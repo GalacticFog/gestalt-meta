@@ -26,8 +26,9 @@ scalaVersion := "2.11.7"
 resolvers ++= Seq(
   "gestalt"   at "http://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
   "snapshots" at "http://scala-tools.org/repo-snapshots",
-  "releases"  at "http://scala-tools.org/repo-releases")
-
+  "releases"  at "http://scala-tools.org/repo-releases",
+  "Atlassian Releases" at "https://maven.atlassian.com/public/"
+)
 
 credentials ++= {
   (for {
