@@ -1,0 +1,166 @@
+# Routes
+# This file defines all application routes (Higher priority routes first)
+# ~~~~
+
+# Home page
+#GET     /                           controllers.Meta.index
+
+
+POST /sync	controllers.Meta.sync()
+
+#
+#   \-^-/         \-^-/          |||           ===      
+#   (o o)         (o o)         (o o)         (o o)     
+#oO--(_)--Ooo-ooO--(_)--Ooo-ooO--(_)--Ooo-ooO--(_)--Ooo-
+#			  ##### ROUTES BY UUID #####
+#
+
+####################
+# ORGS
+
+# -- Create Top-Level Org
+POST /orgs																					controllers.Meta.createTopLevelOrg()
+
+# -- Create Sub-Org
+POST /orgs/$parent<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>	controllers.Meta.createOrg(parent: java.util.UUID)
+
+# -- Read All Orgs
+GET /orgs 																					controllers.ResourceController.getAllOrgs()
+
+# -- Read Single Org
+GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}> 		controllers.ResourceController.getOrgById(uuid: java.util.UUID)
+
+
+
+####################
+# USERS
+
+# -- Create User in Org
+POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users		controllers.Meta.createUser(orgId: java.util.UUID)
+
+# -- Read All Users in Org
+GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users    	controllers.ResourceController.getAllUsers(orgId: java.util.UUID)
+
+# -- Read Single User in Org
+GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/:uuid    controllers.ResourceController.getUserById(orgId: java.util.UUID, uuid: java.util.UUID)
+
+
+
+####################
+# TASKS
+
+
+GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/tasks     	 controllers.TaskController.getAllTasks(uuid: java.util.UUID)
+
+GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/tasks/:id  	 controllers.TaskController.getTaskById(uuid: java.util.UUID, id: java.util.UUID)
+
+POST /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/tasks     	 controllers.TaskController.createTask(uuid: java.util.UUID)
+
+DELETE /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/tasks/:id  controllers.TaskController.deleteTask(uuid: java.util.UUID, id: java.util.UUID)
+
+
+
+########################
+# RESOURCE TYPES
+
+
+# -- Create ResourceType
+POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes  		controllers.TypeController.createResourceType(uuid: java.util.UUID)
+
+# -- Read all Resource Types
+GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes  	    controllers.TypeController.getAllResourceTypes(uuid: java.util.UUID)
+
+# -- Read Single Resource Type
+GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:id 	controllers.TypeController.getResourceTypeById(uuid: java.util.UUID, id: java.util.UUID)
+
+
+
+#-- Create TypeProperty for Type
+POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties controllers.TypeController.createTypeProperty(uuid: java.util.UUID, typeId: java.util.UUID)
+
+#-- Read All TypeProperties from Type
+GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties          controllers.TypeController.getAllProperties(uuid: java.util.UUID, typeId: java.util.UUID)
+
+#-- Read Single TypeProperty from Type
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties/:uuid    controllers.TypeController.getPropertyById(orgId: java.util.UUID, typeId: java.util.UUID, uuid: java.util.UUID)
+
+
+# For generic router - Not Implemented
+#GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:resource  		controllers.ResourceController.getAllByOrgId(uuid: java.util.UUID, resource: String) 
+
+#GET /orgs/$uuid<[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}>/*resource 	controllers.ResourceController.getResourcesByPathWithOrgId(uuid: java.util.UUID, resource)
+
+
+
+
+#
+#     ###           @__           xxx           (((      
+#    (o o)         (o o)         (o o)         (o o)     
+#ooO--(_)--Ooo-ooO--(_)--Ooo-ooO--(_)--Ooo-ooO--(_)--Ooo-
+#
+#				##### Routes by FQON #####
+
+
+#########################
+# ORGS
+
+# -- Create Org by FQON
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.Meta.createOrgFqon(fqon)
+
+# -- Read Org by FQON
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.ResourceController.getOrgByFqon(fqon)
+
+
+
+#########################
+# USERS
+
+# -- Create a User in Org
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.Meta.createUserFqon(fqon: String)
+
+# -- Read All Users in Org
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.ResourceController.getAllUsersFqon(fqon: String)
+
+# -- Read a Single User in Org
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid	controllers.ResourceController.getUserByIdFqon(fqon: String, uuid: java.util.UUID)
+
+
+
+
+#########################
+# RESOURCE_TYPE
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.TypeController.createResourceTypeFqon(fqon: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
+
+#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
+
+#PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
+
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
+
+
+
+#########################
+# TYPE_PROPERTY
+
+
+# -- Create Type Property
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
+
+# -- Read All Type Properties
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.TypeController.getAllPropertiesFqon(fqon: String, uuid: java.util.UUID)
+
+# -- Read Single Type Property
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.TypeController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
+
+
+
+
+# Map static resources from the /public folder to the /assets URL path
+GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
+
+
