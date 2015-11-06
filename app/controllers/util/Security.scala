@@ -78,6 +78,10 @@ object Security {
     ???
   }
   
+  def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId, auth.creds.identifier, auth.creds.password), 5 seconds))
+  }
+  
   def getAllOrgs(org: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltOrg]] = {
     Await.result(GestaltOrg.getOrgs(auth.creds.identifier, auth.creds.password), 5 seconds) 
   }
@@ -98,7 +102,7 @@ object Security {
         lastName = props("lastName"),
         email = props("email"),
         phoneNumber = props("phoneNumber"),
-        credential = GestaltPasswordCredential(props("password")) )
+        credential = GestaltPasswordCredential( props("password")) )
         
     Await.result( GestaltOrg.createAccount(org, account, auth.creds.identifier, auth.creds.password), 5 seconds )
   }

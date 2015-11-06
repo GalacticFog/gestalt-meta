@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.api
 import com.galacticfog.gestalt.data.models._
 
 import play.api.libs.json._
+import java.util.UUID
 
 package object output {
   
@@ -27,4 +28,13 @@ package object output {
   implicit lazy val gestaltTypeOutputFormat = Json.format[GestaltResourceTypeOutput]
   implicit lazy val gestaltPropertyOutputFormat = Json.format[GestaltTypePropertyOutput]
   
+  
+  def toLink(typeId: UUID, id: UUID, name: Option[String]) = {
+    ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id )))
+  }
+  
+  def toHref(typeId: UUID, id: UUID) = {
+    val typename = resourceRestName(typeId) getOrElse { "resources" }
+    "/%s/%s".format(typename, id.toString)
+  }  
 }

@@ -51,7 +51,6 @@ import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource
 object ResourceController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents {
 
-
   private val qs = ResourceQueryService
   
   /**
@@ -62,7 +61,6 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
     Ok(renderLinks(toLinks(ResourceFactory.findAll(ResourceIds.Org))))
   }
 
-  
   /**
    * Get a list of all Users in the given Org from Meta
    * API implements => GET /orgs
@@ -80,7 +78,7 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   
   def getUserById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     ResourceFactory.findById(ResourceIds.User, id) match {
-      case Some(user) => Ok(Output.renderInstance2(user))
+      case Some(user) => Ok(Output.renderInstance(user))
       case None       => NotFound(toError(404, s"User '${id}' not found."))
     }
   }
@@ -88,7 +86,7 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   def getUserByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => ResourceFactory.findById(ResourceIds.User, id) match {
-        case Some(user) => Ok( Output.renderInstance2(user) )
+        case Some(user) => Ok( Output.renderInstance(user) )
         case None => NotFound(toError(404, s"User '${id}' not found."))
       }
       case None => OrgNotFound(fqon)
@@ -100,13 +98,13 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
    * Get a List of ResourceLinks by Org UUID
    * [Implements]: GET /orgs/:uuid/:resources, i.e. /orgs/:uuid/workspaces
    */
-  def getAllByOrgId(org: UUID, resource: String) = GestaltFrameworkAuthAction(Some(org)) { implicit securedRequest =>
-    trace(s"getAllByOrgId($org, $resource)")
-    resourceUUID(resource) match {
-      case Some(id) => getAll(org, id)  
-      case None => NotFound(s"Invalid resource-type: $resource")
-    }
-  }
+//  def getAllByOrgId(org: UUID, resource: String) = GestaltFrameworkAuthAction(Some(org)) { implicit securedRequest =>
+//    trace(s"getAllByOrgId($org, $resource)")
+//    resourceUUID(resource) match {
+//      case Some(id) => getAll(org, id)  
+//      case None => NotFound(s"Invalid resource-type: $resource")
+//    }
+//  }
 
   
   /**
@@ -134,8 +132,9 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   def renderLinks(links: Seq[MetaLink]) = Json.prettyPrint(Json.toJson( links ))
   
   def toLink(typeId: UUID, id: UUID, name: Option[String]) = {
-    MetaLink(typeId, id.toString, name, Some(Output.toHref( typeId, id )))
+    MetaLink(typeId, id.toString, name, Some(toHref( typeId, id )))
   }
+  
   def toLink(r: GestaltResourceInstance): MetaLink = {
     toLink(r.typeId, r.id.toString, Some(r.name))
   }
@@ -227,21 +226,18 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   def getAllWorkspaces(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit securedRequest =>
     println(securedRequest.identity.account)
     val acc = securedRequest.identity
-    Ok("You got workspaces!")
+    ???
   }
 
+  
   object AuthorizationHandler {
-
     def getSingle(org: UUID, typeId: UUID, id: UUID, account: AuthAccountWithCreds) = {
       //
-      // TODO: Perform Authorization Checking Here!
-      //
-
+      // TODO: Perform Authorization Checking Here! Use AuthMap
+      // 
       val identities = account.account +: account.groups map { _.id }
-
       getById(org, typeId, id)
     }
-
   }
 
   //  def createWorkspace() = Action.async(parse.json) { implicit request =>
@@ -265,13 +261,13 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   //    } else getById( ResourceIds.Blueprint, id )
   //  }
 
-  private def getAll(org: UUID, typeId: UUID) = /*Future*/ {
-    okNotFound(qs.findAll(typeId))
-  }
+//  private def getAll(org: UUID, typeId: UUID) = /*Future*/ {
+//    okNotFound(qs.findAll(typeId))
+//  }
 
-  private def getAllWithOrg(org: UUID, typeId: UUID) = Future {
-    okNotFound(qs.findAllWithOrgId(org, typeId))
-  }
+//  private def getAllWithOrg(org: UUID, typeId: UUID) = Future {
+//    okNotFound(qs.findAllWithOrgId(org, typeId))
+//  }
 
   private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = /*Future*/ {
     okNotFound(qs.findById(org, resourceTypeId, id))

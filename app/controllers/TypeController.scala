@@ -103,7 +103,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   
   /** Create ResourceType, return Play Result */
-  private def CreateTypeResult[T](org: UUID, /*, user: UUID,*/ typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+  private def CreateTypeResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Future {
       val user = request.identity.account.id
       

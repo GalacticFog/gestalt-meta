@@ -14,49 +14,48 @@ import scala.util.{Try, Success, Failure}
 
 import play.api.libs.json._
 
-//import ServiceObjects._
 import com.galacticfog.gestalt.meta.api._
 
-//object JsonImports {
-//  implicit lazy val resourceFormat = Json.format[ResourceLink]
-//  implicit lazy val resourceOwnerLinkFormat = Json.format[ResourceOwnerLink]
-//  implicit lazy val instanceDomainFormat = Json.format[GestaltResourceInstance]
-////  implicit lazy val instanceInputFormat = Json.format[GestaltResourceInstanceIn]
-////  implicit lazy val instanceOutputFormat = Json.format[GestaltResourceInstanceOut]
-//}
+import com.galacticfog.gestalt.meta.api.output._
 
+
+/**
+ * 
+ * This object will become useful as we add the other System Resource Types
+ * and more flexible query types.
+ * 
+ */
 
 object ResourceQueryService {
   
   //import JsonImports._
   
-  val TEMP_API_PREFIX = "https://gf.com/api/v1.1"
+  //val TEMP_API_PREFIX = "https://gf.com/api/v1.1"
   
   /**
    * Find all resources of the given type.
    */
     
-  def findAll(typeId: UUID) = Try {
-    ???
-  }
+//  def findAll(typeId: UUID) = Try {
+//    ???
+//  }
   
-  def findAllWithOrgId(org: UUID, typeId: UUID) = Try {
-    prettyLinks {  
-      ResourceFactory.findAll(org, typeId) map {
-        toResourceLink( _ )
-      }
-    }
-  }
+//  def findAllWithOrgId(org: UUID, typeId: UUID) = Try {
+//    prettyLinks {  
+//      ResourceFactory.findAll(org, typeId) map {
+//        toResourceLink( _ )
+//      }
+//    }
+//  }
   
-  import com.galacticfog.gestalt.meta.api.output._
   
   def findById(org: UUID, typeId: UUID, id: UUID) = Try {
     log.debug(s"ResourceQueryService::findById($org, $typeId)")
-    Output.renderInstance2 {
+    Output.renderInstance {
       ResourceFactory.findById(typeId, id) getOrElse {
         rnf( s"Resource not found." )
       }
-    }    
+    }
   }
   
   def pretty(r: GestaltResourceInstance) = {
@@ -71,10 +70,10 @@ object ResourceQueryService {
     Json.prettyPrint( Json.toJson( rs ) )
   }  
   
-  def toResourceLink( instance: GestaltResourceInstance ): ResourceLink = {
-    ResourceLink( instance.typeId, instance.id, Some(instance.name), Some(toHref(instance, TEMP_API_PREFIX)) )
-  }
-  
+//  def toResourceLink( instance: GestaltResourceInstance ): ResourceLink = {
+//    ResourceLink( instance.typeId, instance.id, Some(instance.name), Some(toHref(instance, TEMP_API_PREFIX)) )
+//  }
+//  
   def toHref(r: GestaltResourceInstance, host: String): String = {
     "%s/%s/%s/%s".format("http://{host}", "{org}", "{resource}", r.id.toString)
   }  

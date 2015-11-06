@@ -1,14 +1,27 @@
 package com.galacticfog.gestalt.meta.api.output
 
-
-
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-
 import java.util.UUID
-import play.api.libs.json._
+
+import scala.math.BigDecimal.int2bigDecimal
+
 import org.joda.time.DateTime
 import org.joda.time.format.ISODateTimeFormat
+
+import com.galacticfog.gestalt.data.ReferenceFactory
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.ResourceType
+import com.galacticfog.gestalt.data.illegal
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.GestaltTypeProperty
+import com.galacticfog.gestalt.data.models.ResourceLink
+import com.galacticfog.gestalt.data.uuid2string
+
+import play.api.libs.json.JsArray
+import play.api.libs.json.JsBoolean
+import play.api.libs.json.JsNumber
+import play.api.libs.json.JsString
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
  
 
 object OutputDatatypeHandlers {
@@ -31,9 +44,7 @@ object OutputDatatypeHandlers {
   def json(property: GestaltTypeProperty, value: String) = Json.parse( value )
   
   def renderUUID(property: GestaltTypeProperty, value: String) = JsString(value)
-  /*
-   * RESOURCE::UUID
-   */
+
   def renderResourceUUID(property: GestaltTypeProperty, value: String) = JsString(value)  
   
   /**
@@ -71,10 +82,7 @@ object OutputDatatypeHandlers {
     }
     JsArray( links )
   }
-  
-  
 
-  
   
 //  def renderReferenceUUID(property: GestaltResourceTypeProperty, value: String) = {
 //    //val (tableName, instanceId) = toTuple2( s )
@@ -97,9 +105,7 @@ object OutputDatatypeHandlers {
 //      // Return the UUID as a String
 //      JsString( data.toString )
 //  }
-//  
 //
-//  
 //  def renderReferenceUUIDProperty(property: GestaltResourceTypeProperty, value: String) = {
 //    val tableName = property.referenceValueType getOrElse {
 //      illegal(s"ReferenceValueType not specified.")
@@ -153,12 +159,6 @@ object OutputDatatypeHandlers {
   private[output] def toHref(typeId: UUID, id: UUID): String = {
     "http://dummy_href/%s".format(id.toString)
   }  
-  
-//  FOR ORG - need to build parent/child list dynamically from closure table
-//  
-//  NOW HOW do i handle different rendering strategies for different resource types?
-  
-  
-  
+
   
 }

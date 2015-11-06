@@ -17,9 +17,8 @@ import scala.util.{Try,Success,Failure}
 
 
 object seed extends App {
-  //
-  //...get root user org and user name from Security for creates...
-  //
+
+  
   refreshDb()
   createReferenceData()
   createBaseTypes()

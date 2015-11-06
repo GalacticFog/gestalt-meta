@@ -6,7 +6,10 @@
 #GET     /                           controllers.Meta.index
 
 
-POST /sync	controllers.Meta.sync()
+POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
+#POST 	/sync		 	controllers.Meta.sync()
+
+POST	/sync			controllers.Meta.sync()
 
 #
 #   \-^-/         \-^-/          |||           ===      
@@ -89,8 +92,6 @@ GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0
 #GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:resource  		controllers.ResourceController.getAllByOrgId(uuid: java.util.UUID, resource: String) 
 
 #GET /orgs/$uuid<[a-fA-F0-9]{8}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{4}-[a-fA-F0-9]{12}>/*resource 	controllers.ResourceController.getResourcesByPathWithOrgId(uuid: java.util.UUID, resource)
-
-
 
 
 #
