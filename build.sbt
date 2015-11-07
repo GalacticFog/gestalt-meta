@@ -7,6 +7,12 @@ lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
 scalaVersion := "2.11.7"
 
+maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
+
+dockerUpdateLatest := true
+
+dockerRepository := Some("galacticfog.artifactoryonline.com")
+
 
 
 //scalacOptions ++= Seq(
