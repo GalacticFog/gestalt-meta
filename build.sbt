@@ -61,12 +61,11 @@ libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	/*"com.galacticfog" % "gestalt-meta-data_2.11" 	% "0.1.0-SNAPSHOT",*/
-	"com.galacticfog" % "gestalt-task-io_2.11" 	 	% "0.2.2-SNAPSHOT",
-	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2-SNAPSHOT",	
-	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.3-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-meta-repository" % "0.1.0-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-security-play" % "1.2.0-SNAPSHOT" withSources()
+	"com.galacticfog" % "gestalt-task-io_2.11" 	 	% "0.2.2",
+	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2",	
+	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.3",
+	"com.galacticfog" %% "gestalt-meta-repository" % "0.1.0",
+	"com.galacticfog" %% "gestalt-security-play" % "1.2.0" withSources()
 )
 
 
