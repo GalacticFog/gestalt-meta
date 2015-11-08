@@ -31,12 +31,21 @@ POST /orgs/$parent<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f
 GET /orgs 																					controllers.ResourceController.getAllOrgs()
 
 # -- Read Single Org
-GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}> 		controllers.ResourceController.getOrgById(uuid: java.util.UUID)
+GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}> 				controllers.ResourceController.getOrgById(uuid: java.util.UUID)
+
+# -- Read Child Orgs from Org
+GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/orgs 		controllers.ResourceController.getChildOrgs(orgId: java.util.UUID)
+
+
+DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>  controllers.Meta.hardDeleteOrg(orgId: java.util.UUID)
 
 
 
 ####################
 # USERS
+
+# -- Get All Users in the System (from root down)
+GET /users   controllers.ResourceController.getAllUsersFromRoot
 
 # -- Create User in Org
 POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users		controllers.Meta.createUser(orgId: java.util.UUID)
@@ -111,6 +120,8 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.Meta.createOrgFqon
 # -- Read Org by FQON
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.ResourceController.getOrgByFqon(fqon)
 
+# -- Read Child Orgs of Org
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/orgs			controllers.ResourceController.getChildOrgsFqon(fqon: String)
 
 
 #########################
@@ -126,6 +137,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.ResourceContr
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid	controllers.ResourceController.getUserByIdFqon(fqon: String, uuid: java.util.UUID)
 
 
+#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid  controllers.Meta.hardDeleteUser(fqon: java.util.UUID, uuid: java.util.UUID)
 
 
 #########################

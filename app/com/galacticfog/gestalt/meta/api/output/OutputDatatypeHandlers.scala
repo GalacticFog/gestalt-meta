@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.meta.api.output
 
+
 import java.util.UUID
 
 import scala.math.BigDecimal.int2bigDecimal
@@ -22,13 +23,12 @@ import play.api.libs.json.JsNumber
 import play.api.libs.json.JsString
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
- 
+
 
 object OutputDatatypeHandlers {
 
   def default(property: GestaltTypeProperty, value: String) = JsString(value)
 
-    
   def int(property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
   
   def intList(property: GestaltTypeProperty, value: String): JsArray = {
@@ -156,9 +156,9 @@ object OutputDatatypeHandlers {
   }
   
   /** TODO: Provide a real implementation. */
-  private[output] def toHref(typeId: UUID, id: UUID): String = {
-    "http://dummy_href/%s".format(id.toString)
-  }  
+//  private[output] def toHref(typeId: UUID, id: UUID): String = {
+//    "http://dummy_href/%s".format(id.toString)
+//  }  
 
   
 }

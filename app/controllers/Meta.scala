@@ -22,6 +22,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.gestaltResourceInputFormat
 import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
 import com.galacticfog.gestalt.meta.api.rte
+import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
@@ -52,13 +53,16 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
   //
 
   def sync() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-
+    trace("sync")
+    
+    log.debug("Getting Orgs from Security.")
     /* Get Security Org/User tree */
     val sd = Security.getOrgSyncTree(None, request.identity) match {
       case Success(data) => data
       case Failure(err) => throw err
     }
 
+    
     /* Get parent of given org - get root Org if None */
     def parentId(o: GestaltOrg) = {
       if (o.parent.isDefined) o.parent.get.id 
@@ -68,6 +72,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       }
     }
 
+    
     val metaorgs  = ResourceFactory.findAll(ResourceIds.Org)
     val metausers = ResourceFactory.findAll(ResourceIds.User)    
     
@@ -89,7 +94,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     log.debug(s"Users Create [${usersCreate.size} users]:")
     for (a <- usersCreate) log.debug("%s, %-10s : org: %s".format(a.id, a.name, a.directory.orgId))
 
-    
+    log.debug("Creating Resources in Meta...")
     Try {  
       for (o <- orgsCreate) createNewMetaOrg(parentId(o), o)
       for (a <- usersCreate) createNewMetaUser(a.directory.orgId, a)
@@ -157,6 +162,44 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
   
+
+  def hardDeleteOrg(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    Security.deleteOrg(org, request.identity) match {
+      case Failure(e) => InternalServerError(toError(500, e.getMessage))//handleSecurityApiException(e)
+      case Success(_) => ResourceFactory.hardDeleteResource(org) match {
+        case Success(_) => NoContent
+        case Failure(e) => e match {
+          //
+          // TODO: ResourceFactory needs to throw typed exception indicating NotFound
+          //
+          case rnf: ResourceNotFoundException => NotFound(rnf.getMessage)
+          case _ => InternalServerError(toError(500, e.getMessage))
+        }
+      }
+    }
+  }
+  
+  
+  def hardDeleteUser(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    Security.deleteAccount(org, request.identity) match {
+      case Failure(e) => handleSecurityApiException(e)
+      case Success(_) => ResourceFactory.hardDeleteResource(org) match {
+        case Success(_) => NoContent
+        case Failure(e) => e match {
+          //
+          // TODO: ResourceFactory needs to throw typed exception indicating NotFound
+          //
+          case rnf: IllegalArgumentException => NotFound(rnf.getMessage)
+          case _ => InternalServerError(toError(500, e.getMessage))
+        }
+      }
+    }
+  }
+  
+  private def hardDeleteMetaResource(id: UUID) = {
+    ???
+  }
+  
   /*
    * TODO: This method is shared between the Org and User resources. With minimal specification
    * the two input types are identical - validate properties to ensure things to to the right place.
@@ -174,6 +217,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
 
+  
   private def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
     val res = json.validate[GestaltResourceInput].map {
       case resource: GestaltResourceInput => resource

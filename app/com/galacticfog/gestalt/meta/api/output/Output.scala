@@ -153,6 +153,12 @@ object Output {
   }
   
   
+  def renderLink(r: GestaltResourceInstance) = toLink(r.typeId, r.id, Some(r.name))
+  
+  def renderLinks(rs: Seq[GestaltResourceInstance]) = {
+    Json.prettyPrint(Json.toJson(rs map { r => toLink(r.typeId, r.id, Some(r.name)) }))
+  }
+  
   def renderTypeProperties(typeId: UUID) = {
     val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p ) }
     Json.prettyPrint(Json.toJson( ps ))

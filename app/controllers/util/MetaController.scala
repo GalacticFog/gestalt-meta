@@ -28,6 +28,15 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.models._
 
+import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
+import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => SecurityBadRequestException }
+import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ ForbiddenAPIException => SecurityForbiddenAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException => SecurityResourceNotFoundException }
+import com.galacticfog.gestalt.security.api.errors.{ CreateConflictException => SecurityCreateConflictException }
+import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
+
 
 trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticator] {
   
@@ -79,26 +88,20 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     ???
   }  
   
-  val galfogId      = "b2e8ecd1-351d-4671-a6f0-2955335d6522"
-  val engineeringId = "4cfd1dea-f0dd-4176-91cc-5f319543f187"
-  val coreId        = "dc452e1c-0db1-45f1-920c-059c01def231"
-  
-  //
-  // TODO: Obviously a temp implementation
-  //
-//  protected def resolveFqon(fqon: String): Try[UUID] = Try {
-//    println(s"resolveFqon(${fqon})")
-//    fqon match {
-//      case "vatomic"                      => uuid("77819375-f3a6-41b2-9302-15a7af280f57")  
-//      case "galacticfog"                  => uuid(galfogId)
-//      case "galacticfog.engineering"      => uuid(engineeringId)
-//      case "galacticfog.engineering.core" => uuid(coreId)
-//      case _ => rnf(s"Org '${fqon}' does not exist.")
-//    }
-//  }
-  
+//  val galfogId      = "b2e8ecd1-351d-4671-a6f0-2955335d6522"
+//  val engineeringId = "4cfd1dea-f0dd-4176-91cc-5f319543f187"
+//  val coreId        = "dc452e1c-0db1-45f1-920c-059c01def231"
   
 
+  def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
+    case e: SecurityBadRequestException       => BadRequest(toError(400, e.getMessage))
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(toError(401, e.getMessage))
+    case e: SecurityForbiddenAPIException     => Forbidden(toError(403, e.getMessage))
+    case e: SecurityResourceNotFoundException => NotFound(toError(404, e.getMessage))
+    case e: SecurityCreateConflictException   => Conflict(toError(409, e.getMessage))
+    case e: SecurityUnknownAPIException       => BadRequest(toError(400, e.getMessage))
+    case e: SecurityAPIParseException         => InternalServerError(toError(500, e.getMessage))
+  }
   
   protected def trace(method: String) = {
     log.debug("%s::%s".format(this.getClass.getSimpleName, method))

@@ -55,39 +55,81 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   
   /**
    * Get a list of all Orgs in Meta
-   * API implements => GET /orgs
    */
   def getAllOrgs = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-    Ok(renderLinks(toLinks(ResourceFactory.findAll(ResourceIds.Org))))
+    trace("getAllOrgs()")
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
+  }
+  
+  /**
+   * Get a list of child Orgs by Org UUID.
+   */
+  def getChildOrgs(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getChildOrgs($org)")
+    getOrg(org) match {
+      case Some(_) => childOrgs(org)  
+      case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(org.toString)))
+    }
+  }
+  
+  /**
+   * Get a list of child Orgs by Org FQON.
+   */
+  def getChildOrgsFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getChildOrgsFqon($fqon)")
+    orgFqon(fqon) match {
+      case Some(org) => childOrgs(org.id)  
+      case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(fqon)))
+    }
   }
 
   /**
-   * Get a list of all Users in the given Org from Meta
-   * API implements => GET /orgs
+   * Get a list of all users in the system from root Org down.
    */
-  def getAllUsers(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    Ok(renderLinks(toLinks(ResourceFactory.findAll(ResourceIds.User, org))))
+  def getAllUsersFromRoot = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+    trace("getAllUsersFromRoot()")
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User)))
   }
   
+  /**
+   * Get a list of all Users in the given Org by UUID.
+   */
+  def getAllUsers(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getAllUsers(org = ${org.toString}")
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org)))
+  }
+  
+  /**
+   * Get a list of all Users in the given Org by FQON.
+   */  
   def getAllUsersFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getAllUsersFqon($fqon)")
     orgFqon(fqon) match {
-      case Some(org) => Ok(renderLinks(toLinks(ResourceFactory.findAll(ResourceIds.User, org.id))))
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org.id)))
       case None => OrgNotFound(fqon)
     }
   }
   
+  /**
+   * Get a single user by their ID and Org UUID.
+   */
   def getUserById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getUserById($org, $id")
     ResourceFactory.findById(ResourceIds.User, id) match {
       case Some(user) => Ok(Output.renderInstance(user))
       case None       => NotFound(toError(404, s"User '${id}' not found."))
     }
   }
   
+  /**
+   * Get a single user by their ID and Org FQON.
+   */  
   def getUserByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getUserByIdFqon($fqon, $id")
     orgFqon(fqon) match {
       case Some(org) => ResourceFactory.findById(ResourceIds.User, id) match {
-        case Some(user) => Ok( Output.renderInstance(user) )
-        case None => NotFound(toError(404, s"User '${id}' not found."))
+        case Some(user) => Ok(Output.renderInstance(user))
+        case None       => NotFound(toError(404, s"User '${id}' not found."))
       }
       case None => OrgNotFound(fqon)
     } 
@@ -117,7 +159,7 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
       case Some(org) => {
         resourceUUID(resource) match {
           case Some(typeId) => Ok {
-            renderLinks(toLinks(ResourceFactory.findAll(typeId)))
+            Output.renderLinks(ResourceFactory.findAll(typeId))
           }
           case None => NotFound(toError(404, s"Invalid resource name '${resource}'."))
         }
@@ -127,51 +169,25 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   }
 
   
-  def pretty(r: GestaltResourceInstance) = Json.prettyPrint(Json.toJson( r ))
-  def renderLink(link: MetaLink) = Json.prettyPrint(Json.toJson( link ))
-  def renderLinks(links: Seq[MetaLink]) = Json.prettyPrint(Json.toJson( links ))
-  
-  def toLink(typeId: UUID, id: UUID, name: Option[String]) = {
-    MetaLink(typeId, id.toString, name, Some(toHref( typeId, id )))
-  }
-  
-  def toLink(r: GestaltResourceInstance): MetaLink = {
-    toLink(r.typeId, r.id.toString, Some(r.name))
-  }
-  
-  def toLinks(rs: Seq[GestaltResourceInstance]): Seq[MetaLink] = {
-    rs map { toLink( _ ) }
-  }
-  
-  def toHref(typeId: UUID, id: UUID) = {
-    "/%s/%s".format("{typename}", id.toString)
-  }  
-  
-  
   /**
    * TODO: this can be made to work for any resource queries up to 2 levels deep
    * (which is the maximum we're going to go).
    */
-  def getResourcesByPathWithOrgId(org: UUID, path: String) = Action.async {
-
-    val pc = path.split("/").toList
-    val m = if (pc.size == 1) {
-      "*** Getting ALL: " + pc(0)
-    } else if (pc.size == 2) {
-      s"*** Getting SINGLE : ${pc(0)}/${pc(1)}"
-    } else if (pc.size == 3) {
-      s"*** Getting ALL :  ${pc(2)}"
-    } else "I don't know what you're asking for."
-
-    Future {
-      Ok(s"RESOLVING (path.size=${pc.size}): " + m)
-    }
-  }
-
-
-  def cacheSecurityOrgs(implicit client: GestaltSecurityClient): Future[Seq[GestaltOrg]] = {
-    client.get[Seq[GestaltOrg]]("orgs")
-  }
+//  def getResourcesByPathWithOrgId(org: UUID, path: String) = Action.async {
+//
+//    val pc = path.split("/").toList
+//    val m = if (pc.size == 1) {
+//      "*** Getting ALL: " + pc(0)
+//    } else if (pc.size == 2) {
+//      s"*** Getting SINGLE : ${pc(0)}/${pc(1)}"
+//    } else if (pc.size == 3) {
+//      s"*** Getting ALL :  ${pc(2)}"
+//    } else "I don't know what you're asking for."
+//
+//    Future {
+//      Ok(s"RESOLVING (path.size=${pc.size}): " + m)
+//    }
+//  }
 
   /**
    * Determine whether a given identity name is a gestalt-security
@@ -269,7 +285,15 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
 //    okNotFound(qs.findAllWithOrgId(org, typeId))
 //  }
 
-  private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = /*Future*/ {
+  private def getOrg(id: UUID) = {
+    ResourceFactory.findById(ResourceIds.Org, id)
+  }
+
+  private def childOrgs(org: UUID) = {
+    Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Org, org)))
+  }
+  
+  private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = {
     okNotFound(qs.findById(org, resourceTypeId, id))
   }
 

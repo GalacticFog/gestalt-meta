@@ -90,6 +90,16 @@ object Security {
     Await.result(GestaltOrg.createSubOrg(parent, org.name, auth.creds.identifier, auth.creds.password), 5 seconds )
   }
   
+  def deleteOrg(org: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
+    log.debug(s"Attempting to DELETE Org ${org.toString}. Account: ${auth.account}")
+    Await.result(GestaltOrg.deleteOrg(org, auth.creds.identifier, auth.creds.password), 5 seconds)
+  }
+
+  def deleteAccount(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
+    //Await.result(GestaltOrg.deleteOrg(org, auth.creds.identifier, auth.creds.password), 5 seconds)
+    ???
+  }
+  
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltAccount]] = {
     Await.result(GestaltOrg.getOrgAccounts(org.get, auth.creds.identifier, auth.creds.password), 5 seconds)
   }
