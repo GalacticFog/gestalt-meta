@@ -54,8 +54,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   /* --------------------------------------------------------------------------
    * RESOURCE_TYPES
    */
-
-  /* /{org}/resourcetypes */
   
   def getAllResourceTypes(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     trace(s"getAllResourceTypes($org)")
@@ -69,8 +67,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
       case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(fqon)))
     }
   }
-
-  /* /{org}/resourcetypes/:uuid */
   
   def getResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     trace(s"getResourceTypeById($org, $id)")
@@ -85,9 +81,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     }
   }
 
-  
-  /* POST /orgs/:uuid/resourcetypes */
-  
   def createResourceType(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createResourceType($org)")
     CreateTypeResult(org, request.body)
@@ -118,11 +111,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
         }
       }
     }
-//    for {
-//      res <- safeGetTypeJson(typeJson)
-//      res <- typeFromInput(org, userId, res)
-//      out <- TypeFactory.create(userId)(res)
-//    } yield out    
   }
 
   /* DELETE /orgs/:uuid/resourcetypes/:uuid */

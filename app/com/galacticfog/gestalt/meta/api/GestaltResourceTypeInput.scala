@@ -19,8 +19,9 @@ case class GestaltResourceTypeInput(
   modified: Option[Hstore] = None,
   properties: Option[Hstore] = None,
   variables: Option[Hstore] = None,
-  tags: Option[Hstore] = None,
+  tags: Option[List[String]] = None,
   auth: Option[Hstore] = None,
   
   property_defs: Option[Seq[GestaltTypePropertyInput]] = None)
 
+  

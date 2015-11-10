@@ -6,7 +6,7 @@
 #GET     /                           controllers.Meta.index
 
 
-POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
+#POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 #POST 	/sync		 	controllers.Meta.sync()
 
 POST	/sync			controllers.Meta.sync()
@@ -36,8 +36,8 @@ GET /orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9
 # -- Read Child Orgs from Org
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/orgs 		controllers.ResourceController.getChildOrgs(orgId: java.util.UUID)
 
-
-DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>  controllers.Meta.hardDeleteOrg(orgId: java.util.UUID)
+# -- Delete Org by UUID
+DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>  controllers.DeleteController.hardDeleteOrg(orgId: java.util.UUID)
 
 
 
@@ -56,6 +56,8 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 # -- Read Single User in Org
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/:uuid    controllers.ResourceController.getUserById(orgId: java.util.UUID, uuid: java.util.UUID)
 
+# -- Delete Single User in Org
+DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/:userId  controllers.DeleteController.hardDeleteUser(orgId: java.util.UUID, userId: java.util.UUID)
 
 
 ####################
@@ -123,6 +125,9 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.ResourceController.
 # -- Read Child Orgs of Org
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/orgs			controllers.ResourceController.getChildOrgsFqon(fqon: String)
 
+# -- Delete an Org by FQON
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>				controllers.DeleteController.hardDeleteOrgFqon(fqon: String)  
+
 
 #########################
 # USERS
@@ -136,16 +141,16 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.ResourceContr
 # -- Read a Single User in Org
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid	controllers.ResourceController.getUserByIdFqon(fqon: String, uuid: java.util.UUID)
 
-
-#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid  controllers.Meta.hardDeleteUser(fqon: java.util.UUID, uuid: java.util.UUID)
+# -- Delete a Single User by FQON
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid  	controllers.DeleteController.hardDeleteUserFqon(fqon: String, uuid: java.util.UUID)
 
 
 #########################
 # RESOURCE_TYPE
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
-
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.TypeController.createResourceTypeFqon(fqon: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
 
@@ -171,6 +176,10 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.TypeController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
 
 
+#########################
+# RESOURCES
+
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId
 
 
 # Map static resources from the /public folder to the /assets URL path

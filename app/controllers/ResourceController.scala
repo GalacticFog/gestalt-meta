@@ -61,6 +61,7 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
   }
   
+  
   /**
    * Get a list of child Orgs by Org UUID.
    */

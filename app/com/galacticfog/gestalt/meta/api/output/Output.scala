@@ -117,7 +117,7 @@ object Output {
       modified = Json.toJson(r.modified),
       properties = jsonHstore(r.properties),
       variables = jsonHstore(r.variables),
-      tags = jsonHstore(r.tags),
+      tags = jsonArray(r.tags),
       auth = jsonHstore(r.auth),
       property_defs = jsonTypePropertyLinks(r.id))
 
@@ -142,7 +142,7 @@ object Output {
       modified = Json.toJson(r.modified),
       properties = jsonHstore(r.properties),
       variables = jsonHstore(r.variables),
-      tags = jsonHstore(r.tags),
+      tags = jsonArray(r.tags),
       auth = jsonHstore(r.auth) )
       
     //
@@ -347,7 +347,11 @@ object Output {
   }
   def jsStringOpt(s: Option[String]): Option[JsString] = {
     if (s.isDefined) Some(JsString(s.get)) else None
-  }  
+  }
+  
+  def jsonArray(ar: Option[List[String]]) = {
+    if (ar.isEmpty) None else Some(Json.toJson(ar))
+  }
   def jsonHstore(hs: Option[Hstore]) = {
     if (hs.isEmpty) None else Some(Json.toJson(hs))
   }

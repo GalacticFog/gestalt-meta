@@ -87,11 +87,7 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     }
     ???
   }  
-  
-//  val galfogId      = "b2e8ecd1-351d-4671-a6f0-2955335d6522"
-//  val engineeringId = "4cfd1dea-f0dd-4176-91cc-5f319543f187"
-//  val coreId        = "dc452e1c-0db1-45f1-920c-059c01def231"
-  
+
 
   def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
     case e: SecurityBadRequestException       => BadRequest(toError(400, e.getMessage))

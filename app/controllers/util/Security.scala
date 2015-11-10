@@ -97,7 +97,7 @@ object Security {
 
   def deleteAccount(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
     //Await.result(GestaltOrg.deleteOrg(org, auth.creds.identifier, auth.creds.password), 5 seconds)
-    ???
+    Try(Await.result(GestaltAccount.deleteAccount(id, auth.creds.identifier, auth.creds.password), 5 seconds))
   }
   
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltAccount]] = {

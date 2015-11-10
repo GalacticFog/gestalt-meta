@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -42,8 +43,10 @@ import play.api.libs.json.Json
 
 /**
  * Code for integrating Security and Meta. Handles resource synchronization between
- * the two systems (Orgs and Accounts), and implements the REST endpoints for creating
- * Orgs and Users in Meta (ensuring they are created in Security as well).
+ * the two systems (Orgs and Accounts), and implements the REST endpoints for CRUD
+ * operations on Orgs and Users in Meta (ensuring they are created in Security as well).
+ * 
+ * TODO: Security doesn't have PUT/PATCH endpoints - need that.
  */
 object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with MetaController with NonLoggingTaskEvents {
   
@@ -72,7 +75,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       }
     }
 
-    
     val metaorgs  = ResourceFactory.findAll(ResourceIds.Org)
     val metausers = ResourceFactory.findAll(ResourceIds.User)    
     
@@ -130,7 +132,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
   }
   
   //
-  // TODO: Refactor to use CrateOrgResult
+  // TODO: Refactor to use CreateOrgResult
   //
   def createTopLevelOrg() = GestaltFrameworkAuthAction(nullOptString(None)).async(parse.json) { implicit request =>
     Future {      
@@ -162,43 +164,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
   
-
-  def hardDeleteOrg(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    Security.deleteOrg(org, request.identity) match {
-      case Failure(e) => InternalServerError(toError(500, e.getMessage))//handleSecurityApiException(e)
-      case Success(_) => ResourceFactory.hardDeleteResource(org) match {
-        case Success(_) => NoContent
-        case Failure(e) => e match {
-          //
-          // TODO: ResourceFactory needs to throw typed exception indicating NotFound
-          //
-          case rnf: ResourceNotFoundException => NotFound(rnf.getMessage)
-          case _ => InternalServerError(toError(500, e.getMessage))
-        }
-      }
-    }
-  }
-  
-  
-  def hardDeleteUser(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    Security.deleteAccount(org, request.identity) match {
-      case Failure(e) => handleSecurityApiException(e)
-      case Success(_) => ResourceFactory.hardDeleteResource(org) match {
-        case Success(_) => NoContent
-        case Failure(e) => e match {
-          //
-          // TODO: ResourceFactory needs to throw typed exception indicating NotFound
-          //
-          case rnf: IllegalArgumentException => NotFound(rnf.getMessage)
-          case _ => InternalServerError(toError(500, e.getMessage))
-        }
-      }
-    }
-  }
-  
-  private def hardDeleteMetaResource(id: UUID) = {
-    ???
-  }
   
   /*
    * TODO: This method is shared between the Org and User resources. With minimal specification
@@ -267,65 +232,25 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       case Failure(ex) => rte(s"Failed to create ${ResourceType.name(typeId)} in Security: " + ex.getMessage)
     }
   }
-    
-// TODO: OLD SECURITY SYNC FUNCTION - VERIFY NEW FUNCTION AND REMOVE
-//  /**
-//   * Ensure Security and Meta contain the same resources of the given type.
-//   * 
-//   * @param typeId the Meta resource_type_id you want to synchronize
-//   * @param owningOrg the Org used as the value for org_id on the new resource
-//   */
-//  private def syncSecurityResources[T](typeId: UUID, owningOrg: Option[UUID])(implicit request: SecuredRequest[T]) = Try {
-//    
-//    trace(s"syncSecurityResources($typeId, $owningOrg)")
-//    
-//    // TODO: This defaults to the root Org if None given (is that correct?).
-//    val owner = orgOrElseRoot(owningOrg)
-//    
-//    // Resolve function to pull resources from Security
-//    val securityReader: (Option[UUID], AuthAccountWithCreds) => Try[Seq[SecurityResource]] = typeId match {
-//      case ResourceIds.Org  => Security.getAllOrgs _
-//      case ResourceIds.User => Security.getAllAccounts _
-//      case _ => illegal(Errors.INVALID_RESOURCE_TYPE_ID(typeId))
-//    }
-//    
-//    // Get the resources from Security
-//    val securityResources = securityReader(Some(owner), request.identity) match {
-//      case Success(rs) => rs.map(r => (r.id, r)).toMap
-//      case Failure(ex) => throw ex
-//    }
-//    
-//    // Get resource of the same type from Meta
-//    val metaResources = ResourceFactory.findAll(typeId, owner).map(r => (r.id, r)).toMap
-//    
-//    /*
-//     * Compare keys from both maps to determine which resources to 
-//     * create/delete in Meta (Security is authoritative).
-//     */
-//    val securityIds = securityResources.keys.toList
-//    val metaIds = metaResources.keys.toList
-//    val resourcesCreate = securityIds.diff(metaIds) map { id => securityResources(id) }
-//    val resourcesDelete = metaIds.diff(securityIds) map { metaResources(_) }
-//    
-//    
-//    // Resolve function to create new resources in Meta.
-//    val metaWriter: (UUID, SecurityResource*) => Try[Unit] = typeId match {
-//      case ResourceIds.Org  => createNewMetaOrgs[T] _
-//      case ResourceIds.User => createNewMetaUsers[T] _
-//      case _ => illegal(Errors.INVALID_RESOURCE_TYPE_ID(typeId))
-//    }
-//
-//    // TODO: Implement DELETE.
-//    if (!resourcesCreate.isEmpty) metaWriter(owner, resourcesCreate : _ *) // else Success
-//  }
   
   private def createNewMetaOrg[T](owningOrg: UUID, org: SecurityResource)(implicit securedRequest: SecuredRequest[T]) = {
-    trace(s"createNewMetaOrgs($owningOrg, [org])")
+    trace(s"createNewMetaOrg($owningOrg, [org])")
     Try {
       val o = org.asInstanceOf[GestaltOrg]
       val parent = if (o.parent.isDefined) Some(o.parent.get.id) else None
       val props = Some(Map("fqon" -> o.fqon))
-      ResourceFactory.create(toMeta(org, ResourceIds.Org, owningOrg, props), parent)
+      
+      try {
+        
+        ResourceFactory.create(toMeta(org, ResourceIds.Org, owningOrg, props), parent)
+        
+      } catch {
+        case e: Throwable => {
+          log.error("ERROR : " + e.getMessage)
+          throw e
+        }
+      }
+      
     }
   }  
   
