@@ -158,7 +158,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controlle
 
 #PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
 
-#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.DeleteController.hardDeleteResourceTypeFqon(fqon: String, typeId: java.util.UUID) 
 
 
 
@@ -179,7 +179,12 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperti
 #########################
 # RESOURCES
 
-GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   controllers.Meta.createResource(fqon: String)
+
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    controllers.ResourceController.getAllResourcesFqon(fqon: String)
+
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+
 
 
 # Map static resources from the /public folder to the /assets URL path

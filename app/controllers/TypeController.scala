@@ -80,7 +80,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
       case None => NotFound(toError(404, Errors.TYPE_NOT_FOUND(id)))
     }
   }
-
+  
   def createResourceType(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createResourceType($org)")
     CreateTypeResult(org, request.body)
@@ -88,9 +88,13 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   def createResourceTypeFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
     trace(s"createResourceTypeFqon($fqon)")
+    //    orgFqon(fqon) match {
+    //      case Some(org) => CreateTypeResult(org.id, request.body)
+    //      case None => Future { OrgNotFound(fqon) }
+    //    }
     orgFqon(fqon) match {
-      case Some(org) => CreateTypeResult(org.id, request.body)
-      case None => Future { OrgNotFound(fqon) }
+      case Some(org) => CreateTypeWithPropertiesResult(org.id, request.body)
+      case None      => Future { OrgNotFound(fqon) }
     }
   }
   
@@ -113,6 +117,80 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     }
   }
 
+  private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+    Future {
+      createTypeWithProperties(org, typeJson) match {
+        case Failure(e) => InternalServerError(toError(500, e.getMessage))
+        case Success(newtype) => Ok(Output.renderResourceTypeOutput( newtype ))
+      }
+    }
+  }
+  
+  
+  private def deconstructType(org: UUID, user: UUID, typeJson: JsValue)(): (GestaltResourceType, Option[Seq[GestaltTypeProperty]]) = {    
+    // Get Input instance from JSON
+    val input = safeGetTypeJson(typeJson).get
+    
+    // Get Domain from Input
+    val domain = typeFromInput(org, user, input).get
+    
+    
+    val definitions = input.property_defs map { ps => ps map { p => 
+      propertyFromInput(org, user, p.copy(applies_to = Some(domain.id))).get } 
+    }
+    
+    (domain, definitions)
+    
+    
+//    if (input.property_defs.isDefined) {
+//      input.property_defs.get map { p => propertyFromInput(org, user, p).get }
+//      
+//      for (p <- input.property_defs.get) {
+//        val pd = propertyFromInput(org, user, p).get
+//        PropertyFactory.create(user)(pd)
+//      }
+//    }
+//    ???
+    
+  }
+
+  
+  private def createTypeWithProperties[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+    trace(s"createTypeWithProperties($org, [json])")
+    log.debug("TYPE-JSON:\n" + typeJson)
+    
+    Try {
+      val user = request.identity.account.id
+      log.debug("Converting input types to domain...")
+      val (domain, propdefs) = deconstructType(org, user, typeJson)
+      
+      log.debug("Creating new ResourceType...")
+      // *** Create the Type *** //
+      val newtype = TypeFactory.create(user)(domain).get
+      
+      log.debug("Checking for TypeProperties...")
+      // *** Create Properties *** //
+      if (propdefs.isDefined) {
+        for (prop <- propdefs.get) {
+          log.debug(s"Creating TypeProperty : ${prop.name}")
+          PropertyFactory.create(user)(prop).get
+        }
+      }
+      trace("createTypeWithProperties => COMPLETE.")
+      newtype
+    }
+    
+//    val ps = input.property_defs
+//    if (ps.isDefined) {
+//      for (p <- ps.get) {
+//        val pd = propertyFromInput(org, user, p).get
+//        PropertyFactory.create(user)(pd)
+//      }
+//    }
+    
+  }
+  
+  
   /* DELETE /orgs/:uuid/resourcetypes/:uuid */
   def deleteResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     ???    
@@ -175,6 +253,9 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   /** 
    * Create a new TypeProperty on the given ResourceType 
+   * 
+   * TODO: applies_to is an Option in PropertyInput - when the property is created directly
+   * (independent of the type it applies to) applies_to MUST be specified.  Enforce that here.
    */
   def createTypeProperty(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createTypeProperty($org, $typeId)")
@@ -241,9 +322,18 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   }
 
   /** Convert GestaltTypePropertyInput to GestaltTypeProperty */
-  private def propertyFromInput(org: UUID, owner: UUID, r: GestaltTypePropertyInput): Try[GestaltTypeProperty] = {
+  private def propertyFromInput(org: UUID, owner: UUID, r: GestaltTypePropertyInput, appliesToType: Option[UUID] = None): Try[GestaltTypeProperty] = {
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
     Try {
+      
+      val applies = if (appliesToType.isDefined) appliesToType.get
+        else {
+          if (r.applies_to.isDefined) r.applies_to.get
+          else {
+            illegal("No value found for TypeProperty -> applies_to")
+          }
+        }
+      
       GestaltTypeProperty(
         id = r.id.getOrElse(UUID.randomUUID), 
         typeId = ResourceIds.TypeProperty, 
@@ -254,7 +344,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
         description = r.description, 
         created = None, 
         modified = None,
-        appliesTo = r.applies_to, 
+        appliesTo = applies, 
         datatype = DataType.id(r.data_type), 
         defaultValue = r.default_value, 
         isSealed = r.is_sealed.getOrElse(false), 

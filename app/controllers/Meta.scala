@@ -39,7 +39,8 @@ import play.api.{Logger => log}
 import play.api.libs.json.JsError
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
-
+import com.galacticfog.gestalt.data.ResourceState
+import com.galacticfog.gestalt.data.ResourceStates
 
 /**
  * Code for integrating Security and Meta. Handles resource synchronization between
@@ -97,6 +98,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     for (a <- usersCreate) log.debug("%s, %-10s : org: %s".format(a.id, a.name, a.directory.orgId))
 
     log.debug("Creating Resources in Meta...")
+    
     Try {  
       for (o <- orgsCreate) createNewMetaOrg(parentId(o), o)
       for (a <- usersCreate) createNewMetaUser(a.directory.orgId, a)
@@ -105,7 +107,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       case Success(_) => NoContent
       case Failure(e) => InternalServerError
     }
-
   }
 
   
@@ -130,6 +131,81 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       case None      => Future { OrgNotFound(fqon) }
     }
   }
+  
+  def createResource(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
+    trace(s"createResource($fqon)")
+    Future {
+      orgFqon(fqon) match {
+        case Some(org) => CreateResourceResult(org.id, request.body, request.identity)
+        case None      => OrgNotFound(fqon)
+      }
+    }
+  }
+  
+  import com.galacticfog.gestalt.data._
+  import com.galacticfog.gestalt.meta.api.output._
+  
+  def typeExists(typeId: UUID) = {
+    !TypeFactory.findById(typeId).isEmpty
+  }
+  
+  private def CreateResourceResult(org: UUID, resourceJson: JsValue, user: AuthAccountWithCreds) = {
+    safeGetInputJson(resourceJson) match {
+      case Failure(e) => BadRequest(toError(400, e.getMessage))
+      case Success(input) => {
+        
+        if (input.resource_type.isEmpty) 
+          BadRequest(toError(400, s"resource_type must be specified."))
+        else if (!typeExists(input.resource_type.get)/*ResourceType.exists(input.resource_type.get)*/)
+          BadRequest(toError(400, s"resource_type ${input.resource_type.get} does not exist."))
+        else {
+          val owner = if (input.owner.isDefined) input.owner else Some(toOwnerLink(ResourceIds.User, user.account.id, Some(user.account.name)))
+          val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+          val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+          val domain = inputToMeta(org, 
+              input.copy(id = resid, owner = owner, resource_state = state))
+          
+          ResourceFactory.create(domain) match {
+            case Success(res) => Ok(Output.renderInstance(res))
+            case Failure(err) => InternalServerError(toError(500, err.getMessage))
+          }
+          
+        }
+      }
+    }
+  }
+
+/*
+  id: UUID,
+  typeId: UUID,
+  state: UUID = ResourceState.id(ResourceStates.Active),
+  orgId: UUID,
+  owner: ResourceOwnerLink,
+  name: String,
+  description: Option[String] = None,
+  created: Option[Hstore] = None,
+  modified: Option[Hstore] = None,  
+  properties: Option[Hstore] = None,
+  variables: Option[Hstore] = None,
+  tags: Option[List[String]] = None,
+  auth: Option[Hstore] = None)  
+ */
+  
+  private def inputToMeta(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id.get,
+      typeId = in.resource_type.get,
+      state = ResourceState.id(in.resource_state.get),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      properties = in.properties,
+      tags = in.tags,
+      auth = in.auth
+    )
+  }
+  
   
   //
   // TODO: Refactor to use CreateOrgResult
@@ -182,6 +258,13 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
 
+  private def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
+    json.validate[GestaltResourceInput].map {
+      case resource: GestaltResourceInput => resource
+    }.recoverTotal {
+      e => illegal(toError(400, JsError.toFlatJson(e).toString))
+    }    
+  }
   
   private def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
     val res = json.validate[GestaltResourceInput].map {
@@ -223,6 +306,11 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       case _ => illegal(Errors.INVALID_RESOURCE_TYPE_ID(typeId))
     }
 
+    //
+    // TODO: Need to validate properties against Meta before creating in Security
+    // otherwise we're out of sync if meta-create fails.
+    //
+    
     val st = securityCreate(org, request.identity, input.copy(resource_type = Some(typeId)))
     st match {
       case Success(resource) => metaCreate(org, resource) match {
@@ -240,16 +328,16 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       val parent = if (o.parent.isDefined) Some(o.parent.get.id) else None
       val props = Some(Map("fqon" -> o.fqon))
       
-      try {
+//      try {
         
-        ResourceFactory.create(toMeta(org, ResourceIds.Org, owningOrg, props), parent)
+        ResourceFactory.create(toMeta(org, ResourceIds.Org, owningOrg, props), parent).get
         
-      } catch {
-        case e: Throwable => {
-          log.error("ERROR : " + e.getMessage)
-          throw e
-        }
-      }
+//      } catch {
+//        case e: Throwable => {
+//          log.error("ERROR : " + e.getMessage)
+//          throw e
+//        }
+//      }
       
     }
   }  
@@ -261,7 +349,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       log.debug(s"Creating User : ${a.id}, ${a.name}")
       ResourceFactory.create(toMeta(a, ResourceIds.User, owningOrg, Some(Map(
         "email"    -> a.email,    "firstName"   -> a.firstName, 
-        "lastName" -> a.lastName, "phoneNumber" -> a.phoneNumber ))))//, "password" -> a.password))))
+        "lastName" -> a.lastName, "phoneNumber" -> a.phoneNumber )))).get
     }
   }
   

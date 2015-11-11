@@ -29,7 +29,7 @@ case class GestaltTypePropertyInput(
     name: String,
     data_type: String,
     requirement_type: String,
-    applies_to: UUID,
+    applies_to: Option[UUID],
     
     refers_to: Option[UUID] = None,
     resource_state: Option[String] = Option(ResourceStates.Active),
@@ -43,3 +43,5 @@ case class GestaltTypePropertyInput(
     auth: Option[Hstore] = None,
     visibility_type: Option[String] = Some("plain"),
     default_value: Option[String] = None )
+
+    

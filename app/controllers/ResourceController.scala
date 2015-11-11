@@ -236,6 +236,28 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
+  
+  def getAllResourcesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getAllResourcesFqon($fqon)")
+    orgFqon(fqon) match {
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAllByOrg(org.id)))
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  def getResourceByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getResourceByIdFqon($fqon, $id")
+    orgFqon(fqon) match {
+      case Some(org) => ResourceFactory.findById(id) match {
+        case Some(res) => Ok(Output.renderInstance(res))
+        case None => NotFound(toError(404, Errors.RESOURCE_NOT_FOUND(id)))
+      }
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
   // --------------------------------------------------------------------------
   // WORKSPACES
   // --------------------------------------------------------------------------  

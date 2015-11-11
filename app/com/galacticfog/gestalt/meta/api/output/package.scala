@@ -33,6 +33,10 @@ package object output {
     ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id )))
   }
   
+  def toOwnerLink(typeId: UUID, id: UUID, name: Option[String]) = {
+    ResourceOwnerLink(typeId, id.toString, name, Some(toHref(typeId, id)))
+  }
+  
   def toHref(typeId: UUID, id: UUID) = {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)

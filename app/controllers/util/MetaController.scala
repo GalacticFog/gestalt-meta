@@ -74,6 +74,7 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
     def TYPE_NOT_FOUND(id: String) = s"ResourceType '${id}' not found."
+    def RESOURCE_NOT_FOUND(id: String) = s"Resource '${id}' not found."
     def INVALID_RESOURCE_TYPE_ID(id: UUID) = s"Type ID must be Gestalt Org or User. Found: ${id.toString}"
   }    
   /**

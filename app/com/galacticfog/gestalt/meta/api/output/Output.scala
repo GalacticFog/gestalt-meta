@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.meta.api.output
 
+
 import java.util.UUID
 
 import scala.annotation.tailrec
@@ -55,7 +56,7 @@ case class GestaltResourceOutput(
   tags: Option[JsValue],
   auth: Option[JsValue])
 
-  
+
 case class GestaltResourceTypeOutput(
   id: UUID,
   name: String,
@@ -85,7 +86,7 @@ case class GestaltTypePropertyOutput(
   created: JsValue,
   modified: JsValue,
   
-  applies_to: JsValue,
+  applies_to: Option[JsValue],
   datatype: JsValue, //name
   default_value: Option[JsString],  
   is_sealed: Boolean,
@@ -120,11 +121,10 @@ object Output {
       tags = jsonArray(r.tags),
       auth = jsonHstore(r.auth),
       property_defs = jsonTypePropertyLinks(r.id))
-
+      
     //
     // TODO: .copy rendered properties!!!
     //
-    
     Json.prettyPrint(Json.toJson(res))
   }
   
@@ -191,7 +191,7 @@ object Output {
       created = Json.toJson(p.created),
       modified = Json.toJson(p.modified),
 
-      applies_to = jsonTypeName(Option(p.appliesTo)).get,
+      applies_to = jsonTypeName(Option(p.appliesTo)),
       datatype = JsString(DataType.name(p.datatype)), //name
       default_value = jsStringOpt(p.defaultValue),
       is_sealed = p.isSealed,

@@ -12,6 +12,7 @@ import scala.util.Try
 import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.PropertyValidator
 import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.ResourceIds
 import com.galacticfog.gestalt.data.ResourceType
 import com.galacticfog.gestalt.data.illegal
@@ -43,11 +44,9 @@ import play.api.libs.json.Json
 
 object DeleteController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
     with MetaController with NonLoggingTaskEvents {
-    
   
   type SecurityDelete = (UUID, AuthAccountWithCreds) => Try[Boolean]
 
-  
   /**
    * Permanently delete an Org from Security and Meta
    */
@@ -63,7 +62,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case None      => OrgNotFound(fqon)
     }    
   }
-  
   
   /**
    * Permanently delete a User/Account from Security and Meta
@@ -81,7 +79,28 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
 
-
+  /**
+   * Permanently delete a ResourceType along with any associated TypeProperties
+   */
+   def hardDeleteResourceTypeFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+     trace(s"hardDeleteResourceTypeFqon($fqon, $id)")
+     orgFqon(fqon) match {
+       case Some(org) => hardDeleteResourceType(id)
+       case None => OrgNotFound(fqon)
+     }
+   }
+  
+   def hardDeleteResourceType(typeId: UUID) = {
+     TypeFactory.hardDeleteType(typeId) match {
+       case Success(_) => NoContent
+       case Failure(e) => e match {
+         case iae : IllegalArgumentException => BadRequest(toError(400, iae.getMessage))
+         case x => InternalServerError(toError(500, x.getMessage))
+       }
+     }
+   }
+   
+   
   /**
    * Permanently delete a Resource from Meta
    */
