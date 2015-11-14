@@ -64,12 +64,14 @@ package object api {
       case _                  => None
     }
   }
-
+  
+  
   /**
    * Translate Resource Type ID to REST name
    */
   def resourceRestName(typeId: UUID): Option[String] = {
     typeId match {
+      
       case ResourceIds.Org             => Some("orgs")
       case ResourceIds.User            => Some("users")
       case ResourceIds.Workspace       => Some("workspaces")
@@ -90,7 +92,9 @@ package object api {
       case ResourceIds.VisibilityType  => Some("visibilitytypes")
       case ResourceIds.ResourceState   => Some("resourcestates")
       case ResourceIds.ResourceType    => Some("resourcetypes")
+      case ResourceIds.TypeProperty    => Some("typeproperties")
       case ResourceIds.TaskStatusType  => Some("taskstatustypes")
+      
       case _ => None
     }
   }  

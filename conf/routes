@@ -2,12 +2,7 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
-# Home page
-#GET     /                           controllers.Meta.index
-
-
-#POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
-#POST 	/sync		 	controllers.Meta.sync()
+POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 
 POST	/sync			controllers.Meta.sync()
 

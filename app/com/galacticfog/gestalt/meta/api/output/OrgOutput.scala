@@ -38,7 +38,8 @@ object OrgOutput {
     val os = ResourceFactory.getOrgWithRelatives(orgId)
     
     def safeAddLink(org: Option[GestaltResourceInstance], links: Seq[ResourceLink]) = {
-      if (org.isDefined) links :+ toLink( ResourceIds.Org, org.get.id, Some(org.get.name) ) else links
+      if (org.isDefined) links :+ toLink( 
+          ResourceIds.Org, org.get.id, name = Some(org.get.name), orgId = org.get.orgId ) else links
     }
     
     /*

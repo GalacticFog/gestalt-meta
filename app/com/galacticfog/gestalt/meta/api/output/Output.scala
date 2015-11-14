@@ -20,90 +20,43 @@ import com.galacticfog.gestalt.data.models.GestaltTypeProperty
 import com.galacticfog.gestalt.data.models.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid
 
-import OutputDatatypeHandlers.boolean
-import OutputDatatypeHandlers.dateTime
-import OutputDatatypeHandlers.default
-import OutputDatatypeHandlers.int
-import OutputDatatypeHandlers.intList
-import OutputDatatypeHandlers.json
-import OutputDatatypeHandlers.renderResourceUUID
-import OutputDatatypeHandlers.resourceUUIDLink
-import OutputDatatypeHandlers.resourceUUIDLinkList
-import OutputDatatypeHandlers.resourceUUIDName
+import OutputDatatypeHandlers._
+
 import play.api.libs.json.JsString
+import play.api.libs.json.JsObject
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
-
-/*
- * 
- * TODO: Move these case classes into api.io
- * (or breakout into separate files in this package)
- * 
- */
-case class GestaltResourceOutput(
-  id: UUID,
-  name: String,
-  resource_type: JsValue,    // name
-  resource_state: JsValue,   // name
-  org: JsValue,               // link
-  owner: JsValue,            // link 
-  description: Option[String],
-  created: JsValue,            //link
-  modified: JsValue,           //link
-  properties: Option[JsValue],
-  variables: Option[JsValue],
-  tags: Option[JsValue],
-  auth: Option[JsValue])
-
-
-case class GestaltResourceTypeOutput(
-  id: UUID,
-  name: String,
-  extend: Option[JsValue], //link
-  resource_type: JsValue,    // name
-  resource_state: JsValue,   // name
-  org: JsValue,               // link
-  owner: JsValue,            // link 
-  description: Option[String],
-  created: JsValue,            //link
-  modified: JsValue,           //link
-  properties: Option[JsValue],
-  variables: Option[JsValue],
-  tags: Option[JsValue],
-  auth: Option[JsValue],
-  property_defs: Option[JsValue] = None)
-
-  
-case class GestaltTypePropertyOutput(
-  id: UUID = uuid(),
-  name: String,
-  resource_type: JsValue, // name
-  resource_state: JsValue, //name
-  org: JsValue, //link
-  owner: JsValue, //link
-  description: Option[String],
-  created: JsValue,
-  modified: JsValue,
-  
-  applies_to: Option[JsValue],
-  datatype: JsValue, //name
-  default_value: Option[JsString],  
-  is_sealed: Boolean,
-  is_system: Boolean,
-  requirement_type: JsValue, //name
-  visibility_type: JsValue, //name
-  refers_to: Option[JsValue], //link
-  
-  properties: Option[JsValue],
-  variables: Option[JsValue],
-  tags: Option[JsValue],
-  auth: Option[JsValue]) 
-
+import scala.reflect.runtime.{ universe => ru }
+import scala.reflect.runtime.currentMirror
+import ru._
 
 object Output {
 
-  def renderResourceTypeOutput(r: GestaltResourceType) = {
+  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): String = {
+
+    val res = GestaltResourceOutput(
+      id = r.id,
+      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+      resource_type = jsonTypeName(Option(r.typeId)).get,
+      resource_state = JsString(ResourceState.name(r.state)),
+      owner = Json.toJson(r.owner),
+      name = r.name,
+      description = r.description,
+      created = Json.toJson(r.created),
+      modified = Json.toJson(r.modified),
+      properties = jsonHstore(r.properties),
+      variables = jsonHstore(r.variables),
+      tags = jsonArray(r.tags),
+      auth = r.auth)       
+
+    // this renders the properties
+    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    Json.prettyPrint(Json.toJson(res.copy(properties = renderedProps)))
+  }
+  
+  
+  def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
     val res = GestaltResourceTypeOutput(
       id = r.id,
       name = r.name,
@@ -111,7 +64,7 @@ object Output {
       resource_type = jsonTypeName(Option(r.typeId)).get,
       resource_state = JsString(ResourceState.name(r.state)),
 
-      org = jsonLink(ResourceIds.Org, r.orgId, None),
+      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
       owner = Json.toJson(r.owner),
       description = r.description,
       created = Json.toJson(r.created),
@@ -127,65 +80,40 @@ object Output {
     //
     Json.prettyPrint(Json.toJson(res))
   }
-  
-  
-  def renderInstance(r: GestaltResourceInstance) = {
-    val res = GestaltResourceOutput(
-      id = r.id,
-      org = jsonLink(ResourceIds.Org, r.orgId, None),
-      resource_type = jsonTypeName(Option(r.typeId)).get,
-      resource_state = JsString(ResourceState.name(r.state)),
-      owner = Json.toJson(r.owner),
-      name = r.name,
-      description = r.description,
-      created = Json.toJson(r.created),
-      modified = Json.toJson(r.modified),
-      properties = jsonHstore(r.properties),
-      variables = jsonHstore(r.variables),
-      tags = jsonArray(r.tags),
-      auth = jsonHstore(r.auth) )
-      
-    //
-    // TODO: .copy rendered properties!!!
-    //
-    val renderedProps = render(r)
-    Json.prettyPrint(Json.toJson(res.copy(properties = renderedProps)))
-  }
-  
-  
-  def renderLink(r: GestaltResourceInstance) = toLink(r.typeId, r.id, Some(r.name))
-  
-  def renderLinks(rs: Seq[GestaltResourceInstance]) = {
-    Json.prettyPrint(Json.toJson(rs map { r => toLink(r.typeId, r.id, Some(r.name)) }))
-  }
-  
-  def renderTypeProperties(typeId: UUID) = {
-    val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p ) }
+
+  def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
+    val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p, baseUri ) }
     Json.prettyPrint(Json.toJson( ps ))
   }
-
   
-  def getTypePropertyLinks(typeId: UUID) = {
-    Properties.getTypeProperties(typeId) map { p => toLink( p.typeId, p.id, Some(p.name) ) }
-  }
-
-  
-  def renderTypePropertyOutput(p: GestaltTypeProperty) = {  
-    val res = toPropertyOutput( p )
+  def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None) = {  
+    val res = toPropertyOutput( p, baseUri )
     //
     // TODO: .copy rendered properties!!!
     //
     Json.prettyPrint(Json.toJson(res))
   }
-
   
-  def toPropertyOutput(p: GestaltTypeProperty) = {
+  def renderLink(r: GestaltResourceInstance, baseUri: Option[String] = None) = {
+    toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri)
+  }
+  
+  def renderLinks(rs: Seq[GestaltResourceInstance], baseUri: Option[String] = None) = {
+    Json.prettyPrint(Json.toJson(rs map { r => 
+      toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri) 
+    }))
+  }
+  
+  /**
+   * Convert a domain TypeProperty to an output TypeProperty.
+   */
+  protected[output] def toPropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None) = {
     GestaltTypePropertyOutput(
       id = p.id,
       name = p.name,
       resource_type = jsonTypeName(Option(p.typeId)).get,
       resource_state = JsString(ResourceState.name(p.state)),
-      org = jsonLink(ResourceIds.Org, p.orgId, None),
+      org = jsonLink(ResourceIds.Org, p.orgId, p.orgId, None, baseUri),
       owner = Json.toJson(p.owner),
       description = p.description,
       created = Json.toJson(p.created),
@@ -205,110 +133,81 @@ object Output {
       tags = jsonHstore(p.tags),
       auth = jsonHstore(p.auth))
   }
-
   
-  def render(r: GestaltResourceInstance): Option[JsValue] = {
+  /**
+   * Takes a Resource's property Map (Hstore) and renders each property as appropriate
+   * for its datatype.
+   * 
+   * @param typeId UUID of Type to gather properties for
+   * @param instanceId UUID of Type instance
+   * @return JsValue object containing all rendered property name/values.
+   */
+  def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]/*r: GestaltResourceInstance*/): Option[JsValue] = {
     
-    val typeId   = r.typeId
-    val template = Properties.getTypeProperties(typeId)
-    
-    /* Convert property list to Map[PropertyName, DataType */
-    val pmap = Properties.getTypePropertyMap(typeId)
-
-    /**
-     * Return true if property is 'hidden' or 'optional' and its value is missing.
-     */
-    def skipRender(p: GestaltTypeProperty, props: Hstore) = {
-      p.visibilityType == VisibilityType.id("hidden") || 
-      p.requirementType == RequirementType.id("optional") && !props.contains(p.name)                               // optional
-    }
+    /* Get a Map of the properties defined for the current ResourceType. */
+    val templateProps = Properties.getTypePropertyMap(typeId)
     
     @tailrec
     def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
       propKeys match {
-        case Nil => Option(acc)
-        case h :: t => {
-          println(s"render: parsing('$h'), type: ${DataType.name(pmap(h).datatype)}")
+        case Nil    => Option(acc)
+        case property :: tail => {
           /*
-           * TODO: Here - you'll get "key not found 'h'" if key is not in type_properties.
-           * Need to decide if we allow arbitrary values in properties - I vote No. Props
-           * contains only what's defined in the schema. If you want arbitrary values use
-           * variables.
+           * DEBUG-NOTE: You'll get "key not found 'h'" if key is not templateProps.
+           * That shouldn't happen as this is output (how did the rogue prop get in there).
+           * just a note to look here if you see that error pop up.
            */
-          if (skipRender(pmap(h), given)) loop(t, given, acc)
+          if (skipRender(templateProps(property), given)) loop(tail, given, acc)
           else {
-            val renderedValue = renderDataType(pmap( h ), given( h ))
-            loop( t, given, acc + (h -> renderedValue) )
+            val renderedValue = renderDataType(templateProps( property ), given( property ))
+            loop( tail, given, acc + (property -> renderedValue) )
           }
         }
       }
     }
 
-    val givenProperties =
-      if (r.properties.isEmpty) None
-      else {
-        /*
-         * TODO: This is a hack just to get something out the door.
-         * Once the PropertyManager architecture is done, special cases
-         * by resource-type will be handled in a much cleaner way. Here
-         * we manually check for type Org and force in the hierarchy props
-         * (parent/children) if there's a match. This is very temporary.
-         */
-
-        if (r.typeId != ResourceIds.Org) r.properties
-        else OrgOutput.buildOrgProps(r.id)
-
-      }
-
+    val givenProperties = collectInstanceProperties(typeId, instanceId, properties)
     Option {
       Json.toJson {
         if (givenProperties.isEmpty) None
-        else loop(pmap.keys.toList, givenProperties.get, Map[String, JsValue]())
+        else loop(templateProps.keys.toList, givenProperties.get, Map[String, JsValue]())
       }
     }
   }
 
-//  def render(r: GestaltResourceInstance) = {
-//    
-//    val typeId   = r.typeId
-//    val template = Properties.getTypeProperties(typeId)
-//    
-//    /* Convert property list to Map[PropertyName, DataType */
-//    val pmap = Map( template map { p => (p.name, p) }: _* )
-//
-//    def loop(propKeys: Seq[String], props: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
-//      propKeys match {
-//        case Nil => Option(acc)
-//        case h :: t => {
-//          println(s"render: parsing('$h')")
-//          /*
-//           * TODO: Here - you'll get "key not found 'h'" if key is not in type_properties.
-//           * that means that it's just an instance property (user-defined). We need to handle
-//           * that - probably just format as string.
-//           */
-//          val renderedValue = renderDataType(pmap( h ), props( h ))
-//          loop( t, props, acc + (h -> renderedValue) )
-//        }
-//      }
-//    }
-//    
-//    val propertyDefNames = pmap.keys.toList
-//    val givenProperties = r.properties.get
-//    val renderedValues = Map[String,JsValue]()
-//    
-//    val renderedProperties = if (r.properties.isEmpty) None 
-//          else loop(r.properties.get.keys.toList, r.properties.get, Map[String,JsValue]())
-//
-//  }  
-
+  /*
+   * TODO: This is a hack just to get something out the door.
+   * Once the PropertyManager architecture is done, special cases
+   * by resource-type will be handled in a much cleaner way. Here
+   * we manually check for type Org and force in the hierarchy props
+   * (parent/children) if there's a match. This is very temporary.
+   */  
+  private def collectInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]) = {
+    typeId match {
+      case ResourceIds.Org => OrgOutput.buildOrgProps(instanceId)
+      case _ => properties
+    }
+  }
   
-  def renderDataType(property: GestaltTypeProperty, value: String): JsValue = {
+  /*
+   * Return true if property is 'hidden' or 'optional' and its value is missing.
+   */
+  private def skipRender(p: GestaltTypeProperty, props: Hstore) = {
+    p.visibilityType == VisibilityType.id("hidden") ||
+      p.requirementType == RequirementType.id("optional") && !props.contains(p.name) // optional
+  }
+  
+  /**
+   * Maps datatype names to rendering functions.
+   */
+  private def renderDataType(property: GestaltTypeProperty, value: String): JsValue = {
     val typeName = DataType.name(property.datatype)
     if (typeRenderers.contains( typeName )) 
       typeRenderers( typeName )( property, value )
     else default( property, value )
   }  
-
+  
+  type RenderFunction = (GestaltTypeProperty, String) => JsValue
   
   private val typeRenderers = Map[String, (GestaltTypeProperty,String) => JsValue](
       "resource::uuid"             -> renderResourceUUID,
@@ -322,6 +221,7 @@ object Output {
       "reference::uuid::name" -> renderReferenceUUIDProperty,
       */
       
+      "string::list" -> stringList,
       "datetime"  -> dateTime,
       "json"      -> json,
       "int"       -> int,
@@ -333,33 +233,65 @@ object Output {
    * TODO: Determine which of these json helpers are really necessary
    * and move up to package object.
    */
+ 
   
-  def jsonTypeName(typeId: Option[UUID]): Option[JsValue] = {
+  /**
+   * Get the TypeProprties of any resource-type and convert to list of ResourceLinks.
+   */
+  protected[output] def getTypePropertyLinks(typeId: UUID, baseUri: Option[String] = None) = {
+    Properties.getTypeProperties(typeId) map { p => 
+      toLink( p.typeId, p.id, name = Some(p.name), orgId = p.orgId, baseUri = baseUri ) 
+    }
+  }  
+  
+  /**
+   * Given a resource type-id get the type-name as a JsString
+   */
+  protected[output] def jsonTypeName(typeId: Option[UUID]): Option[JsValue] = {
     if (typeId.isEmpty) None
     else TypeFactory.findById(typeId.get) match {
       case Some(t) => Option(JsString(t.name))
       case None => illegal(s"Unknown type_id '${typeId}'")
     }
   }
-  def jsonTypePropertyLinks(typeId: UUID) = {
+  
+  /**
+   * Get list of resource TypeProperties, convert to rendered Seq[ResourceLink]
+   */
+  protected[output] def jsonTypePropertyLinks(typeId: UUID): Option[JsValue] = {
     val ps = getTypePropertyLinks(typeId)
     if (ps.isEmpty) None else Some(Json.toJson(ps))
   }
-  def jsStringOpt(s: Option[String]): Option[JsString] = {
+  
+  /**
+   * Create a ResourceLink converted to a JsValue.
+   */
+  protected[output] def jsonLink(typeId: UUID, id: UUID, org: UUID, name: Option[String], baseUri: Option[String] = None): JsValue = {
+    Json.toJson(toLink(typeId, id, name = name, orgId = org, baseUri = baseUri))
+  }  
+  
+  
+  /**
+   * Convert Option[String] to Option[JsString]
+   */
+  protected[output] implicit def jsStringOpt(s: Option[String]): Option[JsString] = {
     if (s.isDefined) Some(JsString(s.get)) else None
   }
   
-  def jsonArray(ar: Option[List[String]]) = {
+  /**
+   * Convert a List[String] to a JsArray
+   */
+  protected[output] implicit def jsonArray(ar: Option[List[String]]): Option[JsValue] = {
     if (ar.isEmpty) None else Some(Json.toJson(ar))
   }
-  def jsonHstore(hs: Option[Hstore]) = {
+  
+  /**
+   * Convert a Map[String,String] to a JsObject.
+   */
+  protected[output] implicit def jsonHstore(hs: Option[Hstore]): Option[JsValue] = {
     if (hs.isEmpty) None else Some(Json.toJson(hs))
   }
-  def jsonOwnerLink(ro: ResourceOwnerLink) = {
-    Json.toJson(ro)
-  }
-  def jsonLink(typeId: UUID, id: UUID, name: Option[String]) = {
-    Json.toJson(toLink(typeId, id, name))
-  }  
+
 
 }
+

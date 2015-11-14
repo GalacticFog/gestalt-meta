@@ -59,18 +59,34 @@ object OutputDatatypeHandlers {
     JsString(data.asInstanceOf[GestaltResourceInstance].name)
   }
   
+  
   def resourceUUIDLink(property: GestaltTypeProperty, value: String): JsValue = {
+    val baseUri = None //"CHANGEMEIN::resourceUUIDLink"
     /* Get resource referenced by instanceId */
     Json.toJson { 
-      linkFromId( safeGetTypeId(property), UUID.fromString( value ) )
+      linkFromId( safeGetTypeId(property), UUID.fromString( value ), baseUri )
     }
   }
+  
+  
+  /**
+   * Render string::list
+   */
+  def stringList(property: GestaltTypeProperty, value: String) = {
+    println(s"OutputDatatypeHandlers::stringList([property], $value)")
+    // Remove surrounding square brackets if provided and split int JsArray
+    val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+    val items = normal.split(",")
+
+    JsArray { items.map( s => JsString( s.trim )) }
+  }
+  
   
   /**
    * Render resource::uuid::link::list
    */
   def resourceUUIDLinkList(property: GestaltTypeProperty, value: String) = {
-    println("Rendering UUID LinkList: " + value)
+    val baseUri = None
     val typeId = safeGetTypeId( property )
     
     // Convert value string to array of UUIDs
@@ -78,7 +94,7 @@ object OutputDatatypeHandlers {
     
     // Convert UUID array to array of ResourceLink
     val links = ids map { id => 
-      Json.toJson( linkFromId( typeId, UUID.fromString( id ) ) ) 
+      Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
     }
     JsArray( links )
   }
@@ -148,11 +164,12 @@ object OutputDatatypeHandlers {
   }
   
   /** Convert a resource type instance to a ResourceLink */
-  private[output] def linkFromId(typeId: UUID, id: UUID) = {
+  private[output] def linkFromId(typeId: UUID, id: UUID, baseUri: Option[String] = None) = {
     val target = ResourceFactory.findById(typeId, id) getOrElse {
       illegal(s"No resource of type '${ResourceType.name(typeId)}' with ID '${id} was found.")
     }
-    ResourceLink(target.typeId, target.id, Some(target.name), Option(toHref(typeId, id)))
+    ResourceLink(target.typeId, target.id, Some(target.name), 
+        href = Option(toHref(typeId, id, target.orgId, baseUri)))
   }
   
   /** TODO: Provide a real implementation. */

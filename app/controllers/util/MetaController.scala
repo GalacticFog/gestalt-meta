@@ -43,7 +43,7 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
   override def getAuthenticator: AuthenticatorService[DummyAuthenticator] = new DummyAuthenticatorService
   
   protected val connection = Session.connection
-  protected def getApiPrefix() = "https://gf.com/api/v1.1"
+//  protected def getApiPrefix() = "https://gf.com/api/v1.1"
   
   /* 
    * 'Null' functions for SecuredAuthAction - can't just pass None to function

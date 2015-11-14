@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.meta.api
 
+import com.galacticfog.gestalt.data.ResourceIds
 import com.galacticfog.gestalt.data.models._
 
 import play.api.libs.json._
@@ -29,16 +30,33 @@ package object output {
   implicit lazy val gestaltPropertyOutputFormat = Json.format[GestaltTypePropertyOutput]
   
   
-  def toLink(typeId: UUID, id: UUID, name: Option[String]) = {
-    ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id )))
+  def toLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {
+    ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id, orgId, baseUri )))
   }
   
-  def toOwnerLink(typeId: UUID, id: UUID, name: Option[String]) = {
-    ResourceOwnerLink(typeId, id.toString, name, Some(toHref(typeId, id)))
+  def toOwnerLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {
+    ResourceOwnerLink(typeId, id.toString, name, Some(toHref(typeId, id, orgId, baseUri)))
   }
   
-  def toHref(typeId: UUID, id: UUID) = {
+  def toHref(typeId: UUID, id: UUID, orgId: UUID, baseUri: Option[String] = None) = {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)
-  }  
+
+    val base = if (baseUri.isDefined) baseUri.get else ""
+    if (typeId == ResourceIds.Org) "%s/orgs/%s".format(base, id)
+    else "%s/orgs/%s/%s/%s".format(base, orgId, typename, id)
+    
+  }
+  
+  import com.galacticfog.gestalt.data._
+  
+  def getResource(typeId: UUID, id: UUID) = {
+    val r = typeId match {
+      case ResourceIds.ResourceType => TypeFactory.findById(id)
+      case ResourceIds.TypeProperty => PropertyFactory.findById(id)
+      case _                        => ResourceFactory.findById(id)
+    }
+    
+    
+  }
 }

@@ -51,6 +51,11 @@ import com.galacticfog.gestalt.data.ResourceStates
  */
 object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with MetaController with NonLoggingTaskEvents {
   
+  import play.api.libs.json._
+  
+  
+  implicit def str2js(s: String) = JsString(s)
+  
   //
   // TODO: Tighten up error-handling - too many 500s
   // TODO: ResourceFactory::create - failed property validation assertion is being swallowed!
@@ -100,8 +105,8 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     log.debug("Creating Resources in Meta...")
     
     Try {  
-      for (o <- orgsCreate) createNewMetaOrg(parentId(o), o)
-      for (a <- usersCreate) createNewMetaUser(a.directory.orgId, a)
+      for (o <- orgsCreate) createNewMetaOrg(parentId(o), o, properties = None)
+      for (a <- usersCreate) createNewMetaUser(a.directory.orgId, a, properties = None)
       
     } match {
       case Success(_) => NoContent
@@ -148,8 +153,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
   def typeExists(typeId: UUID) = {
     !TypeFactory.findById(typeId).isEmpty
   }
+  private def ownerFromAccount(account: AuthAccountWithCreds) = toOwnerLink(ResourceIds.User, 
+    account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId
+  )
   
   private def CreateResourceResult(org: UUID, resourceJson: JsValue, user: AuthAccountWithCreds) = {
+    trace(s"CreateResourceResult($org, [json], [account])")
     safeGetInputJson(resourceJson) match {
       case Failure(e) => BadRequest(toError(400, e.getMessage))
       case Success(input) => {
@@ -159,7 +168,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
         else if (!typeExists(input.resource_type.get)/*ResourceType.exists(input.resource_type.get)*/)
           BadRequest(toError(400, s"resource_type ${input.resource_type.get} does not exist."))
         else {
-          val owner = if (input.owner.isDefined) input.owner else Some(toOwnerLink(ResourceIds.User, user.account.id, Some(user.account.name)))
+          val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(user))
           val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
           val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
           val domain = inputToMeta(org, 
@@ -249,21 +258,28 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     trace(s"CreateSynchronizedResult($org, $typeId, ${json.toString})")
     Future {
       safeGetInputJson(typeId, json) match {
-        case Failure(e) => BadRequest(toError(400, e.getMessage))
+        case Failure(e)     => BadRequest(toError(400, e.getMessage))
         case Success(input) => createSynchronized(typeId, org, input) match {
           case Success(resource) => Ok( Output.renderInstance(resource) )
-          case Failure(e) => InternalServerError(e.getMessage)
+          case Failure(e)        => InternalServerError(e.getMessage)
         }
       }
     }
   }
 
   private def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
+    
+    implicit def jsarray2str(arr: JsArray) = arr.toString
+    
     json.validate[GestaltResourceInput].map {
-      case resource: GestaltResourceInput => resource
-    }.recoverTotal {
-      e => illegal(toError(400, JsError.toFlatJson(e).toString))
-    }    
+      case resource: GestaltResourceInput => {
+        log.debug("RESOURCE : " + resource)
+        resource
+      }
+    }.recoverTotal { e =>
+      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
+      illegal(toError(400, JsError.toFlatJson(e).toString))
+    }
   }
   
   private def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
@@ -298,9 +314,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
       case ResourceIds.User => Security.createAccount _
       case _ => illegal(Errors.INVALID_RESOURCE_TYPE_ID(typeId))
     }
-
+    
     // Resolve Meta function to create resources.
-    val metaCreate: (UUID, SecurityResource) => Try[GestaltResourceInstance] = typeId match {
+    val metaCreate: (UUID, SecurityResource, Option[Hstore]) => Try[GestaltResourceInstance] = typeId match {
       case ResourceIds.Org  => createNewMetaOrg[T] _
       case ResourceIds.User => createNewMetaUser[T] _
       case _ => illegal(Errors.INVALID_RESOURCE_TYPE_ID(typeId))
@@ -313,7 +329,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     
     val st = securityCreate(org, request.identity, input.copy(resource_type = Some(typeId)))
     st match {
-      case Success(resource) => metaCreate(org, resource) match {
+      case Success(resource) => metaCreate(org, resource, input.properties) match {
         case Success(resource) => resource
         case Failure(ex) => rte(s"Failed to create ${ResourceType.name(typeId)} in Meta: " + ex.getMessage)
       }
@@ -321,7 +337,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
   
-  private def createNewMetaOrg[T](owningOrg: UUID, org: SecurityResource)(implicit securedRequest: SecuredRequest[T]) = {
+  private def createNewMetaOrg[T](owningOrg: UUID, org: SecurityResource, properties: Option[Hstore])(implicit securedRequest: SecuredRequest[T]) = {
     trace(s"createNewMetaOrg($owningOrg, [org])")
     Try {
       val o = org.asInstanceOf[GestaltOrg]
@@ -342,14 +358,15 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }  
   
-  private def createNewMetaUser[T](owningOrg: UUID, account: SecurityResource)(implicit securedRequest: SecuredRequest[T]) = {
+  private def createNewMetaUser[T](owningOrg: UUID, account: SecurityResource, properties: Option[Hstore])(implicit securedRequest: SecuredRequest[T]) = {
     trace(s"createNewMetaUser($owningOrg, [account])")
     Try {
       val a = account.asInstanceOf[GestaltAccount]
       log.debug(s"Creating User : ${a.id}, ${a.name}")
-      ResourceFactory.create(toMeta(a, ResourceIds.User, owningOrg, Some(Map(
-        "email"    -> a.email,    "firstName"   -> a.firstName, 
-        "lastName" -> a.lastName, "phoneNumber" -> a.phoneNumber )))).get
+//      ResourceFactory.create(toMeta(a, ResourceIds.User, owningOrg, Some(Map(
+//        "email"    -> a.email,    "firstName"   -> a.firstName, 
+//        "lastName" -> a.lastName, "phoneNumber" -> a.phoneNumber )) )).get
+      ResourceFactory.create(toMeta(a, ResourceIds.User, owningOrg, properties )).get      
     }
   }
   

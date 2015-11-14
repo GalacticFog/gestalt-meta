@@ -4,7 +4,7 @@ package controllers.util.db
 import com.galacticfog.gestalt.data.util._
 import controllers.util.AppConf
 import play.api.{Logger => log}
-
+import org.apache.commons.dbcp2.BasicDataSource
 
 object ConnectionManager {
   
@@ -12,6 +12,16 @@ object ConnectionManager {
   
   lazy val config = loadConfig
 
+  def currentDataSource(): BasicDataSource = {
+    val info = loadConfig
+    val ds = new BasicDataSource();
+    ds.setDriverClassName(info.driver);
+    ds.setUsername(info.username.get);
+    ds.setPassword(info.password.get);
+    ds.setUrl(info.url());
+    ds
+  }
+  
   /**
    * Resolve database configuration info from either the
    * system environment (env) or /conf/application.conf

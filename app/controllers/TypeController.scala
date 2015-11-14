@@ -88,10 +88,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   def createResourceTypeFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
     trace(s"createResourceTypeFqon($fqon)")
-    //    orgFqon(fqon) match {
-    //      case Some(org) => CreateTypeResult(org.id, request.body)
-    //      case None => Future { OrgNotFound(fqon) }
-    //    }
     orgFqon(fqon) match {
       case Some(org) => CreateTypeWithPropertiesResult(org.id, request.body)
       case None      => Future { OrgNotFound(fqon) }
