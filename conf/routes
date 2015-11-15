@@ -13,6 +13,8 @@ POST	/sync			controllers.Meta.sync()
 #			  ##### ROUTES BY UUID #####
 #
 
+
+
 ####################
 # ORGS
 
@@ -41,6 +43,9 @@ DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a
 
 # -- Get All Users in the System (from root down)
 GET /users   controllers.ResourceController.getAllUsersFromRoot
+
+GET /users/search  controllers.ResourceController.getUserByProperty()
+
 
 # -- Create User in Org
 POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users		controllers.Meta.createUser(orgId: java.util.UUID)
@@ -179,7 +184,6 @@ POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   controllers.Meta.cre
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    controllers.ResourceController.getAllResourcesFqon(fqon: String)
 
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
-
 
 
 # Map static resources from the /public folder to the /assets URL path

@@ -135,7 +135,64 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
       case None => OrgNotFound(fqon)
     } 
   }
-
+  
+  
+  def getUserByProperty() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+    trace(s"getUserByProperty()")
+    
+    val qs = request.queryString
+    
+    validateUserSearchCriteria(qs) match {
+      case Success((name,value)) => {
+        
+        val resource = 
+          if (name == "name") getUserByName(value)
+          else ResourceFactory.findByPropertyValue(ResourceIds.User, name, value) 
+        
+        resource match {
+          case Some(res) => Ok(Output.renderInstance(res))
+          case None      => NotFound(toError(404, s"No user with '$name' : '$value' was found."))
+        }
+      }
+      case Failure(error) => error match {
+        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
+        case _ => InternalServerError(toError(500, error.getMessage))
+      }
+    }
+  }
+  
+  def getUserByName(name: String): Option[GestaltResourceInstance] = {
+    trace(s"getUserByName($name)")
+    val u = ResourceFactory.findAllByName(ResourceIds.User, name)
+    u.size match {
+      case 1 => Option(u(0))
+      case 0 => None
+      case _ => rte(s"Multiple users with username '$name' were found.")
+    }
+  }
+  
+  private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {
+    val good = List("name", "email", "phoneNumber")
+    val key = qs.keys.toList
+    if (key.isEmpty) illegal(s"Must provide a search term. One of : ${good.mkString(",")}")
+    if (key.size > 1) illegal(s"Must provide a SINGLE search term. One of : ${good.mkString(",")}")
+    if (!good.contains(key(0))) illegal(s"Unknown search term '${key(0)}. Valid terms: ${good.mkString(",")}")
+    val name = key(0)
+    
+    val value = qs(name)
+    
+    // NOTE: value is never 'empty' - contains a Buffer()
+    //if (value.isEmpty) illegal(s"Must provide a value for ${name}")
+    if (value.size > 1) illegal(s"Must provide a SINGLE value for ${name}")
+    if (value(0).isEmpty()) illegal(s"Must provide a value for ${name}")
+    (name, value(0))
+  }
+  
+  
+//  def getResourceByProperty(org: UUID, typeId: UUID, propValue: String) = {
+//    //ResourceFactory.findAllByPropertyValue(typeId, property, value)
+//  }
+  
   
   /**
    * Get a List of ResourceLinks by Org UUID
@@ -169,34 +226,6 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  
-  /**
-   * TODO: this can be made to work for any resource queries up to 2 levels deep
-   * (which is the maximum we're going to go).
-   */
-//  def getResourcesByPathWithOrgId(org: UUID, path: String) = Action.async {
-//
-//    val pc = path.split("/").toList
-//    val m = if (pc.size == 1) {
-//      "*** Getting ALL: " + pc(0)
-//    } else if (pc.size == 2) {
-//      s"*** Getting SINGLE : ${pc(0)}/${pc(1)}"
-//    } else if (pc.size == 3) {
-//      s"*** Getting ALL :  ${pc(2)}"
-//    } else "I don't know what you're asking for."
-//
-//    Future {
-//      Ok(s"RESOLVING (path.size=${pc.size}): " + m)
-//    }
-//  }
-
-  /**
-   * Determine whether a given identity name is a gestalt-security
-   * user or group account.
-   */
-  def resolveSecuredIdentity(name: String): Option[SecuredResource] = {
-    ???
-  }
 
   // TODO: Do I use this to get a default 'owning-org' ???
   def getCurrentOrg(implicit client: GestaltSecurityClient): Future[GestaltOrg] = {
