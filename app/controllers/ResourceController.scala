@@ -137,22 +137,119 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   }
   
   
-  def getUserByProperty() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-    trace(s"getUserByProperty()")
+  case class Criterion(name: String, value: String)
+  def getAllResourcesByTypeOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getAllResourcesByTypeOrg($org)")
+    Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org)))
+  }
+  
+  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getAllResourcesByTypeFqon($fqon)")
+    
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)  
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org.id)))
+    }     
+  }
+
+  /* /orgs/:org-id/resourcetypes/:type-id/resources/search?... */
+  def getAllResourcesByTypePropertyOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getAllResourcesByTypeOrg($org)")
     
     val qs = request.queryString
+    extractNameValue(qs) match {
+      case Success((name,value)) => {
+        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+      }
+      case Failure(error) => error match {
+        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
+        case _ => InternalServerError(toError(500, error.getMessage))
+      }
+    }
+  }
+
+  /* /:fqon/resourcetypes/:type-id/resources/search?... */
+  def getAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getAllResourcesByTypeFqon($fqon)")
     
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+        val qs = request.queryString
+        extractNameValue(qs) match {
+          case Success((name,value)) => {
+            Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
+          }
+          case Failure(error) => error match {
+            case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
+            case _ => InternalServerError(toError(500, error.getMessage))
+          }
+        }
+      }
+    }
+  }  
+  
+  
+  def getResourceByProperty(typeId: UUID, crtn: Criterion) = {
+    trace(s"getResourceByProperty()")
+    if (crtn.name == "name") ResourceFactory.findAllByName(typeId, crtn.value)
+    else ResourceFactory.findAllByPropertyValue(typeId, crtn.name, crtn.value)
+  }
+  
+  def getResourceByPropertyOrg(org: UUID, typeId: UUID, crtn: Criterion) = {
+    trace(s"getResourceByPropertyOrg()")
+    if (crtn.name == "name") ResourceFactory.findAllByName(org, typeId, crtn.value)
+    else ResourceFactory.findAllByPropertyValueOrg(org, typeId, crtn.name, crtn.value)
+  }
+  
+  
+  def getUserByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getUserByPropertyOrgId($org)")
+
+    val qs = request.queryString
+
     validateUserSearchCriteria(qs) match {
       case Success((name,value)) => {
-        
-        val resource = 
-          if (name == "name") getUserByName(value)
-          else ResourceFactory.findByPropertyValue(ResourceIds.User, name, value) 
-        
-        resource match {
-          case Some(res) => Ok(Output.renderInstance(res))
-          case None      => NotFound(toError(404, s"No user with '$name' : '$value' was found."))
+        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+      }
+      case Failure(error) => error match {
+        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
+        case _ => InternalServerError(toError(500, error.getMessage))
+      }
+    }
+  }
+
+  def getUserByPropertyFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getUserByPropertyFqon($fqon)")
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+
+        val qs = request.queryString
+        validateUserSearchCriteria(qs) match {
+          case Success((name,value)) => {
+            Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
+          }
+          case Failure(error) => error match {
+            case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
+            case _ => InternalServerError(toError(500, error.getMessage))
+          }
         }
+        
+      }
+    }
+    
+  }
+
+
+  def getUserByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+    trace(s"getUserByProperty()")
+
+    val qs = request.queryString
+
+    validateUserSearchCriteria(qs) match {
+      case Success((name,value)) => {
+        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
       }
       case Failure(error) => error match {
         case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
@@ -161,14 +258,17 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
   
-  def getUserByName(name: String): Option[GestaltResourceInstance] = {
-    trace(s"getUserByName($name)")
-    val u = ResourceFactory.findAllByName(ResourceIds.User, name)
-    u.size match {
-      case 1 => Option(u(0))
-      case 0 => None
-      case _ => rte(s"Multiple users with username '$name' were found.")
-    }
+  private def extractNameValue(qs: Map[String, Seq[String]]) = Try {
+    val key = qs.keys.toList
+    if (key.isEmpty) illegal(s"Must provide a search term.")
+    if (key.size > 1) illegal(s"Must provide a SINGLE search term.")
+    val name = key(0)
+    
+    val value = qs(name)
+    if (value.size > 1) illegal(s"Must provide a SINGLE value for ${name}")
+    if (value(0).isEmpty()) illegal(s"Must provide a value for ${name}")
+    
+    (name, value(0))
   }
   
   private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {

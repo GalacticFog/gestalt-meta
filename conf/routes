@@ -44,7 +44,11 @@ DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a
 # -- Get All Users in the System (from root down)
 GET /users   controllers.ResourceController.getAllUsersFromRoot
 
-GET /users/search  controllers.ResourceController.getUserByProperty()
+GET /users/search  controllers.ResourceController.getUserByPropertyGlobal()
+
+
+
+GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/search controllers.ResourceController.getUserByPropertyOrgId(orgId: java.util.UUID)
 
 
 # -- Create User in Org
@@ -88,15 +92,27 @@ GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:id 	controllers.TypeController.getResourceTypeById(uuid: java.util.UUID, id: java.util.UUID)
 
 
+########################
+# TYPE PROPERTIES
 
 #-- Create TypeProperty for Type
-POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties controllers.TypeController.createTypeProperty(uuid: java.util.UUID, typeId: java.util.UUID)
+POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties 	controllers.TypeController.createTypeProperty(uuid: java.util.UUID, typeId: java.util.UUID)
 
 #-- Read All TypeProperties from Type
 GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties          controllers.TypeController.getAllProperties(uuid: java.util.UUID, typeId: java.util.UUID)
 
 #-- Read Single TypeProperty from Type
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties/:uuid    controllers.TypeController.getPropertyById(orgId: java.util.UUID, typeId: java.util.UUID, uuid: java.util.UUID)
+
+
+########################
+# RESOURCES
+
+# -- Read all Resources of the given type in the given Org
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/resources		controllers.ResourceController.getAllResourcesByTypeOrg(orgId: java.util.UUID, typeId: java.util.UUID)
+
+# -- Search for Resources of the given type by property value.
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/resources/search 		controllers.ResourceController.getAllResourcesByTypePropertyOrg(orgId: java.util.UUID, typeId: java.util.UUID)
 
 
 # For generic router - Not Implemented
@@ -135,6 +151,9 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>				controllers.DeleteControlle
 # -- Create a User in Org
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.Meta.createUserFqon(fqon: String)
 
+# -- Search for a user by property value
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/search  		controllers.ResourceController.getUserByPropertyFqon(fqon: String)
+
 # -- Read All Users in Org
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.ResourceController.getAllUsersFqon(fqon: String)
 
@@ -159,6 +178,13 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controlle
 #PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
 
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.DeleteController.hardDeleteResourceTypeFqon(fqon: String, typeId: java.util.UUID) 
+
+
+# -- Read all resources of the given type.
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources 		controllers.ResourceController.getAllResourcesByTypeFqon(fqon: String, typeId: java.util.UUID)
+
+# -- Search for resources of the given type by property value.
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/search controllers.ResourceController.getAllResourcesByTypePropertyFqon(fqon: String, typeId: java.util.UUID)
 
 
 
