@@ -17,10 +17,10 @@ import com.galacticfog.gestalt.data.illegal
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.meta.api.{PatchOp, PatchDocument, PatchHandler}
 import com.galacticfog.gestalt.meta.api.GestaltResourceInput
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.gestaltResourceInputFormat
-import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.output._
+
 import com.galacticfog.gestalt.meta.api.rte
 import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
 import com.galacticfog.gestalt.security.api.GestaltAccount
@@ -40,6 +40,8 @@ import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.ResourceStates
+
+import controllers.util.stringmap
 
 /**
  * Code for integrating Security and Meta. Handles resource synchronization between
@@ -164,29 +166,55 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
     }
   }
 
+  def patchResource(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
+    trace(s"patchResource($fqon, $id)")
+    
+    // Parse PATCH document from payload
+    Future {
+      
+      safeGetPatchDocument(request.body) match {
+        case Failure(e) => BadRequest(toError(400, e.getMessage))
+        case Success(patch) => {
+          // TODO: Don't currently use typeId, but will in future.
+          val handler = PatchHandler(UUID.randomUUID(), id, patch)
+          handler.applyPatch match {
+            case Success(r) => Ok(Output.renderInstance(r))
+            case Failure(e) => InternalServerError(toError(500, e.getMessage))
+          }
+        }
+      }
+
+    }
+  }
+  
   import com.galacticfog.gestalt.data._
   import com.galacticfog.gestalt.meta.api.output._
-
+  
   def typeExists(typeId: UUID) = {
     !TypeFactory.findById(typeId).isEmpty
   }
   
+  
   private def ownerFromAccount(account: AuthAccountWithCreds) = toOwnerLink(ResourceIds.User,
     account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId)
-
+  
+  
   private def CreateResourceResult(org: UUID, resourceJson: JsValue, user: AuthAccountWithCreds) = {
     trace(s"CreateResourceResult($org, [json], [account])")
+    
     safeGetInputJson(resourceJson) match {
-      case Failure(e) => BadRequest(toError(400, e.getMessage))
+      case Failure(e)     => BadRequest(toError(400, e.getMessage))
       case Success(input) => {
 
-        if (input.resource_type.isEmpty)
+        if (input.resource_type.isEmpty) {
           BadRequest(toError(400, s"resource_type must be specified."))
-        else if (!typeExists(input.resource_type.get) /*ResourceType.exists(input.resource_type.get)*/ )
+        }
+        else if (!typeExists(input.resource_type.get)) {
           BadRequest(toError(400, s"resource_type ${input.resource_type.get} does not exist."))
+        }
         else {
           val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(user))
-          val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+          val resid = if (input.id.isDefined)    input.id else Some(UUID.randomUUID())
           val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
           val domain = fromResourceInput(org,
             input.copy(id = resid, owner = owner, resource_state = state))
@@ -195,12 +223,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator] with M
             case Success(res) => Ok(Output.renderInstance(res))
             case Failure(err) => InternalServerError(toError(500, err.getMessage))
           }
-
         }
-      }
+      }  
     }
   }
-
+  
+  
   /*
   id: UUID,
   typeId: UUID,
@@ -316,15 +344,38 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
     trace("createSynchronized(...)")
     //log.debug(s"Creating ${ResourceType.name(typeId)}")
 
-    PropertyValidator.validate(typeId, input.properties) match {
+    val stringprops = stringmap(input.properties)
+    
+    PropertyValidator.validate(typeId, stringprops) match {
       case  (false, message) => Failure(illegal(message.get))
       case _ => for {
         sr  <- sc(org, request.identity, input)
-        mr  <- mc(org, sr, input.properties)
+        mr  <- mc(org, sr, stringprops)
       } yield mr
-    }
+    }    
+//    PropertyValidator.validate(typeId, input.properties) match {
+//      case  (false, message) => Failure(illegal(message.get))
+//      case _ => for {
+//        sr  <- sc(org, request.identity, input)
+//        mr  <- mc(org, sr, input.properties)
+//      } yield mr
+//    }
 
-  }    
+  }
+  
+
+  private def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
+//    json.validate[PatchDocument].map {
+//      case patch: PatchDocument => {
+//        log.debug("PATCH : " + patch)
+//        patch
+//      }
+//    }.recoverTotal { e =>
+//      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
+//      illegal(toError(400, JsError.toFlatJson(e).toString))
+//    }
+      PatchDocument.fromJsValue(json)
+  }
   
   private def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
 
@@ -350,7 +401,7 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
     }
 
     log.debug(s"Validating instance properties for type ${ResourceType.name(typeId)}")
-    val validation = PropertyValidator.validate(typeId, res.properties)
+    val validation = PropertyValidator.validate(typeId, stringmap(res.properties))
 
     if (validation._1) res else illegal(validation._2.get)
   }
@@ -389,7 +440,7 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
     
     val st = securityCreate(org, request.identity, input.copy(resource_type = Some(typeId)))
     st match {
-      case Success(resource) => metaCreate(org, resource, input.properties) match {
+      case Success(resource) => metaCreate(org, resource, stringmap(input.properties)) match {
         case Success(resource) => resource
         case Failure(ex)       => rte(s"Failed to create ${ResourceType.name(typeId)} in Meta: " + ex.getMessage)
       }
@@ -398,7 +449,7 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
     
     val metaResource = for {
       sr  <- securityCreate(org, request.identity, input.copy(resource_type = Some(typeId)))
-      mr  <- metaCreate(org, sr, input.properties)
+      mr  <- metaCreate(org, sr, stringmap(input.properties))
     } yield mr
     
     metaResource match {
@@ -408,12 +459,6 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
     
   }
 
-  
-
-  
-  
-  
-  
   
   private def createNewMetaOrg[T](owningOrg: UUID, org: SecurityResource, properties: Option[Hstore])(implicit securedRequest: SecuredRequest[T]) = {
     trace(s"createNewMetaOrg($owningOrg, [org])")
@@ -460,13 +505,14 @@ private def createSynchronized2[T](org: UUID, typeId: UUID, input: GestaltResour
       state = ResourceState.id(in.resource_state.get),
       orgId = org,
       owner = in.owner.get,
-      name = in.name,
+      name  = in.name,
       description = in.description,
-      properties = in.properties,
+      /* TODO: Here is where we transform from map(any) to map(string) */
+      properties = stringmap(in.properties),
       tags = in.tags,
       auth = in.auth)
   }  
-  
+
   /**
    * Unwrap the given UUID or get the root org_id if None.
    */

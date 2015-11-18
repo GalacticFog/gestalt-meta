@@ -58,18 +58,17 @@ resolvers ++= {
 
 scalikejdbcSettings
 
-
 libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	"com.galacticfog" % "gestalt-task-io_2.11" 	 	% "0.2.2",
-	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2",	
-	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.3",
+	"com.galacticfog" % "gestalt-task-io_2.11" 	 	% "0.2.2-SNAPSHOT",
+	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2-SNAPSHOT",	
+	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.5-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-meta-repository" % "0.1.1-SNAPSHOT" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" % "1.2.1-SNAPSHOT" withSources()
+	"com.galacticfog" %% "gestalt-security-play" % "1.2.1-SNAPSHOT" withSources(),
+        "com.galacticfog" %% "gestalt-security-sdk-scala" % "0.2.1-SNAPSHOT" withSources()
 )
-
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"
 
@@ -82,6 +81,4 @@ libraryDependencies += "org.scalikejdbc" % "scalikejdbc_2.11" % "2.2.6"
 libraryDependencies += "org.scalikejdbc" % "scalikejdbc-test_2.11"   % "2.2.6"   % "test"
 
 libraryDependencies += "org.scalikejdbc" % "scalikejdbc-config_2.11" % "2.2.6" % "test"
-
-libraryDependencies += "com.typesafe.play" % "play-json_2.11" % "2.4.0-M2"
 

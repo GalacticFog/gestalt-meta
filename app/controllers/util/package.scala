@@ -16,9 +16,30 @@ import com.galacticfog.gestalt.meta.api._
 import play.api.libs.json._
 
 import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.data._
+
 
 package object util {
 
+  def trimquotes(s: String) = {
+    val trimmed = s.trim
+    val t1 = if (trimmed.startsWith("\"")) trimmed.drop(1) else trimmed
+    if (t1.endsWith("\"")) t1.dropRight(1) else t1
+  }
+  
+  def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
+    m map { x => 
+      x map { x =>
+        /* this bit removes the quotes the play parser includes with strings */
+        val normalized = x._2 match {
+          case s: JsString => trimquotes(s.toString)
+          case _ => x._2.toString
+        }
+        (x._1, normalized)
+      } 
+    }
+  }  
+  
   def renderLinks(rs: Seq[GestaltResourceInstance]) = {
     Json.prettyPrint(Json.toJson(rs map { toLink(_) }))
   }
@@ -33,7 +54,8 @@ package object util {
   
   def toError(code: Int, message: String) = Json.prettyPrint {
     Json.parse(s"""{ "code": ${code}, "message": "${message}" }""")
-  }    
+  }
+  
 //  def in2domain[T](org: UUID, in: GestaltResourceInput)(implicit request: SecuredRequest[T]) = {
 //    GestaltResourceInstance(
 //      id = if (in.id.isDefined) in.id.get else UUID.randomUUID,
@@ -47,7 +69,6 @@ package object util {
 //      tags = in.tags,
 //      auth = in.auth)
 //  }  
-  
   
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {

@@ -15,8 +15,8 @@ case class GestaltResourceInput(
     owner: Option[ResourceOwnerLink] = None,
     resource_state: Option[String] = Option(ResourceStates.Active),
     description: Option[String] = None,
-    properties: Option[Hstore] = None,
-    /*properties: Option[Map[String,JsValue]] = None,*/
+    /*properties: Option[Hstore] = None, */
+    properties: Option[Map[String,JsValue]] = None,
     variables: Option[Hstore] = None,
     tags: Option[List[String]] = None,
     auth: Option[Hstore] = None)

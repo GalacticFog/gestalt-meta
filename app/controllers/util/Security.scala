@@ -105,7 +105,9 @@ object Security {
   }
   
   def createAccount(org: UUID, auth: AuthAccountWithCreds, user: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltAccount] = {
-    val props = user.properties.getOrElse { illegal(s"Invalid user. Cannot create.") }
+    //val props = user.properties.getOrElse { illegal(s"Invalid user. Cannot create.") }
+    
+    val props = stringmap(user.properties) getOrElse { illegal(s"Invalid user. Cannot create.") }
     val account = GestaltAccountCreateWithRights(
         username = user.name,
         firstName = props("firstName"),

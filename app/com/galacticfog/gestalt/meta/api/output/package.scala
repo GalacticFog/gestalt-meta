@@ -30,6 +30,11 @@ package object output {
   implicit lazy val gestaltPropertyOutputFormat = Json.format[GestaltTypePropertyOutput]
   
   
+  /* JSON PATCH */
+  implicit lazy val patchOpFormat = Json.format[PatchOp]
+  implicit lazy val patchDocFormat = Json.format[PatchDocument]  
+  
+  
   def toLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {
     ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id, orgId, baseUri )))
   }
@@ -45,8 +50,8 @@ package object output {
     val base = if (baseUri.isDefined) baseUri.get else ""
     if (typeId == ResourceIds.Org) "%s/orgs/%s".format(base, id)
     else "%s/orgs/%s/%s/%s".format(base, orgId, typename, id)
-    
   }
+  
   
   import com.galacticfog.gestalt.data._
   
@@ -56,7 +61,6 @@ package object output {
       case ResourceIds.TypeProperty => PropertyFactory.findById(id)
       case _                        => ResourceFactory.findById(id)
     }
-    
-    
   }
+  
 }
