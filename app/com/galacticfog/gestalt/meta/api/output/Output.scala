@@ -86,6 +86,12 @@ object Output {
     Json.prettyPrint(Json.toJson( ps ))
   }
   
+  def renderPropertyLinks(rs: Seq[GestaltTypeProperty], baseUri: Option[String] = None) = {
+    Json.prettyPrint(Json.toJson(rs map { r => 
+      toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri) 
+    }))
+  }
+  
   def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None) = {  
     val res = toPropertyOutput( p, baseUri )
     //

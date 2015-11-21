@@ -20,7 +20,11 @@ import com.galacticfog.gestalt.data._
 
 
 package object util {
-
+  
+  def trace(method: String) = {
+    log.debug("%s::%s".format(this.getClass.getSimpleName, method))
+  }
+  
   def trimquotes(s: String) = {
     val trimmed = s.trim
     val t1 = if (trimmed.startsWith("\"")) trimmed.drop(1) else trimmed
@@ -52,9 +56,9 @@ package object util {
     "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
   }  
   
-  def toError(code: Int, message: String) = Json.prettyPrint {
+  def toError(code: Int, message: String) = 
     Json.parse(s"""{ "code": ${code}, "message": "${message}" }""")
-  }
+  
   
 //  def in2domain[T](org: UUID, in: GestaltResourceInput)(implicit request: SecuredRequest[T]) = {
 //    GestaltResourceInstance(

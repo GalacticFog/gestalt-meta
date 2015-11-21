@@ -15,9 +15,29 @@ import controllers.util.trimquotes
 import play.api.{ Logger => log }
 
 
+
+
+//case object ResourcePatch extends PatchHandle[UUID, Try[GestaltResourceInstance]] {
+//  
+//  def applyPatch(target: UUID, patch: PatchDocument) = Try {
+//    
+//    val res = safeGetResource(target)
+//    
+//    
+//    ResourceFactory.update(res).get
+//  }
+//  
+//  def safeGetResource(id: UUID) = ResourceFactory.findById(id) getOrElse {
+//    throw new IllegalArgumentException(s"Resource not found '$id'.")
+//  }
+//  
+//}
+
+
 case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
   
   def applyPatch() = Try {
+    
     val res = ResourceFactory.findById(instanceId) getOrElse {
       throw new IllegalArgumentException(s"Resource not found '$instanceId'.")
     }
@@ -97,6 +117,7 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
 
 }
 
+
 case class PatchOp(op: String, path: String, value: JsValue) {
   if (List("add", "remove", "move", "copy", "test").contains(op.toLowerCase)) {
     throw new RuntimeException(s"The '$op' op is not currently supported.")
@@ -124,5 +145,26 @@ object PatchDocument {
       }
     }
   }
+  
+  /**
+   * Create a new PatchDocument from an existing one by filtering for
+   * only those PatchOps beginning with the given prefix.
+   */
+  def fromPathPrefix(prefix: String, doc: PatchDocument, rebase: Boolean = false) = {
+    val pre = if (!prefix.trim.endsWith("/")) prefix.trim + "/" else prefix.trim
+    
+    println("fromPrefix::patch : " + doc)
+    println("fromPrefix::pre:: " + pre)
+    
+    def rb(o: PatchOp) = { 
+      if (rebase) o.copy(path = o.path.drop(pre.size-1)) else o 
+    } 
+    
+    PatchDocument(doc.op collect { 
+      case op: PatchOp if op.path.startsWith(pre) => rb( op ) } : _*)
+  }
 
 }  
+
+
+

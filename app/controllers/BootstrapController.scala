@@ -13,8 +13,7 @@ import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredC
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import controllers.util.MetaController
-import controllers.util.Security
+import controllers.util._
 import controllers.util.db._
 
 

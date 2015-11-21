@@ -4,7 +4,7 @@
 
 POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 
-POST	/sync			controllers.Meta.sync()
+POST	/sync			controllers.SyncController.sync()
 
 #
 #   \-^-/         \-^-/          |||           ===      
@@ -96,13 +96,13 @@ GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 # TYPE PROPERTIES
 
 #-- Create TypeProperty for Type
-POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties 	controllers.TypeController.createTypeProperty(uuid: java.util.UUID, typeId: java.util.UUID)
+POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties 	controllers.PropertyController.createTypeProperty(uuid: java.util.UUID, typeId: java.util.UUID)
 
 #-- Read All TypeProperties from Type
-GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties          controllers.TypeController.getAllProperties(uuid: java.util.UUID, typeId: java.util.UUID)
+GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties          controllers.PropertyController.getAllProperties(uuid: java.util.UUID, typeId: java.util.UUID)
 
 #-- Read Single TypeProperty from Type
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties/:uuid    controllers.TypeController.getPropertyById(orgId: java.util.UUID, typeId: java.util.UUID, uuid: java.util.UUID)
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties/:uuid    controllers.PropertyController.getPropertyById(orgId: java.util.UUID, typeId: java.util.UUID, uuid: java.util.UUID)
 
 
 ########################
@@ -192,13 +192,13 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/s
 
 
 # -- Create Type Property
-POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PropertyController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
 
 # -- Read All Type Properties
-GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.TypeController.getAllPropertiesFqon(fqon: String, uuid: java.util.UUID)
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.PropertyController.getAllPropertiesFqon(fqon: String, uuid: java.util.UUID)
 
 # -- Read Single Type Property
-GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.TypeController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.PropertyController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
 
 
 #########################

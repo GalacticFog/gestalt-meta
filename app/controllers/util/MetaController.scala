@@ -1,6 +1,7 @@
 package controllers.util
 
-
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api._
 
 import com.galacticfog.gestalt.data.util._
@@ -87,8 +88,7 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
 
     }
     ???
-  }  
-
+  }
 
   def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
     case e: SecurityBadRequestException       => BadRequest(toError(400, e.getMessage))
@@ -100,9 +100,6 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     case e: SecurityAPIParseException         => InternalServerError(toError(500, e.getMessage))
   }
   
-  protected def trace(method: String) = {
-    log.debug("%s::%s".format(this.getClass.getSimpleName, method))
-  }
   
 }
 
