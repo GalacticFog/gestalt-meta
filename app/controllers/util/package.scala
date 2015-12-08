@@ -1,7 +1,7 @@
 package controllers
 
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.models.{ResourceLink => GestaltLink}
+
 import scala.util.{Try,Success,Failure}
 import play.api.{Logger => log}
 import play.api.mvc._
@@ -18,8 +18,19 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data._
 
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
+import com.galacticfog.gestalt.meta.api.errors._
 
 package object util {
+  
+  /* Return HTTP Results containing formatted system error JSON */
+  def NotFoundResult(message: String) = NotFound(new ResourceNotFoundException(message).asJson)
+  def BadRequestResult(message: String) = BadRequest(new BadRequestException(message).asJson)
+  def ConflictResult(message: String) = Conflict(new ConflictException(message).asJson)
+  def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
+  
+  
   
   def trace(method: String) = {
     log.debug("%s::%s".format(this.getClass.getSimpleName, method))
@@ -44,20 +55,20 @@ package object util {
     }
   }  
   
-  def renderLinks(rs: Seq[GestaltResourceInstance]) = {
-    Json.prettyPrint(Json.toJson(rs map { toLink(_) }))
-  }
-  
-  def toLink(r: GestaltResourceInstance) = {
-    GestaltLink(r.typeId, r.id.toString, Some(r.name), Some(toHref( r )))
-  }
-  
-  def toHref(r: GestaltResourceInstance) = {
-    "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
-  }  
-  
-  def toError(code: Int, message: String) = 
-    Json.parse(s"""{ "code": ${code}, "message": "${message}" }""")
+//  def renderLinks(rs: Seq[GestaltResourceInstance]) = {
+//    Json.prettyPrint(Json.toJson(rs map { toLink(_) }))
+//  }
+//  
+//  def toLink(r: GestaltResourceInstance) = {
+//    GestaltLink(r.typeId, r.id.toString, Some(r.name), Some(toHref( r )))
+//  }
+//  
+//  def toHref(r: GestaltResourceInstance) = {
+//    "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
+//  }  
+//  
+//  def toError(code: Int, message: String) = 
+//    Json.parse(s"""{ "code": ${code}, "message": "${message}" }""")
   
   
 //  def in2domain[T](org: UUID, in: GestaltResourceInput)(implicit request: SecuredRequest[T]) = {
@@ -89,7 +100,7 @@ package object util {
     err match {
       case rnf: ResourceNotFoundException => {
         log.info( rnf.getMessage )
-        NotFound( rnf.toErrorString )
+        NotFound( rnf.asJson )
       }
       case unknown => {
         log.error( err.getMessage )
@@ -100,14 +111,14 @@ package object util {
   
   
   
-  private def securedGetListFailure(err: Throwable) = {
-    err match {
-      case unauth: UnauthorizedException => {
-        log.info( unauth.getMessage )
-        Unauthorized( unauth.toErrorString )
-      }
-    }
-  }
+//  private def securedGetListFailure(err: Throwable) = {
+//    err match {
+//      case unauth: UnauthorizedException => {
+//        log.info( unauth.getMessage )
+//        Unauthorized( unauth.toErrorString )
+//      }
+//    }
+//  }
   
   class OkNotFoundNoResultHandler 
     extends TryHandler[Unit,Result](trySuccessNoResult)(tryNotFoundFailure)

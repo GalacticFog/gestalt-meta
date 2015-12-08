@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import controllers.util.trimquotes
 import play.api.{ Logger => log }
 
+import com.galacticfog.gestalt.meta.api.errors._
 
 
 
@@ -36,17 +37,17 @@ import play.api.{ Logger => log }
 
 case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
   
-  def applyPatch() = Try {
+  def applyPatch(identityType: UUID, identity: UUID) = Try {
     
     val res = ResourceFactory.findById(instanceId) getOrElse {
-      throw new IllegalArgumentException(s"Resource not found '$instanceId'.")
+      throw new ResourceNotFoundException(s"Resource not found '$instanceId'.")
     }
     
     // Get new resource instance with altered properties.
     val newres = updateProperties(doc.op.toList, res)
 
     // Save instance with new data in the database
-    ResourceFactory.update(newres).get
+    ResourceFactory.update(newres, identity).get
   }
   
   def setAttribute(p: PatchOp, r: GestaltResourceInstance) = strip(p.path) match {
@@ -55,12 +56,12 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     case Attributes.Name          => r.copy(name = p.value.toString())
     case Attributes.ResourceState => r.copy(state = UUID.fromString(p.value.toString))
     case Attributes.Description   => r.copy(description = Some(p.value.toString))
-    case _                        => throw new IllegalArgumentException(s"Invalid path '${p.path}'")
+    case _                        => throw new BadRequestException(s"Invalid path '${p.path}'")
   }
   
   def replaceProperty(pname: String, pvalue: JsValue, r: GestaltResourceInstance) = {
     if (!r.properties.isDefined || !r.properties.get.contains(pname)) {
-      throw new IllegalArgumentException(s"Property not defined '$pname'. No changes made.")
+      throw new BadRequestException(s"Property not defined '$pname'. No changes made.")
     }
 
     val props = r.properties.get
@@ -89,20 +90,20 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
 
   def getPropertyName(s: String): Try[String] = Try {
     if (!s.trim.startsWith("/properties/")) {
-      throw new IllegalArgumentException(s"Invalid path to property '$s'")
+      throw new BadRequestException(s"Invalid path to property '$s'")
     }
     else {
       val cs = s.trim.drop(1).split("/").toList
       cs.size match {
         case 2 => cs(1)
-        case _ => throw new IllegalArgumentException(s"Invalid path to property '$s'") 
+        case _ => throw new BadRequestException(s"Invalid path to property '$s'") 
       }
     }
   }
 
   def strip(s: String) = { 
     if (s.trim.startsWith("/")) s.trim.drop(1)
-    else throw new IllegalArgumentException(s"Path must begin with '/', found: $s")
+    else throw new BadRequestException(s"Path must begin with '/', found: $s")
   }
   
   private object Attributes {
@@ -123,7 +124,7 @@ case class PatchOp(op: String, path: String, value: JsValue) {
     throw new RuntimeException(s"The '$op' op is not currently supported.")
   }
   else if (!List("replace").contains(op.toLowerCase)) {
-    throw new IllegalArgumentException(s"Illegal op value '$op'.")
+    throw new BadRequestException(s"Illegal op value '$op'.")
   }
 }
 

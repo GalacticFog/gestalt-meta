@@ -29,6 +29,8 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.models._
 
+import com.galacticfog.gestalt.meta.api.errors._
+
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
 import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => SecurityBadRequestException }
 import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
@@ -37,12 +39,59 @@ import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException =
 import com.galacticfog.gestalt.security.api.errors.{ CreateConflictException => SecurityCreateConflictException }
 import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
+import play.api.mvc.RequestHeader
 
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
-trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticator] {
+trait MetaController extends SecureController {
+
+  /**
+   * Get the base URL for this Meta instance
+   */
+  def META_URL[T](implicit request: SecuredRequest[T]) = { 
+    val protocol = if (request.secure) "https" else "http"
+    Some( "%s://%s".format(protocol, request.host) )
+  }
+
+  def HandleRepositoryExceptions(e: Throwable) = e.asInstanceOf[ApiException] match {
+    case e: ResourceNotFoundException     => NotFound(e.asJson)
+    case e: BadRequestException           => BadRequest(e.asJson)
+    case e: UnrecognizedResourceException => BadRequest(e.asJson)
+    case e: ConflictException             => Conflict(e.asJson)
+    case x => GenericErrorResult(500, x.getMessage)
+  }
   
-  override def getAuthenticator: AuthenticatorService[DummyAuthenticator] = new DummyAuthenticatorService
+  /**
+   * Get the Org and ResourceType Ids when given FQON and REST name.
+   * 
+   * @param fqon FQON of the target Org
+   * @param rest REST name of ResourceType (i.e., workspaces, environments)
+   */
+//  protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
+//    orgFqon(fqon) match {
+//      case None => Left(OrgNotFound(fqon))
+//      case Some(org) => resourceUUID(rest) match {
+//        case None => Left(Errors.INVALID_RESOURCE_TYPE(rest))
+//        case Some(typeId) => Right((org.id, typeId))
+//      }
+//    }
+//  }
   
+  protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
+    orgFqon(fqon) match {
+      case Some(org) => extractByName(org.id, rest)
+      case None      => Left(OrgNotFound(fqon))
+    }
+  }
+  
+  protected def extractByName(org: UUID, rest: String): Either[play.api.mvc.Result, (UUID, UUID)] = {
+    resourceUUID(rest) match {
+      case Some(typeId) => Right((org, typeId))  
+      case None         => Left(Errors.INVALID_RESOURCE_TYPE(rest))
+    }
+  }
+
   protected val connection = Session.connection
 //  protected def getApiPrefix() = "https://gf.com/api/v1.1"
   
@@ -65,9 +114,10 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
   }
   
+  
   /** Format a 404 for 'Org Not Found' */
   protected[controllers] def OrgNotFound(orgIdentifier: String) = {
-    NotFound(toError(404, Errors.ORG_NOT_FOUND(orgIdentifier)))
+    NotFoundResult(Errors.ORG_NOT_FOUND(orgIdentifier))
   }
   
  
@@ -76,8 +126,11 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
     def TYPE_NOT_FOUND(id: String) = s"ResourceType '${id}' not found."
     def RESOURCE_NOT_FOUND(id: String) = s"Resource '${id}' not found."
-    def INVALID_RESOURCE_TYPE_ID(id: UUID) = s"Type ID must be Gestalt Org or User. Found: ${id.toString}"
-  }    
+    def INVALID_OWNER_TYPE(id: UUID) = s"Type ID must be Gestalt Org or User. Found: ${id.toString}"
+    def INVALID_RESOURCE_TYPE(identifier: String) = NotFoundResult(s"Invalid resource type '${identifier}'")
+  }
+  
+  
   /**
    * Only return resources that the given account (user) has 'read' access to.
    */
@@ -91,16 +144,15 @@ trait MetaController extends GestaltFrameworkSecuredController[DummyAuthenticato
   }
 
   def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
-    case e: SecurityBadRequestException       => BadRequest(toError(400, e.getMessage))
-    case e: SecurityUnauthorizedAPIException  => Unauthorized(toError(401, e.getMessage))
-    case e: SecurityForbiddenAPIException     => Forbidden(toError(403, e.getMessage))
-    case e: SecurityResourceNotFoundException => NotFound(toError(404, e.getMessage))
-    case e: SecurityCreateConflictException   => Conflict(toError(409, e.getMessage))
-    case e: SecurityUnknownAPIException       => BadRequest(toError(400, e.getMessage))
-    case e: SecurityAPIParseException         => InternalServerError(toError(500, e.getMessage))
+    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
+    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
+    case e: SecurityCreateConflictException   => ConflictResult(e.getMessage)
+    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
+    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
+    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)  
   }
-  
-  
+
 }
 
 

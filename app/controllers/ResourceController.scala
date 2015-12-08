@@ -17,7 +17,7 @@ import scala.util.{ Try, Success, Failure }
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.models.{ ResourceLink => MetaLink }
+import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => MetaLink }
 
 import com.galacticfog.gestalt.meta.services.ResourceQueryService
 import com.galacticfog.gestalt.tasks.io.TaskStatus
@@ -46,252 +46,201 @@ import com.galacticfog.gestalt.meta.api.output._ //JsonImports._
 
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
+import com.galacticfog.gestalt.meta.api.errors._
 
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
-object ResourceController extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with NonLoggingTaskEvents {
+object ResourceController extends MetaController with NonLoggingTaskEvents {
 
   private val qs = ResourceQueryService
-  
+
   /**
-   * Get a list of all Orgs in Meta
+   * Get a list of all Orgs in Meta (global)
    */
-  def getAllOrgs = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-    trace("getAllOrgs()")
+  def getAllOrgs = Authenticate() { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
   }
-  
+
   
   /**
-   * Get a list of child Orgs by Org UUID.
+   * Get a single Org
    */
-  def getChildOrgs(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getChildOrgs($org)")
-    getOrg(org) match {
-      case Some(_) => childOrgs(org)  
-      case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(org.toString)))
+  def getOrgById(id: UUID) = Authenticate(id) { implicit securedRequest =>
+    trace(s"getByOrgId($id)")
+    getById(org = id, ResourceIds.Org, id)
+  }
+
+  def getOrgByFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    trace(s"getOrgByFqon($fqon)")
+    orgFqon(fqon) match {
+      case Some(org) => getById(org = org.id, ResourceIds.Org, org.id)
+      case None => OrgNotFound(fqon)
     }
   }
   
+  
   /**
-   * Get a list of child Orgs by Org FQON.
+   * Get a list of child Orgs 
    */
-  def getChildOrgsFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getChildOrgsFqon($fqon)")
+  def getChildOrgs(org: UUID) = Authenticate(org) { implicit request =>
+    getOrg(org) match {
+      case Some(_) => childOrgs(org)
+      case None    => OrgNotFound(org)
+    }
+  }
+
+  def getChildOrgsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => childOrgs(org.id)  
-      case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(fqon)))
+      case Some(org) => childOrgs(org.id)
+      case None      => OrgNotFound(fqon)
     }
   }
 
   /**
-   * Get a list of all users in the system from root Org down.
+   * Get a list of all users in the system (global)
    */
-  def getAllUsersFromRoot = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-    trace("getAllUsersFromRoot()")
+  def getAllUsersGlobal = Authenticate() { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User)))
   }
+
   
   /**
-   * Get a list of all Users in the given Org by UUID.
+   * Get a list of all Users in the given Org
    */
-  def getAllUsers(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getAllUsers(org = ${org.toString}")
+  def getAllUsers(org: UUID) = Authenticate(org) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org)))
   }
-  
-  /**
-   * Get a list of all Users in the given Org by FQON.
-   */  
-  def getAllUsersFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllUsersFqon($fqon)")
+
+  def getAllUsersFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org.id)))
       case None => OrgNotFound(fqon)
     }
   }
   
-  /**
-   * Get a single user by their ID and Org UUID.
-   */
-  def getUserById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getUserById($org, $id")
-    ResourceFactory.findById(ResourceIds.User, id) match {
-      case Some(user) => Ok(Output.renderInstance(user))
-      case None       => NotFound(toError(404, s"User '${id}' not found."))
-    }
-  }
+
   
   /**
-   * Get a single user by their ID and Org FQON.
-   */  
-  def getUserByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getUserByIdFqon($fqon, $id")
+   * Get a single user by ID
+   */
+  def getUserById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findById(ResourceIds.User, id) match {
+      case Some(user) => Ok(Output.renderInstance(user))
+      case None       => NotFoundResult(s"User '${id}' not found.")
+    }
+  }
+
+  def getUserByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => ResourceFactory.findById(ResourceIds.User, id) match {
         case Some(user) => Ok(Output.renderInstance(user))
-        case None       => NotFound(toError(404, s"User '${id}' not found."))
+        case None       => NotFoundResult(s"User '${id}' not found.")
       }
       case None => OrgNotFound(fqon)
     } 
   }
   
-  
-  case class Criterion(name: String, value: String)
-  def getAllResourcesByTypeOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getAllResourcesByTypeOrg($org)")
+  /**
+   * Get all Resources by Type ID
+   */
+  def getAllResourcesByTypeOrg(org: UUID, typeId: UUID) = Authenticate(org) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org)))
   }
   
-  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllResourcesByTypeFqon($fqon)")
-    
+  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case None => OrgNotFound(fqon)  
       case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org.id)))
     }     
   }
 
-  /* /orgs/:org-id/resourcetypes/:type-id/resources/search?... */
-  def getAllResourcesByTypePropertyOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getAllResourcesByTypeOrg($org)")
-    
-    val qs = request.queryString
-    extractNameValue(qs) match {
-      case Success((name,value)) => {
-        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
-        case _ => InternalServerError(toError(500, error.getMessage))
-      }
-    }
-  }
-
-  /* /:fqon/resourcetypes/:type-id/resources/search?... */
-  def getAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllResourcesByTypeFqon($fqon)")
-    
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
-        val qs = request.queryString
-        extractNameValue(qs) match {
-          case Success((name,value)) => {
-            Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
-          }
-          case Failure(error) => error match {
-            case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
-            case _ => InternalServerError(toError(500, error.getMessage))
-          }
-        }
-      }
-    }
-  }  
+  val resources = ResourceFactory
+  val references = ReferenceFactory
   
-  
-  def getResourceByProperty(typeId: UUID, crtn: Criterion) = {
-    trace(s"getResourceByProperty()")
-    if (crtn.name == "name") ResourceFactory.findAllByName(typeId, crtn.value)
-    else ResourceFactory.findAllByPropertyValue(typeId, crtn.name, crtn.value)
+  def resourceLinks(org: UUID, typeId: UUID, baseurl: Option[String] = None): String = {
+    Output.renderLinks(resources.findAll(typeId, org), baseurl)
   }
   
-  def getResourceByPropertyOrg(org: UUID, typeId: UUID, crtn: Criterion) = {
-    trace(s"getResourceByPropertyOrg()")
-    if (crtn.name == "name") ResourceFactory.findAllByName(org, typeId, crtn.value)
-    else ResourceFactory.findAllByPropertyValueOrg(org, typeId, crtn.name, crtn.value)
-  }
+
   
-  
-  def getUserByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getUserByPropertyOrgId($org)")
-
-    val qs = request.queryString
-
-    validateUserSearchCriteria(qs) match {
-      case Success((name,value)) => {
-        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
-        case _ => InternalServerError(toError(500, error.getMessage))
-      }
-    }
-  }
-
-  def getUserByPropertyFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getUserByPropertyFqon($fqon)")
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
-
-        val qs = request.queryString
-        validateUserSearchCriteria(qs) match {
-          case Success((name,value)) => {
-            Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
-          }
-          case Failure(error) => error match {
-            case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
-            case _ => InternalServerError(toError(500, error.getMessage))
-          }
-        }
-        
-      }
-    }
-    
-  }
-
-
-  def getUserByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
-    trace(s"getUserByProperty()")
-
-    val qs = request.queryString
-
-    validateUserSearchCriteria(qs) match {
-      case Success((name,value)) => {
-        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequest(toError(400, ill.getMessage))
-        case _ => InternalServerError(toError(500, error.getMessage))
-      }
-    }
-  }
-  
-  private def extractNameValue(qs: Map[String, Seq[String]]) = Try {
-    val key = qs.keys.toList
-    if (key.isEmpty) illegal(s"Must provide a search term.")
-    if (key.size > 1) illegal(s"Must provide a SINGLE search term.")
-    val name = key(0)
-    
-    val value = qs(name)
-    if (value.size > 1) illegal(s"Must provide a SINGLE value for ${name}")
-    if (value(0).isEmpty()) illegal(s"Must provide a value for ${name}")
-    
-    (name, value(0))
-  }
-  
-  private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {
-    val good = List("name", "email", "phoneNumber")
-    val key = qs.keys.toList
-    if (key.isEmpty) illegal(s"Must provide a search term. One of : ${good.mkString(",")}")
-    if (key.size > 1) illegal(s"Must provide a SINGLE search term. One of : ${good.mkString(",")}")
-    if (!good.contains(key(0))) illegal(s"Unknown search term '${key(0)}. Valid terms: ${good.mkString(",")}")
-    val name = key(0)
-    
-    val value = qs(name)
-    
-    // NOTE: value is never 'empty' - contains a Buffer()
-    //if (value.isEmpty) illegal(s"Must provide a value for ${name}")
-    if (value.size > 1) illegal(s"Must provide a SINGLE value for ${name}")
-    if (value(0).isEmpty()) illegal(s"Must provide a value for ${name}")
-    (name, value(0))
-  }
-  
-  
-//  def getResourceByProperty(org: UUID, typeId: UUID, propValue: String) = {
-//    //ResourceFactory.findAllByPropertyValue(typeId, property, value)
+//  def NOT_FOUND(m: String) = NotFound(toError(404, m))
+//  
+//  def createSystemResourceInstance(fqon: String, restName: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    orgFqon(fqon) match {
+//      case None => OrgNotFound(fqon)
+//      case Some(org) => {
+//        resourceUUID(restName) match {
+//          case None => Errors.INVALID_RESOURCE_TYPE(restName)
+//          case Some(typeId) => {
+//            
+//          }
+//        }
+//      }
+//     }
+//    
+//    extractByName(fqon, restName) match {
+//      case Left(result) => result
+//      case Right(tuple) => {
+//        val org = tuple._1
+//        val typeId = tuple._2
+//        
+//        // If the payload has resource_type, it must match the typeId 
+//        // corresponding to the url they posted to (can't post node to /clusters)
+//        
+//      }
+//    }
+//    ???
 //  }
+//  
+// 
+//  /**
+//   * Get the Org and ResourceType Ids when given FQON and REST name.
+//   * 
+//   * @param fqon FQON of the target Org
+//   * @param rest REST name of ResourceType (i.e., workspaces, environments)
+//   */
+//  private def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
+//    orgFqon(fqon) match {
+//      case None => Left(OrgNotFound(fqon))
+//      case Some(org) => resourceUUID(rest) match {
+//        case None => Left(Errors.INVALID_RESOURCE_TYPE(rest))
+//        case Some(typeId) => Right((org.id, typeId))
+//      }
+//    }
+//  }
+  
+  def getAllSystemResourcesByName(org: UUID, restName: String) = Authenticate(org)  { implicit request =>
+    extractByName(org, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))      
+    }
+  }
+  
+  def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
+    extractByName(fqon, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))
+    }
+  }
+  
+  
+  private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
+    if (references.isReferenceType(typeId)) {
+      //"REFERENCE_TYPE"
+      referenceLinks(org, typeId)
+    }
+    else {
+      resourceLinks(org, typeId, url)
+    }
+    
+  }
+  
+  /* TODO: This is extremely temporary */
+  private def referenceLinks(org: UUID, typeId: UUID) = {
+    val refs = references.findAll(org, typeId) map { r => "{\"id\": \"%s\", \"name\": \"%s\"}".format(r.id, r.name) }
+    Json.prettyPrint(Json.parse("[%s]".format(refs.mkString(","))))
+  }
   
   
   /**
@@ -307,19 +256,20 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
 //  }
 
   
+  
+  
   /**
    * Get a List of ResourceLinks by FQON
    * [Implements]: GET /orgs/:fqon/:resources, i.e. /orgs/gf.engineering.core/workspaces
    */
-  def getAllByFqon(fqon: String, resource: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit securedRequest =>
-    trace(s"getAllByFqon($fqon, $resource)")
+  def getAllByFqon(fqon: String, resource: String) = Authenticate(fqon) { implicit securedRequest =>
     ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon) match {
       case Some(org) => {
         resourceUUID(resource) match {
           case Some(typeId) => Ok {
             Output.renderLinks(ResourceFactory.findAll(typeId))
           }
-          case None => NotFound(toError(404, s"Invalid resource name '${resource}'."))
+          case None => NotFoundResult(s"Invalid resource name '${resource}'.")
         }
       } // This shouldn't happen since security would send back 'unauthorized'
       case None => NotFound(s"Org FQON '${fqon}' does not exist.")
@@ -351,23 +301,8 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   // ORGS
   // --------------------------------------------------------------------------
 
-  def getOrgById(id: UUID) = GestaltFrameworkAuthAction(Some(id)) { implicit securedRequest =>
-    trace(s"getByOrgId($id)")
-    getById(org = id, ResourceIds.Org, id)
-  }
-
-  // GET /some.org.name
-  def getOrgByFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getOrgByFqon(${fqon})")
-    orgFqon(fqon) match {
-      case Some(org) => getById(org = org.id, ResourceIds.Org, org.id)
-      case None => OrgNotFound(fqon)
-    }
-  }
-
   
   def getAllResourcesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllResourcesFqon($fqon)")
     orgFqon(fqon) match {
       case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAllByOrg(org.id)))
       case None => OrgNotFound(fqon)
@@ -376,11 +311,10 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   
   
   def getResourceByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getResourceByIdFqon($fqon, $id")
     orgFqon(fqon) match {
       case Some(org) => ResourceFactory.findById(id) match {
         case Some(res) => Ok(Output.renderInstance(res))
-        case None => NotFound(toError(404, Errors.RESOURCE_NOT_FOUND(id)))
+        case None => NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))
       }
       case None => OrgNotFound(fqon)
     }
@@ -391,12 +325,138 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   // WORKSPACES
   // --------------------------------------------------------------------------  
 
-  def getAllWorkspaces(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit securedRequest =>
-    println(securedRequest.identity.account)
-    val acc = securedRequest.identity
+  def getAllWorkspaces(org: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Workspace, org)))  
+  }
+  
+  def getAllWorkspacesFqon(fqon: String) = Authenticate(fqon) { implicit securedRequest =>
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)  
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Workspace, org.id)))
+    }
+  }
+
+  def getWorkspaceById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Workspace, id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None       => NotFoundResult(s"Workspace '${id}' not found.")
+    }
+  }
+  
+  def getWorkspaceByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => ResourceFactory.findById(ResourceIds.Workspace, id) match {
+        case Some(res) => Ok(Output.renderInstance(res))
+        case None => NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))
+      }
+      case None => OrgNotFound(fqon)
+    }  
+  }
+  
+
+  
+
+  
+  // --------------------------------------------------------------------------
+  // ENVIRONMENTS
+  // --------------------------------------------------------------------------   
+  def getAllEnvironments(org: UUID) = Authenticate(org) { implicit request =>
+    ???
+  }
+  
+  def getAllEnvironmentsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    ???
+  }
+  
+  def getEnvironmentById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    FindByIdResult(org, ResourceIds.Environment, id)
+  }
+  
+  def getEnvironmentByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => FindByIdResult(org.id, ResourceIds.Environment, id)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  def FindByIdResult(org: UUID, typeId: UUID, id: UUID) = {
+    ResourceFactory.findById(typeId, id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None       => NotFoundResult(s"${ResourceLabel(typeId)} '${id}' not found.")
+    }    
+  }  
+  
+  def getEnvironmentsByWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org, ResourceIds.Environment, "workspace", workspaceId.toString)))  
+  }
+  
+  def getEnvironmentsByWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) =>
+        Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org.id, ResourceIds.Environment, "workspace", workspaceId.toString)))
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def putEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def postEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def postEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    ???
+  }  
+  
+  def putEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def patchEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def patchEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def deleteEnvironment(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     ???
   }
 
+  def deleteEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ???
+  }  
+  
+  
+  
+  // --------------------------------------------------------------------------
+  // MACHINE_SPECS
+  // --------------------------------------------------------------------------
+  
+  
+  // --------------------------------------------------------------------------
+  // SERVICES
+  // --------------------------------------------------------------------------  
+  
+
+  // --------------------------------------------------------------------------
+  // NODE_TEMPLATES
+  // --------------------------------------------------------------------------
+  
+  
+  // --------------------------------------------------------------------------
+  // CLUSTER_TEMPLATES
+  // --------------------------------------------------------------------------
+  
+  
+  // --------------------------------------------------------------------------
+  // BLUEPRINTS
+  // --------------------------------------------------------------------------  
+  
   
   object AuthorizationHandler {
     def getSingle(org: UUID, typeId: UUID, id: UUID, account: AuthAccountWithCreds) = {
@@ -423,20 +483,12 @@ object ResourceController extends GestaltFrameworkSecuredController[DummyAuthent
   //    }  
   //  }
 
-  //  def getBlueprintById(id: UUID, expand: Option[String]) = Action.async {
-  //    if (expand.isDefined && expand.get.toLowerCase == "all") {
-  //      Future( okNotFound( qs.getExpandedBlueprint( id ) ) )
-  //    } else getById( ResourceIds.Blueprint, id )
-  //  }
-
-//  private def getAll(org: UUID, typeId: UUID) = /*Future*/ {
-//    okNotFound(qs.findAll(typeId))
-//  }
-
-//  private def getAllWithOrg(org: UUID, typeId: UUID) = Future {
-//    okNotFound(qs.findAllWithOrgId(org, typeId))
-//  }
-
+  
+  def getAllInOrg(typeId: UUID, org: UUID): List[GestaltResourceInstance] = {
+    ResourceFactory.findAll(typeId, org)
+  }
+  
+  
   private def getOrg(id: UUID) = {
     ResourceFactory.findById(ResourceIds.Org, id)
   }

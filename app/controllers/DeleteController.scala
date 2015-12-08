@@ -6,17 +6,14 @@ import scala.util.Failure
 import scala.util.Success
 
 import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import controllers.util.MetaController
-import controllers.util.Security
-import controllers.util.toError
-import controllers.util.trace
+import controllers.util._
 import play.api.{Logger => log}
 
 
@@ -72,8 +69,8 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
      TypeFactory.hardDeleteType(typeId) match {
        case Success(_) => NoContent
        case Failure(e) => e match {
-         case iae : IllegalArgumentException => BadRequest(toError(400, iae.getMessage))
-         case x => InternalServerError(toError(500, x.getMessage))
+         case iae : IllegalArgumentException => BadRequestResult(iae.getMessage)
+         case x => GenericErrorResult(500, x.getMessage)
        }
      }
    }
@@ -89,8 +86,8 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
         log.error(s"hardDeleteSecure: ERROR: " + e.getMessage)
         e match {
           case s: SecurityRESTException     => handleSecurityApiException(s)
-          case r: ResourceNotFoundException => NotFound(toError(404, r.getMessage))
-          case _ => InternalServerError(toError(500, e.getMessage))
+          case r: ResourceNotFoundException => NotFoundResult(r.getMessage)
+          case _ => GenericErrorResult(500, e.getMessage)
         }
       }
     }

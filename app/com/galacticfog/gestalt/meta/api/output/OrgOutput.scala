@@ -12,6 +12,8 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.models._
 import scalikejdbc._
 
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 object OrgOutput {
   /**

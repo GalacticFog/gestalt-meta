@@ -13,18 +13,19 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.PropertyValidator
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.ResourceIds
+
 import com.galacticfog.gestalt.data.ResourceType
 import com.galacticfog.gestalt.data.illegal
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.ResourceOwnerLink
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.{ PatchOp, PatchDocument, PatchHandler }
-import com.galacticfog.gestalt.meta.api.GestaltResourceInput
+
 import com.galacticfog.gestalt.meta.api.output._
 
-import com.galacticfog.gestalt.meta.api.rte
-import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
+//import com.galacticfog.gestalt.meta.api.rte
+//import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
@@ -34,19 +35,22 @@ import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredC
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
+import controllers.util._
 import controllers.util.MetaController
 import controllers.util.Security
-import controllers.util.toError
+
 import play.api.{ Logger => log }
 import play.api.libs.json.JsError
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.data.ResourceStates
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 import controllers.util.stringmap
 
 import controllers.util.trace
+import com.galacticfog.gestalt.meta.api._
 
 /**
  * Code for integrating Security and Meta. Handles resource synchronization between
@@ -57,46 +61,23 @@ import controllers.util.trace
  */
 object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents with SecurityResources {
-
+  
   import play.api.libs.json._
-
+  
   implicit def str2js(s: String) = JsString(s)
-
+  
   //
-  // TODO: Tighten up error-handling - too many 500s
-  // TODO: ResourceFactory::create - failed property validation assertion is being swallowed!
   // TODO: Add creator to auth at create!
   //  
 
-  
-  //
-  // TODO: Refactor to use CreateOrgResult
-  //
-  def createTopLevelOrg() = GestaltFrameworkAuthAction(nullOptString(None)).async(parse.json) { implicit request =>
-//    Future {
-      //val input = request.body.as[GestaltResourceInput]
-      
-      //val creator = request.identity.account.id
-
-//      CreateSynchronizedResult2(org, ResourceIds.Org, request.body)(
-//        Security.createOrg, createNewMetaOrg[JsValue])
-    
-      val root = Security.getRootOrg(request.identity).get.id
-      
-      Security.getRootOrg(request.identity) match {
-        case Success(root) => 
-          CreateSynchronizedResult(root.id, ResourceIds.Org, request.body)(
-            Security.createOrg, createNewMetaOrg[JsValue])
-        case Failure(err)  => Future { handleSecurityApiException(err) }
-      }
-
-      
-//      createSynchronized2(root, ResourceIds.Org, input)(
-//        Security.createOrg, createNewMetaOrg[JsValue]) match {
-//          case Success(resource) => Ok(Output.renderInstance(resource))
-//          case Failure(e)        => InternalServerError(e.getMessage)
-//        }
-//    }
+  def createTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
+    val root = Security.getRootOrg(request.identity).get.id
+    Security.getRootOrg(request.identity) match {
+      case Success(root) =>
+        CreateSynchronizedResult(root.id, ResourceIds.Org, request.body)(
+          Security.createOrg, createNewMetaOrg[JsValue])
+      case Failure(err) => Future { handleSecurityApiException(err) }
+    }
   }  
   
   /**
@@ -125,32 +106,103 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     trace(s"createResource($fqon)")
     Future {
       orgFqon(fqon) match {
-        case Some(org) => CreateResourceResult(org.id, request.body, request.identity)
+        case Some(org) => 
+          CreateResourceResult(ResourceIds.User, request.identity.account.id, org.id, request.body, request.identity)
         case None      => OrgNotFound(fqon)
       }
     }
   }
 
+  def createResource2(org: UUID, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    Future {
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          request.body, 
+          request.identity, 
+          typeId)
+    }
+  }
+
+  def createSystemResource(fqon: String, restName: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
+    trace(s"createSystemResource($fqon)")
+    Future { 
+      extractByName(fqon, restName) match {
+        case Left(result) => result
+        case Right((org, pathtype)) => CreateNoConflictResult(org, pathtype)
+      }
+    }
+  }
+  
+
+  
+//  private def pathCreateError(pathType: UUID, givenType: UUID) = {
+//    toError(409, "conflicting resource_type_ids found.")
+//  }
+  
+  private def CreateConflictResult(pathType: UUID, input: GestaltResourceInput) = {
+    //Conflict(pathCreateError(pathType, input.resource_type.get))
+    ConflictResult("conflicting resource_type_ids found.")
+  }
+
+  private def CreateNoConflictResult(org: UUID, pathType: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    getWellFormedInput(org, request.body, Some(pathType)) match {
+      case Failure(error) => HandleRepositoryExceptions(error)
+      case Success(input) => {
+
+        // Ensure no conflict between given resource_type (if any) and pathtype
+        // (can't create a Node in /clusters)
+
+        if (pathType != input.resource_type) 
+             CreateConflictResult(pathType, input)
+        else CreateResourceResult2(ResourceIds.User, request.identity.account.id, org, input, request.identity)
+      }
+    }    
+  }  
+  
+  
   def patchResource(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
     trace(s"patchResource($fqon, $id)")
 
     Future {
       safeGetPatchDocument(request.body) match {
-        case Failure(e) => BadRequest(toError(400, e.getMessage))
+        case Failure(e) => BadRequestResult(e.getMessage)
         case Success(patch) => {
+          
           // TODO: Don't currently use typeId, but will in future.
-          val handler = PatchHandler(UUID.randomUUID(), id, patch)
-          handler.applyPatch match {
+          val identity = request.identity.account.id
+          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity)  match {
             case Success(r) => Ok(Output.renderInstance(r))
-            case Failure(e) => InternalServerError(toError(500, e.getMessage))
+            case Failure(e) => HandleRepositoryExceptions(e) 
           }
         }
       }
+    }
+  }
+  
+  
+  
+  def postWorkspace(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => Meta.createResource2(org.id, Some(ResourceIds.Workspace))
+      case None => Future { OrgNotFound(fqon) }
+    }
+  }  
 
+  def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    orgFqon(fqon) match {
+      case None => Future { OrgNotFound(fqon) }  
+      case Some(org) => {
+        Meta.createResource2(org.id, Some(ResourceIds.Workspace))
+      }
     }
   }
 
-  
   private object Err {
     
     def RESOURCE_TYPE_NOT_FOUND(m: String) = ???
@@ -158,48 +210,108 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     val RESOURCE_TYPE_NOT_GIVEN = "resource_type must be specified."
     
   }
+
+  /**
+   * Ensure the given JSON can be serialized to a GestaltResourceInput with required values.
+   * Currently checks are limited to whether a resource_type_id is supplied, and whether
+   * that type_id exists.
+   */
+  private def getWellFormedInput(org: UUID, inputJson: JsValue, typeId: Option[UUID] = None): Try[GestaltResourceInput] = {
+    
+    /* Assert that the given type_id exists */
+    def assertTypeExists(typeId: UUID) = if (!TypeFactory.findById(typeId).isEmpty) {
+      throw new ResourceNotFoundException(Err.RESOURCE_TYPE_NOT_FOUND(typeId))
+    }
+    
+    def resolveInputTypeId(in: GestaltResourceInput) = in.resource_type orElse { typeId }
+
+    safeGetInputJson(inputJson) map { input =>
+      assertTypeExists {
+        resolveInputTypeId(input) getOrElse {
+          throw new BadRequestException(Err.RESOURCE_TYPE_NOT_GIVEN)
+        }
+      }
+      input
+    }
+  }
   
-//  private def validateInputResource(input: GestaltResourceInput, typeRequired: Boolean = true) = Try {
-//    def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
-//    
-//    if (input.resource_type.isEmpty) 
-//      rte(toError(400, Err.RESOURCE_TYPE_NOT_GIVEN))
-//    else if (!typeExists(input.resource_type.get))
-//      rte(toError(404, Err.RESOURCE_TYPE_NOT_FOUND(input.resource_type.get)))
-//  }
   
-//  Need to formalize the toError structure
-//  Need a function that takes an error and returns the appropriate Result based on error code.
+  /**
+   * Inspect a GestaltResourceInput, supplying default values where appropriate.
+   */
+  private def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
+  }
   
-  private def CreateResourceResult(org: UUID, resourceJson: JsValue, user: AuthAccountWithCreds) = {
+  
+  private def CreateResourceResult2(creatorType: UUID, creator: UUID, org: UUID, input: GestaltResourceInput, user: AuthAccountWithCreds) = {
+    trace(s"CreateResourceResult($org, [json], [account])")
+
+    ResourceFactory.create(creatorType, creator)(inputWithDefaults(org, input, user)) match {
+      case Success(res) => Ok(Output.renderInstance(res))
+      case Failure(err) => {
+        log.error(s"Internal Server Error: ${err.getMessage}")
+        GenericErrorResult(500, err.getMessage)
+      }
+    }
+  }  
+  
+  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
+    if (r.resource_type.isDefined) r.resource_type
+    else if (typeId.isDefined) typeId
+    else None
+  }
+  
+  
+  /*
+   * TODO: This needs to be broken up further - need the ability to inspect/inject properties before create.
+   * For instance, user shouldn't have to provide 'workspace' property when creating an environment at the
+   * POST /workspaces/:id/environments. In order to make that possible, the implementing action needs the
+   * ability to inject the workspace ID.
+   */
+  private def CreateResourceResult(creatorType: UUID, creator: UUID, org: UUID, resourceJson: JsValue, user: AuthAccountWithCreds, typeId: Option[UUID] = None) = {
     trace(s"CreateResourceResult($org, [json], [account])")
     
     def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
     
     safeGetInputJson(resourceJson) match {
-      case Failure(e) => BadRequest(toError(400, e.getMessage))
+      case Failure(e) => BadRequestResult(e.getMessage)
       case Success(input) => {
   
-        if (input.resource_type.isEmpty) {
+        val tid = resolveTypeId(input, typeId)
+        
+        //if (input.resource_type.isEmpty) {
+        if (tid.isEmpty) {
           log.error(s"No resource_type specified.")
-          BadRequest(toError(400, Err.RESOURCE_TYPE_NOT_GIVEN))
+          BadRequestResult(Err.RESOURCE_TYPE_NOT_GIVEN)
         } 
-        else if (!typeExists(input.resource_type.get)) {
-          log.error(Err.RESOURCE_TYPE_NOT_FOUND(input.resource_type.get))
-          NotFound(toError(404, Err.RESOURCE_TYPE_NOT_FOUND(input.resource_type.get)))
+        else if (!typeExists(/*input.resource_type.get*/tid.get)) {
+          log.error(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
+          NotFoundResult(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
         } 
         else {
+          
           val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(user))
           val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
           val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
           val domain = fromResourceInput(org,
-            input.copy(id = resid, owner = owner, resource_state = state))
+            input.copy(id = resid, owner = owner, resource_state = state, resource_type = tid))
 
-          ResourceFactory.create(domain) match {
-            case Success(res) => Ok(Output.renderInstance(res))
+          /* 
+           * TODO: create now returns better errors - match them to be more specific 
+           */
+          ResourceFactory.create(creatorType, creator)(domain) match {
+            case Success(res) => {
+              println("========== INSTANCE ==========")
+              println(res)
+              Ok(Output.renderInstance(res))
+            }
             case Failure(err) => {
               log.error(s"Internal Server Error: ${err.getMessage}")
-              InternalServerError(toError(500, err.getMessage))
+              GenericErrorResult(500, err.getMessage)
             }
           }
         }
@@ -233,7 +345,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     trace(s"CreateSynchronizedResult($org, $typeId, ${json.toString})")
     Future {
       safeGetInputJson(typeId, json) match {
-        case Failure(e) => BadRequest(toError(400, e.getMessage))
+        case Failure(e) => BadRequestResult(e.getMessage)
         case Success(input) => {
 
           createSynchronized(org, typeId, input)(sc, mc) match {
@@ -246,7 +358,8 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
-  private def createSynchronized[T](org: UUID, typeId: UUID, input: GestaltResourceInput)(sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
+  private def createSynchronized[T](org: UUID, typeId: UUID, input: GestaltResourceInput)
+    (sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
 
     trace("createSynchronized(...)")
     //log.debug(s"Creating ${ResourceType.name(typeId)}")
@@ -258,11 +371,11 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case (false, message) => Failure(illegal(message.get))
       case _ => for {
         sr <- sc(org, request.identity, input)
-        mr <- mc(org, sr, creator, stringprops)
+        mr <- mc(creator, org,  sr, stringprops)
       } yield mr
     }
   }
-
+  
   
   private def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
     PatchDocument.fromJsValue(json)

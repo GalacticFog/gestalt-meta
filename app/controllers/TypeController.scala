@@ -3,6 +3,7 @@ package controllers
 
 import play.api.{ Logger => log }
 
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import play.api.Play.current
 import play.api.libs.ws._
 import play.api.libs.ws.ning.NingAsyncHttpClientConfigBuilder
@@ -17,7 +18,7 @@ import scala.util.{ Try, Success, Failure }
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.models.{ ResourceLink => GestaltLink }
+import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => GestaltLink }
 
 import com.galacticfog.gestalt.meta.services.ResourceQueryService
 import com.galacticfog.gestalt.tasks.io.TaskStatus
@@ -42,11 +43,13 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.security.api.json.JsonImports.{ orgFormat, linkFormat, acctFormat }
 import com.mohiva.play.silhouette.api.util.Credentials
 
+import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.output._
 
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
-
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents {
@@ -61,7 +64,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     trace(s"getAllResourceTypeFqon($fqon)")
     orgFqon(fqon) match {
       case Some(org) => OkTypeLinksResult(org.id)
-      case None => NotFound(toError(404, Errors.ORG_NOT_FOUND(fqon)))
+      case None => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
     }
   }
   
@@ -74,7 +77,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     trace(s"getResourceTypeByIdFqon($fqon, $id)")
     orgFqon(fqon) match {
       case Some(org) => OkTypeByIdResult(org.id, id)
-      case None => NotFound(toError(404, Errors.TYPE_NOT_FOUND(id)))
+      case None => NotFoundResult(Errors.TYPE_NOT_FOUND(id))
     }
   }
   
@@ -98,13 +101,13 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
       val user = request.identity.account.id
       
       safeGetTypeJson(typeJson) match {
-        case Failure(e) => BadRequest(toError(400, e.getMessage))
+        case Failure(e) => BadRequestResult(e.getMessage)
         case Success(input) => typeFromInput(org, user, input) match {
           case Success(resource) => TypeFactory.create(user)(resource) match {
             case Success(t) => Ok(renderType(t))
-            case Failure(e) => InternalServerError(toError(500, e.getMessage))
+            case Failure(e) => GenericErrorResult(500, e.getMessage)
           }
-          case Failure(e) => BadRequest(toError(400, "Could not read input: " + e.getMessage))
+          case Failure(e) => BadRequestResult("Could not read input: " + e.getMessage)
         }
       }
     }
@@ -113,7 +116,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Future {
       createTypeWithProperties(org, typeJson) match {
-        case Failure(e) => InternalServerError(toError(500, e.getMessage))
+        case Failure(e) => GenericErrorResult(500, e.getMessage)
         case Success(newtype) => Ok(Output.renderResourceTypeOutput( newtype ))
       }
     }
@@ -180,7 +183,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   private def OkTypeByIdResult(org: UUID, id: UUID) = {
     TypeFactory.findById(id) match {
       case Some(t) => Ok(Output.renderResourceTypeOutput(t))
-      case None    => NotFound(toError(404, Errors.TYPE_NOT_FOUND(id.toString)))
+      case None    => NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))
     }
   }
   
@@ -355,7 +358,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     json.validate[GestaltResourceTypeInput].map{
       case resource: GestaltResourceTypeInput => resource
     }.recoverTotal{
-      e => illegal(JsError.toFlatJson(e).toString)
+      e => throw new BadRequestException(JsError.toFlatJson(e).toString)
     }
   }
   

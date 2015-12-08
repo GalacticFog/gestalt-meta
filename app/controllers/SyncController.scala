@@ -2,48 +2,28 @@ package controllers
 
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-import com.galacticfog.gestalt.data.Hstore
-import com.galacticfog.gestalt.data.PropertyValidator
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.ResourceIds
-import com.galacticfog.gestalt.data.ResourceType
-import com.galacticfog.gestalt.data.illegal
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.ResourceOwnerLink
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.{PatchOp, PatchDocument, PatchHandler}
-import com.galacticfog.gestalt.meta.api.GestaltResourceInput
-import com.galacticfog.gestalt.meta.api.output._
 
-import com.galacticfog.gestalt.meta.api.rte
-import com.galacticfog.gestalt.meta.api.ResourceNotFoundException
+
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
 import controllers.util._
-import play.api.{ Logger => log }
-import play.api.libs.json.JsError
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.data.ResourceStates
+import play.api.{Logger => log}
 
-import controllers.util.stringmap
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
-object SyncController extends GestaltFrameworkSecuredController[DummyAuthenticator] with MetaController with NonLoggingTaskEvents with SecurityResources {
 
-  def sync() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
+
+  def sync() = Authenticate() { implicit request =>
     trace("sync")
     
     Try {
@@ -81,12 +61,12 @@ object SyncController extends GestaltFrameworkSecuredController[DummyAuthenticat
       log.debug(s"Deleteing ${usersDelete.size} Users.")
       deleteResources(creator, usersDelete)
       
-      createOrgs (creator, (orgsCreate  map secOrgMap), request.identity)
-      createUsers(creator, (usersCreate map secAccMap) )
+      createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
+      createUsers(ResourceIds.User, creator, (usersCreate map secAccMap) )
       
     } match {
       case Success(_) => NoContent
-      case Failure(e) => InternalServerError(toError(500, e.getMessage))
+      case Failure(e) => GenericErrorResult(500, e.getMessage)
     }
   }
   
@@ -94,18 +74,18 @@ object SyncController extends GestaltFrameworkSecuredController[DummyAuthenticat
     for (id <- ids) ResourceFactory.hardDeleteResource(id).get
   }
   
-  def createOrgs(creator: UUID, rs: Iterable[GestaltOrg], auth: AuthAccountWithCreds) = {
+  def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], auth: AuthAccountWithCreds) = {
     for (org <- rs) {
       log.debug(s"Creating Org : ${org.name}")
       val parent = parentOrgId(org, auth)
-      createNewMetaOrg(parent, org, creator, properties = None).get
+      createNewMetaOrg(creator, parent, org, properties = None).get
     }
   }
   
-  def createUsers(creator: UUID, rs: Iterable[GestaltAccount]) = {    
+  def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount]) = {    
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
-      createNewMetaUser(acc.directory.orgId, acc, creator, 
+      createNewMetaUser(creator, acc.directory.orgId, acc, 
         properties = Some(Map(
           "email"       -> acc.email,
           "firstName"   -> acc.firstName,

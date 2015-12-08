@@ -17,7 +17,7 @@ import scala.util.{ Try, Success, Failure }
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.models.{ ResourceLink => GestaltLink }
+import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => GestaltLink }
 
 import com.galacticfog.gestalt.meta.services.ResourceQueryService
 import com.galacticfog.gestalt.tasks.io.TaskStatus
@@ -46,7 +46,8 @@ import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.output._
 
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
-
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 object PropertyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents {
@@ -66,7 +67,7 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
     trace(s"getAllPropertiesFqon($fqon, $typeId)")
     orgFqon(fqon) match {
       case Some(org) => Ok(Output.renderPropertyLinks(PropertyFactory.findAll(typeId, org.id)))
-      case None      => NotFound(toError(404, Errors.ORG_NOT_FOUND(fqon)))
+      case None      => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
     }
   }
 
@@ -113,11 +114,11 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
       val user = request.identity.account.id
       
       safeGetPropertyJson(propertyJson) match {
-        case Failure(e) => BadRequest(toError(400,e.getMessage))
+        case Failure(e) => BadRequestResult(e.getMessage)
         case Success(input) => propertyFromInput(org, user, input) match {
           case Success(d) => PropertyFactory.create(request.identity.account.id)(d) match {
             case Success(p) => Ok(Output.renderTypePropertyOutput(p))
-            case Failure(e) => InternalServerError(toError(500, e.getMessage))
+            case Failure(e) => GenericErrorResult(500, e.getMessage)
           }
           case Failure(e) => BadRequest(s"Could not read input: " + e.getMessage)
         }
@@ -135,7 +136,7 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
   private def OkNotFoundProperty(id: UUID) = {
     PropertyFactory.findById(ResourceIds.TypeProperty, id) match {
       case Some(property) => Ok(Output.renderTypePropertyOutput(property))
-      case None => NotFound(toError(404, Errors.PROPERTY_NOT_FOUND(id)))
+      case None => NotFoundResult(Errors.PROPERTY_NOT_FOUND(id))
     }
   }
 
@@ -148,7 +149,7 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
         else {
           if (r.applies_to.isDefined) r.applies_to.get
           else {
-            illegal("No value found for TypeProperty -> applies_to")
+            throw new BadRequestException("No value found for TypeProperty -> applies_to")
           }
         }
       
@@ -190,7 +191,7 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
     json.validate[GestaltTypePropertyInput].map{
       case resource: GestaltTypePropertyInput => resource
     }.recoverTotal{
-      e => illegal(JsError.toFlatJson(e).toString)
+      e => throw new BadRequestException(JsError.toFlatJson(e).toString)
     }      
   }
   

@@ -6,6 +6,7 @@ import play.api.{ Logger => log }
 import scala.util.Failure
 import scala.util.Success
 
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.bootstrap._
@@ -15,7 +16,8 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
 import controllers.util._
 import controllers.util.db._
-
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 object BootstrapController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
     with MetaController with NonLoggingTaskEvents {
@@ -40,7 +42,7 @@ object BootstrapController extends GestaltFrameworkSecuredController[DummyAuthen
     log.debug("bootstrap : [root-user-id] : " + rootOrgId.toString)
     
     log.debug("Initializing bootstrapper...")
-    val db = new Bootstrap(rootOrgId, owner, ConnectionManager.currentDataSource())
+    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
     
     log.debug("Beginning migration...")
     (for {
@@ -48,6 +50,7 @@ object BootstrapController extends GestaltFrameworkSecuredController[DummyAuthen
       b <- db.migrate
       c <- db.loadReferenceData
       d <- db.loadSystemTypes
+      e <- db.initialize("root")
     } yield d) match {
       case Success(_) => {
         log.info("Successfully rebuilt Meta DB.")

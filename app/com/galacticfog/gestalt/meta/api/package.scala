@@ -1,10 +1,19 @@
 package com.galacticfog.gestalt.meta
 
-import com.galacticfog.gestalt.data.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models._
 import _root_.play.api.libs.json._
 
 import java.util.UUID
+
+import _root_.play.api.mvc._
+import _root_.play.api.mvc.Action
+import _root_.play.api.mvc.Controller
+import _root_.play.api.mvc.RequestHeader
+import _root_.play.api.mvc.AnyContent
+//import com.galacticfog.gestalt.meta.api.errors._
+
 
 package object api {
 
@@ -17,22 +26,6 @@ package object api {
   case class Wait(content: String, ex: Option[Throwable] = None) extends ConfigStatus(content, ex)
   case class Fail(content: String, ex: Option[Throwable] = None) extends ConfigStatus(content, ex)
 
-  
-  sealed abstract class ApiException(val code: Int, message: String) extends RuntimeException(message) {
-    def toErrorString = Json.prettyPrint {
-      Json.parse( s"""{ "code": ${code}, "message": "${message}" }""" ) 
-    }
-  }
-  case class UnknownResourceException(message: String) extends ApiException(400, message)
-  case class ResourceNotFoundException(message: String) extends ApiException(404, message)
-  case class UnauthorizedException(message: String) extends ApiException(401, message)
-  case class ForbiddenException(message: String) extends ApiException(403, message)
-  
-  
-  def rte(message: String) = throw new RuntimeException(message)
-  def rnf(message: String) = throw new ResourceNotFoundException(message)
-
-  
   /**
    * Translate resource REST name to Resource Type ID
    */

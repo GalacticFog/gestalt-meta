@@ -11,18 +11,18 @@ import com.galacticfog.gestalt.tasks.io._
 import com.galacticfog.gestalt.streaming.io._
 import com.galacticfog.gestalt.streaming.io.EventMatchType._
 import play.api.libs.json._
-//import controllers.util.toError
+
 
 object Global extends GlobalSettings {
 
   override def onError(request: RequestHeader, ex: Throwable) = {
     log.debug("Global::onError(...)")
-    Future.successful(InternalServerError(toError(500, ex.getMessage)))
+    Future.successful(GenericErrorResult(500, ex.getMessage))
   }
-      
+  
   override def onBadRequest(request: RequestHeader, error: String) = {
     log.debug("Global::onBadRequest(...)")
-    Future.successful(BadRequest(toError(400, error)))    
+    Future.successful(BadRequestResult(error))    
   }  
   
   override def onHandlerNotFound(request: RequestHeader) = {
@@ -30,7 +30,7 @@ object Global extends GlobalSettings {
     Future {
       if (request.path.endsWith("/"))
         MovedPermanently(request.path.dropRight(1))
-      else NotFound(toError(404, request.path))
+      else NotFoundResult(request.path)
     }
   }  
     

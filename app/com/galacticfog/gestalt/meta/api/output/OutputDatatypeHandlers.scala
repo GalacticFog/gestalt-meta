@@ -1,8 +1,6 @@
 package com.galacticfog.gestalt.meta.api.output
 
 
-import java.util.UUID
-
 import scala.math.BigDecimal.int2bigDecimal
 
 import org.joda.time.DateTime
@@ -12,10 +10,10 @@ import com.galacticfog.gestalt.data.ReferenceFactory
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.ResourceType
 import com.galacticfog.gestalt.data.illegal
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-import com.galacticfog.gestalt.data.models.ResourceLink
+import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLink
 import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.meta.api.errors._
 
 import play.api.libs.json.JsArray
 import play.api.libs.json.JsBoolean
@@ -24,11 +22,13 @@ import play.api.libs.json.JsString
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
+import java.util.UUID
+
 
 object OutputDatatypeHandlers {
-
+  
   def default(property: GestaltTypeProperty, value: String) = JsString(value)
-
+  
   def int(property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
   
   def intList(property: GestaltTypeProperty, value: String): JsArray = {
@@ -36,7 +36,7 @@ object OutputDatatypeHandlers {
   }
   
   def boolean(property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
-
+  
   def dateTime(property: GestaltTypeProperty, value: String) = JsString {
     ISODateTimeFormat.dateTime.print(new DateTime(value.trim))
   }
@@ -44,7 +44,7 @@ object OutputDatatypeHandlers {
   def json(property: GestaltTypeProperty, value: String) = Json.parse( value )
   
   def renderUUID(property: GestaltTypeProperty, value: String) = JsString(value)
-
+  
   def renderResourceUUID(property: GestaltTypeProperty, value: String) = JsString(value)  
   
   /**
@@ -56,7 +56,9 @@ object OutputDatatypeHandlers {
     val data = lookup(typeId)(typeId, instanceId) getOrElse {
       illegal(s"No resource of type '${typeId}' with ID '${instanceId} was found.")
     }
-    JsString(data.asInstanceOf[GestaltResourceInstance].name)
+    if (ReferenceFactory.isReferenceType(typeId)) 
+      JsString(data.asInstanceOf[GestaltReferenceData].name)
+    else JsString(data.asInstanceOf[GestaltResourceInstance].name)
   }
   
   
@@ -165,13 +167,26 @@ object OutputDatatypeHandlers {
   
   /** Convert a resource type instance to a ResourceLink */
   private[output] def linkFromId(typeId: UUID, id: UUID, baseUri: Option[String] = None) = {
+    
+    import  com.galacticfog.gestalt.data.models.ResourceLike
+    /*
+     * 
+     * ResourceType.name(typeId) is failing when the resource type is a reference-type.
+     * 
+     */
+
     val target = ResourceFactory.findById(typeId, id) getOrElse {
-      illegal(s"No resource of type '${ResourceType.name(typeId)}' with ID '${id} was found.")
+      throw new BadRequestException(s"No resource of type '${ResourceType.name(typeId)}' with ID '${id} was found.")
     }
+
     ResourceLink(target.typeId, target.id, Some(target.name), 
         href = Option(toHref(typeId, id, target.orgId, baseUri)))
   }
   
+//  def linkFromReference(r: GestaltReferenceData) = {
+//        ResourceLink(r.typeId, target.id, Some(target.name), 
+//        href = Option(toHref(typeId, id, target.orgId, baseUri)))
+//  }
   /** TODO: Provide a real implementation. */
 //  private[output] def toHref(typeId: UUID, id: UUID): String = {
 //    "http://dummy_href/%s".format(id.toString)

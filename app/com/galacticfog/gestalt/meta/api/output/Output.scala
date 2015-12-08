@@ -5,19 +5,17 @@ import java.util.UUID
 
 import scala.annotation.tailrec
 
-import com.galacticfog.gestalt.data.DataType
-import com.galacticfog.gestalt.data.Hstore
-import com.galacticfog.gestalt.data.Properties
-import com.galacticfog.gestalt.data.RequirementType
-import com.galacticfog.gestalt.data.ResourceIds
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.data.VisibilityType
+import com.galacticfog.gestalt.meta.api.sdk._
+
+
+import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.illegal
+
+
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-import com.galacticfog.gestalt.data.models.ResourceOwnerLink
+//import com.galacticfog.gestalt.data.models.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid
 
 import OutputDatatypeHandlers._
@@ -31,10 +29,22 @@ import scala.reflect.runtime.{ universe => ru }
 import scala.reflect.runtime.currentMirror
 import ru._
 
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
+
 object Output {
 
-  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): String = {
+  
+/*
+  ...FAILURE IS HAPPENING HERE...
+  When creating an environment - the create works, but i get a failure when trying to render and
+  return the created resource. It appears to be failing while trying to render one of the links.
+  In this case it always fails with the same UUID (starts with 'b' - resourcetype doesn't exist)
+  Not sure which link isn't working...
+*/
 
+  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): String = {
+  
     val res = GestaltResourceOutput(
       id = r.id,
       org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
@@ -57,30 +67,54 @@ object Output {
   
   
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
-    val res = GestaltResourceTypeOutput(
-      id = r.id,
-      name = r.name,
-      extend = jsonTypeName(r.extend),
-      resource_type = jsonTypeName(Option(r.typeId)).get,
-      resource_state = JsString(ResourceState.name(r.state)),
-
-      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
-      owner = Json.toJson(r.owner),
-      description = r.description,
-      created = Json.toJson(r.created),
-      modified = Json.toJson(r.modified),
-      properties = jsonHstore(r.properties),
-      variables = jsonHstore(r.variables),
-      tags = jsonArray(r.tags),
-      auth = jsonHstore(r.auth),
-      property_defs = jsonTypePropertyLinks(r.id))
-      
+//    val res = GestaltResourceTypeOutput(
+//      id = r.id,
+//      name = r.name,
+//      extend = jsonTypeName(r.extend),
+//      resource_type = jsonTypeName(Option(r.typeId)).get,
+//      resource_state = JsString(ResourceState.name(r.state)),
+//
+//      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+//      owner = Json.toJson(r.owner),
+//      description = r.description,
+//      created = Json.toJson(r.created),
+//      modified = Json.toJson(r.modified),
+//      properties = jsonHstore(r.properties),
+//      variables = jsonHstore(r.variables),
+//      tags = jsonArray(r.tags),
+//      auth = jsonHstore(r.auth),
+//      property_defs = jsonTypePropertyLinks(r.id))
+    
     //
     // TODO: .copy rendered properties!!!
     //
-    Json.prettyPrint(Json.toJson(res))
+    //Json.prettyPrint(Json.toJson(mkTypeOutput(r)))
+    val res = mkTypeOutput(r)
+    Json.toJson(res)
   }
 
+  
+  private def mkTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
+    GestaltResourceTypeOutput(
+          id = r.id,
+          name = r.name,
+          extend = jsonTypeName(r.extend),
+          resource_type = jsonTypeName(Option(r.typeId)).get,
+          resource_state = JsString(ResourceState.name(r.state)),
+    
+          org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+          owner = Json.toJson(r.owner),
+          description = r.description,
+          created = Json.toJson(r.created),
+          modified = Json.toJson(r.modified),
+          properties = jsonHstore(r.properties),
+          variables = jsonHstore(r.variables),
+          tags = jsonArray(r.tags),
+          auth = jsonHstore(r.auth),
+          property_defs = jsonTypePropertyLinks(r.id))    
+  }
+  
+  
   def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
     val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p, baseUri ) }
     Json.prettyPrint(Json.toJson( ps ))
@@ -136,7 +170,7 @@ object Output {
 
       properties = jsonHstore(p.properties),
       variables = jsonHstore(p.variables),
-      tags = jsonHstore(p.tags),
+      tags = jsonArray(p.tags),
       auth = jsonHstore(p.auth))
   }
   
@@ -149,7 +183,7 @@ object Output {
    * @return JsValue object containing all rendered property name/values.
    */
   def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]/*r: GestaltResourceInstance*/): Option[JsValue] = {
-    
+    println("renderInstanceProperties: " + properties)
     /* Get a Map of the properties defined for the current ResourceType. */
     val templateProps = Properties.getTypePropertyMap(typeId)
     

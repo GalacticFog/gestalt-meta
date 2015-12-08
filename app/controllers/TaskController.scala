@@ -35,8 +35,9 @@ import com.galacticfog.gestalt.security.api.json.JsonImports
 import play.api.libs.json._
 import com.galacticfog.gestalt.security.api.json.JsonImports.{orgFormat,linkFormat}
 import com.mohiva.play.silhouette.api.util.Credentials
-import com.galacticfog.gestalt.data.models.{ResourceLink => GestaltLink}
-
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 object TaskController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
   with MetaController with NonLoggingTaskEvents {

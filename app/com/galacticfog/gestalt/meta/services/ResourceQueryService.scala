@@ -6,6 +6,8 @@ import play.api.{Logger => log}
 
 import com.galacticfog.gestalt.data._
 
+import com.galacticfog.gestalt.meta.api.sdk._
+
 import com.galacticfog.gestalt.data.models._
 
 import java.util.UUID
@@ -17,7 +19,7 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api._
 
 import com.galacticfog.gestalt.meta.api.output._
-
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 
 /**
  * 
@@ -53,7 +55,7 @@ object ResourceQueryService {
     log.debug(s"ResourceQueryService::findById($org, $typeId)")
     Output.renderInstance {
       ResourceFactory.findById(typeId, id) getOrElse {
-        rnf( s"Resource not found." )
+        throw new com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException("Resource Not Found")
       }
     }
   }
