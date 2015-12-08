@@ -32,7 +32,8 @@ import controllers.util.db._
 import play.mvc.Result
 
 import java.util.UUID
-
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltBaseAuthProvider
@@ -64,8 +65,8 @@ object Security {
     def unwrap(os: Seq[GestaltOrg]) = Try {
       os.size match {
         case 1 => os(0)
-        case 0 => rte( Error.ROOT_ORG_NOT_FOUND )
-        case _ => rte( Error.ROOT_ORG_MULTIPLE  )
+        case 0 => throw new RuntimeException( Error.ROOT_ORG_NOT_FOUND )
+        case _ => throw new RuntimeException( Error.ROOT_ORG_MULTIPLE  )
       }
     }
     getAllOrgs(None, auth) match {
@@ -107,7 +108,10 @@ object Security {
   def createAccount(org: UUID, auth: AuthAccountWithCreds, user: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltAccount] = {
     //val props = user.properties.getOrElse { illegal(s"Invalid user. Cannot create.") }
     
-    val props = stringmap(user.properties) getOrElse { illegal(s"Invalid user. Cannot create.") }
+    val props = stringmap(user.properties) getOrElse { 
+      throw new BadRequestException(s"Invalid user. Cannot create.") 
+    }
+    
     val account = GestaltAccountCreateWithRights(
         username = user.name,
         firstName = props("firstName"),
