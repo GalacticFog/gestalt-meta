@@ -12,7 +12,7 @@ POST	/sync			controllers.SyncController.sync()
 
 # TODO: Need a similar generic method for id queries, i.e., /:restName/:id
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName 											controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
+										
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName 	controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
 
 ####################
@@ -247,6 +247,13 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id 	controllers.Res
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/clustertemplates
 
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints
+
+
+
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
+
+
 
 
 # Map static resources from the /public folder to the /assets URL path

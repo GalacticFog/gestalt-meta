@@ -44,14 +44,19 @@ object BootstrapController extends GestaltFrameworkSecuredController[DummyAuthen
     log.debug("Initializing bootstrapper...")
     val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
     
+    
+    import scala.util.Try
+    
+    
     log.debug("Beginning migration...")
+    
     (for {
       a <- db.clean
       b <- db.migrate
       c <- db.loadReferenceData
       d <- db.loadSystemTypes
       e <- db.initialize("root")
-    } yield d) match {
+    } yield e) match {
       case Success(_) => {
         log.info("Successfully rebuilt Meta DB.")
         NoContent
