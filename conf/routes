@@ -13,7 +13,6 @@ POST	/sync			controllers.SyncController.sync()
 # TODO: Need a similar generic method for id queries, i.e., /:restName/:id
 
 										
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName 	controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
 
 ####################
 # ORGS
@@ -104,6 +103,7 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id controllers.ResourceController.getEnvironmentById(orgId: java.util.UUID, id: java.util.UUID)
 
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName 	controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
 
 
 ######
