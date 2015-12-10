@@ -83,7 +83,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   def createResourceType(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createResourceType($org)")
-    CreateTypeResult(org, request.body)
+    CreateTypeWithPropertiesResult(org, request.body)
   }
   
   def createResourceTypeFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
@@ -337,6 +337,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
 
   
   def renderType(r: GestaltResourceType) = Json.prettyPrint(Json.toJson(r))
+  
   def renderTypes(rs: GestaltResourceType*) = Json.prettyPrint(Json.toJson(rs))  
   def renderTypeLinks(rs: Seq[GestaltResourceType]) = {
     Json.prettyPrint(Json.toJson(rs map { toTypeLink(_) }))
