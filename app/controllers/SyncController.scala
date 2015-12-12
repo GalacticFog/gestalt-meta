@@ -102,13 +102,23 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       ResourceFactory.findById(acc.id) foreach { a =>
         ResourceFactory.update(
           a.copy(
-            name = acc.name,
-            properties = Some(Map(
-              "email" -> acc.email,
-              "firstName" -> acc.firstName,
-              "lastName" -> acc.lastName,
-              "phoneNumber" -> acc.phoneNumber
-            ))
+            name = acc.name, // name/username
+            // update properties
+            properties = a.properties map {
+              _ ++ Seq(
+                "email" -> acc.email,
+                "firstName" -> acc.firstName,
+                "lastName" -> acc.lastName,
+                "phoneNumber" -> acc.phoneNumber
+              )
+            } orElse {
+              Some(Map(
+                "email" -> acc.email,
+                "firstName" -> acc.firstName,
+                "lastName" -> acc.lastName,
+                "phoneNumber" -> acc.phoneNumber
+              ))
+            }
           ),
           creator
         )
