@@ -34,6 +34,32 @@ import com.galacticfog.gestalt.meta.api.errors._
 //  
 //}
 
+protected[api] object Attributes {
+  val Id = "id"
+  val Org = "org_id"
+  val Name = "name"
+  val Description = "description"
+  val ResourceType = "resource_type_id"
+  val ResourceState = "resource_state_id"
+  val Owner = "owner"    
+}
+
+//trait AttributePatch[T <: BaseResource] {
+//  
+//  /* 
+//   * TODO: Have this return an Option (None indicating no match) so i can compose this
+//   * with another attribute setter for TypeProperty (which has a bunch of extra fields).
+//   */
+//  def setAttribute(p: PatchOp, r: GestaltResourceInstance) = stripSlash(p.path) match {
+//    case Attributes.Org           => ??? // function to safely set Org
+//    case Attributes.Owner         => ??? // function to safely set Owner
+//    case Attributes.Name          => r.copy(name = p.value.toString())
+//    case Attributes.ResourceState => r.copy(state = UUID.fromString(p.value.toString))
+//    case Attributes.Description   => r.copy(description = Some(p.value.toString))
+//    case _                        => throw new BadRequestException(s"Invalid path '${p.path}'")
+//  }
+//  
+//}
 
 case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
   
@@ -63,7 +89,6 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     if (!r.properties.isDefined || !r.properties.get.contains(pname)) {
       throw new BadRequestException(s"Property not defined '$pname'. No changes made.")
     }
-
     val props = r.properties.get
     val newprops = Some((props - pname) ++ Map(pname -> trimquotes(pvalue.toString)))
     r.copy(properties = newprops)
@@ -105,16 +130,6 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     if (s.trim.startsWith("/")) s.trim.drop(1)
     else throw new BadRequestException(s"Path must begin with '/', found: $s")
   }
-  
-  private object Attributes {
-    val Id = "id"
-    val Org = "org_id"
-    val Name = "name"
-    val Description = "description"
-    val ResourceType = "resource_type_id"
-    val ResourceState = "resource_state_id"
-    val Owner = "owner"    
-  }    
 
 }
 

@@ -31,9 +31,7 @@ object OutputDatatypeHandlers {
   
   def int(property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
   
-  def intList(property: GestaltTypeProperty, value: String): JsArray = {
-    JsArray(value.split(",") map { n => JsNumber(n.trim.toInt) })
-  }
+
   
   def boolean(property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
   
@@ -42,6 +40,8 @@ object OutputDatatypeHandlers {
   }
   
   def json(property: GestaltTypeProperty, value: String) = Json.parse( value )
+  
+  //def jsonList((property: GestaltTypeProperty, value: String) = Json.parse( value ))
   
   def renderUUID(property: GestaltTypeProperty, value: String) = JsString(value)
   
@@ -77,11 +77,24 @@ object OutputDatatypeHandlers {
   def stringList(property: GestaltTypeProperty, value: String) = {
     println(s"OutputDatatypeHandlers::stringList([property], $value)")
     // Remove surrounding square brackets if provided and split int JsArray
-    val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
-    val items = normal.split(",")
-
+    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+    
+    val items = normalArray(unquote(value)).split(",")
     JsArray { items.map( s => JsString( s.trim )) }
   }
+  
+  def intList(property: GestaltTypeProperty, value: String): JsArray = {
+    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+    JsArray(normalArray(value).split(",") map { n => JsNumber(n.trim.toInt) })
+  }
+  
+  def booleanList(property: GestaltTypeProperty, value: String): JsArray = {
+    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+    JsArray(normalArray(value).split(",") map { b => JsBoolean(b.trim.toBoolean)})  
+  }  
+  
+  def normalArray(value: String) = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+  def unquote(s: String) = s.replaceAll("\"", "")
   
   
   /**
@@ -92,7 +105,7 @@ object OutputDatatypeHandlers {
     val typeId = safeGetTypeId( property )
     
     // Convert value string to array of UUIDs
-    val ids = value.split(",") map { v => v.trim }
+    val ids = normalArray(unquote(value)).split(",") map { v => v.trim }
     
     // Convert UUID array to array of ResourceLink
     val links = ids map { id => 
@@ -101,6 +114,19 @@ object OutputDatatypeHandlers {
     JsArray( links )
   }
 
+//  def resourceUUIDList(property: GestaltTypeProperty, value: String) = {
+//    val baseUri = None
+//    val typeId = safeGetTypeId( property )
+//    
+//    // Convert value string to array of UUIDs
+//    val ids = normalArray(value).split(",") map { v => v.trim }
+//    
+//    // Convert UUID array to array of ResourceLink
+//    val links = ids map { id => 
+//      Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
+//    }
+//    JsArray( links )
+//  }  
   
 //  def renderReferenceUUID(property: GestaltResourceTypeProperty, value: String) = {
 //    //val (tableName, instanceId) = toTuple2( s )

@@ -13,10 +13,12 @@ import _root_.play.api.mvc.Controller
 import _root_.play.api.mvc.RequestHeader
 import _root_.play.api.mvc.AnyContent
 //import com.galacticfog.gestalt.meta.api.errors._
-
+import com.galacticfog.gestalt.data.Hstore
 
 package object api {
 
+
+  
   /**
    * Move to 'errors' sub-package
    */
@@ -90,6 +92,16 @@ package object api {
       
       case _ => None
     }
+  }  
+  
+  def stripSlash(s: String) = {
+    
+    lazy val err = throw new BadRequestException(s"Path must begin with '/', found: $s")
+    
+    (for {
+      a <- Option { if (s.trim.startsWith("/")) s.drop(1) else err }
+      b <- Option { if (a.endsWith("/")) a.dropRight(1) else a }
+    } yield b).get
   }  
   
 }

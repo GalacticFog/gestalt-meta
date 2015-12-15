@@ -34,6 +34,11 @@ import com.galacticfog.gestalt.meta.api.errors._
 
 object Output {
 
+
+  /*
+   * TODO: Refactor renderLinks* to take ResourceLike args.
+   */
+  
   
 /*
   ...FAILURE IS HAPPENING HERE...
@@ -67,28 +72,6 @@ object Output {
   
   
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
-//    val res = GestaltResourceTypeOutput(
-//      id = r.id,
-//      name = r.name,
-//      extend = jsonTypeName(r.extend),
-//      resource_type = jsonTypeName(Option(r.typeId)).get,
-//      resource_state = JsString(ResourceState.name(r.state)),
-//
-//      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
-//      owner = Json.toJson(r.owner),
-//      description = r.description,
-//      created = Json.toJson(r.created),
-//      modified = Json.toJson(r.modified),
-//      properties = jsonHstore(r.properties),
-//      variables = jsonHstore(r.variables),
-//      tags = jsonArray(r.tags),
-//      auth = jsonHstore(r.auth),
-//      property_defs = jsonTypePropertyLinks(r.id))
-    
-    //
-    // TODO: .copy rendered properties!!!
-    //
-    //Json.prettyPrint(Json.toJson(mkTypeOutput(r)))
     val res = mkTypeOutput(r)
     Json.toJson(res)
   }
@@ -252,6 +235,7 @@ object Output {
   private val typeRenderers = Map[String, (GestaltTypeProperty,String) => JsValue](
       "resource::uuid"             -> renderResourceUUID,
       "resource::uuid::name"       -> resourceUUIDName,
+      "resource::uuid::list"       -> stringList,
       "resource::uuid::link"       -> resourceUUIDLink,
       "resource::uuid::link::list" -> resourceUUIDLinkList,
       
@@ -260,13 +244,16 @@ object Output {
       "reference::uuid::link" -> renderReferenceUUIDLink,
       "reference::uuid::name" -> renderReferenceUUIDProperty,
       */
-      
-      "string::list" -> stringList,
+
+      "int"       -> int,
+      "boolean"   -> boolean,
       "datetime"  -> dateTime,
       "json"      -> json,
-      "int"       -> int,
+      
+      "string::list" -> stringList,
       "int::list" -> intList,
-      "boolean"   -> boolean
+      "boolean::list" -> booleanList,
+      "uuid::list" -> stringList
   )
   
   /*
