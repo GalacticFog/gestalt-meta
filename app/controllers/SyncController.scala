@@ -143,7 +143,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   private def computeResourceDiffs(securityIds: Seq[UUID], metaIds: Seq[UUID]) = {
     val create = securityIds.diff(metaIds) // in security, not meta
     val delete = metaIds.diff(securityIds) // in meta, not security
-    val update = metaIds.diff(create)      // in meta, but not new
+    val update = securityIds.diff(create)  // in security, but not new
     (create, delete, update)
   }
   
