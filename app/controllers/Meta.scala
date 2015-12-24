@@ -205,7 +205,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
 
   private object Err {
     
-    def RESOURCE_TYPE_NOT_FOUND(m: String) = ???
+    def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
     
     val RESOURCE_TYPE_NOT_GIVEN = "resource_type must be specified."
     

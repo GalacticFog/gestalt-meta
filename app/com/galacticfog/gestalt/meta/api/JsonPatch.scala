@@ -16,7 +16,16 @@ import play.api.{ Logger => log }
 
 import com.galacticfog.gestalt.meta.api.errors._
 
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+  
 
+/*
+ * TODO: Refactor.
+ * 
+ * There's no real need for PatchHandler to be a class - it can be a singleton:
+ * 
+ * PatchHandler.applyPatch(ops: Seq[PatchOp], res: GestaltResourceInstance)
+ */
 
 //case object ResourcePatch extends PatchHandle[UUID, Try[GestaltResourceInstance]] {
 //  
@@ -34,14 +43,15 @@ import com.galacticfog.gestalt.meta.api.errors._
 //  
 //}
 
+
 protected[api] object Attributes {
   val Id = "id"
-  val Org = "org_id"
+  val Org = "org"
   val Name = "name"
   val Description = "description"
-  val ResourceType = "resource_type_id"
-  val ResourceState = "resource_state_id"
-  val Owner = "owner"    
+  val ResourceType = "resource_type"
+  val ResourceState = "state"
+  val Owner = "owner"
 }
 
 //trait AttributePatch[T <: BaseResource] {
@@ -63,6 +73,9 @@ protected[api] object Attributes {
 
 case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
   
+  val AttributePaths = List("id", "org", "owner", "name", "description", "resource_type", "state")
+  val PROPERTY_PREFIX = "/properties/"
+  
   def applyPatch(identityType: UUID, identity: UUID) = Try {
     
     val res = ResourceFactory.findById(instanceId) getOrElse {
@@ -70,21 +83,72 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     }
     
     // Get new resource instance with altered properties.
-    val newres = updateProperties(doc.op.toList, res)
+    val ops = doc.op.toList
+
+    assertValidAttributeOps(ops)
+    
+    val newres = updateAttributes(getAttributeOps(ops), updateProperties(getPropertyOps(ops), res))
 
     // Save instance with new data in the database
     ResourceFactory.update(newres, identity).get
   }
-  
-  def setAttribute(p: PatchOp, r: GestaltResourceInstance) = strip(p.path) match {
-    case Attributes.Org           => ??? // function to safely set Org
-    case Attributes.Owner         => ??? // function to safely set Owner
-    case Attributes.Name          => r.copy(name = p.value.toString())
-    case Attributes.ResourceState => r.copy(state = UUID.fromString(p.value.toString))
-    case Attributes.Description   => r.copy(description = Some(p.value.toString))
-    case _                        => throw new BadRequestException(s"Invalid path '${p.path}'")
+
+  /*
+   * ops that DO NOT target properties, must be targeting attributes. Ensure
+   * that anythin not targeting a property is a valid attribute name. Properties
+   * will be validated by the resource factory when it attempts to actually
+   * update the resource. 
+   */
+  def assertValidAttributeOps(ops: Seq[PatchOp]) = {
+    val unknown = ops filter { o => !o.path.startsWith(PROPERTY_PREFIX) } filter { o => 
+      !AttributePaths.contains(o.path.trim.drop(1)) 
+    }
+    if (!unknown.isEmpty) {
+      throw new BadRequestException(errorString(unknown))
+    }
   }
   
+  def errorString(ops: Seq[PatchOp]) = {
+    val bad = (ops.map(_.path).mkString(", "))
+    s"Invalid path(s) : [$bad]. No changes made."
+  }
+  
+  def getAttributeOps(ops: Seq[PatchOp]): Seq[PatchOp] = 
+    ops filter { o => AttributePaths.contains( o.path.drop(1) ) }
+  
+  def getPropertyOps(ops: Seq[PatchOp]) = ops filter { _.path.startsWith(PROPERTY_PREFIX) }
+  
+  def unquote(s: String) = s.replaceAll(""""""", "")
+  
+  def setAttribute(op: PatchOp, r: GestaltResourceInstance) = {
+    val p = strip(op.path)
+    
+    p match {
+      case Attributes.Org           => r.copy(orgId = UUID.fromString(unquote(op.value.toString)))
+      case Attributes.Owner         => r.copy(owner = ownerFromJson(op.value))
+      case Attributes.Name          => r.copy(name = unquote(op.value.toString()))
+      case Attributes.ResourceState => r.copy(state = UUID.fromString(unquote(op.value.toString)))
+      case Attributes.Description   => r.copy(description = Some(unquote(op.value.toString)))
+      
+      case Attributes.Id            => throw new BadRequestException(s"Resource ID cannot be modified.")
+      case Attributes.ResourceType  => throw new BadRequestException(s"Resource Type cannot be modified.")
+      case _                        => throw new BadRequestException(s"Invalid path '${op.path}'")
+    }
+  }
+  
+
+  def ownerFromJson(js: JsValue) = {
+    js.validate[ResourceOwnerLink].map {
+      case link: ResourceOwnerLink => link
+    }.recoverTotal { e =>
+      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
+      throw new BadRequestException("Invalid Resource Owner JSON. " + JsError.toFlatJson(e).toString)
+    }
+  }
+  
+  /**
+   * Replace the named property with the new value in the resource's properties collection.
+   */
   def replaceProperty(pname: String, pvalue: JsValue, r: GestaltResourceInstance) = {
     if (!r.properties.isDefined || !r.properties.get.contains(pname)) {
       throw new BadRequestException(s"Property not defined '$pname'. No changes made.")
@@ -94,14 +158,21 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     r.copy(properties = newprops)
   } 
   
-  def updateAttributes(ps: List[PatchOp], res: GestaltResourceInstance): GestaltResourceInstance = {
+  def updateAttributes(ps: Seq[PatchOp], res: GestaltResourceInstance): GestaltResourceInstance = {
+    /*
+     * TODO: Enforce Rules
+     * - remove may only be called on fields that are *truly* optional
+     * - add may only be called on missing optional fields
+     * - move and copy may NEVER be called
+     */
+    
     ps match {
       case Nil    => res
       case h :: t => updateAttributes(t, setAttribute(h, res))
     }
   }
   
-  def updateProperties(ps: List[PatchOp], res: GestaltResourceInstance): GestaltResourceInstance = {
+  def updateProperties(ps: Seq[PatchOp], res: GestaltResourceInstance): GestaltResourceInstance = {
     ps match {
       case Nil    => res
       case h :: t => {
@@ -114,7 +185,7 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
   }
 
   def getPropertyName(s: String): Try[String] = Try {
-    if (!s.trim.startsWith("/properties/")) {
+    if (!s.trim.startsWith(PROPERTY_PREFIX)) {
       throw new BadRequestException(s"Invalid path to property '$s'")
     }
     else {
@@ -126,13 +197,12 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     }
   }
 
+  // TODO: Check for and strip trailing slash
   def strip(s: String) = { 
     if (s.trim.startsWith("/")) s.trim.drop(1)
-    else throw new BadRequestException(s"Path must begin with '/', found: $s")
-  }
-
+    else throw new BadRequestException(s"Path must begin with '/', found: $s")    
+  } 
 }
-
 
 case class PatchOp(op: String, path: String, value: JsValue) {
   if (List("add", "remove", "move", "copy", "test").contains(op.toLowerCase)) {

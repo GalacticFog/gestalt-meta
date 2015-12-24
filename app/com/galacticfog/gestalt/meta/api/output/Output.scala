@@ -227,7 +227,7 @@ object Output {
     val typeName = DataType.name(property.datatype)
     if (typeRenderers.contains( typeName )) 
       typeRenderers( typeName )( property, value )
-    else default( property, value )
+    else renderDefault( property, value )
   }  
   
   type RenderFunction = (GestaltTypeProperty, String) => JsValue
@@ -235,25 +235,23 @@ object Output {
   private val typeRenderers = Map[String, (GestaltTypeProperty,String) => JsValue](
       "resource::uuid"             -> renderResourceUUID,
       "resource::uuid::name"       -> resourceUUIDName,
-      "resource::uuid::list"       -> stringList,
       "resource::uuid::link"       -> resourceUUIDLink,
+      
+      "resource::uuid::list"       -> renderStringList,
       "resource::uuid::link::list" -> resourceUUIDLinkList,
-      
-      /*
-      "reference::uuid" -> renderReferenceUUID,
-      "reference::uuid::link" -> renderReferenceUUIDLink,
-      "reference::uuid::name" -> renderReferenceUUIDProperty,
-      */
 
-      "int"       -> int,
-      "boolean"   -> boolean,
-      "datetime"  -> dateTime,
-      "json"      -> json,
+      "int"       -> renderInt,
+      "float"     -> renderFloat,
+      "boolean"   -> renderBoolean,
+      "datetime"  -> renderDateTime,
+      "json"      -> renderJson,
       
-      "string::list" -> stringList,
-      "int::list" -> intList,
-      "boolean::list" -> booleanList,
-      "uuid::list" -> stringList
+      "json::list"    -> renderJsonList,
+      "string::list"  -> renderStringList,
+      "int::list"     -> renderIntList,
+      "float::list"   -> renderFloatList,
+      "boolean::list" -> renderBooleanList,
+      "uuid::list"    -> renderStringList
   )
   
   /*

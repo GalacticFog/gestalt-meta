@@ -26,42 +26,58 @@ import java.util.UUID
 
 
 object OutputDatatypeHandlers {
-  
-  def default(property: GestaltTypeProperty, value: String) = JsString(value)
-  
-  def int(property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
-  
 
-  
-  def boolean(property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
-  
-  def dateTime(property: GestaltTypeProperty, value: String) = JsString {
+  //
+  // Simple Types
+  //
+  def renderDefault   (property: GestaltTypeProperty, value: String) = JsString(value)
+  def renderFloat     (property: GestaltTypeProperty, value: String) = JsNumber(value.toDouble)
+  def renderInt       (property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
+  def renderBoolean   (property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
+  def renderJson      (property: GestaltTypeProperty, value: String) = Json.parse( value )
+  def renderUUID      (property: GestaltTypeProperty, value: String) = JsString(value)
+  def renderDateTime  (property: GestaltTypeProperty, value: String) = JsString {
     ISODateTimeFormat.dateTime.print(new DateTime(value.trim))
   }
   
-  def json(property: GestaltTypeProperty, value: String) = Json.parse( value )
   
-  //def jsonList((property: GestaltTypeProperty, value: String) = Json.parse( value ))
-  
-  def renderUUID(property: GestaltTypeProperty, value: String) = JsString(value)
-  
-  def renderResourceUUID(property: GestaltTypeProperty, value: String) = JsString(value)  
-  
-  /**
-   * Render resource::uuid::name
-   */
-  def resourceUUIDName(property: GestaltTypeProperty, value: String) = {
-    val typeId = safeGetTypeId( property )
-    val instanceId = UUID.fromString(value)
-    val data = lookup(typeId)(typeId, instanceId) getOrElse {
-      illegal(s"No resource of type '${typeId}' with ID '${instanceId} was found.")
-    }
-    if (ReferenceFactory.isReferenceType(typeId)) 
-      JsString(data.asInstanceOf[GestaltReferenceData].name)
-    else JsString(data.asInstanceOf[GestaltResourceInstance].name)
+  //
+  // List Types
+  //
+  def renderStringList(property: GestaltTypeProperty, value: String) = {
+    jsonarray(value)
   }
   
+  def renderFloatList(property: GestaltTypeProperty, value: String): JsArray = {
+    jsonarray(value)
+  }
   
+  def renderIntList(property: GestaltTypeProperty, value: String): JsArray = {
+    jsonarray(value)
+  }
+  
+  def renderBooleanList(property: GestaltTypeProperty, value: String): JsArray = {
+    jsonarray(value)
+  }
+  
+  def renderJsonList(property: GestaltTypeProperty, value: String): JsArray = {
+    jsonarray(value)
+  }
+  
+
+  //
+  // REFERENCE types
+  //
+  
+  /**
+   * Render datatype resource::uuid
+   */
+  def renderResourceUUID(property: GestaltTypeProperty, value: String) = JsString(value)  
+  
+  
+  /**
+   * Render datatype resource::uuid::link
+   */
   def resourceUUIDLink(property: GestaltTypeProperty, value: String): JsValue = {
     val baseUri = None //"CHANGEMEIN::resourceUUIDLink"
     /* Get resource referenced by instanceId */
@@ -70,33 +86,6 @@ object OutputDatatypeHandlers {
     }
   }
   
-  
-  /**
-   * Render string::list
-   */
-  def stringList(property: GestaltTypeProperty, value: String) = {
-    println(s"OutputDatatypeHandlers::stringList([property], $value)")
-    // Remove surrounding square brackets if provided and split int JsArray
-    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
-    
-    val items = normalArray(unquote(value)).split(",")
-    JsArray { items.map( s => JsString( s.trim )) }
-  }
-  
-  def intList(property: GestaltTypeProperty, value: String): JsArray = {
-    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
-    JsArray(normalArray(value).split(",") map { n => JsNumber(n.trim.toInt) })
-  }
-  
-  def booleanList(property: GestaltTypeProperty, value: String): JsArray = {
-    //val normal = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
-    JsArray(normalArray(value).split(",") map { b => JsBoolean(b.trim.toBoolean)})  
-  }  
-  
-  def normalArray(value: String) = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
-  def unquote(s: String) = s.replaceAll("\"", "")
-  
-  
   /**
    * Render resource::uuid::link::list
    */
@@ -104,80 +93,34 @@ object OutputDatatypeHandlers {
     val baseUri = None
     val typeId = safeGetTypeId( property )
     
-    // Convert value string to array of UUIDs
     val ids = normalArray(unquote(value)).split(",") map { v => v.trim }
-    
-    // Convert UUID array to array of ResourceLink
     val links = ids map { id => 
       Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
     }
     JsArray( links )
   }
-
-//  def resourceUUIDList(property: GestaltTypeProperty, value: String) = {
-//    val baseUri = None
-//    val typeId = safeGetTypeId( property )
-//    
-//    // Convert value string to array of UUIDs
-//    val ids = normalArray(value).split(",") map { v => v.trim }
-//    
-//    // Convert UUID array to array of ResourceLink
-//    val links = ids map { id => 
-//      Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
-//    }
-//    JsArray( links )
-//  }  
   
-//  def renderReferenceUUID(property: GestaltResourceTypeProperty, value: String) = {
-//    //val (tableName, instanceId) = toTuple2( s )
-//    
-//    val tableName = property.referenceValueType getOrElse {
-//      illegal(s"ReferenceValueType not specified.")
-//    }
-//    val instanceId = UUID.fromString( value )
-//    val table = SQLSyntax.createUnsafely( tableName )
-//    
-//    val data = sql"""
-//      SELECT id FROM ${table}
-//      WHERE id = ${instanceId}
-//      """.map { rs =>
-//        rs.any("id").asInstanceOf[UUID]
-//      }.single.apply getOrElse {
-//        illegal(s"'${tableName}' with ID '${instanceId}' not found.")
-//      }
-//      
-//      // Return the UUID as a String
-//      JsString( data.toString )
-//  }
-//
-//  def renderReferenceUUIDProperty(property: GestaltResourceTypeProperty, value: String) = {
-//    val tableName = property.referenceValueType getOrElse {
-//      illegal(s"ReferenceValueType not specified.")
-//    }
-//    val instanceId = UUID.fromString( value )
-//    val table = SQLSyntax.createUnsafely( tableName )
-//    val data = sql"""
-//      SELECT name FROM ${table}
-//      WHERE id = ${instanceId}
-//      """.map { rs =>
-//        rs.any("name")
-//      }.single.apply getOrElse {
-//        illegal(s"'${tableName}' with ID '${instanceId}' not found.")
-//      }
-//      
-//      // Return the UUID as a String
-//      JsString( data.toString )
-//  }  
-//  
-//  
-//  def renderReferenceUUIDLink(property: GestaltResourceTypeProperty, value: String) = {    
-//    val typeName = property.referenceValueType getOrElse {
-//      illegal(s"ReferenceValueType not specified.")
-//    } 
-//    Json.toJson( refLinkFromId( typeName, UUID.fromString( value ) ) )
-//  }  
+  /**
+   * Render resource::uuid::name
+   */
+  def resourceUUIDName(property: GestaltTypeProperty, value: String) = {
+    val typeId = safeGetTypeId( property )
+    val instanceId = UUID.fromString(value)
+    
+    val data = lookupFn(typeId)(typeId, instanceId) getOrElse {
+      illegal(s"No resource of type '${typeId}' with ID '${instanceId} was found.")
+    }
+    
+    if (ReferenceFactory.isReferenceType(typeId)) 
+      JsString(data.asInstanceOf[GestaltReferenceData].name)
+    else JsString(data.asInstanceOf[GestaltResourceInstance].name)
+  }  
   
-  private def lookup(typeId: UUID): (UUID,UUID) => Option[Any] = {
+  
+  /**
+   * Get the 'find' function for a resource based on its type.
+   */
+  private def lookupFn(typeId: UUID): (UUID,UUID) => Option[Any] = {
     ReferenceFactory.isReferenceType( typeId ) match {
       case true  => ReferenceFactory.findById
       case false => ResourceFactory.findById
@@ -188,10 +131,12 @@ object OutputDatatypeHandlers {
    * Get the resource_type_id of the resource a property is referring to.
    */
   private[output] def safeGetTypeId(p: GestaltTypeProperty) = p.refersTo getOrElse {
-    illegal(s"Property value 'refersTo' must be specified - None found.")
+    throw new BadRequestException(s"Property value 'refersTo' must be specified - None found.")
   }
   
-  /** Convert a resource type instance to a ResourceLink */
+  /** 
+   *  Convert a resource type instance to a ResourceLink 
+   */
   private[output] def linkFromId(typeId: UUID, id: UUID, baseUri: Option[String] = None) = {
     
     import  com.galacticfog.gestalt.data.models.ResourceLike
@@ -209,14 +154,8 @@ object OutputDatatypeHandlers {
         href = Option(toHref(typeId, id, target.orgId, baseUri)))
   }
   
-//  def linkFromReference(r: GestaltReferenceData) = {
-//        ResourceLink(r.typeId, target.id, Some(target.name), 
-//        href = Option(toHref(typeId, id, target.orgId, baseUri)))
-//  }
-  /** TODO: Provide a real implementation. */
-//  private[output] def toHref(typeId: UUID, id: UUID): String = {
-//    "http://dummy_href/%s".format(id.toString)
-//  }  
-
+  private def jsonarray(value: String) = Json.parse(value).as[JsArray] 
+  private def normalArray(value: String) = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
+  private def unquote(s: String) = s.replaceAll("\"", "")  
   
 }

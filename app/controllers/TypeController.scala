@@ -112,9 +112,9 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
       (GestaltResourceType, Option[Seq[GestaltTypeProperty]]) = {    
     
     val input: GestaltResourceTypeInput = safeGetTypeJson(typeJson).get
-
+    
     val domain: GestaltResourceType = typeFromInput(org, owner, input).get
-
+    
     val definitions: Option[Seq[GestaltTypeProperty]] = 
       input.property_defs map { ps => ps map { p => 
         PropertyController.propertyFromInput(org, owner, p.copy(applies_to = Some(domain.id))).get } 
@@ -132,7 +132,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
       
       log.debug("Converting input types to domain...")
       val (domain, propdefs) = deconstructType(org, owner, typeJson)
-      
+
       log.debug("Creating new ResourceType...")
       val newtype = TypeFactory.create(owner)(domain).get
       
@@ -170,6 +170,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
   /** Convert GestaltResourceTypeInut to GestaltResourceType */
   private def typeFromInput(org: UUID, owner: UUID, r: GestaltResourceTypeInput) = Try {
+
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
     GestaltResourceType(
         id = r.id.getOrElse(UUID.randomUUID),
