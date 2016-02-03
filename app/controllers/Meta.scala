@@ -102,7 +102,13 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
-  def createResource(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
+  def createResource(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    Future {
+      CreateResourceResult(ResourceIds.User, request.identity.account.id, org, request.body, request.identity)
+    }
+  }
+  
+  def createResourceFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
     trace(s"createResource($fqon)")
     Future {
       orgFqon(fqon) match {
@@ -152,7 +158,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case Success(input) => {
 
         // Ensure no conflict between given resource_type (if any) and pathtype
-        // (can't create a Node in /clusters)
+        // (i.e. can't create a Node in /clusters)
 
         if (pathType != input.resource_type) 
              CreateConflictResult(pathType, input)
@@ -161,10 +167,17 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }    
   }  
   
+  def patchResource(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    trace(s"patchResource($org, $id)")
+    resourcePatch(id)
+  }
   
-  def patchResource(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
-    trace(s"patchResource($fqon, $id)")
-
+  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    trace(s"patchResourceFqon($fqon, $id)")
+    resourcePatch(id)
+  }
+  
+  def resourcePatch(id: UUID)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       safeGetPatchDocument(request.body) match {
         case Failure(e) => BadRequestResult(e.getMessage)
@@ -172,19 +185,17 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           
           // TODO: Don't currently use typeId, but will in future.
           val identity = request.identity.account.id
-          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity)  match {
+          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
             case Success(r) => Ok(Output.renderInstance(r))
             case Failure(e) => HandleRepositoryExceptions(e) 
           }
         }
-      }
+      }      
     }
   }
   
-  
-  
   def postWorkspace(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    ???
+    Meta.createResource2(org, Some(ResourceIds.Workspace))
   }
   
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -193,6 +204,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case None => Future { OrgNotFound(fqon) }
     }
   }  
+  
 
   def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     orgFqon(fqon) match {

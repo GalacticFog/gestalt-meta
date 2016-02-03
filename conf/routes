@@ -86,11 +86,19 @@ GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0
 # RESOURCES
 ############################
 
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources       	controllers.ResourceController.getAllResources(orgId: java.util.UUID)
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources/:resId	controllers.ResourceController.getResourceById(orgId: java.util.UUID, resId: java.util.UUID)
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/resources		controllers.ResourceController.getAllResourcesByTypeOrg(orgId: java.util.UUID, typeId: java.util.UUID)
+
+POST 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources    				controllers.Meta.createResource(orgId: java.util.UUID)
+PATCH  	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources/:resId		controllers.Meta.patchResource(orgId: java.util.UUID, resId: java.util.UUID)
+
 
 ############################
 # WORKSPACES
 ############################
+
+POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.Meta.postWorkspace(orgId: java.util.UUID)
 
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.ResourceController.getAllWorkspaces(orgId: java.util.UUID)
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id 		controllers.ResourceController.getWorkspaceById(orgId: java.util.UUID, id: java.util.UUID)
@@ -162,8 +170,8 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperti
 # RESOURCES
 ############################
 
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   			controllers.Meta.createResource(fqon: String)
-PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId		controllers.Meta.patchResource(fqon: String, resId: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   			controllers.Meta.createResourceFqon(fqon: String)
+PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId		controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    			controllers.ResourceController.getAllResourcesFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  	controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
 

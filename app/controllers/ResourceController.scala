@@ -163,53 +163,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
 
-  
-//  def NOT_FOUND(m: String) = NotFound(toError(404, m))
-//  
-//  def createSystemResourceInstance(fqon: String, restName: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    orgFqon(fqon) match {
-//      case None => OrgNotFound(fqon)
-//      case Some(org) => {
-//        resourceUUID(restName) match {
-//          case None => Errors.INVALID_RESOURCE_TYPE(restName)
-//          case Some(typeId) => {
-//            
-//          }
-//        }
-//      }
-//     }
-//    
-//    extractByName(fqon, restName) match {
-//      case Left(result) => result
-//      case Right(tuple) => {
-//        val org = tuple._1
-//        val typeId = tuple._2
-//        
-//        // If the payload has resource_type, it must match the typeId 
-//        // corresponding to the url they posted to (can't post node to /clusters)
-//        
-//      }
-//    }
-//    ???
-//  }
-//  
-// 
-//  /**
-//   * Get the Org and ResourceType Ids when given FQON and REST name.
-//   * 
-//   * @param fqon FQON of the target Org
-//   * @param rest REST name of ResourceType (i.e., workspaces, environments)
-//   */
-//  private def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
-//    orgFqon(fqon) match {
-//      case None => Left(OrgNotFound(fqon))
-//      case Some(org) => resourceUUID(rest) match {
-//        case None => Left(Errors.INVALID_RESOURCE_TYPE(rest))
-//        case Some(typeId) => Right((org.id, typeId))
-//      }
-//    }
-//  }
-  
   def getAllSystemResourcesByName(org: UUID, restName: String) = Authenticate(org)  { implicit request =>
     extractByName(org, restName) match {
       case Left(result) => result
@@ -289,7 +242,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
 
-  /*
+  /**
    * 
    * With FQON matching String, we have to check if that String is a resource-type.
    * That means we have to prevent registration of an Org with a name that conflicts with our Resource names.
@@ -301,7 +254,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   // ORGS
   // --------------------------------------------------------------------------
 
-  
+  def getAllResources(org: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderLinks(ResourceFactory.findAllByOrg(org)))
+  }
+
   def getAllResourcesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAllByOrg(org.id)))
@@ -317,6 +273,13 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         case None => NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))
       }
       case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def getResourceById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findById(id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None      => NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))
     }
   }
   
