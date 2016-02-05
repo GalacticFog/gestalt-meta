@@ -5,6 +5,7 @@ import java.util.UUID
 import scala.util.Failure
 import scala.util.Success
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
@@ -93,10 +94,15 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
 
-  
   // TODO: Simpler since resources aren't synced with security.
-  private def hardDeleteMetaResource(id: UUID) = {
-    ???
+  private def hardDeleteMetaResource(id: UUID, typeId: UUID) = {
+    ResourceFactory.hardDeleteResource(typeId, id) match {
+      case Success(_) => NoContent
+      case Failure(e) => {
+        log.error(s"hardDeleteMetaResource($id, $typeId)")
+        HandleRepositoryExceptions(e)
+      }
+    }
   }
-   
+  
 }

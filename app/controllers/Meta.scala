@@ -119,6 +119,19 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
+  // Same as createResource2 but takes JSON arg instead of extracting from request.body
+  def createResource3(org: UUID, json: JsValue, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    Future {
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId)
+    }    
+  }
+  
   def createResource2(org: UUID, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       CreateResourceResult(
@@ -140,8 +153,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       }
     }
   }
-  
-
   
 //  private def pathCreateError(pathType: UUID, givenType: UUID) = {
 //    toError(409, "conflicting resource_type_ids found.")
@@ -204,17 +215,79 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case None => Future { OrgNotFound(fqon) }
     }
   }  
-  
 
+  def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
+      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
+  }
+  
+  def replaceJsonProps(obj: JsObject, props: JsObject) = {
+    obj ++ Json.obj("properties" -> props)
+  }
+  
+  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
+    (obj \ "resource_type" match {
+      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
+      case t => {
+        if (!(t.as[UUID] == expectedType))
+          throw new BadRequestException(
+              s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
+        else obj
+      }
+    }).as[JsObject]    
+  }
+  
+  // Inject 'properties/workspace' field if missing from JSON object
+  def normalizeWorkspace(obj: JsObject, value: UUID) = Try {
+    obj \ "properties" \ "workspace" match {
+      case u : JsUndefined => {
+        val ps  = replaceJsonPropValue(obj, "workspace", value.toString)
+        replaceJsonProps(obj, ps)
+      }
+      case _ => obj
+    }    
+  }
+  
+  // Replace environment_type simple-name into type UUID in environment properties
+  def normalizeEnvironmentType(env: JsObject) = Try {
+    val envTypeId = env \ "properties" \ "environment_type" match {
+      case u : JsUndefined => throw new BadRequestException("Missing required property : 'environment_type'")
+      case n => EnvironmentType.id(n.as[String])
+    }
+    env ++ Json.obj(
+        "properties" -> 
+        replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
+  }
+  
+  def normalizeEnvironment(env: JsValue, wk: Option[UUID] = None) = {
+    for {
+      a <- normalizeResourceType(env, ResourceIds.Environment)
+      b <- normalizeWorkspace(a, wk.get)
+      c <- normalizeEnvironmentType(b)
+    } yield c    
+  }
+  
+  
+  def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    normalizeEnvironment(request.body, Some(workspaceId)) match {
+      case Success(env) => Meta.createResource3(org, env, Some(ResourceIds.Environment))
+      case Failure(err) => Future { HandleRepositoryExceptions(err) }
+    }
+  }
+  
   def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     orgFqon(fqon) match {
       case None => Future { OrgNotFound(fqon) }  
       case Some(org) => {
-        Meta.createResource2(org.id, Some(ResourceIds.Workspace))
+        //Meta.createResource2(org.id, Some(ResourceIds.Workspace))
+        normalizeEnvironment(request.body, Some(workspaceId)) match {
+          case Success(env) => Meta.createResource3(org.id, env, Some(ResourceIds.Environment))
+          case Failure(err) => Future { HandleRepositoryExceptions(err) }
+        }        
       }
     }
   }
-
+  
+  
   private object Err {
     
     def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
@@ -257,7 +330,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
   }
-  
   
   private def CreateResourceResult2(creatorType: UUID, creator: UUID, org: UUID, input: GestaltResourceInput, user: AuthAccountWithCreds) = {
     trace(s"CreateResourceResult($org, [json], [account])")
@@ -316,15 +388,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
            * TODO: create now returns better errors - match them to be more specific 
            */
           ResourceFactory.create(creatorType, creator)(domain) match {
-            case Success(res) => {
-              println("========== INSTANCE ==========")
-              println(res)
-              Ok(Output.renderInstance(res))
-            }
-            case Failure(err) => {
-              log.error(s"Internal Server Error: ${err.getMessage}")
-              GenericErrorResult(500, err.getMessage)
-            }
+            case Success(res) => Ok(Output.renderInstance(res))
+            case Failure(err) => HandleRepositoryExceptions(err) 
+//            {
+//              log.error(s"Internal Server Error: ${err.getMessage}")
+//              GenericErrorResult(500, err.getMessage)
+//            }
           }
         }
       }

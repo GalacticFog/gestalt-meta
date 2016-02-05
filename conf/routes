@@ -109,6 +109,8 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 # ENVIRONMENTS
 ############################
 
+POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id/environments  controllers.Meta.postEnvironmentWorkspace(orgId: java.util.UUID, id: java.util.UUID)
+
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id controllers.ResourceController.getEnvironmentById(orgId: java.util.UUID, id: java.util.UUID)
 
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName 	controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
@@ -185,14 +187,16 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id        controllers
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments  controllers.ResourceController.getEnvironmentsByWorkspaceFqon(fqon: String, id: java.util.UUID)     
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces			controllers.Meta.postWorkspaceFqon(fqon: String)
 
+
 # -- Create new Environment in Workspace
-#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments controllers.Meta.postEnvironmentWorkspaceFqon(fqon: String, id: java.util.UUID)
 
 
 
 ############################
 # ENVIRONMENTS
 ############################
+
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id 	controllers.ResourceController.getEnvironmentByIdFqon(fqon: String, id: java.util.UUID)
 
@@ -205,10 +209,14 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id 	controllers.Res
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
 
+
+
+
+
 ############################
 # 
 ############################
-
+ 
 # Map static resources from the /public folder to the /assets URL path
 GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
 

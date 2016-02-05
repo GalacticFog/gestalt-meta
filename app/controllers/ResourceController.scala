@@ -51,6 +51,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
+
 object ResourceController extends MetaController with NonLoggingTaskEvents {
 
   private val qs = ResourceQueryService
