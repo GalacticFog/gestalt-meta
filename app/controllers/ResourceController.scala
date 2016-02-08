@@ -120,7 +120,19 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
-
+  /**
+   * Get the Meta User corresponding with the caller identity.
+   * NOTE: The 'empty' call to Autheticate means the caller MUST be able
+   * to authenticate against the 'root' Org.
+   */
+  def getUserSelf() = Authenticate() { implicit request =>
+    val id = request.identity.account.id
+    ResourceFactory.findById(ResourceIds.User, id) match {
+      case Some(user) => Ok(Output.renderInstance(user))
+      case None => InternalServerError(
+          s"User ID ${id.toString} was found in Security but not in Meta - this may be a synchronization error. Contact an administrator.")
+    }  
+  }
   
   /**
    * Get a single user by ID
@@ -352,7 +364,12 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }  
   
   def getEnvironmentsByWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org, ResourceIds.Environment, "workspace", workspaceId.toString)))  
+    // Ensure workspace exists
+    if (ResourceFactory.existsInOrg(org, workspaceId)) {
+      Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org, ResourceIds.Environment, "workspace", workspaceId.toString)))
+    } else {
+      NotFoundResult(s"Workspace ID '$workspaceId' not found.")
+    }
   }
   
   def getEnvironmentsByWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon) { implicit request =>

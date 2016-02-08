@@ -1,10 +1,14 @@
 package controllers
 
+
 import java.util.UUID
 
 import scala.util.Failure
 import scala.util.Success
 
+import com.galacticfog.gestalt.meta.api.sdk._
+
+import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.meta.api.errors._
@@ -17,10 +21,69 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import play.api.{Logger => log}
 
+import com.galacticfog.gestalt.data.models._
+
 
 object DeleteController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
     with MetaController with NonLoggingTaskEvents with SecurityResources {
-
+  
+  val handlers = Map(
+      "workspaces" -> HardDeleteWorkspace,
+      "environments" -> HardDeleteEnvironment )
+  
+  import com.galacticfog.gestalt.meta.api._
+  
+  
+  def lookupfn(restName: String) = {
+    resourceUUID(restName) match {
+      case Some(id) => ResourceFactory.findById(typeId = id, _ : UUID)
+      case None => throw new ResourceNotFoundException("")
+    }
+  }
+  
+  def deleteLevel1Resource(org: UUID, restName1: String, id1: UUID) = Authenticate(org) { implicit request =>
+    trace(s"deleteLevel1Resource($org, $restName1, $id1)")
+    if (!handlers.contains(restName1)) NotFoundResult(request.path)
+    else {
+      lookupfn(restName1)(id1) match {
+        case None => NotFoundResult("not found.")
+        case Some(_) => {
+          
+//          println("QUERYSTRING : " + request.queryString)
+//          val qs = request.queryString.map { case (k,v) => k -> v.mkString }
+//          
+          val force = getForceParam(request.queryString)
+          println("FORCE : " + force)
+          handlers(restName1).delete(id1, force) match {
+            case Success(_) => NoContent
+            case Failure(e) => HandleRepositoryExceptions(e)
+          }
+          
+        }
+      }
+    }
+  }
+  
+  import scala.util.{Try,Success,Failure}
+  
+  def getForceParam(qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains("force")) false
+    else {
+      val fp = qs("force")
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+      }
+    }
+  }
+  
+  def deleteLevel2Resource(org: UUID, restName1: String, id1: UUID, restName2: String, id2: UUID) = Authenticate(org) { implicit request =>
+    trace(s"deleteLevel1Resource($org, $restName1, $id1, $restName2, $id2)")
+    Ok(s"DELETING $restName2 : ${id2.toString}")  
+  }
+  
   /**
    * Permanently delete an Org from Security and Meta
    */
@@ -28,7 +91,10 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     trace(s"hardeDeleteOrg($org)")
     hardDeleteSecure(org, request.identity, Security.deleteOrg)    
   }
-
+  
+  /**
+   * 
+   */
   def hardDeleteOrgFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     trace(s"hardDeleteOrgFqon($fqon)")
     orgFqon(fqon) match {
@@ -36,7 +102,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case None      => OrgNotFound(fqon)
     }    
   }
-  
   
   /**
    * Permanently delete a User/Account from Security and Meta
@@ -46,6 +111,9 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     hardDeleteSecure(id, request.identity, Security.deleteAccount)
   }
   
+  /**
+   * 
+   */
   def hardDeleteUserFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     trace(s"hardDeleteUserFqon($fqon, user = $id")
     orgFqon(fqon) match {
@@ -53,7 +121,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case None      => OrgNotFound(fqon)
     }
   }
-
   
   /**
    * Permanently delete a ResourceType along with any associated TypeProperties
@@ -65,7 +132,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
        case None      => OrgNotFound(fqon)
      }
    }
-  
+   
    def hardDeleteResourceType(typeId: UUID) = {
      TypeFactory.hardDeleteType(typeId) match {
        case Success(_) => NoContent
@@ -75,7 +142,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
        }
      }
    }
-
+   
   /**
    * Permanently delete a Resource from Meta and Security
    */   
@@ -93,7 +160,15 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       }
     }
   }
-
+  
+  /**
+   * 
+   */
+  def hardDeleteEnvironment(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ???
+  }
+  
+  
   // TODO: Simpler since resources aren't synced with security.
   private def hardDeleteMetaResource(id: UUID, typeId: UUID) = {
     ResourceFactory.hardDeleteResource(typeId, id) match {
@@ -104,5 +179,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       }
     }
   }
-  
+    
 }
+

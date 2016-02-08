@@ -216,13 +216,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }  
 
-  def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
-      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
-  }
-  
-  def replaceJsonProps(obj: JsObject, props: JsObject) = {
-    obj ++ Json.obj("properties" -> props)
-  }
+
   
   def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
     (obj \ "resource_type" match {
@@ -266,6 +260,26 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     } yield c    
   }
   
+  def postEnvironment(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    postEnvironmentResult(org)
+  }
+  
+  def postEnvironmentFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+      orgFqon(fqon) match {
+        case Some(org) => postEnvironmentResult(org.id)
+        case None => Future { OrgNotFound(fqon) }
+      }
+  }
+  
+  def postEnvironmentResult(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    (for {
+      a <- normalizeResourceType(request.body, ResourceIds.Environment)
+      b <- normalizeEnvironmentType(a)
+    } yield b) match {
+      case Success(env) => Meta.createResource3(org, env, Some(ResourceIds.Environment))
+      case Failure(err) => Future { HandleRepositoryExceptions(err) }
+    }    
+  }
   
   def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     normalizeEnvironment(request.body, Some(workspaceId)) match {
@@ -400,14 +414,38 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
+  def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
+      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
+  }
+  
+  def replaceJsonProps(obj: JsObject, props: JsObject) = {
+    obj ++ Json.obj("properties" -> props)
+  }
 
-
+  def normalizeUserJson(json: JsObject, account: AuthAccountWithCreds) = {
+    // Check if default_org property is set - if not
+    // create property and set to 'root' Org.
+    
+    json \ "properties" \ "default_org" match {
+      case u: JsUndefined => {
+        val root = Security.getRootOrg(account)
+        val props = replaceJsonPropValue(json, "gestalt_home", root.get.id.toString)
+        replaceJsonProps(json, props)
+      }
+      case _ => json
+    }
+    
+  }
+  
   /**
    * Create a User Account in Security, then in Meta
    * API implements => POST /orgs/:uuid/users
    */
   def createUser(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createUser(org = $org)")
+    
+    println(Json.prettyPrint(normalizeUserJson(request.body.as[JsObject], request.identity)))
+    
     CreateSynchronizedResult(org, ResourceIds.User, request.body)(
       Security.createAccount, createNewMetaUser[JsValue])
   }

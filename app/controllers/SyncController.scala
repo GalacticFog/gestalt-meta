@@ -62,7 +62,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       deleteResources(creator, usersDelete)
       
       createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
-      createUsers(ResourceIds.User, creator, (usersCreate map secAccMap) )
+      createUsers(ResourceIds.User, creator, (usersCreate map secAccMap), request.identity )
 
       updateOrgs (creator, (orgsUpdate map secOrgMap) )
       updateUsers(creator, (usersUpdate map secAccMap) )
@@ -128,15 +128,22 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }
 
-  def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount]) = {
+  
+  def getRootOrgId(account: AuthAccountWithCreds): UUID = {
+    val root = Security.getRootOrg(account)
+    root.get.id
+  }
+  
+  def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
       createNewMetaUser(creator, acc.directory.orgId, acc, 
         properties = Some(Map(
-          "email"       -> acc.email,
-          "firstName"   -> acc.firstName,
-          "lastName"    -> acc.lastName,
-          "phoneNumber" -> acc.phoneNumber)) ).get
+          "email"        -> acc.email,
+          "gestalt_home" -> getRootOrgId(account).toString,
+          "firstName"    -> acc.firstName,
+          "lastName"     -> acc.lastName,
+          "phoneNumber"  -> acc.phoneNumber)) ).get
     }
   }
   
