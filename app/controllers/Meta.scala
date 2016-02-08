@@ -443,10 +443,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
    */
   def createUser(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     trace(s"createUser(org = $org)")
+    val userJson = normalizeUserJson(request.body.as[JsObject], request.identity)
     
-    println(Json.prettyPrint(normalizeUserJson(request.body.as[JsObject], request.identity)))
-    
-    CreateSynchronizedResult(org, ResourceIds.User, request.body)(
+    CreateSynchronizedResult(org, ResourceIds.User, userJson)(
       Security.createAccount, createNewMetaUser[JsValue])
   }
 
