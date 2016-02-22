@@ -135,6 +135,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
+    val root = getRootOrgId(account)
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
       createNewMetaUser(creator, acc.directory.orgId, acc, 

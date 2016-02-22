@@ -1,6 +1,9 @@
 package controllers
 
 
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
+
 import java.util.UUID
 
 import scala.util.Failure
@@ -41,6 +44,23 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
+  def removeEndpointImplementation(endpoint: UUID) = {
+      
+  }
+  
+  import play.api.libs.json._
+  def deleteLambda(org: UUID, lambda: UUID) = Authenticate(org) { implicit request =>
+    /*
+     * 1.) Get list of associated endpoints.
+     * 2.) Update each endpoint (removing, implementation property)
+     * 3.) Delete the lambda
+     */
+//    ResourceFactory.findEndpointsByLambda(lambda) foreach { p =>
+//      val pjson = Json.toJson(p)
+//    }
+    ???  
+  }
+  
   def deleteLevel1Resource(org: UUID, restName1: String, id1: UUID) = Authenticate(org) { implicit request =>
     trace(s"deleteLevel1Resource($org, $restName1, $id1)")
     if (!handlers.contains(restName1)) NotFoundResult(request.path)
@@ -48,12 +68,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       lookupfn(restName1)(id1) match {
         case None => NotFoundResult("not found.")
         case Some(_) => {
-          
-//          println("QUERYSTRING : " + request.queryString)
-//          val qs = request.queryString.map { case (k,v) => k -> v.mkString }
-//          
           val force = getForceParam(request.queryString)
-          println("FORCE : " + force)
           handlers(restName1).delete(id1, force) match {
             case Success(_) => NoContent
             case Failure(e) => HandleRepositoryExceptions(e)
@@ -83,6 +98,40 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     trace(s"deleteLevel1Resource($org, $restName1, $id1, $restName2, $id2)")
     Ok(s"DELETING $restName2 : ${id2.toString}")  
   }
+  
+  def hardDeleteWorkspaceProvider(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
+  }
+  
+  def hardDeleteWorkspaceProviderFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def hardDeleteLambda(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    hardDeleteMetaResource(id, ResourceIds.Lambda)
+  }
+  
+  def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => hardDeleteMetaResource(id, ResourceIds.Lambda)
+      case None => OrgNotFound(fqon) 
+    }
+  }  
+  
+  def hardDeleteWorkspaceDomain(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    hardDeleteMetaResource(id, ResourceIds.Domain)
+  }
+  
+  def hardDeleteWorkspaceDomainFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => hardDeleteMetaResource(id, ResourceIds.Domain)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
   
   /**
    * Permanently delete an Org from Security and Meta

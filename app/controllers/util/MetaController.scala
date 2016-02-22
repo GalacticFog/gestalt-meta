@@ -44,6 +44,8 @@ import play.api.mvc.RequestHeader
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
+import play.api.libs.json._
+
 trait MetaController extends SecureController {
 
   /**
@@ -77,6 +79,21 @@ trait MetaController extends SecureController {
 //      }
 //    }
 //  }
+  
+  /**
+   * Replace the named property value in resource.properties 
+   * with the given value
+   */
+  def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
+      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
+  }
+  
+  /**
+   * Replace the entire resource.properties collection with the given object.
+   */
+  def replaceJsonProps(obj: JsObject, props: JsObject) = {
+    obj ++ Json.obj("properties" -> props)
+  }  
   
   protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
     orgFqon(fqon) match {

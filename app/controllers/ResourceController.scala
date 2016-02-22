@@ -167,7 +167,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org.id)))
     }     
   }
-
+  
   val resources = ResourceFactory
   val references = ReferenceFactory
   
@@ -175,7 +175,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Output.renderLinks(resources.findAll(typeId, org), baseurl)
   }
   
-
   def getAllSystemResourcesByName(org: UUID, restName: String) = Authenticate(org)  { implicit request =>
     extractByName(org, restName) match {
       case Left(result) => result
@@ -184,12 +183,42 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
+    println
+    println
+    println("QUERY_STRING:\n" + request.queryString)
+    println
+    println
+    
+    
+    
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))
     }
   }
   
+  def getAllSystemResourcesByNameId(org: UUID, restName: String, id: UUID) = Authenticate(org) { implicit request =>
+    extractByName(org, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
+        case Some(res) => Ok(Output.renderInstance(res))
+        case None => NotFoundResult(request.uri)
+      }
+    }
+  }
+  
+  def getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getAllSystemResourcesByNameIdFqon($fqon, $restName, $id)")
+
+    extractByName(fqon, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
+        case Some(res) => Ok(Output.renderInstance(res))
+        case None => NotFoundResult(request.uri)
+        //Ok(renderResourceLinks(org, typeId, META_URL))
+      }
+    }
+  }  
   
   private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
     if (references.isReferenceType(typeId)) {
@@ -199,7 +228,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     else {
       resourceLinks(org, typeId, url)
     }
-    
   }
   
   /* TODO: This is extremely temporary */
@@ -222,8 +250,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
 //  }
 
   
-  
-  
   /**
    * Get a List of ResourceLinks by FQON
    * [Implements]: GET /orgs/:fqon/:resources, i.e. /orgs/gf.engineering.core/workspaces
@@ -241,14 +267,14 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case None => NotFound(s"Org FQON '${fqon}' does not exist.")
     }
   }
-
-
+  
+  
   // TODO: Do I use this to get a default 'owning-org' ???
   def getCurrentOrg(implicit client: GestaltSecurityClient): Future[GestaltOrg] = {
     client.get[GestaltOrg]("orgs/current")
   }
-
-
+  
+  
   def getResourcesByPathWithFqon(fqon: String, path: String) = Action.async {
     Future {
       Ok("RESOLVING : " + path)
@@ -278,7 +304,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
-  
   def getResourceByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => ResourceFactory.findById(id) match {
@@ -296,7 +321,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
-  
+
   // --------------------------------------------------------------------------
   // WORKSPACES
   // --------------------------------------------------------------------------  
@@ -329,10 +354,236 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }  
   }
   
+  /*
+   * TODO: This only handles true | false. Extend to allow for expansion
+   * of individual resource attributes and properties.
+   */
+  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains("expand")) false
+    else {
+      val fp = qs("expand")
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+      }
+    }
+  }  
+  
+  /*
+   * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
+   */
+  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+    if (getExpandParam(qs)) {
+      Ok(Json.toJson(rs map { r => Json.parse(Output.renderInstance(r)) }))
+    }
+    else Ok(Output.renderLinks(rs))
+  }
+  
+  
+  // --------------------------------------------------------------------------
+  // APIS
+  // --------------------------------------------------------------------------    
+  def getApis(org: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org)))
+  }
+  
+  def getApisFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org.id)))
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  
+  def getEnvironmentApis(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Api, environment)))
+  }
+  
+  def getEnvironmentApisFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Api, environment)))
+      case None => OrgNotFound(fqon)
+    }  
+  }
 
+  def getEnvironmentApiById(org: UUID, environment: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Api, id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None      => NotFoundResult(request.uri)
+    }
+  }
+  
+  def getEnvironmentApiByIdFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => {
+        ResourceFactory.findById(ResourceIds.Api, id) match {
+          case Some(res) => Ok(Output.renderInstance(res))
+          case None => NotFoundResult(request.uri)
+        }
+      }
+      case None => OrgNotFound(fqon)
+    }
+  }
   
 
   
+  // --------------------------------------------------------------------------
+  // LAMBDAS
+  // --------------------------------------------------------------------------  
+  def getWorkspaceLambdas(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
+    trace(s"getWorkspaceLambdas($org, $workspace)")
+    handleExpansion(
+        ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace), request.queryString)
+  }
+  
+
+  
+  def getWorkspaceLambdasFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getWorkspaceLambdasFqon($fqon, $workspace)")
+    val lambdas = ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace) map { 
+      injectLambdaFunctionMap(_).get
+    }
+    handleExpansion(lambdas, request.queryString)
+  }
+  
+  
+  def getChildLambdas(parent: UUID) = {
+    ResourceFactory.findChildrenOfType(ResourceIds.Lambda, parent) map { 
+      injectLambdaFunctionMap(_).get
+    }    
+  }
+  
+  def getLambda(id: UUID) = {
+    
+  }
+  
+  def getEnvironmentLambdas(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
+    trace(s"getEnvironmentLambdas($org, $environment)")
+    handleExpansion(getChildLambdas(environment), request.queryString)    
+  }  
+  
+  def getEnvironmentLambdasFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getEnvironmentLambdasFqon($fqon, $environment)")
+    handleExpansion(getChildLambdas(environment), request.queryString)      
+  }
+  
+  def getEnvironmentLambdaByIdFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getEnvironmentLambdaByIdFqon($fqon, $environment, $id)")
+    orgFqon(fqon) match {
+      case Some(org) => getLambdaByIdCommon(id)
+      case None => OrgNotFound(fqon)
+    }  
+  }
+  
+  def getLambdaByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => getLambdaByIdCommon(id)
+      case None => OrgNotFound(fqon)
+    }    
+  }
+  
+  def getEnvironmentLambdaById(org: UUID, environment: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    trace(s"getEnvironmentLambdaById($org, $environment, $id)")
+    getLambdaByIdCommon(id)
+  }
+  
+  def getLambdaByIdCommon(id: UUID)(implicit request: SecuredRequest[AnyContent]) = {
+    ResourceFactory.findById(ResourceIds.Lambda, id) match {
+      case Some(res) => injectLambdaFunctionMap(res) match {
+        case Success(lamb) => Ok(Output.renderInstance(lamb))
+        case Failure(err) => HandleRepositoryExceptions(err)
+      }
+      case None => NotFoundResult(request.uri)
+    }    
+  }
+  
+  def injectLambdaFunctionMap(res: GestaltResourceInstance) = Try {
+    val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
+    val ps = Json.toJson(res.properties.get).as[JsObject]
+    val ljson = Json.toJson(res).as[JsObject]
+    val smap = JsString(Json.toJson(lmap).toString)
+    val m2 = replaceJsonPropValue(ljson, "function_mappings", smap)
+
+    println("OLD-PROPS :\n" + Json.prettyPrint(ps))
+    println("NEW-PROPS :\n" + Json.prettyPrint(m2))
+    println("OBJECT : \n" + Json.prettyPrint(replaceJsonProps(ljson, m2)))
+    println
+
+    val newjson = replaceJsonProps(ljson, m2)
+    val newobj = newjson.validate[GestaltResourceInstance]
+    println
+    println(newobj)
+    println
+    
+    // TODO: Check for JsError
+    newobj.get
+  }
+  
+  def getEndpointsByLambda(org: UUID, lambda: UUID) = Authenticate(org) { implicit request =>
+    trace(s"getEndpointsByLambda($org, $lambda)")
+    handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
+  }
+  
+  def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getEndpointsByLambdaFqon($fqon, $lambda)")
+    orgFqon(fqon) match {
+      case Some(org) => handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
+      case None => OrgNotFound(fqon)
+    }
+  }  
+  
+  // --------------------------------------------------------------------------
+  // API_ENDPOINTS
+  // --------------------------------------------------------------------------  
+  def getEndpoints(org: UUID, parentType: UUID, qs: Map[String,Seq[String]]) = {
+    handleExpansion(
+        ResourceFactory.findChildrenOfType(ResourceIds.ApiEndpoint, parentType), qs)    
+  }
+  
+  def getApiEndpoint(org: UUID, parent: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    // TODO: Use parent for validation - ensure exists, ensure is parent of endpoint...
+    renderInstance(ResourceIds.ApiEndpoint, id)
+  }
+  
+  def getApiEndpointFqon(fqon: String, parent: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    renderInstance(ResourceIds.ApiEndpoint, id)  
+  }
+  
+  def getWorkspaceApiEndpoints(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
+    getEndpoints(org, workspace, request.queryString)
+  }
+  
+  def getEnvironmentApiEndpoints(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
+    getEndpoints(org, environment, request.queryString)
+  }  
+  
+  
+  def renderInstance(typeId: UUID, id: UUID)(implicit request: SecuredRequest[AnyContent]) = {
+    ResourceFactory.findById(typeId, id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None => NotFoundResult(request.uri)
+    }
+  }
+  
+  
+  def getWorkspaceApiEndpointsFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getWorkspaceApiEndpointsFqon($fqon, $workspace)")
+    orgFqon(fqon) match {
+      case Some(org) => getEndpoints(org.id, workspace, request.queryString)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  def getEnvironmentApiEndpointsFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => getEndpoints(org.id, environment, request.queryString)
+      case None => OrgNotFound(fqon)
+    }
+  }    
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
   // --------------------------------------------------------------------------   
@@ -361,7 +612,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Some(res) => Ok(Output.renderInstance(res))
       case None       => NotFoundResult(s"${ResourceLabel(typeId)} '${id}' not found.")
     }    
-  }  
+  }
   
   def getEnvironmentsByWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org) { implicit request =>
     // Ensure workspace exists
@@ -463,7 +714,67 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   //      Accepted( event.task.toJson )
   //    }  
   //  }
-
+  
+  
+  def getWorkspaceProviders(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.ApiGatewayProvider, org)))
+  }
+  
+  
+  def getWorkspaceProviderByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => {
+        ResourceFactory.findById(id) match {
+          case Some(res) => Ok(Output.renderInstance(res))
+          case None => NotFoundResult(request.uri)
+        }
+      }
+    }  
+  }
+  
+  
+  def getWorkspaceProvidersFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => handleExpansion(
+            ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace), request.queryString)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  def getWorkspaceDomains(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
+    handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Domain, workspace), request.queryString)
+  }
+  
+  
+  def getWorkspaceDomainsFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => handleExpansion(
+          ResourceFactory.findChildrenOfType(ResourceIds.Domain, workspace), request.queryString)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
+  def getWorkspaceDomainById(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Domain, id) match {
+      case Some(res) => Ok(Output.renderInstance(res))
+      case None => NotFoundResult(request.uri)
+    }
+  }
+  
+  def getWorkspaceDomainByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) =>
+        ResourceFactory.findById(ResourceIds.Domain, id) match {
+          case Some(res) => Ok(Output.renderInstance(res))
+          case None => NotFoundResult(request.uri)
+        }
+      case None => OrgNotFound(fqon)
+    } 
+  }  
+  
   
   def getAllInOrg(typeId: UUID, org: UUID): List[GestaltResourceInstance] = {
     ResourceFactory.findAll(typeId, org)

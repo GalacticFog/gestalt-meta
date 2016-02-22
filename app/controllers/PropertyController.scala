@@ -49,32 +49,62 @@ import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
+
 object PropertyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents {
- //
+  //
   // RESOURCE_TYPE_PROPERTIES
   //
   
-  
   /* GET /{org}/resourcetypes/:uuid/typeproperties */
   
-  def getAllProperties(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+  def getAllProperties(org: UUID) = Authenticate(org) { implicit request =>
+    Ok(Output.renderPropertyLinks(PropertyFactory.findAllByOrg(org)))
+  }
+  
+  def getAllPropertiesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => Ok(Output.renderPropertyLinks(PropertyFactory.findAllByOrg(org.id))) 
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def getAllPropertiesByType(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     trace(s"getAllProperties($org, $typeId)")
     Ok(Output.renderPropertyLinks(PropertyFactory.findAll(typeId, org)))
-  } 
+  }
   
-  def getAllPropertiesFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+  def getAllPropertiesByTypeFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     trace(s"getAllPropertiesFqon($fqon, $typeId)")
     orgFqon(fqon) match {
       case Some(org) => Ok(Output.renderPropertyLinks(PropertyFactory.findAll(typeId, org.id)))
       case None      => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
     }
   }
-
+  
   
   /* GET /orgs/:uuid/typeproperties */
   
-  def getPropertyById(org: UUID, typeId: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+  def getTypePropertyById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    trace(s"getTypePropertyById($org, $id)")
+    OkNotFoundProperty(id)
+  }  
+  
+//  def getTypePropertyByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    trace(s"getTypePropertyByIdFqon($fqon, $id)")
+//    OkNotFoundProperty(id)
+//  }  
+//  
+  def getTypePropertyByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"getTypePropertyByIdFqon($fqon, $id)")
+    OkNotFoundProperty(id)
+  }
+  /*
+   * TODO: The 'typeId' arg is unused at the moment - this should be used to validate that the requested
+   * property is actually a member of the parent resource_type (as it is, you could get any valid property
+   * from this URL, even if it was from another resource_type - this is misleading).
+   */
+  def getPropertyById(org: UUID, typeId: UUID, id: UUID) = Authenticate(org) { implicit request =>
     trace(s"getPropertyById($org, $id)")
     OkNotFoundProperty(id)
   }
@@ -174,11 +204,12 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
         properties = r.properties, variables = r.variables, tags = r.tags, auth = r.auth)
     }
   }  
- 
+  
   
   /*
    * TODO: Get rid of all of this rendering code!!!  
    */
+  
 //  def renderProperty(r: GestaltTypeProperty) = Json.prettyPrint(Json.toJson(r))
 //  def renderProperties(rs: GestaltTypeProperty*) = Json.prettyPrint(Json.toJson(rs))
 //  def toPropertyLink(r: GestaltTypeProperty) = {
@@ -187,6 +218,7 @@ object PropertyController extends GestaltFrameworkSecuredController[DummyAuthent
 //  def renderPropertyLinks(rs: Seq[GestaltTypeProperty]) = {
 //    Json.prettyPrint(Json.toJson(rs map { toPropertyLink(_) }))
 //  }
+  
   private def safeGetPropertyJson(json: JsValue): Try[GestaltTypePropertyInput] = Try {
     json.validate[GestaltTypePropertyInput].map{
       case resource: GestaltTypePropertyInput => resource

@@ -48,6 +48,10 @@ package object api {
       case "nodes"            => Some(ResourceIds.Node)
       case "tasks"            => Some(ResourceIds.Task)
 
+      case "lambdas"          => Some(ResourceIds.Lambda)
+      case "apis"             => Some(ResourceIds.Api)
+      case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
+      
       case "nodetypes"        => Some(ResourceIds.NodeType)
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
       case "datatypes"        => Some(ResourceIds.DataType)
@@ -56,6 +60,7 @@ package object api {
       case "resourcestates"   => Some(ResourceIds.ResourceState)
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
+      
       case _                  => None
     }
   }

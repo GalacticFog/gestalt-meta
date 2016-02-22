@@ -213,5 +213,57 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   }
   
 
+  def getPropertySchema(org: UUID, typeId: UUID) = Authenticate(org) { implicit request =>
+    getSchemaResult(typeId)
+  }
+  
+  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => getSchemaResult(typeId)
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def getSchemaResult(typeId: UUID) = TypeFactory.findById(typeId) match {
+    case Some(tpe) => {
+      val ps = Properties.getTypeProperties(typeId)   
+      if (ps.isEmpty) Ok(s"There are no properties defined for type: ${tpe.name}")
+      else Ok(renderTypePropertySchema(ps))
+    }
+    case None => NotFoundResult(s"ResourceType ID '$typeId' not found.")
+  }    
+  
+  
+  
+  private def maxwidth(ps: Seq[GestaltTypeProperty]) = {
+    ps map { _.name.size } reduceLeft( _ max _)
+  }
+  
+  private def typename(tpe: UUID) = {
+    DataType.name(tpe) match {
+      case arr if arr.endsWith("::list") => {
+        val dt = arr.take(arr.indexOf(":"))
+        s"array_${dt}"
+      }
+      case ref if ref.contains("::uuid") => "string_uuid"
+      case "uuid" => "string_uuid"
+      case "json" => "json_object"        
+      case other => other
+    }
+  }
+  
+  private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty]) = {
+    val buf = new StringBuilder
+    val namewidth = maxwidth(ps)
+    val typewidth = 13
+    
+    buf append "[properties]:\n"
+    ps foreach { p =>   
+      val required = if (p.isRequired) ": [required]" else ""
+      buf append s"\t%-${namewidth}s : %-${typewidth}s %s".format(p.name, typename(p.datatype), required) + "\n"
+    }
+    buf toString
+  }  
+  
 
 }
