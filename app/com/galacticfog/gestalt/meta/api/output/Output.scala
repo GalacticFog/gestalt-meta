@@ -47,7 +47,7 @@ object Output {
   In this case it always fails with the same UUID (starts with 'b' - resourcetype doesn't exist)
   Not sure which link isn't working...
 */
-
+  
   def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): String = {
   
     val res = GestaltResourceOutput(

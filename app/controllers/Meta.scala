@@ -247,13 +247,25 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   
   def postLambda(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     trace(s"postLambda($org, $parent)")
-    createLambdaCommon(org, parent)
+    ResourceFactory.findById(ResourceIds.Environment, parent) match {
+      case Some(env) => {
+        createLambdaCommon(org, env)
+      }
+      case None => Future{ NotFoundResult(s"Environment ID $parent not found.") }
+    }
   }
   
   def postLambdaFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     trace(s"postLambdaFqon($fqon, $parent)")
     orgFqon(fqon) match {
-      case Some(org) => createLambdaCommon(org.id, parent)
+      case Some(org) => {
+        ResourceFactory.findById(ResourceIds.Environment, parent) match {
+          case Some(env) => {
+            createLambdaCommon(org.id, env)
+          }
+          case None => Future{ NotFoundResult(s"Environment ID $parent not found.") }
+        }
+      }
       case None => Future { OrgNotFound(fqon) }
     }  
   }
@@ -319,19 +331,29 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       } 
   }
   
-  def createLambdaCommon(org: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
+  def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
    
     Future {
     
       safeGetInputJson(ResourceIds.Lambda, request.body) match {
         case Failure(e)     => BadRequestResult(e.getMessage)
         case Success(input) => {
+          
+          val env = ResourceFactory.findById(ResourceIds.Environment, parent.id)
+          val parentLink = toLink(parent, None)
+          
+          val newjson = request.body.as[JsObject] ++ Json.obj(
+            "properties" -> 
+            replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) 
+          
+            println(Json.prettyPrint(newjson))
+            
           CreateResourceResult(
               ResourceIds.User, 
               request.identity.account.id,
-              org, request.body, request.identity,
+              org, /*request.body*/newjson, request.identity,
               typeId = Some(ResourceIds.Lambda), 
-              parentId = Some(parentId) )
+              parentId = Some(parent.id) )
         }
       }
       
@@ -747,7 +769,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     json \ "properties" \ "default_org" match {
       case u: JsUndefined => {
         val root = Security.getRootOrg(account)
-        val props = replaceJsonPropValue(json, "gestalt_home", root.get.id.toString)
+        val props = replaceJsonPropValue(json, "gestalt_home", root.get.fqon)
         replaceJsonProps(json, props)
       }
       case _ => json

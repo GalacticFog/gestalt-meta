@@ -134,6 +134,10 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     root.get.id
   }
   
+  def getRootOrgFqon(account: AuthAccountWithCreds): String = {
+    Security.getRootOrg(account).get.fqon
+  }
+  
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
     val root = getRootOrgId(account)
     for (acc <- rs) {
@@ -141,7 +145,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       createNewMetaUser(creator, acc.directory.orgId, acc, 
         properties = Some(Map(
           "email"        -> acc.email,
-          "gestalt_home" -> getRootOrgId(account).toString,
+          "gestalt_home" -> getRootOrgFqon(account),
           "firstName"    -> acc.firstName,
           "lastName"     -> acc.lastName,
           "phoneNumber"  -> acc.phoneNumber)) ).get
