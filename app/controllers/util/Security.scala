@@ -88,6 +88,7 @@ object Security {
   }
  
   def createOrg(parent: UUID, auth: AuthAccountWithCreds, org: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
+    log.debug(s"createOrg($parent, <auth>, <org>)")
     Await.result(GestaltOrg.createSubOrg(parent, org.name, auth.creds.identifier, auth.creds.password), 5 seconds )
   }
   
@@ -106,11 +107,10 @@ object Security {
   }
   
   def createAccount(org: UUID, auth: AuthAccountWithCreds, user: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltAccount] = {
-    //val props = user.properties.getOrElse { illegal(s"Invalid user. Cannot create.") }
-    
     val props = stringmap(user.properties) getOrElse { 
       throw new BadRequestException(s"Invalid user. Cannot create.") 
     }
+    
     
     val account = GestaltAccountCreateWithRights(
         username = user.name,
@@ -119,7 +119,6 @@ object Security {
         email = props("email"),
         phoneNumber = props("phoneNumber"),
         credential = GestaltPasswordCredential( props("password")) )
-        
     Await.result( GestaltOrg.createAccount(org, account, auth.creds.identifier, auth.creds.password), 5 seconds )
   }
   

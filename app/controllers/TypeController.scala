@@ -57,15 +57,38 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
 
   def getAllResourceTypes(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
     trace(s"getAllResourceTypes($org)")
-    Ok(renderTypeLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
+    Ok(Output.renderLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
   }
   
-  def getAllResourceTypesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllResourceTypeFqon($fqon)")
-    orgFqon(fqon) match {
-      case Some(org) => OkTypeLinksResult(org.id)
-      case None => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
+  def getTypesByName(org: UUID, names: List[String]): Seq[ResourceLike] = {
+    def go(nms: List[String], out: Seq[ResourceLike]): Seq[ResourceLike] = {
+      nms match {
+        case Nil => out
+        case h :: t => go(t, out ++ TypeFactory.findByName(org, h))
+      }
     }
+    go(names, Seq())
+  }
+  
+
+  
+  def getAllResourceTypesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getAllResourceTypesFqon($fqon)")
+
+    orgFqon(fqon) match {
+      case None => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
+      case Some(org) => {
+        println("QS: " + request.queryString)
+        if (request.queryString.contains("name")) {
+          val names = request.queryString("name").toSeq
+          val tpes = names flatMap { TypeFactory.findByName(org.id, _)}
+          Ok(Output.renderLinks(tpes))
+        } else {
+          OkTypeLinksResult(org.id)
+        }
+      }
+    }
+    
   }
   
   def getResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
@@ -154,10 +177,9 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     ???    
   }  
 
-  
   /** Get a list of ResourceTypes */
   private def OkTypeLinksResult(org: UUID) = {
-    Ok(renderTypeLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
+    Ok(Output.renderLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
   }  
   
   /** Get a single ResourceType by ID */
@@ -187,23 +209,7 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
         tags = r.tags, 
         auth = r.auth)
   }
-  
-  def renderTypeLinks(rs: Seq[GestaltResourceType]) = {
-    Json.prettyPrint(Json.toJson(rs map { toTypeLink(_) }))
-  }
-  
-  def toTypeLink(r: GestaltResourceType) = {
-    GestaltLink(r.typeId, r.id.toString, Some(r.name), Some(toHref( r )))
-  }
 
-  def toHref(r: GestaltResourceType) = {
-    "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
-  }
-  
-  def toPropertyHref(r: GestaltTypeProperty) = {
-    "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
-  }
-  
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
     json.validate[GestaltResourceTypeInput].map{
       case resource: GestaltResourceTypeInput => resource

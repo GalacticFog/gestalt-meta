@@ -154,13 +154,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   import scala.util.Either
   
   def getEndpointImplementation(json: JsValue): Either[Throwable, Option[Map[String,String]]] = {
-    
-    println
-    println("JSON-FIELD : name : " + getJsonField(json, "name"))
-    println("JSON-FIELD : implementation : " + getJsonPropertyField(json, "implementation"))
-    println("JSON-FIELD : " + json)
-    println
-    
+
     getJsonPropertyField(json, "implementation") match {
       case None => Right(None)
       case Some(impl) => {
@@ -177,11 +171,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   def postEndpoint(org: UUID, parent: UUID)(implicit request: SecuredRequest[JsValue]) = Try {
     trace(s"postEndpoint($org, $parent)")
     
-    
     val (lambda, props) = getEndpointImplementation(request.body) match {
       case Left(err) => throw err
       case Right(props) => {
-        println("****************getEndpointImplementation SUCCEEDED!!!!")
         if (props.isEmpty) (None,None) else {
           val id = props.get("id")
           (ResourceFactory.findById(ResourceIds.Lambda, id) match {
@@ -191,14 +183,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         }
       }
     }
-    
-    println
-    println("*************************************")
-    println("LAMBDA : " + lambda)
-    println("PROPS : " + props)
-    println("*************************************")
-    println
-    
+
     // Create the ApiEndpoint
     val typeId = ResourceIds.ApiEndpoint
     val endpoint = safeGetInputJson(typeId, request.body) match {
@@ -331,6 +316,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       } 
   }
   
+  import com.galacticfog.gestalt.laser._
   def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
    
     Future {
@@ -345,15 +331,25 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           val newjson = request.body.as[JsObject] ++ Json.obj(
             "properties" -> 
             replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) 
-          
-            println(Json.prettyPrint(newjson))
             
+          /*
+           * 
+           * Create in Laser
+           * if successful, get it's ID
+           * inject ID into properties.external_id
+           * Create in Meta -> Sick
+           *
+              val lmb = newjson.validate[GestaltResourceInput].get
+              val las = toLaserLambda(lmb)
+           */
+  
           CreateResourceResult(
               ResourceIds.User, 
               request.identity.account.id,
               org, /*request.body*/newjson, request.identity,
               typeId = Some(ResourceIds.Lambda), 
               parentId = Some(parent.id) )
+
         }
       }
       
@@ -807,7 +803,11 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
 
           createSynchronized(org, typeId, input)(sc, mc) match {
             case Success(resource) => Ok(Output.renderInstance(resource))
-            case Failure(e)        => InternalServerError(e.getMessage)
+            case Failure(e)        => {
+              println(e)
+              log.error(e.getMessage)
+              InternalServerError(e.getMessage)
+            }
           }
 
         }

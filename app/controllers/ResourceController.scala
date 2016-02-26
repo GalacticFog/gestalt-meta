@@ -171,7 +171,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   val resources = ResourceFactory
   val references = ReferenceFactory
   
-  def resourceLinks(org: UUID, typeId: UUID, baseurl: Option[String] = None): String = {
+  def resourceLinks(org: UUID, typeId: UUID, baseurl: Option[String] = None): JsValue = {
     Output.renderLinks(resources.findAll(typeId, org), baseurl)
   }
   
@@ -183,14 +183,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
-    println
-    println
-    println("QUERY_STRING:\n" + request.queryString)
-    println
-    println
-    
-    
-    
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))
@@ -231,9 +223,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   /* TODO: This is extremely temporary */
-  private def referenceLinks(org: UUID, typeId: UUID) = {
+  private def referenceLinks(org: UUID, typeId: UUID): JsValue = {
     val refs = references.findAll(org, typeId) map { r => "{\"id\": \"%s\", \"name\": \"%s\"}".format(r.id, r.name) }
-    Json.prettyPrint(Json.parse("[%s]".format(refs.mkString(","))))
+    Json.parse("[%s]".format(refs.mkString(",")))
   }
   
   
@@ -376,7 +368,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
    */
   def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
     if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => Json.parse(Output.renderInstance(r)) }))
+      /*Ok(Json.toJson(rs map { r => Json.parse(Output.renderInstance(r)) }))*/
+      Ok(Json.toJson(rs map { r => Output.renderInstance(r) }))
     }
     else Ok(Output.renderLinks(rs))
   }

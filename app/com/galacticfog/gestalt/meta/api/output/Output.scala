@@ -11,7 +11,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.illegal
 
-
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
@@ -38,17 +38,8 @@ object Output {
   /*
    * TODO: Refactor renderLinks* to take ResourceLike args.
    */
-  
-  
-/*
-  ...FAILURE IS HAPPENING HERE...
-  When creating an environment - the create works, but i get a failure when trying to render and
-  return the created resource. It appears to be failing while trying to render one of the links.
-  In this case it always fails with the same UUID (starts with 'b' - resourcetype doesn't exist)
-  Not sure which link isn't working...
-*/
-  
-  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): String = {
+
+  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue /*String*/ = {
   
     val res = GestaltResourceOutput(
       id = r.id,
@@ -67,7 +58,7 @@ object Output {
 
     // this renders the properties
     val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
-    Json.prettyPrint(Json.toJson(res.copy(properties = renderedProps)))
+    Json.toJson(res.copy(properties = renderedProps))
   }
   
   
@@ -100,31 +91,27 @@ object Output {
   
   def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
     val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p, baseUri ) }
-    Json.prettyPrint(Json.toJson( ps ))
+    Json.toJson( ps )
   }
   
-  def renderPropertyLinks(rs: Seq[GestaltTypeProperty], baseUri: Option[String] = None) = {
-    Json.prettyPrint(Json.toJson(rs map { r => 
+  def renderPropertyLinks(rs: Seq[GestaltTypeProperty], baseUri: Option[String] = None): JsValue = {
+    Json.toJson(rs map { r => 
       toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri) 
-    }))
+    })
   }
   
-  def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None) = {  
+  def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None): JsValue = {  
     val res = toPropertyOutput( p, baseUri )
     //
     // TODO: .copy rendered properties!!!
     //
-    Json.prettyPrint(Json.toJson(res))
+    Json.toJson(res)
   }
   
-  def renderLink(r: GestaltResourceInstance, baseUri: Option[String] = None) = {
-    toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri)
-  }
-  
-  def renderLinks(rs: Seq[GestaltResourceInstance], baseUri: Option[String] = None) = {
-    Json.prettyPrint(Json.toJson(rs map { r => 
+  def renderLinks(rs: Seq[ResourceLike], baseUri: Option[String] = None): JsValue = {
+    Json.toJson(rs map { r => 
       toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri) 
-    }))
+    })
   }
   
   /**
@@ -165,7 +152,7 @@ object Output {
    * @param instanceId UUID of Type instance
    * @return JsValue object containing all rendered property name/values.
    */
-  def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]/*r: GestaltResourceInstance*/): Option[JsValue] = {
+  def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
     println("renderInstanceProperties: " + properties)
     /* Get a Map of the properties defined for the current ResourceType. */
     val templateProps = Properties.getTypePropertyMap(typeId)

@@ -54,37 +54,7 @@ package object util {
       } 
     }
   }  
-  
-//  def renderLinks(rs: Seq[GestaltResourceInstance]) = {
-//    Json.prettyPrint(Json.toJson(rs map { toLink(_) }))
-//  }
-//  
-//  def toLink(r: GestaltResourceInstance) = {
-//    GestaltLink(r.typeId, r.id.toString, Some(r.name), Some(toHref( r )))
-//  }
-//  
-//  def toHref(r: GestaltResourceInstance) = {
-//    "http://dummy_host/orgs/%s/%s/%s".format(r.orgId, "{typename}", r.id)
-//  }  
-//  
-//  def toError(code: Int, message: String) = 
-//    Json.parse(s"""{ "code": ${code}, "message": "${message}" }""")
-  
-  
-//  def in2domain[T](org: UUID, in: GestaltResourceInput)(implicit request: SecuredRequest[T]) = {
-//    GestaltResourceInstance(
-//      id = if (in.id.isDefined) in.id.get else UUID.randomUUID,
-//      typeId = ResourceType.id(in.resource_type),
-//      orgId = org,
-//      owner = ResourceOwnerLink(ResourceIds.User, request.identity.account.id),
-//      name = in.name,
-//      description = in.description,
-//      properties = in.properties,
-//      variables = in.variables,
-//      tags = in.tags,
-//      auth = in.auth)
-//  }  
-  
+
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {
       case Success(out) => success(out)
@@ -92,7 +62,7 @@ package object util {
     }
   }
   
-  private def trySuccess(in: String) = Ok(in)
+  private def trySuccess(in: JsValue) = Ok(in)
   private def trySuccessNoResult(in: Unit) = Ok("")
   
   private def tryNotFoundFailure(err: Throwable) = {    
@@ -124,9 +94,9 @@ package object util {
     extends TryHandler[Unit,Result](trySuccessNoResult)(tryNotFoundFailure)
   
   class OkNotFoundHandler 
-    extends TryHandler[String,Result](trySuccess)(tryNotFoundFailure)
+    extends TryHandler[JsValue,Result](trySuccess)(tryNotFoundFailure)
   
-  def okNotFound(f: Try[String]) = new OkNotFoundHandler().handle( f )
+  def okNotFound(f: Try[JsValue]) = new OkNotFoundHandler().handle( f )
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
 
   

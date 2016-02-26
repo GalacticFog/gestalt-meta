@@ -51,7 +51,7 @@ object ResourceQueryService {
 //  }
   
   
-  def findById(org: UUID, typeId: UUID, id: UUID) = Try {
+  def findById(org: UUID, typeId: UUID, id: UUID): Try[JsValue] = Try {
     log.debug(s"ResourceQueryService::findById($org, $typeId)")
     Output.renderInstance {
       ResourceFactory.findById(typeId, id) getOrElse {
