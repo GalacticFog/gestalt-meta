@@ -1,7 +1,7 @@
 package controllers.util
 
 
-
+import controllers.ResourceController
 import play.api._
 import play.api.test._
 import play.api.test.Helpers._
@@ -66,7 +66,7 @@ class SpecGlobal extends PlaySpecification  with GestaltPlaySpecification {
       // Call via router (this doesn't work for 'framework' errors???)
       route(request)
 
-      status(res) must_== OK
+      status(result) must_== OK
       
       //status(result) === OK
     }

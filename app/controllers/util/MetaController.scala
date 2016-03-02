@@ -36,7 +36,7 @@ import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => Secu
 import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ ForbiddenAPIException => SecurityForbiddenAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException => SecurityResourceNotFoundException }
-import com.galacticfog.gestalt.security.api.errors.{ CreateConflictException => SecurityCreateConflictException }
+import com.galacticfog.gestalt.security.api.errors.{ ConflictException => SecurityConflictException }
 import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
 import play.api.mvc.RequestHeader
@@ -163,7 +163,7 @@ trait MetaController extends SecureController {
   def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
     case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
     case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
-    case e: SecurityCreateConflictException   => ConflictResult(e.getMessage)
+    case e: SecurityConflictException         => ConflictResult(e.getMessage)
     case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
     case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
     case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
