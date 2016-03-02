@@ -13,24 +13,25 @@ package object laser {
   implicit lazy val laserArtifactDescriptionFormat = Json.format[LaserArtifactDescription]
   implicit lazy val laserLambdaFormat = Json.format[LaserLambda]
   
-  case class LaserApi(
-      id: Option[String], 
-      name: String, 
-      gatewayId: String, 
-      description: Option[String])
-  
   case class LaserGatewayInfo(host: String, port: Int, username: String, password: String)
   
   case class LaserGateway(
       id: Option[String], 
       name: String, 
-      gatewayInfo: JsValue)
+      gatewayInfo: JsValue)  
   
+  case class LaserApi(
+      id: Option[String], 
+      name: String, 
+      provider: JsValue, 
+      description: Option[String] = None)
+
   case class LaserEndpoint(
       id: Option[String], 
       apiId: String, 
       uri: String, 
       path: String, 
+      domain: JsValue,
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None)
 
@@ -49,6 +50,7 @@ package object laser {
   case class LaserLambda(
       id: Option[String], 
       eventFilter: Option[String],
+      provider: JsValue,
       artifactDescription: LaserArtifactDescription)
 
 
@@ -64,7 +66,7 @@ package object laser {
         "password" : "password"        
     }
   }
-}      
+}
 */
 
   def toLaserGateway(input: GestaltResourceInput) = {
@@ -88,7 +90,16 @@ package object laser {
   // uri is implementation.uri
   def getEndpointPath(uri: String) = uri.drop(uri.lastIndexOf("/"))
   
-  def toLaserEndpoint(lambda: GestaltResourceInput) = {
+  /*
+   * TODO: May translate into severl LaserApis
+   */
+  def toLaserApi(api: GestaltResourceInput): Seq[LaserApi] = {
+    // One LaserApi for each given provider.
+    ???
+  }
+  
+  def toLaserEndpoint(lambda: GestaltResourceInput): Seq[LaserEndpoint] = {
+    // One LaserEndpoint for each given provider.
     /*
      * 1.) Get ApiId
      * 2.) uri == implementation.uri
@@ -96,25 +107,25 @@ package object laser {
      * 4.) endpointInfo ???
      * 5.) authentication ???
      */
+    ???
   }
   
-/*
-  case class LaserEndpoint(
-      id: Option[String], 
-      apiId: String, 
-      uri: String, 
-      path: String, 
-      endpointInfo: Option[JsValue] = None, 
-      authentication: Option[JsValue] = None)  
- */  
-  
+  /*
+   * TODO: This may translate into multiple LaserLambdas
+   */
   def toLaserLambda(lambda: GestaltResourceInput) = {
+    
+    // One LaserLambda for each given provider.
+    
     println("toLaserLambda(...)")
     
     val props = lambda.properties.get
     val (handler,function) = parseHandlerFunction(lambda)
     
-    LaserLambda(id = None, eventFilter = Some("placeholder.event"),
+    LaserLambda(
+      id = None, 
+      eventFilter = Some("placeholder.event"),
+      provider = props("provider"),
       LaserArtifactDescription(
           artifactUri = props("package_url").as[String],
           description = None,
