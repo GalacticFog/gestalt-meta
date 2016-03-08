@@ -3,6 +3,7 @@ package com.galacticfog.gestalt
 import com.galacticfog.gestalt.data.models._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
+import java.util.UUID
 
 package object laser {
 
@@ -12,6 +13,9 @@ package object laser {
   implicit lazy val laserEndpointFormat = Json.format[LaserEndpoint]
   implicit lazy val laserArtifactDescriptionFormat = Json.format[LaserArtifactDescription]
   implicit lazy val laserLambdaFormat = Json.format[LaserLambda]
+  implicit lazy val laserProviderFormat = Json.format[LaserProvider]
+  implicit lazy val laserLocationFormat = Json.format[LaserLocation]
+  
   
   case class LaserGatewayInfo(host: String, port: Int, username: String, password: String)
   
@@ -23,15 +27,21 @@ package object laser {
   case class LaserApi(
       id: Option[String], 
       name: String, 
-      provider: JsValue, 
+      gatewayId: Option[String] = None,
+      provider: Option[JsValue] = None, 
       description: Option[String] = None)
 
+  case class LaserProvider(id: Option[String], name: String, href: Option[String] = None, providerInfo: Option[JsValue] = None)
+  case class LaserLocation(id: Option[String], name: String, providerId: String)
+  
   case class LaserEndpoint(
       id: Option[String], 
       apiId: String, 
-      uri: String, 
+      upstreamUrl: String,
       path: String, 
-      domain: JsValue,
+      domain: Option[JsValue] = None,
+      url: Option[String] = None,
+      provider: Option[JsValue],
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None)
 
@@ -50,35 +60,13 @@ package object laser {
   case class LaserLambda(
       id: Option[String], 
       eventFilter: Option[String],
-      provider: JsValue,
+      provider: Option[JsValue],
       artifactDescription: LaserArtifactDescription)
 
-
-/*
-{
-  "name": "GFI-Kong-4",
-  "properties": {
-    "locations": ["us-east-1a", "us-east-1b", "us-west-1a", "us-west-1b", "us-west-1c"],
-    "gateway_info": {
-        "host" : "192.168.200.20",
-        "port" : 8000,
-        "username" : "testUser",
-        "password" : "password"        
-    }
-  }
-}
-*/
 
   def toLaserGateway(input: GestaltResourceInput) = {
     LaserGateway(id = None, name = input.name, gatewayInfo = input.properties.get("gateway_info"))
   }
-
-  /*
-   * 
-   * I need to create Api in order to map api_name to laser's api_id
-   * 
-   */
-  
 
   def getApiId(apiName: String) = ???
   
@@ -90,42 +78,56 @@ package object laser {
   // uri is implementation.uri
   def getEndpointPath(uri: String) = uri.drop(uri.lastIndexOf("/"))
   
-  /*
-   * TODO: May translate into severl LaserApis
-   */
-  def toLaserApi(api: GestaltResourceInput): Seq[LaserApi] = {
+
+  def toLaserApi(api: GestaltResourceInput, provider: UUID, location: String) = {
     // One LaserApi for each given provider.
-    ???
+    val input = Json.toJson(api)
+    println("API-INPUT:\n" + Json.prettyPrint(input))
+    val id = api.id.getOrElse(UUID.randomUUID).toString
+    LaserApi(
+        id = Some(id),
+        name = api.name,
+        description = api.description,
+        provider = Some(Json.obj("id" -> provider.toString, "location" -> location)))
   }
   
-  def toLaserEndpoint(lambda: GestaltResourceInput): Seq[LaserEndpoint] = {
-    // One LaserEndpoint for each given provider.
-    /*
-     * 1.) Get ApiId
-     * 2.) uri == implementation.uri
-     * 3.) path ???
-     * 4.) endpointInfo ???
-     * 5.) authentication ???
-     */
-    ???
+  
+  def toLaserEndpoint(input: GestaltResourceInput, apiId: UUID, upstreamUrl: String, provider: JsValue) = {
+    val id = Some(input.id.getOrElse(UUID.randomUUID).toString)
+    val props = input.properties.get
+    LaserEndpoint(
+        id = id,  
+        apiId = apiId.toString,           // argument
+        upstreamUrl = upstreamUrl,        // argument
+        path = props("resource").as[String],        // from properties
+        domain = if (props.contains("domain")) Some(props("domain")) else None,      // from properties
+        provider = Some(provider))    // argument
+  }
+  
+  
+  def toLaserEndpoint(input: GestaltResourceInput) = {
+    val id = Some(input.id.getOrElse(UUID.randomUUID).toString)
+    LaserEndpoint(
+        id = id,
+        apiId = ???,
+        upstreamUrl = ???,
+        path = ???,
+        domain = ???,
+        provider = ???)
   }
   
   /*
    * TODO: This may translate into multiple LaserLambdas
    */
-  def toLaserLambda(lambda: GestaltResourceInput) = {
-    
-    // One LaserLambda for each given provider.
-    
-    println("toLaserLambda(...)")
-    
+  def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
+
     val props = lambda.properties.get
     val (handler,function) = parseHandlerFunction(lambda)
     
     LaserLambda(
-      id = None, 
-      eventFilter = Some("placeholder.event"),
-      provider = props("provider"),
+      id = Some(lambda.id.get.toString), 
+      eventFilter = Some(UUID.randomUUID.toString),
+      provider = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")), //props("provider"),
       LaserArtifactDescription(
           artifactUri = props("package_url").as[String],
           description = None,
@@ -138,7 +140,11 @@ package object laser {
           runtime = props("runtime").as[String],
           timeoutSecs = props("timeout").as[Int]) )
   }
-
+  
+  
+  def syncLaserProviders(toResource: UUID) = ???
+  
+  
   def parseHandlerFunction(lambda: GestaltResourceInput) = {
     val props = lambda.properties.get
     val runtime = props("runtime")

@@ -13,14 +13,31 @@ import scala.concurrent.Await
 
 import com.ning.http.client.AsyncHttpClientConfig
 import play.api.libs.ws.ning.NingWSClient
+import java.net.URL
+
 
 case class BasicCredential(username: String, password: String) {
   val scheme = WSAuthScheme.BASIC
   def asOpt = Option(this)
 }
 
+
 case class HostConfig(protocol: String, host: String, port: Option[Long], timeout: Int = 10, creds: Option[BasicCredential] = None)
+
+object HostConfig {
+  def make(url: URL, timeout: Int = 10, creds: Option[BasicCredential] = None) = {
+    HostConfig(
+      protocol = url.getProtocol, 
+      host = url.getHost, 
+      port = if (url.getPort == -1) None else Some(url.getPort),
+      timeout = timeout,
+      creds = creds)  
+  }
+}
+
+
 case class ApiResponse(status: Int, output: Option[JsValue], error: Option[String] = None)
+
 
 class JsonWebClient(config: HostConfig) {
   
@@ -33,22 +50,24 @@ class JsonWebClient(config: HostConfig) {
   val baseUrl = "%s://%s%s".format(config.protocol, config.host, portString)
   val timeout = config.timeout
 
-  def get(resource: String, expected: Seq[Int] = Seq(200), timeout: Int = timeout): Try[ApiResponse] = Try {
+  val ALL_GOOD = Seq((200 to 299):_*)
+  
+  def get(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = sync(resource, timeout)(request(_).get())
     unwrapResponse(response, expected)
   }
 
-  def postEmpty(resource: String, expected: Seq[Int] = Seq(201), timeout: Int = timeout): Try[ApiResponse] = Try {
+  def postEmpty(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = Await.result(request(resource).post(Array.empty[Byte]), timeout seconds)
     unwrapResponse(response, expected)
   }
 
-  def post(resource: String, payload: JsValue, expected: Seq[Int] = Seq(201), timeout: Int = timeout): Try[ApiResponse] = Try {
+  def post(resource: String, payload: JsValue, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = Await.result(request(resource).post(payload), timeout seconds)
     unwrapResponse(response, expected)
   }
 
-  def delete(resource: String, expected: Seq[Int] = Seq(200, 204), timeout: Int = timeout): Try[ApiResponse] = Try {
+  def delete(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = sync(resource, timeout)(request(_).delete())
     unwrapResponse(response, expected)
   }
