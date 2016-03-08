@@ -51,6 +51,7 @@ package object api {
       case "lambdas"          => Some(ResourceIds.Lambda)
       case "apis"             => Some(ResourceIds.Api)
       case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
+      case "domains"          => Some(ResourceIds.Domain)
       
       case "nodetypes"        => Some(ResourceIds.NodeType)
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
