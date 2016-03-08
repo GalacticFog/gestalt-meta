@@ -257,7 +257,7 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces					controllers.Meta.
 # -- Create new Environment in Workspace
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments controllers.Meta.postEnvironmentWorkspaceFqon(fqon: String, id: java.util.UUID)
 
-
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id  	controllers.DeleteController.deleteWorkspaceFqon(fqon: String, id: java.util.UUID)
 
 ############################
 # ENVIRONMENTS
@@ -276,13 +276,14 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id 	controllers.Res
 
 POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments			controllers.Meta.postEnvironmentFqon(fqon: String)
 
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id     
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id  controllers.DeleteController.deleteEnvironmentFqon(fqon: String, id: java.util.UUID)
+
 
 ############################
 # APIS
 ############################
 
-POST     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis controllers.Meta.postApiFqon(fqon: String, id: java.util.UUID)
+POST     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.Meta.postApiFqon(fqon: String, id: java.util.UUID)
 
 #GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
 #GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
@@ -316,6 +317,16 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id					controllers.Del
 
 
 ############################
+# APIS
+############################
+
+#GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
+#GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
+#POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
+
+
+############################
 # API_ENDPOINTS
 ############################
 
@@ -325,6 +336,7 @@ POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints		co
 # Create ApiEndpoint in an Environment
 POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints		controllers.Meta.postApiEndpointFqon(fqon: String, id: java.util.UUID)
 
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  controllers.Meta.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
 
 GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
 
@@ -336,7 +348,7 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints  con
 
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:environment/apiendpoints/:id  controllers.ResourceController.getApiEndpointFqon(fqon: String, environment: java.util.UUID, id: java.util.UUID)
 
-
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apiendpoints/:id						  controllers.DeleteController.hardDeleteEndpointFqon(fqon: String, id: java.util.UUID)
 
 ############################
 # GATEWAY_PROVIDERS

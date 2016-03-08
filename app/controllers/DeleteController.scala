@@ -5,6 +5,7 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
 import java.util.UUID
+import java.net.URL
 
 import scala.util.Failure
 import scala.util.Success
@@ -21,7 +22,10 @@ import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredC
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
+import com.galacticfog.gestalt.laser._
+
 import controllers.util._
+import controllers.util.db._
 import play.api.{Logger => log}
 
 import com.galacticfog.gestalt.data.models._
@@ -44,6 +48,33 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
+  
+  
+  def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => {
+        HardDeleteEnvironment.delete(environment, true) match {
+          case Success(_) => NoContent
+          case Failure(e) => HandleRepositoryExceptions(e)
+        }
+      }
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon) match {
+      case Some(org) => {
+        HardDeleteWorkspace.delete(workspace, true) match {
+          case Success(_) => NoContent
+          case Failure(e) => HandleRepositoryExceptions(e)
+        }
+      }
+      case None => OrgNotFound(fqon)
+    }
+  }
+  
+  
   def removeEndpointImplementation(endpoint: UUID) = {
       
   }
@@ -60,6 +91,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
 //    }
     ???  
   }
+  
   
   def deleteLevel1Resource(org: UUID, restName1: String, id1: UUID) = Authenticate(org) { implicit request =>
     trace(s"deleteLevel1Resource($org, $restName1, $id1)")
@@ -114,16 +146,136 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     hardDeleteMetaResource(id, ResourceIds.Lambda)
   }
   
-  def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  
+  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+  lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+  lazy val laser = new Laser(gatewayConfig, lambdaConfig)
+  
+  
+  def deleteLaserApi(id: UUID) = ???
+  def deleteLaserEndpoint(apiId: UUID, id: UUID) = ???
+  def deleteLaserLambda(id: UUID) = ???
+  
+  
+  def hardDeleteApiFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => hardDeleteMetaResource(id, ResourceIds.Lambda)
-      case None => OrgNotFound(fqon) 
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+        ResourceFactory.findById(ResourceIds.Api, id) match {
+          case None => NotFoundResult(request.uri)
+          case Some(api) => {
+            laser.deleteApi(id.toString) match {
+              case Failure(e) => HandleRepositoryExceptions(e)
+              case Success(_) => HardDeleteApi.delete(id, true) match {
+                case Success(_) => NoContent
+                case Failure(e) => HandleRepositoryExceptions(e)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  
+  def deleteApiCommon(id: UUID) = Try {
+    ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
+      case None => throw new ResourceNotFoundException(s"API with ID $id not found.")
+      case Some(ep) => {
+        val apiId = ep.properties.get("api")
+        
+        // 2.) Delete endpoint in laser
+        laser.deleteEndpoint(apiId, id) match {
+          case Failure(e) => throw e
+          case Success(_) => {
+            // 3.) Delete endpoint in meta
+            HardDeleteEndpoint.delete(id, true).get
+          }
+        }
+      }
+    }
+  }
+  
+  
+  def hardDeleteEndpointFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    trace(s"hardDeleteEndpointFqon($fqon, $id)")
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+        // 1.) Lookup given endpoint
+        ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
+          case None => NotFoundResult(request.uri)
+          case Some(ep) => {
+            val apiId = ep.properties.get("api")
+            // 2.) Delete endpoint in laser
+            laser.deleteEndpoint(apiId, id) match {
+              case Failure(e) => HandleRepositoryExceptions(e)
+              case Success(_) => {
+                // 3.) Delete endpoint in meta
+                HardDeleteEndpoint.delete(id, true) match {
+                  case Success(_) => NoContent
+                  case Failure(e) => {
+                    log.error(e.getMessage)
+                    HandleRepositoryExceptions(e)
+                  }
+                }                
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    
+    /* ------------------------------------------------------------
+     * DELETING A META-LAMBDA
+     * 
+     * In Laser:
+     *   - Delete apis (this should also delete laser-endpoints)
+     *   - Delete lambdas
+     * 
+     * In Meta:
+     *   - delete from meta_lambda_x_meta_api
+     *   - delete Endpoints, Apis, Lambda from meta_x_laser
+     *   - delete from lambda_x_endpoint
+     *   - Delete endpoints
+     *   - Delete apis
+     *   - Delete Lambda
+     *   
+     */
+    
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+        ResourceFactory.findById(ResourceIds.Lambda, id) match {
+          case None => NotFoundResult(s"Lambda with ID '$id' not found.")
+          case Some(lambda) => {
+            
+            ResourceFactory.getLaserLambdaIds(id) foreach { lid => 
+              laser.deleteLambda(lid).get
+            }
+            
+            ResourceFactory.findAllApisByLambda(id) foreach { aid =>
+              laser.deleteApi(aid).get  
+            }
+            
+            HardDeleteLambda.delete(id, true) match {
+              case Success(_) => NoContent
+              case Failure(e) => HandleRepositoryExceptions(e)
+            }
+          }
+        }
+      }
     }
   }  
+  
   
   def hardDeleteWorkspaceDomain(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
     hardDeleteMetaResource(id, ResourceIds.Domain)
   }
+  
   
   def hardDeleteWorkspaceDomainFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
@@ -131,7 +283,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case None => OrgNotFound(fqon)
     }
   }
-  
   
   /**
    * Permanently delete an Org from Security and Meta

@@ -56,7 +56,7 @@ trait MetaController extends SecureController {
     Some( "%s://%s".format(protocol, request.host) )
   }
 
-  def HandleRepositoryExceptions(e: Throwable) = e.asInstanceOf[ApiException] match {
+  def HandleRepositoryExceptions(e: Throwable) = e match {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
     case e: BadRequestException           => BadRequest(e.asJson)
     case e: UnrecognizedResourceException => BadRequest(e.asJson)

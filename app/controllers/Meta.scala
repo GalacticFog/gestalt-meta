@@ -62,27 +62,37 @@ import com.galacticfog.gestalt.meta.api._
 object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents with SecurityResources {
   
+  implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
+  case class LambdaProviderInfo(id: String, locations: Seq[String])
+  
+  import com.galacticfog.gestalt.laser._
+  
   import play.api.libs.json._
   
   implicit def str2js(s: String) = JsString(s)
-  
-  //
-  // TODO: Add creator to auth at create!
-  //  
 
-  /*
-   * FOR LAMBDAS: Decide: create and inject properties.parent, or build dynamically on request?
-   */
   
   def postApi(org: UUID, environment: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     trace(s"postApi($org, $environment)")
     createResourceCommon(org, environment, ResourceIds.Api)
   }
   
+  
+  lazy val gatewayConfig = HostConfig("http", "apigateway.galacticfog.com", port = None)
+  lazy val lambdaConfig = HostConfig("http", "lambda.galacticfog.com", port = None)
+  lazy val laser = new Laser(gatewayConfig, lambdaConfig)
+  
+  
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     trace(s"postApiFqon($fqon, $parent)")
     orgFqon(fqon) match {
-      case Some(org) => createResourceCommon(org.id, parent, ResourceIds.Api)
+      case Some(org) => {
+        
+        val apijson = safeGetInputJson(ResourceIds.Api, request.body)
+        //val input = toLaserApi(apijson.get)
+        
+        createResourceCommon(org.id, parent, ResourceIds.Api)
+      }
       case None => Future { OrgNotFound(fqon) }
     }
   }  
@@ -94,11 +104,17 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   
   def postApiEndpointFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     trace(s"postApiEndpointFqon($fqon, $parent)")
+    
     Future {
       orgFqon(fqon) match {
         case Some(org) => postEndpoint(org.id, parent) match {
-          case Success(endpoint) => Ok(Output.renderInstance(endpoint))
-          case Failure(error) => HandleRepositoryExceptions(error)
+          case Success(endpoints) => {
+            Created(Json.toJson(endpoints map { ep => Output.renderInstance(ep) } ))
+          }
+          case Failure(error) => {
+            log.error(error.getMessage)
+            InternalServerError(error.getMessage)
+          }
         }
         case None => OrgNotFound(fqon)
       }  
@@ -165,13 +181,57 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       }
     }
   }
+
+  def postLambdaEndpointFqon(fqon: String, lambda: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    Future {
+      createLambdaEndpoint(lambda, request.body.as[JsObject]) match {
+        case Failure(e) => HandleRepositoryExceptions(e)
+        case Success(r) => {
+          Created(r)
+        }
+      }
+    }
+  }
   
-  
+  def createLambdaEndpoint(lambdaId: UUID, json: JsObject) = Try {
+    trace(s"createLambdaEndpoint($lambdaId, <json>)")
+    /*
+     * To post /lambdas/:id/endpoints, caller must supply implementation.function
+     */
+    
+    //1.) Ensure caller supplied implementation.function
+    println("RECEIVED : " + Json.prettyPrint(json))
+    
+    val impl = Try {
+      json \ "properties" \ "implementation" \ "function" match {
+        case u: JsUndefined => 
+          throw new BadRequestException("No value for implementation.function was found.")
+        case f => (json \ "properties" \ "implementation").as[JsObject] ++ Json.obj(
+          "type" -> "Lambda",
+          "id" -> lambdaId.toString)
+      }
+    }
+    
+    impl match {
+      case Failure(e) => throw e
+      case Success(i) => {
+        val newprops = (json \ "properties").as[JsObject] ++ Json.obj("implementation" -> i)
+        println("UPDATED PROPERTIES:")
+        println(Json.prettyPrint(newprops))
+        println
+        json ++ Json.obj("properties" -> newprops)
+      }
+    }
+    
+
+  } 
   
   def postEndpoint(org: UUID, parent: UUID)(implicit request: SecuredRequest[JsValue]) = Try {
     trace(s"postEndpoint($org, $parent)")
     
-    val (lambda, props) = getEndpointImplementation(request.body) match {
+    
+    
+    val (lambda, impl) = getEndpointImplementation(request.body) match {
       case Left(err) => throw err
       case Right(props) => {
         if (props.isEmpty) (None,None) else {
@@ -184,31 +244,104 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       }
     }
 
-    // Create the ApiEndpoint
-    val typeId = ResourceIds.ApiEndpoint
-    val endpoint = safeGetInputJson(typeId, request.body) match {
-      case Failure(e)     => throw new BadRequestException(e.getMessage)
-      case Success(input) => {
-        CreateResource(ResourceIds.User, request.identity.account.id,
-            org, request.body, request.identity,
-            typeId = Some(typeId), 
+    /*
+     * Lookup lambda from implementation
+     * Create LaserEndpoint for each provider+location
+     * Create MetaEndpoint for each provider+location
+     * Update meta_x_laser map
+     * 
+     */
+
+    val props1 = lambda.get.properties.get
+    val ps = Json.parse(props1("providers")).validate[Seq[JsValue]].get
+    val providers = ps map { p => p.validate[LambdaProviderInfo].get }
+    
+    def go(ps: Seq[LambdaProviderInfo], acc: Seq[GestaltResourceInstance]): Seq[GestaltResourceInstance] = {
+      
+      ps match {
+        case Nil => acc
+        case h :: t => h.locations map { loc =>
+          val providerObj = Json.obj("id" -> h.id, "location" -> loc)
+          val upstream = s"http://foo/lambdas/${lambda.get.id.toString}/invoke"
+          val api = ResourceFactory.findApiId(lambda.get.id, h.id, loc)
+          
+          // User client-supplied ID if given.
+          val endpointId = request.body \ "id" match {
+            case u: JsUndefined => UUID.randomUUID
+            case i => UUID.fromString(i.as[String])
+          }
+          
+          val input1 = safeGetInputJson(ResourceIds.ApiEndpoint, request.body)
+          val input = input1.get.copy(id = Some(endpointId))
+          
+          println("--------------------------------------------")
+          println("PROVIDER: " + providerObj)
+          println("UPSTREAM: " + upstream)
+          println("API:      " + api)
+          println("INPUT:\n" + input)
+          println("--------------------------------------------")
+          
+          // Create LaserEndpoint
+          val laserJson = toLaserEndpoint(input, api.get, upstream, providerObj)
+          println(Json.prettyPrint(Json.toJson(laserJson)))
+          val laserEndpoint = laser.createEndpoint(laserJson, api.get.toString) match {
+            case Success(r) => {
+              
+              println("****CREATED LASER ENDPOINT***")
+              println("RESPONSE:\n" + r)
+              
+              r.output.get.validate[LaserEndpoint].map {
+                case lep: LaserEndpoint => {
+                  lep   
+                }
+              }.recoverTotal { e =>
+                //InternalServerError("Error parsing Laser Endpoint JSON: " + JsError.toFlatJson(e).toString)
+                throw new RuntimeException("Error parsing Laser Endpoint JSON: " + JsError.toFlatJson(e).toString)
+              }
+            }
+            case Failure(e) => throw e
+          }
+          
+          //
+          // Create MetaEndpoint
+          //
+          
+          // Inject 'gateway_url' and 'api' properties
+          val metaJson = input.copy(
+              properties = Some(input.properties.get ++ Map(
+                  "gateway_url" -> JsString(laserEndpoint.url.get),
+                  "api" -> JsString(api.get.toString))))
+          
+          println("***CREATING META ENDPOINT***")
+          println(Json.prettyPrint(Json.toJson(metaJson)))
+          println
+          
+          val metaEndpoint = CreateResource(ResourceIds.User, request.identity.account.id,
+            org, Json.toJson(metaJson), request.identity,
+            typeId = Some(ResourceIds.ApiEndpoint),
             parentId = Some(parent))
-      }
-    }
-    
-    endpoint match {
-      case Failure(err) => throw err
-      case Success(enp) => {
-        if (lambda.isDefined) {
-          ResourceFactory.addEndpointToLambda(enp.id, lambda.get.id, props.get("function"))    
+          
+          // Write meta_x_laser map
+          val out = metaEndpoint match {
+            case Failure(err) => throw err
+            case Success(enp) => {
+              if (lambda.isDefined) {
+                ResourceFactory.addEndpointToLambda(enp.id, lambda.get.id, impl.get("function"))
+              }
+              enp
+            }
+          }
+          
+          // Write lambda_x_endpoint map
+          ResourceFactory.mapLaserType(ResourceIds.ApiEndpoint, endpointId, endpointId, h.id, loc)
+          out
         }
-        enp
       }
     }
-    
+    go(providers, Seq())    
   }
   
-
+  
   def idFromImpl(json: JsValue): UUID = {
     val tpe = json \ "type" match {
       case u: JsUndefined => throw new BadRequestException("Must specify 'type'")
@@ -242,6 +375,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   
   def postLambdaFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     trace(s"postLambdaFqon($fqon, $parent)")
+    
     orgFqon(fqon) match {
       case Some(org) => {
         ResourceFactory.findById(ResourceIds.Environment, parent) match {
@@ -278,7 +412,13 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case None => Future { OrgNotFound(fqon) }
     }
   }
-
+  
+  def createApiCommon(org: UUID, parentId: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    CreateResourceResult(ResourceIds.User, request.identity.account.id,
+        org, json, request.identity,
+        typeId = Some(ResourceIds.Api),
+        parentId = Some(parentId))  
+  }
   
   def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID)(implicit request: SecuredRequest[JsValue]) = {
     Future {
@@ -296,14 +436,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
   
-  /*
-   * 
-   * 1.) Transform JSON from request to ResourceInstance
-   * 2.) Create or update the instance
-   * 3.) Return an HTTP Result
-   * 
-   */
-  
   def createResource(org: UUID, parentId: UUID, typeId: UUID)(implicit request: SecuredRequest[JsValue]) = {
       safeGetInputJson(typeId, request.body) match {
         case Failure(e)     => BadRequestResult(e.getMessage)
@@ -316,9 +448,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       } 
   }
   
-  import com.galacticfog.gestalt.laser._
+  
+
+  
+  
   def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
-   
+    trace(s"createLambdaCommon($org, <parent>)")
     Future {
     
       safeGetInputJson(ResourceIds.Lambda, request.body) match {
@@ -331,17 +466,112 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           val newjson = request.body.as[JsObject] ++ Json.obj(
             "properties" -> 
             replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) 
+          
+          
+          // TODO: Validate unwrapped providers Seq
+          val providers = newjson \ "properties" \ "providers" match {
+            case u: JsUndefined => None
+            case j => Some(j.validate[Seq[JsValue]].get)
+          }
+
+          def createApisSynchronized(metaLambdaId: UUID, lambdaName: String,  providers: Seq[LambdaProviderInfo]) = {
+            def toMetaApi(apiName: String, apiId: UUID, provider: JsValue) = {
+              GestaltResourceInput(
+                  id = Some(apiId), 
+                  name = apiName,
+                  resource_type = Some(ResourceIds.Api), 
+                  resource_state = Some(ResourceStates.Active),
+                  properties = Some(Map("provider" -> provider)))
+            }
             
-          /*
-           * 
-           * Create in Laser
-           * if successful, get it's ID
-           * inject ID into properties.external_id
-           * Create in Meta -> Sick
-           *
-              val lmb = newjson.validate[GestaltResourceInput].get
-              val las = toLaserLambda(lmb)
-           */
+            def go(ps: Seq[LambdaProviderInfo], acc: Seq[UUID]): Seq[UUID] = {
+              ps match {
+                case Nil => acc
+                case h :: t => {
+                  
+                  val nids: Seq[UUID] = h.locations map { loc =>
+                    val id = UUID.randomUUID
+                    println("------------------------------------------")
+                    
+                    // Create Laser API
+                    println(s"  Create LASER API [$lambdaName]: id: ${id}, ${loc}")
+                    val laserjson = LaserApi(
+                      id = Some(id),
+                      name = lambdaName,
+                      description = None,
+                      provider = Some(Json.obj("id" -> h.id.toString, "location" -> loc)))
+                      
+                    laser.createApi(laserjson) match {
+                      case Success(_) => println("***LASER API CREATED***")
+                      case Failure(e) => throw e
+                    }
+                    
+                    // Create Meta API
+                    println(s"  Create META API  [$lambdaName]: id: ${id}, ${loc}")
+                    
+                    println
+                    val metaApiJson = toMetaApi(lambdaName, id, Json.obj("id" -> h.id.toString, "location" -> loc))
+                    println("TO META: " + Json.prettyPrint(Json.toJson(metaApiJson)))
+                    
+                    val res = createApiCommon(org, parent.id, Json.toJson(metaApiJson))
+                    // Write Record to association table
+                    
+                    println("RESULT : " + res + " : " + res.body)
+                    
+                    println(s"  Writing Lambda -> API association:")
+                    println(s"  $metaLambdaId, $id, ${h.id}, $loc")
+                    ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, loc)
+                    
+                    println
+                    println(s"  Writing to Meta -> Laser map:")
+                    println(s"  ${ResourceIds.Api}, $id, ${h.id}, $loc")
+                    ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, loc)
+                    println("------------------------------------------")
+                    println
+                    
+                    // return IDs
+                    id
+                  }
+                  go(t, (acc ++ nids))
+                }
+              }
+            }
+            go(providers, Seq())
+          }
+          
+          def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = {
+            for (p <- providers; l <- p.locations) {
+              val laserId = Some(UUID.randomUUID())
+              val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
+              
+              laser.createLambda(lambda) match {
+                case Success(_) => println("**********LASER LAMBDA CREATED*********")
+                case Failure(e) => throw e
+              }
+              ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)                
+            }
+          }
+          
+          // 
+          // Create one LaserApi and one LaserLambda for each provider.
+          // 
+          
+          val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
+          
+          
+          if (providers.isDefined) {
+            println("***CREATING META-LAMBDA: " + lambdaId)
+            
+            val ps = providers.get map { p => p.validate[LambdaProviderInfo].get }
+            
+            println("***CREATING LASER-LAMBDAS...")
+            createLaserLambdas(lambdaId, input, ps)
+            
+            println
+            println("***CREATING APIs...")
+            createApisSynchronized(lambdaId, input.name, ps)
+            println
+          }
   
           CreateResourceResult(
               ResourceIds.User, 
@@ -349,7 +579,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
               org, /*request.body*/newjson, request.identity,
               typeId = Some(ResourceIds.Lambda), 
               parentId = Some(parent.id) )
-
         }
       }
       
@@ -418,52 +647,18 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }    
   }
   
-  def createResource2(org: UUID, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
-    Future {
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          org, 
-          request.body, 
-          request.identity, 
-          typeId)
-    }
-  }
-
-  def createSystemResource(fqon: String, restName: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
-    trace(s"createSystemResource($fqon)")
-    Future { 
-      extractByName(fqon, restName) match {
-        case Left(result) => result
-        case Right((org, pathtype)) => CreateNoConflictResult(org, pathtype)
-      }
-    }
-  }
-  
-//  private def pathCreateError(pathType: UUID, givenType: UUID) = {
-//    toError(409, "conflicting resource_type_ids found.")
+//  def createResource2(org: UUID, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+//    Future {
+//      CreateResourceResult(
+//          ResourceIds.User, 
+//          request.identity.account.id, 
+//          org, 
+//          request.body, 
+//          request.identity, 
+//          typeId)
+//    }
 //  }
-  
-  private def CreateConflictResult(pathType: UUID, input: GestaltResourceInput) = {
-    //Conflict(pathCreateError(pathType, input.resource_type.get))
-    ConflictResult("conflicting resource_type_ids found.")
-  }
 
-  private def CreateNoConflictResult(org: UUID, pathType: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    getWellFormedInput(org, request.body, Some(pathType)) match {
-      case Failure(error) => HandleRepositoryExceptions(error)
-      case Success(input) => {
-
-        // Ensure no conflict between given resource_type (if any) and pathtype
-        // (i.e. can't create a Node in /clusters)
-
-        if (pathType != input.resource_type) 
-             CreateConflictResult(pathType, input)
-        else CreateResourceResult2(ResourceIds.User, request.identity.account.id, org, input, request.identity)
-      }
-    }    
-  }  
-  
   def patchResource(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     trace(s"patchResource($org, $id)")
     resourcePatch(id)
@@ -492,16 +687,81 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   def postWorkspace(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    Meta.createResource2(org, Some(ResourceIds.Workspace))
+    Meta.createResource3(org, request.body,  Some(ResourceIds.Workspace))
   }
   
+  
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+   Future { 
     orgFqon(fqon) match {
-      case Some(org) => Meta.createResource2(org.id, Some(ResourceIds.Workspace))
-      case None => Future { OrgNotFound(fqon) }
-    }
-  }  
+      case None => OrgNotFound(fqon) 
+      case Some(org) => {
+        // Create the workspace
+        //Meta.createResource3(org.id, request.body, Some(ResourceIds.Workspace))        
+        val user = request.identity
+        CreateResource(ResourceIds.User, user.account.id, org.id,
+            request.body, user, Some(ResourceIds.Workspace)) match {
+          case Failure(e) => HandleRepositoryExceptions(e)
+          case Success(workspace) => {
+            // Add ALL gateway providers to new workspace.
+            getLaserProviders(org.id) foreach { p =>
+              this.CreateResource(ResourceIds.User, user.account.id, org.id, p, user, 
+                  Some(ResourceIds.ApiGatewayProvider), Some(workspace.id))
+            }
+            Created(Output.renderInstance(workspace, META_URL))
+          }
+        }
+      }
 
+      }
+    }
+  }
+  
+  def getLaserProviders(org: java.util.UUID): Seq[JsObject] = {
+    
+    val ps = laser.providers match {
+      case Failure(e) => throw e
+      case Success(r) => {
+        r.output.get.validate[Seq[LaserProvider]] match {
+          case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
+          case p => p.get
+        }
+      }
+    }
+    
+    def mkProviderJson(provider: LaserProvider, locations: Seq[LaserLocation]) = {
+      Json.obj(
+          "id" -> provider.id.get,
+          "name" -> provider.name,
+          "org" -> org.toString,
+          "resource_type" -> ResourceIds.ApiGatewayProvider,
+          "properties" -> Json.obj(
+            "locations" -> (locations map { _.name })
+          )
+      )  
+    }
+    
+    def extractLocations(response: ApiResponse): Seq[LaserLocation] = {
+      response.output.get.validate[Seq[LaserLocation]] match {
+        case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
+        case p => p.get
+      }
+    }
+    
+    def go(ps: Seq[LaserProvider], acc: Seq[JsObject]): Seq[JsObject] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+          laser.providerLocations(h.id.get) match {
+            case Failure(e) => throw e
+            case Success(ls) => go(t, acc :+ mkProviderJson(h, extractLocations(ls)))
+          }
+        }
+      }
+    }  
+    go(ps, Seq())
+  }
+  
 
   def postLambdaWorksapce(org: UUID, workspace: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     // Check if parent object is given in properties
@@ -509,7 +769,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     // NO: create a new parent object from this workspace and inject
     ???  
   }  
-  
   
   def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
     (obj \ "resource_type" match {
@@ -603,29 +862,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     
   }
 
-  /**
-   * Ensure the given JSON can be serialized to a GestaltResourceInput with required values.
-   * Currently checks are limited to whether a resource_type_id is supplied, and whether
-   * that type_id exists.
-   */
-  private def getWellFormedInput(org: UUID, inputJson: JsValue, typeId: Option[UUID] = None): Try[GestaltResourceInput] = {
-    
-    /* Assert that the given type_id exists */
-    def assertTypeExists(typeId: UUID) = if (!TypeFactory.findById(typeId).isEmpty) {
-      throw new ResourceNotFoundException(Err.RESOURCE_TYPE_NOT_FOUND(typeId))
-    }
-    
-    def resolveInputTypeId(in: GestaltResourceInput) = in.resource_type orElse { typeId }
 
-    safeGetInputJson(inputJson) map { input =>
-      assertTypeExists {
-        resolveInputTypeId(input) getOrElse {
-          throw new BadRequestException(Err.RESOURCE_TYPE_NOT_GIVEN)
-        }
-      }
-      input
-    }
-  }
   
   
   /**
@@ -638,6 +875,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
   }
   
+  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
+    if (r.resource_type.isDefined) r.resource_type
+    else if (typeId.isDefined) typeId
+    else None
+  }  
+  
   private def CreateResourceResult2(creatorType: UUID, creator: UUID, org: UUID, input: GestaltResourceInput, user: AuthAccountWithCreds) = {
     trace(s"CreateResourceResult($org, [json], [account])")
 
@@ -649,12 +892,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       }
     }
   }  
-  
-  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
-    if (r.resource_type.isDefined) r.resource_type
-    else if (typeId.isDefined) typeId
-    else None
-  }
   
   
   /*
@@ -673,46 +910,47 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       parentId: Option[UUID] = None) = {
     
     trace(s"CreateResourceResult($org, [json], [account])")
-    
-    def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
-    
-    safeGetInputJson(resourceJson) match {
-      case Failure(e) => BadRequestResult(e.getMessage)
-      case Success(input) => {
-  
-        val tid = resolveTypeId(input, typeId)
-        
-        //if (input.resource_type.isEmpty) {
-        if (tid.isEmpty) {
-          log.error(s"No resource_type specified.")
-          BadRequestResult(Err.RESOURCE_TYPE_NOT_GIVEN)
-        } 
-        else if (!typeExists(/*input.resource_type.get*/tid.get)) {
-          log.error(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
-          NotFoundResult(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
-        } 
-        else {
-          
-          val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(user))
-          val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-          val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-          val domain = fromResourceInput(org,
-            input.copy(id = resid, owner = owner, resource_state = state, resource_type = tid))
 
-          /* 
-           * TODO: create now returns better errors - match them to be more specific 
-           */
-          ResourceFactory.create(creatorType, creator)(domain, parentId = parentId) match {
-            case Success(res) => Ok(Output.renderInstance(res))
-            case Failure(err) => HandleRepositoryExceptions(err) 
-//            {
-//              log.error(s"Internal Server Error: ${err.getMessage}")
-//              GenericErrorResult(500, err.getMessage)
-//            }
-          }
-        }
-      }
+    //    def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
+    //    
+    //    safeGetInputJson(resourceJson) match {
+    //      case Failure(e) => BadRequestResult(e.getMessage)
+    //      case Success(input) => {
+    //  
+    //        val tid = resolveTypeId(input, typeId)
+    //        
+    //        if (tid.isEmpty) {
+    //          log.error(s"No resource_type specified.")
+    //          BadRequestResult(Err.RESOURCE_TYPE_NOT_GIVEN)
+    //        } 
+    //        else if (!typeExists(/*input.resource_type.get*/tid.get)) {
+    //          log.error(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
+    //          NotFoundResult(Err.RESOURCE_TYPE_NOT_FOUND(tid.get))
+    //        } 
+    //        else {
+    //          
+    //          val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(user))
+    //          val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    //          val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    //          val domain = fromResourceInput(org,
+    //            input.copy(id = resid, owner = owner, resource_state = state, resource_type = tid))
+    //
+    //          /* 
+    //           * TODO: create now returns better errors - match them to be more specific 
+    //           */
+    //          ResourceFactory.create(creatorType, creator)(domain, parentId = parentId) match {
+    //            case Success(res) => Ok(Output.renderInstance(res))
+    //            case Failure(err) => HandleRepositoryExceptions(err)
+    //          }
+
+    CreateResource(creatorType, creator, org, resourceJson, user, typeId, parentId) match {
+      case Success(res) => Created(Output.renderInstance(res))
+      case Failure(err) => HandleRepositoryExceptions(err)
     }
+          
+//        }
+//      }
+//    }
   }
   
   
@@ -725,7 +963,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       typeId: Option[UUID] = None,
       parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
     
-    trace(s"CreateResourceResult($org, [json], [account])")
+    trace(s"CreateResource($org, [json], [account])")
     
     def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
     
@@ -839,42 +1077,37 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
 
   
+  /**
+   * Parse JSON to GestaltResourceInput
+   */
   private def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
 
     implicit def jsarray2str(arr: JsArray) = arr.toString
 
     json.validate[GestaltResourceInput].map {
-      case resource: GestaltResourceInput => {
-        log.debug("RESOURCE : " + resource)
-        resource
-      }
-    }.recoverTotal { e =>
+      case resource: GestaltResourceInput => resource
+    }.recoverTotal { e => 
       log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
       illegal(JsError.toFlatJson(e).toString)
     }
   }
 
-  
+  /**
+   * Parse JSON to GestaltResourceInput and validate type-properties.
+   */
   private def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
     trace(s"safeGetInputJson($typeId, [json]")
 
-    val res = json.validate[GestaltResourceInput].map {
-      case resource: GestaltResourceInput => resource
-    }.recoverTotal {
-      e => illegal(JsError.toFlatJson(e).toString)
+    safeGetInputJson(json) match {
+      case Failure(e)   => throw e
+      case Success(res) => {
+        val validation = PropertyValidator.validate(typeId, stringmap(res.properties))
+        if (validation._1) res else illegal(validation._2.get)
+      }
     }
-    
-    log.debug(s"Validating instance properties for type ${ResourceType.name(typeId)}")
-    val validation = PropertyValidator.validate(typeId, stringmap(res.properties))
-
-    if (validation._1) res else illegal(validation._2.get)
   }
-
-
+  
   def resolveResourceState(state: Option[String]) = {
-//    if (state.isDefined) ResourceState.id(state.get)
-//    else ResourceState.id(ResourceStates.Active)
-    
     ResourceState.id( state getOrElse ResourceStates.Active )
   }
   

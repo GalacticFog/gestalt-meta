@@ -178,14 +178,17 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getAllSystemResourcesByName(org: UUID, restName: String) = Authenticate(org)  { implicit request =>
     extractByName(org, restName) match {
       case Left(result) => result
-      case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))      
+      case Right((org, typeId)) => handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, META_URL)      
     }
   }
   
   def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
+    trace(s"getAllSystemResourceByNameFqon($fqon, $restName)")
     extractByName(fqon, restName) match {
       case Left(result) => result
-      case Right((org, typeId)) => Ok(renderResourceLinks(org, typeId, META_URL))
+      case Right((org, typeId)) => {
+        handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, META_URL)
+      }
     }
   }
   
@@ -366,10 +369,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   /*
    * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
    */
-  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
       /*Ok(Json.toJson(rs map { r => Json.parse(Output.renderInstance(r)) }))*/
-      Ok(Json.toJson(rs map { r => Output.renderInstance(r) }))
+      Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
     }
     else Ok(Output.renderLinks(rs))
   }
