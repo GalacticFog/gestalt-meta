@@ -5,6 +5,7 @@ import controllers.util.AppConf
 import play.api.{ Logger => log }
 
 object EnvConfig extends JdbcConfiguration {
+  
   private val defaultTimeout = 5000
   private lazy val host = System.getenv("DATABASE_HOSTNAME")
   private lazy val port = System.getenv("DATABASE_PORT")
@@ -12,11 +13,17 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val username = System.getenv("DATABASE_USERNAME")
   private lazy val password = System.getenv("DATABASE_PASSWORD")
   private lazy val timeout = System.getenv("DATABASE_TIMEOUT_MS")
-
+  private lazy val apigateway = System.getenv("GESTALT_APIGATEWAY")
+  private lazy val lambda = System.getenv("GESTALT_LAMBDA")
+  
   def isValid() = {
-    !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password))
+    !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
+        empty(apigateway) && empty(lambda))
   }
-
+  
+  val gatewayUrl = apigateway
+  val lambdaUrl = lambda
+  
   def getConnection() = {
     ScalikePostgresInfo(
       host,
@@ -29,6 +36,6 @@ object EnvConfig extends JdbcConfiguration {
 
   private def empty(s: String) = (s == null || s.trim.isEmpty())
   override def toString = {
-    s"EnvConfig(\n  host = ${host},\n  port = ${port},\n  dbname = ${dbname},\n  username = ${username},\n  password = '...'\n)"
+    s"EnvConfig(\n  host = ${host},\n  port = ${port},\n  dbname = ${dbname},\n  username = ${username},\n  db_password = '...',\n  apigateway = ${apigateway},\n  lambda_service = ${lambda}\n)"
   }
 }
