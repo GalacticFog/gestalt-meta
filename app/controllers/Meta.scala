@@ -1,6 +1,8 @@
 package controllers
 
+
 import java.util.UUID
+import java.net.URL
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -36,6 +38,7 @@ import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
 import controllers.util._
+import controllers.util.db._
 import controllers.util.MetaController
 import controllers.util.Security
 
@@ -78,10 +81,33 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   
-  lazy val gatewayConfig = HostConfig("http", "apigateway.galacticfog.com", port = None)
-  lazy val lambdaConfig = HostConfig("http", "lambda.galacticfog.com", port = None)
+  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
   lazy val laser = new Laser(gatewayConfig, lambdaConfig)
   
+  
+  def resetLaser() = Authenticate() { implicit request =>
+
+    val lambdastats = laser.lambdas map { m =>
+      laser.deleteLambda(m.id.get) match {
+        case Success(_) => (m.id.get, "SUCCESS")
+        case Failure(e) => (m.id.get, "FAILURE: " + e.getMessage)
+      }
+    }
+
+    val apistats = laser.apis map { a =>
+      laser.deleteApi(a.id.get) match {
+        case Success(_) => (a.id.get, "SUCCESS")
+        case Failure(e) => (a.id.get, "FAILURE: " + e.getMessage)
+      }
+    }
+
+    val result = Json.obj(
+      "deleted_lambdas" -> Json.toJson(lambdastats.toMap),
+      "deleted_apis" -> Json.toJson(apistats.toMap))
+
+    Ok(result)
+  }
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     trace(s"postApiFqon($fqon, $parent)")

@@ -93,7 +93,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
 
   def getChildOrgsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => childOrgs(org.id)
+      case Some(org) => {
+        childOrgs(org.id)
+        handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Org, org.id), request.queryString)
+      }
       case None      => OrgNotFound(fqon)
     }
   }
@@ -105,7 +108,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User)))
   }
 
-  
   /**
    * Get a list of all Users in the given Org
    */
@@ -115,7 +117,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
 
   def getAllUsersFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org.id)))
+      case Some(org) => 
+        handleExpansion(ResourceFactory.findAll(ResourceIds.User, org.id), request.queryString) //Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org.id)))
       case None => OrgNotFound(fqon)
     }
   }
@@ -621,9 +624,11 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   def getEnvironmentsByWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) =>
-        Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org.id, ResourceIds.Environment, "workspace", workspaceId.toString)))
       case None => OrgNotFound(fqon)
+      case Some(org) => handleExpansion(
+          ResourceFactory.findAllByPropertyValueOrg(
+              org.id, ResourceIds.Environment, "workspace", workspaceId.toString),
+                request.queryString)
     }
   }
   

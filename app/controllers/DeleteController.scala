@@ -202,11 +202,14 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     orgFqon(fqon) match {
       case None => OrgNotFound(fqon)
       case Some(org) => {
+        println(s"Looking up endpoint $id")
         // 1.) Lookup given endpoint
         ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
           case None => NotFoundResult(request.uri)
           case Some(ep) => {
+            
             val apiId = ep.properties.get("api")
+            println(s"FOUND ENDPOINT: API-ID => $apiId")
             // 2.) Delete endpoint in laser
             laser.deleteEndpoint(apiId, id) match {
               case Failure(e) => HandleRepositoryExceptions(e)

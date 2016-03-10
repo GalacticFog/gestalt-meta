@@ -6,13 +6,16 @@ POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 
 POST	/sync			controllers.SyncController.sync()
 
+POST	/laser/reset	controllers.Meta.resetLaser()
+
+
 ######
 ###### ROUTES BY UUID #####
 ######
 
 # TODO: Need a similar generic method for id queries, i.e., /:restName/:id
 
-										
+
 
 ####################
 # ORGS

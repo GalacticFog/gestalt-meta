@@ -93,8 +93,12 @@ class JsonWebClient(config: HostConfig) {
   def unwrapResponse(response: WSResponse, expected: Seq[Int]) = {
     if (expected.contains(response.status)) {
       ApiResponse(response.status, output = Some(Json.parse(response.body)))
-    } else throw new ApiResponseException(
-        Json.prettyPrint(Json.toJson(ApiResponse(response.status, None, error = Some(response.statusText)))))
+    } else {
+      println("ERROR: JsonWebClient.unwrapResponse => " + response.statusText)
+      throw new ApiResponseException(
+        Json.prettyPrint(Json.toJson(ApiResponse(response.status, None, error = Some(response.statusText))))
+      )
+    }
   }
   
   
