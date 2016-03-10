@@ -124,7 +124,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }  
   
   def postApiEndpoint(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    postEndpoint(org, parent)
+    postEndpoint(org, parent, request.body)
     Future { Ok("nothing") }
   }
   
@@ -133,7 +133,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     
     Future {
       orgFqon(fqon) match {
-        case Some(org) => postEndpoint(org.id, parent) match {
+        case Some(org) => postEndpoint(org.id, parent, request.body) match {
           case Success(endpoints) => {
             Created(Json.toJson(endpoints map { ep => Output.renderInstance(ep) } ))
           }
@@ -147,6 +147,59 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
+  def postLambdaEndpointFqon(fqon: String, lambda: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    Future {
+      orgFqon(fqon) match {
+        case None => OrgNotFound(fqon)
+        case Some(org) => {
+          createLambdaEndpoint(lambda, request.body.as[JsObject]) match {
+            case Failure(e) => HandleRepositoryExceptions(e)
+            case Success(r) => postEndpoint(org.id, lambda, r) match {
+              case Success(endpoints) => {
+                Created(Json.toJson(endpoints map { ep => Output.renderInstance(ep) }))
+              }
+              case Failure(error) => {
+                log.error(error.getMessage)
+                InternalServerError(error.getMessage)
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  def createLambdaEndpoint(lambdaId: UUID, json: JsObject) = Try {
+    trace(s"createLambdaEndpoint($lambdaId, <json>)")
+    /*
+     * To post /lambdas/:id/endpoints, caller must supply implementation.function
+     */
+    
+    //1.) Ensure caller supplied implementation.function
+    println("RECEIVED : " + Json.prettyPrint(json))
+    
+    val impl = Try {
+      json \ "properties" \ "implementation" \ "function" match {
+        case u: JsUndefined => 
+          throw new BadRequestException("No value for implementation.function was found.")
+        case f => (json \ "properties" \ "implementation").as[JsObject] ++ Json.obj(
+          "type" -> "Lambda",
+          "id" -> lambdaId.toString)
+      }
+    }
+    
+    impl match {
+      case Failure(e) => throw e
+      case Success(i) => {
+        val newprops = (json \ "properties").as[JsObject] ++ Json.obj("implementation" -> i)
+        println("UPDATED PROPERTIES:")
+        println(Json.prettyPrint(newprops))
+        println
+        json ++ Json.obj("properties" -> newprops)
+      }
+    }
+  }   
+  
   def getJsonPropertyField(json: JsValue, field: String) = {
     json \ "properties" \ field match {
       case u: JsUndefined => None
@@ -208,56 +261,16 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }
 
-  def postLambdaEndpointFqon(fqon: String, lambda: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      createLambdaEndpoint(lambda, request.body.as[JsObject]) match {
-        case Failure(e) => HandleRepositoryExceptions(e)
-        case Success(r) => {
-          Created(r)
-        }
-      }
-    }
-  }
-  
-  def createLambdaEndpoint(lambdaId: UUID, json: JsObject) = Try {
-    trace(s"createLambdaEndpoint($lambdaId, <json>)")
-    /*
-     * To post /lambdas/:id/endpoints, caller must supply implementation.function
-     */
-    
-    //1.) Ensure caller supplied implementation.function
-    println("RECEIVED : " + Json.prettyPrint(json))
-    
-    val impl = Try {
-      json \ "properties" \ "implementation" \ "function" match {
-        case u: JsUndefined => 
-          throw new BadRequestException("No value for implementation.function was found.")
-        case f => (json \ "properties" \ "implementation").as[JsObject] ++ Json.obj(
-          "type" -> "Lambda",
-          "id" -> lambdaId.toString)
-      }
-    }
-    
-    impl match {
-      case Failure(e) => throw e
-      case Success(i) => {
-        val newprops = (json \ "properties").as[JsObject] ++ Json.obj("implementation" -> i)
-        println("UPDATED PROPERTIES:")
-        println(Json.prettyPrint(newprops))
-        println
-        json ++ Json.obj("properties" -> newprops)
-      }
-    }
-    
 
-  } 
   
-  def postEndpoint(org: UUID, parent: UUID)(implicit request: SecuredRequest[JsValue]) = Try {
+  
+  
+  def postEndpoint(org: UUID, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Try {
     trace(s"postEndpoint($org, $parent)")
     
     
     
-    val (lambda, impl) = getEndpointImplementation(request.body) match {
+    val (lambda, impl) = getEndpointImplementation(json) match {
       case Left(err) => throw err
       case Right(props) => {
         if (props.isEmpty) (None,None) else {
