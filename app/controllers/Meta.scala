@@ -502,10 +502,10 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           val env = ResourceFactory.findById(ResourceIds.Environment, parent.id)
           val parentLink = toLink(parent, None)
           
+          val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
           val newjson = request.body.as[JsObject] ++ Json.obj(
             "properties" -> 
-            replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) 
-          
+            replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) ++ Json.obj("id" -> lambdaId.toString) 
           
           // TODO: Validate unwrapped providers Seq
           val providers = newjson \ "properties" \ "providers" match {
@@ -595,7 +595,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           // Create one LaserApi and one LaserLambda for each provider.
           // 
           
-          val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
+
           
           
           if (providers.isDefined) {

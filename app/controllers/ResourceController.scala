@@ -190,7 +190,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => {
-        handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, META_URL)
+        handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, baseUri = META_URL)
       }
     }
   }
@@ -199,7 +199,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     extractByName(org, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
-        case Some(res) => Ok(Output.renderInstance(res))
+        case Some(res) => Ok(Output.renderInstance(res, META_URL))
         case None => NotFoundResult(request.uri)
       }
     }
@@ -211,9 +211,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
-        case Some(res) => Ok(Output.renderInstance(res))
+        case Some(res) => Ok(Output.renderInstance(res, META_URL))
         case None => NotFoundResult(request.uri)
-        //Ok(renderResourceLinks(org, typeId, META_URL))
       }
     }
   }  
@@ -374,10 +373,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
    */
   def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
-      /*Ok(Json.toJson(rs map { r => Json.parse(Output.renderInstance(r)) }))*/
       Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
     }
-    else Ok(Output.renderLinks(rs))
+    else Ok(Output.renderLinks(rs, baseUri))
   }
   
   
@@ -385,12 +383,12 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   // APIS
   // --------------------------------------------------------------------------    
   def getApis(org: UUID) = Authenticate(org) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org)))
+    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org), META_URL))
   }
   
   def getApisFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org.id)))
+      case Some(org) => Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Api, org.id), META_URL))
       case None => OrgNotFound(fqon)
     }
   }
@@ -435,17 +433,16 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getWorkspaceLambdas(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
     trace(s"getWorkspaceLambdas($org, $workspace)")
     handleExpansion(
-        ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace), request.queryString)
+        ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace), request.queryString,
+        META_URL)
   }
-  
-
   
   def getWorkspaceLambdasFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
     trace(s"getWorkspaceLambdasFqon($fqon, $workspace)")
     val lambdas = ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace) map { 
       injectLambdaFunctionMap(_).get
     }
-    handleExpansion(lambdas, request.queryString)
+    handleExpansion(lambdas, request.queryString, META_URL)
   }
   
   
@@ -461,7 +458,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   def getEnvironmentLambdas(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
     trace(s"getEnvironmentLambdas($org, $environment)")
-    handleExpansion(getChildLambdas(environment), request.queryString)    
+    handleExpansion(getChildLambdas(environment), request.queryString, META_URL)    
   }  
   
   def getEnvironmentLambdasFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>

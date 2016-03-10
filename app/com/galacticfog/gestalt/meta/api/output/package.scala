@@ -24,6 +24,9 @@ package object output {
   }
   
   def toLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {
+    val href = toHref( typeId, id, orgId, baseUri )
+    println("BASE-URI : " + href)
+    println("HREF : " + href)
     ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id, orgId, baseUri )))
   }
   
