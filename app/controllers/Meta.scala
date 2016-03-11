@@ -301,7 +301,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         case Nil => acc
         case h :: t => h.locations map { loc =>
           val providerObj = Json.obj("id" -> h.id, "location" -> loc)
-          val upstream = s"http://foo/lambdas/${lambda.get.id.toString}/invoke"
+         val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
           val api = ResourceFactory.findApiId(lambda.get.id, h.id, loc)
           
           // User client-supplied ID if given.
