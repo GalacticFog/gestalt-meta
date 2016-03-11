@@ -580,7 +580,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           
           def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = {
             for (p <- providers; l <- p.locations) {
-              val laserId = Some(UUID.randomUUID())
+              val laserId = Some(metaLambdaId)
               val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
               
               laser.createLambda(lambda) match {
