@@ -66,7 +66,7 @@ object Output {
     val res = mkTypeOutput(r)
     Json.toJson(res)
   }
-
+  
   
   private def mkTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
     GestaltResourceTypeOutput(

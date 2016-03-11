@@ -63,6 +63,107 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
   }
 
+/*
+case class GestaltResourceInstance(  
+  override val id: UUID,
+  override val typeId: UUID,
+  override val state: UUID = ResourceState.id(ResourceStates.Active),
+  override val orgId: UUID,
+  override val owner: ResourceOwnerLink,
+  override val name: String,
+  override val description: Option[String] = None,
+  override val created: Option[Hstore] = None,
+  override val modified: Option[Hstore] = None,  
+  override val properties: Option[Hstore] = None,
+  override val variables: Option[Hstore] = None,
+  override val tags: Option[List[String]] = None,
+  override val auth: Option[Hstore] = None)  
+ */
+  
+  import com.galacticfog.gestalt.laser._
+  import scala.reflect.runtime.{ universe => ru }
+  import scala.reflect.runtime.currentMirror
+  import scala.reflect.ClassTag
+  import ru.TypeTag
+  import ru.MethodSymbol
+  import ru.typeOf
+  import scala.collection.immutable.ListMap
+
+import scala.annotation.tailrec  
+  def instance2map[T: ClassTag: TypeTag](inst: T) = {
+    val im = currentMirror.reflect( inst )
+    @tailrec def loop(acc: Map[String,Any], symbols: List[MethodSymbol]): Map[String,Any] = {
+      symbols match {
+        case Nil => acc
+        case h :: t => loop( acc + ((h.name.toString, im.reflectMethod( h ).apply().toString)), t )
+      }
+    }
+    loop( Map(), getMethods[T] )
+  }  
+  
+  def getMethods[T: TypeTag]: List[MethodSymbol] = typeOf[T].members.collect {
+    case m: MethodSymbol if m.isCaseAccessor => m
+  }.toList
+
+  def getContainersFqon(fqon: String) = Authenticate().async { implicit request =>
+    orgFqon(fqon) match {
+      case None => Future { OrgNotFound(fqon) }
+      case Some(org) => getContainers(org.id, request.queryString)
+    }
+  }
+  
+  def getEnvironmentContainersFqon(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
+    trace(s"getEnvironmentContainersFqon($fqon, $environment)")
+    orgFqon(fqon) match {
+      case None => Future { OrgNotFound(fqon) }
+      case Some(org) => {
+        getContainers(org.id, request.queryString)
+//        val out = GestaltResourceInstance(
+//          id = UUID.randomUUID(),
+//          typeId = ResourceIds.Container,
+//          orgId = org.id,
+//          owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
+//          name = UUID.randomUUID.toString)
+//
+//        Future { Ok(Output.renderInstance(out, META_URL)) }
+//        val marathonClient = MarathonClient(
+//          WS.client,
+//          current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
+//
+//        val outs = marathonClient.listApplications map { s =>
+//          s map { i =>
+//            out.copy(
+//              name = i.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
+//              properties = Some(instance2map(i).asInstanceOf[Map[String, String]]))
+//          }
+//        }
+//        outs map { s => handleExpansion(s, request.queryString, META_URL) }
+      }
+    }
+  }
+  
+  def getContainers(org: UUID, qs: Map[String,Seq[String]])(implicit request: SecuredRequest[AnyContent]) = {
+    val out = GestaltResourceInstance(
+      id = UUID.randomUUID(),
+      typeId = ResourceIds.Container,
+      orgId = org,
+      owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
+      name = UUID.randomUUID.toString)
+
+    Future { Ok(Output.renderInstance(out, META_URL)) }
+    val marathonClient = MarathonClient(
+      WS.client,
+      current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
+
+    val outs = marathonClient.listApplications map { s =>
+      s map { i =>
+        out.copy(
+          name = i.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
+          properties = Some(instance2map(i).asInstanceOf[Map[String, String]]))
+      }
+    }
+    outs map { s => handleExpansion(s, request.queryString, META_URL) }    
+  }
   
   /**
    * Get a single Org

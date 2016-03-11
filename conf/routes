@@ -283,6 +283,15 @@ DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id  controllers.
 
 
 ############################
+# CONTAINERS
+############################
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/containers   controllers.ResourceController.getEnvironmentContainersFqon(fqon: String, id: java.util.UUID)
+
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 controllers.ResourceController.getContainersFqon(fqon: String)
+
+############################
 # APIS
 ############################
 

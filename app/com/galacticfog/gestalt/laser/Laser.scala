@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.laser
 import play.api.libs.json._
 import scala.util.{Try,Success,Failure}
 
+import com.galacticfog.gestalt.meta.api.sdk._
 
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig) {
 
