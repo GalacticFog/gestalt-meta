@@ -75,6 +75,18 @@ object Security {
     }
   }
   
+  def getGroups(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltGroup]] = {
+    Try(Await.result(GestaltGroup.getGroups(auth.creds.identifier, auth.creds.password), 5 seconds))
+  }
+  
+  def deleteGroup(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltGroup] = {
+    ???
+  }
+  
+  def createGroup(auth: AuthAccountWithCreds, group: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltGroup] = {
+    ???
+  }
+  
   def getRootUser(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
     ???
   }

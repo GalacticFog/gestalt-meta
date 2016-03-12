@@ -63,22 +63,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
   }
 
-/*
-case class GestaltResourceInstance(  
-  override val id: UUID,
-  override val typeId: UUID,
-  override val state: UUID = ResourceState.id(ResourceStates.Active),
-  override val orgId: UUID,
-  override val owner: ResourceOwnerLink,
-  override val name: String,
-  override val description: Option[String] = None,
-  override val created: Option[Hstore] = None,
-  override val modified: Option[Hstore] = None,  
-  override val properties: Option[Hstore] = None,
-  override val variables: Option[Hstore] = None,
-  override val tags: Option[List[String]] = None,
-  override val auth: Option[Hstore] = None)  
- */
+  def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    ???  
+  }
+  
   
   import com.galacticfog.gestalt.laser._
   import scala.reflect.runtime.{ universe => ru }
@@ -90,6 +78,7 @@ case class GestaltResourceInstance(
   import scala.collection.immutable.ListMap
 
 import scala.annotation.tailrec  
+  
   def instance2map[T: ClassTag: TypeTag](inst: T) = {
     val im = currentMirror.reflect( inst )
     @tailrec def loop(acc: Map[String,Any], symbols: List[MethodSymbol]): Map[String,Any] = {

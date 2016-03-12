@@ -17,8 +17,6 @@ import com.galacticfog.gestalt.data.Hstore
 
 package object api {
 
-
-  
   /**
    * Move to 'errors' sub-package
    */
@@ -36,6 +34,7 @@ package object api {
       case "resources"        => Some(ResourceIds.Resource)
       case "orgs"             => Some(ResourceIds.Org)
       case "users"            => Some(ResourceIds.User)
+      case "groups"           => Some(ResourceIds.Group)
       case "workspaces"       => Some(ResourceIds.Workspace)
       case "environments"     => Some(ResourceIds.Environment)
       case "clustertemplates" => Some(ResourceIds.ClusterTemplate)
@@ -52,6 +51,7 @@ package object api {
       case "apis"             => Some(ResourceIds.Api)
       case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
       case "domains"          => Some(ResourceIds.Domain)
+      case "containers"       => Some(ResourceIds.Container)
       
       case "nodetypes"        => Some(ResourceIds.NodeType)
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
@@ -75,6 +75,7 @@ package object api {
       
       case ResourceIds.Org             => Some("orgs")
       case ResourceIds.User            => Some("users")
+      case ResourceIds.Group           => Some("groups")
       case ResourceIds.Workspace       => Some("workspaces")
       case ResourceIds.Environment     => Some("environments")
       case ResourceIds.ClusterTemplate => Some("clustertemplates")
@@ -85,6 +86,12 @@ package object api {
       case ResourceIds.Cluster         => Some("clusters")
       case ResourceIds.Node            => Some("nodes")
       case ResourceIds.Task            => Some("tasks")
+      
+      case ResourceIds.Lambda          => Some("lambdas")
+      case ResourceIds.Api             => Some("apis")
+      case ResourceIds.ApiEndpoint     => Some("apiendpoints")
+      case ResourceIds.Domain          => Some("domains")
+      case ResourceIds.Container       => Some("containers")      
       
       case ResourceIds.NodeType        => Some("nodetypes")
       case ResourceIds.EnvironmentType => Some("environmenttypes")
