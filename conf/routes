@@ -6,7 +6,7 @@ POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 
 POST	/sync			controllers.SyncController.sync()
 
-POST	/laser/reset	controllers.Meta.resetLaser()
+POST	/laser/reset	controllers.LaserController.resetLaser()
 
 
 ######
@@ -135,10 +135,10 @@ GET     /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a
 ############################
 
 # Create lambda in a workspace
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:workspace/lambdas   controllers.Meta.postLambda(orgId: java.util.UUID, workspace: java.util.UUID)
+POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:workspace/lambdas   controllers.LaserController.postLambda(orgId: java.util.UUID, workspace: java.util.UUID)
 
 # Create lambda in an environment
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:environment/lambdas   controllers.Meta.postLambda(orgId: java.util.UUID, environment: java.util.UUID)
+POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:environment/lambdas   controllers.LaserController.postLambda(orgId: java.util.UUID, environment: java.util.UUID)
 
 
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id/lambdas  controllers.ResourceController.getWorkspaceLambdas(orgId: java.util.UUID, id: java.util.UUID)
@@ -173,9 +173,9 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 
 
 # Create api_endpoint in environment
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/apiendpoints		controllers.Meta.postApiEndpoint(orgId: java.util.UUID , id: java.util.UUID)
+POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/apiendpoints		controllers.LaserController.postApiEndpoint(orgId: java.util.UUID , id: java.util.UUID)
 
-GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName/:id   controllers.ResourceController.getAllSystemResourcesByNameId(orgId: java.util.UUID, restName: String, id: java.util.UUID)
+GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName/:id   					controllers.ResourceController.getAllSystemResourcesByNameId(orgId: java.util.UUID, restName: String, id: java.util.UUID)
 
 
 
@@ -295,7 +295,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 controllers.ResourceC
 # APIS
 ############################
 
-POST     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.Meta.postApiFqon(fqon: String, id: java.util.UUID)
+POST     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.LaserController.postApiFqon(fqon: String, id: java.util.UUID)
 
 #GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
 #GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
@@ -315,7 +315,7 @@ GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/apis/:id  
 # LAMBDAS
 ############################
 
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas 	controllers.Meta.postLambdaFqon(fqon: String, envId: java.util.UUID)	
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas 	controllers.LaserController.postLambdaFqon(fqon: String, envId: java.util.UUID)	
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id					controllers.ResourceController.getLambdaByIdFqon(fqon: String, id: java.util.UUID)
 
@@ -343,12 +343,12 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id					controllers.Del
 ############################
 
 # Create ApiEndpoint in a Workspace
-POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints		controllers.Meta.postApiEndpointFqon(fqon: String, id: java.util.UUID)
+POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints		controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
 
 # Create ApiEndpoint in an Environment
-POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints		controllers.Meta.postApiEndpointFqon(fqon: String, id: java.util.UUID)
+POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints		controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
 
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  controllers.Meta.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  controllers.LaserController.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
 
 GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
 

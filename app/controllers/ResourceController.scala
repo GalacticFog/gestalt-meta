@@ -50,6 +50,8 @@ import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
+import controllers.util.JsonUtil._
+import com.galacticfog.gestalt.laser._
 
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
