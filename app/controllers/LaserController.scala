@@ -369,6 +369,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
     }  
   }
 
+  
   def createApiCommon(org: UUID, parentId: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     CreateResourceResult(ResourceIds.User, request.identity.account.id,
         org, json, request.identity,
@@ -376,8 +377,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
         parentId = Some(parentId))  
   }
   
-
-
+  
   def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
     trace(s"createLambdaCommon($org, <parent>)")
     Future {
@@ -402,74 +402,13 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
             case j => Some(j.validate[Seq[JsValue]].get)
           }
 
-          def createApisSynchronized(metaLambdaId: UUID, lambdaName: String,  providers: Seq[LambdaProviderInfo]) = {
-            def toMetaApi(apiName: String, apiId: UUID, provider: JsValue) = {
-              GestaltResourceInput(
-                  id = Some(apiId), 
-                  name = apiName,
-                  resource_type = Some(ResourceIds.Api), 
-                  resource_state = Some(ResourceStates.Active),
-                  properties = Some(Map("provider" -> provider)))
-            }
-            
-            def go(ps: Seq[LambdaProviderInfo], acc: Seq[UUID]): Seq[UUID] = {
-              ps match {
-                case Nil => acc
-                case h :: t => {
-                  
-                  val nids: Seq[UUID] = h.locations map { loc =>
-                    val id = UUID.randomUUID
-
-                    // Create Laser API
-                    val laserjson = LaserApi(
-                      id = Some(id),
-                      name = lambdaName,
-                      description = None,
-                      provider = Some(Json.obj("id" -> h.id.toString, "location" -> loc)))
-                      
-                    laser.createApi(laserjson) match {
-                      case Success(_) => println("***LASER API CREATED***")
-                      case Failure(e) => throw e
-                    }
-                    
-                    // Create Meta API
-                    val metaApiJson = toMetaApi(lambdaName, id, Json.obj("id" -> h.id.toString, "location" -> loc))
-                    val res = createApiCommon(org, parent.id, Json.toJson(metaApiJson))
-                    
-                    // Write Record to association table
-                    ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, loc)
-                    ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, loc)
-                    id
-                  }
-                  go(t, (acc ++ nids))
-                }
-              }
-            }
-            go(providers, Seq())
-          }
-          
-          def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = {
-            for (p <- providers; l <- p.locations) {
-              val laserId = Some(metaLambdaId)
-              val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
-              
-              laser.createLambda(lambda) match {
-                case Success(_) => println("**********LASER LAMBDA CREATED*********")
-                case Failure(e) => throw e
-              }
-              ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)                
-            }
-          }
-          
-          // 
-          // Create one LaserApi and one LaserLambda for each provider.
-          // 
-
           if (providers.isDefined) {
             val ps = providers.get map { p => p.validate[LambdaProviderInfo].get }
             createLaserLambdas(lambdaId, input, ps)
-            createApisSynchronized(lambdaId, input.name, ps)
+            createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
           }
+          
+          // Create the Lambda in Meta
           CreateResourceResult(
               ResourceIds.User, 
               request.identity.account.id,
@@ -480,6 +419,77 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
       }
     }
   }
+
+  def createApisSynchronized(
+      org: UUID, 
+      parent: UUID, 
+      metaLambdaId: UUID, 
+      lambdaName: String, 
+      providers: Seq[LambdaProviderInfo])(implicit request: SecuredRequest[JsValue]) = {
+
+    def go(ps: Seq[LambdaProviderInfo], acc: Seq[UUID]): Seq[UUID] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+
+          val nids: Seq[UUID] = h.locations map { loc =>
+            val id = UUID.randomUUID
+
+            // Create Laser API
+            val laserjson = LaserApi(
+              id = Some(id),
+              name = lambdaName,
+              description = None,
+              provider = Some(Json.obj("id" -> h.id.toString, "location" -> loc)))
+
+            laser.createApi(laserjson) match {
+              case Success(_) => println("***LASER API CREATED***")
+              case Failure(e) => throw e
+            }
+
+            // Create Meta API
+            val metaApiJson = toMetaApiInput(lambdaName, id, Json.obj("id" -> h.id.toString, "location" -> loc))
+            val res = createApiCommon(org, parent, Json.toJson(metaApiJson))
+
+            // Write Record to association table
+            ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, loc)
+            ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, loc)
+            id
+          }
+          go(t, (acc ++ nids))
+        }
+      }
+    }
+    go(providers, Seq())
+  }  
+  
+  def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = Try {
+    for (p <- providers; l <- p.locations) {
+      val laserId = Some(metaLambdaId)
+      val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
+
+//      laser.createLambda(lambda) match {
+//        case Success(_) => println("**********LASER LAMBDA CREATED*********")
+//        case Failure(e) => throw e
+//      }
+//      ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
+      
+      laser.createLambda(lambda) map { m =>
+        ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
+        ()
+      }
+    }
+  }
+  
+  
+  def toMetaApiInput(apiName: String, apiId: UUID, provider: JsValue) = {
+    GestaltResourceInput(
+      id = Some(apiId),
+      name = apiName,
+      resource_type = Some(ResourceIds.Api),
+      resource_state = Some(ResourceStates.Active),
+      properties = Some(Map("provider" -> provider)))
+  }  
   
   /**
    * Gets the list of API Gateway providers from gestalt-apigateway and transforms them into
