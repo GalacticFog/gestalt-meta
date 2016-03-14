@@ -356,7 +356,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case Failure(e) => {
         log.error(s"hardDeleteSecure: ERROR: " + e.getMessage)
         e match {
-          case s: SecurityRESTException     => handleSecurityApiException(s)
+          case s: SecurityRESTException     => HandleExceptions(s)
           case r: ResourceNotFoundException => NotFoundResult(r.getMessage)
           case _ => GenericErrorResult(500, e.getMessage)
         }
