@@ -196,17 +196,7 @@ trait MetaController extends SecureController with SecurityResources {
   }
 
 
-  def createResource(org: UUID, json: JsValue, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
-    Future {
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          org, 
-          json, 
-          request.identity, 
-          typeId)
-    }    
-  }    
+  
   
   protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID)(implicit request: SecuredRequest[JsValue]) = {
     Future {
@@ -248,8 +238,6 @@ trait MetaController extends SecureController with SecurityResources {
     typeId: Option[UUID] = None,
     parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
 
-    trace(s"CreateResource($org, [json], [account])")
-
     safeGetInputJson(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, typeId)
       ResourceFactory.create(creatorType, creator)(
@@ -257,6 +245,18 @@ trait MetaController extends SecureController with SecurityResources {
     }
 
   }    
+  
+  def createResourceD(org: UUID, json: JsValue, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    Future {
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId)
+    }    
+  }  
   
  /**
    * Inspect a GestaltResourceInput, supplying default values where appropriate.

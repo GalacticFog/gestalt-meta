@@ -207,10 +207,23 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
     }
   }
 
+  def createLaserEndpoint(input: GestaltResourceInput, api: UUID, upstream: String, provider: JsValue) = {
+    val json = toLaserEndpoint(input, api, upstream, provider)
+    laser.createEndpoint(json, api.toString) match {
+      case Success(r) => {
+        r.output.get.validate[LaserEndpoint].map {
+          case lep: LaserEndpoint => {
+            lep
+          }
+        }.recoverTotal { e =>
+          throw new RuntimeException("Error parsing Laser Endpoint JSON: " + JsError.toFlatJson(e).toString)
+        }
+      }
+      case Failure(e) => throw e
+    }
+  }
 
   def postEndpoint(org: UUID, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Try {
-    trace(s"postEndpoint($org, $parent)")
-    
     val (lambda, impl) = getEndpointImplementation(json) match {
       case Left(err) => throw err
       case Right(props) => {
@@ -224,67 +237,45 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
       }
     }
 
-    /*
-     * Lookup lambda from implementation
-     * Create LaserEndpoint for each provider+location
-     * Create MetaEndpoint for each provider+location
-     * Update meta_x_laser map
-     * 
-     */
-
-    val props1 = lambda.get.properties.get
-    val ps = Json.parse(props1("providers")).validate[Seq[JsValue]].get
-    val providers = ps map { p => p.validate[LambdaProviderInfo].get }
+    // Get list of providers from the Lambda.
+    val props = lambda.get.properties.get
+    val providers = Json.parse(props("providers")).validate[Seq[JsValue]].map {
+      case providers: Seq[JsValue] => providers
+    }.recoverTotal { e =>
+      throw new RuntimeException(JsError.toFlatJson(e).toString)
+    } map { p => p.validate[LambdaProviderInfo].get }
     
+
     def go(ps: Seq[LambdaProviderInfo], acc: Seq[GestaltResourceInstance]): Seq[GestaltResourceInstance] = {
       
       ps match {
         case Nil => acc
         case h :: t => h.locations map { loc =>
+          
           val providerObj = Json.obj("id" -> h.id, "location" -> loc)
-         val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
+          val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
           val api = ResourceFactory.findApiId(lambda.get.id, h.id, loc)
           
-          // User client-supplied ID if given.
+          // Use client-supplied ID if given.
           val endpointId = request.body \ "id" match {
             case u: JsUndefined => UUID.randomUUID
             case i => UUID.fromString(i.as[String])
           }
+  
+          val input = safeGetInputJson(ResourceIds.ApiEndpoint, request.body).map( in =>
+            in.copy(id = Some(endpointId))
+          ).get
           
-          val input1 = safeGetInputJson(ResourceIds.ApiEndpoint, request.body)
-          val input = input1.get.copy(id = Some(endpointId))
-          
-          println("--------------------------------------------")
-          println("PROVIDER: " + providerObj)
-          println("UPSTREAM: " + upstream)
-          println("API:      " + api)
-          println("INPUT:\n" + input)
-          println("--------------------------------------------")
+          log.debug(Json.prettyPrint{
+            Json.obj(
+              "provider" -> providerObj,
+              "upstream" -> upstream,
+              "api" -> api.toString,
+              "input" -> input)
+          })
           
           // Create LaserEndpoint
-          val laserJson = toLaserEndpoint(input, api.get, upstream, providerObj)
-          println(Json.prettyPrint(Json.toJson(laserJson)))
-          val laserEndpoint = laser.createEndpoint(laserJson, api.get.toString) match {
-            case Success(r) => {
-              
-              println("****CREATED LASER ENDPOINT***")
-              println("RESPONSE:\n" + r)
-              
-              r.output.get.validate[LaserEndpoint].map {
-                case lep: LaserEndpoint => {
-                  lep   
-                }
-              }.recoverTotal { e =>
-                //InternalServerError("Error parsing Laser Endpoint JSON: " + JsError.toFlatJson(e).toString)
-                throw new RuntimeException("Error parsing Laser Endpoint JSON: " + JsError.toFlatJson(e).toString)
-              }
-            }
-            case Failure(e) => throw e
-          }
-          
-          //
-          // Create MetaEndpoint
-          //
+          val laserEndpoint = createLaserEndpoint(input, api.get, upstream, providerObj)
           
           // Inject 'gateway_url' and 'api' properties
           val metaJson = input.copy(
@@ -292,15 +283,15 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
                   "gateway_url" -> JsString(laserEndpoint.url.get),
                   "api" -> JsString(api.get.toString))))
           
-          println("***CREATING META ENDPOINT***")
-          println(Json.prettyPrint(Json.toJson(metaJson)))
-          println
-          
-          val metaEndpoint = CreateResource(ResourceIds.User, request.identity.account.id,
-            org, Json.toJson(metaJson), request.identity,
-            typeId = Some(ResourceIds.ApiEndpoint),
-            parentId = Some(parent))
-          
+          // Create meta-endpoint
+          val metaEndpoint = 
+            CreateResource(ResourceIds.User, 
+              request.identity.account.id,
+              org, Json.toJson(metaJson), 
+              request.identity,
+              typeId = Some(ResourceIds.ApiEndpoint),
+              parentId = Some(parent))
+
           // Write meta_x_laser map
           val out = metaEndpoint match {
             case Failure(err) => throw err
@@ -468,12 +459,6 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
       val laserId = Some(metaLambdaId)
       val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
 
-//      laser.createLambda(lambda) match {
-//        case Success(_) => println("**********LASER LAMBDA CREATED*********")
-//        case Failure(e) => throw e
-//      }
-//      ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
-      
       laser.createLambda(lambda) map { m =>
         ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
         ()

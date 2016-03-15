@@ -210,14 +210,14 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       a <- normalizeResourceType(request.body, ResourceIds.Environment)
       b <- normalizeEnvironmentType(a)
     } yield b) match {
-      case Success(env) => createResource(org, env, Some(ResourceIds.Environment))
+      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment))
       case Failure(err) => Future { HandleRepositoryExceptions(err) }
     }    
   }
   
   def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     normalizeEnvironment(request.body, Some(workspaceId)) match {
-      case Success(env) => createResource(org, env, Some(ResourceIds.Environment))
+      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment))
       case Failure(err) => Future { HandleRepositoryExceptions(err) }
     }
   }
@@ -227,7 +227,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case None => Future { OrgNotFound(fqon) }  
       case Some(org) => {
         normalizeEnvironment(request.body, Some(workspaceId)) match {
-          case Success(env) => createResource(org.id, env, Some(ResourceIds.Environment))
+          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment))
           case Failure(err) => Future { HandleRepositoryExceptions(err) }
         }        
       }

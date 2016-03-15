@@ -109,26 +109,6 @@ import scala.annotation.tailrec
       case None => Future { OrgNotFound(fqon) }
       case Some(org) => {
         getContainers(org.id, request.queryString)
-//        val out = GestaltResourceInstance(
-//          id = UUID.randomUUID(),
-//          typeId = ResourceIds.Container,
-//          orgId = org.id,
-//          owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
-//          name = UUID.randomUUID.toString)
-//
-//        Future { Ok(Output.renderInstance(out, META_URL)) }
-//        val marathonClient = MarathonClient(
-//          WS.client,
-//          current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
-//
-//        val outs = marathonClient.listApplications map { s =>
-//          s map { i =>
-//            out.copy(
-//              name = i.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
-//              properties = Some(instance2map(i).asInstanceOf[Map[String, String]]))
-//          }
-//        }
-//        outs map { s => handleExpansion(s, request.queryString, META_URL) }
       }
     }
   }
@@ -142,10 +122,13 @@ import scala.annotation.tailrec
       name = UUID.randomUUID.toString)
 
     Future { Ok(Output.renderInstance(out, META_URL)) }
-    val marathonClient = MarathonClient(
-      WS.client,
-      current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
+//    val marathonClient = MarathonClient(
+//      WS.client,
+//      current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
 
+    val marathonClient = MarathonClient(
+      WS.client, EnvConfig.marathonUrl stripSuffix ("/"))
+    
     val outs = marathonClient.listApplications map { s =>
       s map { i =>
         out.copy(

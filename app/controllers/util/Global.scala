@@ -15,27 +15,35 @@ import play.api.libs.json._
 
 case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long])
 
-
 object LoggingFilter extends Filter {
   
   implicit lazy val traceLogFormat = Json.format[TraceLog]
   
-  def apply(nextFilter: (RequestHeader) => Future[Result])
-      (requestHeader: RequestHeader): Future[Result] = {
+  def apply(nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
     
     val startTime = System.currentTimeMillis
-
+    
     nextFilter(requestHeader).map { result =>
-      val requestTime = System.currentTimeMillis - startTime
-      val trace = TraceLog(
-        requestHeader.method,
+
+      val fqAction = "%s.%s".format(
         requestHeader.tags(Routes.ROUTE_CONTROLLER),
-        requestHeader.tags(Routes.ROUTE_ACTION_METHOD),
-        result.header.status,
-        Some(requestTime))
+        requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
+      
+      val requestUrl = "%s://%s%s".format(
+        if (requestHeader.secure) "https" else "http",
+        requestHeader.host,
+        requestHeader.uri)
+      
+      val requestTime = System.currentTimeMillis - startTime
 
-      log.debug(Json.prettyPrint(Json.toJson(trace)))
-
+      log.debug ( Json.prettyPrint ( Json.toJson (
+        TraceLog(
+          requestHeader.method,
+          requestUrl, fqAction,
+          result.header.status,
+          Some(requestTime))
+      )))
+      
       result.withHeaders("Request-Time" -> requestTime.toString)
     }
   }
