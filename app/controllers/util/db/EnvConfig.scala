@@ -15,14 +15,16 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val timeout = System.getenv("DATABASE_TIMEOUT_MS")
   private lazy val apigateway = System.getenv("GESTALT_APIGATEWAY")
   private lazy val lambda = System.getenv("GESTALT_LAMBDA")
+  private lazy val marathon = System.getenv("GESTALT_MARATHON_PROVIDER")
   
   def isValid() = {
     !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
-        empty(apigateway) && empty(lambda))
+        empty(apigateway) && empty(lambda) && empty(marathon))
   }
   
   val gatewayUrl = apigateway
   val lambdaUrl = lambda
+  val marathonUrl = marathon
   
   def getConnection() = {
     ScalikePostgresInfo(
@@ -36,6 +38,6 @@ object EnvConfig extends JdbcConfiguration {
 
   private def empty(s: String) = (s == null || s.trim.isEmpty())
   override def toString = {
-    s"EnvConfig(\n  host = ${host},\n  port = ${port},\n  dbname = ${dbname},\n  username = ${username},\n  db_password = '...',\n  apigateway = ${apigateway},\n  lambda_service = ${lambda}\n)"
+    s"EnvConfig(\n  host = ${host},\n  port = ${port},\n  dbname = ${dbname},\n  username = ${username},\n  db_password = '...',\n  apigateway = ${apigateway},\n  lambda_service = ${lambda},\n  marathon = ${marathon})"
   }
 }

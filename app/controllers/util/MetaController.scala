@@ -1,5 +1,6 @@
 package controllers.util
 
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api._
@@ -45,9 +46,16 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
 import play.api.libs.json._
+import play.api.mvc.Result
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.output._
+import controllers.SecurityResources
 
-trait MetaController extends SecureController {
 
+trait MetaController extends SecureController with SecurityResources {
+
+  
+  
   /**
    * Get the base URL for this Meta instance
    */
@@ -56,13 +64,53 @@ trait MetaController extends SecureController {
     Some( "%s://%s".format(protocol, request.host) )
   }
 
+  
+  def HandleExceptions(e: Throwable) = {
+    (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
+  }
+  
+  val metaApiExceptions: PartialFunction[Throwable,play.api.mvc.Result] = {
+    case e: ResourceNotFoundException     => NotFound(e.asJson)
+    case e: BadRequestException           => BadRequest(e.asJson)
+    case e: UnrecognizedResourceException => BadRequest(e.asJson)
+    case e: ConflictException             => Conflict(e.asJson)    
+  }
+  
+  val securityApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
+    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
+    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
+    case e: SecurityConflictException         => ConflictResult(e.getMessage)
+    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
+    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
+    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)      
+  }
+  
+  val genericApiException: PartialFunction[Throwable, play.api.mvc.Result] = {
+    case x => GenericErrorResult(500, x.getMessage)
+  }
+  
   def HandleRepositoryExceptions(e: Throwable) = e match {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
     case e: BadRequestException           => BadRequest(e.asJson)
     case e: UnrecognizedResourceException => BadRequest(e.asJson)
     case e: ConflictException             => Conflict(e.asJson)
-    case x => GenericErrorResult(500, x.getMessage)
+    case x => {
+      if (x.isInstanceOf[SecurityRESTException])
+        HandleSecurityApiException(x)
+      else GenericErrorResult(500, x.getMessage)
+    }
   }
+  
+  def HandleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
+    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
+    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
+    case e: SecurityConflictException         => ConflictResult(e.getMessage)
+    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
+    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
+    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)  
+  }  
   
   /**
    * Get the Org and ResourceType Ids when given FQON and REST name.
@@ -80,20 +128,7 @@ trait MetaController extends SecureController {
 //    }
 //  }
   
-  /**
-   * Replace the named property value in resource.properties 
-   * with the given value
-   */
-  def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
-      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
-  }
-  
-  /**
-   * Replace the entire resource.properties collection with the given object.
-   */
-  def replaceJsonProps(obj: JsObject, props: JsObject) = {
-    obj ++ Json.obj("properties" -> props)
-  }  
+
   
   protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
     orgFqon(fqon) match {
@@ -160,16 +195,189 @@ trait MetaController extends SecureController {
     ???
   }
 
-  def handleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
-    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
-    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
-    case e: SecurityConflictException         => ConflictResult(e.getMessage)
-    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
-    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
-    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
-    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)  
+
+  
+  
+  protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    Future {
+      
+      safeGetInputJson(typeId, request.body) match {
+        case Failure(e)     => BadRequestResult(e.getMessage)
+        case Success(input) => {
+          CreateResourceResult(ResourceIds.User, request.identity.account.id,
+              org, request.body, request.identity,
+              typeId = Some(typeId), 
+              parentId = Some(parentId))
+        }
+      }
+    }
+  }  
+  
+  protected[controllers] def CreateResourceResult(
+      creatorType: UUID, 
+      creatorId: UUID, 
+      org: UUID, 
+      resourceJson: JsValue, 
+      user: AuthAccountWithCreds, 
+      typeId: Option[UUID] = None,
+      parentId: Option[UUID] = None) = {
+    
+    log.trace(s"CreateResourceResult($org, [json], [account])")
+    
+    HandleCreate {
+      CreateResource(creatorType, creatorId, org, resourceJson, user, typeId, parentId)
+    }
+  }
+  
+  protected[controllers] def CreateResource(
+    creatorType: UUID,
+    creator: UUID,
+    org: UUID,
+    resourceJson: JsValue,
+    user: AuthAccountWithCreds,
+    typeId: Option[UUID] = None,
+    parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
+
+    safeGetInputJson(resourceJson) flatMap { input =>
+      val tid = assertValidTypeId(input, typeId)
+      ResourceFactory.create(creatorType, creator)(
+        inputWithDefaults(org, input.copy(resource_type = Some(tid)), user), parentId = parentId)
+    }
+
+  }    
+  
+  def createResourceD(org: UUID, json: JsValue, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    Future {
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId)
+    }    
+  }  
+  
+ /**
+   * Inspect a GestaltResourceInput, supplying default values where appropriate.
+   */
+  protected[controllers] def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
   }
 
+  
+  def HandleCreate(typeId: UUID, json: JsValue)(resource : => Try[GestaltResourceInstance]): Result = {
+    safeGetInputJson(typeId, json) match {
+      case Failure(error) => BadRequestResult(error.getMessage)
+      case Success(input) => HandleCreate(resource)
+    }
+  }
+  
+  
+  def HandleCreate(resource : => Try[GestaltResourceInstance]): Result = {
+    resource match {
+      case Success(res) => Created(Output.renderInstance(res))
+      case Failure(err) => {
+        log.error("ERROR CREATING RESOURCE: " + err.getMessage)
+        println(err)
+        HandleExceptions(err)  
+      }
+    }
+  }  
+  
+  /**
+   * Parse JSON to GestaltResourceInput
+   */
+  protected[controllers] def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
+    trace(s"safeGetInputJson([json]")
+    implicit def jsarray2str(arr: JsArray) = arr.toString
+
+    json.validate[GestaltResourceInput].map {
+      case resource: GestaltResourceInput => resource
+    }.recoverTotal { e => 
+      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
+      throw new BadRequestException(JsError.toFlatJson(e).toString)
+    }
+  }
+
+  /**
+   * Parse JSON to GestaltResourceInput and validate type-properties.
+   */
+  protected[controllers] def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
+    trace(s"safeGetInputJson($typeId, [json]")
+
+    safeGetInputJson(json) match {
+      case Failure(e)   => throw e
+      case Success(res) => {
+        val validation = PropertyValidator.validate(typeId, stringmap(res.properties))
+        if (validation._1) res else throw new BadRequestException(validation._2.get)
+      }
+    }
+  }
+  
+  /**
+   * Convert GestaltResourceInput to GestaltResourceInstance
+   */
+  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state), //ResourceState.id(in.resource_state.get),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      /* TODO: Here is where we transform from map(any) to map(string) */
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }
+  
+  protected[controllers] object Err {
+    def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
+    val RESOURCE_TYPE_NOT_GIVEN = "resource_type must be specified."
+  }
+  
+  
+  /**
+   * Convert a string FQON to corresponding Org UUID.
+   */
+  def id(fqon: String): UUID = {
+    val org = orgFqon(fqon) getOrElse {
+      throw new ResourceNotFoundException(s"Org ID '$fqon' not found.")
+    }
+    org.id
+  }  
+  
+  def resolveResourceState(state: Option[String]) = {
+    ResourceState.id( state getOrElse ResourceStates.Active )
+  }  
+  
+  protected[controllers] def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
+    PatchDocument.fromJsValue(json)
+  }  
+  
+  
+  protected[controllers] def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty  
+  
+  def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
+    val id = resolveTypeId(r, typeId) getOrElse {
+      throw new BadRequestException(Err.RESOURCE_TYPE_NOT_GIVEN)
+    }
+    if (typeExists(id)) id
+    else throw new BadRequestException(Err.RESOURCE_TYPE_NOT_FOUND(id))
+  }
+  
+  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
+    if (r.resource_type.isDefined) r.resource_type
+    else if (typeId.isDefined) typeId
+    else None
+  }      
+  
 }
 
 

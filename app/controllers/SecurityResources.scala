@@ -1,25 +1,20 @@
 package controllers
 
 import java.util.UUID
-
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.ResourceFactory
-
 import com.galacticfog.gestalt.meta.api.sdk._
-
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
-
 import com.galacticfog.gestalt.meta.api.output.toOwnerLink
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
-import controllers.util.trace
+import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
 
 /**
  * Functions for dealing with resources that exist in both Security and in Meta (currently
@@ -33,7 +28,6 @@ trait SecurityResources {
   type SecurityDelete           = (UUID, AuthAccountWithCreds) => Try[Boolean]
   
   def createNewMetaOrg[T](creator: UUID, owningOrg: UUID, org: SecurityResource, properties: Option[Hstore]) = { //(implicit securedRequest: SecuredRequest[T]) = {
-    trace(s"createNewMetaOrg($owningOrg, [org])")
     Try {
       val o = org.asInstanceOf[GestaltOrg]
       val parent = o.parent map { _.id }
@@ -44,7 +38,6 @@ trait SecurityResources {
   }
 
   def createNewMetaUser[T](creator: UUID, owningOrg: UUID, account: SecurityResource, properties: Option[Hstore]) = {//(implicit securedRequest: SecuredRequest[T]) = {
-    trace(s"createNewMetaUser($owningOrg, [account])")
     Try {
       val a = account.asInstanceOf[GestaltAccount]
       ResourceFactory.create(ResourceIds.User, creator)(

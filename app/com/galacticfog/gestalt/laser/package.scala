@@ -145,6 +145,8 @@ package object laser {
   def syncLaserProviders(toResource: UUID) = ???
   
   
+
+  
   def parseHandlerFunction(lambda: GestaltResourceInput) = {
     val props = lambda.properties.get
     val runtime = props("runtime")
@@ -168,6 +170,6 @@ package object laser {
     } yield e).toList
     
     ps(0) -> ps(1)
-  }          
+  }
 }
 

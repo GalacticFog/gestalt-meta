@@ -13,28 +13,63 @@ import com.galacticfog.gestalt.streaming.io.EventMatchType._
 import play.api.libs.json._
 
 
-object Global extends GlobalSettings {
+case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long])
+
+object LoggingFilter extends Filter {
+  
+  implicit lazy val traceLogFormat = Json.format[TraceLog]
+  
+  def apply(nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
+    
+    val startTime = System.currentTimeMillis
+    
+    nextFilter(requestHeader).map { result =>
+
+      val fqAction = "%s.%s".format(
+        requestHeader.tags(Routes.ROUTE_CONTROLLER),
+        requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
+      
+      val requestUrl = "%s://%s%s".format(
+        if (requestHeader.secure) "https" else "http",
+        requestHeader.host,
+        requestHeader.uri)
+      
+      val requestTime = System.currentTimeMillis - startTime
+
+      log.debug ( Json.prettyPrint ( Json.toJson (
+        TraceLog(
+          requestHeader.method,
+          requestUrl, fqAction,
+          result.header.status,
+          Some(requestTime))
+      )))
+      
+      result.withHeaders("Request-Time" -> requestTime.toString)
+    }
+  }
+}
+
+
+object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
   override def onError(request: RequestHeader, ex: Throwable) = {
-    log.debug("Global::onError(...)")
     Future.successful(GenericErrorResult(500, ex.getMessage))
   }
   
   override def onBadRequest(request: RequestHeader, error: String) = {
-    log.debug("Global::onBadRequest(...)")
     Future.successful(BadRequestResult(error))    
   }  
   
   override def onHandlerNotFound(request: RequestHeader) = {
-    log.debug("Global::onHandlerNotFound(...)")
     Future {
       if (request.path.endsWith("/"))
         MovedPermanently(request.path.dropRight(1))
       else NotFoundResult(request.path)
     }
   }  
-    
-  
+
+
+
 //  private var listener: GestaltStreamListener = null
 //  
 //  override def onStart(app: Application) {
