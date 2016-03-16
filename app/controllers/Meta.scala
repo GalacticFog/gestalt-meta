@@ -179,16 +179,38 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       workspace match {
         case Failure(e) => HandleExceptions(e)
         case Success(workspace) => {
+          
+          // TODO: [TEMPORARY]: Create ApiGatewayProvider under workspace
           LaserController.getLaserProviders(org) foreach { p =>
             CreateResource(ResourceIds.User, user.account.id, org, p, user,
               Some(ResourceIds.ApiGatewayProvider), Some(workspace.id))
           }
+          
+          // TODO: [TEMPORARY]: Create MarathonProvider under workspace
+          val marathon = newMarathonProvider("Marathon::" + UUID.randomUUID.toString)
+          log.debug("Attaching MarathonProvider to workspace:\n" + Json.prettyPrint(marathon))
+          
+          CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
+              Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
+            case Success(instance) => "Successfully created marathon provider: " + instance.id
+            case Failure(error) => log.error(error.getMessage)
+          }
+              
           Created(Output.renderInstance(workspace, baseUri))
         }
       }
     }
   }
 
+  /** 
+   *  TODO: [TEMPORARY]: Create a new MarathonProvider configuration using URL
+   *  contained in the GESTALT_MARATHON_PROVIDER environment variable.
+   */
+  def newMarathonProvider(name: String) = {
+    Json.obj("name" -> name, 
+        "properties" -> Json.obj("config" -> 
+          Json.obj("url" -> EnvConfig.marathonUrl)))
+  }
   
   // --------------------------------------------------------------------------
   // ENVIRONMENTS

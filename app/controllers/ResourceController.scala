@@ -790,8 +790,17 @@ import scala.annotation.tailrec
   
   
   def getWorkspaceProviders(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
-    ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.ApiGatewayProvider, org)))
+    // Get gateway and marathon provider types and merge list.
+    val gateways = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
+    val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
+    println("MARATHONS:")
+    println(marathons)
+    println("---")
+    val providers = gateways ++ marathons
+    
+    handleExpansion(providers, request.queryString, META_URL)
+    
+    //Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.ApiGatewayProvider, org)))
   }
   
   
@@ -809,8 +818,22 @@ import scala.annotation.tailrec
   
   def getWorkspaceProvidersFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => handleExpansion(
-            ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace), request.queryString)
+      case Some(org) => {
+        val gateways = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
+        val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
+        val qs = request.queryString
+        
+        val providers = if (qs.contains("type")) {
+          val typeId = "Gestalt::Configuration::Provider::" + qs("type")(0) match {
+            case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
+            case b if b == Resources.MarathonProvider.toString   => ResourceIds.MarathonProvider
+            case e => throw new BadRequestException(s"Unknown provider type : '$e'")
+          }
+          (gateways ++ marathons) filter { _.typeId == typeId }
+        } else (gateways ++ marathons)
+        
+        handleExpansion(providers, request.queryString, META_URL)
+      }
       case None => OrgNotFound(fqon)
     }
   }
