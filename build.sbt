@@ -4,8 +4,35 @@ organization := "com.galacticfog"
 
 version := "0.1.4-SNAPSHOT"
 
-lazy val root = (project in file(".")).enablePlugins(PlayScala)
+//lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
+lazy val root = (project in file(".")).
+  enablePlugins(PlayScala,SbtNativePackager).
+  enablePlugins(BuildInfoPlugin).
+  settings(
+    buildInfoKeys := Seq[BuildInfoKey](
+      name, version, scalaVersion, sbtVersion,
+      "builtBy" -> System.getProperty("user.name"),
+      "gitHash" -> new java.lang.Object(){
+              override def toString(): String = {
+                      try { 
+                    val extracted = new java.io.InputStreamReader(
+                              java.lang.Runtime.getRuntime().exec("git rev-parse HEAD").getInputStream())                         
+                    (new java.io.BufferedReader(extracted)).readLine()
+                      } catch {      case t: Throwable => "get git hash failed"    }
+              }}.toString()
+    ),
+    buildInfoPackage := "com.galacticfog.gestalt.meta.api"
+  )
+
+buildInfoOptions += BuildInfoOption.BuildTime
+
+buildInfoOptions += BuildInfoOption.ToMap
+
+buildInfoOptions += BuildInfoOption.ToJson
+
+
+EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 scalaVersion := "2.11.7"
 

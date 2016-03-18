@@ -1,5 +1,7 @@
 resolvers += "Typesafe repository" at "https://repo.typesafe.com/typesafe/releases/"
 
+addSbtPlugin("com.eed3si9n" % "sbt-buildinfo" % "0.6.0")
+
 addSbtPlugin("com.typesafe.sbteclipse" % "sbteclipse-plugin" % "3.0.0")
 
 // The Play plugin
