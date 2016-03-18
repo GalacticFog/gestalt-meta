@@ -3,7 +3,7 @@
 set -e
 # set -x
 
-set IMG=galacticfog.artifactoryonline.com/gestalt-meta
+export IMG=galacticfog.artifactoryonline.com/gestalt-meta
 
 export SHA=$(git rev-parse --short=8 HEAD)
 export VER=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
