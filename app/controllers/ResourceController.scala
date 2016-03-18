@@ -53,11 +53,34 @@ import com.galacticfog.gestalt.meta.api.errors._
 import controllers.util.JsonUtil._
 import com.galacticfog.gestalt.laser._
 
+import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
 
   private val qs = ResourceQueryService
 
+  implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
+  implicit lazy val aboutMetaFormat = Json.format[AboutMeta]
+  
+  case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])
+  case class ServiceInfo(url: String, status: String)
+  
+  
+  def about() = Authenticate() { implicit request =>
+    val result = AboutMeta( 
+        status     = "OK",
+        url        = META_URL.get,
+        time       = org.joda.time.DateTime.now.toString,
+        build_info = Json.parse(BuildInfo.toJson), 
+        services   = Map(
+            "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
+            "gateway"        -> ServiceInfo(url = EnvConfig.gatewayUrl, status = "OK"),
+            "gestalt-lambda" -> ServiceInfo(url = EnvConfig.lambdaUrl, status = "OK"),
+            "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")))
+            
+    Ok(Json.toJson(result))
+  }
+  
   /**
    * Get a list of all Orgs in Meta (global)
    */
@@ -68,7 +91,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     ???  
   }
-  
   
   import com.galacticfog.gestalt.laser._
   import scala.reflect.runtime.{ universe => ru }
@@ -793,19 +815,15 @@ import scala.annotation.tailrec
     // Get gateway and marathon provider types and merge list.
     val gateways = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
     val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
-    println("MARATHONS:")
-    println(marathons)
-    println("---")
     val providers = gateways ++ marathons
     
     handleExpansion(providers, request.queryString, META_URL)
-    
-    //Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.ApiGatewayProvider, org)))
   }
   
   
   def getWorkspaceProviderByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
       case Some(org) => {
         ResourceFactory.findById(id) match {
           case Some(res) => Ok(Output.renderInstance(res))

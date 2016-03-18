@@ -66,6 +66,7 @@ trait MetaController extends SecureController with SecurityResources {
 
   
   def HandleExceptions(e: Throwable) = {
+    log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
   

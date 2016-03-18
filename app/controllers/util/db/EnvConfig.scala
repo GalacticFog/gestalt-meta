@@ -1,8 +1,10 @@
 package controllers.util.db
 
+
 import com.galacticfog.gestalt.data.util._
 import controllers.util.AppConf
 import play.api.{ Logger => log }
+
 
 object EnvConfig extends JdbcConfiguration {
   
@@ -17,14 +19,30 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val lambda = System.getenv("GESTALT_LAMBDA")
   private lazy val marathon = System.getenv("GESTALT_MARATHON_PROVIDER")
   
-  def isValid() = {
-    !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
-        empty(apigateway) && empty(lambda) && empty(marathon))
+  private lazy val security_protocol = System.getenv("GESTALT_SECURITY_PROTOCOL")
+  private lazy val security_hostname = System.getenv("GESTALT_SECURITY_HOSTNAME")
+  private lazy val security_port = System.getenv("GESTALT_SECURITY_PORT")
+  
+  
+  
+  val gatewayUrl  = apigateway
+  val lambdaUrl   = lambda
+  val marathonUrl = marathon
+  
+  val databaseUrl = {
+    "jdbc:postgresql://%s:%s/%s?user=%s&password=*****".format(host, port, dbname, username)
   }
   
-  val gatewayUrl = apigateway
-  val lambdaUrl = lambda
-  val marathonUrl = marathon
+  val securityUrl = {
+    val port = if (security_port.toInt > 0) ":"+security_port else ""
+    "%s://%s%s".format(security_protocol, security_hostname, port)
+  }
+  
+  def isValid() = {
+    !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
+        empty(apigateway) && empty(lambda) && empty(marathon) && 
+        empty(security_protocol) && empty(security_hostname))
+  }
   
   def getConnection() = {
     ScalikePostgresInfo(
@@ -38,6 +56,13 @@ object EnvConfig extends JdbcConfiguration {
 
   private def empty(s: String) = (s == null || s.trim.isEmpty())
   override def toString = {
-    s"EnvConfig(\n  host = ${host},\n  port = ${port},\n  dbname = ${dbname},\n  username = ${username},\n  db_password = '...',\n  apigateway = ${apigateway},\n  lambda_service = ${lambda},\n  marathon = ${marathon})"
+    s"""
+      |EnvConfig(
+      |  database = ${databaseUrl},
+      |  apigateway = ${gatewayUrl},
+      |  lambda = ${lambdaUrl},
+      |  marathon = ${marathonUrl},
+      |  security = ${securityUrl})
+    """.stripMargin
   }
 }

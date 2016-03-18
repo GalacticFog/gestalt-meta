@@ -181,9 +181,15 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         case Success(workspace) => {
           
           // TODO: [TEMPORARY]: Create ApiGatewayProvider under workspace
-          LaserController.getLaserProviders(org) foreach { p =>
-            CreateResource(ResourceIds.User, user.account.id, org, p, user,
-              Some(ResourceIds.ApiGatewayProvider), Some(workspace.id))
+          val gateway = LaserController.getLaserProviders(org) foreach { p =>
+            val json = p ++ Json.obj("id" -> UUID.randomUUID.toString)
+            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
+            
+            CreateResource(ResourceIds.User, user.account.id, org, json, user,
+              Some(ResourceIds.ApiGatewayProvider), Some(workspace.id)) match {
+              case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)
+              case Success(r) => log.debug(s"Successfully create GatewayProvider: ${r.id.toString}");
+            }
           }
           
           // TODO: [TEMPORARY]: Create MarathonProvider under workspace
@@ -192,10 +198,10 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           
           CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
               Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
-            case Success(instance) => "Successfully created marathon provider: " + instance.id
-            case Failure(error) => log.error(error.getMessage)
+            case Success(instance) => log.debug("Successfully created MarathonProvider: " + instance.id)
+            case Failure(error)    => throw new RuntimeException("Unable to create MarathonProvider: " + error.getMessage)
           }
-              
+          
           Created(Output.renderInstance(workspace, baseUri))
         }
       }
