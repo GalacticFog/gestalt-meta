@@ -3,6 +3,8 @@
 set -e
 # set -x
 
+set IMG=galacticfog.artifactoryonline.com/gestalt-meta
+
 export SHA=$(git rev-parse --short=8 HEAD)
 export VER=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
 export TAG=$VER-$SHA
@@ -12,8 +14,8 @@ echo "Building $TAG"
 echo "Creating build image..."
 sbt docker:stage
 cd target/docker/stage
-docker build -t galacticfog.artifatoryonline.com/gestalt-meta:$TAG .
+docker build -t $IMG:$TAG .
 echo "Pushing new image to artifactory..."
-docker push   galacticfog.artifactoryonline.com/gestalt-meta:$TAG
-docker tag -f galacticfog.artifactoryonline.com/gestalt-meta:$TAG  galacticfog.artifactoryonline.com/gestalt-meta:$VER
-docker push   galacticfog.artifactoryonline.com/gestalt-meta:$VER
+docker push   $IMG:$TAG
+docker tag -f $IMG:$TAG $IMG:$VER
+docker push   $IMG:$VER
