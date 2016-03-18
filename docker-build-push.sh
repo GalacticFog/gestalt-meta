@@ -1,7 +1,7 @@
 #!/bin/bash 
 
 set -e
-set -x
+# set -x
 
 export SHA=$(git rev-parse --short=8 HEAD)
 export VER=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
