@@ -163,7 +163,7 @@ package object laser {
     }
   }
   
-  def splitEntrypoint(ep: String) = { 
+  def splitEntrypoint(ep: String): (String,String) = { 
     val ps = (for {
       m <- "^(.*)\\.(.*)$".r.findAllIn(ep.trim).matchData
       e <- m.subgroups

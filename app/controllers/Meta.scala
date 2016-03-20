@@ -182,9 +182,23 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           
           // TODO: [TEMPORARY]: Create ApiGatewayProvider under workspace
           val gateway = LaserController.getLaserProviders(org) foreach { p =>
-            val json = p ++ Json.obj("id" -> UUID.randomUUID.toString)
-            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
             
+            // Get LaserProvider ID, inject into properties.external_id
+            val laserProviderId = p \ "id" match {
+              case u: JsUndefined => throw new RuntimeException(s"Unable to parse provider JSON from gestalt-apigateway. recieved: ${p.toString}")
+              case v => v
+            }
+            
+            log.debug("LASER-PROVIDER-JSON: " + Json.prettyPrint(p))
+            log.debug("LASER-PROVIDER-ID: " + laserProviderId)
+            
+            // Use unique ID for Meta provider
+            val json = withJsonPropValue(
+                  obj       = p ++ Json.obj("id" -> UUID.randomUUID.toString),
+                  propName  = "external_id",
+                  propValue = laserProviderId)
+            
+            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
             CreateResource(ResourceIds.User, user.account.id, org, json, user,
               Some(ResourceIds.ApiGatewayProvider), Some(workspace.id)) match {
               case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)

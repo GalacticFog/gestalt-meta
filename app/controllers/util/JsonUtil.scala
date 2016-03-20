@@ -12,18 +12,23 @@ object JsonUtil {
   
   /**
    * Replace the named property value in resource.properties 
-   * with the given value
+   * with the given value. Returns *JUST* the properties JSON.
    */
   def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
-      (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
+    (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
   }
   
   /**
    * Replace the entire resource.properties collection with the given object.
+   * Returns entire JSON object with updated properties.
    */
   def replaceJsonProps(obj: JsObject, props: JsObject) = {
     obj ++ Json.obj("properties" -> props)
   }    
+  
+  def withJsonPropValue(obj: JsObject, propName: String, propValue: JsValue) = {
+    replaceJsonProps(obj, replaceJsonPropValue(obj, propName, propValue))
+  }
   
   def getJsonPropertyField(json: JsValue, field: String) = {
     json \ "properties" \ field match {

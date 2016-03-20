@@ -144,9 +144,6 @@ import scala.annotation.tailrec
       name = UUID.randomUUID.toString)
 
     Future { Ok(Output.renderInstance(out, META_URL)) }
-//    val marathonClient = MarathonClient(
-//      WS.client,
-//      current.configuration.getString("marathon.url") getOrElse "http://v2.galacticfog.com:8080" stripSuffix ("/"))
 
     val marathonClient = MarathonClient(
       WS.client, EnvConfig.marathonUrl stripSuffix ("/"))
@@ -680,14 +677,7 @@ import scala.annotation.tailrec
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
   // --------------------------------------------------------------------------   
-  def getAllEnvironments(org: UUID) = Authenticate(org) { implicit request =>
-    ???
-  }
-  
-  def getAllEnvironmentsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    ???
-  }
-  
+
   def getEnvironmentById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     FindByIdResult(org, ResourceIds.Environment, id)
   }
@@ -726,65 +716,7 @@ import scala.annotation.tailrec
     }
   }
   
-  def putEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  def postEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  def postEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    ???
-  }  
-  
-  def putEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  def patchEnvironment(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  def patchEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  def deleteEnvironment(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    ???
-  }
 
-  def deleteEnvironmentFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    ???
-  }  
-  
-  
-  
-  // --------------------------------------------------------------------------
-  // MACHINE_SPECS
-  // --------------------------------------------------------------------------
-  
-  
-  // --------------------------------------------------------------------------
-  // SERVICES
-  // --------------------------------------------------------------------------  
-  
-
-  // --------------------------------------------------------------------------
-  // NODE_TEMPLATES
-  // --------------------------------------------------------------------------
-  
-  
-  // --------------------------------------------------------------------------
-  // CLUSTER_TEMPLATES
-  // --------------------------------------------------------------------------
-  
-  
-  // --------------------------------------------------------------------------
-  // BLUEPRINTS
-  // --------------------------------------------------------------------------  
-  
-  
   object AuthorizationHandler {
     def getSingle(org: UUID, typeId: UUID, id: UUID, account: AuthAccountWithCreds) = {
       //
@@ -795,21 +727,6 @@ import scala.annotation.tailrec
     }
   }
 
-  //  def createWorkspace() = Action.async(parse.json) { implicit request =>
-  //    Future {
-  //      val event = newPostEvent(TaskStatus.Pending)
-  //            .withActionArgs(Map(
-  //                "org_id"   -> "6add206f-58e5-43c4-b958-787879ab2d6a", 
-  //                "owner_id" -> "ee7b94e2-5f0c-4b23-8d45-c18de9116c1f") )
-  //      raiseTaskEvent {
-  //        TaskEventMessage( event ) {
-  //          ResourceCommandService.createResource
-  //        }
-  //      }
-  //      Accepted( event.task.toJson )
-  //    }  
-  //  }
-  
   
   def getWorkspaceProviders(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
     // Get gateway and marathon provider types and merge list.

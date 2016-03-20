@@ -49,7 +49,9 @@ import com.galacticfog.gestalt.laser._
  * 
  * TODO:
  * 
- * -| Refactor the horrible createLambda and createEndpoint functions.
+ * -| More refactoring - cleanup and generalize function to translate meta gateway providers
+ * -| to laser gateway providers. Need to ensure that properties.external_id is used in any
+ * -| call to laser that needs a provider ID.
  * 
  */
 
@@ -58,7 +60,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
 
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
   
-  case class LambdaProviderInfo(id: String, locations: Seq[String])
+  case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[String])
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
@@ -71,7 +73,6 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   }
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
-    trace(s"postApiFqon($fqon, $parent)")
     orgFqon(fqon) match {
       case Some(org) => {
         
@@ -90,16 +91,20 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   }
   
   def postApiEndpointFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    trace(s"postApiEndpointFqon($fqon, $parent)")
-    
     Future {
       orgFqon(fqon) match {
         case Some(org) => postEndpoint(org.id, parent, request.body) match {
           case Success(endpoints) => {
+            
+            println("\n-----------ENDPOINTS----------")
+            endpoints foreach println
+            println("------------------------------\n")
+            
             Created(Json.toJson(endpoints map { ep => Output.renderInstance(ep) } ))
           }
           case Failure(error) => {
             log.error(error.getMessage)
+            error.printStackTrace()
             InternalServerError(error.getMessage)
           }
         }
@@ -163,7 +168,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   
 
   def getImplProps(json: JsValue): Try[Map[String,String]] = Try {
-    
+    log.debug("--getImpleProps")
     val tpe = getJsonField(json, "type") match {
       case None => throw new BadRequestException("Must specify 'type' property.")
       case Some(tpe) => {
@@ -195,7 +200,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   import scala.util.Either
   
   def getEndpointImplementation(json: JsValue): Either[Throwable, Option[Map[String,String]]] = {
-
+    log.debug("--getEndpointImplementation(...)")
     getJsonPropertyField(json, "implementation") match {
       case None => Right(None)
       case Some(impl) => {
@@ -223,14 +228,28 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
     }
   }
 
+  def findLaserProviderId(metaProviderId: String) = {
+    ResourceFactory.findById(metaProviderId) match {
+      case Some(mp) => mp.properties.get("external_id")
+      case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$metaProviderId'")
+    }    
+  }
+  
   def postEndpoint(org: UUID, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Try {
+    log.debug("--postEndpoint(...)")
     val (lambda, impl) = getEndpointImplementation(json) match {
       case Left(err) => throw err
       case Right(props) => {
+        log.debug("PROPS:")
+        log.debug(props.toString)
         if (props.isEmpty) (None,None) else {
           val id = props.get("id")
+          log.debug("id -> " + id)
           (ResourceFactory.findById(ResourceIds.Lambda, id) match {
-            case Some(res) => Some(res)
+            case Some(res) => { 
+              log.debug("Returning Resource:\n" + res)
+              Some(res)
+            }
             case None => throw new ResourceNotFoundException(s"Lambda with ID '$id' not found.")
           }, props)
         }
@@ -240,10 +259,16 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
     // Get list of providers from the Lambda.
     val props = lambda.get.properties.get
     val providers = Json.parse(props("providers")).validate[Seq[JsValue]].map {
-      case providers: Seq[JsValue] => providers
+      case providers: Seq[JsValue] => {
+        providers
+      }
     }.recoverTotal { e =>
       throw new RuntimeException(JsError.toFlatJson(e).toString)
-    } map { p => p.validate[LambdaProviderInfo].get }
+    } map { p =>
+      val metaProviderId = (p \ "id").as[String] 
+      val laserProviderId = findLaserProviderId(metaProviderId)
+      (p.as[JsObject] ++ Json.obj("external_id" -> laserProviderId)).validate[LambdaProviderInfo].get 
+    }
     
 
     def go(ps: Seq[LambdaProviderInfo], acc: Seq[GestaltResourceInstance]): Seq[GestaltResourceInstance] = {
@@ -394,7 +419,19 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           }
 
           if (providers.isDefined) {
-            val ps = providers.get map { p => p.validate[LambdaProviderInfo].get }
+            
+            val ps = providers.get map { p => 
+              log.debug("****EXTRACTING LAMBDA PROVIDER INFO:\n" + Json.prettyPrint(p))
+              
+              val id = (p \ "id").as[String]
+              val exId = ResourceFactory.findById(id) match {
+                case Some(mp) => mp.properties.get("external_id")
+                case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
+              }
+              log.debug("***Mapping Meta provider ID to laser ID")
+              log.debug(s"$id => $exId")
+              (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].get 
+            }
             createLaserLambdas(lambdaId, input, ps)
             createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
           }
@@ -427,11 +464,8 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
             val id = UUID.randomUUID
 
             // Create Laser API
-            val laserjson = LaserApi(
-              id = Some(id),
-              name = lambdaName,
-              description = None,
-              provider = Some(Json.obj("id" -> h.id.toString, "location" -> loc)))
+            val laserjson = LaserApi(id = Some(id), name = lambdaName,description = None,
+              provider = Some(Json.obj("id" -> h.external_id.toString, "location" -> loc)))
 
             laser.createApi(laserjson) match {
               case Success(_) => println("***LASER API CREATED***")
@@ -457,7 +491,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = Try {
     for (p <- providers; l <- p.locations) {
       val laserId = Some(metaLambdaId)
-      val lambda = toLaserLambda(input.copy(id = laserId), p.id, l)
+      val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, l)
 
       laser.createLambda(lambda) map { m =>
         ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
@@ -474,7 +508,8 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
       resource_type = Some(ResourceIds.Api),
       resource_state = Some(ResourceStates.Active),
       properties = Some(Map("provider" -> provider)))
-  }  
+  }
+  
   
   /**
    * Gets the list of API Gateway providers from gestalt-apigateway and transforms them into
@@ -494,12 +529,14 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
       }
     }  
 
+    
     def extractLocations(response: com.galacticfog.gestalt.laser.ApiResponse): Seq[LaserLocation] = {
       response.output.get.validate[Seq[LaserLocation]] match {
         case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
         case p => p.get
       }
     }
+    
     
     def go(ps: Seq[LaserProvider], acc: Seq[JsObject]): Seq[JsObject] = {
       ps match {
