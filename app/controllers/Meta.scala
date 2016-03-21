@@ -71,7 +71,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
 
   def postOrgFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
-    createOrgCommon(id(fqon), request.body)
+    createOrgCommon(fqid(fqon), request.body)
   }
 
   def createOrgCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
@@ -93,7 +93,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
 
   
   def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createUserCommon(id(fqon), request.body)
+    createUserCommon(fqid(fqon), request.body)
   }
 
   def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
@@ -124,7 +124,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       CreateResourceResult(
           ResourceIds.User, 
           request.identity.account.id, 
-          id(fqon), request.body, request.identity)
+          fqid(fqon), request.body, request.identity)
     }
   }
 
@@ -167,7 +167,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
 
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createWorkspaceCommon(id(fqon), request.body, request.identity, META_URL)
+    createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
   }
 
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
