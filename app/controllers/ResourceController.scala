@@ -57,6 +57,50 @@ import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
 
+  def getGenericTopLevel(targetTypeId: String) = Authenticate() { implicit request =>
+    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId)), request.queryString, META_URL)  
+  }  
+  
+  def getOrg(org: UUID) = Authenticate(org) { implicit request =>
+    getById(org, ResourceIds.Org, org)  
+  }
+  
+  def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val orgId = fqid(fqon)
+    getById(orgId, ResourceIds.Org, orgId)
+  }  
+  
+  def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
+    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), org), request.queryString, META_URL)
+  }
+  
+  def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
+    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), fqid(fqon)), request.queryString, META_URL)
+  }
+  
+  def getGenericById(targetTypeId: String, org: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    getById(org, uuid(targetTypeId), id)  
+  }
+  
+  def getGenericByIdFqon(targetTypeId: String, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    getById(fqid(fqon), uuid(targetTypeId), id)  
+  }
+
+  def getGenericChildAll(targetTypeId: String, parentType: String, parentId: UUID, org: UUID) = Authenticate(org) { implicit request =>
+    handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), parentId),
+        request.queryString, META_URL)
+  }
+  
+  def getGenericChildAllFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String) = Authenticate(fqon) { implicit request =>
+    println("TARGET CORRECT: " + (ResourceIds.Environment == uuid(targetTypeId)))
+    println("PARENT CORRECT: " + (ResourceIds.Workspace == uuid(parentType)))
+    
+    handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), parentId),
+        request.queryString, META_URL)
+  }  
+  
+  //def getGenericChildAll(targetTypeId: String, parentType: String, parentId: UUID, targetId: UUID) = Authenticate(org) { implicit request =>  
+  
   private val qs = ResourceQueryService
 
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
@@ -80,43 +124,13 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
             
     Ok(Json.toJson(result))
   }
-  
-  /**
-   * Get a list of all Orgs in Meta (global)
-   */
-  def getAllOrgs = Authenticate() { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Org)))
-  }
 
-  def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    ???  
-  }
+
   
   import com.galacticfog.gestalt.laser._
-  import scala.reflect.runtime.{ universe => ru }
-  import scala.reflect.runtime.currentMirror
-  import scala.reflect.ClassTag
-  import ru.TypeTag
-  import ru.MethodSymbol
-  import ru.typeOf
-  import scala.collection.immutable.ListMap
+  
+  
 
-import scala.annotation.tailrec  
-  
-  def instance2map[T: ClassTag: TypeTag](inst: T) = {
-    val im = currentMirror.reflect( inst )
-    @tailrec def loop(acc: Map[String,Any], symbols: List[MethodSymbol]): Map[String,Any] = {
-      symbols match {
-        case Nil => acc
-        case h :: t => loop( acc + ((h.name.toString, im.reflectMethod( h ).apply().toString)), t )
-      }
-    }
-    loop( Map(), getMethods[T] )
-  }  
-  
-  def getMethods[T: TypeTag]: List[MethodSymbol] = typeOf[T].members.collect {
-    case m: MethodSymbol if m.isCaseAccessor => m
-  }.toList
 
   def getContainersFqon(fqon: String) = Authenticate().async { implicit request =>
     orgFqon(fqon) match {
@@ -157,65 +171,7 @@ import scala.annotation.tailrec
     }
     outs map { s => handleExpansion(s, request.queryString, META_URL) }    
   }
-  
-  /**
-   * Get a single Org
-   */
-  def getOrgById(id: UUID) = Authenticate(id) { implicit securedRequest =>
-    trace(s"getByOrgId($id)")
-    getById(org = id, ResourceIds.Org, id)
-  }
 
-  def getOrgByFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    trace(s"getOrgByFqon($fqon)")
-    orgFqon(fqon) match {
-      case Some(org) => getById(org = org.id, ResourceIds.Org, org.id)
-      case None => OrgNotFound(fqon)
-    }
-  }
-  
-  
-  /**
-   * Get a list of child Orgs 
-   */
-  def getChildOrgs(org: UUID) = Authenticate(org) { implicit request =>
-    getOrg(org) match {
-      case Some(_) => childOrgs(org)
-      case None    => OrgNotFound(org)
-    }
-  }
-
-  def getChildOrgsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => {
-        childOrgs(org.id)
-        handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Org, org.id), request.queryString)
-      }
-      case None      => OrgNotFound(fqon)
-    }
-  }
-
-  /**
-   * Get a list of all users in the system (global)
-   */
-  def getAllUsersGlobal = Authenticate() { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User)))
-  }
-
-  /**
-   * Get a list of all Users in the given Org
-   */
-  def getAllUsers(org: UUID) = Authenticate(org) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org)))
-  }
-
-  def getAllUsersFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => 
-        handleExpansion(ResourceFactory.findAll(ResourceIds.User, org.id), request.queryString) //Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.User, org.id)))
-      case None => OrgNotFound(fqon)
-    }
-  }
   
   /**
    * Get the Meta User corresponding with the caller identity.
@@ -682,12 +638,12 @@ import scala.annotation.tailrec
     FindByIdResult(org, ResourceIds.Environment, id)
   }
   
-  def getEnvironmentByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => FindByIdResult(org.id, ResourceIds.Environment, id)
-      case None => OrgNotFound(fqon)
-    }
-  }
+//  def getEnvironmentByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    orgFqon(fqon) match {
+//      case Some(org) => FindByIdResult(org.id, ResourceIds.Environment, id)
+//      case None => OrgNotFound(fqon)
+//    }
+//  }
   
   
   def FindByIdResult(org: UUID, typeId: UUID, id: UUID) = {
@@ -716,17 +672,6 @@ import scala.annotation.tailrec
     }
   }
   
-
-  object AuthorizationHandler {
-    def getSingle(org: UUID, typeId: UUID, id: UUID, account: AuthAccountWithCreds) = {
-      //
-      // TODO: Perform Authorization Checking Here! Use AuthMap
-      // 
-      val identities = account.account +: account.groups map { _.id }
-      getById(org, typeId, id)
-    }
-  }
-
   
   def getWorkspaceProviders(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
     // Get gateway and marathon provider types and merge list.
@@ -806,22 +751,34 @@ import scala.annotation.tailrec
     } 
   }  
   
-  
-  def getAllInOrg(typeId: UUID, org: UUID): List[GestaltResourceInstance] = {
-    ResourceFactory.findAll(typeId, org)
-  }
-  
-  
-  private def getOrg(id: UUID) = {
-    ResourceFactory.findById(ResourceIds.Org, id)
-  }
 
-  private def childOrgs(org: UUID) = {
-    Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Org, org)))
-  }
-  
   private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = {
     okNotFound(qs.findById(org, resourceTypeId, id))
   }
 
+  
+  import scala.reflect.runtime.{ universe => ru }
+  import scala.reflect.runtime.currentMirror
+  import scala.reflect.ClassTag
+  import ru.TypeTag
+  import ru.MethodSymbol
+  import ru.typeOf
+  import scala.collection.immutable.ListMap
+  import scala.annotation.tailrec  
+  
+  def instance2map[T: ClassTag: TypeTag](inst: T) = {
+    val im = currentMirror.reflect( inst )
+    @tailrec def loop(acc: Map[String,Any], symbols: List[MethodSymbol]): Map[String,Any] = {
+      symbols match {
+        case Nil => acc
+        case h :: t => loop( acc + ((h.name.toString, im.reflectMethod( h ).apply().toString)), t )
+      }
+    }
+    loop( Map(), getMethods[T] )
+  }  
+  
+  def getMethods[T: TypeTag]: List[MethodSymbol] = typeOf[T].members.collect {
+    case m: MethodSymbol if m.isCaseAccessor => m
+  }.toList  
+  
 }

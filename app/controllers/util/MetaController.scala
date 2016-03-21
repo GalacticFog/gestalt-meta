@@ -347,7 +347,7 @@ trait MetaController extends SecureController with SecurityResources {
   /**
    * Convert a string FQON to corresponding Org UUID.
    */
-  def id(fqon: String): UUID = {
+  def fqid(fqon: String): UUID = {
     val org = orgFqon(fqon) getOrElse {
       throw new ResourceNotFoundException(s"Org FQON '$fqon' not found.")
     }
