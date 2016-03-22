@@ -248,13 +248,17 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   def postEnvironmentResult(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    val workspace = request.body \ "properties" \ "workspace" match {
+      case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
+      case j => UUID.fromString(j.as[String])
+    }
     (for {
       a <- normalizeResourceType(request.body, ResourceIds.Environment)
       b <- normalizeEnvironmentType(a)
     } yield b) match {
-      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment))
+      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
       case Failure(err) => Future { HandleRepositoryExceptions(err) }
-    }    
+    }
   }
   
   def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
@@ -269,7 +273,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case None => Future { OrgNotFound(fqon) }  
       case Some(org) => {
         normalizeEnvironment(request.body, Some(workspaceId)) match {
-          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment))
+          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment), parentId = Some(workspaceId))
           case Failure(err) => Future { HandleRepositoryExceptions(err) }
         }        
       }

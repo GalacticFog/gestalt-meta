@@ -247,7 +247,11 @@ trait MetaController extends SecureController with SecurityResources {
 
   }    
   
-  def createResourceD(org: UUID, json: JsValue, typeId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+  def createResourceD(
+      org: UUID, 
+      json: JsValue, 
+      typeId: Option[UUID] = None, 
+      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       CreateResourceResult(
           ResourceIds.User, 
@@ -255,7 +259,8 @@ trait MetaController extends SecureController with SecurityResources {
           org, 
           json, 
           request.identity, 
-          typeId)
+          typeId,
+          parentId)
     }    
   }  
   

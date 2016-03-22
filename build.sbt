@@ -2,7 +2,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.1.4-SNAPSHOT"
+version := "0.1.5-SNAPSHOT"
 
 //lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
