@@ -248,10 +248,11 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperti
 # RESOURCES
 ############################
 
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   			controllers.Meta.postResourceFqon(fqon: String)
-PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId		controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    			controllers.ResourceController.getAllResourcesFqon(fqon: String)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  	controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   				controllers.Meta.postResourceFqon(fqon: String)
+PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    				controllers.ResourceController.getAllResourcesFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  		controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resourceId 	controllers.DeleteController.hardDeleteResourceFqon(fqon: String, resourceId: java.util.UUID)
 
 
 ############################
@@ -365,9 +366,34 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:environment/apiendpo
 
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apiendpoints/:id						  controllers.DeleteController.hardDeleteEndpointFqon(fqon: String, id: java.util.UUID)
 
+
 ############################
 # GATEWAY_PROVIDERS
 ############################
+
+#
+# Org Providers
+#
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers   controllers.Meta.postProviderConfigOrgFqon(fqon: String)
+
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers  controllers.ResourceController.getGenericChildAllOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String)
+
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id  controllers.ResourceController.getGenericChildByIdOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String, id: java.util.UUID)
+
+
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers
+
+#GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers
+
+
+#PUT /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id
+
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id controllers.ResourceController.hardDeleteChildFqon(fqon: String, childType: UUID, childId: UUID, parentType: UUID, parentId: Some[UUID])
+
+#
+# Workspace Providers
+#
 
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/providers   controllers.Meta.postProviderConfigFqon(fqon: String, id: java.util.UUID)
 
@@ -377,29 +403,44 @@ GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/providers/:
 DELETE	 /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/providers/:id  controllers.DeleteController.hardDeleteWorkspaceProviderFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
 
+#
+# Environment Providers
+#
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers   controllers.Meta.postProviderConfigFqon(fqon: String, id: java.util.UUID)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers  controllers.ResourceController.getGenericChildAllFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id controllers.ResourceController.getGenericChildByIdFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String, id: java.util.UUID)
+
+#PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
+
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
+
+
 ############################
 # DOMAINS
 ############################
 
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains		controllers.ResourceController.getWorkspaceDomainsFqon(fqon: String, workspace: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains			controllers.ResourceController.getWorkspaceDomainsFqon(fqon: String, workspace: java.util.UUID)
 
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  controllers.ResourceController.getWorkspaceDomainByIdFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  	controllers.ResourceController.getWorkspaceDomainByIdFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  	controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
 
-DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  controllers.DeleteController.hardDeleteWorkspaceDomainFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  	controllers.DeleteController.hardDeleteWorkspaceDomainFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
 
 
 ############################
 # 
 ############################
- 
+
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.ResourceController.getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: java.util.UUID)
  
- 
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		 controllers.DeleteController.hardDeleteResourceByNameFqon(fqon: String, restName: String, id: java.util.UUID) 
  
 # Map static resources from the /public folder to the /assets URL path
 GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)

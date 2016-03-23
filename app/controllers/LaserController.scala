@@ -69,7 +69,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   
   def postApi(org: UUID, environment: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     trace(s"postApi($org, $environment)")
-    createResourceCommon(org, environment, ResourceIds.Api)
+    createResourceCommon(org, environment, ResourceIds.Api, request.body)
   }
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
@@ -79,7 +79,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
         val apijson = safeGetInputJson(ResourceIds.Api, request.body)
         //val input = toLaserApi(apijson.get)
         
-        createResourceCommon(org.id, parent, ResourceIds.Api)
+        createResourceCommon(org.id, parent, ResourceIds.Api, request.body)
       }
       case None => Future { OrgNotFound(fqon) }
     }

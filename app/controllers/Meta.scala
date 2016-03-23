@@ -285,29 +285,54 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   // --------------------------------------------------------------------------
   
   def postDomain(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createResourceCommon(org, parent, ResourceIds.Domain)
+    createResourceCommon(org, parent, ResourceIds.Domain, request.body)
   }
   
   def postDomainFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     orgFqon(fqon) match {
-      case Some(org) => createResourceCommon(org.id, parent, ResourceIds.Domain)
+      case Some(org) => createResourceCommon(org.id, parent, ResourceIds.Domain, request.body)
       case None => Future { OrgNotFound(fqon) }
     }
   }  
-
+  
   // --------------------------------------------------------------------------
   // GATEWAY_PROVIDERS
   // --------------------------------------------------------------------------
   
+  def resolveProviderType(json: JsValue): UUID = {
+    json \ "resource_type" match {
+      case u: JsUndefined => 
+        throw new BadRequestException("You must provider resource_type, i.e., resource_type = Provider::Type::Name")
+      case v => {
+        log.debug("Parsed provider-type as : " + v.as[String])
+        v.as[String] match {
+          case a if a == Resources.LambdaProvider     => ResourceIds.LambdaProvider
+          case b if b == Resources.ApiGatewayProvider => ResourceIds.ApiGatewayProvider
+          case c if c == Resources.MarathonProvider   => ResourceIds.MarathonProvider
+          case e => throw new BadRequestException(s"Unknown provider type : '$e'")
+        }
+      }
+    }    
+  }
+  
+  def postProviderCommon(org: UUID, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    val providerType = resolveProviderType(json)
+    log.debug("Translated provider-type to UUID => " + providerType)
+    val newjson = json.as[JsObject] ++ Json.obj("resource_type" -> providerType.toString)
+    createResourceCommon(org, parent, providerType, newjson)
+  }
+  
   def postProviderConfig(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createResourceCommon(org, parent, ResourceIds.ApiGatewayProvider)  
+    postProviderCommon(org, parent, request.body)
+  }
+  
+  def postProviderConfigOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val orgId = fqid(fqon)
+    postProviderCommon(orgId, orgId, request.body)
   }
   
   def postProviderConfigFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => createResourceCommon(org.id, parent, ResourceIds.ApiGatewayProvider)
-      case None => Future { OrgNotFound(fqon) }
-    }
+    postProviderCommon(fqid(fqon), parent, request.body)
   }  
   
 

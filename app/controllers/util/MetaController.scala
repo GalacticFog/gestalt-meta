@@ -199,14 +199,15 @@ trait MetaController extends SecureController with SecurityResources {
 
   
   
-  protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID)(implicit request: SecuredRequest[JsValue]) = {
+  protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       
-      safeGetInputJson(typeId, request.body) match {
+      safeGetInputJson(typeId, json) match {
         case Failure(e)     => BadRequestResult(e.getMessage)
         case Success(input) => {
-          CreateResourceResult(ResourceIds.User, request.identity.account.id,
-              org, request.body, request.identity,
+          CreateResourceResult(ResourceIds.User, 
+              request.identity.account.id,
+              org, json, request.identity,
               typeId = Some(typeId), 
               parentId = Some(parentId))
         }
@@ -298,7 +299,8 @@ trait MetaController extends SecureController with SecurityResources {
    * Parse JSON to GestaltResourceInput
    */
   protected[controllers] def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
-    trace(s"safeGetInputJson([json]")
+    log.debug(s"safeGetInputJson([json]")
+    log.debug(Json.prettyPrint(json))
     implicit def jsarray2str(arr: JsArray) = arr.toString
 
     json.validate[GestaltResourceInput].map {
@@ -313,7 +315,7 @@ trait MetaController extends SecureController with SecurityResources {
    * Parse JSON to GestaltResourceInput and validate type-properties.
    */
   protected[controllers] def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
-    trace(s"safeGetInputJson($typeId, [json]")
+    log.debug(s"safeGetInputJson($typeId, [json]")
 
     safeGetInputJson(json) match {
       case Failure(e)   => throw e
