@@ -142,6 +142,53 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
+  def hardDeleteChildFqon(fqon: String, childType: UUID, childId: UUID, parentType: UUID, parentId: Some[UUID]) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    hardDeleteChild(org, childType, childId, ResourceIds.Org, org)
+  }
+  
+  
+  def hardDeleteResourceFqon(fqon: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(resourceId) match {
+      case None => NotFoundResult(request.uri)
+      case Some(r) => {
+        if (r.orgId != fqid(fqon)) NotFoundResult(s"Resource ID ${resourceId} not found in Org '$fqon'.")
+        else ResourceFactory.hardDeleteResource(resourceId) match {
+          case Success(_) => NoContent
+          case Failure(e) => HandleRepositoryExceptions(e)
+        }
+      }
+    }
+  }
+  
+  def hardDeleteResourceByNameFqon(fqon: String, restName: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+    extractByName(fqon, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => ResourceFactory.findById(typeId, resourceId) match {
+        case None => NotFoundResult(request.uri)
+        case Some(res) => ResourceFactory.hardDeleteResource(resourceId) match {
+          case Success(_) => NoContent
+          case Failure(e) => HandleRepositoryExceptions(e)
+        }
+      }
+    }
+  }
+  
+  
+  def hardDeleteChild(org: UUID, childType: UUID, childId: UUID, parentType: UUID, parentId: UUID) = {
+    
+    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
+    
+    ResourceFactory.findById(parentType, parentId) match {
+      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
+      case Some(res) => ResourceFactory.hardDeleteResource(childType, childId) match {
+        case Success(_) => NoContent
+        case Failure(e) => HandleRepositoryExceptions(e)
+      } 
+    }
+  }
+  
+  
   def hardDeleteLambda(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     hardDeleteMetaResource(id, ResourceIds.Lambda)
   }

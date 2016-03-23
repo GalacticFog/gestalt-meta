@@ -91,13 +91,66 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         request.queryString, META_URL)
   }
   
-  def getGenericChildAllFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String) = Authenticate(fqon) { implicit request =>
-    println("TARGET CORRECT: " + (ResourceIds.Environment == uuid(targetTypeId)))
-    println("PARENT CORRECT: " + (ResourceIds.Workspace == uuid(parentType)))
-    
+  def getGenericChildAllFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String) = Authenticate(fqon) { implicit request =>  
     handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), parentId),
         request.queryString, META_URL)
   }  
+  
+  def getGenericChildByIdFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+
+    getGenericChildById(targetTypeId, parentType, parentId, fqid(fqon), id)
+    
+//    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
+//    
+//    ResourceFactory.findById(parentType, parentId) match {
+//      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
+//      case Some(p) => {
+//        ResourceFactory.findById(targetTypeId, id) match {
+//          case None => NotFoundResult(notfound(ResourceLabel(targetTypeId), id))
+//          case Some(t) => Ok(Output.renderInstance(t, META_URL))
+//        }
+//      }
+//    }
+  }    
+  
+  def getGenericChildById(targetTypeId: String, parentType: String, parentId: UUID, org: UUID, id: UUID)(implicit request: SecuredRequest[AnyContent]) = {
+    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
+    
+    ResourceFactory.findById(parentType, parentId) match {
+      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
+      case Some(p) => {
+        ResourceFactory.findById(targetTypeId, id) match {
+          case None => NotFoundResult(notfound(ResourceLabel(targetTypeId), id))
+          case Some(t) => Ok(Output.renderInstance(t, META_URL))
+        }
+      }
+    }    
+  }
+  
+  def getGenericChildByIdOrgFqon(targetTypeId: String, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+
+    //getGenericChildByIdFqon(targetTypeId, ResourceIds.Org, fqid(fqon), fqon, id)
+    val org = fqid(fqon)
+    getGenericChildById(targetTypeId, ResourceIds.Org, org, org, id)
+    
+//    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
+//    
+//    ResourceFactory.findById(ResourceId, fqid(fqon)) match {
+//      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
+//      case Some(p) => {
+//        ResourceFactory.findById(targetTypeId, id) match {
+//          case None => NotFoundResult(notfound(ResourceLabel(targetTypeId), id))
+//          case Some(t) => Ok(Output.renderInstance(t, META_URL))
+//        }
+//      }
+//    }
+  }   
+  
+  def getGenericChildAllOrgFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
+    handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), fqid(fqon)),
+        request.queryString, META_URL)
+  }    
+  
   
   //def getGenericChildAll(targetTypeId: String, parentType: String, parentId: UUID, targetId: UUID) = Authenticate(org) { implicit request =>  
   
@@ -236,11 +289,16 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
-    trace(s"getAllSystemResourceByNameFqon($fqon, $restName)")
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => {
-        handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, baseUri = META_URL)
+        
+        // TODO: This is a hack for Lambda - getChildLambdas dynamically builds the endpoint function map.
+        val resources = typeId match {
+          case m if m == ResourceIds.Lambda => getDescendantLambdas(org)
+          case _ => ResourceFactory.findAll(typeId, org)
+        }
+        handleExpansion(resources, request.queryString, baseUri = META_URL)
       }
     }
   }
@@ -256,8 +314,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    trace(s"getAllSystemResourcesByNameIdFqon($fqon, $restName, $id)")
-
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
@@ -481,20 +537,23 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   // LAMBDAS
   // --------------------------------------------------------------------------  
   def getWorkspaceLambdas(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
-    trace(s"getWorkspaceLambdas($org, $workspace)")
     handleExpansion(
         ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace), request.queryString,
         META_URL)
   }
   
   def getWorkspaceLambdasFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
-    trace(s"getWorkspaceLambdasFqon($fqon, $workspace)")
     val lambdas = ResourceFactory.findChildrenOfType(ResourceIds.Lambda, workspace) map { 
       injectLambdaFunctionMap(_).get
     }
     handleExpansion(lambdas, request.queryString, META_URL)
   }
   
+  def getDescendantLambdas(org: UUID) = {
+    ResourceFactory.findAll(ResourceIds.Lambda, org) map {
+      injectLambdaFunctionMap(_).get
+    }  
+  }
   
   def getChildLambdas(parent: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Lambda, parent) map { 
@@ -507,17 +566,14 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getEnvironmentLambdas(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
-    trace(s"getEnvironmentLambdas($org, $environment)")
     handleExpansion(getChildLambdas(environment), request.queryString, META_URL)    
   }  
   
   def getEnvironmentLambdasFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
-    trace(s"getEnvironmentLambdasFqon($fqon, $environment)")
     handleExpansion(getChildLambdas(environment), request.queryString)      
   }
   
   def getEnvironmentLambdaByIdFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    trace(s"getEnvironmentLambdaByIdFqon($fqon, $environment, $id)")
     orgFqon(fqon) match {
       case Some(org) => getLambdaByIdCommon(id)
       case None => OrgNotFound(fqon)
