@@ -21,13 +21,16 @@ object LoggingFilter extends Filter {
   
   def apply(nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
     
+    
     val startTime = System.currentTimeMillis
     
     nextFilter(requestHeader).map { result =>
 
-      val fqAction = "%s.%s".format(
-        requestHeader.tags(Routes.ROUTE_CONTROLLER),
-        requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
+      val fqAction = if (requestHeader.tags.contains(Routes.ROUTE_CONTROLLER)) {
+        "%s.%s".format(
+          requestHeader.tags(Routes.ROUTE_CONTROLLER),
+          requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
+      } else "ERROR_ROUTE_NOT_FOUND"
       
       val requestUrl = "%s://%s%s".format(
         if (requestHeader.secure) "https" else "http",
@@ -39,7 +42,8 @@ object LoggingFilter extends Filter {
       log.debug ( Json.prettyPrint ( Json.toJson (
         TraceLog(
           requestHeader.method,
-          requestUrl, fqAction,
+          requestUrl, 
+          fqAction,
           result.header.status,
           Some(requestTime))
       )))
@@ -52,6 +56,10 @@ object LoggingFilter extends Filter {
 
 object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
+  override def onRouteRequest(request: RequestHeader): Option[Handler] = {
+    super.onRouteRequest(request)  
+  }
+  
   override def onError(request: RequestHeader, ex: Throwable) = {
     Future.successful(GenericErrorResult(500, ex.getMessage))
   }
@@ -64,7 +72,7 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
     Future {
       if (request.path.endsWith("/"))
         MovedPermanently(request.path.dropRight(1))
-      else NotFoundResult(request.path)
+      else NotFoundResult("ROUTE_NOT_FOUND: " + request.path)
     }
   }  
 
