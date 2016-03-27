@@ -96,6 +96,40 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         request.queryString, META_URL)
   }  
   
+  def getProviders(org: UUID, parentType: String, parent: UUID) = Authenticate(org) { implicit request =>
+    getProvidersCommon(org, parentType, parent, request.queryString, META_URL)
+  }
+  
+  def getProvidersFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon) { implicit request =>
+    getProvidersCommon(fqid(fqon), parentType, parent, request.queryString, META_URL)
+  }
+  
+  def getProvidersCommon(org: UUID, parentType: String, parent: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
+    ResourceFactory.findById(parentType, parent) match {
+      case None => NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found.")
+      case Some(_) => {
+        val filtered = filterProvidersByType(ResourceFactory.findAncestorProviders(parent), qs)
+        handleExpansion(filtered, qs, baseUrl)
+      }
+    }
+  }
+  
+  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+    if (qs.contains("type")) {
+      
+      val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
+      log.debug("Filtering providers for type : " + typeName)
+      
+      val typeId = typeName match {
+        case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
+        case b if b == Resources.MarathonProvider.toString => ResourceIds.MarathonProvider
+        case c if c == Resources.LambdaProvider.toString => ResourceIds.LambdaProvider
+        case e => throw new BadRequestException(s"Unknown provider type : '$e'")
+      }
+      rs filter { _.typeId == typeId }
+    } else rs
+  }
+  
   def getGenericChildByIdFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
 
     getGenericChildById(targetTypeId, parentType, parentId, fqid(fqon), id)
@@ -430,7 +464,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   // --------------------------------------------------------------------------  
 
   def getAllWorkspaces(org: UUID) = Authenticate(org) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(ResourceIds.Workspace, org)))  
+    handleExpansion(ResourceFactory.findAll(ResourceIds.Workspace, org), request.queryString)  
   }
   
   def getAllWorkspacesFqon(fqon: String) = Authenticate(fqon) { implicit securedRequest =>
@@ -712,7 +746,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getEnvironmentsByWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org) { implicit request =>
     // Ensure workspace exists
     if (ResourceFactory.existsInOrg(org, workspaceId)) {
-      Ok(Output.renderLinks(ResourceFactory.findAllByPropertyValueOrg(org, ResourceIds.Environment, "workspace", workspaceId.toString)))
+      handleExpansion(
+          ResourceFactory.findAllByPropertyValueOrg(org, ResourceIds.Environment, "workspace", workspaceId.toString), 
+          request.queryString, META_URL)
     } else {
       NotFoundResult(s"Workspace ID '$workspaceId' not found.")
     }
@@ -751,6 +787,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }  
   }
   
+  
+  def filterProviders() = {
+    
+  }
   
   def getWorkspaceProvidersFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {

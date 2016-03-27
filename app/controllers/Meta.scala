@@ -173,7 +173,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
     Future {
       /* Create the workspace */
-      val workspace = CreateResource(ResourceIds.User, user.account.id, org, json, user, Some(ResourceIds.Workspace)) 
+      val workspace = CreateResource(
+          ResourceIds.User, user.account.id, org, json, user, Some(ResourceIds.Workspace),
+          parentId = Some(org)) 
       
       /* Add ALL gateway providers to new workspace. */
       workspace match {
@@ -197,24 +199,36 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
                   obj       = p ++ Json.obj("id" -> UUID.randomUUID.toString),
                   propName  = "external_id",
                   propValue = laserProviderId)
+                  
+            val parentJson = Json.toJson(toLink(workspace, None))
+            log.debug("PARENT-LINK:\n" + Json.prettyPrint(parentJson))
+            
+            val json2 = JsonUtil.upsertProperty(json.as[JsObject], "parent", parentJson) match {
+              case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
+              case v => v.get
+            }
+            
+            log.debug("FINAL:\n" + Json.prettyPrint(json2))
             
             log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
-            CreateResource(ResourceIds.User, user.account.id, org, json, user,
+            CreateResource(ResourceIds.User, user.account.id, org, 
+                json2, 
+                user,
               Some(ResourceIds.ApiGatewayProvider), Some(workspace.id)) match {
               case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)
               case Success(r) => log.debug(s"Successfully create GatewayProvider: ${r.id.toString}");
             }
           }
           
-          // TODO: [TEMPORARY]: Create MarathonProvider under workspace
-          val marathon = newMarathonProvider("Marathon::" + UUID.randomUUID.toString)
-          log.debug("Attaching MarathonProvider to workspace:\n" + Json.prettyPrint(marathon))
-          
-          CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
-              Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
-            case Success(instance) => log.debug("Successfully created MarathonProvider: " + instance.id)
-            case Failure(error)    => throw new RuntimeException("Unable to create MarathonProvider: " + error.getMessage)
-          }
+//          // TODO: [TEMPORARY]: Create MarathonProvider under workspace
+//          val marathon = newMarathonProvider("Marathon::" + UUID.randomUUID.toString)
+//          log.debug("Attaching MarathonProvider to workspace:\n" + Json.prettyPrint(marathon))
+//          
+//          CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
+//              Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
+//            case Success(instance) => log.debug("Successfully created MarathonProvider: " + instance.id)
+//            case Failure(error)    => throw new RuntimeException("Unable to create MarathonProvider: " + error.getMessage)
+//          }
           
           Created(Output.renderInstance(workspace, baseUri))
         }
@@ -315,24 +329,42 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }    
   }
   
-  def postProviderCommon(org: UUID, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+  def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     val providerType = resolveProviderType(json)
     log.debug("Translated provider-type to UUID => " + providerType)
-    val newjson = json.as[JsObject] ++ Json.obj("resource_type" -> providerType.toString)
-    createResourceCommon(org, parent, providerType, newjson)
+    
+    ResourceFactory.findById(UUID.fromString(parentType), parent) match {
+      case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
+      case Some(p) => {
+        // inject resource_type and parent
+        JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
+          case Failure(e) => Future(HandleRepositoryExceptions(e))
+          case Success(j) => {
+            val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
+            createResourceCommon(org, parent, providerType, newjson)
+          }
+        }
+      }
+    }
+    
+//    val newjson = {
+//      json.as[JsObject] ++ 
+//        Json.obj("resource_type" -> providerType.toString) 
+//    }
+//    createResourceCommon(org, parent, providerType, newjson)
   }
   
-  def postProviderConfig(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    postProviderCommon(org, parent, request.body)
+  def postProviderConfig(org: UUID, parentType: String, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
+    postProviderCommon(org, parentType, parent, request.body)
   }
   
   def postProviderConfigOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val orgId = fqid(fqon)
-    postProviderCommon(orgId, orgId, request.body)
+    postProviderCommon(orgId, ResourceIds.Org.toString, orgId, request.body)
   }
   
-  def postProviderConfigFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    postProviderCommon(fqid(fqon), parent, request.body)
+  def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }  
   
 
