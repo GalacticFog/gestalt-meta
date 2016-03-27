@@ -50,7 +50,7 @@ object JsonUtil {
   def upsertProperty(obj: JsObject, name: String, value: JsValue) = Try {
     obj \ "properties" \ name match {
       case u : JsUndefined => {
-        val ps  = replaceJsonPropValue(obj, name, value.as[String])
+        val ps  = replaceJsonPropValue(obj, name, value)
         replaceJsonProps(obj, ps)
       }
       case _ => obj
