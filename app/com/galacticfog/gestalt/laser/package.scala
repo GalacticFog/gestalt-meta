@@ -46,7 +46,7 @@ package object laser {
       authentication: Option[JsValue] = None)
 
   case class LaserArtifactDescription(
-      artifactUri: String,
+      artifactUri: Option[String],
       runtime: String,
       functionName: String,
       handler: String,
@@ -123,13 +123,16 @@ package object laser {
 
     val props = lambda.properties.get
     val (handler,function) = parseHandlerFunction(lambda)
-    
+    val artifactUri = {
+      if (props.contains("package_url")) Some(props("package_url").as[String])
+      else None
+    }
     LaserLambda(
       id = Some(lambda.id.get.toString), 
       eventFilter = Some(UUID.randomUUID.toString),
       provider = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")), //props("provider"),
       LaserArtifactDescription(
-          artifactUri = props("package_url").as[String],
+          artifactUri = artifactUri,
           description = None,
           functionName = function,
           handler = handler,
