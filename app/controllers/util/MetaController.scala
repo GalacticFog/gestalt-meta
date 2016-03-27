@@ -63,7 +63,7 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = if (request.secure) "https" else "http"
     Some( "%s://%s".format(protocol, request.host) )
   }
-
+  
   
   def HandleExceptions(e: Throwable) = {
     log.error(e.getMessage)
@@ -197,8 +197,6 @@ trait MetaController extends SecureController with SecurityResources {
   }
 
 
-  
-  
   protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       
