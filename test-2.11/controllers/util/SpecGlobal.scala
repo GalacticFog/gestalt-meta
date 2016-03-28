@@ -57,19 +57,19 @@ class SpecGlobal extends PlaySpecification  with GestaltPlaySpecification {
   
   "Global" should {
     
-    "handle invalid routes with a 404" in new WithApplication {
-      val request = get("/orgs/foo") //FakeRequest(GET, "/orgs/foo").withHeaders(basicAuthHeader(user, password))
-      
-      // Call a controller method directly     
-      val result = ResourceController.getAllOrgs.apply(request)
-      
-      // Call via router (this doesn't work for 'framework' errors???)
-      route(request)
-
-      status(result) must_== OK
-      
-      //status(result) === OK
-    }
+//    "handle invalid routes with a 404" in new WithApplication {
+//      val request = get("/orgs/foo") //FakeRequest(GET, "/orgs/foo").withHeaders(basicAuthHeader(user, password))
+//
+//      // Call a controller method directly
+//      val result = ResourceController.getAllOrgs.apply(request)
+//
+//      // Call via router (this doesn't work for 'framework' errors???)
+//      route(request)
+//
+//      status(result) must_== OK
+//
+//      //status(result) === OK
+//    }
     
   }
    

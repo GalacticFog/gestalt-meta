@@ -225,7 +225,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Some(org) => getContainers(org.id, request.queryString)
     }
   }
-  
+
+  // TODO: this as well for demo
   def getEnvironmentContainersFqon(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
     trace(s"getEnvironmentContainersFqon($fqon, $environment)")
     orgFqon(fqon) match {
