@@ -431,6 +431,9 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers  co
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id controllers.ResourceController.getGenericChildByIdFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String, id: java.util.UUID)
 
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/:proxyUri   controllers.Meta.proxyProvider(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, proxyUri: String)
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/:proxyUri   controllers.Meta.proxyProvider(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, proxyUri: String)
+
 #PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
 
 #DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
