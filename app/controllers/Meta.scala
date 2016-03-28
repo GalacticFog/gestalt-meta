@@ -371,22 +371,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
 
-  def proxyProvider(fqon: String, parentType: String, envId: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    // TODO: fill in the blanks!
-    lazy val ___ = ???
-    val marathonClient = MarathonClient(WS.client,___)
-    (request.method,proxyUri) match {
-      case (HttpVerbs.GET, "v2/apps") =>
-        marathonClient.listApplicationsInEnvironment_marathon_v2(fqon = fqon, wrkName = ___, envName = ___)
-          .map {Ok(_)}
-          .recover {case e: Throwable => BadRequest(e.getMessage)}
-      case (HttpVerbs.POST,"v2/apps") =>
-        marathonClient.launchContainer_marathon_v2(fqon = fqon, wrkName = ___, envName = ___, marPayload = request.request.body.as[JsObject])
-          .map {Created(_)}
-          .recover {case e: Throwable => BadRequest(e.getMessage)}
-      case _ => ___ // endpoints that we don't care about yet
-    }
-  }
+  
+  
+
 
   // --------------------------------------------------------------------------
   //
