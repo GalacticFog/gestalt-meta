@@ -57,6 +57,41 @@ import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
 
+
+  def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+
+    def mkuri(fqon: String, r: GestaltResourceInstance) = {
+      "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)
+    }
+    
+    def mkinfo(r: GestaltResourceInstance) = {
+      ResourceInfo(r.id, r.name, mkuri(fqon, r))
+    }
+    
+    def resolve(parent: UUID, cmps: List[(UUID,String)], dat: Map[String, ResourceInfo]): Try[Map[String,ResourceInfo]] = Try {
+      cmps match {
+        case Nil => dat
+        case h :: t => {
+          ResourceFactory.findChildByName(parent, h._1, h._2) match {
+            case None => throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
+            case Some(res) => 
+              resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
+          }
+        }
+      }
+    }
+
+    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
+    val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
+    val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
+    
+    resolve(org.id, (keys zip values), Map("org" -> mkinfo(org))) match {
+      case Success(m) => Ok(Json.toJson(m))
+      case Failure(e) => HandleRepositoryExceptions(e)
+    }
+
+  }
+  
   def getGenericTopLevel(targetTypeId: String) = Authenticate() { implicit request =>
     handleExpansion(ResourceFactory.findAll(uuid(targetTypeId)), request.queryString, META_URL)  
   }  

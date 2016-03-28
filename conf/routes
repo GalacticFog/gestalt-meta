@@ -2,6 +2,11 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
+
+#GET 	/environments/:eid/providers/*marathon controllers.MarathonController.test(marathon)
+
+GET  /path/:fqon/*components  controllers.ResourceController.mapPath(fqon, components)
+
 GET		/about			controllers.ResourceController.about()
 
 POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
