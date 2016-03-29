@@ -302,7 +302,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         
         val marathonClient = MarathonClient(WS.client, providerUrl)
         marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
-          cs.map { toGestaltContainer(fqon, _) }  
+          cs.map { toGestaltContainer(fqon, _, Some(prv.name)) }  
         }
         .map { handleExpansion(_, request.queryString, META_URL) }
         .recover { case e: Throwable => BadRequest(e.getMessage) }        
@@ -313,15 +313,21 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   /**
    * Convert ContainerApp to GestaltResourceInstance
    */
-  def toGestaltContainer(fqon: String, c: ContainerApp) = GestaltResourceInstance(
+  def toGestaltContainer(fqon: String, c: ContainerApp, providerName: Option[String] = None) = {
+
+    // If given, inject properties.provider = providerName
+    val prvName = if (providerName.isEmpty) Map() else Map("provider" -> providerName.get)
+    val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ prvName)
+    
+    GestaltResourceInstance(
       id = UUID.randomUUID(),
       typeId = ResourceIds.Container,
       orgId = fqid(fqon),
       owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
       name = UUID.randomUUID.toString).copy(
               name = c.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
-              properties = Some(instance2map(c).asInstanceOf[Map[String,String]])  
-  )
+              properties = props)
+  }
   
   /**
    * TODO: This is still used by /{org}/containers - delete when that endpoint goes away.
@@ -581,34 +587,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }  
   }
   
-  /*
-   * TODO: This only handles true | false. Extend to allow for expansion
-   * of individual resource attributes and properties.
-   */
-  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
-    if (!qs.contains("expand")) false
-    else {
-      val fp = qs("expand")
-      Try {
-        fp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
-      }
-    }
-  }  
-  
-  /*
-   * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
-   */
-  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }
-  
-  
+
   // --------------------------------------------------------------------------
   // APIS
   // --------------------------------------------------------------------------    

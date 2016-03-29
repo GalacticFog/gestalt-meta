@@ -63,7 +63,31 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = if (request.secure) "https" else "http"
     Some( "%s://%s".format(protocol, request.host) )
   }
-  
+    /*
+   * TODO: This only handles true | false. Extend to allow for expansion
+   * of individual resource attributes and properties.
+   */
+  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains("expand")) false
+    else {
+      val fp = qs("expand")
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+      }
+    }
+  }  
+  /*
+   * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
+   */
+  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
+    if (getExpandParam(qs)) {
+      Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
+    }
+    else Ok(Output.renderLinks(rs, baseUri))
+  }
   
   def HandleExceptions(e: Throwable) = {
     log.error(e.getMessage)

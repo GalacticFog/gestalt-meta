@@ -60,24 +60,44 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
+  
+  /**
+   * GET /{fqon}/environments/{eid}/containers
+   */
+  def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
     
-    def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
+    def go(
+        ps: Seq[GestaltResourceInstance], wrk: String, env: String,
+        acc: Seq[Future[Seq[GestaltResourceInstance]]]): Seq[Future[Seq[GestaltResourceInstance]]] = {
+
       ps match {
         case Nil => acc
-        case h :: t => {
-          val url = (Json.parse(h.properties.get("config")) \ "url").as[String]
-          val m = if (acc.contains(url)) acc else acc ++ Map(url -> h)
-          go(t, m)
+        case h #:: t => {
+          val containers = client(h).listApplicationsInEnvironment(fqon, wrk, env).map { cs =>
+            cs.map { ResourceController.toGestaltContainer(fqon, _, Some(h.name)) }  
+          }
+          go(t, wrk, env, acc :+ containers)
         }
       }
     }
-    go(ResourceFactory.findAncestorProviders(environment), Map())
+    
+    appComponents(environment) match {
+      case Failure(e) => Future( HandleExceptions(e) )
+      case Success((wrk, env)) => {
+        
+        val providers  = findAllMarathonProvidersInScope(environment)
+        val containers = go(providers.values.toSeq, wrk.name, env.name, Seq())
+        
+        for {
+          a <- (Future sequence containers)
+          b = a.flatten
+          c = handleExpansion(b, request.queryString, META_URL)
+        } yield c
+        
+      }
+    }
   }
   
-  def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon) { implicit request =>
-    ???
-  }
   
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
@@ -108,7 +128,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
   
-  def execAppFunction(
+  private def execAppFunction(
       fqon: String, 
       parentType: String, 
       environment: UUID, 
@@ -138,6 +158,28 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     MarathonClient(WS.client, providerUrl)
   }
+  
+  /**
+   * Get a unique list (Set) of marathon providers in the given environment's scope.
+   * Uniqueness is determined by provider URL.
+   */
+  private def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
+    
+    def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+          val url = (Json.parse(h.properties.get("config")) \ "url").as[String]
+          val m = if (acc.contains(url)) acc else acc ++ Map(url -> h)
+          go(t, m)
+        }
+      }
+    }
+    val providers = ResourceFactory.findAncestorProviders(environment) filter { p =>
+      p.typeId == ResourceIds.MarathonProvider  
+    }
+    go(providers, Map())
+  }  
   
   
 //    targets match {
