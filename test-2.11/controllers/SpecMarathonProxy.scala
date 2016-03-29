@@ -51,7 +51,7 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
       listAfter must haveSize(1)
       listAfter.head.service must_== "/test-app" // strip the environment and stuff
       Thread.sleep(1000)
-      await(client.deleteApplication(fqon, wrkName, envName, "test-app")) must beTrue
+      await(client.deleteApplication(fqon, wrkName, envName, "test-app"))
     }
 
     "handle app groups under an environment" in new WithApplication {
@@ -85,7 +85,7 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
       listAfter must haveSize(1)
       listAfter.head.service must_== "/web-app/ui" // strip the environment and stuff
       Thread.sleep(1000)
-      await(client.deleteApplication(fqon, wrkName, envName, "web-app/ui")) must beTrue
+      await(client.deleteApplication(fqon, wrkName, envName, "web-app/ui"))
     }
 
   }
