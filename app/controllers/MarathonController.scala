@@ -29,7 +29,27 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   with MetaController with SecurityResources {
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
-  
+
+  /**
+    * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps
+    */
+  def delMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async { implicit request =>
+
+    val provider = marathon(providerId)
+
+    // if this isn't formatted like v2/apps/app-id/..., allow it to fail below in execAppFunction
+    val (newProxyUri,appId) = if (proxyUri.startsWith("v2/apps"))
+      ("v2/apps",proxyUri.stripPrefix("v2/apps"))
+    else
+      (proxyUri,"")
+
+    execAppFunction(fqon, parentType, environment, provider, newProxyUri) {
+      client(provider).deleteApplication(_,_,_,appId)
+    } map { Ok(_) } recover {
+      case e: Throwable => BadRequest(e.getMessage)
+    }
+  }
+
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
