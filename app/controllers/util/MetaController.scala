@@ -54,7 +54,7 @@ import controllers.SecurityResources
 
 trait MetaController extends SecureController with SecurityResources {
 
-  
+  type QueryString = Map[String,Seq[String]]
   
   /**
    * Get the base URL for this Meta instance
