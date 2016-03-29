@@ -135,6 +135,14 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
   }
   
+  def hardDeleteEnvironmentProvider(org: UUID, environment: UUID, id: UUID) = Authenticate(org) { implicit request =>
+    hardDeleteMetaResource(id, ResourceIds.MarathonProvider)  
+  }
+  
+  def hardDeleteEnvironmentProviderFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    hardDeleteMetaResource(id, ResourceIds.MarathonProvider)  
+  }
+  
   def hardDeleteWorkspaceProviderFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)

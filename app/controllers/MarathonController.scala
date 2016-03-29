@@ -30,6 +30,16 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
 
+  
+  /**
+   * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info`
+   */
+  def getInfo(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
+    client(marathon(provider)).getInfo.map { Ok( _ ) } recover {
+      case e: Throwable => HandleExceptions(e)
+    }  
+  }
+  
   /**
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps
     */
@@ -50,6 +60,25 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
+  def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
+    
+    def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+          val url = (Json.parse(h.properties.get("config")) \ "url").as[String]
+          val m = if (acc.contains(url)) acc else acc ++ Map(url -> h)
+          go(t, m)
+        }
+      }
+    }
+    go(ResourceFactory.findAncestorProviders(environment), Map())
+  }
+  
+  def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon) { implicit request =>
+    ???
+  }
+  
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
@@ -78,7 +107,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       case e: Throwable => BadRequest(e.getMessage) 
     }
   }
-
+  
   def execAppFunction(
       fqon: String, 
       parentType: String, 

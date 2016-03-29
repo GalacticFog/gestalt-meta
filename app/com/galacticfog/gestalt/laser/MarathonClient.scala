@@ -115,6 +115,15 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     }
   }
 
+  def getInfo()(implicit ex: ExecutionContext): Future[JsValue] = {
+    client.url(s"${marathonAddress}/v2/info").get map { marResp =>
+      marResp.status match {
+        case 200 => marResp.json
+        case _ => throw new RuntimeException(marResp.statusText)
+      }
+    }
+  }
+  
 }
 
 case object MarathonClient {
