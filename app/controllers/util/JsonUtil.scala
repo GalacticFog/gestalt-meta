@@ -53,7 +53,9 @@ object JsonUtil {
         val ps  = replaceJsonPropValue(obj, name, value)
         replaceJsonProps(obj, ps)
       }
-      case _ => obj
+      case _ => {
+        withJsonPropValue(obj, name, value)
+      }
     }        
   }    
   

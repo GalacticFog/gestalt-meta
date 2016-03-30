@@ -131,7 +131,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           fqid(fqon), request.body, request.identity)
     }
   }
-
+  
   
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
@@ -158,7 +158,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
             case Failure(e) => HandleExceptions(e) 
           }
         }
-      }      
+      }
     }
   }
   
@@ -205,35 +205,34 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
                   propValue = laserProviderId)
                   
             val parentJson = Json.toJson(toLink(workspace, None))
-            log.debug("PARENT-LINK:\n" + Json.prettyPrint(parentJson))
             
             val json2 = JsonUtil.upsertProperty(json.as[JsObject], "parent", parentJson) match {
-              case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
-              case v => v.get
+              case Failure(e) => throw new RuntimeException(e.getMessage)
+              case Success(v) => v
             }
-            
-            log.debug("FINAL:\n" + Json.prettyPrint(json2))
-            
-            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
+
+            // TODO: HACK to make gateway provider locations match marathon locations structure.
+            val locations = (json2 \ "properties" \ "locations").validate[Seq[String]].map {
+              case seq: Seq[String] => seq
+            }.recoverTotal { e =>
+              log.error("Error parsing gateway.locations JSON: " + JsError.toFlatJson(e).toString)
+              throw new RuntimeException("Error parsing gateway.locations JSON: " + JsError.toFlatJson(e).toString)
+            }
+            val locationsJson = Json.toJson(Seq(Json.obj("name" -> locations(0), "enabled" -> true)))
+            val json3 = JsonUtil.upsertProperty(json2.as[JsObject], "locations", locationsJson) match {
+              case Failure(e) => throw new RuntimeException(e.getMessage)
+              case Success(js) => js
+            }
+
+            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json3))
             CreateResource(ResourceIds.User, user.account.id, org, 
-                json2, 
+                json3, 
                 user,
               Some(ResourceIds.ApiGatewayProvider), Some(workspace.id)) match {
-              case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)
-              case Success(r) => log.debug(s"Successfully create GatewayProvider: ${r.id.toString}");
+                case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)
+                case Success(r) => log.debug(s"Successfully create GatewayProvider: ${r.id.toString}");
             }
           }
-          
-//          // TODO: [TEMPORARY]: Create MarathonProvider under workspace
-//          val marathon = newMarathonProvider("Marathon::" + UUID.randomUUID.toString)
-//          log.debug("Attaching MarathonProvider to workspace:\n" + Json.prettyPrint(marathon))
-//          
-//          CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
-//              Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
-//            case Success(instance) => log.debug("Successfully created MarathonProvider: " + instance.id)
-//            case Failure(error)    => throw new RuntimeException("Unable to create MarathonProvider: " + error.getMessage)
-//          }
-          
           Created(Output.renderInstance(workspace, baseUri))
         }
       }
