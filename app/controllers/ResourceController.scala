@@ -316,16 +316,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def toGestaltContainer(fqon: String, c: ContainerApp, provider: Option[GestaltResourceInstance] = None) = {
 
     // If given, inject properties.provider = providerName
-    val prvName = provider match {
+    val providerProps = provider match {
       case None => Map()
       case Some(p) => {
         Map("provider" -> Json.stringify(Json.obj("id" -> p.id.toString, "name" -> p.name)))
       }
     }
     
-   println("PRV-NAME : " + prvName)
+    val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ providerProps)
     
-    val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ prvName)
+    // drop leading slash from service name, and urlencode the rest in case 
+    // there are embedded slashes.
+    val containerName = java.net.URLEncoder.encode(c.service.trim.stripPrefix("/"), "utf-8")
     
     GestaltResourceInstance(
       id = UUID.randomUUID(),
@@ -333,7 +335,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       orgId = fqid(fqon),
       owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
       name = UUID.randomUUID.toString).copy(
-              name = c.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
+              name = containerName, 
+              created = None, modified = None,
               properties = props)
   }
   
@@ -362,11 +365,11 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
     outs map { s => handleExpansion(s, request.queryString, META_URL) }    
   }
-
+  
   
   /**
    * Get the Meta User corresponding with the caller identity.
-   * NOTE: The 'empty' call to Autheticate means the caller MUST be able
+   * NOTE: The 'empty' call to Authenticate means the caller MUST be able
    * to authenticate against the 'root' Org.
    */
   def getUserSelf() = Authenticate() { implicit request =>
