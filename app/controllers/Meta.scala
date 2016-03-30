@@ -350,7 +350,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         }
       }
     }
-    
+
 //    val newjson = {
 //      json.as[JsObject] ++ 
 //        Json.obj("resource_type" -> providerType.toString) 

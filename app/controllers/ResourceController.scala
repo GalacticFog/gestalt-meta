@@ -251,8 +251,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   import com.galacticfog.gestalt.laser._
   
-  
-
 
   def getContainersFqon(fqon: String) = Authenticate().async { implicit request =>
     orgFqon(fqon) match {
@@ -261,17 +259,90 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
 
-  // TODO: this as well for demo
-  def getEnvironmentContainersFqon(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
-    trace(s"getEnvironmentContainersFqon($fqon, $environment)")
-    orgFqon(fqon) match {
-      case None => Future { OrgNotFound(fqon) }
-      case Some(org) => {
-        getContainers(org.id, request.queryString)
+  def findWorkspaceEnvironment(envId: UUID) = Try {
+    val p = ResourceFactory.findParent(ResourceIds.Workspace, envId) getOrElse {
+      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$envId'.")
+    }
+    val c = ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
+      throw new ResourceNotFoundException(s"Environment with ID '$envId' not found.")
+    }
+    (p -> c)
+  }  
+  
+  /**
+   * Implements GET /{fqon}/environment/{eid}/providers/{pie}/containers
+   */
+  def getEnvironmentContainersFqon(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
+    getEnvContainers(fqon, environment, provider, request.queryString)
+  }
+  
+  def getEnvContainers(fqon: String, environment: UUID, provider: UUID, qs: QueryString)(implicit request: SecuredRequest[AnyContent]) = {
+    log.debug(s"Entered ResourceController::getEnvContainers($fqon, $environment, $provider)")
+
+    val targets = Try {
+      val prv = ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
+        throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
+      }
+      val we = ResourceController.findWorkspaceEnvironment(environment).get
+      (we._1, we._2, prv)
+    }      
+      
+    targets match {
+      case Failure(e) => Future { HandleRepositoryExceptions(e) }
+      case Success((wrk, env, prv)) => {
+        
+        log.debug("workspace   : %s - %s".format(wrk.id, wrk.name))
+        log.debug("environment : %s - %s".format(env.id, env.name))
+        log.debug("provider    : %s - %s".format(prv.id, prv.name))
+
+        val providerUrl = {
+          (Json.parse(prv.properties.get("config")) \ "url").as[String]
+        }
+        log.debug("provider.url: %s".format(providerUrl))
+        
+        val marathonClient = MarathonClient(WS.client, providerUrl)
+        marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
+          cs.map { toGestaltContainer(fqon, _, Some(prv)) }  
+        }
+        .map { handleExpansion(_, request.queryString, META_URL) }
+        .recover { case e: Throwable => BadRequest(e.getMessage) }        
       }
     }
   }
   
+  /**
+   * Convert ContainerApp to GestaltResourceInstance
+   */
+  def toGestaltContainer(fqon: String, c: ContainerApp, provider: Option[GestaltResourceInstance] = None) = {
+
+    // If given, inject properties.provider = providerName
+    val providerProps = provider match {
+      case None => Map()
+      case Some(p) => {
+        Map("provider" -> Json.stringify(Json.obj("id" -> p.id.toString, "name" -> p.name)))
+      }
+    }
+    
+    val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ providerProps)
+    
+    // drop leading slash from service name, and urlencode the rest in case 
+    // there are embedded slashes.
+    val containerName = java.net.URLEncoder.encode(c.service.trim.stripPrefix("/"), "utf-8")
+    
+    GestaltResourceInstance(
+      id = UUID.randomUUID(),
+      typeId = ResourceIds.Container,
+      orgId = fqid(fqon),
+      owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
+      name = UUID.randomUUID.toString).copy(
+              name = containerName, 
+              created = None, modified = None,
+              properties = props)
+  }
+  
+  /**
+   * TODO: This is still used by /{org}/containers - delete when that endpoint goes away.
+   */
   def getContainers(org: UUID, qs: Map[String,Seq[String]])(implicit request: SecuredRequest[AnyContent]) = {
     val out = GestaltResourceInstance(
       id = UUID.randomUUID(),
@@ -294,11 +365,11 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
     outs map { s => handleExpansion(s, request.queryString, META_URL) }    
   }
-
+  
   
   /**
    * Get the Meta User corresponding with the caller identity.
-   * NOTE: The 'empty' call to Autheticate means the caller MUST be able
+   * NOTE: The 'empty' call to Authenticate means the caller MUST be able
    * to authenticate against the 'root' Org.
    */
   def getUserSelf() = Authenticate() { implicit request =>
@@ -527,34 +598,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }  
   }
   
-  /*
-   * TODO: This only handles true | false. Extend to allow for expansion
-   * of individual resource attributes and properties.
-   */
-  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
-    if (!qs.contains("expand")) false
-    else {
-      val fp = qs("expand")
-      Try {
-        fp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
-      }
-    }
-  }  
-  
-  /*
-   * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
-   */
-  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }
-  
-  
+
   // --------------------------------------------------------------------------
   // APIS
   // --------------------------------------------------------------------------    

@@ -58,13 +58,27 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     val allApps = client.url(s"${marathonAddress}/v2/apps").get()
     allApps map { marResp =>
       marResp.status match {
-        case 404 => Json.obj("apps" -> Json.arr())
         case 200 =>
           val envApps = (marResp.json \ "apps").as[Seq[JsObject]].flatMap(MarathonClient.filterXformAppsByGroup(groupId))
           Json.obj(
             "apps" -> envApps
           )
-        case _ => throw new RuntimeException("unepected return from Marathon REST API")
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+      }
+    }
+  }
+
+  def listDeploymentsAffectingEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
+    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    val allDeployments = client.url(s"${marathonAddress}/v2/deployments").get()
+    allDeployments map { marResp =>
+      marResp.status match {
+        case 200 =>
+          Logger.info(s"all deployments before filter/xform: ${Json.prettyPrint(marResp.json)}")
+          val envDeployments = marResp.json.as[Seq[JsObject]].flatMap(MarathonClient.filterXformDeploymentsByGroup(groupId))
+          Logger.info(s"deployments after filter/xform: ${Json.prettyPrint(Json.toJson(envDeployments))}")
+          Json.toJson(envDeployments)
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
       }
     }
   }
@@ -101,28 +115,70 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     }
   }
 
-  def deleteApplication(fqon: String, wrkName: String, envName: String, appId: String)(implicit ex: ExecutionContext): Future[Boolean] = {
+  def deleteApplication(fqon: String, wrkName: String, envName: String, appId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
     val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
-    val longAppId = appGroupId + "/" + appId.stripPrefix("/")
+    val longAppId = appGroupId + appId.stripPrefix("/")
     client.url(s"${marathonAddress}/v2/apps${longAppId}").delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
-      marResp.status match {
-        case 200 => true
-        case 404 => false
-        case _ => throw new RuntimeException((marResp.json \ "message").asOpt[String] getOrElse marResp.statusText)
-      }
+//      marResp.status match {
+//        case 200 => true
+//        case 404 => false
+//        case _ => throw new RuntimeException((marResp.json \ "message").asOpt[String] getOrElse marResp.statusText)
+//      }
+        marResp.json
     }
   }
 
+  def getInfo()(implicit ex: ExecutionContext): Future[JsValue] = {
+    client.url(s"${marathonAddress}/v2/info").get map { marResp =>
+      marResp.status match {
+        case 200 => marResp.json
+        case _ => throw new RuntimeException(marResp.statusText)
+      }
+    }
+  }
+  
 }
 
 case object MarathonClient {
+
+  def filterXformDeploymentsByGroup(groupId: String)(app: JsObject): Option[JsObject] = {
+    val xformAppId = (__ \ "app").json.update(
+      of[JsString].map {
+        case JsString(appId) => JsString("/" + appId.stripPrefix(groupId))
+      }
+    )
+    val xformAndFilter = (
+      (__ \ "steps").json.update( of[JsArray].map { case _ => JsArray() } ) andThen
+      (__ \ "currentStep").json.update( of[JsNumber].map {case _ => JsNumber(0) } ) andThen
+      (__ \ "totalSteps").json.update( of[JsNumber].map {case _ => JsNumber(0) } ) andThen
+      (__ \ "currentActions").json.update( of[JsArray].map{ arr =>
+        Json.toJson(arr.as[Seq[JsObject]].flatMap { action =>
+          (action \ "app").asOpt[String] match {
+            case Some(appId) if appId.startsWith(groupId) => action.transform(xformAppId).asOpt
+            case _ => None
+          }
+        })
+      }) andThen
+      (__ \ "affectedApps").json.update( of[JsArray].map{ arr =>
+        Json.toJson(arr.as[Seq[String]].flatMap {
+          case appId if appId.startsWith(groupId) => Some("/" + appId.stripPrefix(groupId))
+          case _ => None
+        })
+      })
+    )
+
+    app.transform(xformAndFilter) match {
+      case JsSuccess(newList,_) if !(newList \ "affectedApps").as[Seq[JsString]].isEmpty => Some(newList)
+      case _ => None
+    }
+  }
 
   def filterXformAppsByGroup(groupId: String)(app: JsObject): Option[JsObject] = {
     (app \ "id").asOpt[String] match {
       case Some(id) if id.startsWith(groupId) =>
         val stripEnvGroup = (__ \ 'id).json.update(
-          __.read[JsString].map{ id => JsString(id.value.stripPrefix(groupId)) }
+          __.read[JsString].map{ id => JsString("/" + id.value.stripPrefix(groupId)) }
         )
         app.transform(stripEnvGroup) match {
           case JsSuccess(newApp,_) => Some(newApp)
@@ -147,7 +203,7 @@ case object MarathonClient {
   }
 
   def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {
-    ("/" + fqon + "/" + wrkName.replace("/","") + "/" + envName.replace("/","")).replace(" ","-").toLowerCase
+    ("/" + fqon + "/" + wrkName.replace("/","-") + "/" + envName.replace("/","-") + "/").replace(" ","-").toLowerCase
   }
 
 }
