@@ -30,9 +30,22 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
 
-  
+
   /**
-   * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info`
+    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
+    */
+  def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
+    val provider = marathon(providerId)
+
+    execAppFunction(fqon, parentType, environment, provider, "v2/deployments") {
+      client(provider).listDeploymentsAffectingEnvironment_marathon_v2
+    } map { Ok(_) } recover {
+      case e: Throwable => BadRequest(e.getMessage)
+    }
+  }
+
+  /**
+   * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info
    */
   def getInfo(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
     client(marathon(provider)).getInfo.map { Ok( _ ) } recover {
