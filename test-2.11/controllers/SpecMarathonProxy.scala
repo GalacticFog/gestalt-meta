@@ -14,9 +14,9 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
 
   def pretty(json: JsValue) = Json.prettyPrint(json)
 
-  val wrkName: String = "Test Workspace"
+  val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"
-  val fqon: String = "galacticfog.engineering.core"
+  val fqon: String = "galacticfog.engineering.test"
 
   "MarathonClient" should {
 
@@ -46,6 +46,10 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
         """
       ).as[JsObject]
       await(client.launchContainer(fqon, wrkName, envName, marPayload)) must endWith("test-app")
+      val deployments = await(client.listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrkName, envName))
+      val depsArr = deployments.as[Seq[JsObject]]
+      depsArr must not be empty
+      (depsArr.head \ "affectedApps").asOpt[String] must beSome("\test-app")
       Thread.sleep(1000)
       val listAfter = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
       listAfter must haveSize(1)
@@ -86,6 +90,72 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
       listAfter.head.service must_== "/web-app/ui" // strip the environment and stuff
       Thread.sleep(1000)
       await(client.deleteApplication(fqon, wrkName, envName, "web-app/ui"))
+    }
+
+    "xform deployments by env and filter affectedApps" in {
+      val input = Json.parse(
+        """
+          |{
+          |  "id" : "a0935106-6466-4019-b5b6-1388dedb0ba1",
+          |  "version" : "2016-03-30T03:16:39.208Z",
+          |  "affectedApps" : [
+          |     "/galacticfog.engineering.test/meta-workspace/test-environment/test-app",
+          |     "/galacticfog.engineering.test/meta-workspace/test-environment-2/another-test-app"
+          |  ],
+          |  "steps" : [ [ {
+          |    "action" : "StartApplication",
+          |    "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |  } ], [ {
+          |    "action" : "ScaleApplication",
+          |    "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |  } ] ],
+          |  "currentActions" : [ {
+          |      "action" : "ScaleApplication",
+          |      "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |    }, {
+          |      "action" : "ScaleApplication",
+          |      "app" : "/galacticfog.engineering.test/meta-workspace/test-environment-2/another-test-app"
+          |  } ],
+          |  "currentStep" : 2,
+          |  "totalSteps" : 2
+          |}
+        """.stripMargin).as[JsObject]
+      val expected = Json.parse(
+        """
+          |{
+          |  "id" : "a0935106-6466-4019-b5b6-1388dedb0ba1",
+          |  "version" : "2016-03-30T03:16:39.208Z",
+          |  "affectedApps" : [ "/test-app" ],
+          |  "steps" : [],
+          |  "currentActions" : [ {
+          |    "action" : "ScaleApplication",
+          |    "app" : "/test-app"
+          |  } ],
+          |  "currentStep" : 0,
+          |  "totalSteps" : 0
+          |}
+        """.stripMargin).as[JsObject]
+      val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+      val result = MarathonClient.filterXformDeploymentsByGroup(groupId)(input)
+      result must beSome(expected)
+    }
+
+    "filter out a deployments with no affected apps in the env" in {
+      val input = Json.parse(
+        """
+          |{
+          |  "id" : "a0935106-6466-4019-b5b6-1388dedb0ba1",
+          |  "version" : "2016-03-30T03:16:39.208Z",
+          |  "affectedApps" : [ "/galacticfog.engineering.test/meta-workspace/test-environment-2/test-app" ],
+          |  "steps" : [ ],
+          |  "currentActions" : [ ],
+          |  "currentStep" : 0,
+          |  "totalSteps" : 0
+          |}
+        """.stripMargin).as[JsObject]
+      val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+      val result = MarathonClient.filterXformDeploymentsByGroup(groupId)(input)
+      result must beNone
     }
 
   }
