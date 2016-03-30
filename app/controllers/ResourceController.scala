@@ -302,7 +302,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         
         val marathonClient = MarathonClient(WS.client, providerUrl)
         marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
-          cs.map { toGestaltContainer(fqon, _, Some(prv.name)) }  
+          cs.map { toGestaltContainer(fqon, _, Some(prv)) }  
         }
         .map { handleExpansion(_, request.queryString, META_URL) }
         .recover { case e: Throwable => BadRequest(e.getMessage) }        
@@ -313,10 +313,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   /**
    * Convert ContainerApp to GestaltResourceInstance
    */
-  def toGestaltContainer(fqon: String, c: ContainerApp, providerName: Option[String] = None) = {
+  def toGestaltContainer(fqon: String, c: ContainerApp, provider: Option[GestaltResourceInstance] = None) = {
 
     // If given, inject properties.provider = providerName
-    val prvName = if (providerName.isEmpty) Map() else Map("provider" -> providerName.get)
+    val prvName = provider match {
+      case None => Map()
+      case Some(p) => {
+        Map("provider" -> Json.stringify(Json.obj("id" -> p.id.toString, "name" -> p.name)))
+      }
+    }
+    
+   println("PRV-NAME : " + prvName)
+    
     val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ prvName)
     
     GestaltResourceInstance(

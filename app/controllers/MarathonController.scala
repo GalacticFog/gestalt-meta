@@ -74,7 +74,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         case Nil => acc
         case h #:: t => {
           val containers = client(h).listApplicationsInEnvironment(fqon, wrk, env).map { cs =>
-            cs.map { ResourceController.toGestaltContainer(fqon, _, Some(h.name)) }  
+            cs.map { ResourceController.toGestaltContainer(fqon, _, Some(h)) }  
           }
           go(t, wrk, env, acc :+ containers)
         }
