@@ -30,9 +30,22 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
 
-  
+
   /**
-   * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info`
+    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
+    */
+  def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
+    val provider = marathon(providerId)
+
+    execAppFunction(fqon, parentType, environment, provider, "v2/deployments") {
+      client(provider).listDeploymentsAffectingEnvironment_marathon_v2
+    } map { Ok(_) } recover {
+      case e: Throwable => BadRequest(e.getMessage)
+    }
+  }
+
+  /**
+   * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info
    */
   def getInfo(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
     client(marathon(provider)).getInfo.map { Ok( _ ) } recover {
@@ -137,7 +150,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     appComponents(environment) match {
       case Failure(e) => throw e
       case Success((parent, child)) => proxyUri match {
-        case "v2/apps" => { fn(fqon, parent.name, child.name) }
+        case "v2/apps" =>        { fn(fqon, parent.name, child.name) }
+        case "v2/deployments" => { fn(fqon, parent.name, child.name) }
         case e         => throw new BadRequestException(s"Unsupported Marathon URL : " + e)
       }
     }
