@@ -150,7 +150,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     appComponents(environment) match {
       case Failure(e) => throw e
       case Success((parent, child)) => proxyUri match {
-        case "v2/apps" => { fn(fqon, parent.name, child.name) }
+        case "v2/apps" =>        { fn(fqon, parent.name, child.name) }
+        case "v2/deployments" => { fn(fqon, parent.name, child.name) }
         case e         => throw new BadRequestException(s"Unsupported Marathon URL : " + e)
       }
     }
