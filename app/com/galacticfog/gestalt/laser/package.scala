@@ -55,7 +55,8 @@ package object laser {
       description: Option[String] = None,
       publish: Boolean = false,
       role: String = "none",
-      timeoutSecs: Int = 180)
+      timeoutSecs: Int = 180,
+      code: Option[String] = None)
   
   case class LaserLambda(
       id: Option[String], 
@@ -133,7 +134,7 @@ package object laser {
       provider = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")), //props("provider"),
       LaserArtifactDescription(
           artifactUri = artifactUri,
-          description = None,
+          description = if (props.contains("description")) props("description").asOpt[String] else None,
           functionName = function,
           handler = handler,
           memorySize = props("memory").as[Int],
@@ -141,7 +142,9 @@ package object laser {
           publish = false,             // <- currently not used
           role = "placeholder.role",   // <- currently not used
           runtime = props("runtime").as[String],
-          timeoutSecs = props("timeout").as[Int]) )
+          timeoutSecs = props("timeout").as[Int],
+          code = if (props.contains("code")) props("code").asOpt[String] else None
+          ))
   }
   
   
