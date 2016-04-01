@@ -60,7 +60,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
 
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
   
-  case class LambdaProviderInfo(id: String, external_id: String, locations: /*Seq[String]*/ Seq[JsValue])
+  case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[String])
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
@@ -277,10 +277,9 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
         case Nil => acc
         case h :: t => h.locations map { loc =>
           
-          val locationName = (loc \ "name").as[String]
           val providerObj = Json.obj("id" -> h.id, "location" -> loc)
           val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
-          val api = ResourceFactory.findApiId(lambda.get.id, h.id, /*loc*/locationName)
+          val api = ResourceFactory.findApiId(lambda.get.id, h.id, loc)
           
           // Use client-supplied ID if given.
           val endpointId = request.body \ "id" match {
@@ -330,7 +329,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           }
           
           // Write lambda_x_endpoint map
-          ResourceFactory.mapLaserType(ResourceIds.ApiEndpoint, endpointId, endpointId, h.id, /*loc*/ locationName)
+          ResourceFactory.mapLaserType(ResourceIds.ApiEndpoint, endpointId, endpointId, h.id, loc)
           out
         }
       }
@@ -411,7 +410,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           if (providers.isDefined) {
             
             val ps = providers.get map { p => 
-              
+
               val id = (p \ "id").as[String]
               val exId = ResourceFactory.findById(id) match {
                 case Some(mp) => mp.properties.get("external_id")
@@ -451,12 +450,10 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           val nids: Seq[UUID] = h.locations map { loc =>
             val id = UUID.randomUUID
 
-            val locationName = (loc \ "name").as[String]
-            
             // Create Laser API
             val laserjson = LaserApi(id = Some(id), name = lambdaName,description = None,
-              provider = Some(Json.obj("id" -> h.external_id.toString, "location" -> /*loc*/locationName)))
-            
+              provider = Some(Json.obj("id" -> h.external_id.toString, "location" -> loc)))
+
             laser.createApi(laserjson) match {
               case Success(_) => println("***LASER API CREATED***")
               case Failure(e) => throw e
@@ -467,8 +464,8 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
             val res = createApiCommon(org, parent, Json.toJson(metaApiJson))
 
             // Write Record to association table
-            ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, /*loc*/ locationName)
-            ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, /*loc*/ locationName)
+            ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, loc)
+            ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, loc)
             id
           }
           go(t, (acc ++ nids))
@@ -481,11 +478,10 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = Try {
     for (p <- providers; l <- p.locations) {
       val laserId = Some(metaLambdaId)
-      val locationName = (l \ "name").as[String]
-      val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, locationName)
+      val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, l)
 
       laser.createLambda(lambda) map { m =>
-        ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, locationName)
+        ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
         ()
       }
     }
