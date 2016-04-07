@@ -3,8 +3,10 @@ package com.galacticfog.gestalt
 import java.util.UUID
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
-  
+import play.api.{ Logger => log }
+
 package object marathon {
 
   
@@ -30,7 +32,7 @@ package object marathon {
       container_port: Int, 
       host_port: Int = 0, 
       service_port: Int = 0,
-      lable: Option[String] = None)
+      label: Option[String] = None)
       
   case class InputContainerProperties(
       container_type: String,
@@ -48,12 +50,18 @@ package object marathon {
       volumes: Option[Iterable[Volume]] = None,
       labels: Option[Map[String,String]] = None,
       env: Option[Map[String,String]] = None)
+  
+  case class InputContainer(
+      id: UUID = UUID.randomUUID,
+      name: String,
+      resource_type: UUID = ResourceIds.Container,
+      properties: InputContainerProperties)
       
   case class KeyValuePair(key: String, value: String)
   
   case class MarathonDocker(
       image: String,
-      network: String = "BRIDGED",
+      network: String = "BRIDGE",
       forcePullImage: Boolean = false,
       portMappings: Iterable[PortMapping] = Seq(),
       parameters: Option[Iterable[KeyValuePair]] = None)
@@ -81,15 +89,76 @@ package object marathon {
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
   implicit lazy val portMappingFormat = Json.format[PortMapping]
   implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
-  
+  implicit lazy val inputContainerFormat = Json.format[InputContainer]
   
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
   implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
   implicit lazy val marathonContainerFormat = Json.format[MarathonContainer]
   implicit lazy val marathonAppFormat = Json.format[MarathonApp]  
   
+  import com.galacticfog.gestalt.data.ResourceFactory
   
-  def toMarathonApp(name: String, inputJson: JsObject /*props: InputContainerProperties*/) = {
+  
+  /**
+   * Convert Marathon App JSON to Meta Container JSON
+   */
+  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID) = {
+    log.debug("Entered marathonApp2MetaContainer...")
+    log.debug("Received:\n" + Json.prettyPrint(inputJson))
+    log.debug("Deserializing Marathon App JSON...")
+    
+    val app = inputJson.validate[MarathonApp].map {
+      case app: MarathonApp => app
+    }.recoverTotal { e =>
+      throw new BadRequestException("Could not parse Marathon App JSON: " + JsError.toFlatJson(e).toString)
+    }
+    
+    log.debug("Marathon App:\n" + app)
+    log.debug("Looking up Provider : " + providerId)
+    val provider = {
+      val p = ResourceFactory.findById(ResourceIds.MarathonProvider, providerId) getOrElse {
+        throw new ResourceNotFoundException(s"MarathonProvider with ID '$providerId' not found.")
+      }
+      InputProvider(id = p.id)
+    }
+    log.debug("Provider:\n" + provider)
+    
+    // TODO: Add 'containerType' to Marathon object, remove "DOCKER" constant.
+    val props = InputContainerProperties(
+      container_type = "DOCKER",
+      image = app.container.docker.image,
+      provider = provider,
+      port_mappings = app.container.docker.portMappings,
+      cpus = app.cpus,
+      memory = app.mem,
+      num_instances = app.instances,
+      network = app.container.docker.network,
+      cmd = app.cmd,
+      args = app.args,
+      force_pull = app.container.docker.forcePullImage,
+      health_checks = app.healthChecks,
+      volumes = app.container.volumes,
+      labels = app.labels,
+      env = app.env)
+    
+    // Meta container name is last component of Marathon ID 'path'
+    val containerName = {
+        val cmps = app.id.stripPrefix("/").stripSuffix("/").split("/")
+        cmps(cmps.size-1)
+    }
+    log.debug("Container-Name : " + containerName)
+    
+    val output = Json.toJson(InputContainer(name = containerName, properties = props))
+    
+    log.debug("Transform Complete:\n" + Json.prettyPrint(output))
+    output
+  }
+  
+  
+  /**
+   * Convert Meta Container JSON to Marathon App object.
+   */
+  def toMarathonApp(name: String, inputJson: JsObject) = {
     
     val props = (inputJson \ "properties").validate[InputContainerProperties].map {
       case ps: InputContainerProperties => ps
@@ -99,7 +168,7 @@ package object marathon {
     }
     
     def portmap(ps: Iterable[PortMapping]): Iterable[PortMapping] = {
-      ps map { _.copy(lable = None) }
+      ps map { _.copy(label = None) }
     }
     
     def appPorts(ps: Iterable[PortMapping]): Iterable[Int] = {
@@ -129,7 +198,7 @@ package object marathon {
        labels = props.labels,
        healthChecks = props.health_checks,
        env = props.env)
-  }  
+  }
   
   def containerWithDefaults(json: JsValue) = {
     val ctype = (json \ "properties" \ "container_type") match {

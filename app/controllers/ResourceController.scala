@@ -56,8 +56,8 @@ import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
-
-
+  
+  
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
@@ -272,8 +272,21 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   /**
    * Implements GET /{fqon}/environment/{eid}/providers/{pie}/containers
    */
-  def getEnvironmentContainersFqon(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
+  def getEnvironmentContainersFqon(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>  
     getEnvContainers(fqon, environment, provider, request.queryString)
+  }
+  
+  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>  
+    handleExpansion(
+        ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), 
+        request.queryString, META_URL)
+  }
+  
+  def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Container, containerId) match {
+      case None => NotFoundResult(s"Container with ID '$containerId' not found.")
+      case Some(res) => Ok(Output.renderInstance(res, META_URL))
+    }
   }
   
   def getEnvContainers(fqon: String, environment: UUID, provider: UUID, qs: QueryString)(implicit request: SecuredRequest[AnyContent]) = {
@@ -286,7 +299,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       val we = ResourceController.findWorkspaceEnvironment(environment).get
       (we._1, we._2, prv)
     }      
-      
+    
     targets match {
       case Failure(e) => Future { HandleRepositoryExceptions(e) }
       case Success((wrk, env, prv)) => {
