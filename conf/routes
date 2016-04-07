@@ -123,7 +123,6 @@ PATCH  	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a
 POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.Meta.postWorkspace(orgId: java.util.UUID)
 
 
-
 #GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.ResourceController.getAllWorkspaces(orgId: java.util.UUID)
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id 		controllers.ResourceController.getWorkspaceById(orgId: java.util.UUID, id: java.util.UUID)
 
@@ -312,6 +311,15 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pr
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 controllers.ResourceController.getContainersFqon(fqon: String)
 
+
+
+#POST 		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pid/containers
+#GET 		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pid/containers/:cid
+#GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid
+#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid
+
+
+
 ############################
 # APIS
 ############################
@@ -425,15 +433,17 @@ DELETE	 /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/provider
 # Environment Providers
 #
 
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers   controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers   					controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers  controllers.ResourceController.getProvidersFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers  				controllers.ResourceController.getProvidersFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
 
-GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   controllers.MarathonController.getMarathonAppsAll(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   				controllers.MarathonController.getMarathonAppsAll(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/info		        controllers.MarathonController.getInfo(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/deployments		controllers.MarathonController.getDeployments(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id controllers.ResourceController.getGenericChildByIdFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String, id: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id 			controllers.ResourceController.getGenericChildByIdFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String, id: java.util.UUID)
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps  	controllers.MarathonController.postMarathonApp(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/*proxyUri   controllers.MarathonController.postMarathonApps(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, proxyUri: String)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/*proxyUri   controllers.MarathonController.getMarathonApps(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, proxyUri: String)
@@ -442,7 +452,7 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/
 
 #PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
 
-DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id   controllers.DeleteController.hardDeleteEnvironmentProviderFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id   			controllers.DeleteController.hardDeleteEnvironmentProviderFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 
 
 

@@ -951,7 +951,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       }
     }
     loop( Map(), getMethods[T] )
-  }  
+  }
   
   def getMethods[T: TypeTag]: List[MethodSymbol] = typeOf[T].members.collect {
     case m: MethodSymbol if m.isCaseAccessor => m

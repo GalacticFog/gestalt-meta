@@ -296,7 +296,26 @@ trait MetaController extends SecureController with SecurityResources {
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
   }
-
+  
+  /**
+   * Convert GestaltResourceInput to GestaltResourceInstance
+   */
+  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      
+      /* TODO: Here is where we transform from map(any) to map(string) */
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }
   
   def HandleCreate(typeId: UUID, json: JsValue)(resource : => Try[GestaltResourceInstance]): Result = {
     safeGetInputJson(typeId, json) match {
@@ -348,24 +367,7 @@ trait MetaController extends SecureController with SecurityResources {
     }
   }
   
-  /**
-   * Convert GestaltResourceInput to GestaltResourceInstance
-   */
-  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-    GestaltResourceInstance(
-      id = in.id getOrElse UUID.randomUUID,
-      typeId = in.resource_type.get,
-      state = resolveResourceState(in.resource_state), //ResourceState.id(in.resource_state.get),
-      orgId = org,
-      owner = in.owner.get,
-      name = in.name,
-      description = in.description,
-      /* TODO: Here is where we transform from map(any) to map(string) */
-      properties = stringmap(in.properties),
-      variables = in.variables,
-      tags = in.tags,
-      auth = in.auth)
-  }
+
   
   protected[controllers] object Err {
     def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
