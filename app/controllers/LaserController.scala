@@ -416,7 +416,12 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
                 case Some(mp) => mp.properties.get("external_id")
                 case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
               }
-              (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].get
+              (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
+                case lpi: LambdaProviderInfo => lpi
+              }.recoverTotal { e =>
+                log.error(JsError.toFlatJson(e).toString)
+                throw new RuntimeException(JsError.toFlatJson(e).toString)
+              }
               
             }
             createLaserLambdas(lambdaId, input, ps)

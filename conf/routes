@@ -2,6 +2,7 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
+GET /rules  controllers.PolicyController.getRulesGlobal()
 
 #GET 	/environments/:eid/providers/*marathon controllers.MarathonController.test(marathon)
 
