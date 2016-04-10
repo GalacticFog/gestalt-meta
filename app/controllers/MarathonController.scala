@@ -349,24 +349,23 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon) { implicit request =>
+  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")
 
     appComponents(environment) match {
-      case Failure(e) => HandleExceptions(e)
+      case Failure(e) => Future.successful(HandleExceptions(e))
       case Success((wrk, env)) => {
 
         log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
         ResourceFactory.findById(ResourceIds.Container, id) match {
-          case None => NotFoundResult(s"Container with ID '$id' not found.")
+          case None => Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
           case Some(c) => {
 
             log.debug(s"Scaling Marathon App...")
-            Try {
-              scaleMarathonApp(c, numInstances)
-            } match {
-              case Success(js) => NoContent // TODO: Accepted(js)
-              case Failure(e) => HandleRepositoryExceptions(e)
+            scaleMarathonApp(c, numInstances) map {
+              marathonJson => Accepted(marathonJson) // TODO: scaleMarathonApp returns Marathon JSON; need to return Meta JSON
+            } recover {
+              case e: Throwable => HandleExceptions(e)
             }
           }
         }
@@ -409,13 +408,11 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     UUID.fromString(pid)
   }
 
-  def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int) = {
+  def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
     val provider = marathon(providerId(container))
     container.properties flatMap {_.get("external_id")} match {
       case Some(externalId) =>
-        Await.result(
-          client(provider).scaleApplication(externalId, numInstances),
-          5 seconds)
+        client(provider).scaleApplication(externalId, numInstances)
       case None =>
         throw new RuntimeException("container did not have external_id")
     }
