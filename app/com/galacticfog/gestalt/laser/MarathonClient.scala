@@ -128,7 +128,16 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
         marResp.json
     }
   }
-  
+
+  def scaleApplication(appId: String, numInstances: Int)(implicit ex: ExecutionContext): Future[JsValue] = {
+    client.url(s"${marathonAddress}/v2/apps/${appId}").put(Json.obj(
+      "instances" -> numInstances
+    )) map { marResp =>
+      Logger.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
+      marResp.json
+    }
+  }
+
   def deleteApplication(fqon: String, appId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
     client.url(s"${marathonAddress}/v2/apps/${appId}").delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))

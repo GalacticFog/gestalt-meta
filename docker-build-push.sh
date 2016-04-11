@@ -17,5 +17,8 @@ cd target/docker/stage
 docker build -t $IMG:$TAG .
 echo "Pushing new image to artifactory..."
 docker push   $IMG:$TAG
-docker tag -f $IMG:$TAG $IMG:$VER
-docker push   $IMG:$VER
+
+echo Built and published: $IMG:$TAG
+echo If you want to update the version, run the following:
+echo    docker tag -f $IMG:$TAG $IMG:$VER
+echo    docker push   $IMG:$VER

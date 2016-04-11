@@ -291,6 +291,12 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 						controllers.Res
 
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   		controllers.MarathonController.getMarathonAppsAll(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
 
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/scale    controllers.MarathonController.scaleContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, numInstances: Int)
+
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/migrate  controllers.MarathonController.migrateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, providerId: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid   controllers.ResourceController.getEnvironmentContainersIdFqon(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
+
 
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		controllers.MarathonController.postMarathonApp2(fqon: String, envId: java.util.UUID) 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   		controllers.ResourceController.getEnvironmentContainersFqon2(fqon: String, envId: java.util.UUID)
