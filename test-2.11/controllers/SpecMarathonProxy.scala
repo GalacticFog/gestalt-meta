@@ -6,9 +6,11 @@ import com.galacticfog.gestalt.laser.MarathonClient
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
 import org.specs2.mutable._
+import play.api.libs.json
 import play.api.libs.json._
 import play.api.libs.ws.WS
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, WithApplication}
+import com.galacticfog.gestalt.marathon._
 
 class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwaitTimeout {
 
@@ -20,77 +22,77 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
 
   "MarathonClient" should {
 
-    "handle env-specific app lists" in new WithApplication {
-      val client = MarathonClient(WS.client, "http://v2.galacticfog.com:8080")
-      val listBefore = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
-      listBefore must beEmpty
-      val marPayload = Json.parse(
-        """
-          {
-            "id": "test-app",
-            "cpus": 0.1,
-            "mem": 128.0,
-            "instances": 1,
-            "ports": [0],
-            "container": {
-               "type": "DOCKER",
-               "docker": {
-                 "image": "nginx",
-                 "network": "BRIDGE",
-                 "portMappings": [
-                    {"containerPort": 80}
-                 ]
-               }
-            }
-          }
-        """
-      ).as[JsObject]
-      await(client.launchContainer(fqon, wrkName, envName, marPayload)) must endWith("test-app")
-      val deployments = await(client.listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrkName, envName))
-      val depsArr = deployments.as[Seq[JsObject]]
-      depsArr must not be empty
-      (depsArr.head \ "affectedApps").asOpt[String] must beSome("\test-app")
-      Thread.sleep(1000)
-      val listAfter = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
-      listAfter must haveSize(1)
-      listAfter.head.service must_== "/test-app" // strip the environment and stuff
-      Thread.sleep(1000)
-      await(client.deleteApplication(fqon, wrkName, envName, "test-app"))
-    }
+//    "handle env-specific app lists" in new WithApplication {
+//      val client = MarathonClient(WS.client, "http://v2.galacticfog.com:8080")
+//      val listBefore = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
+//      listBefore must beEmpty
+//      val marPayload = Json.parse(
+//        """
+//          {
+//            "id": "test-app",
+//            "cpus": 0.1,
+//            "mem": 128.0,
+//            "instances": 1,
+//            "ports": [0],
+//            "container": {
+//               "type": "DOCKER",
+//               "docker": {
+//                 "image": "nginx",
+//                 "network": "BRIDGE",
+//                 "portMappings": [
+//                    {"containerPort": 80}
+//                 ]
+//               }
+//            }
+//          }
+//        """
+//      ).as[JsObject]
+//      await(client.launchContainer(fqon, wrkName, envName, marPayload)) must endWith("test-app")
+//      val deployments = await(client.listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrkName, envName))
+//      val depsArr = deployments.as[Seq[JsObject]]
+//      depsArr must not be empty
+//      (depsArr.head \ "affectedApps").asOpt[String] must beSome("\test-app")
+//      Thread.sleep(1000)
+//      val listAfter = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
+//      listAfter must haveSize(1)
+//      listAfter.head.service must_== "/test-app" // strip the environment and stuff
+//      Thread.sleep(1000)
+//      await(client.deleteApplication(fqon, wrkName, envName, "test-app"))
+//    }
 
-    "handle app groups under an environment" in new WithApplication {
-      val client = MarathonClient(WS.client, "http://v2.galacticfog.com:8080")
-      val listBefore = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
-      listBefore must beEmpty
-      val marPayload = Json.parse(
-        """
-          {
-            "id": "/web-app/ui",
-            "cpus": 0.1,
-            "mem": 128.0,
-            "instances": 1,
-            "ports": [0],
-            "container": {
-               "type": "DOCKER",
-               "docker": {
-                 "image": "nginx",
-                 "network": "BRIDGE",
-                 "portMappings": [
-                    {"containerPort": 80}
-                 ]
-               }
-            }
-          }
-        """
-      ).as[JsObject]
-      await(client.launchContainer(fqon, wrkName, envName, marPayload)) must endWith("web-app/ui")
-      Thread.sleep(1000)
-      val listAfter = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
-      listAfter must haveSize(1)
-      listAfter.head.service must_== "/web-app/ui" // strip the environment and stuff
-      Thread.sleep(1000)
-      await(client.deleteApplication(fqon, wrkName, envName, "web-app/ui"))
-    }
+//    "handle app groups under an environment" in new WithApplication {
+//      val client = MarathonClient(WS.client, "http://v2.galacticfog.com:8080")
+//      val listBefore = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
+//      listBefore must beEmpty
+//      val marPayload = Json.parse(
+//        """
+//          {
+//            "id": "/web-app/ui",
+//            "cpus": 0.1,
+//            "mem": 128.0,
+//            "instances": 1,
+//            "ports": [0],
+//            "container": {
+//               "type": "DOCKER",
+//               "docker": {
+//                 "image": "nginx",
+//                 "network": "BRIDGE",
+//                 "portMappings": [
+//                    {"containerPort": 80}
+//                 ]
+//               }
+//            }
+//          }
+//        """
+//      ).as[JsObject]
+//      await(client.launchContainer(fqon, wrkName, envName, marPayload)) must endWith("web-app/ui")
+//      Thread.sleep(1000)
+//      val listAfter = await(client.listApplicationsInEnvironment(fqon, wrkName, envName))
+//      listAfter must haveSize(1)
+//      listAfter.head.service must_== "/web-app/ui" // strip the environment and stuff
+//      Thread.sleep(1000)
+//      await(client.deleteApplication(fqon, wrkName, envName, "web-app/ui"))
+//    }
 
     "xform deployments by env and filter affectedApps" in {
       val input = Json.parse(
@@ -156,6 +158,55 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
       val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
       val result = MarathonClient.filterXformDeploymentsByGroup(groupId)(input)
       result must beNone
+    }
+
+    "parse marathon apps" in {
+      val inputJson = Json.parse(
+        """
+          {
+            "container" : {
+              "type" : "DOCKER",
+              "docker" : {
+                "image" : "nginx",
+                "portMappings" : [ {
+                  "containerPort" : 80
+                } ],
+                "network" : "BRIDGE"
+              }
+            },
+            "id" : "cli-example-server",
+            "mem" : 128.0,
+            "cpus" : 0.1,
+            "ports" : [ 0 ],
+            "instances" : 1,
+            "healthChecks" : [ {
+              "portIndex" : 0,
+              "protocol" : "HTTP",
+              "gracePeriodSeconds" : 30,
+              "maxConsecutiveFailures" : 10,
+              "intervalSeconds" : 3,
+              "path" : "/"
+            } ]
+          }
+        """)
+
+      val app = inputJson.validate[MarathonApp].asOpt
+      app must beSome(MarathonApp(
+        id = "cli-example-server",
+        container = MarathonContainer(MarathonDocker(image = "nginx", network = "BRIDGE", forcePullImage = false, portMappings = Seq(
+          PortMapping(protocol = "tcp", container_port = 80, host_port = 0, service_port = 0, label = None)
+        ), parameters = None), volumes = None),
+        cpus = 0.1,
+        mem = 128,
+        instances = 1,
+        cmd = None,
+        args = None,
+        ports = Seq(0),
+        labels = None,
+        healthChecks = Some(Seq(
+          HealthCheck(protocol = "HTTP", path = "/", grace_period_seconds = 30, interval_seconds = 3, timeout_seconds = 10, max_consecutive_failures = 10)
+        ))
+      ))
     }
 
   }
