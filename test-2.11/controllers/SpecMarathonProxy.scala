@@ -190,11 +190,11 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
           }
         """)
 
-      val app = inputJson.validate[MarathonApp].asOpt
-      app must beSome(MarathonApp(
+      val app = inputJson.as[MarathonApp]
+      app must_== MarathonApp(
         id = "cli-example-server",
         container = MarathonContainer(MarathonDocker(image = "nginx", network = "BRIDGE", forcePullImage = false, portMappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80, host_port = 0, service_port = 0, label = None)
+          MarathonPortMapping(containerPort = 80)
         ), parameters = None), volumes = None),
         cpus = 0.1,
         mem = 128,
@@ -203,10 +203,16 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
         args = None,
         ports = Seq(0),
         labels = None,
-        healthChecks = Some(Seq(
-          HealthCheck(protocol = "HTTP", path = "/", grace_period_seconds = 30, interval_seconds = 3, timeout_seconds = 10, max_consecutive_failures = 10)
-        ))
-      ))
+        healthChecks = Some(Seq(MarathonHealthCheck(
+          protocol = Some("HTTP"),
+          path = Some("/"),
+          portIndex = Some(0),
+          gracePeriodSeconds = Some(30),
+          intervalSeconds = Some(3),
+          timeoutSeconds = Some(10),
+          maxConsecutiveFailures = Some(10)
+        )))
+      )
     }
 
   }
