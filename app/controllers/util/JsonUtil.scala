@@ -15,7 +15,11 @@ object JsonUtil {
    * with the given value. Returns *JUST* the properties JSON.
    */
   def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
-    (obj \ "properties").as[JsObject] ++ Json.obj(name -> value)
+    val newprop = Json.obj(name -> value)
+    (obj \ "properties") match {
+      case u: JsUndefined => /*obj ++*/ newprop
+      case v => v.as[JsObject] ++ newprop
+    }
   }
   
   /**
@@ -27,6 +31,7 @@ object JsonUtil {
   }    
   
   def withJsonPropValue(obj: JsObject, propName: String, propValue: JsValue) = {
+    val newprops = replaceJsonPropValue(obj, propName, propValue)
     replaceJsonProps(obj, replaceJsonPropValue(obj, propName, propValue))
   }
   

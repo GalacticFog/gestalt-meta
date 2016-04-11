@@ -2,6 +2,7 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.marathon._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
@@ -17,19 +18,20 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import controllers.util.MetaController
+import controllers.util._
 import play.api.Play.current
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
+import play.api.libs.json._
 import play.api.libs.ws.WS
-
-
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.laser._
+import play.api.{ Logger => log }
+import scala.concurrent.{ ExecutionContext, ExecutionContext$, Future, Promise, Await }
+import scala.concurrent.duration._
+  
 object MarathonController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with SecurityResources {
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
-
 
   /**
     * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
@@ -126,19 +128,147 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
   
+  /**
+   * TODO: This function is obsolete - delete once verified that UI can function without it.
+   */
+  def postMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val inputJson = request.body.as[JsObject]
+    val provider = marathon(providerId)
+  
+    execAppFunction(fqon, parentType, environment, provider, proxyUri) {
+      client(provider).launchContainer_marathon_v2(_,_,_,inputJson)      
+    } map { Created( _ ) } recover { 
+      case e: Throwable => BadRequest(e.getMessage) 
+    }    
+  }
   
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */  
-  def postMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postMarathonAppDcos(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
+    val inputJson = request.body.as[JsObject]
     val provider = marathon(providerId)
-    
-    execAppFunction(fqon, parentType, environment, provider, proxyUri) {
-      client(provider).launchContainer_marathon_v2(_,_,_,request.request.body.as[JsObject])
-    } map { Created( _ ) } recover { 
-      case e: Throwable => BadRequest(e.getMessage) 
+
+    appComponents(environment) match {
+      case Failure(e) => throw e
+      case Success((wrk,env)) => {
+        
+        // TODO: Parse result for error...
+        log.debug("Transforming JSON to Meta Container format...")
+        val metaContainerJson = marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID)
+        
+        for {
+          f1 <- client(provider).launchContainer_marathon_v2(fqon, wrk.name, env.name, inputJson)
+          f2 <- createResourceD(fqid(fqon), metaContainerJson, Some(ResourceIds.Container), Some(environment))
+        } yield Created(f1)
+
+      }
     }
+  }
+  
+
+  //
+  // POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
+  //
+  def postMarathonApp(fqon: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    
+    log.debug("RECEIVED :\n" + Json.prettyPrint(request.body))
+    
+    appComponents(environment) match {
+      case Failure(e) => Future { HandleExceptions(e) }
+      case Success((wrk,env)) => {
+        
+        // This initializes all required properties if missing.
+        val inputJson = normalizeInputContainer(request.body)
+        val name = requiredJsString("name", (inputJson \ "name"))
+        val provider = marathon(providerId)
+        
+        // Create app in Marathon
+        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) match {
+          case Failure(e) => Future { HandleExceptions(e) }
+          case Success(r) => {
+            
+            log.debug("Marathon App created:\n" + Json.prettyPrint(r))
+            
+            // Inject external_id property
+            val marathonGroupId = groupId(fqon, wrk.name, env.name)
+            val resourceJson = JsonUtil.withJsonPropValue(inputJson, 
+                "external_id", JsString(marathonGroupId + "/" + name))
+            
+            // Create app in Meta
+            log.debug("Marathon-Group-ID : " + marathonGroupId)
+            log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
+            
+            createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
+          }
+        }
+      }
+    }
+  }
+  
+  
+  def postMarathonApp2(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    
+    log.debug("RECEIVED :\n" + Json.prettyPrint(request.body))
+    
+    appComponents(environment) match {
+      case Failure(e) => Future { HandleExceptions(e) }
+      case Success((wrk,env)) => {
+        
+        // This initializes all required properties if missing.
+        val inputJson = normalizeInputContainer(request.body)
+        val name = requiredJsString("name", (inputJson \ "name"))
+        
+        val providerId = UUID.fromString {
+          requiredJsString("id", (inputJson \ "properties" \ "provider" \ "id"))
+        }
+        
+        val provider = marathon(providerId)
+        
+        // Create app in Marathon
+        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) match {
+          case Failure(e) => Future { HandleExceptions(e) }
+          case Success(r) => {
+            
+            log.debug("Marathon App created:\n" + Json.prettyPrint(r))
+            
+            // Inject external_id property
+            val marathonGroupId = groupId(fqon, wrk.name, env.name)
+            val resourceJson = JsonUtil.withJsonPropValue(inputJson, 
+                "external_id", JsString(marathonGroupId + "/" + name))
+            
+            // Create app in Meta
+            log.debug("Marathon-Group-ID : " + marathonGroupId)
+            log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
+            createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
+          }
+        }
+      }
+    
+    }
+  }  
+  
+  def groupId(fqon: String, workspaceName: String, environmentName: String) = {
+    MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
+  }
+  
+  def createMarathonApp(
+      fqon: String, 
+      appName: String, 
+      workspaceName: String, 
+      environmentName: String, 
+      inputJson: JsObject, 
+      provider: GestaltResourceInstance): Try[JsValue] = Try {
+        
+    // Create app in Marathon
+    val app = toMarathonApp(appName, inputJson)
+    val marathonPayload = Json.toJson(app).as[JsObject]
+    
+    // TODO: Parse result JsValue for error response.
+    log.debug("Creating App in Marathon:\n" + Json.prettyPrint(marathonPayload))
+    Await.result(client(provider).launchContainer_marathon_v2(
+      fqon, workspaceName, environmentName, marathonPayload), 5 seconds)    
   }
   
   private def execAppFunction(
@@ -195,6 +325,71 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     go(providers, Map())
   }  
   
+  def normalizeInputContainer(inputJson: JsValue): JsObject = {
+    val defaults = containerWithDefaults(inputJson)
+    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]  
+    inputJson.as[JsObject] ++ Json.obj("properties" -> newprops)
+  }
+  
+  def normalizeContainerInput(json: JsValue, props: Option[InputContainerProperties] = None): Try[GestaltResourceInput] = {
+    val defaults = props getOrElse containerWithDefaults(json)
+    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (json \ "properties").as[JsObject]  
+    safeGetInputJson {  
+      json.as[JsObject] ++ Json.obj("properties" -> newprops)
+    }    
+  }
+  
+  def containerIntake(json: JsValue): Try[GestaltResourceInput] = {
+    val defaults = containerWithDefaults(json)
+    val name = requiredJsString("name", (json \ "name"))
+
+    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (json \ "properties").as[JsObject]
+    safeGetInputJson {  
+      json.as[JsObject] ++ Json.obj("properties" -> newprops)
+    }
+  }  
+
+  def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    log.debug("Looking up workspace and environment for container...")
+    
+    appComponents(environment) match {
+      case Failure(e) => HandleExceptions(e)
+      case Success((wrk, env)) => {
+        
+        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
+        ResourceFactory.findById(ResourceIds.Container, id) match {
+          case None => NotFoundResult(s"Container with ID '$id' not found.")
+          case Some(c) => {
+            
+            log.debug(s"Deleting Marathon App...")
+            deleteMarathonApp(fqon, wrk.name, env.name, c)
+            
+            log.debug(s"Deleting Meta Container...")
+            ResourceFactory.hardDeleteResource(c.id) match {
+              case Success(_) => NoContent
+              case Failure(e) => HandleRepositoryExceptions(e)
+            }
+          }
+        }        
+      }
+    }
+
+  }
+  
+  def providerId(c: GestaltResourceInstance) = {
+    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
+    log.debug("Provider-ID : " + pid)
+    UUID.fromString(pid)
+  }
+  
+  def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance) = {
+    
+    val provider = marathon(providerId(container))
+    Await.result(
+        client(provider).deleteApplication(
+            fqon, workspaceName, environmentName, container.name),
+        5 seconds)
+  }
   
 //    targets match {
 //      case Failure(e) => Future { HandleRepositoryExceptions(e) } 

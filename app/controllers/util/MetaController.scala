@@ -63,6 +63,10 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = if (request.secure) "https" else "http"
     Some( "%s://%s".format(protocol, request.host) )
   }
+  def META_URL(host: String, secure: Boolean = false) = {
+    val protocol = if (secure) "https" else "http"
+    Some( "%s://%s".format(protocol, host) )
+  }
     /*
    * TODO: This only handles true | false. Extend to allow for expansion
    * of individual resource attributes and properties.
@@ -82,9 +86,9 @@ trait MetaController extends SecureController with SecurityResources {
   /*
    * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
    */
-  def handleExpansion(rs: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
+  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => Output.renderInstance(r, baseUri) }))
+      Ok(Json.toJson(rs map { r => Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
     }
     else Ok(Output.renderLinks(rs, baseUri))
   }
@@ -270,6 +274,22 @@ trait MetaController extends SecureController with SecurityResources {
 
   }    
   
+  def createResourceInstance(
+      org: UUID, 
+      json: JsValue, 
+      typeId: Option[UUID] = None, 
+      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    
+    CreateResource(
+      ResourceIds.User,
+      request.identity.account.id,
+      org,
+      json,
+      request.identity,
+      typeId,
+      parentId)
+  }
+  
   def createResourceD(
       org: UUID, 
       json: JsValue, 
@@ -296,7 +316,26 @@ trait MetaController extends SecureController with SecurityResources {
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
   }
-
+  
+  /**
+   * Convert GestaltResourceInput to GestaltResourceInstance
+   */
+  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      
+      /* TODO: Here is where we transform from map(any) to map(string) */
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }
   
   def HandleCreate(typeId: UUID, json: JsValue)(resource : => Try[GestaltResourceInstance]): Result = {
     safeGetInputJson(typeId, json) match {
@@ -348,24 +387,7 @@ trait MetaController extends SecureController with SecurityResources {
     }
   }
   
-  /**
-   * Convert GestaltResourceInput to GestaltResourceInstance
-   */
-  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-    GestaltResourceInstance(
-      id = in.id getOrElse UUID.randomUUID,
-      typeId = in.resource_type.get,
-      state = resolveResourceState(in.resource_state), //ResourceState.id(in.resource_state.get),
-      orgId = org,
-      owner = in.owner.get,
-      name = in.name,
-      description = in.description,
-      /* TODO: Here is where we transform from map(any) to map(string) */
-      properties = stringmap(in.properties),
-      variables = in.variables,
-      tags = in.tags,
-      auth = in.auth)
-  }
+
   
   protected[controllers] object Err {
     def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
