@@ -222,7 +222,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   // ==========================================================================
   // RULES
   // ==========================================================================
-  
+
 
   /**
    * Implements http://{host}/rules?type={rule-type}
@@ -231,9 +231,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
   }  
 
-
-  
-  
 //  def postRule2(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 //    val resourceType = Try {
 //      (request.body \ "resource_type") match {
@@ -339,7 +336,10 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
-        val typeId = ruleTypeId(typeName)
+        val typeId = ruleTypeId(typeName) getOrElse {
+          throw new BadRequestException(s"Unknown rule-type: " + typeName)
+        }
+        log.debug("[TypeFilter]: %s - %s".format(typeName, typeId))
         rules filter { _.typeId == typeId }
       } else rules
     }
@@ -347,10 +347,13 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   }  
   
   protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {
+    println("QS : " + qs)
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
-        val typeId = ruleTypeId(typeName)
+        val typeId = ruleTypeId(typeName) getOrElse {
+          throw new BadRequestException(s"Unknown rule-type: " + typeName)
+        }
         rules filter { _.typeId == typeId }
       } else rules
     }
