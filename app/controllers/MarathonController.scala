@@ -347,7 +347,33 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     safeGetInputJson {  
       json.as[JsObject] ++ Json.obj("properties" -> newprops)
     }
-  }  
+  }
+
+  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+    log.debug("Looking up workspace and environment for container...")
+
+    appComponents(environment) match {
+      case Failure(e) => Future.successful(HandleExceptions(e))
+      case Success((wrk, env)) => {
+
+        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
+        ResourceFactory.findById(ResourceIds.Container, id) match {
+          case None => Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
+          case Some(c) => {
+
+            log.debug(s"Scaling Marathon App...")
+            scaleMarathonApp(c, numInstances) map {
+              marathonJson => Accepted(marathonJson) // TODO: scaleMarathonApp returns Marathon JSON; need to return Meta JSON
+            } recover {
+              case e: Throwable => HandleExceptions(e)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  def migrateContainer(fqon: String, envId: java.util.UUID, id: UUID, providerId: String) = play.mvc.Results.TODO
 
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     log.debug("Looking up workspace and environment for container...")
@@ -381,9 +407,18 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     log.debug("Provider-ID : " + pid)
     UUID.fromString(pid)
   }
-  
+
+  def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
+    val provider = marathon(providerId(container))
+    container.properties flatMap {_.get("external_id")} match {
+      case Some(externalId) =>
+        client(provider).scaleApplication(externalId, numInstances)
+      case None =>
+        throw new RuntimeException("container did not have external_id")
+    }
+  }
+
   def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance) = {
-    
     val provider = marathon(providerId(container))
     Await.result(
         client(provider).deleteApplication(
@@ -411,6 +446,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 //      }
 //    }
 //  }
+
   
 }
 
