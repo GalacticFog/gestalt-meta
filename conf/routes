@@ -465,6 +465,41 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/
 
 
 ############################
+# POLICIES AND RULES
+############################
+
+# Org policy
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies								controllers.PolicyController.postPolicyOrgFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies								controllers.PolicyController.getResourceListOrgFqon(fqon: String, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:resourceId					controllers.PolicyController.getResourceByIdOrgFqon(fqon: String, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:resourceId					controllers.PolicyController.hardDeleteSimpleOrgFqon(fqon: String, resourceId: java.util.UUID)
+
+#controllers.PolicyController.deletePolicyOrgFqon(fqon: String, resourceId: java.util.UUID)
+
+# Workspace policy
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies				  	controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies				  	controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies/:resourceId   	controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies/:resourceId   	controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceId: java.util.UUID)
+  	
+#controllers.PolicyController.deletePolicyFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, pid: java.util.UUID)
+
+# Environment policy
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies				controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies				controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies/:resourceId   controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies/:resourceId   controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceId: java.util.UUID)  
+
+#controllers.PolicyController.deletePolicyFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, pid: java.util.UUID)
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules   			controllers.PolicyController.postRuleFqon(fqon: String, parentId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules 				controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceType = "51af837d-544d-4c60-be66-984a6f2f658a")
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceType = "51af837d-544d-4c60-be66-984a6f2f658a", resourceId: java.util.UUID, subTypes: Boolean = true)
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceId: java.util.UUID)
+
+
+
+############################
 # DOMAINS
 ############################
 

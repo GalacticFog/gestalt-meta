@@ -56,7 +56,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   
 
   def getAllResourceTypes(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getAllResourceTypes($org)")
     Ok(Output.renderLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
   }
   
@@ -73,12 +72,9 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
 
   
   def getAllResourceTypesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getAllResourceTypesFqon($fqon)")
-
     orgFqon(fqon) match {
       case None => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
       case Some(org) => {
-        println("QS: " + request.queryString)
         if (request.queryString.contains("name")) {
           val names = request.queryString("name").toSeq
           val tpes = names flatMap { TypeFactory.findByName(org.id, _)}
@@ -92,12 +88,10 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   }
   
   def getResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getResourceTypeById($org, $id)")
     OkTypeByIdResult(org, id)
   }
   
   def getResourceTypeByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"getResourceTypeByIdFqon($fqon, $id)")
     orgFqon(fqon) match {
       case Some(org) => OkTypeByIdResult(org.id, id)
       case None => NotFoundResult(Errors.TYPE_NOT_FOUND(id))
@@ -105,12 +99,10 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
   }
   
   def createResourceType(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
-    trace(s"createResourceType($org)")
     CreateTypeWithPropertiesResult(org, request.body)
   }
   
   def createResourceTypeFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
-    trace(s"createResourceTypeFqon($fqon)")
     orgFqon(fqon) match {
       case Some(org) => CreateTypeWithPropertiesResult(org.id, request.body)
       case None      => Future { OrgNotFound(fqon) }
@@ -148,8 +140,6 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
 
   
   private def createTypeWithProperties[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
-    trace(s"createTypeWithProperties($org, [json])")
-    
     Try {
       val owner = request.identity.account.id
       
@@ -271,5 +261,4 @@ object TypeController extends GestaltFrameworkSecuredController[DummyAuthenticat
     buf toString
   }  
   
-
 }
