@@ -170,48 +170,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
     }
   }
-  
 
-  //
-  // POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
-  //
-  def postMarathonApp(fqon: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    
-    log.debug("RECEIVED :\n" + Json.prettyPrint(request.body))
-    
-    appComponents(environment) match {
-      case Failure(e) => Future { HandleExceptions(e) }
-      case Success((wrk,env)) => {
-        
-        // This initializes all required properties if missing.
-        val inputJson = normalizeInputContainer(request.body)
-        val name = requiredJsString("name", (inputJson \ "name"))
-        val provider = marathon(providerId)
-        
-        // Create app in Marathon
-        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) match {
-          case Failure(e) => Future { HandleExceptions(e) }
-          case Success(r) => {
-            
-            log.debug("Marathon App created:\n" + Json.prettyPrint(r))
-            
-            // Inject external_id property
-            val marathonGroupId = groupId(fqon, wrk.name, env.name)
-            val resourceJson = JsonUtil.withJsonPropValue(inputJson, 
-              "external_id", JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")))
 
-            // Create app in Meta
-            log.debug("Marathon-Group-ID : " + marathonGroupId)
-            log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
-            createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
-          }
-        }
-      }
-    }
-  }
-  
-  
-  def postMarathonApp2(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postMarathonApp(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
     log.debug("RECEIVED :\n" + Json.prettyPrint(request.body))
     
@@ -331,24 +292,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     val defaults = containerWithDefaults(inputJson)
     val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]  
     inputJson.as[JsObject] ++ Json.obj("properties" -> newprops)
-  }
-  
-  def normalizeContainerInput(json: JsValue, props: Option[InputContainerProperties] = None): Try[GestaltResourceInput] = {
-    val defaults = props getOrElse containerWithDefaults(json)
-    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (json \ "properties").as[JsObject]  
-    safeGetInputJson {  
-      json.as[JsObject] ++ Json.obj("properties" -> newprops)
-    }    
-  }
-  
-  def containerIntake(json: JsValue): Try[GestaltResourceInput] = {
-    val defaults = containerWithDefaults(json)
-    val name = requiredJsString("name", (json \ "name"))
-
-    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (json \ "properties").as[JsObject]
-    safeGetInputJson {  
-      json.as[JsObject] ++ Json.obj("properties" -> newprops)
-    }
   }
 
   def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>

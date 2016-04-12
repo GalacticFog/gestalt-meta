@@ -247,9 +247,9 @@ package object marathon {
   }
   
   def containerWithDefaults(json: JsValue) = {
-    val ctype = (json \ "properties" \ "container_type") match {
-      case u: JsUndefined => throw new IllegalArgumentException(s"'container_type' is missing.")
-      case v => v.as[String]
+    val ctype = (json \ "properties" \ "container_type").asOpt[String] match {
+      case Some(t) if ! t.trim.isEmpty => t
+      case _ => throw new IllegalArgumentException(s"'container_type' is missing or empty.")
     }
     val image = (json \ "properties" \ "image") match {
       case u: JsUndefined => throw new IllegalArgumentException(s"'image' is missing.")
@@ -263,7 +263,11 @@ package object marathon {
         throw new IllegalArgumentException("Invalid provider JSON: " + JsError.toFlatJson(e).toString)  
       }
     }
-    InputContainerProperties(ctype, image, prv)
+    InputContainerProperties(
+      container_type = ctype,
+      image = image,
+      provider = prv
+    )
   }
   
   def requiredJsString(name: String, value: JsValue) = value match {

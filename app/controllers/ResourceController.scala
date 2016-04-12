@@ -276,7 +276,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     getEnvContainers(fqon, environment, provider, request.queryString)
   }
   
-  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>  
+  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
     handleExpansion(
         ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), 
         request.queryString, META_URL)
@@ -325,6 +325,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   /**
    * Convert ContainerApp to GestaltResourceInstance
+   * TODO: this is some leftover stuff that precedes Marathon container persistence (note the randomly assigned UUID below)
    */
   def toGestaltContainer(fqon: String, c: ContainerApp, provider: Option[GestaltResourceInstance] = None) = {
 
