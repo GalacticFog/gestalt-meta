@@ -14,7 +14,9 @@ package object marathon {
       container_path: String,
       host_path: String,
       mode: String)
-      
+
+  // TODO: Marathon health checks require a port index, to specify which port the check is run against
+  // ours aren't well defined without something similar, like a label
   case class HealthCheck(
       protocol: String,
       path: String,
@@ -58,19 +60,34 @@ package object marathon {
       properties: InputContainerProperties)
       
   case class KeyValuePair(key: String, value: String)
-  
+
+  case class MarathonPortMapping(
+                          protocol: Option[String] = Some("tcp"),
+                          containerPort: Int,
+                          hostPort: Option[Int] = Some(0),
+                          servicePort: Option[Int] = Some(0))
+
   case class MarathonDocker(
       image: String,
       network: String = "BRIDGE",
-      forcePullImage: Boolean = false,
-      portMappings: Iterable[PortMapping] = Seq(),
+      forcePullImage: Option[Boolean] = None,
+      portMappings: Option[Iterable[MarathonPortMapping]] = None,
       parameters: Option[Iterable[KeyValuePair]] = None)
 
   case class MarathonContainer(
-      docker: MarathonDocker,
+      docker: MarathonDocker, // TODO: this is actually optional, only necessary if the container type is DOCKER
       volumes: Option[Iterable[Volume]] = None
   )
-  
+
+  case class MarathonHealthCheck(
+                          protocol: Option[String] = Some("http"),
+                          path: Option[String] = Some("/"),
+                          portIndex: Option[Int] = Some(0),
+                          gracePeriodSeconds: Option[Int] = None,
+                          intervalSeconds: Option[Int] = None,
+                          timeoutSeconds: Option[Int] = None,
+                          maxConsecutiveFailures: Option[Int] = None)
+
   case class MarathonApp(
     id: String,
     container: MarathonContainer,
@@ -81,7 +98,7 @@ package object marathon {
     args: Option[Iterable[String]] = None,
     ports: Iterable[Int] = Seq(0),
     labels: Option[Map[String, String]] = None,
-    healthChecks: Option[Iterable[HealthCheck]] = None,
+    healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
     env: Option[Map[String, String]] = None)
     
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
@@ -92,6 +109,8 @@ package object marathon {
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
   
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
+  implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
+  implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
   implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
   implicit lazy val marathonContainerFormat = Json.format[MarathonContainer]
   implicit lazy val marathonAppFormat = Json.format[MarathonApp]  
@@ -128,15 +147,28 @@ package object marathon {
       container_type = "DOCKER",
       image = app.container.docker.image,
       provider = provider,
-      port_mappings = app.container.docker.portMappings,
+      port_mappings = app.container.docker.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
+        label = Some(index.toString),
+        protocol = pm.protocol getOrElse "tcp",
+        container_port = pm.containerPort,
+        host_port = pm.hostPort getOrElse 0,
+        service_port = pm.servicePort getOrElse 0
+      )}} getOrElse Seq(),
       cpus = app.cpus,
       memory = app.mem,
       num_instances = app.instances,
       network = app.container.docker.network,
       cmd = app.cmd,
       args = app.args,
-      force_pull = app.container.docker.forcePullImage,
-      health_checks = app.healthChecks,
+      force_pull = app.container.docker.forcePullImage getOrElse false,
+      health_checks = app.healthChecks map { _.map {check => HealthCheck(
+        protocol = check.protocol getOrElse "http",
+        path = check.path getOrElse "/",
+        grace_period_seconds = check.gracePeriodSeconds getOrElse 15,
+        interval_seconds = check.intervalSeconds getOrElse 10,
+        timeout_seconds = check.timeoutSeconds getOrElse 20,
+        max_consecutive_failures = check.maxConsecutiveFailures getOrElse 3
+      )}},
       volumes = app.container.volumes,
       labels = app.labels,
       env = app.env)
@@ -167,37 +199,51 @@ package object marathon {
           "Could not parse container properties: " + JsError.toFlatJson(e).toString)
     }
     
-    def portmap(ps: Iterable[PortMapping]): Iterable[PortMapping] = {
-      ps map { _.copy(label = None) }
+    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
+      ps map {pm => MarathonPortMapping(
+        protocol = Some(pm.protocol),
+        containerPort = pm.container_port,
+        hostPort = Some(pm.host_port),
+        servicePort = Some(pm.service_port)
+      )}
     }
-    
-    def appPorts(ps: Iterable[PortMapping]): Iterable[Int] = {
-      val output = ps map { _.service_port }
-      if (output exists { _ > 0 }) output else Seq(0)
-    }
-    
+
+    val portLabelToIndex = props.port_mappings.zipWithIndex.map {
+      case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
+    }.toMap
+
     val docker = MarathonDocker(
         image = props.image,
         network = props.network,
-        forcePullImage = props.force_pull,
-        portMappings = portmap(props.port_mappings))
+        forcePullImage = Some(props.force_pull),
+        portMappings = Some(portmap(props.port_mappings))
+    )
         
     val container = MarathonContainer(
         docker = docker,
         volumes = props.volumes)
-        
-   MarathonApp(
-       id = name,
-       container = container,
-       cpus = props.cpus,
-       mem = props.memory,
-       instances = props.num_instances,
-       cmd = props.cmd,
-       args = props.args,
-       ports = appPorts(props.port_mappings),
-       labels = props.labels,
-       healthChecks = props.health_checks,
-       env = props.env)
+
+    MarathonApp(
+      id = name,
+      container = container,
+      cpus = props.cpus,
+      mem = props.memory,
+      instances = props.num_instances,
+      cmd = props.cmd,
+      args = props.args,
+      ports = props.port_mappings map { _.service_port },
+      labels = props.labels,
+      healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
+        protocol = Some(hc.protocol),
+        path = Some(hc.path),
+        portIndex = None, // TODO: don't know how to define this
+        gracePeriodSeconds = Some(hc.grace_period_seconds),
+        intervalSeconds = Some(hc.interval_seconds),
+        timeoutSeconds = Some(hc.timeout_seconds),
+        maxConsecutiveFailures = Some(hc.max_consecutive_failures)
+      )}},
+      env = props.env
+    )
   }
   
   def containerWithDefaults(json: JsValue) = {

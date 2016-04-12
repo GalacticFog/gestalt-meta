@@ -96,6 +96,10 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-security-play" 	% "2.0.0-SNAPSHOT" withSources()
 )
 
+
+// MockWS for testing
+libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
+
 libraryDependencies += "com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.1.0-SNAPSHOT"
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"

@@ -25,7 +25,7 @@ import play.api.libs.ws.WS
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.laser._
 import play.api.{ Logger => log }
-import scala.concurrent.{ ExecutionContext, ExecutionContext$, Future, Promise, Await }
+import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
   
 object MarathonController extends GestaltFrameworkSecuredController[DummyAuthenticator]
@@ -54,28 +54,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       case e: Throwable => HandleExceptions(e)
     }  
   }
-  
-  /**
-    * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps
-    */
-  def delMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async { implicit request =>
 
-    val provider = marathon(providerId)
 
-    // if this isn't formatted like v2/apps/app-id/..., allow it to fail below in execAppFunction
-    val (newProxyUri,appId) = if (proxyUri.startsWith("v2/apps"))
-      ("v2/apps",proxyUri.stripPrefix("v2/apps"))
-    else
-      (proxyUri,"")
-
-    execAppFunction(fqon, parentType, environment, provider, newProxyUri) {
-      client(provider).deleteApplication(_,_,_,appId)
-    } map { Ok(_) } recover {
-      case e: Throwable => BadRequest(e.getMessage)
-    }
-  }
-
-  
   /**
    * GET /{fqon}/environments/{eid}/containers
    */
@@ -127,21 +107,44 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       case e: Throwable => BadRequest(e.getMessage)
     }
   }
-  
+
   /**
-   * TODO: This function is obsolete - delete once verified that UI can function without it.
-   */
-  def postMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    val inputJson = request.body.as[JsObject]
-    val provider = marathon(providerId)
-  
-    execAppFunction(fqon, parentType, environment, provider, proxyUri) {
-      client(provider).launchContainer_marathon_v2(_,_,_,inputJson)      
-    } map { Created( _ ) } recover { 
-      case e: Throwable => BadRequest(e.getMessage) 
-    }    
+    * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
+    */
+  def deleteMarathonAppDcos(fqon: String, parentType: String, environment: UUID, providerId: UUID, marathonAppId: String) = Authenticate(fqon).async { implicit request =>
+    log.debug("Looking up workspace and environment for container...")
+    appComponents(environment) match {
+      case Failure(e) => Future{HandleExceptions(e)}
+      case Success((wrk, env)) => {
+
+        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
+        ResourceFactory.findChildByName(env.id, ResourceIds.Container, marathonAppId) match {
+          case None => Future{NotFound(Json.obj(
+            "message" -> s"App '${marathonAppId}' does not exist"
+          ))}
+          case Some(c) => {
+
+            log.debug(s"Deleting Marathon App...")
+            deleteMarathonApp(fqon, wrk.name, env.name, c) recover {
+              case e: Throwable =>
+                log.warn("received error deleting app in marathon",e)
+                Json.obj(
+                  "deploymentId" -> "error",
+                  "version" -> "error"
+                )
+            } map { js =>
+              log.debug(s"Deleting Meta Container...")
+              ResourceFactory.hardDeleteResource(c.id) match {
+                case Success(_) => Ok(js)
+                case Failure(e) => HandleRepositoryExceptions(e)
+              }
+            }
+          }
+        }
+      }
+    }
   }
-  
+
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */  
@@ -388,8 +391,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
           case Some(c) => {
             
             log.debug(s"Deleting Marathon App...")
-            deleteMarathonApp(fqon, wrk.name, env.name, c)
-            
+            deleteMarathonApp(fqon, wrk.name, env.name, c) map { js =>
+              log.info("marathon return from app deletion: " + js.toString)
+            }
             log.debug(s"Deleting Meta Container...")
             ResourceFactory.hardDeleteResource(c.id) match {
               case Success(_) => NoContent
@@ -399,7 +403,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         }        
       }
     }
-
   }
   
   def providerId(c: GestaltResourceInstance) = {
@@ -418,12 +421,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance) = {
+  def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance): Future[JsValue] = {
     val provider = marathon(providerId(container))
-    Await.result(
-        client(provider).deleteApplication(
-            fqon, workspaceName, environmentName, container.name),
-        5 seconds)
+    client(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
   }
   
 //    targets match {
@@ -447,7 +447,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 //    }
 //  }
 
-  
 }
 
 
