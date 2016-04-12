@@ -83,29 +83,10 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     }
   }
 
-  def launchContainer(fqon: String, wrkName: String, envName: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[String] = {
-    val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
-    val idTransformer = (__ \ 'id).json.update(
-      __.read[JsString].map{ o => JsString(appGroupId + "/" + o.value) }
-    )
-    marPayload.transform(idTransformer) match {
-      case e: JsError => Future.failed(new RuntimeException("error extracting and transforming app id"))
-      case JsSuccess(newPayload,_) =>
-        Logger.info(s"new payload:\n${Json.prettyPrint(newPayload)}")
-        client.url(s"${marathonAddress}/v2/apps").post(newPayload) map { marResp =>
-          Logger.info(marResp.statusText + "\n" + marResp.body)
-          marResp.status match {
-            case 201 => (marResp.json \ "id").as[String]
-            case _ => throw new RuntimeException((marResp.json \ "message").asOpt[String] getOrElse marResp.statusText)
-          }
-        }
-    }
-  }
-
   def launchContainer_marathon_v2(fqon: String, wrkName: String, envName: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     val idTransformer = (__ \ 'id).json.update(
-      __.read[JsString].map{ o => JsString(appGroupId + "/" + o.value) }
+      __.read[JsString].map{ o => JsString(appGroupId.stripSuffix("/") + "/" + o.value.stripPrefix("/")) }
     )
     marPayload.transform(idTransformer) match {
       case e: JsError => Future.failed(new RuntimeException("error extracting and transforming app id"))
