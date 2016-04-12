@@ -197,10 +197,15 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             
             log.debug("Marathon App created:\n" + Json.prettyPrint(r))
             
-            // Inject external_id property
+            // Inject external_id property and full provider info
             val marathonGroupId = groupId(fqon, wrk.name, env.name)
-            val resourceJson = JsonUtil.withJsonPropValue(inputJson,
-              "external_id", JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")))
+            val resourceJson = Seq(
+              "external_id" -> JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")),
+              "provider" -> Json.obj(
+                "id" -> provider.id.toString,
+                "name" -> provider.name
+              )
+            ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
 
             // Create app in Meta
             log.debug("Marathon-Group-ID : " + marathonGroupId)
