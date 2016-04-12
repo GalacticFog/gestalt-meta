@@ -58,6 +58,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
   /**
    * GET /{fqon}/environments/{eid}/containers
+   * TODO: is this obsolete? or maybe code from here needs to be moved into ResourceController.getEnvironmentContainersFqon2
    */
   def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
     
@@ -238,7 +239,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             
             // Inject external_id property
             val marathonGroupId = groupId(fqon, wrk.name, env.name)
-            val resourceJson = JsonUtil.withJsonPropValue(inputJson, 
+            val resourceJson = JsonUtil.withJsonPropValue(inputJson,
                 "external_id", JsString(marathonGroupId + "/" + name.stripPrefix("/")))
             
             // Create app in Meta
