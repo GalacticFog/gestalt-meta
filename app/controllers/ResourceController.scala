@@ -276,12 +276,23 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     getEnvContainers(fqon, environment, provider, request.queryString)
   }
   
-  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
-    handleExpansion(
-        ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), 
-        request.queryString, META_URL)
+  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
+//    handleExpansion(
+//        ResourceFactory.findChildrenOfType(ResourceIds.Container, environment),
+//        request.queryString, META_URL)
+    val crs = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)
+    val pidsAndEids = (for {
+      cr <- crs
+      props <- cr.properties
+      providerProp <- props.get("provider")
+      pobj <- Try{Json.parse(providerProp)}.toOption
+      providerId <- (pobj \ "id").asOpt[UUID]
+      prov <- Try{MarathonController.marathonProvider(providerId)}.toOption
+      externalId <- props.get("external_id")
+    } yield prov.id -> externalId).toMap
+    ???
   }
-  
+
   def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, containerId) match {
       case None => NotFoundResult(s"Container with ID '$containerId' not found.")
