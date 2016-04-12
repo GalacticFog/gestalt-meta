@@ -189,14 +189,12 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         }
         
         val provider = marathon(providerId)
-        
+
         // Create app in Marathon
-        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) match {
-          case Failure(e) => Future { HandleExceptions(e) }
-          case Success(r) => {
-            
+        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) flatMap {
+          r =>
             log.debug("Marathon App created:\n" + Json.prettyPrint(r))
-            
+
             // Inject external_id property and full provider info
             val marathonGroupId = groupId(fqon, wrk.name, env.name)
             val resourceJson = Seq(
@@ -211,7 +209,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             log.debug("Marathon-Group-ID : " + marathonGroupId)
             log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
             createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
-          }
+        } recover {
+          case e: Throwable => HandleExceptions(e)
         }
       }
     }
@@ -227,7 +226,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       workspaceName: String, 
       environmentName: String, 
       inputJson: JsObject, 
-      provider: GestaltResourceInstance): Try[JsValue] = Try {
+      provider: GestaltResourceInstance): Future[JsValue] = {
         
     // Create app in Marathon
     val app = toMarathonApp(appName, inputJson)
@@ -235,8 +234,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     
     // TODO: Parse result JsValue for error response.
     log.debug("Creating App in Marathon:\n" + Json.prettyPrint(marathonPayload))
-    Await.result(client(provider).launchContainer_marathon_v2(
-      fqon, workspaceName, environmentName, marathonPayload), 5 seconds)    
+    client(provider).launchContainer_marathon_v2(fqon, workspaceName, environmentName, marathonPayload)
   }
   
   private def execAppFunction(
@@ -373,27 +371,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     client(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
   }
   
-//    targets match {
-//      case Failure(e) => Future { HandleRepositoryExceptions(e) } 
-//      case Success((parent, child, provider)) => {
-//        val providerUrl = (provider.properties.get("config") \ "url").as[String]
-//        val marathonClient = MarathonClient(WS.client, providerUrl)
-//        
-//        (request.method, proxyUri) match {
-//          case (HttpVerbs.GET, "v2/apps") =>
-//            marathonClient.listApplicationsInEnvironment_marathon_v2(fqon, wrkName = parent.name, envName = child.name)
-//              .map {Ok(_)}
-//              .recover {case e: Throwable => BadRequest(e.getMessage)}
-//          case (HttpVerbs.POST,"v2/apps") =>
-//            marathonClient.launchContainer_marathon_v2(fqon, wrkName = parent.name, envName = child.name, marPayload = request.request.body.as[JsObject])
-//              .map {Created(_)}
-//              .recover {case e: Throwable => BadRequest(e.getMessage)}
-//          case _ => Future { BadRequest(s"Unsupported provider URL: " + proxyUri) }
-//        }        
-//      }
-//    }
-//  }
-
 }
 
 
