@@ -63,11 +63,17 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
           filter: Option[FilterFunction] = None, qs: Option[QueryString] = None)(
               implicit request: SecuredRequest[_]) = {
     
-    val rs = if (includeSubTypes) 
-      ResourceFactory.findChildrenOfSubType(resourceType, parentId)
-    else ResourceFactory.findChildrenOfType(resourceType, parentId)
-    
-    handleExpansion(if (filter.isDefined) filter.get(rs, qs.get) else rs, request.queryString, META_URL)
+    ResourceFactory.findById(parentType, parentId) match {
+      case None => ResourceNotFound(parentType, parentId)
+      case Some(_) => {
+        val rs = if (includeSubTypes) 
+          ResourceFactory.findChildrenOfSubType(resourceType, parentId)
+        else ResourceFactory.findChildrenOfType(resourceType, parentId)
+        
+        handleExpansion(if (filter.isDefined) filter.get(rs, qs.get) else rs, request.queryString, META_URL)        
+      }
+    }
+
   }
 
   def getResourceByIdOrgFqon(fqon: String, resourceType: String, resourceId: UUID, subTypes: Boolean = false) = Authenticate(fqon) { implicit request =>
