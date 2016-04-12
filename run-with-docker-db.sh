@@ -58,10 +58,18 @@ sleep 5
 echo $DBPASS | docker exec  -i gestaltdb  createdb -h $DOCKERIP -p $DBPORT -U $DBUSER -W $DBNAME || true
 
 cleanup_docker_db() {
+while true; do
+    read -p "Stop database container?" yn
+    case $yn in
+        [Yy]* ) 
 echo ""
 echo Stopping db container
 echo Stopped $(docker stop $db)
-
+break;; 
+        [Nn]* ) break;;
+        * ) echo "Please answer yes or no.";;
+    esac
+done
 echo "
 List of running docker containers; make sure I didn't leave anything behind
 $(docker ps)
@@ -96,6 +104,6 @@ echo "
 Running gestalt-meta on http://localhost:14374
 
 "
-./activator run -Dhttp.port=14374 -Dlogger.application=DEBUG
+./activator run -Dhttp.port=14374 -Dlogger.application=TRACE -jvm-debug 9999
 
 exit 0

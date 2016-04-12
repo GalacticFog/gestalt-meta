@@ -198,12 +198,11 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             // Inject external_id property
             val marathonGroupId = groupId(fqon, wrk.name, env.name)
             val resourceJson = JsonUtil.withJsonPropValue(inputJson, 
-                "external_id", JsString(marathonGroupId + "/" + name))
-            
+              "external_id", JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")))
+
             // Create app in Meta
             log.debug("Marathon-Group-ID : " + marathonGroupId)
             log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
-            
             createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
           }
         }
@@ -240,8 +239,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             // Inject external_id property
             val marathonGroupId = groupId(fqon, wrk.name, env.name)
             val resourceJson = JsonUtil.withJsonPropValue(inputJson,
-                "external_id", JsString(marathonGroupId + "/" + name.stripPrefix("/")))
-            
+              "external_id", JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")))
+
             // Create app in Meta
             log.debug("Marathon-Group-ID : " + marathonGroupId)
             log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
@@ -249,7 +248,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
           }
         }
       }
-    
     }
   }  
   
