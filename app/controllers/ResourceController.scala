@@ -276,43 +276,59 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     } else {
       MarathonController.appComponents(environment) match {
         case Failure(e) => Future.successful(HandleExceptions(e))
-        case Success((wrk, env)) => for {
-          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
-          relevantProviders = (for {
-            con <- metaCons
-            props <- con.properties
-            providerProp <- props.get("provider")
-            pobj <- Try{Json.parse(providerProp)}.toOption
-            providerId <- (pobj \ "id").asOpt[UUID]
-            prov <- Try{MarathonController.marathonProvider(providerId)}.toOption
-          } yield prov)
-          marCons <- Future.sequence(relevantProviders map {
-            MarathonController.marathonClient(_).listApplicationsInEnvironment(fqon, wrk.name, env.name)
-          }) map {_.flatten}
-          mapMarCons = marCons.map(mc => mc.id -> mc).toMap
-          renderedMetaContainers = metaCons map { metaCon =>
-            val origRendering = Output.renderInstance(metaCon, META_URL).as[JsObject]
-            (for {
-              props <- metaCon.properties
+        case Success((wrk, env)) =>
+          val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+          for {
+            metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
+            metaCon2guid = (for {
+              con <- metaCons
+              props <- con.properties
+              providerProp <- props.get("provider")
+              pobj <- Try{Json.parse(providerProp)}.toOption
+              providerId <- (pobj \ "id").asOpt[UUID]
               eid <- props.get("external_id")
-              marCon <- mapMarCons.get(eid)
-            } yield marCon) match {
-              case Some(correspondingMarCon) =>
-                val updatedRendering = Seq(
-                  "age" -> JsString(correspondingMarCon.age.toString),
-                  "status" -> JsString(
-                    if (metaCon.properties.exists(_.get("status").exists(_ == "MIGRATING"))) "MIGRATING"
-                    else correspondingMarCon.status
-                  )
-                ).foldLeft(origRendering) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
-                log.trace("Updated rendering with marathon status: " + Json.prettyPrint(updatedRendering))
-                updatedRendering
-              case None =>
-                log.trace("Original rendering with no marathon status: " + Json.prettyPrint(origRendering))
-                origRendering
+              localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
+            } yield (con.id -> (providerId,localEid))).toMap
+            relevantProviderIds = (metaCon2guid.values.map{_._1} toSeq).distinct
+            relevantProviders = relevantProviderIds flatMap {
+              pid => Try{MarathonController.marathonProvider(pid)}.toOption
             }
-          }
-        } yield Ok(Json.toJson(renderedMetaContainers))
+            _ = log.info(s"Querying ${relevantProviders.size} relevant Marathon providers")
+            // id is only unique inside a marathon provider, so we have to zip these with the provider ID
+            marCons <- Future.sequence(relevantProviders map { p =>
+              MarathonController.marathonClient(p).listApplicationsInEnvironment(fqon, wrk.name, env.name) map {cs => cs.map {c => p.id -> c}}
+            }) map {_.flatten}
+            _ = log.info(s"Found ${marCons.size} total containers over relevant Marathon")
+            mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
+            _ = log.trace(mapMarCons.keys.toString)
+            renderedMetaContainers = metaCons map { metaCon =>
+              val origRendering = Output.renderInstance(metaCon, META_URL).as[JsObject]
+              (for {
+                guid <- {
+                  log.trace(s"looking for marathon container guid for meta container ${metaCon.id}")
+                  metaCon2guid.get(metaCon.id)
+                }
+                marCon <- {
+                  log.trace(s"looking for marathon container corresponding to guid ${guid}")
+                  mapMarCons.get(guid)
+                }
+              } yield marCon) match {
+                case Some(correspondingMarCon) =>
+                  val updatedRendering = Seq(
+                    "age" -> JsString(correspondingMarCon.age.toString),
+                    "status" -> JsString(
+                      if (metaCon.properties.exists(_.get("status").exists(_ == "MIGRATING"))) "MIGRATING"
+                      else correspondingMarCon.status
+                    )
+                  ).foldLeft(origRendering) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
+                  log.trace("Updated rendering with marathon status: " + Json.prettyPrint(updatedRendering))
+                  updatedRendering
+                case None =>
+                  log.trace("Original rendering with no marathon status: " + Json.prettyPrint(origRendering))
+                  origRendering
+              }
+            }
+          } yield Ok(Json.toJson(renderedMetaContainers))
       }
     }
   }
