@@ -147,24 +147,25 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def postMarathonAppDcos(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-
+  def postMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val inputJson = request.body.as[JsObject]
     val provider = marathonProvider(providerId)
-
     appComponents(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
-
         // TODO: Parse result for error...
         log.debug("Transforming JSON to Meta Container format...")
         val metaContainerJson = marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID)
-
+        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
         for {
           f1 <- marathonClient(provider).launchContainer_marathon_v2(fqon, wrk.name, env.name, inputJson)
-          f2 <- createResourceD(fqid(fqon), metaContainerJson, Some(ResourceIds.Container), Some(environment))
+          metaContainerWithExtId = JsonUtil.withJsonPropValue(
+            obj = metaContainerJson,
+            propName = "external_id",
+            propValue = JsString(appGroupPrefix.stripSuffix("/") + "/" + (f1 \ "id").as[String].stripPrefix("/"))
+          )
+          f2 <- createResourceD(fqid(fqon), metaContainerWithExtId, Some(ResourceIds.Container), Some(environment))
         } yield Created(f1)
-
       }
     }
   }

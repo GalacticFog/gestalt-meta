@@ -389,7 +389,7 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/
 
 
 # Direct to Marathon Endpoints
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps     controllers.MarathonController.postMarathonAppDcos(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps     controllers.MarathonController.postMarathonAppDCOS(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/info		    controllers.MarathonController.getInfo(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/deployments	controllers.MarathonController.getDeployments(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps/:marathonAppId   controllers.MarathonController.deleteMarathonAppDcos(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, marathonAppId)

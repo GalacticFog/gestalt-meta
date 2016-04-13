@@ -122,7 +122,7 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta Container JSON
    */
-  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID) = {
+  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID): JsObject = {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
@@ -184,7 +184,7 @@ package object marathon {
     val output = Json.toJson(InputContainer(name = containerName, properties = props))
     
     log.debug("Transform Complete:\n" + Json.prettyPrint(output))
-    output
+    output.as[JsObject]
   }
   
   
