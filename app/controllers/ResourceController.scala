@@ -267,30 +267,54 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       throw new ResourceNotFoundException(s"Environment with ID '$envId' not found.")
     }
     (p -> c)
-  }  
-  
-  /**
-   * Implements GET /{fqon}/environment/{eid}/providers/{pie}/containers
-   */
-  def getEnvironmentContainersFqon(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>  
-    getEnvContainers(fqon, environment, provider, request.queryString)
   }
-  
+
   def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
-//    handleExpansion(
-//        ResourceFactory.findChildrenOfType(ResourceIds.Container, environment),
-//        request.queryString, META_URL)
-    val crs = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)
-    val pidsAndEids = (for {
-      cr <- crs
-      props <- cr.properties
-      providerProp <- props.get("provider")
-      pobj <- Try{Json.parse(providerProp)}.toOption
-      providerId <- (pobj \ "id").asOpt[UUID]
-      prov <- Try{MarathonController.marathonProvider(providerId)}.toOption
-      externalId <- props.get("external_id")
-    } yield prov.id -> externalId).toMap
-    ???
+    if (!getExpandParam(request.queryString)) {
+      // don't need to expand them, so we don't need to query marathon for status
+      Future{Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), META_URL))}
+    } else {
+      MarathonController.appComponents(environment) match {
+        case Failure(e) => Future.successful(HandleExceptions(e))
+        case Success((wrk, env)) => for {
+          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
+          relevantProviders = (for {
+            con <- metaCons
+            props <- con.properties
+            providerProp <- props.get("provider")
+            pobj <- Try{Json.parse(providerProp)}.toOption
+            providerId <- (pobj \ "id").asOpt[UUID]
+            prov <- Try{MarathonController.marathonProvider(providerId)}.toOption
+          } yield prov)
+          marCons <- Future.sequence(relevantProviders map {
+            MarathonController.marathonClient(_).listApplicationsInEnvironment(fqon, wrk.name, env.name)
+          }) map {_.flatten}
+          mapMarCons = marCons.map(mc => mc.id -> mc).toMap
+          renderedMetaContainers = metaCons map { metaCon =>
+            val origRendering = Output.renderInstance(metaCon, META_URL).as[JsObject]
+            (for {
+              props <- metaCon.properties
+              eid <- props.get("external_id")
+              marCon <- mapMarCons.get(eid)
+            } yield marCon) match {
+              case Some(correspondingMarCon) =>
+                val updatedRendering = Seq(
+                  "age" -> JsString(correspondingMarCon.age.toString),
+                  "status" -> JsString(
+                    if (metaCon.properties.exists(_.get("status").exists(_ == "MIGRATING"))) "MIGRATING"
+                    else correspondingMarCon.status
+                  )
+                ).foldLeft(origRendering) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
+                log.trace("Updated rendering with marathon status: " + Json.prettyPrint(updatedRendering))
+                updatedRendering
+              case None =>
+                log.trace("Original rendering with no marathon status: " + Json.prettyPrint(origRendering))
+                origRendering
+            }
+          }
+        } yield Ok(Json.toJson(renderedMetaContainers))
+      }
+    }
   }
 
   def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>
@@ -299,46 +323,46 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Some(res) => Ok(Output.renderInstance(res, META_URL))
     }
   }
-  
-  def getEnvContainers(fqon: String, environment: UUID, provider: UUID, qs: QueryString)(implicit request: SecuredRequest[AnyContent]) = {
-    log.debug(s"Entered ResourceController::getEnvContainers($fqon, $environment, $provider)")
 
-    val targets = Try {
-      val prv = ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
-        throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
-      }
-      val we = ResourceController.findWorkspaceEnvironment(environment).get
-      (we._1, we._2, prv)
-    }      
-    
-    targets match {
-      case Failure(e) => Future { HandleRepositoryExceptions(e) }
-      case Success((wrk, env, prv)) => {
-        
-        log.debug("workspace   : %s - %s".format(wrk.id, wrk.name))
-        log.debug("environment : %s - %s".format(env.id, env.name))
-        log.debug("provider    : %s - %s".format(prv.id, prv.name))
+//  def getEnvContainers(fqon: String, environment: UUID, provider: UUID, qs: QueryString)(implicit request: SecuredRequest[AnyContent]) = {
+//    log.debug(s"Entered ResourceController::getEnvContainers($fqon, $environment, $provider)")
+//
+//    val targets = Try {
+//      val prv = ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
+//        throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
+//      }
+//      val we = ResourceController.findWorkspaceEnvironment(environment).get
+//      (we._1, we._2, prv)
+//    }
+//
+//    targets match {
+//      case Failure(e) => Future { HandleRepositoryExceptions(e) }
+//      case Success((wrk, env, prv)) => {
+//
+//        log.debug("workspace   : %s - %s".format(wrk.id, wrk.name))
+//        log.debug("environment : %s - %s".format(env.id, env.name))
+//        log.debug("provider    : %s - %s".format(prv.id, prv.name))
+//
+//        val providerUrl = {
+//          (Json.parse(prv.properties.get("config")) \ "url").as[String]
+//        }
+//        log.debug("provider.url: %s".format(providerUrl))
+//
+//        val marathonClient = MarathonClient(WS.client, providerUrl)
+//        marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
+//          cs.map { toGestaltContainer(fqon, _, Some(prv)) }
+//        }
+//        .map { handleExpansion(_, request.queryString, META_URL) }
+//        .recover { case e: Throwable => BadRequest(e.getMessage) }
+//      }
+//    }
+//  }
 
-        val providerUrl = {
-          (Json.parse(prv.properties.get("config")) \ "url").as[String]
-        }
-        log.debug("provider.url: %s".format(providerUrl))
-        
-        val marathonClient = MarathonClient(WS.client, providerUrl)
-        marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
-          cs.map { toGestaltContainer(fqon, _, Some(prv)) }  
-        }
-        .map { handleExpansion(_, request.queryString, META_URL) }
-        .recover { case e: Throwable => BadRequest(e.getMessage) }        
-      }
-    }
-  }
-  
   /**
    * Convert ContainerApp to GestaltResourceInstance
    * TODO: this is some leftover stuff that precedes Marathon container persistence (note the randomly assigned UUID below)
    */
-  def toGestaltContainer(fqon: String, c: ContainerApp, provider: Option[GestaltResourceInstance] = None) = {
+  def toGestaltContainer(fqon: String, c: ContainerStats, provider: Option[GestaltResourceInstance] = None) = {
 
     // If given, inject properties.provider = providerName
     val providerProps = provider match {
@@ -352,7 +376,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     
     // drop leading slash from service name, and urlencode the rest in case 
     // there are embedded slashes.
-    val containerName = java.net.URLEncoder.encode(c.service.trim.stripPrefix("/"), "utf-8")
+    val containerName = java.net.URLEncoder.encode(c.id.trim.stripPrefix("/"), "utf-8")
     
     GestaltResourceInstance(
       id = UUID.randomUUID(),
@@ -384,7 +408,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     val outs = marathonClient.listApplications map { s =>
       s map { i =>
         out.copy(
-          name = i.service + "-" + UUID.randomUUID.toString, created = None, modified = None,
+          name = i.id + "-" + UUID.randomUUID.toString, created = None, modified = None,
           properties = Some(instance2map(i).asInstanceOf[Map[String, String]]))
       }
     }

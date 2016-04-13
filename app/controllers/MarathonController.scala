@@ -38,7 +38,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     */
   def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
     val provider = marathonProvider(providerId)
-
     execAppFunction(fqon, parentType, environment, provider, "v2/deployments") {
       marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2
     } map { Ok(_) } recover {
@@ -54,7 +53,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       case e: Throwable => HandleExceptions(e)
     }
   }
-
 
   /**
    * GET /{fqon}/environments/{eid}/containers
@@ -259,7 +257,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  private def appComponents(environment: UUID /*, provider: UUID*/) = Try {
+  def appComponents(environment: UUID /*, provider: UUID*/) = Try {
     val we = ResourceController.findWorkspaceEnvironment(environment).get
     (we._1, we._2)
   }
