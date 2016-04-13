@@ -9,22 +9,18 @@ import play.api.libs.functional.syntax._
 
 import scala.concurrent.{ExecutionContext, Future}
 
-case class ContainerApp(service: String,
-                        containerType: String,
-                        status: String,
-                        cpus: Double,
-                        memory: Double,
-                        image: String,
-                        age: DateTime,
-                        numInstances: Int)
-
-case object ContainerApp {
-  implicit val appContainerFormat = Json.format[ContainerApp]
-}
+case class ContainerStats(id: String,
+                          containerType: String,
+                          status: String,
+                          cpus: Double,
+                          memory: Double,
+                          image: String,
+                          age: DateTime,
+                          numInstances: Int)
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 
-  def listApplications(implicit ex: ExecutionContext): Future[Seq[ContainerApp]] = {
+  def listApplications(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     for {
       marResp <- client.url(s"${marathonAddress}/v2/apps").get()
       appsJson = (marResp.json \ "apps").as[Seq[JsObject]]
@@ -32,7 +28,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     } yield apps
   }
 
-  def listApplicationsInEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerApp]] = {
+  def listApplicationsInEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
     // therefore, to get these, we have to loop over all apps :(
@@ -50,6 +46,9 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     }
   }
 
+  /**
+     *Returns the raw json from Marathon, but transformed to remove the org structure
+   **/
   def listApplicationsInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
@@ -85,14 +84,25 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
 
   def launchContainer_marathon_v2(fqon: String, wrkName: String, envName: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
-    val idTransformer = (__ \ 'id).json.update(
+    val prefixIdXForm = (__ \ 'id).json.update(
       __.read[JsString].map{ o => JsString(appGroupId.stripSuffix("/") + "/" + o.value.stripPrefix("/")) }
     )
-    marPayload.transform(idTransformer) match {
+    val stripIdXForm = (__ \ 'id).json.update(
+      __.read[JsString].map{ o => JsString("/" + o.value.stripPrefix(appGroupId).stripPrefix("/")) }
+    )
+    marPayload.transform(prefixIdXForm) match {
       case e: JsError => Future.failed(new RuntimeException("error extracting and transforming app id"))
       case JsSuccess(newPayload,_) =>
         Logger.info(s"new payload:\n${Json.prettyPrint(newPayload)}")
-        client.url(s"${marathonAddress}/v2/apps").post(newPayload) map { _.json }
+        client.url(s"${marathonAddress}/v2/apps").post(newPayload) map { r =>
+          r.json.transform(stripIdXForm) match {
+            case e: JsError =>
+              Logger.warn("Error stripping Gestalt context prefix from Marathon app id post-creation")
+              r.json
+            case JsSuccess(newPayload,_) =>
+              newPayload
+          }
+        }
     }
   }
 
@@ -123,9 +133,9 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     client.url(s"${marathonAddress}/v2/apps/${appId}").delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
       marResp.json
-    }  
+    }
   }
-  
+
   def getInfo()(implicit ex: ExecutionContext): Future[JsValue] = {
     client.url(s"${marathonAddress}/v2/info").get map { marResp =>
       marResp.status match {
@@ -134,7 +144,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       }
     }
   }
-  
+
 }
 
 case object MarathonClient {
@@ -185,7 +195,7 @@ case object MarathonClient {
     }
   }
 
-  def marathon2Container(marApp: JsObject): Option[ContainerApp] = {
+  def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
           service <- (marApp \ "id").asOpt[String]
           ctype = (marApp \ "container" \ "type").asOpt[String] getOrElse "UNKNOWN"
@@ -196,7 +206,7 @@ case object MarathonClient {
           cpus <- (marApp \ "cpus").asOpt[Double]
           memory  <- (marApp \ "mem").asOpt[Double]
           age <- (marApp \ "version").asOpt[String] map DateTime.parse
-    } yield ContainerApp(status = status, containerType = ctype, service = service, cpus = cpus, memory = memory, image = image, age = age, numInstances = numRunning)
+    } yield ContainerStats(status = status, containerType = ctype, id = service, cpus = cpus, memory = memory, image = image, age = age, numInstances = numRunning)
   }
 
   def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {
