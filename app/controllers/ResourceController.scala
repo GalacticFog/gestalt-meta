@@ -269,68 +269,83 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     (p -> c)
   }
 
+  private def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+
   def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
     if (!getExpandParam(request.queryString)) {
       // don't need to expand them, so we don't need to query marathon for status
       Future{Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), META_URL))}
     } else {
+      // make a best effort to get updated stats from the Marathon provider and to update the resource with them
       MarathonController.appComponents(environment) match {
         case Failure(e) => Future.successful(HandleExceptions(e))
         case Success((wrk, env)) =>
           val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
           for {
             metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
+            // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
             metaCon2guid = (for {
-              con <- metaCons
-              props <- con.properties
+              metaCon <- metaCons
+              props <- metaCon.properties
               providerProp <- props.get("provider")
               pobj <- Try{Json.parse(providerProp)}.toOption
               providerId <- (pobj \ "id").asOpt[UUID]
               eid <- props.get("external_id")
+              // MarathonClient.listApplicationsInEnvironment strips env app group prefix
               localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
-            } yield (con.id -> (providerId,localEid))).toMap
-            relevantProviderIds = (metaCon2guid.values.map{_._1} toSeq).distinct
-            relevantProviders = relevantProviderIds flatMap {
+            } yield (metaCon.id -> (providerId,localEid))).toMap
+            // all the providers we care about
+            relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
               pid => Try{MarathonController.marathonProvider(pid)}.toOption
             }
-            _ = log.info(s"Querying ${relevantProviders.size} relevant Marathon providers")
             // id is only unique inside a marathon provider, so we have to zip these with the provider ID
-            marCons <- Future.sequence(relevantProviders map { p =>
-              MarathonController.marathonClient(p).listApplicationsInEnvironment(fqon, wrk.name, env.name) map {cs => cs.map {c => p.id -> c}}
-            }) map {_.flatten}
-            _ = log.info(s"Found ${marCons.size} total containers over relevant Marathon")
+            triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
+              val marCons = MarathonController.marathonClient(pid).listApplicationsInEnvironment(fqon, wrk.name, env.name)
+              val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
+              // wrap this in a try so that failures don't crash the whole list in Future.traverse
+              futureToFutureTry(pidsAndMarCons)
+            })
+            successfulContainerListings = triedContainerListings collect {case Success(x) => x}
+            marCons = successfulContainerListings.flatten
+            _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
             mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
-            _ = log.trace(mapMarCons.keys.toString)
-            renderedMetaContainers = metaCons map { metaCon =>
-              val origRendering = Output.renderInstance(metaCon, META_URL).as[JsObject]
-              (for {
-                guid <- {
-                  log.trace(s"looking for marathon container guid for meta container ${metaCon.id}")
-                  metaCon2guid.get(metaCon.id)
-                }
-                marCon <- {
-                  log.trace(s"looking for marathon container corresponding to guid ${guid}")
-                  mapMarCons.get(guid)
-                }
-              } yield marCon) match {
-                case Some(correspondingMarCon) =>
-                  val updatedRendering = Seq(
-                    "age" -> JsString(correspondingMarCon.age.toString),
-                    "status" -> JsString(
-                      if (metaCon.properties.exists(_.get("status").exists(_ == "MIGRATING"))) "MIGRATING"
-                      else correspondingMarCon.status
-                    )
-                  ).foldLeft(origRendering) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
-                  log.trace("Updated rendering with marathon status: " + Json.prettyPrint(updatedRendering))
-                  updatedRendering
-                case None =>
-                  log.trace("Original rendering with no marathon status: " + Json.prettyPrint(origRendering))
-                  origRendering
-              }
+            outputMetaContainers = metaCons map { originalMetaCon =>
+              val outputContainer = for {
+                guid <- metaCon2guid.get(originalMetaCon.id)
+                marCon <- mapMarCons.get(guid)
+              } yield updateMetaContainerWithStats(originalMetaCon, marCon)
+              outputContainer getOrElse originalMetaCon
             }
-          } yield Ok(Json.toJson(renderedMetaContainers))
+          } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
       }
     }
+  }
+
+  private def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: ContainerStats)
+                                          (implicit request: ResourceController.SecuredRequest[AnyContent]) = {
+    val updatedMetaCon = metaCon.copy(
+      properties = metaCon.properties map {
+        _ ++ Seq(
+          "age" -> stats.age.toString,
+          "status" -> stats.status,
+          "num_instances" -> stats.numInstances.toString
+        )
+      } orElse {
+        Some(Map(
+          "age" -> stats.age.toString,
+          "status" -> stats.status,
+          "num_instances" -> stats.numInstances.toString
+        ))
+      })
+    Future{ ResourceFactory.update(updatedMetaCon, request.identity.account.id ) } onComplete {
+      case Success(Success(updatedContainer)) =>
+        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
+      case Success(Failure(e)) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+      case Failure(e) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+    }
+    updatedMetaCon
   }
 
   def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>
