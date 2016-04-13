@@ -296,8 +296,6 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:c
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/migrate   controllers.MarathonController.migrateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, providerId: String)
 DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid	        controllers.MarathonController.hardDeleteContainerFqon(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:providerId/containers   controllers.ResourceController.getEnvironmentContainersFqon(fqon: String, envId: java.util.UUID, providerId: java.util.UUID)
-
 #POST 		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pid/containers
 #GET 		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pid/containers/:cid
 #GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid
