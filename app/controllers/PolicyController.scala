@@ -139,14 +139,18 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def postProcess(r: GestaltResourceInstance)(implicit request: SecuredRequest[_]): GestaltResourceInstance = {
-    if (r.typeId != ResourceIds.Policy) throw new IllegalArgumentException("Not a policy.")
-    val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, r.id) map { r => 
-      toLink(r, META_URL)
-    }
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
       resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
     }
-    upsertProperties(r, "rules" -> Json.stringify(Json.toJson(rs)))
+    if (r.typeId != ResourceIds.Policy) r else {
+      //throw new IllegalArgumentException("Not a policy.")
+    
+      val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, r.id) map { r => 
+        toLink(r, META_URL)  
+      }
+      upsertProperties(r, "rules" -> Json.stringify(Json.toJson(rs)))
+    }
+    
   }
   
   protected [controllers] def findCovariantResource(baseType: UUID, id: UUID) = Try {
