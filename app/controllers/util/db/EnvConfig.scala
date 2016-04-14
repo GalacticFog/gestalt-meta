@@ -4,7 +4,7 @@ package controllers.util.db
 import com.galacticfog.gestalt.data.util._
 import controllers.util.AppConf
 import play.api.{ Logger => log }
-
+import play.api.libs.json._
 
 object EnvConfig extends JdbcConfiguration {
   
@@ -18,11 +18,15 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val apigateway = System.getenv("GESTALT_APIGATEWAY")
   private lazy val lambda = System.getenv("GESTALT_LAMBDA")
   private lazy val marathon = System.getenv("GESTALT_MARATHON_PROVIDER")
+
+  lazy val rabbitHost = System.getenv("RABBIT_HOST")
+  lazy val rabbitPort = System.getenv("RABBIT_PORT")
+  lazy val rabbitExchange = System.getenv("RABBIT_EXCHANGE")
+  lazy val rabbitRoute = System.getenv("RABBIT_ROUTE")
   
   private lazy val security_protocol = System.getenv("GESTALT_SECURITY_PROTOCOL")
   private lazy val security_hostname = System.getenv("GESTALT_SECURITY_HOSTNAME")
   private lazy val security_port = System.getenv("GESTALT_SECURITY_PORT")
-  
   
   
   val gatewayUrl  = apigateway
@@ -38,10 +42,18 @@ object EnvConfig extends JdbcConfiguration {
     "%s://%s%s".format(security_protocol, security_hostname, port)
   }
   
+  val rabbitUrl = "amqp://%s:%s".format(rabbitHost, rabbitPort)
+  private val rabbit = Json.obj("url" -> rabbitUrl, "exchange" -> rabbitExchange, "route" -> rabbitRoute)
+  
+  
   def isValid() = {
     !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
         empty(apigateway) && empty(lambda) && empty(marathon) && 
-        empty(security_protocol) && empty(security_hostname))
+        empty(security_protocol) && empty(security_hostname) &&
+        empty(rabbitHost) &&
+        empty(rabbitPort) &&
+        empty(rabbitExchange) &&
+        empty(rabbitRoute))
   }
   
   def getConnection() = {
@@ -62,7 +74,8 @@ object EnvConfig extends JdbcConfiguration {
       |  apigateway = ${gatewayUrl},
       |  lambda = ${lambdaUrl},
       |  marathon = ${marathonUrl},
-      |  security = ${securityUrl})
+      |  security = ${securityUrl},
+      |  events = ${Json.prettyPrint(rabbit)})
     """.stripMargin
   }
 }

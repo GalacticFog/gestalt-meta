@@ -213,7 +213,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         }
       }
     }
-  }  
+  }
   
   def groupId(fqon: String, workspaceName: String, environmentName: String) = {
     MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
@@ -230,8 +230,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     // Create app in Marathon
     val app = toMarathonApp(appName, inputJson)
     val marathonPayload = Json.toJson(app).as[JsObject]
-    
-    // TODO: Parse result JsValue for error response.
+
     log.debug("Creating App in Marathon:\n" + Json.prettyPrint(marathonPayload))
     Await.result(client(provider).launchContainer_marathon_v2(
       fqon, workspaceName, environmentName, marathonPayload), 5 seconds)    
@@ -266,6 +265,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   
   private def client(provider: GestaltResourceInstance) = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
+    log.debug("Marathon URL: " + providerUrl)
     MarathonClient(WS.client, providerUrl)
   }
   
@@ -321,7 +321,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
   
-  def eventsClient() = {
+  
+  def eventsClient() = {  
     AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
   }
   
@@ -339,20 +340,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))
   }
-  
-//    def migrateEventMessage(
-//        env: GestaltResourceInstance, 
-//        container: GestaltResourceInstance,
-//        rule: GestaltResourceInstance,
-//        provider: UUID,
-//        meta: String) = {
-//
-//      log.debug("ENVIRONMENT-PROPERTIES:\n" + env.properties.get)
-//      val workspace = UUID.fromString(env.properties.get("workspace"))
-//      val context = EventContext("container.migrate", meta, workspace, env.id, env.orgId, container.id, "")
-//      val args = EventLambdaArgs(container, rule)
-//      MigrateEvent(context, args, provider, Some(meta))
-//    }      
+
   
   def getMigrationContainer(id: UUID) = Try {
     ResourceFactory.findById(ResourceIds.Container, id) match {
@@ -366,6 +354,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }    
   }
   
+  
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
 
     val updated = for {
@@ -377,10 +366,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       environment  <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
                         throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
       
-      // TODO: Throw CONFLICT if container.properties.status == MIGRATING.
-//      container    <- Try(ResourceFactory.findById(ResourceIds.Container, id) getOrElse {
-//                        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))})
-      
       container    <- getMigrationContainer(id)
       
       message      <- MigrateEvent.make(environment, container, rule, provider, META_URL.get)
@@ -391,9 +376,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       
     } yield newcontainer
 
-    
-
-    
     updated match {
       case Failure(e) => {
         log.debug(e.toString)
@@ -402,31 +384,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
       case Success(c) => Accepted(Output.renderInstance(c, META_URL))
     }
-    
-//    val publish = for {
-//      p <- providerQueryParam(request.queryString)
-//      
-//      a <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
-//        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
-//        
-//      b <- Try(ResourceFactory.findById(ResourceIds.Container, id) getOrElse {
-//        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))})
-//        
-//      c <- publishMigrate(MigrateEvent(b, p, META_URL))
-//    } yield (b, c)
-//    
-//    publish match {
-//      case Failure(e) => HandleExceptions(e)
-//      case Success((container,status)) => {
-//        val update = upsertProperties(container, "status" -> "MIGRATING")
-//        
-//        ResourceFactory.update(update, request.identity.account.id) match {
-//          case Failure(e) => HandleExceptions(e)
-//          case Success(c) => Accepted(Output.renderInstance(c, META_URL))
-//        }
-//      }
-//    }
-    
+
   }
 
   def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {

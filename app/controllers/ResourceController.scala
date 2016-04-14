@@ -170,21 +170,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getGenericChildByIdFqon(targetTypeId: String, parentType: String, parentId: UUID, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-
     getGenericChildById(targetTypeId, parentType, parentId, fqid(fqon), id)
-    
-//    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
-//    
-//    ResourceFactory.findById(parentType, parentId) match {
-//      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
-//      case Some(p) => {
-//        ResourceFactory.findById(targetTypeId, id) match {
-//          case None => NotFoundResult(notfound(ResourceLabel(targetTypeId), id))
-//          case Some(t) => Ok(Output.renderInstance(t, META_URL))
-//        }
-//      }
-//    }
-  }    
+  }
   
   def getGenericChildById(targetTypeId: String, parentType: String, parentId: UUID, org: UUID, id: UUID)(implicit request: SecuredRequest[AnyContent]) = {
     def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
