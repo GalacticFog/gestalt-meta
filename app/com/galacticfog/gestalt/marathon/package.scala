@@ -27,6 +27,7 @@ package object marathon {
   
   case class InputProvider(
       id: UUID,
+      name: Option[String] = None,
       locations: Option[Iterable[String]] = None)
 
   case class PortMapping(
@@ -121,7 +122,7 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta Container JSON
    */
-  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID) = {
+  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID): JsObject = {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
@@ -138,7 +139,7 @@ package object marathon {
       val p = ResourceFactory.findById(ResourceIds.MarathonProvider, providerId) getOrElse {
         throw new ResourceNotFoundException(s"MarathonProvider with ID '$providerId' not found.")
       }
-      InputProvider(id = p.id)
+      InputProvider(id = p.id, name = Some(p.name))
     }
     log.debug("Provider:\n" + provider)
     
@@ -183,7 +184,7 @@ package object marathon {
     val output = Json.toJson(InputContainer(name = containerName, properties = props))
     
     log.debug("Transform Complete:\n" + Json.prettyPrint(output))
-    output
+    output.as[JsObject]
   }
   
   
@@ -274,26 +275,6 @@ package object marathon {
     case u: JsUndefined => throw new IllegalArgumentException(s"'$name' is missing.")
     case v => v.as[String]
   }
-  
-  protected def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
-    implicit def jsarray2str(arr: JsArray) = arr.toString
-    json.validate[GestaltResourceInput].map {
-      case resource: GestaltResourceInput => resource
-    }.recoverTotal { e => 
-      throw new RuntimeException((JsError.toFlatJson(e).toString))
-    }
-  }
-  
-  def containerIntake(json: JsValue): Try[GestaltResourceInput] = {
-    val defaults = containerWithDefaults(json)
-    val name = requiredJsString("name", (json \ "name"))
-    val app = toMarathonApp(name, json.as[JsObject])
 
-    val newprops = (json \ "properties").as[JsObject] ++ (Json.toJson(defaults).as[JsObject])
-    safeGetInputJson {  
-      json.as[JsObject] ++ Json.obj("properties" -> newprops)
-    }
-  }
-  
-  
+
 }

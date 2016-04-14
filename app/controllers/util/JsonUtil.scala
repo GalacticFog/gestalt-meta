@@ -28,9 +28,11 @@ object JsonUtil {
    */
   def replaceJsonProps(obj: JsObject, props: JsObject) = {
     obj ++ Json.obj("properties" -> props)
-  }    
-  
-  def withJsonPropValue(obj: JsObject, propName: String, propValue: JsValue) = {
+  }
+
+  def withJsonPropValue(obj: JsObject, prop: (String, JsValue)): JsObject = withJsonPropValue(obj, prop._1, prop._2)
+
+  def withJsonPropValue(obj: JsObject, propName: String, propValue: JsValue): JsObject = {
     val newprops = replaceJsonPropValue(obj, propName, propValue)
     replaceJsonProps(obj, replaceJsonPropValue(obj, propName, propValue))
   }
