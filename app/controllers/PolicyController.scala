@@ -53,6 +53,21 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     val (subtypes,filter) = setupFilter(rtid)
     getResourceListFqonCommon(fqon, ptid, parentId, rtid, subtypes)(filter, Some(request.queryString))
   }
+
+//  def getPolicyFqon(fqon: String, parentType: UUID, parentId: UUID, resourceType: UUID) = Authenticate(fqon) { implicit request =>
+//
+//    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+//      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+//    }
+//    
+//    val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId) map { p =>
+//      val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id) map { r => 
+//        toLink(r, META_URL)
+//      }
+//      upsertProperties(p, "rules" -> Json.stringify(Json.toJson(rs)))
+//    }
+//    ???
+//  }
   
   def getResourceListFqonCommon(
       fqon: String, 
@@ -60,7 +75,8 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
       parentId: UUID, 
       resourceType: UUID,
       includeSubTypes: Boolean = false)(
-          filter: Option[FilterFunction] = None, qs: Option[QueryString] = None)(
+          filter: Option[FilterFunction] = None, 
+          qs: Option[QueryString] = None)(
               implicit request: SecuredRequest[_]) = {
     
     ResourceFactory.findById(parentType, parentId) match {
@@ -104,7 +120,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
       parentType: UUID, 
       parentId: UUID, 
       resourceType: UUID, 
-      resourceId: UUID)(fn: Option[LookupFunction] = None) = {
+      resourceId: UUID)(fn: Option[LookupFunction] = None)(implicit request: SecuredRequest[_]) = {
     
     val lookup: LookupFunction = if (fn.isDefined) fn.get else findResource _
     
@@ -112,11 +128,25 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
       p <- findResource(parentType, parentId)
       c <- lookup(resourceType, resourceId)
     } yield c
-    
+
     target match {
       case Failure(e) => HandleExceptions(e)
-      case Success(r) => Ok(Output.renderInstance(r.asInstanceOf[GestaltResourceInstance]))
+      case Success(r) => {
+        val out = postProcess(r.asInstanceOf[GestaltResourceInstance])
+        Ok(Output.renderInstance(out))
+      }
     }
+  }
+  
+  def postProcess(r: GestaltResourceInstance)(implicit request: SecuredRequest[_]): GestaltResourceInstance = {
+    if (r.typeId != ResourceIds.Policy) throw new IllegalArgumentException("Not a policy.")
+    val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, r.id) map { r => 
+      toLink(r, META_URL)
+    }
+    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+    }
+    upsertProperties(r, "rules" -> Json.stringify(Json.toJson(rs)))
   }
   
   protected [controllers] def findCovariantResource(baseType: UUID, id: UUID) = Try {
@@ -306,8 +336,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
 
-  protected [controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
-    NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")
+
   
   /**
    * Get Rule type ID from its fully-qualified name.
