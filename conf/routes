@@ -293,7 +293,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.MarathonController.postMarathonApp(fqon: String, envId: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid           controllers.ResourceController.getEnvironmentContainersIdFqon(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/scale     controllers.MarathonController.scaleContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, numInstances: Int)
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/migrate   controllers.MarathonController.migrateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, providerId: String)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/migrate   controllers.MarathonController.migrateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
 DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid	        controllers.MarathonController.hardDeleteContainerFqon(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
 
 #POST 		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:pid/containers

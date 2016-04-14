@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.laser.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
@@ -27,6 +28,8 @@ import com.galacticfog.gestalt.laser._
 import play.api.{ Logger => log }
 import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.events._
   
 object MarathonController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with SecurityResources {
@@ -214,7 +217,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
     }
   }
-
+  
   def groupId(fqon: String, workspaceName: String, environmentName: String) = {
     MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
   }
@@ -265,6 +268,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
   def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
+    log.debug("Marathon URL: " + providerUrl)
     MarathonClient(WS.client, providerUrl)
   }
 
@@ -319,9 +323,101 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
     }
   }
+  
+  
+  def eventsClient() = {  
+    AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
+  }
+  
+  def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
+  
+  def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
+    val rs = for {
+      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
+      r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
+    } yield r
+    
+    val fs = if (event.isEmpty) rs else {
+      rs filter { _.properties.get("actions").contains(event.get) }
+    }
+    // TODO: This is temporary. Need a strategy for multiple matching rules.
+    if (fs.isEmpty) None else Some(fs(0))
+  }
 
-  def migrateContainer(fqon: String, envId: java.util.UUID, id: UUID, providerId: String) = play.mvc.Results.TODO
+  
+  def getMigrationContainer(id: UUID) = Try {
+    ResourceFactory.findById(ResourceIds.Container, id) match {
+      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
+      case Some(container) => {  
+        val props = container.properties.get
+        if (props.contains("status") && props("status") == "MIGRATING") {
+          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+        } else container
+      }
+    }    
+  }
+  
+  
+  def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
 
+    val updated = for {
+      rule         <- Try(effectiveEventRules(envId, Some("container.migrate")) getOrElse {
+                        throw new ConflictException("There are no migration rules in scope. No changes made.")})
+
+      provider     <- providerQueryParam(request.queryString)
+      
+      environment  <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
+                        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
+      
+      container    <- getMigrationContainer(id)
+      
+      message      <- MigrateEvent.make(environment, container, rule, provider, META_URL.get)
+      
+      publish      <- publishMigrate(message)
+      
+      newcontainer <- ResourceFactory.update(upsertProperties(container, "status" -> "MIGRATING"), request.identity.account.id)
+      
+    } yield newcontainer
+
+    updated match {
+      case Failure(e) => {
+        log.debug(e.toString)
+        log.debug(e.getStackTraceString)
+        HandleExceptions(e)
+      }
+      case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+    }
+
+  }
+
+  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+  }
+  
+  protected [controllers] def publishMigrate(event: MigrateEvent) = {
+    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
+  }
+  
+  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]) = Try {
+    val PROVIDER_KEY = "provider"
+    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
+      throw new BadRequestException("You must supply a provider-id in the query-string, i.e., .../migrate?provider={UUID}")
+    else {
+      try {
+       val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
+       ResourceFactory.findById(ResourceIds.MarathonProvider, pid) match {
+         case None => throw new ResourceNotFoundException(
+             s"Invalid querystring. Provider with ID '$pid' not found.")
+         case Some(_) => pid
+       }
+      } catch {
+        case i: IllegalArgumentException => 
+          throw new BadRequestException(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
+        case e: Throwable => throw e
+      }
+    }
+  }  
+  
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     log.debug("Looking up workspace and environment for container...")
 
