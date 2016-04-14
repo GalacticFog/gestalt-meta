@@ -143,6 +143,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     ResourceFactory.findById(parentType, parent) match {
       case None => NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found.")
       case Some(_) => {
+        val allProvidersInScope = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parent)
+        
         val filtered = filterProvidersByType(ResourceFactory.findAncestorProviders(parent), qs)
         handleExpansion(filtered, qs, baseUrl)
       }
@@ -154,6 +156,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       
       val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
       log.debug("Filtering providers for type : " + typeName)
+      
+      //val validTypes = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
       
       val typeId = typeName match {
         case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
@@ -730,26 +734,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }    
   }
   
+  
   def injectLambdaFunctionMap(res: GestaltResourceInstance) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
-    val ps = Json.toJson(res.properties.get).as[JsObject]
-    val ljson = Json.toJson(res).as[JsObject]
-    val smap = JsString(Json.toJson(lmap).toString)
-    val m2 = replaceJsonPropValue(ljson, "function_mappings", smap)
-
-    println("OLD-PROPS :\n" + Json.prettyPrint(ps))
-    println("NEW-PROPS :\n" + Json.prettyPrint(m2))
-    println("OBJECT : \n" + Json.prettyPrint(replaceJsonProps(ljson, m2)))
-    println
-
-    val newjson = replaceJsonProps(ljson, m2)
-    val newobj = newjson.validate[GestaltResourceInstance]
-    println
-    println(newobj)
-    println
+    val resJson = Json.toJson(res).as[JsObject]
     
-    // TODO: Check for JsError
-    newobj.get
+    val newjson = if (lmap.isEmpty) resJson else {
+        val smap = JsString(Json.toJson(lmap).toString)
+        val m2 = replaceJsonPropValue(resJson, "function_mappings", smap)      
+        replaceJsonProps(resJson, m2)
+      } 
+    
+    newjson.validate[GestaltResourceInstance].get
   }
   
   def getEndpointsByLambda(org: UUID, lambda: UUID) = Authenticate(org) { implicit request =>
