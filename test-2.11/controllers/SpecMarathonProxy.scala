@@ -193,9 +193,9 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
       val app = inputJson.as[MarathonApp]
       app must_== MarathonApp(
         id = "cli-example-server",
-        container = MarathonContainer(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
+        container = MarathonContainer(containerType = "DOCKER", docker = Some(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
           MarathonPortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
-        )), parameters = None), volumes = None),
+        )), parameters = None)), volumes = None),
         cpus = 0.1,
         mem = 128,
         instances = 1,

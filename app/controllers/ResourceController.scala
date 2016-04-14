@@ -314,7 +314,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
                 guid <- metaCon2guid.get(originalMetaCon.id)
                 marCon <- mapMarCons.get(guid)
               } yield marCon
-              MarathonController.updateMetaContainerWithStats(originalMetaCon, stats)
+              MarathonController.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
             }
           } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
       }

@@ -1,15 +1,18 @@
 package com.galacticfog.gestalt
  
 import java.util.UUID
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
 import play.api.{ Logger => log }
+import play.api.libs.json.Reads._ // Custom validation helpers
+import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
 
-  
   case class Volume(
       container_path: String,
       host_path: String,
@@ -76,7 +79,8 @@ package object marathon {
       parameters: Option[Iterable[KeyValuePair]] = None)
 
   case class MarathonContainer(
-      docker: MarathonDocker, // TODO: this is actually optional, only necessary if the container type is DOCKER
+      docker: Option[MarathonDocker],
+      containerType: String,
       volumes: Option[Iterable[Volume]] = None
   )
 
@@ -95,6 +99,10 @@ package object marathon {
     cpus: Double = 0.2,
     mem: Int = 128,
     instances: Int = 1,
+    tasksStaged: Option[Int] = None,
+    tasksRunning: Option[Int] = None,
+    tasksHealthy: Option[Int] = None,
+    tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
     args: Option[Iterable[String]] = None,
     ports: Iterable[Int] = Seq(0),
@@ -113,8 +121,17 @@ package object marathon {
   implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
   implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
   implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
-  implicit lazy val marathonContainerFormat = Json.format[MarathonContainer]
-  implicit lazy val marathonAppFormat = Json.format[MarathonApp]  
+  implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
+    (__ \ "docker").readNullable[MarathonDocker] and
+      (__ \ "type").read[String] and
+      (__ \ "volumes").readNullable[Iterable[Volume]]
+    )(MarathonContainer.apply _)
+  implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
+    (__ \ "docker").writeNullable[MarathonDocker] and
+      (__ \ "type").write[String] and
+      (__ \ "volumes").writeNullable[Iterable[Volume]]
+    )(unlift(MarathonContainer.unapply))
+  implicit lazy val marathonAppFormat = Json.format[MarathonApp]
   
   import com.galacticfog.gestalt.data.ResourceFactory
   
@@ -143,25 +160,24 @@ package object marathon {
     }
     log.debug("Provider:\n" + provider)
     
-    // TODO: Add 'containerType' to Marathon object, remove "DOCKER" constant.
     val props = InputContainerProperties(
       container_type = "DOCKER",
-      image = app.container.docker.image,
+      image = app.container.docker map {_.image} getOrElse "",
       provider = provider,
-      port_mappings = app.container.docker.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
+      port_mappings = app.container.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
         label = Some(index.toString),
         protocol = pm.protocol getOrElse "tcp",
         container_port = pm.containerPort,
         host_port = pm.hostPort getOrElse 0,
         service_port = pm.servicePort getOrElse 0
-      )}} getOrElse Seq(),
+      )}}} getOrElse Seq(),
       cpus = app.cpus,
       memory = app.mem,
       num_instances = app.instances,
-      network = app.container.docker.network,
+      network = app.container.docker map {_.network} getOrElse "",
       cmd = app.cmd,
       args = app.args,
-      force_pull = app.container.docker.forcePullImage getOrElse false,
+      force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
       health_checks = app.healthChecks map { _.map {check => HealthCheck(
         protocol = check.protocol getOrElse "http",
         path = check.path getOrElse "/",
@@ -186,12 +202,103 @@ package object marathon {
     log.debug("Transform Complete:\n" + Json.prettyPrint(output))
     output.as[JsObject]
   }
-  
-  
+
+  /**
+    * Convert Meta container resource to MarathonApp object
+ *
+    * @param metaApp
+    * @return
+    */
+  def meta2Marathon(metaApp: GestaltResourceInstance): MarathonApp = {
+
+    val props: InputContainerProperties = (for {
+      props <- metaApp.properties
+      ctype <- props.get("container_type")
+      image <- props.get("image")
+      provider <- props.get("provider") map {json => Json.parse(json).as[InputProvider]}
+      cpus <- props.get("cpus")
+      memory <- props.get("memory")
+      num_instances <- props.get("num_instances")
+      network = props.get("network") getOrElse "HOST"
+      cmd = props.get("cmd")
+      args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
+      force_pull = props.get("force_pull") map {_.toBoolean} getOrElse false
+      port_mappings <- props.get("port_mappings") map {json => Json.parse(json).as[Iterable[PortMapping]]}
+      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
+      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
+      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
+    } yield InputContainerProperties(
+      container_type = ctype,
+      image = image,
+      provider = provider,
+      cpus = cpus.toDouble,
+      memory = memory.toInt,
+      num_instances = num_instances.toInt,
+      network = network,
+      cmd = cmd,
+      args = args,
+      port_mappings = port_mappings,
+      force_pull = force_pull,
+      health_checks = health_checks,
+      volumes = volumes,
+      labels = labels,
+      env = env
+    )) getOrElse {throw new IllegalArgumentException("Could not parse container properties")}
+
+    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
+      ps map {pm => MarathonPortMapping(
+        protocol = Some(pm.protocol),
+        containerPort = pm.container_port,
+        hostPort = Some(pm.host_port),
+        servicePort = Some(pm.service_port)
+      )}
+    }
+
+    val portLabelToIndex = props.port_mappings.zipWithIndex.map {
+      case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
+    }.toMap
+
+    val docker = if(props.container_type.toUpperCase == "DOCKER") Some(MarathonDocker(
+      image = props.image,
+      network = props.network,
+      forcePullImage = Some(props.force_pull),
+      portMappings = Some(portmap(props.port_mappings))
+    )) else None
+
+    val container = MarathonContainer(
+      docker = docker,
+      containerType = props.container_type,
+      volumes = props.volumes)
+
+    MarathonApp(
+      id = "/" + metaApp.name,
+      container = container,
+      cpus = props.cpus,
+      mem = props.memory,
+      instances = props.num_instances,
+      cmd = props.cmd,
+      args = props.args,
+      ports = props.port_mappings map { _.service_port },
+      labels = props.labels,
+      healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
+        protocol = Some(hc.protocol),
+        path = Some(hc.path),
+        portIndex = None, // TODO: figure out how to define this
+        gracePeriodSeconds = Some(hc.grace_period_seconds),
+        intervalSeconds = Some(hc.interval_seconds),
+        timeoutSeconds = Some(hc.timeout_seconds),
+        maxConsecutiveFailures = Some(hc.max_consecutive_failures)
+      )}},
+      env = props.env
+    )
+  }
+
+
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonApp(name: String, inputJson: JsObject) = {
+  def toMarathonApp(name: String, inputJson: JsObject): MarathonApp = {
     
     val props = (inputJson \ "properties").validate[InputContainerProperties].map {
       case ps: InputContainerProperties => ps
@@ -213,19 +320,20 @@ package object marathon {
       case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
     }.toMap
 
-    val docker = MarathonDocker(
+    val docker = if(props.container_type.toLowerCase == "DOCKER") Some(MarathonDocker(
         image = props.image,
         network = props.network,
         forcePullImage = Some(props.force_pull),
         portMappings = Some(portmap(props.port_mappings))
-    )
-        
+    )) else None
+
     val container = MarathonContainer(
         docker = docker,
+        containerType = props.container_type,
         volumes = props.volumes)
 
     MarathonApp(
-      id = name,
+      id = "/" + name,
       container = container,
       cpus = props.cpus,
       mem = props.memory,
