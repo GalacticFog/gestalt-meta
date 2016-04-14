@@ -196,11 +196,45 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
-  
+  import com.galacticfog.gestalt.meta.api.output._
   def hardDeleteLambda(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    hardDeleteMetaResource(id, ResourceIds.Lambda)
+    hardDeleteLambdaCommon(org, id)
   }
   
+  def hardDeleteLambdaCommon(org: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+    val associatedRules = 
+      ResourceFactory.findAllByPropertyValue(ResourceIds.RuleEvent, "lambda", id.toString)
+    
+    if (associatedRules.isEmpty) {
+      log.debug("Deleting Lambda...")
+      Ok("Testing delete Lambda.")
+      //hardDeleteMetaResource(id, ResourceIds.Lambda) 
+      } else {
+    
+      log.warn("Conflict - Attempting to delete lambda with associated rules.")
+      val msg = "There are Event Rules associated with this Lambda. Cannot delete."
+      val response = Json.obj("code" -> 409, "message" -> msg, 
+          "conflicts" -> Json.toJson(
+              associatedRules map { toLink(_, META_URL) }).as[JsObject])
+      Conflict(response)
+    }
+  }
+  
+  def canDeleteLambda(org: UUID, id: UUID)(implicit request: SecuredRequest[_]): Either[JsValue,Unit] = {
+    val associatedRules = 
+      ResourceFactory.findAllByPropertyValue(ResourceIds.RuleEvent, "lambda", id.toString)
+    
+    if (associatedRules.isEmpty) Right(Unit) else {
+      log.warn("Conflict - Attempting to delete lambda with associated rules.")
+      Left {      
+        val msg = "There are Event Rules associated with this Lambda. Cannot delete."
+        val conflicts = Json.toJson(associatedRules map { toLink(_, META_URL) })
+        Json.obj("code" -> JsNumber(409), "message" -> JsString(msg), 
+            "conflicts" -> conflicts)
+      }
+      
+    }    
+  }
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
@@ -287,26 +321,9 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     
-    /* ------------------------------------------------------------
-     * DELETING A META-LAMBDA
-     * 
-     * In Laser:
-     *   - Delete apis (this should also delete laser-endpoints)
-     *   - Delete lambdas
-     * 
-     * In Meta:
-     *   - delete from meta_lambda_x_meta_api
-     *   - delete Endpoints, Apis, Lambda from meta_x_laser
-     *   - delete from lambda_x_endpoint
-     *   - Delete endpoints
-     *   - Delete apis
-     *   - Delete Lambda
-     *   
-     */
-    
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
+    canDeleteLambda(fqid(fqon), id) match {
+      case Left(json) => Conflict(json)
+      case Right(_)   => {
         ResourceFactory.findById(ResourceIds.Lambda, id) match {
           case None => NotFoundResult(s"Lambda with ID '$id' not found.")
           case Some(lambda) => {
@@ -321,7 +338,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
             
             HardDeleteLambda.delete(id, true) match {
               case Success(_) => NoContent
-              case Failure(e) => HandleRepositoryExceptions(e)
+              case Failure(e) => HandleExceptions(e)
             }
           }
         }
