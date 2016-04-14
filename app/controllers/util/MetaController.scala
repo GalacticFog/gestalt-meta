@@ -67,7 +67,11 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = if (secure) "https" else "http"
     Some( "%s://%s".format(protocol, host) )
   }
-    /*
+  
+  protected [controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
+    NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
+  
+  /*
    * TODO: This only handles true | false. Extend to allow for expansion
    * of individual resource attributes and properties.
    */
@@ -192,6 +196,7 @@ trait MetaController extends SecureController with SecurityResources {
   
   /** Get an Org by FQON */
   protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
+    log.debug("Looking up FQON : " + fqon)
     ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
   }
   
