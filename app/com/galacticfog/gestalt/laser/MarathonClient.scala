@@ -26,6 +26,7 @@ case class ContainerStats(id: String,
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 
+
   def listApplications(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     for {
       marResp <- client.url(s"${marathonAddress}/v2/apps").get()
@@ -53,7 +54,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   /**
-     *Returns the raw json from Marathon, but transformed to remove the org structure
+    * Returns the raw json from Marathon, but transformed to remove the org structure
    **/
   def listApplicationsInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[JsObject]] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
@@ -65,6 +66,31 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       marResp.status match {
         case 200 =>
           (marResp.json \ "apps").as[Seq[JsObject]].flatMap(MarathonClient.filterXformAppsByGroup(groupId))
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+      }
+    }
+  }
+
+  /**
+    * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
+    * @param fqon fully-qualified org name
+    * @param wrkName workspace name
+    * @param envName environment name
+    * @param localAppId local name of the app, stripped of the above
+    */
+  def getApplication_marathon_v2(fqon: String, wrkName: String, envName: String, localAppId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
+    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
+    // therefore, to get these, we have to loop over all apps :(
+    // val appGroup = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps.counts").get()
+    val url = s"${marathonAddress}/v2/apps/" + groupId.stripPrefix("/").stripSuffix("/") + "/" + localAppId.stripPrefix("/")
+    val app = client.url(url).get()
+    app map { marResp =>
+      marResp.status match {
+        case 404 =>  throw new ResourceNotFoundException(marResp.body)
+        case 200 =>
+          val xformApp = (marResp.json \ "app").asOpt[JsObject] flatMap MarathonClient.filterXformAppsByGroup(groupId)
+          xformApp getOrElse(throw new RuntimeException("could not extract/transform app from Marathon REST response"))
         case _ => throw new RuntimeException("unexpected return from Marathon REST API")
       }
     }

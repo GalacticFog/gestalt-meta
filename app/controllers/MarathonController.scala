@@ -146,6 +146,44 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
+  /**
+    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
+    */
+  def getMarathonApp(fqon: String, parentType: String, envId: UUID, providerId: UUID, appId: String) = Authenticate(fqon).async { implicit request =>
+    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    MarathonController.appComponents(envId) match {
+      case Failure(e) => Future.successful(HandleExceptions(e))
+      case Success((wrk, env)) =>
+        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+        for {
+          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, envId)}
+          metaCon = {
+            val cons = metaCons.flatMap {testApp =>
+              for {
+                props <- testApp.properties
+                providerProp <- props.get("provider")
+                pobj <- Try{Json.parse(providerProp)}.toOption
+                pid <- (pobj \ "id").asOpt[UUID]
+                if pid == providerId
+                eid <- props.get("external_id")
+                // MarathonClient.listApplicationsInEnvironment strips env app group prefix
+                localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
+                if localEid == appId.stripPrefix("/")
+              } yield testApp
+            }
+            if (cons.size > 1) log.warn(s"found multiple container with the same external id a single provider (${providerId}); this represents a bug.")
+            cons.headOption
+          } getOrElse(throw new ResourceNotFoundException(s"cannot find container with id ${appId} in environment ${envId}"))
+          provider = MarathonController.marathonProvider(providerId)
+          client = MarathonController.marathonClient(provider)
+          marConTry <- ResourceController.futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
+          stats = marConTry.toOption flatMap MarathonClient.marathon2Container
+          outputMetaContainer = updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
+          outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not cover meta container to marathon container"))
+        } yield Ok(Json.obj("app" -> outputMarathonContainer))
+    }
+  }
+
   def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
     val newStats = stats match {
       case Some(stats) => Seq(
@@ -446,7 +484,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     marathonClient(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
   }
 
-  def getMarathonApp(fqon: String, parentType: String, envId: java.util.UUID, id: java.util.UUID, appId: String) = play.mvc.Results.TODO
 }
 
 
