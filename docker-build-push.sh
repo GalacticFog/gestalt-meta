@@ -13,7 +13,7 @@ if [ $numChanges -gt 0 ]; then
   echo "You are dirty. You probably shouldn't be running this script."
   exit 1       
 fi
-if [ branch != "master" ]; then 
+if [ $branch != "master" ]; then 
   echo "Uh-oh. You appear not to be on the master branch. You probably shouldn't be running this script yet."
   exit 1
 fi
