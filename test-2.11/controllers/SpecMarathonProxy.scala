@@ -179,6 +179,9 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
             "cpus" : 0.1,
             "ports" : [ 0 ],
             "instances" : 1,
+            "labels": {
+              "key": "value"
+            },
             "healthChecks" : [ {
               "portIndex" : 0,
               "protocol" : "HTTP",
@@ -202,15 +205,15 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
         cmd = None,
         args = None,
         ports = Seq(0),
-        labels = None,
-        healthChecks = Some(Seq(MarathonHealthCheck(
+        labels = Map("key" -> "value"),
+        healthChecks = Seq(MarathonHealthCheck(
           protocol = Some("HTTP"),
           path = Some("/"),
           portIndex = Some(0),
           gracePeriodSeconds = Some(30),
           intervalSeconds = Some(3),
           maxConsecutiveFailures = Some(10)
-        )))
+        ))
       )
     }
 

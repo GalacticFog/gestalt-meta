@@ -139,9 +139,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             } yield marCon
             updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
           }
-          outputMarathonContainers = outputMetaContainers map { metaApp =>
-            val app: MarathonApp = meta2Marathon(metaApp)
-            Json.toJson(app).as[JsObject]
+          outputMarathonContainers = outputMetaContainers flatMap { metaApp =>
+            (meta2Marathon(metaApp) map {Json.toJson(_).as[JsObject]}).toOption
           }
         } yield Ok(Json.obj("apps" -> outputMarathonContainers))
     }
@@ -152,7 +151,11 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       case Some(stats) => Seq(
         "age" -> stats.age.toString,
         "status" -> stats.status,
-        "num_instances" -> stats.numInstances.toString
+        "num_instances" -> stats.numInstances.toString,
+        "tasks_running" -> stats.tasksRunning.toString,
+        "tasks_healthy" -> stats.tasksHealthy.toString,
+        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+        "tasks_staged" -> stats.tasksStaged.toString
       )
       case None => Seq(
         "status" -> "LOST",
