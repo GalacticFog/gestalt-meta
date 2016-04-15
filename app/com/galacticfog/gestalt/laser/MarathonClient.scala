@@ -242,9 +242,9 @@ case object MarathonClient {
           tasksUnhealthy = (marApp \ "tasksUnhealthy").asOpt[Int] getOrElse 0
           status = (instances, tasksRunning, tasksHealthy, tasksUnhealthy) match {
             case (i,r,h,u) if r != i => "SCALING"
+            case (i,r,h,u) if i == 0 => "SUSPENDED"
             case (i,r,h,u) if h == i => "HEALTHY"
             case (i,r,h,u) if u > 0  => "UNHEALTHY"
-            case (i,r,h,u) if i == 0 => "SUSPENDED"
             case _ => "RUNNING" // r == i > 0 && u == 0 but no health checks
           }
           // if (tasksStaged > 0 && tasksRunning > 0) "SCALING" else if (tasksRunning > 0) "RUNNING" else if (tasksStaged > 0) "SCALING" else "SUSPENDED"

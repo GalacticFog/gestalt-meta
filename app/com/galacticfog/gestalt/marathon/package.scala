@@ -105,16 +105,39 @@ package object marathon {
     tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
     args: Option[Iterable[String]] = None,
-    ports: Iterable[Int] = Seq(0),
-    labels: Map[String, String] = Map(),
-    healthChecks: Iterable[MarathonHealthCheck] = None,
-    env: Map[String, String] = Map(),
-    deployments: Seq[JsObject] = Seq())
+    ports: Iterable[Int] = Seq(),
+    labels: Option[Map[String, String]] = None,
+    healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
+    env: Option[Map[String, String]] = None,
+    deployments: Option[Seq[JsObject]] = None)
     
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
   implicit lazy val volumeFormat = Json.format[Volume]
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
-  implicit lazy val portMappingFormat = Json.format[PortMapping]
+
+  implicit lazy val portMappingWrites = Json.writes[PortMapping]
+
+  implicit lazy val portMappingFormat = new Reads[PortMapping] {
+    override def reads(json: JsValue): JsResult[PortMapping] = {
+      (for {
+        protocol <- (json \ "protocol").asOpt[String]
+        container_port <- (json \ "container_port").asOpt[Int]
+        host_port = (json \ "host_port").asOpt[Int] getOrElse 0
+        service_port = (json \ "service_port").asOpt[Int] getOrElse 0
+        label = (json \ "label").asOpt[String]
+      } yield PortMapping(
+        protocol = protocol,
+        container_port = container_port,
+        host_port = host_port,
+        service_port = service_port,
+        label = label
+      )) match {
+        case Some(pm) => JsSuccess(pm)
+        case None => JsError("Could not parse PortMapping")
+      }
+    }
+  }
+
   implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
   
@@ -145,34 +168,38 @@ package object marathon {
       (__ \ "tasksRunning").readNullable[Int] and
       (__ \ "tasksHealthy").readNullable[Int] and
       (__ \ "tasksUnhealthy").readNullable[Int] and
-      (__ \ "cmd").read[Option[String]] and
-      (__ \ "args").read[Option[Iterable[String]]] and
+      (__ \ "cmd").readNullable[String] and
+      (__ \ "args").readNullable[Iterable[String]] and
       (__ \ "ports").read[Iterable[Int]] and
-      (__ \ "labels").read[Map[String,String]] and
-      (__ \ "healthChecks").read[Iterable[MarathonHealthCheck]] and
-      (__ \ "env").read[Map[String,String]] and
-      (__ \ "deployments").read[Seq[JsObject]]
+      (__ \ "labels").readNullable[Map[String,String]] and
+      (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
+      (__ \ "env").readNullable[Map[String,String]] and
+      (__ \ "deployments").readNullable[Seq[JsObject]]
     )(MarathonApp.apply _)
 
-  implicit lazy val marathonAppWrites: Writes[MarathonApp] = (
-    (__ \ "id").write[String] and
-      (__ \ "container").write[MarathonContainer] and
-      (__ \ "cpus").write[Double] and
-      (__ \ "mem").write[Double] and
-      (__ \ "instances").write[Int] and
-      (__ \ "tasksStaged").writeNullable[Int] and
-      (__ \ "tasksRunning").writeNullable[Int] and
-      (__ \ "tasksHealthy").writeNullable[Int] and
-      (__ \ "tasksUnhealthy").writeNullable[Int] and
-      (__ \ "cmd").write[Option[String]] and
-      (__ \ "args").write[Option[Iterable[String]]] and
-      (__ \ "ports").write[Iterable[Int]] and
-      (__ \ "labels").write[Map[String,String]] and
-      (__ \ "healthChecks").write[Iterable[MarathonHealthCheck]] and
-      (__ \ "env").write[Map[String,String]] and
-      (__ \ "deployments").write[Seq[JsObject]]
-    )(unlift(MarathonApp.unapply))
-  
+  implicit lazy val marathonAppWrites = new Writes[MarathonApp] {
+    override def writes(o: MarathonApp): JsValue = {
+      Json.obj(
+        "id" -> o.id,
+        "container" -> Json.toJson(o.container),
+        "cpus" -> o.cpus,
+        "mem" -> o.mem,
+        "instances" -> o.instances,
+        "cmd" -> o.cmd.getOrElse(null),
+        "args" -> o.args.getOrElse(Seq()).map(Json.toJson(_)),
+        "ports" -> Json.toJson(o.ports),
+        "labels" -> Json.toJson(o.labels.getOrElse(Map())),
+        "healthChecks" -> Json.toJson(o.healthChecks.getOrElse(Seq())),
+        "env" -> Json.toJson(o.env.getOrElse(Map())),
+        "deployments" -> Json.toJson(o.deployments.getOrElse(Seq())),
+        "tasksStaged" -> Json.toJson(o.tasksStaged.getOrElse(0)),
+        "tasksRunning" -> Json.toJson(o.tasksRunning.getOrElse(0)),
+        "tasksHealthy" -> Json.toJson(o.tasksHealthy.getOrElse(0)),
+        "tasksUnhealthy" -> Json.toJson(o.tasksUnhealthy.getOrElse(0))
+      )
+    }
+  }
+
   import com.galacticfog.gestalt.data.ResourceFactory
   
   
@@ -218,17 +245,18 @@ package object marathon {
       cmd = app.cmd,
       args = app.args,
       force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
-      health_checks = Some(app.healthChecks map {check => HealthCheck(
+      health_checks = app.healthChecks map { _.map{ check => HealthCheck(
         protocol = check.protocol getOrElse "http",
         path = check.path getOrElse "/",
         grace_period_seconds = check.gracePeriodSeconds getOrElse 15,
         interval_seconds = check.intervalSeconds getOrElse 10,
         timeout_seconds = check.timeoutSeconds getOrElse 20,
         max_consecutive_failures = check.maxConsecutiveFailures getOrElse 3
-      )}),
+      )}},
       volumes = app.container.volumes,
-      labels = Some(app.labels),
-      env = Some(app.env))
+      labels = app.labels,
+      env = app.env
+    )
     
     // Meta container name is last component of Marathon ID 'path'
     val containerName = {
@@ -271,8 +299,8 @@ package object marathon {
       args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
       volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
-      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]} getOrElse Map()
-      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]} getOrElse Map()
+      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
+      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
       port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Iterable[PortMapping]]}
       tasks_running = props.get("tasks_running") map {_.toInt}
       tasks_healthy = props.get("tasks_healthy") map {_.toInt}
@@ -311,7 +339,7 @@ package object marathon {
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}} getOrElse Seq(),
+      )}},
       env = env,
       tasksStaged = tasks_staged,
       tasksRunning = tasks_running,
@@ -349,7 +377,7 @@ package object marathon {
       case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
     }.toMap
 
-    val docker = if(props.container_type.toLowerCase == "DOCKER") Some(MarathonDocker(
+    val docker = if(props.container_type.toUpperCase == "DOCKER") Some(MarathonDocker(
         image = props.image,
         network = props.network,
         forcePullImage = Some(props.force_pull),
@@ -370,7 +398,7 @@ package object marathon {
       cmd = props.cmd,
       args = props.args,
       ports = props.port_mappings map { _.service_port },
-      labels = props.labels getOrElse Map(),
+      labels = props.labels,
       healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),
@@ -379,8 +407,8 @@ package object marathon {
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}} getOrElse Seq(),
-      env = props.env getOrElse Map()
+      )}},
+      env = props.env
     )
   }
   

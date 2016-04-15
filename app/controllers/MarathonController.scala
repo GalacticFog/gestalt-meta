@@ -159,7 +159,11 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       )
       case None => Seq(
         "status" -> "LOST",
-        "num_instances" -> "0"
+        "num_instances" -> "0",
+        "tasks_running" -> "0",
+        "tasks_healthy" -> "0",
+        "tasks_unhealthy" -> "0",
+        "tasks_staged" -> "0"
       )
     }
     val updatedMetaCon = metaCon.copy(

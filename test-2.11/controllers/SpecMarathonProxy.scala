@@ -205,15 +205,15 @@ class SpecMarathonProxy extends Specification with FutureAwaits with DefaultAwai
         cmd = None,
         args = None,
         ports = Seq(0),
-        labels = Map("key" -> "value"),
-        healthChecks = Seq(MarathonHealthCheck(
+        labels = Some(Map("key" -> "value")),
+        healthChecks = Some(Seq(MarathonHealthCheck(
           protocol = Some("HTTP"),
           path = Some("/"),
           portIndex = Some(0),
           gracePeriodSeconds = Some(30),
           intervalSeconds = Some(3),
           maxConsecutiveFailures = Some(10)
-        ))
+        )))
       )
     }
 
