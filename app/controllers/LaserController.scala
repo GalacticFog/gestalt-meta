@@ -384,68 +384,69 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   
   
   def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
-    log.trace(s"createLambdaCommon($org, <parent>)")
     Future {
-    
+
       safeGetInputJson(ResourceIds.Lambda, request.body) match {
         case Failure(e)     => BadRequestResult(e.getMessage)
         case Success(input) => {
-          
-          val env = ResourceFactory.findById(ResourceIds.Environment, parent.id)
-          val parentLink = toLink(parent, None)
-          
+
           val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
-          
-          /* Add parent property to Lambda JSON */
-          val newjson = request.body.as[JsObject] ++ Json.obj(
-            "properties" -> 
-            replaceJsonPropValue(request.body.as[JsObject], "parent", Json.toJson(parentLink))) ++ Json.obj("id" -> lambdaId.toString) 
-          
-          // TODO: Validate unwrapped providers Seq
-          val providers = newjson \ "properties" \ "providers" match {
-            case u: JsUndefined => None
-            case j => Some(j.validate[Seq[JsValue]].get)
-          }
 
-          if (providers.isDefined) {
-            
-            val ps = providers.get map { p => 
-
-              val id = (p \ "id").as[String]
-              val exId = ResourceFactory.findById(id) match {
-                case Some(mp) => mp.properties.get("external_id")
-                case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
-              }
-              (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
-                case lpi: LambdaProviderInfo => lpi
-              }.recoverTotal { e =>
-                log.error(JsError.toFlatJson(e).toString)
-                throw new RuntimeException(JsError.toFlatJson(e).toString)
-              }
-              
-            }
-            createLaserLambdas(lambdaId, input, ps)
-            createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
-          }
+          val newjson = injectParentLink(
+              request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent
+          )
           
-          // Create the Lambda in Meta
-          CreateResourceResult(
-              ResourceIds.User, 
-              request.identity.account.id,
-              org, newjson, request.identity,
-              typeId = Some(ResourceIds.Lambda), 
-              parentId = Some(parent.id) )
+          val ps = getProviderInfo(newjson)
+
+          val resource = for {
+            a <- createLaserLambdas(lambdaId, input, ps)
+            b <- createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
+            c <- createResourceInstance(org, newjson, Some(ResourceIds.Lambda), Some(parent.id))
+          } yield c 
+          
+          resource match {
+            case Failure(err) => HandleExceptions(err)
+            case Success(res) => Created(Output.renderInstance(res, META_URL))
+          }
         }
       }
     }
   }
+  
+  def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
+    val parentLink = toLink(parent, None)
+    json ++ Json.obj("properties" -> 
+      replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
+  }
+  
+  def getProviderInfo(lambdaJson: JsValue) = {
+    val providers = lambdaJson \ "properties" \ "providers" match {
+      case u: JsUndefined => None
+      case j              => Some(j.validate[Seq[JsValue]].get)
+    }
+    providers.get map { p => 
 
+      val id = (p \ "id").as[String]
+      val exId = ResourceFactory.findById(id) match {
+        case Some(mp) => mp.properties.get("external_id")
+        case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
+      }
+      (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
+        case lpi: LambdaProviderInfo => lpi
+      }.recoverTotal { e =>
+        log.error(JsError.toFlatJson(e).toString)
+        throw new RuntimeException(JsError.toFlatJson(e).toString)
+      }  
+    }  
+  }
+  
+  
   def createApisSynchronized(
       org: UUID, 
       parent: UUID, 
       metaLambdaId: UUID, 
       lambdaName: String, 
-      providers: Seq[LambdaProviderInfo])(implicit request: SecuredRequest[JsValue]) = {
+      providers: Seq[LambdaProviderInfo])(implicit request: SecuredRequest[JsValue]) = Try {
 
     def go(ps: Seq[LambdaProviderInfo], acc: Seq[UUID]): Seq[UUID] = {
       ps match {
@@ -463,7 +464,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
               case Success(_) => println("***LASER API CREATED***")
               case Failure(e) => throw e
             }
-
+            
             // Create Meta API
             val metaApiJson = toMetaApiInput(lambdaName, id, Json.obj("id" -> h.id.toString, "location" -> loc))
             val res = createApiCommon(org, parent, Json.toJson(metaApiJson))
@@ -481,13 +482,16 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   }  
   
   def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = Try {
+    
+    log.debug("In createLaserLambda(...)")
+    
     for (p <- providers; l <- p.locations) {
       val laserId = Some(metaLambdaId)
       val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, l)
-
+      
       laser.createLambda(lambda) map { m =>
         ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
-        ()
+        
       }
     }
   }

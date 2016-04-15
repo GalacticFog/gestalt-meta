@@ -4,6 +4,7 @@ import com.galacticfog.gestalt.data.models._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 
 package object laser {
 
@@ -151,17 +152,28 @@ package object laser {
   def syncLaserProviders(toResource: UUID) = ???
   
   
-
+  
+  def requiredProperty(props: Map[String,JsValue], key: String) = {
+    if (props.contains(key)) props(key) else
+      throw new BadRequestException(s"Missing property '$key'.")
+  }
   
   def parseHandlerFunction(lambda: GestaltResourceInput) = {
     val props = lambda.properties.get
-    val runtime = props("runtime")
-    val mapJson = lambda.properties.get("function_mappings")
-    val fmap = mapJson.validate[Map[String, JsValue]]
+    val runtime = requiredProperty(props, "runtime") //props("runtime")
+    val mapJson = requiredProperty(props, "function_mappings")
+    val fmap = mapJson.validate[Map[String, JsValue]].map {
+      case m: Map[String,JsValue] => m
+    }.recoverTotal { e =>
+      throw new BadRequestException(
+        "Could not parse property 'function_mappings': " + 
+          JsError.toFlatJson(e).toString)
+    }
+    
     //
     // TODO: Validation parsing.
     //
-    val function = fmap.get.keys.toSeq(0)
+    val function = fmap.keys.toSeq(0)
 
     runtime.as[String] match {
       case "dotnet" => ("", function)

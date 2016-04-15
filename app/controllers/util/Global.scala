@@ -55,13 +55,15 @@ object LoggingFilter extends Filter {
 
 
 object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
-
+  
   override def onRouteRequest(request: RequestHeader): Option[Handler] = {
     super.onRouteRequest(request)  
   }
   
   override def onError(request: RequestHeader, ex: Throwable) = {
-    Future.successful(GenericErrorResult(500, ex.getMessage))
+    Future.successful{ 
+      HandleExceptions(ex)
+    }
   }
   
   override def onBadRequest(request: RequestHeader, error: String) = {
