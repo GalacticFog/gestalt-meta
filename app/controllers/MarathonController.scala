@@ -424,7 +424,17 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
             log.debug(s"Scaling Marathon App...")
             scaleMarathonApp(c, numInstances) map {
-              marathonJson => Accepted(marathonJson) // TODO: scaleMarathonApp returns Marathon JSON; need to return Meta JSON
+              marathonJson => Accepted(Output.renderInstance(c.copy(
+                properties = c.properties map {
+                  _ ++ Seq(
+                    "num_instances" -> numInstances.toString,
+                    "status" -> "SCALING"
+                  )
+                } orElse Some(Map(
+                  "num_instances" -> numInstances.toString,
+                  "status" -> "SCALING"
+                ))
+              ), META_URL))
             } recover {
               case e: Throwable => HandleExceptions(e)
             }
