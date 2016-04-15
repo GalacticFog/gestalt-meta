@@ -1,15 +1,18 @@
 package com.galacticfog.gestalt
  
 import java.util.UUID
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
 import play.api.{ Logger => log }
+import play.api.libs.json.Reads._ // Custom validation helpers
+import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
 
-  
   case class Volume(
       container_path: String,
       host_path: String,
@@ -76,7 +79,8 @@ package object marathon {
       parameters: Option[Iterable[KeyValuePair]] = None)
 
   case class MarathonContainer(
-      docker: MarathonDocker, // TODO: this is actually optional, only necessary if the container type is DOCKER
+      docker: Option[MarathonDocker],
+      containerType: String,
       volumes: Option[Iterable[Volume]] = None
   )
 
@@ -93,19 +97,47 @@ package object marathon {
     id: String,
     container: MarathonContainer,
     cpus: Double = 0.2,
-    mem: Int = 128,
+    mem: Double = 128.0,
     instances: Int = 1,
+    tasksStaged: Option[Int] = None,
+    tasksRunning: Option[Int] = None,
+    tasksHealthy: Option[Int] = None,
+    tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
     args: Option[Iterable[String]] = None,
-    ports: Iterable[Int] = Seq(0),
+    ports: Iterable[Int] = Seq(),
     labels: Option[Map[String, String]] = None,
     healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
-    env: Option[Map[String, String]] = None)
+    env: Option[Map[String, String]] = None,
+    deployments: Option[Seq[JsObject]] = None)
     
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
   implicit lazy val volumeFormat = Json.format[Volume]
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
-  implicit lazy val portMappingFormat = Json.format[PortMapping]
+
+  implicit lazy val portMappingWrites = Json.writes[PortMapping]
+
+  implicit lazy val portMappingFormat = new Reads[PortMapping] {
+    override def reads(json: JsValue): JsResult[PortMapping] = {
+      (for {
+        protocol <- (json \ "protocol").asOpt[String]
+        container_port <- (json \ "container_port").asOpt[Int]
+        host_port = (json \ "host_port").asOpt[Int] getOrElse 0
+        service_port = (json \ "service_port").asOpt[Int] getOrElse 0
+        label = (json \ "label").asOpt[String]
+      } yield PortMapping(
+        protocol = protocol,
+        container_port = container_port,
+        host_port = host_port,
+        service_port = service_port,
+        label = label
+      )) match {
+        case Some(pm) => JsSuccess(pm)
+        case None => JsError("Could not parse PortMapping")
+      }
+    }
+  }
+
   implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
   
@@ -113,9 +145,61 @@ package object marathon {
   implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
   implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
   implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
-  implicit lazy val marathonContainerFormat = Json.format[MarathonContainer]
-  implicit lazy val marathonAppFormat = Json.format[MarathonApp]  
-  
+
+  implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
+    (__ \ "docker").readNullable[MarathonDocker] and
+      (__ \ "type").read[String] and
+      (__ \ "volumes").readNullable[Iterable[Volume]]
+    )(MarathonContainer.apply _)
+
+  implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
+    (__ \ "docker").writeNullable[MarathonDocker] and
+      (__ \ "type").write[String] and
+      (__ \ "volumes").writeNullable[Iterable[Volume]]
+    )(unlift(MarathonContainer.unapply))
+
+  implicit lazy val marathonAppReads: Reads[MarathonApp] = (
+    (__ \ "id").read[String] and
+      (__ \ "container").read[MarathonContainer] and
+      (__ \ "cpus").read[Double] and
+      (__ \ "mem").read[Double] and
+      (__ \ "instances").read[Int] and
+      (__ \ "tasksStaged").readNullable[Int] and
+      (__ \ "tasksRunning").readNullable[Int] and
+      (__ \ "tasksHealthy").readNullable[Int] and
+      (__ \ "tasksUnhealthy").readNullable[Int] and
+      (__ \ "cmd").readNullable[String] and
+      (__ \ "args").readNullable[Iterable[String]] and
+      (__ \ "ports").read[Iterable[Int]] and
+      (__ \ "labels").readNullable[Map[String,String]] and
+      (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
+      (__ \ "env").readNullable[Map[String,String]] and
+      (__ \ "deployments").readNullable[Seq[JsObject]]
+    )(MarathonApp.apply _)
+
+  implicit lazy val marathonAppWrites = new Writes[MarathonApp] {
+    override def writes(o: MarathonApp): JsValue = {
+      Json.obj(
+        "id" -> o.id,
+        "container" -> Json.toJson(o.container),
+        "cpus" -> o.cpus,
+        "mem" -> o.mem,
+        "instances" -> o.instances,
+        "cmd" -> o.cmd.getOrElse(null),
+        "args" -> o.args.getOrElse(Seq()).map(Json.toJson(_)),
+        "ports" -> Json.toJson(o.ports),
+        "labels" -> Json.toJson(o.labels.getOrElse(Map())),
+        "healthChecks" -> Json.toJson(o.healthChecks.getOrElse(Seq())),
+        "env" -> Json.toJson(o.env.getOrElse(Map())),
+        "deployments" -> Json.toJson(o.deployments.getOrElse(Seq())),
+        "tasksStaged" -> Json.toJson(o.tasksStaged.getOrElse(0)),
+        "tasksRunning" -> Json.toJson(o.tasksRunning.getOrElse(0)),
+        "tasksHealthy" -> Json.toJson(o.tasksHealthy.getOrElse(0)),
+        "tasksUnhealthy" -> Json.toJson(o.tasksUnhealthy.getOrElse(0))
+      )
+    }
+  }
+
   import com.galacticfog.gestalt.data.ResourceFactory
   
   
@@ -143,26 +227,25 @@ package object marathon {
     }
     log.debug("Provider:\n" + provider)
     
-    // TODO: Add 'containerType' to Marathon object, remove "DOCKER" constant.
     val props = InputContainerProperties(
       container_type = "DOCKER",
-      image = app.container.docker.image,
+      image = app.container.docker map {_.image} getOrElse "",
       provider = provider,
-      port_mappings = app.container.docker.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
+      port_mappings = app.container.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
         label = Some(index.toString),
         protocol = pm.protocol getOrElse "tcp",
         container_port = pm.containerPort,
         host_port = pm.hostPort getOrElse 0,
         service_port = pm.servicePort getOrElse 0
-      )}} getOrElse Seq(),
+      )}}} getOrElse Seq(),
       cpus = app.cpus,
-      memory = app.mem,
+      memory = app.mem.toInt,
       num_instances = app.instances,
-      network = app.container.docker.network,
+      network = app.container.docker map {_.network} getOrElse "",
       cmd = app.cmd,
       args = app.args,
-      force_pull = app.container.docker.forcePullImage getOrElse false,
-      health_checks = app.healthChecks map { _.map {check => HealthCheck(
+      force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
+      health_checks = app.healthChecks map { _.map{ check => HealthCheck(
         protocol = check.protocol getOrElse "http",
         path = check.path getOrElse "/",
         grace_period_seconds = check.gracePeriodSeconds getOrElse 15,
@@ -172,7 +255,8 @@ package object marathon {
       )}},
       volumes = app.container.volumes,
       labels = app.labels,
-      env = app.env)
+      env = app.env
+    )
     
     // Meta container name is last component of Marathon ID 'path'
     val containerName = {
@@ -186,12 +270,92 @@ package object marathon {
     log.debug("Transform Complete:\n" + Json.prettyPrint(output))
     output.as[JsObject]
   }
-  
-  
+
+  /**
+    * Convert Meta container resource to MarathonApp object
+ *
+    * @param metaApp
+    * @return
+    */
+  def meta2Marathon(metaApp: GestaltResourceInstance): Try[MarathonApp] = {
+
+    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
+      ps map {pm => MarathonPortMapping(
+        protocol = Some(pm.protocol),
+        containerPort = pm.container_port,
+        hostPort = Some(pm.host_port),
+        servicePort = Some(pm.service_port)
+      )}
+    }
+
+    val mc = for {
+      props <- Try{metaApp.properties.get}
+      ctype <- Try{props("container_type")}
+      provider <- Try{props("provider")} map {json => Json.parse(json).as[InputProvider]}
+      cpus <- Try{props("cpus").toDouble}
+      memory <- Try{props("memory").toInt}
+      num_instances <- Try{props("num_instances").toInt}
+      cmd = props.get("cmd")
+      args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
+      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
+      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
+      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
+      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Iterable[PortMapping]]}
+      tasks_running = props.get("tasks_running") map {_.toInt}
+      tasks_healthy = props.get("tasks_healthy") map {_.toInt}
+      tasks_unhealthy = props.get("tasks_unhealthy") map {_.toInt}
+      tasks_staged = props.get("tasks_staged") map {_.toInt}
+      docker = for {
+        image <- props.get("image")
+        network = props.get("network") getOrElse "HOST"
+        force_pull = props.get("force_pull") map {_.toBoolean}
+      } yield MarathonDocker(
+        image = image,
+        network = network,
+        forcePullImage = force_pull,
+        portMappings = port_mappings map portmap
+      )
+      container = MarathonContainer(
+        docker = if (ctype.toUpperCase == "DOCKER") docker else None,
+        containerType = ctype,
+        volumes = volumes
+      )
+    } yield MarathonApp(
+      id = "/" + metaApp.name,
+      container = container,
+      cpus = cpus,
+      mem = memory,
+      instances = num_instances,
+      cmd = cmd,
+      args = args,
+      ports = port_mappings map { _.map {_.service_port} } getOrElse Seq(),
+      labels = labels,
+      healthChecks = health_checks map {_.map { hc => MarathonHealthCheck(
+        protocol = Some(hc.protocol),
+        path = Some(hc.path),
+        portIndex = None, // TODO: figure out how to define this
+        gracePeriodSeconds = Some(hc.grace_period_seconds),
+        intervalSeconds = Some(hc.interval_seconds),
+        timeoutSeconds = Some(hc.timeout_seconds),
+        maxConsecutiveFailures = Some(hc.max_consecutive_failures)
+      )}},
+      env = env,
+      tasksStaged = tasks_staged,
+      tasksRunning = tasks_running,
+      tasksHealthy = tasks_healthy,
+      tasksUnhealthy = tasks_unhealthy
+    ) 
+    mc recoverWith {
+      case e: Throwable => throw new IllegalArgumentException("Could not parse container properties",e)
+    }
+  }
+
+
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonApp(name: String, inputJson: JsObject) = {
+  def toMarathonApp(name: String, inputJson: JsObject): MarathonApp = {
     
     val props = (inputJson \ "properties").validate[InputContainerProperties].map {
       case ps: InputContainerProperties => ps
@@ -213,19 +377,20 @@ package object marathon {
       case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
     }.toMap
 
-    val docker = MarathonDocker(
+    val docker = if(props.container_type.toUpperCase == "DOCKER") Some(MarathonDocker(
         image = props.image,
         network = props.network,
         forcePullImage = Some(props.force_pull),
         portMappings = Some(portmap(props.port_mappings))
-    )
-        
+    )) else None
+
     val container = MarathonContainer(
         docker = docker,
+        containerType = props.container_type,
         volumes = props.volumes)
 
     MarathonApp(
-      id = name,
+      id = "/" + name,
       container = container,
       cpus = props.cpus,
       mem = props.memory,

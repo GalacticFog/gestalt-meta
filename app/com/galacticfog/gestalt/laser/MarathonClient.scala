@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.laser
 
+import com.galacticfog.gestalt.meta.api.errors.{ConflictException, BadRequestException, ResourceNotFoundException}
 import org.joda.time.DateTime
 import play.api.Logger
 import play.api.libs.ws.WSClient
@@ -16,9 +17,15 @@ case class ContainerStats(id: String,
                           memory: Double,
                           image: String,
                           age: DateTime,
-                          numInstances: Int)
+                          numInstances: Int,
+                          tasksStaged: Int,
+                          tasksRunning: Int,
+                          tasksHealthy: Int,
+                          tasksUnhealthy: Int
+                         )
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
+
 
   def listApplications(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     for {
@@ -47,9 +54,9 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   /**
-     *Returns the raw json from Marathon, but transformed to remove the org structure
+    * Returns the raw json from Marathon, but transformed to remove the org structure
    **/
-  def listApplicationsInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
+  def listApplicationsInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[JsObject]] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
     // therefore, to get these, we have to loop over all apps :(
@@ -58,10 +65,55 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     allApps map { marResp =>
       marResp.status match {
         case 200 =>
-          val envApps = (marResp.json \ "apps").as[Seq[JsObject]].flatMap(MarathonClient.filterXformAppsByGroup(groupId))
-          Json.obj(
-            "apps" -> envApps
-          )
+          (marResp.json \ "apps").as[Seq[JsObject]].flatMap(MarathonClient.filterXformAppsByGroup(groupId))
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+      }
+    }
+  }
+
+  /**
+    * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
+    * @param fqon fully-qualified org name
+    * @param wrkName workspace name
+    * @param envName environment name
+    * @param localAppId local name of the app, stripped of the above
+    */
+  def getApplication_marathon_v2(fqon: String, wrkName: String, envName: String, localAppId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
+    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
+    // therefore, to get these, we have to loop over all apps :(
+    // val appGroup = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps.counts").get()
+    val url = s"${marathonAddress}/v2/apps/" + groupId.stripPrefix("/").stripSuffix("/") + "/" + localAppId.stripPrefix("/")
+    val app = client.url(url).get()
+    app map { marResp =>
+      marResp.status match {
+        case 404 =>  throw new ResourceNotFoundException(marResp.body)
+        case 200 =>
+          val xformApp = (marResp.json \ "app").asOpt[JsObject] flatMap MarathonClient.filterXformAppsByGroup(groupId)
+          xformApp getOrElse(throw new RuntimeException("could not extract/transform app from Marathon REST response"))
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+      }
+    }
+  }
+
+  /**
+    *Returns the raw json from Marathon, but transformed to remove the org structure
+    **/
+  def getApplicationInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String, appId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
+    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
+    // therefore, to get these, we have to loop over all apps :(
+    // val appGroup = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps.counts").get()
+    val allApps = client.url(s"${marathonAddress}/v2/apps/${groupId.stripSuffix("/")}/${appId.stripPrefix("/")}").get()
+    allApps map { marResp =>
+      marResp.status match {
+        case 404 => throw new ResourceNotFoundException(marResp.statusText)
+        case 200 =>
+          val app = (marResp.json \ "app").as[JsObject]
+          MarathonClient.filterXformAppsByGroup(groupId)(app) match {
+            case Some(xformedApp) => Json.obj("app" -> xformedApp)
+            case None => throw new RuntimeException("could not transform appId from Marathon RESP API response")
+          }
         case _ => throw new RuntimeException("unexpected return from Marathon REST API")
       }
     }
@@ -94,13 +146,22 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       case e: JsError => Future.failed(new RuntimeException("error extracting and transforming app id"))
       case JsSuccess(newPayload,_) =>
         Logger.info(s"new payload:\n${Json.prettyPrint(newPayload)}")
-        client.url(s"${marathonAddress}/v2/apps").post(newPayload) map { r =>
-          r.json.transform(stripIdXForm) match {
-            case e: JsError =>
-              Logger.warn("Error stripping Gestalt context prefix from Marathon app id post-creation")
-              r.json
-            case JsSuccess(newPayload,_) =>
-              newPayload
+        client.url(s"${marathonAddress}/v2/apps").post(newPayload) map { marResp =>
+          marResp.status match {
+            case s if (200 to 299).toSeq.contains(s) => marResp.json.transform(stripIdXForm) match {
+              case e: JsError =>
+                Logger.warn("Error stripping Gestalt context prefix from Marathon app id post-creation")
+                marResp.json
+              case JsSuccess(newPayload,_) =>
+                newPayload
+            }
+            case b if b == 409 =>
+              throw new ConflictException(
+                Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+            case b if Seq(400,422).contains(b)  =>
+              throw new BadRequestException(
+                Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+            case _ => throw new RuntimeException(marResp.body)
           }
         }
     }
@@ -200,13 +261,36 @@ case object MarathonClient {
           service <- (marApp \ "id").asOpt[String]
           ctype = (marApp \ "container" \ "type").asOpt[String] getOrElse "UNKNOWN"
           image = (marApp \ "container" \ "docker" \ "image").asOpt[String] getOrElse ""
-          numStaged <- (marApp \ "tasksStaged").asOpt[Int]
-          numRunning <- (marApp \ "tasksRunning").asOpt[Int]
-          status = if (numStaged > 0 && numRunning > 0) "SCALING" else if (numRunning > 0) "RUNNING" else if (numStaged > 0) "SCALING" else "SUSPENDED"
+          instances <- (marApp \ "instances").asOpt[Int]
+          tasksStaged = (marApp \ "tasksStaged").asOpt[Int] getOrElse 0
+          tasksRunning = (marApp \ "tasksRunning").asOpt[Int] getOrElse 0
+          tasksHealthy = (marApp \ "tasksHealthy").asOpt[Int] getOrElse 0
+          tasksUnhealthy = (marApp \ "tasksUnhealthy").asOpt[Int] getOrElse 0
+          status = (instances, tasksRunning, tasksHealthy, tasksUnhealthy) match {
+            case (i,r,h,u) if r != i => "SCALING"
+            case (i,r,h,u) if i == 0 => "SUSPENDED"
+            case (i,r,h,u) if h == i => "HEALTHY"
+            case (i,r,h,u) if u > 0  => "UNHEALTHY"
+            case _ => "RUNNING" // r == i > 0 && u == 0 but no health checks
+          }
+          // if (tasksStaged > 0 && tasksRunning > 0) "SCALING" else if (tasksRunning > 0) "RUNNING" else if (tasksStaged > 0) "SCALING" else "SUSPENDED"
           cpus <- (marApp \ "cpus").asOpt[Double]
           memory  <- (marApp \ "mem").asOpt[Double]
           age <- (marApp \ "version").asOpt[String] map DateTime.parse
-    } yield ContainerStats(status = status, containerType = ctype, id = service, cpus = cpus, memory = memory, image = image, age = age, numInstances = numRunning)
+    } yield ContainerStats(
+      status = status,
+      containerType = ctype,
+      id = service,
+      cpus = cpus,
+      memory = memory,
+      image = image,
+      age = age,
+      numInstances = instances,
+      tasksRunning = tasksRunning,
+      tasksStaged = tasksStaged,
+      tasksHealthy = tasksHealthy,
+      tasksUnhealthy = tasksUnhealthy
+    )
   }
 
   def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {

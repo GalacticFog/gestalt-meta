@@ -260,7 +260,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     (p -> c)
   }
 
-  private def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+  def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
   def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
     if (!getExpandParam(request.queryString)) {
@@ -301,42 +301,15 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
             _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
             mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
             outputMetaContainers = metaCons map { originalMetaCon =>
-              val outputContainer = for {
+              val stats = for {
                 guid <- metaCon2guid.get(originalMetaCon.id)
                 marCon <- mapMarCons.get(guid)
-              } yield updateMetaContainerWithStats(originalMetaCon, marCon)
-              outputContainer getOrElse originalMetaCon
+              } yield marCon
+              MarathonController.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
             }
           } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
       }
     }
-  }
-
-  private def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: ContainerStats)
-                                          (implicit request: ResourceController.SecuredRequest[AnyContent]) = {
-    val updatedMetaCon = metaCon.copy(
-      properties = metaCon.properties map {
-        _ ++ Seq(
-          "age" -> stats.age.toString,
-          "status" -> stats.status,
-          "num_instances" -> stats.numInstances.toString
-        )
-      } orElse {
-        Some(Map(
-          "age" -> stats.age.toString,
-          "status" -> stats.status,
-          "num_instances" -> stats.numInstances.toString
-        ))
-      })
-    Future{ ResourceFactory.update(updatedMetaCon, request.identity.account.id ) } onComplete {
-      case Success(Success(updatedContainer)) =>
-        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
-      case Success(Failure(e)) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-      case Failure(e) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-    }
-    updatedMetaCon
   }
 
   def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>

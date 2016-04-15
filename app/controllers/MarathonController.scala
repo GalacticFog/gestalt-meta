@@ -3,6 +3,8 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.output.Output
+import play.api.mvc.AnyContent
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
@@ -99,15 +101,127 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def getMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID, proxyUri: String) = Authenticate(fqon).async { implicit request =>
-
-    val provider = marathonProvider(providerId)
-
-    execAppFunction(fqon, parentType, environment, provider, proxyUri) {
-      marathonClient(provider).listApplicationsInEnvironment_marathon_v2
-    } map { Ok(_) } recover {
-      case e: Throwable => BadRequest(e.getMessage)
+  def getMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
+    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    MarathonController.appComponents(environment) match {
+      case Failure(e) => Future.successful(HandleExceptions(e))
+      case Success((wrk, env)) =>
+        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+        for {
+          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
+          // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
+          metaCon2guid = (for {
+            metaCon <- metaCons
+            props <- metaCon.properties
+            providerProp <- props.get("provider")
+            pobj <- Try{Json.parse(providerProp)}.toOption
+            providerId <- (pobj \ "id").asOpt[UUID]
+            eid <- props.get("external_id")
+            // MarathonClient.listApplicationsInEnvironment strips env app group prefix
+            localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
+          } yield (metaCon.id -> (providerId,localEid))).toMap
+          // all the providers we care about
+          relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
+            pid => Try{MarathonController.marathonProvider(pid)}.toOption
+          }
+          // id is only unique inside a marathon provider, so we have to zip these with the provider ID
+          triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
+            val marCons = MarathonController.marathonClient(pid).listApplicationsInEnvironment(fqon, wrk.name, env.name)
+            val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
+            // wrap this in a try so that failures don't crash the whole list in Future.traverse
+            ResourceController.futureToFutureTry(pidsAndMarCons)
+          })
+          successfulContainerListings = triedContainerListings collect {case Success(x) => x}
+          marCons = successfulContainerListings.flatten
+          _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
+          mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
+          outputMetaContainers = metaCons map { originalMetaCon =>
+            val stats = for {
+              guid <- metaCon2guid.get(originalMetaCon.id)
+              marCon <- mapMarCons.get(guid)
+            } yield marCon
+            updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
+          }
+          outputMarathonContainers = outputMetaContainers flatMap { metaApp =>
+            (meta2Marathon(metaApp) map {Json.toJson(_).as[JsObject]}).toOption
+          }
+        } yield Ok(Json.obj("apps" -> outputMarathonContainers))
     }
+  }
+
+  /**
+    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
+    */
+  def getMarathonApp(fqon: String, parentType: String, envId: UUID, providerId: UUID, appId: String) = Authenticate(fqon).async { implicit request =>
+    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    MarathonController.appComponents(envId) match {
+      case Failure(e) => Future.successful(HandleExceptions(e))
+      case Success((wrk, env)) =>
+        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+        for {
+          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, envId)}
+          metaCon = {
+            val cons = metaCons.flatMap {testApp =>
+              for {
+                props <- testApp.properties
+                providerProp <- props.get("provider")
+                pobj <- Try{Json.parse(providerProp)}.toOption
+                pid <- (pobj \ "id").asOpt[UUID]
+                if pid == providerId
+                eid <- props.get("external_id")
+                // MarathonClient.listApplicationsInEnvironment strips env app group prefix
+                localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
+                if localEid == appId.stripPrefix("/")
+              } yield testApp
+            }
+            if (cons.size > 1) log.warn(s"found multiple container with the same external id a single provider (${providerId}); this represents a bug.")
+            cons.headOption
+          } getOrElse(throw new ResourceNotFoundException(s"cannot find container with id ${appId} in environment ${envId}"))
+          provider = MarathonController.marathonProvider(providerId)
+          client = MarathonController.marathonClient(provider)
+          marConTry <- ResourceController.futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
+          stats = marConTry.toOption flatMap MarathonClient.marathon2Container
+          outputMetaContainer = updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
+          outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not cover meta container to marathon container"))
+        } yield Ok(Json.obj("app" -> outputMarathonContainer))
+    }
+  }
+
+  def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
+    val newStats = stats match {
+      case Some(stats) => Seq(
+        "age" -> stats.age.toString,
+        "status" -> stats.status,
+        "num_instances" -> stats.numInstances.toString,
+        "tasks_running" -> stats.tasksRunning.toString,
+        "tasks_healthy" -> stats.tasksHealthy.toString,
+        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+        "tasks_staged" -> stats.tasksStaged.toString
+      )
+      case None => Seq(
+        "status" -> "LOST",
+        "num_instances" -> "0",
+        "tasks_running" -> "0",
+        "tasks_healthy" -> "0",
+        "tasks_unhealthy" -> "0",
+        "tasks_staged" -> "0"
+      )
+    }
+    val updatedMetaCon = metaCon.copy(
+      properties = metaCon.properties map {
+        _ ++ newStats
+      } orElse {
+        Some(newStats toMap)
+      })
+    Future{ ResourceFactory.update(updatedMetaCon, creatorId) } onComplete {
+      case Success(Success(updatedContainer)) =>
+        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
+      case Success(Failure(e)) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+      case Failure(e) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+    }
+    updatedMetaCon
   }
 
   /**
@@ -314,7 +428,17 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
 
             log.debug(s"Scaling Marathon App...")
             scaleMarathonApp(c, numInstances) map {
-              marathonJson => Accepted(marathonJson) // TODO: scaleMarathonApp returns Marathon JSON; need to return Meta JSON
+              marathonJson => Accepted(Output.renderInstance(c.copy(
+                properties = c.properties map {
+                  _ ++ Seq(
+                    "num_instances" -> numInstances.toString,
+                    "status" -> "SCALING"
+                  )
+                } orElse Some(Map(
+                  "num_instances" -> numInstances.toString,
+                  "status" -> "SCALING"
+                ))
+              ), META_URL))
             } recover {
               case e: Throwable => HandleExceptions(e)
             }
@@ -465,7 +589,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     val provider = marathonProvider(containerProviderId(container))
     marathonClient(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
   }
-  
+
 }
 
 
