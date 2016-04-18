@@ -44,7 +44,10 @@ package object events {
       lambdaArgs: EventLambdaArgs,
       providerId: UUID,
       metaUrl: Option[String] = None) {
-    def toJson() = Json.toJson(this)       
+    def toJson() = Json.obj(
+      "eventContext" -> Json.toJson(eventContext),
+      "lambdaArgs" -> (Json.toJson(lambdaArgs).as[JsObject] ++ Json.obj("providerId" -> providerId, "metaUrl" -> metaUrl))
+    )
   }
   
   object MigrateEvent {
