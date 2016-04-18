@@ -393,8 +393,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
 
           val newjson = injectParentLink(
-              request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent
-          )
+              request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
           
           val ps = getProviderInfo(newjson)
 

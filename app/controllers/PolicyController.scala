@@ -38,7 +38,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   type FilterFunction = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
   type LookupFunction = ((UUID,UUID) => Try[ResourceLike])
-
+  
   //case class LookFunction[T <: ResourceLike](t1: UUID, t2: UUID) extends ((UUID,UUID) => T)
   
   def getResourceListOrgFqon(fqon: String, resourceType: String) = Authenticate(fqon) { implicit request =>
@@ -46,7 +46,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     val (subtypes,filter) = setupFilter(rtid)
     getResourceListFqonCommon(fqon, ResourceIds.Org, fqid(fqon), rtid, subtypes)(filter, Some(request.queryString))
   }
-
+  
   def getResourceListFqon(fqon: String, parentType: String, parentId: UUID, resourceType: String) = Authenticate(fqon) { implicit request =>
     val ptid = UUID.fromString(parentType)
     val rtid = UUID.fromString(resourceType)
