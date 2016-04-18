@@ -2,6 +2,9 @@
 # This file defines all application routes (Higher priority routes first)
 # ~~~~
 
+
+GET		/health controllers.ResourceController.health()
+
 GET 	/rules  controllers.PolicyController.getRulesGlobal()
 
 GET		/about			controllers.ResourceController.about()
@@ -285,7 +288,6 @@ DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id  	controllers
 ############################
 # CONTAINERS
 ############################
-
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 						        controllers.ResourceController.getContainersFqon(fqon: String)
 

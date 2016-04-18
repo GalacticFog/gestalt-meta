@@ -58,6 +58,13 @@ import com.galacticfog.gestalt.meta.api.BuildInfo
 object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   
+  def health() = Action {
+    MetaHealth.selfCheck(verbose = false) match {
+      case Left(err) => InternalServerError(err)
+      case Right(success) => Ok(success)
+    }
+  }
+  
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
