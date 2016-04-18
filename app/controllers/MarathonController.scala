@@ -188,10 +188,12 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   }
 
   def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
+    val isMigrating = metaCon.properties flatMap {_.get("status")} exists {_ == "MIGRATING"}
+
     val newStats = stats match {
       case Some(stats) => Seq(
         "age" -> stats.age.toString,
-        "status" -> stats.status,
+        "status" -> {if (isMigrating) "MIGRATING" else stats.status},
         "num_instances" -> stats.numInstances.toString,
         "tasks_running" -> stats.tasksRunning.toString,
         "tasks_healthy" -> stats.tasksHealthy.toString,
@@ -207,12 +209,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         "tasks_staged" -> "0"
       )
     }
-    val updatedMetaCon = metaCon.copy(
-      properties = metaCon.properties map {
-        _ ++ newStats
-      } orElse {
-        Some(newStats toMap)
-      })
+    val updatedMetaCon = upsertProperties(metaCon, newStats:_*)
     Future{ ResourceFactory.update(updatedMetaCon, creatorId) } onComplete {
       case Success(Success(updatedContainer)) =>
         log.trace(s"updated container ${updatedContainer.id} with info from marathon")
