@@ -187,8 +187,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-
-
   /**
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
@@ -499,7 +497,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
 
     appComponents(environment) match {

@@ -46,9 +46,11 @@ package object events {
   case class PolicyEvent(
       eventContext: EventContext,
       lambdaArgs: EventLambdaArgs,
-      providerId: UUID,
-      metaUrl: Option[String] = None) {
-    def toJson() = Json.toJson(this)       
+      providerId: UUID) {
+    def toJson() = Json.obj(
+      "eventContext" -> Json.toJson(eventContext),
+      "lambdaArgs" -> (Json.toJson(lambdaArgs).as[JsObject] ++ Json.obj("providerId" -> providerId))
+    )
   }
   
   object PolicyEvent {
@@ -63,7 +65,7 @@ package object events {
       val workspace = UUID.fromString(env.properties.get("workspace"))
       val context = EventContext(eventName, meta, workspace, env.id, env.orgId, container.id, "")
       val args = EventLambdaArgs(container, rule)
-      PolicyEvent(context, args, provider, Some(meta))
+      PolicyEvent(context, args, provider)
     }
   }
   
