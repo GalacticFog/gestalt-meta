@@ -42,11 +42,10 @@ package object events {
   case class MigrateEvent(
       eventContext: EventContext,
       lambdaArgs: EventLambdaArgs,
-      providerId: UUID,
-      metaUrl: Option[String] = None) {
+      providerId: UUID) {
     def toJson() = Json.obj(
       "eventContext" -> Json.toJson(eventContext),
-      "lambdaArgs" -> (Json.toJson(lambdaArgs).as[JsObject] ++ Json.obj("providerId" -> providerId, "metaUrl" -> metaUrl))
+      "lambdaArgs" -> (Json.toJson(lambdaArgs).as[JsObject] ++ Json.obj("providerId" -> providerId))
     )
   }
   
@@ -61,7 +60,7 @@ package object events {
       val workspace = UUID.fromString(env.properties.get("workspace"))
       val context = EventContext("container.migrate", meta, workspace, env.id, env.orgId, container.id, "")
       val args = EventLambdaArgs(container, rule)
-      MigrateEvent(context, args, provider, Some(meta))
+      MigrateEvent(context, args, provider)
     }
   }
   

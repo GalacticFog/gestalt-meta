@@ -516,7 +516,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   }
   
   protected [controllers] def publishMigrate(event: MigrateEvent) = {
-    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
+    val json = event.toJson()
+    log.debug(s"publishing migrate event:\n${json}")
+    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), json)
   }
   
   protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]) = Try {
