@@ -39,9 +39,9 @@ object MetaHealth {
 
   val rabbitWebUrl = "http://%s".format(EnvConfig.rabbitHost)
   
-  val gatewayConfig = HostConfig.make(new URL("http://gateway.dev.galacticfog.com"))
-  //val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+  val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+  // TODO: We need to store creds for all of these service in env.
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
       creds = Option(BasicCredential("guest", "guest")))  
   

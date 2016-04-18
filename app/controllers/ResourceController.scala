@@ -65,6 +65,13 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  def healthAuthenticated(fqon: String) = Authenticate(fqon) { implicit request =>
+    MetaHealth.selfCheck(verbose = true) match {
+      case Left(err) => InternalServerError(err)
+      case Right(success) => Ok(success)
+    }
+  }
+  
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
