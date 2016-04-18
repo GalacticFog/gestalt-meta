@@ -187,42 +187,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
-    val newStats = stats match {
-      case Some(stats) => Seq(
-        "age" -> stats.age.toString,
-        "status" -> stats.status,
-        "num_instances" -> stats.numInstances.toString,
-        "tasks_running" -> stats.tasksRunning.toString,
-        "tasks_healthy" -> stats.tasksHealthy.toString,
-        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged" -> stats.tasksStaged.toString
-      )
-      case None => Seq(
-        "status" -> "LOST",
-        "num_instances" -> "0",
-        "tasks_running" -> "0",
-        "tasks_healthy" -> "0",
-        "tasks_unhealthy" -> "0",
-        "tasks_staged" -> "0"
-      )
-    }
-    val updatedMetaCon = metaCon.copy(
-      properties = metaCon.properties map {
-        _ ++ newStats
-      } orElse {
-        Some(newStats toMap)
-      })
-    Future{ ResourceFactory.update(updatedMetaCon, creatorId) } onComplete {
-      case Success(Success(updatedContainer)) =>
-        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
-      case Success(Failure(e)) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-      case Failure(e) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-    }
-    updatedMetaCon
-  }
+
 
   /**
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
@@ -287,6 +252,53 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
+  
+  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
+    val newStats = stats match {
+      case Some(stats) => Seq(
+        "age" -> stats.age.toString,
+        "status" -> stats.status,
+        "num_instances" -> stats.numInstances.toString,
+        "tasks_running" -> stats.tasksRunning.toString,
+        "tasks_healthy" -> stats.tasksHealthy.toString,
+        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+        "tasks_staged" -> stats.tasksStaged.toString
+      )
+      case None => Seq(
+        "status" -> "LOST",
+        "num_instances" -> "0",
+        "tasks_running" -> "0",
+        "tasks_healthy" -> "0",
+        "tasks_unhealthy" -> "0",
+        "tasks_staged" -> "0"
+      )
+    }
+    val updatedMetaCon = metaCon.copy(
+      properties = metaCon.properties map {
+        _ ++ newStats
+      } orElse {
+        Some(newStats toMap)
+      })
+    Future{ ResourceFactory.update(updatedMetaCon, creatorId) } onComplete {
+      case Success(Success(updatedContainer)) =>
+        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
+      case Success(Failure(e)) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+      case Failure(e) =>
+        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+    }
+    updatedMetaCon
+  }
+  
+  /**
+   * Ensure Container input JSON is well-formed and valid. Ensures that required properties
+   * are given and fills in default values where appropriate.
+   */
+  protected [controllers] def normalizeInputContainer(inputJson: JsValue): JsObject = {
+    val defaults = containerWithDefaults(inputJson)
+    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
+    inputJson.as[JsObject] ++ Json.obj("properties" -> newprops)
+  }
 
   def postMarathonApp(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
@@ -312,24 +324,75 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             log.debug("Marathon App created:\n" + Json.prettyPrint(r))
 
             // Inject external_id property and full provider info
-            val marathonGroupId = groupId(fqon, wrk.name, env.name)
+            val marGroupId = groupId(fqon, wrk.name, env.name)
             val resourceJson = Seq(
-              "external_id" -> JsString(marathonGroupId.stripSuffix("/") + "/" + name.stripPrefix("/")),
-              "provider" -> Json.obj(
-                "id" -> provider.id.toString,
-                "name" -> provider.name
-              )
-            ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop)}
+              "external_id" -> externalIdJson(marGroupId, name),
+              "provider"    -> providerJson(provider) 
+            ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop) }
 
             // Create app in Meta
-            log.debug("Marathon-Group-ID : " + marathonGroupId)
             log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
-            createResourceD(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment))
+            
+            createResourceInstance(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment)) match {
+              case Failure(err) => Future { HandleExceptions(err) }
+              case Success(container) => {
+                
+//                log.debug("Searching for effective 'postcreate' rules...")
+//                effectiveEventRules(environment, Some(ContainerEvents.PostCreate)) map { rule =>
+//                  log.debug("Sending 'container.postcreate'...")
+//                  val event = PolicyEvent.make("container.postcreate", env, container, rule, provider.id, META_URL.get)
+//                  this.publishEvent(event.get) match {
+//                    case Failure(e) => println("FAILED SENDING MESSAGE: " + e.getMessage)
+//                    case Success(_) => println("***SUCCESS: sent '  container.postcreate'")
+//                  }
+//                }
+                
+                processContainerEvent(env, container, provider.id, ContainerEvents.PostCreate) match {
+                  case Failure(e) => log.error("Failed Publishing Event: " + e.getMessage)
+                  case Success(_) => log.debug(s"Success: Published ${ContainerEvents.PostCreate}")
+                }
+                
+                Future { Created(Output.renderInstance(container)) }
+              }
+            }
+            
         } recover {
           case e: Throwable => HandleExceptions(e)
         }
+        
+        
       }
     }
+  }
+  
+  def processContainerEvent(
+      parent: GestaltResourceInstance, 
+      container: GestaltResourceInstance,
+      provider: UUID,
+      eventName: String)(implicit request: SecuredRequest[_]): Try[Unit] = Try {
+    
+    log.debug(s"Searching for effective '${eventName}' rules...")
+    effectiveEventRules(parent.id, Some(eventName)) match {
+      case None => Success(None)  
+      case Some(rule) => {
+        log.debug(s"Sending '$eventName'...")
+        for {
+          event  <- PolicyEvent.make(eventName, parent, container, rule, provider, META_URL.get)
+          status <- publishEvent(event)  
+        } yield status
+      }
+    }
+    
+  }
+  
+
+  
+  def providerJson(provider: GestaltResourceInstance) = {
+    Json.obj("id" -> provider.id.toString, "name" -> provider.name)
+  }
+  
+  def externalIdJson(marathonGroupId: String, containerName: String): JsString = {
+    JsString(marathonGroupId.stripSuffix("/") + "/" + containerName.stripPrefix("/"))
   }
   
   def groupId(fqon: String, workspaceName: String, environmentName: String) = {
@@ -369,51 +432,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def marathonProvider(provider: UUID): GestaltResourceInstance = {
-    ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
-      throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
-    }
-  }
-
-  def appComponents(environment: UUID /*, provider: UUID*/) = Try {
-    val we = ResourceController.findWorkspaceEnvironment(environment).get
-    (we._1, we._2)
-  }
-
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
-    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
-    log.debug("Marathon URL: " + providerUrl)
-    MarathonClient(WS.client, providerUrl)
-  }
-
-  /**
-   * Get a unique list (Set) of marathon providers in the given environment's scope.
-   * Uniqueness is determined by provider URL.
-   */
-  private def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
-
-    def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
-      ps match {
-        case Nil => acc
-        case h :: t => {
-          val url = (Json.parse(h.properties.get("config")) \ "url").as[String]
-          val m = if (acc.contains(url)) acc else acc ++ Map(url -> h)
-          go(t, m)
-        }
-      }
-    }
-    val providers = ResourceFactory.findAncestorProviders(environment) filter { p =>
-      p.typeId == ResourceIds.MarathonProvider
-    }
-    go(providers, Map())
-  }
-
-  def normalizeInputContainer(inputJson: JsValue): JsObject = {
-    val defaults = containerWithDefaults(inputJson)
-    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
-    inputJson.as[JsObject] ++ Json.obj("properties" -> newprops)
-  }
-
+  
   def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")
 
@@ -449,39 +468,6 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   }
   
   
-  def eventsClient() = {  
-    AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
-  }
-  
-  def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
-  
-  def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
-    val rs = for {
-      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
-      r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
-    } yield r
-    
-    val fs = if (event.isEmpty) rs else {
-      rs filter { _.properties.get("actions").contains(event.get) }
-    }
-    // TODO: This is temporary. Need a strategy for multiple matching rules.
-    if (fs.isEmpty) None else Some(fs(0))
-  }
-
-  
-  def getMigrationContainer(id: UUID) = Try {
-    ResourceFactory.findById(ResourceIds.Container, id) match {
-      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
-      case Some(container) => {  
-        val props = container.properties.get
-        if (props.contains("status") && props("status") == "MIGRATING") {
-          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
-        } else container
-      }
-    }    
-  }
-  
-  
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
 
     val updated = for {
@@ -495,9 +481,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       
       container    <- getMigrationContainer(id)
       
-      message      <- MigrateEvent.make(environment, container, rule, provider, META_URL.get)
+      message      <- PolicyEvent.make("container.migrate", environment, container, rule, provider, META_URL.get)
       
-      publish      <- publishMigrate(message)
+      publish      <- publishEvent(message)
       
       newcontainer <- ResourceFactory.update(upsertProperties(container, "status" -> "MIGRATING"), request.identity.account.id)
       
@@ -511,45 +497,15 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
       case Success(c) => Accepted(Output.renderInstance(c, META_URL))
     }
-
   }
 
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-  }
-  
-  protected [controllers] def publishMigrate(event: MigrateEvent) = {
-    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
-  }
-  
-  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]) = Try {
-    val PROVIDER_KEY = "provider"
-    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
-      throw new BadRequestException("You must supply a provider-id in the query-string, i.e., .../migrate?provider={UUID}")
-    else {
-      try {
-       val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
-       ResourceFactory.findById(ResourceIds.MarathonProvider, pid) match {
-         case None => throw new ResourceNotFoundException(
-             s"Invalid querystring. Provider with ID '$pid' not found.")
-         case Some(_) => pid
-       }
-      } catch {
-        case i: IllegalArgumentException => 
-          throw new BadRequestException(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
-        case e: Throwable => throw e
-      }
-    }
-  }  
   
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    log.debug("Looking up workspace and environment for container...")
 
     appComponents(environment) match {
       case Failure(e) => HandleExceptions(e)
       case Success((wrk, env)) => {
 
-        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
         ResourceFactory.findById(ResourceIds.Container, id) match {
           case None => NotFoundResult(s"Container with ID '$id' not found.")
           case Some(c) => {
@@ -568,14 +524,68 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
     }
   }
+  
+  /**
+   * Get a unique list (Set) of marathon providers in the given environment's scope.
+   * Uniqueness is determined by provider URL.
+   */
+  protected [controllers] def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
 
-  def containerProviderId(c: GestaltResourceInstance): UUID = {
-    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
-    log.debug("Provider-ID : " + pid)
-    UUID.fromString(pid)
+    def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+          val url = (Json.parse(h.properties.get("config")) \ "url").as[String]
+          val m = if (acc.contains(url)) acc else acc ++ Map(url -> h)
+          go(t, m)
+        }
+      }
+    }
+    val providers = ResourceFactory.findAncestorProviders(environment) filter { p =>
+      p.typeId == ResourceIds.MarathonProvider
+    }
+    go(providers, Map())
+  }  
+
+  /**
+   * Lookup and validate a Container for migration. Verifies that the container exists
+   * and that it is in a state where migration is possible.
+   * 
+   * @param  id the UUID of the Container to migrate.
+   * @return    the requested Container as Try[GestaltResourceInstance]
+   */
+  protected [controllers] def getMigrationContainer(id: UUID) = Try {
+    ResourceFactory.findById(ResourceIds.Container, id) match {
+      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
+      case Some(container) => {  
+        val props = container.properties.get
+        if (props.contains("status") && props("status") == "MIGRATING") {
+          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+        } else container
+      }
+    }    
   }
-
-  def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
+  
+  /**
+   * Get all Event-Rules that are in effect for the given parent Resource.
+   * 
+   * @param parentId UUID of the resource to get event rules for
+   * @param event optional event name to filter for rules applying to a specific event.
+   */
+  protected [controllers] def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
+    val rs = for {
+      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
+      r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
+    } yield r
+    
+    val fs = if (event.isEmpty) rs else {
+      rs filter { _.properties.get("actions").contains(event.get) }
+    }
+    // TODO: This is temporary. Need a strategy for multiple matching rules.
+    if (fs.isEmpty) None else Some(fs(0))
+  }  
+  
+  protected [controllers] def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
     val provider = marathonProvider(containerProviderId(container))
     container.properties flatMap {_.get("external_id")} match {
       case Some(externalId) =>
@@ -585,12 +595,79 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
   }
 
-  def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance): Future[JsValue] = {
+  protected [controllers] def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance): Future[JsValue] = {
     val provider = marathonProvider(containerProviderId(container))
     marathonClient(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
   }
 
+  
+  protected [controllers] def appComponents(environment: UUID /*, provider: UUID*/) = Try {
+    val we = ResourceController.findWorkspaceEnvironment(environment).get
+    (we._1, we._2)
+  }
+
+  protected [controllers] def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
+    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
+    log.debug("Marathon URL: " + providerUrl)
+    MarathonClient(WS.client, providerUrl)
+  }
+  
+  protected [controllers] def marathonProvider(provider: UUID): GestaltResourceInstance = {
+    ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
+      throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
+    }
+  }  
+  
+  protected [controllers] def eventsClient() = {  
+    AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
+  }
+    
+  
+  /**
+   * Extract and validate the 'provider' querystring parameter. 
+   * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
+   * 
+   * @param qs the complete, unmodified queryString from the origina request.
+   */
+  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]) = Try {
+    val PROVIDER_KEY = "provider"
+    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
+      throw new BadRequestException("You must supply a provider-id in the query-string, i.e., .../migrate?provider={UUID}")
+    else {
+      try {
+       val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
+       ResourceFactory.findById(ResourceIds.MarathonProvider, pid) match {
+         case None => throw new ResourceNotFoundException(
+             s"Invalid querystring. Provider with ID '$pid' not found.")
+         case Some(_) => pid
+       }
+      } catch {
+        case i: IllegalArgumentException => 
+          throw new BadRequestException(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
+        case e: Throwable => throw e
+      }
+    }
+  }    
+  
+  protected [controllers] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+  }
+  
+  protected [controllers] def publishEvent(event: PolicyEvent) = {
+    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
+  }
+  
+  protected [controllers] def containerProviderId(c: GestaltResourceInstance): UUID = {
+    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
+    log.debug("Provider-ID : " + pid)
+    UUID.fromString(pid)
+  }  
+
+  private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
+
+  private object ContainerEvents {
+    val Migrate = "container.migrate"
+    val PreCreate = "container.precreate"
+    val PostCreate = "container.postcreate"
+  }  
 }
-
-
-
