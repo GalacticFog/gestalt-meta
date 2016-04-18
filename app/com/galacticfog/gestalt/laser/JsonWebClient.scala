@@ -39,6 +39,11 @@ import com.galacticfog.gestalt.meta.api.sdk._
 
 case class ApiResponse(status: Int, output: Option[JsValue], error: Option[String] = None)
 
+object JsonWebClient {
+  val ALL_GOOD = Seq((200 to 299):_*)
+  
+  def apply(config: HostConfig) = new JsonWebClient(config)
+}
 
 class JsonWebClient(config: HostConfig) {
   
@@ -51,24 +56,25 @@ class JsonWebClient(config: HostConfig) {
   val baseUrl = "%s://%s%s".format(config.protocol, config.host, portString)
   val timeout = config.timeout
 
-  val ALL_GOOD = Seq((200 to 299):_*)
   
-  def get(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
+  def close() = client.close()
+  
+  def get(resource: String, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = sync(resource, timeout)(request(_).get())
     unwrapResponse(response, expected)
   }
 
-  def postEmpty(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
+  def postEmpty(resource: String, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = Await.result(request(resource).post(Array.empty[Byte]), timeout seconds)
     unwrapResponse(response, expected)
   }
 
-  def post(resource: String, payload: JsValue, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
+  def post(resource: String, payload: JsValue, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = Await.result(request(resource).post(payload), timeout seconds)
     unwrapResponse(response, expected)
   }
 
-  def delete(resource: String, expected: Seq[Int] = ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
+  def delete(resource: String, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = sync(resource, timeout)(request(_).delete())
     unwrapResponse(response, expected)
   }
@@ -91,9 +97,15 @@ class JsonWebClient(config: HostConfig) {
     ws.withRequestTimeout(timeout * 1000)
   }
 
+  import com.fasterxml.jackson.core.JsonParseException
+  
   def unwrapResponse(response: WSResponse, expected: Seq[Int]) = {
     if (expected.contains(response.status)) {
-      ApiResponse(response.status, output = Some(Json.parse(response.body)))
+      try {
+        ApiResponse(response.status, output = Some(Json.parse(response.body)))
+      } catch {
+        case jpe: JsonParseException => throw new ApiResponseException("Response was not JSON: " + jpe.getMessage)
+      }
     } else {
       println("ERROR: JsonWebClient.unwrapResponse => " + response.statusText)
       throw new ApiResponseException(
