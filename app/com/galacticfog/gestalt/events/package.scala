@@ -7,6 +7,7 @@ import play.api.libs.json._
 import java.util.UUID
 import scala.util.{Try,Success,Failure}
 import controllers.util.db.EnvConfig
+import play.api.{ Logger => log }
 
 package object events {
 
@@ -86,12 +87,17 @@ package object events {
     }
     
     def publish(ep: AmqpEndpoint, message: String): Try[Unit] = Try {
+      
+      log.debug(s"AmqpClient.publish(${ep.toString}, [message])")
+      
       val connection = factory.newConnection
       val channel = connection.createChannel
       
       try {
-        channel.exchangeDeclare( ep.exchange, "direct" )
-        channel.basicPublish( ep.exchange, ep.route, null, message.getBytes() )
+        channel.exchangeDeclare(ep.exchange, "direct")
+        channel.basicPublish(ep.exchange, ep.route, null, message.getBytes())
+      } catch {  
+        case e: Throwable => throw e
       } finally {
         channel.close()
         connection.close()
