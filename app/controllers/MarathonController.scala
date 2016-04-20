@@ -313,54 +313,73 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         val providerId = UUID.fromString {
           requiredJsString("id", (inputJson \ "properties" \ "provider" \ "id"))
         }
-
+        
         val provider = marathonProvider(providerId)
 
-        // Create app in Marathon
-        createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) flatMap {
-          r =>
-            log.debug("Marathon App created:\n" + Json.prettyPrint(r))
-
-            // Inject external_id property and full provider info
-            val marGroupId = groupId(fqon, wrk.name, env.name)
-            val resourceJson = Seq(
-              "external_id" -> externalIdJson(marGroupId, name),
-              "provider"    -> providerJson(provider) 
-            ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop) }
-
-            // Create app in Meta
-            log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
-            
-            createResourceInstance(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment)) match {
-              case Failure(err) => Future { HandleExceptions(err) }
-              case Success(container) => {
+        processPolicy(env, ContainerEvents.Create) match {
+          case Failure(e) => e match {
+            case c: ConflictException => 
+              Future(HandleExceptions(new ConflictException("Failed Pre-Condition : " + e.getMessage)))
+            case _ => Future(HandleExceptions(e))
+          }
+          case Success(_) => {
+          
+            // Create app in Marathon
+            createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) flatMap {
+              r =>
+                log.debug("Marathon App created:\n" + Json.prettyPrint(r))
+    
+                // Inject external_id property and full provider info
+                val marGroupId = groupId(fqon, wrk.name, env.name)
+                val resourceJson = Seq(
+                  "external_id" -> externalIdJson(marGroupId, name),
+                  "provider"    -> providerJson(provider) 
+                ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop) }
                 
-//                log.debug("Searching for effective 'postcreate' rules...")
-//                effectiveEventRules(environment, Some(ContainerEvents.PostCreate)) map { rule =>
-//                  log.debug("Sending 'container.postcreate'...")
-//                  val event = PolicyEvent.make("container.postcreate", env, container, rule, provider.id, META_URL.get)
-//                  this.publishEvent(event.get) match {
-//                    case Failure(e) => println("FAILED SENDING MESSAGE: " + e.getMessage)
-//                    case Success(_) => println("***SUCCESS: sent '  container.postcreate'")
-//                  }
-//                }
+                // Create app in Meta
+                log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
                 
-                processContainerEvent(env, container, provider.id, ContainerEvents.PostCreate) match {
-                  case Failure(e) => log.error("Failed Publishing Event: " + e.getMessage)
-                  case Success(_) => log.debug(s"Success: Published ${ContainerEvents.PostCreate}")
+                createResourceInstance(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment)) match {
+                  case Failure(err) => Future { HandleExceptions(err) }
+                  case Success(container) => {
+    
+                    processContainerEvent(env, container, provider.id, ContainerEvents.PostCreate) match {
+                      case Failure(e) => log.error("Failed Publishing Event: " + e.getMessage)
+                      case Success(_) => log.debug(s"Success: Published ${ContainerEvents.PostCreate}")
+                    }
+                    
+                    Future { Created(Output.renderInstance(container)) }
+                  }
                 }
                 
-                Future { Created(Output.renderInstance(container)) }
-              }
+            } recover {
+              case e: Throwable => HandleExceptions(e)
             }
-            
-        } recover {
-          case e: Throwable => HandleExceptions(e)
+          }
         }
-        
-        
       }
     }
+  }
+  
+  import com.galacticfog.gestalt.meta.policy._
+  
+  def toPredicate(s: String) = {
+    val j = Json.parse(s)
+    Predicate[Int](
+      property = (j \ "property").as[String],
+      operator = (j \ "operator").as[String],
+      value    = (j \ "value").as[Int]
+    )
+  }
+  
+  def processPolicy(target: GestaltResourceInstance, action: String) = Try {
+    log.debug(s"entered processPolicy([target], action = '$action')")
+    effectiveRules(target.id, Some(ResourceIds.RuleLimit), Seq(action)) foreach { r =>
+      val predicate = toPredicate(r.properties.get("eval_logic"))
+      val decision = decide(target, predicate)
+      
+      if (decision.isLeft) throw new ConflictException(decision.left.get)
+    }          
   }
   
   def processContainerEvent(
@@ -569,6 +588,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
    * @param parentId UUID of the resource to get event rules for
    * @param event optional event name to filter for rules applying to a specific event.
    */
+  
   protected [controllers] def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
     val rs = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
@@ -580,7 +600,30 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     }
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))
-  }  
+  }
+  
+  def effectiveRules(parentId: UUID, ruleType: Option[UUID] = None, actions: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+    val rules = for {
+      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
+      r <- ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id)
+    } yield r
+    
+    println("RULES:")
+    rules foreach { r => 
+      println("%s - %s - %s - %s".format(r.id, r.typeId, r.name, r.properties.get("actions")))
+    }
+
+    def array(sa: String) = Json.parse(sa).validate[Seq[String]].get
+    def matchAction(a: Seq[String], b: Seq[String]) = !(a intersect b).isEmpty
+    def matchType(test: UUID) = ( test == (ruleType getOrElse test) )
+
+    if (actions.isEmpty) rules else {
+      rules filter { r =>
+        matchType(r.typeId) &&
+        matchAction(array(r.properties.get("actions")), actions)
+      }
+    }
+  }
   
   protected [controllers] def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
     val provider = marathonProvider(containerProviderId(container))
@@ -665,6 +708,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   private object ContainerEvents {
     val Migrate = "container.migrate"
     val PreCreate = "container.precreate"
+    val Create = "container.create"
     val PostCreate = "container.postcreate"
   }  
 }

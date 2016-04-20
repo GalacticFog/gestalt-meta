@@ -44,7 +44,7 @@ def HandleExceptions(e: Throwable) = {
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
   
-  val metaApiExceptions: PartialFunction[Throwable,play.api.mvc.Result] = {
+  val metaApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
     case e: BadRequestException           => BadRequest(e.asJson)
     case e: UnrecognizedResourceException => BadRequest(e.asJson)
