@@ -97,6 +97,9 @@ libraryDependencies ++= Seq(
 )
 
 
+libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.2.2"
+
+
 // MockWS for testing
 libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
 

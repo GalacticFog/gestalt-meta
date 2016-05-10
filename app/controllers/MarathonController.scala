@@ -507,15 +507,11 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     } yield newcontainer
 
     updated match {
-      case Failure(e) => {
-        log.debug(e.toString)
-        log.debug(e.getStackTraceString)
-        HandleExceptions(e)
-      }
+      case Failure(e) => HandleExceptions(e)
       case Success(c) => Accepted(Output.renderInstance(c, META_URL))
     }
   }
-
+  
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
 
     appComponents(environment) match {

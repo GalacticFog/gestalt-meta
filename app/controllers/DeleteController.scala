@@ -197,6 +197,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   import com.galacticfog.gestalt.meta.api.output._
+  
   def hardDeleteLambda(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     hardDeleteLambdaCommon(org, id)
   }
@@ -207,8 +208,8 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     
     if (associatedRules.isEmpty) {
       log.debug("Deleting Lambda...")
-      Ok("Testing delete Lambda.")
-      //hardDeleteMetaResource(id, ResourceIds.Lambda) 
+      //Ok("Testing delete Lambda.")
+        hardDeleteMetaResource(id, ResourceIds.Lambda) 
       } else {
     
       log.warn("Conflict - Attempting to delete lambda with associated rules.")
