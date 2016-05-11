@@ -96,6 +96,10 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-security-play" 	% "2.1.0-SNAPSHOT" withSources()
 )
 
+
+// MockWS for testing
+libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
+
 libraryDependencies += "com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.1.0-SNAPSHOT"
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"
@@ -111,4 +115,7 @@ libraryDependencies += "org.scalikejdbc" % "scalikejdbc-test_2.11"   % "2.2.6"  
 libraryDependencies += "org.scalikejdbc" % "scalikejdbc-config_2.11" % "2.2.6" % "test"
 
 libraryDependencies += "com.typesafe.play" % "play-json_2.11" % "2.4.0-M2"
+
+libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
+
 

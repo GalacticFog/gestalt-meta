@@ -317,13 +317,17 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   def resolveProviderType(json: JsValue): UUID = {
     json \ "resource_type" match {
       case u: JsUndefined => 
-        throw new BadRequestException("You must provider resource_type, i.e., resource_type = Provider::Type::Name")
+        throw new BadRequestException("You must supply 'resource_type', i.e., resource_type = Provider::Type::Name")
       case v => {
+        
+        val types: Map[String,UUID] = 
+          ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
+            (p.name -> p.id) 
+          }.toMap
+
         log.debug("Parsed provider-type as : " + v.as[String])
         v.as[String] match {
-          case a if a == Resources.LambdaProvider     => ResourceIds.LambdaProvider
-          case b if b == Resources.ApiGatewayProvider => ResourceIds.ApiGatewayProvider
-          case c if c == Resources.MarathonProvider   => ResourceIds.MarathonProvider
+          case a if types.contains(a) => types(a)
           case e => throw new BadRequestException(s"Unknown provider type : '$e'")
         }
       }

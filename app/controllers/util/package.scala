@@ -22,6 +22,15 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
 import com.galacticfog.gestalt.meta.api.errors._
 
+import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
+import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => SecurityBadRequestException }
+import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ ForbiddenAPIException => SecurityForbiddenAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException => SecurityResourceNotFoundException }
+import com.galacticfog.gestalt.security.api.errors.{ ConflictException => SecurityConflictException }
+import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
+import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
+
 package object util {
   
   /* Return HTTP Results containing formatted system error JSON */
@@ -30,7 +39,53 @@ package object util {
   def ConflictResult(message: String) = Conflict(new ConflictException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
+def HandleExceptions(e: Throwable) = {
+    log.error(e.getMessage)
+    (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
+  }
   
+  val metaApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
+    case e: ResourceNotFoundException     => NotFound(e.asJson)
+    case e: BadRequestException           => BadRequest(e.asJson)
+    case e: UnrecognizedResourceException => BadRequest(e.asJson)
+    case e: ConflictException             => Conflict(e.asJson)    
+  }
+  
+  val securityApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
+    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
+    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
+    case e: SecurityConflictException         => ConflictResult(e.getMessage)
+    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
+    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
+    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)      
+  }
+  
+  val genericApiException: PartialFunction[Throwable, play.api.mvc.Result] = {
+    case x => GenericErrorResult(500, x.getMessage)
+  }
+  
+  def HandleRepositoryExceptions(e: Throwable) = e match {
+    case e: ResourceNotFoundException     => NotFound(e.asJson)
+    case e: BadRequestException           => BadRequest(e.asJson)
+    case e: UnrecognizedResourceException => BadRequest(e.asJson)
+    case e: ConflictException             => Conflict(e.asJson)
+    case x => {
+      if (x.isInstanceOf[SecurityRESTException])
+        HandleSecurityApiException(x)
+      else GenericErrorResult(500, x.getMessage)
+    }
+  }
+  
+  def HandleSecurityApiException(e: Throwable) = e.asInstanceOf[SecurityRESTException] match {
+    case e: SecurityBadRequestException       => BadRequestResult(e.getMessage)
+    case e: SecurityResourceNotFoundException => NotFoundResult(e.getMessage)
+    case e: SecurityConflictException         => ConflictResult(e.getMessage)
+    case e: SecurityUnknownAPIException       => BadRequestResult(e.getMessage)
+    case e: SecurityAPIParseException         => GenericErrorResult(500, e.getMessage)
+    case e: SecurityUnauthorizedAPIException  => Unauthorized(e.getMessage)
+    case e: SecurityForbiddenAPIException     => Forbidden(e.getMessage)  
+  }    
   
   def trace(method: String) = {
     log.debug("%s::%s".format(this.getClass.getSimpleName, method))
