@@ -53,21 +53,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     val (subtypes,filter) = setupFilter(rtid)
     getResourceListFqonCommon(fqon, ptid, parentId, rtid, subtypes)(filter, Some(request.queryString))
   }
-
-//  def getPolicyFqon(fqon: String, parentType: UUID, parentId: UUID, resourceType: UUID) = Authenticate(fqon) { implicit request =>
-//
-//    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-//      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-//    }
-//    
-//    val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId) map { p =>
-//      val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id) map { r => 
-//        toLink(r, META_URL)
-//      }
-//      upsertProperties(p, "rules" -> Json.stringify(Json.toJson(rs)))
-//    }
-//    ???
-//  }
   
   def getResourceListFqonCommon(
       fqon: String, 
@@ -271,17 +256,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
   }  
 
-//  def postRule2(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    val resourceType = Try {
-//      (request.body \ "resource_type") match {
-//        case u: JsUndefined => 
-//          throw new BadRequestException("You must provide a 'resource_type'")
-//        case v => ruleTypeId(expandRuleTypeName(v.as[String]))
-//      }
-//    }
-//    postResourceCommon(fqid(fqon), ResourceIds.Policy, policy, resourceType, request.body)
-//  }
-  
   def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
     val resourceType = Try {

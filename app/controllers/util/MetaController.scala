@@ -309,7 +309,6 @@ trait MetaController extends SecureController with SecurityResources {
       case Success(res) => Created(Output.renderInstance(res))
       case Failure(err) => {
         log.error("ERROR CREATING RESOURCE: " + err.getMessage)
-        println(err)
         HandleExceptions(err)  
       }
     }

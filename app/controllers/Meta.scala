@@ -84,6 +84,39 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   // --------------------------------------------------------------------------
+  // GROUPS
+  // --------------------------------------------------------------------------   
+  def postGroupFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    createGroupCommon(fqid(fqon), request.body)  
+  }
+  
+  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    // 1.) Create the Group in Security
+    
+    // 2.) If successful - create the Group in Meta
+    
+    /*
+     * inject resource_type UUID
+     */
+    CreateSynchronizedResult(org, ResourceIds.Group, json)(
+      Security.createGroup, createNewMetaGroup[JsValue])
+    
+    
+//    val typeId = ResourceIds.Group
+//    safeGetInputJson(typeId, json) match {
+//      case Failure(error) => BadRequestResult(error.getMessage)
+//      case Success(input) => {
+//        
+//        HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
+//        
+//      }
+//    }
+//        
+//    ???
+  } 
+  
+  
+  // --------------------------------------------------------------------------
   // USERS
   // --------------------------------------------------------------------------  
   
@@ -389,11 +422,13 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     Future {
       safeGetInputJson(typeId, json) match {
         case Failure(error) => BadRequestResult(error.getMessage)
-        case Success(input) => HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
+        case Success(input) => {
+          HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
+        }
       }
     }
   }
-
+  
   
   private def createSynchronized[T](org: UUID, typeId: UUID, input: GestaltResourceInput)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
@@ -404,12 +439,12 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
      */
     val stringprops = stringmap(input.properties)
     val creator = request.identity.account.id
-
+    
     PropertyValidator.validate(typeId, stringprops) match {
       case (false, message) => Failure(illegal(message.get))
       case _ => for {
         sr <- sc(org, request.identity, input)
-        mr <- mc(creator, org,  sr, stringprops)
+        mr <- mc(creator, org,  sr, stringprops, input.description)
       } yield mr
     }
   }  

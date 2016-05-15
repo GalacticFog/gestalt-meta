@@ -11,6 +11,8 @@ import com.galacticfog.gestalt.data.ResourceFactory
 
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
+import com.galacticfog.gestalt.security.api.GestaltGroup
+
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 
@@ -23,6 +25,8 @@ import com.galacticfog.gestalt.meta.api.errors._
 
 object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
 
+  
+  
   def sync() = Authenticate() { implicit request =>
     trace("sync")
     
@@ -77,11 +81,16 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     for (id <- ids) ResourceFactory.hardDeleteResource(id).get
   }
   
+  def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], auth: AuthAccountWithCreds) = {
+    
+    ???
+  }
+  
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], auth: AuthAccountWithCreds) = {
     for (org <- rs) {
       log.debug(s"Creating Org : ${org.name}")
       val parent = parentOrgId(org, auth)
-      createNewMetaOrg(creator, parent, org, properties = None).get
+      createNewMetaOrg(creator, parent, org, properties = None, None).get
     }
   }
 
@@ -95,6 +104,30 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }
 
+  def getRootOrgId(account: AuthAccountWithCreds): UUID = {
+    val root = Security.getRootOrg(account)
+    root.get.id
+  }
+  
+  def getRootOrgFqon(account: AuthAccountWithCreds): String = {
+    Security.getRootOrg(account).get.fqon
+  }
+  
+  def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
+    val root = getRootOrgId(account)
+    for (acc <- rs) {
+      log.debug(s"Creating User : ${acc.name}")
+      createNewMetaUser(creator, acc.directory.orgId, acc, 
+        properties = Some(Map(
+          "email"        -> acc.email,
+          "gestalt_home" -> getRootOrgFqon(account),
+          "firstName"    -> acc.firstName,
+          "lastName"     -> acc.lastName,
+          "phoneNumber"  -> acc.phoneNumber)), 
+          description = None ).get
+    }
+  }
+  
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount]) = {
     for (acc <- rs) {
       log.debug(s"Updating User : ${acc.name}")
@@ -126,31 +159,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
         )
       }
     }
-  }
-
-  
-  def getRootOrgId(account: AuthAccountWithCreds): UUID = {
-    val root = Security.getRootOrg(account)
-    root.get.id
-  }
-  
-  def getRootOrgFqon(account: AuthAccountWithCreds): String = {
-    Security.getRootOrg(account).get.fqon
-  }
-  
-  def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
-    val root = getRootOrgId(account)
-    for (acc <- rs) {
-      log.debug(s"Creating User : ${acc.name}")
-      createNewMetaUser(creator, acc.directory.orgId, acc, 
-        properties = Some(Map(
-          "email"        -> acc.email,
-          "gestalt_home" -> getRootOrgFqon(account),
-          "firstName"    -> acc.firstName,
-          "lastName"     -> acc.lastName,
-          "phoneNumber"  -> acc.phoneNumber)) ).get
-    }
-  }
+  }  
   
   private def computeResourceDiffs(securityIds: Seq[UUID], metaIds: Seq[UUID]) = {
     val create = securityIds.diff(metaIds) // in security, not meta
