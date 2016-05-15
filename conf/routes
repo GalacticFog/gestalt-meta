@@ -196,12 +196,9 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/providers  controllers.ResourceController.getProviders(orgId: java.util.UUID, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
 
 
-
-
 #####
 ##### Routes by FQON #####
 #####
-
 
 ############################
 # ORGS
@@ -211,6 +208,23 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.Meta.postOrgFqon(f
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.ResourceController.getOrgFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/orgs		controllers.ResourceController.getGenericAllFqon(targetTypeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", fqon: String)
 DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteOrgFqon(fqon: String)  
+
+
+############################
+# GROUPS
+############################
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.Meta.postGroupFqon(fqon: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.ResourceController.getGroupsFqon(fqon: String)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:id	controllers.ResourceController.getGroupByIdFqon(fqon: String, id: java.util.UUID)
+  
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.ResourceController.getGroupUsersFqon(fqon: String, group: java.util.UUID)
+
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group  controllers.DeleteController.hardDeleteGroup(fqon: String, group: java.util.UUID)
+
+
 
 
 ############################

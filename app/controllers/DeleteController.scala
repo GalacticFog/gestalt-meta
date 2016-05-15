@@ -371,12 +371,16 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   /**
    * 
    */
-  def hardDeleteOrgFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+  def hardDeleteOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     trace(s"hardDeleteOrgFqon($fqon)")
     orgFqon(fqon) match {
       case Some(org) => hardDeleteSecure(org.id, request.identity, Security.deleteOrg)
       case None      => OrgNotFound(fqon)
     }    
+  }
+  
+  def hardDeleteGroup(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+    hardDeleteSecure(fqid(fqon), request.identity, Security.deleteGroup)
   }
   
   /**

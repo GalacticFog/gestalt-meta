@@ -165,6 +165,33 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    handleExpansion(
+      ResourceFactory.findAll(ResourceIds.Group, fqid(fqon)),
+      request.queryString, 
+      META_URL)
+  }
+  
+  def getGroupByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
+      r => 
+        // TODO: Inject dynamic 'users' list into r.
+        Ok(Output.renderInstance(r, META_URL)) 
+    }
+  }
+  
+  def getGroupUsersFqon(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+    Security.getGroupAccounts(group, request.identity) match {
+      case Success(gs) => {
+        val userids = gs map { _.id }
+        handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, userids),
+            request.queryString, META_URL)
+      }
+      case Failure(er) => HandleExceptions(er)
+    }  
+  }
+  
+  
   def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
     if (qs.contains("type")) {
       
