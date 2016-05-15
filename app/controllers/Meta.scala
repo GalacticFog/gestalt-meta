@@ -240,11 +240,8 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
             val parentJson = Json.toJson(toLink(workspace, None))
             log.debug("PARENT-LINK:\n" + Json.prettyPrint(parentJson))
             
-            val json2 = JsonUtil.upsertProperty(json.as[JsObject], "parent", parentJson) match {
-              case e: JsError => throw new RuntimeException(JsError.toFlatJson(e).toString)
-              case v => v.get
-            }
-            
+            val json2 = JsonUtil.upsertProperty(json.as[JsObject], "parent", parentJson).get
+
             log.debug("FINAL:\n" + Json.prettyPrint(json2))
             
             log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
