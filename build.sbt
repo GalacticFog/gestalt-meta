@@ -93,6 +93,7 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2",	
 	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.4",
 	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.1.6-SNAPSHOT" withSources(),
+	"com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.1.6-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-security-play" 	% "2.1.1-SNAPSHOT" withSources()
 )
 
@@ -100,10 +101,11 @@ libraryDependencies ++= Seq(
 libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.2.2"
 
 
+
 // MockWS for testing
 libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
 
-libraryDependencies += "com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.1.0-SNAPSHOT"
+
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"
 
