@@ -91,29 +91,9 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    // 1.) Create the Group in Security
-    
-    // 2.) If successful - create the Group in Meta
-    
-    /*
-     * inject resource_type UUID
-     */
     CreateSynchronizedResult(org, ResourceIds.Group, json)(
       Security.createGroup, createNewMetaGroup[JsValue])
-    
-    
-//    val typeId = ResourceIds.Group
-//    safeGetInputJson(typeId, json) match {
-//      case Failure(error) => BadRequestResult(error.getMessage)
-//      case Success(input) => {
-//        
-//        HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
-//        
-//      }
-//    }
-//        
-//    ???
-  } 
+  }
   
   
   // --------------------------------------------------------------------------
@@ -423,6 +403,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       safeGetInputJson(typeId, json) match {
         case Failure(error) => BadRequestResult(error.getMessage)
         case Success(input) => {
+          println("INPUT:\n" + input)
           HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
         }
       }

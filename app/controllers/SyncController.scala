@@ -25,8 +25,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 
 object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
 
-  
-  
   def sync() = Authenticate() { implicit request =>
     trace("sync")
     
@@ -39,20 +37,25 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   
       val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
       val metausers = ResourceFactory.findAll(ResourceIds.User)
-  
+      val metagroups = ResourceFactory.findAll(ResourceIds.Group)
+      
       // Get Ids of everything in security
       val secOrgIds = sd.orgs map { _.id }
       val secAccIds = sd.accounts map { _.id }
+      val secGroupIds = sd.groups map { _.id }
       
       // Get Ids of everything in meta
       val metaOrgIds = metaorgs map { _.id }
       val metaUserIds = metausers map { _.id }
-  
+      val metaGroupIds = metagroups map { _.id }
+      
       val secOrgMap = (sd.orgs map { o => (o.id, o) }).toMap
       val secAccMap = (sd.accounts map { a => (a.id, a) }).toMap
-  
+      val secGroupMap = (sd.groups map { g => (g.id, g) }).toMap
+      
       val (orgsCreate,orgsDelete,orgsUpdate)   = computeResourceDiffs(secOrgIds, metaOrgIds)
       val (usersCreate,usersDelete,usersUpdate) = computeResourceDiffs(secAccIds, metaUserIds)
+      val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
       
       /*
        * TODO: Refactor this - as it is, errors are swallowed. 
@@ -62,14 +65,19 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       log.debug(s"Deleting ${orgsDelete.size} Orgs.")
       deleteResources(creator, orgsDelete)
       
-      log.debug(s"Deleteing ${usersDelete.size} Users.")
+      log.debug(s"Deleting ${usersDelete.size} Users.")
       deleteResources(creator, usersDelete)
+      
+      log.debug(s"Deleting ${groupsDelete.size} Groups.")
+      deleteResources(creator, groupsDelete)
       
       createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
       createUsers(ResourceIds.User, creator, (usersCreate map secAccMap), request.identity )
-
+      createGroups(ResourceIds.User, creator, (groupsCreate map secGroupMap), request.identity)
+      
       updateOrgs (creator, (orgsUpdate map secOrgMap) )
       updateUsers(creator, (usersUpdate map secAccMap) )
+      updateGroups(creator, (groupsUpdate map secGroupMap))
       
     } match {
       case Success(_) => NoContent
@@ -82,8 +90,20 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], auth: AuthAccountWithCreds) = {
-    
-    ???
+    for (group <- rs) {
+      log.debug(s"Creating Group: ${group.name}")
+      createNewMetaGroup(creator, group.directory.orgId, group, 
+          properties = None, group.description)
+    }
+  }
+  
+  def updateGroups(creator: UUID, rs: Iterable[GestaltGroup]) = {
+    for (group <- rs) {
+      log.debug(s"Updating Group : ${group.name}")
+      ResourceFactory.findById(group.id) foreach { g =>
+        ResourceFactory.update(g.copy(name = group.name, description = group.description), creator)  
+      }
+    }
   }
   
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], auth: AuthAccountWithCreds) = {
@@ -94,6 +114,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }
 
+  
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg]) = {
     for (org <- rs) {
       log.debug(s"Updating Org : ${org.name}")
@@ -124,7 +145,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
           "firstName"    -> acc.firstName,
           "lastName"     -> acc.lastName,
           "phoneNumber"  -> acc.phoneNumber)), 
-          description = None ).get
+        description = None ).get
     }
   }
   

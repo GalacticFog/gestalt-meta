@@ -184,13 +184,26 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Security.getGroupAccounts(group, request.identity) match {
       case Success(gs) => {
         val userids = gs map { _.id }
+        if (userids.isEmpty) Ok(Json.parse("[]")) else {
         handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, userids),
             request.queryString, META_URL)
+        }
       }
       case Failure(er) => HandleExceptions(er)
     }  
   }
   
+  def getUserGroupsFqon(fqon: String, user: UUID) = Authenticate(fqon) { implicit request =>
+    Security.getAccountGroups(request.identity) match {
+      case Success(gs) => {
+        val groupids = gs map { _.id }
+        if (groupids.isEmpty) Ok(Json.parse("[]")) else {
+          handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.Group, groupids),
+              request.queryString, META_URL)
+        }
+      }
+    }
+  }
   
   def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
     if (qs.contains("type")) {

@@ -334,7 +334,7 @@ trait MetaController extends SecureController with SecurityResources {
    * Parse JSON to GestaltResourceInput and validate type-properties.
    */
   protected[controllers] def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
-    log.debug(s"safeGetInputJson($typeId, [json]")
+    log.debug(s"safeGetInputJson($typeId, [json])")
 
     safeGetInputJson(json) match {
       case Failure(e)   => throw e

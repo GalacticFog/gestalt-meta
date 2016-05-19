@@ -34,7 +34,7 @@ buildInfoOptions += BuildInfoOption.ToJson
 
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
-scalaVersion := "2.11.7"
+scalaVersion := "2.11.8"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 

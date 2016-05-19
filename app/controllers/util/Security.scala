@@ -80,7 +80,7 @@ object Security {
   }
   
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltAccount]] = {
-    Try(Await.result(GestaltGroup.listAccounts(groupId), 5 seconds))
+    Try(Await.result(GestaltGroup.listAccounts(groupId)(client.withCreds(auth.creds)), 5 seconds))
   }
   
   def createGroup(org: UUID, auth: AuthAccountWithCreds, group: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltGroup] = {
@@ -96,8 +96,7 @@ object Security {
   }
   
   def getAccountGroups(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltGroup]] = {
-    //GestaltAccount.listGroupMemberships(accountId)
-    ???
+    Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def deleteGroup(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
