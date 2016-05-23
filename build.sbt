@@ -94,7 +94,7 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.4",
 	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.1.6-SNAPSHOT" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.1.6-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-security-play" 	% "2.1.1-SNAPSHOT" withSources()
+	"com.galacticfog" %% "gestalt-security-play" 	% "2.1.3-SNAPSHOT" withSources()
 )
 
 
