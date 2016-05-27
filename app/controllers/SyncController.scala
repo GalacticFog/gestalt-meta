@@ -133,19 +133,25 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   def getRootOrgFqon(account: AuthAccountWithCreds): String = {
     Security.getRootOrg(account).get.fqon
   }
+
+  private def userProps(acc: GestaltAccount): Seq[(String,String)] = {
+    Seq(
+      "firstName" -> acc.firstName,
+      "lastName" -> acc.lastName,
+      "email" -> acc.email.getOrElse(""),
+      "phoneNumber" -> acc.phoneNumber.getOrElse("")
+    )
+  }
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
     val root = getRootOrgId(account)
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
-      createNewMetaUser(creator, acc.directory.orgId, acc, 
-        properties = Some(Map(
-          "email"        -> acc.email,
-          "gestalt_home" -> getRootOrgFqon(account),
-          "firstName"    -> acc.firstName,
-          "lastName"     -> acc.lastName,
-          "phoneNumber"  -> acc.phoneNumber)), 
-        description = None ).get
+      createNewMetaUser(creator, acc.directory.orgId, acc,
+        properties = Some(
+          (userProps(acc) ++ Seq("gestalt_home" -> getRootOrgFqon(account))).toMap
+        ),
+        description = acc.description ).get
     }
   }
   
@@ -161,19 +167,9 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
             name = acc.name, // name/username
             // update properties
             properties = a.properties map {
-              _ ++ Seq(
-                "email" -> acc.email,
-                "firstName" -> acc.firstName,
-                "lastName" -> acc.lastName,
-                "phoneNumber" -> acc.phoneNumber
-              )
+              _ ++ userProps(acc)
             } orElse {
-              Some(Map(
-                "email" -> acc.email,
-                "firstName" -> acc.firstName,
-                "lastName" -> acc.lastName,
-                "phoneNumber" -> acc.phoneNumber
-              ))
+              Some(userProps(acc).toMap)
             }
           ),
           creator

@@ -202,6 +202,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
               request.queryString, META_URL)
         }
       }
+      case Failure(er) => HandleExceptions(er)
     }
   }
   
