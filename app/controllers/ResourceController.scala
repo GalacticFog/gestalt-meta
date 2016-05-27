@@ -165,6 +165,16 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  def getTypeActionsFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+    handleExpansion(
+        ResourceFactory.findChildrenOfSubType(ResourceIds.Action, typeId),
+        request.queryString, META_URL)
+  }
+  
+  def getTypeActionByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    ???  
+  }
+  
   def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(
       ResourceFactory.findAll(ResourceIds.Group, fqid(fqon)),
@@ -202,7 +212,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
               request.queryString, META_URL)
         }
       }
-      case Failure(er) => HandleExceptions(er)
+      case Failure(err) => HandleExceptions(err)
     }
   }
   
