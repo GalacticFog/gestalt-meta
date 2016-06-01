@@ -99,6 +99,10 @@ object Security {
     Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(client.withCreds(auth.creds)), 5 seconds)}
   }
   
+  def getAccountGroups(accountId: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltGroup]] = {
+    Try{Await.result(GestaltAccount.listGroupMemberships(accountId)(client.withCreds(auth.creds)), 5 seconds)}
+  }
+  
   def deleteGroup(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
     Try{Await.result(GestaltGroup.deleteGroup(id)(client.withCreds(auth.creds)), 5 seconds)}
   }

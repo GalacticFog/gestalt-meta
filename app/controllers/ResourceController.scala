@@ -187,7 +187,16 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
       r => 
         // TODO: Inject dynamic 'users' list into r.
-        Ok(Output.renderInstance(r, META_URL)) 
+        Security.getGroupAccounts(r.id, request.identity) match {
+          case Success(acs) => {
+            
+            val acids = (acs map { _.id.toString }).mkString(",")
+            val props = r.properties.get ++ Map("users" -> acids)
+            Ok(Output.renderInstance(r.copy(properties = Some(props)), META_URL))
+            
+          }
+          case Failure(err) => HandleExceptions(err)
+        }
     }
   }
   
@@ -568,11 +577,30 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
-        case Some(res) => Ok(Output.renderInstance(res, META_URL))
+        case Some(res) => res.typeId match {
+          case u if res.typeId == ResourceIds.User => Ok(Output.renderInstance(buildUserOutput(res), META_URL))
+          case _ => Ok(Output.renderInstance(res, META_URL))
+        }
         case None => NotFoundResult(request.uri)
       }
     }
   }  
+  
+  /**
+   * Build the dynamic 'groups' property on a User instance.
+   */
+  private def buildUserOutput(res: GestaltResourceInstance)(implicit request: SecuredRequest[_]) = {
+    Security.getAccountGroups(res.id,request.identity) match {
+      case Success(gs) => {
+        val gids = gs map { _.id.toString }
+        val props = res.properties.get ++ Map("groups" -> gids.mkString(","))
+        res.copy(properties = Some(props))
+      }
+      case Failure(er) => throw new RuntimeException(s"Failed looking up groups for user '${res.id}': ${er.getMessage}")
+    }
+    
+  }
+  
   
   private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
     if (references.isReferenceType(typeId)) {
