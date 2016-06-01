@@ -61,7 +61,7 @@ package object api {
       case "resourcestates"   => Some(ResourceIds.ResourceState)
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
-      
+      case "actions"          => Some(ResourceIds.TypeAction)
       case _                  => None
     }
   }

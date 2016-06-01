@@ -166,9 +166,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getTypeActionsFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-    handleExpansion(
-        ResourceFactory.findChildrenOfSubType(ResourceIds.Action, typeId),
-        request.queryString, META_URL)
+//    handleExpansion(
+//        ResourceFactory.findChildrenOfSubType(ResourceIds.Action, typeId),
+//        request.queryString, META_URL)
+    ???
   }
   
   def getTypeActionByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
@@ -589,7 +590,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Json.parse("[%s]".format(refs.mkString(",")))
   }
   
-  
   /**
    * Get a List of ResourceLinks by Org UUID
    * [Implements]: GET /orgs/:uuid/:resources, i.e. /orgs/:uuid/workspaces
@@ -721,8 +721,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case None => OrgNotFound(fqon)
     }
   }
-  
-  
   
   def getEnvironmentApis(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Api, environment)))

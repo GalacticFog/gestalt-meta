@@ -87,20 +87,22 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   // ACTIONS
   // --------------------------------------------------------------------------    
   def postTypeActionFqon(fqon: String, typeId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      val actionName = request.body \ "name" match {
-        case u: JsUndefined => ???
-        case r => r.as[String]
-      }
-      
-      val existingActions = ResourceFactory.findChildrenOfType(ResourceIds.Action, typeId)
-      if (existingActions exists { _.name == actionName}) 
-        ConflictResult(s"Action '$actionName' already exists for this resource type")
-      else {
-        // Create the Action Resource.
-        ???
-      }
-    }
+//    Future {
+//      
+//      val actionName = request.body \ "name" match {
+//        case u: JsUndefined => ???
+//        case r => r.as[String]
+//      }
+//      
+//      val existingActions = ResourceFactory.findChildrenOfType(ResourceIds.Action, typeId)
+//      if (existingActions exists { _.name == actionName }) 
+//        ConflictResult(s"Action '$actionName' already exists for this resource type")
+//      else {
+//        // Create the Action Resource.
+//        ???
+//      }
+//    }
+    ???
   }
   
   
