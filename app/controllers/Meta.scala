@@ -47,7 +47,7 @@ import controllers.util.trace
 import com.galacticfog.gestalt.meta.api._
 import play.api.mvc.Result
 import com.galacticfog.gestalt.laser._
-
+import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 
 /**
  * Code for POST and PATCH of all resource types.
@@ -84,6 +84,29 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   }
   
   // --------------------------------------------------------------------------
+  // ACTIONS
+  // --------------------------------------------------------------------------    
+  def postTypeActionFqon(fqon: String, typeId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    Future {
+//      
+//      val actionName = request.body \ "name" match {
+//        case u: JsUndefined => ???
+//        case r => r.as[String]
+//      }
+//      
+//      val existingActions = ResourceFactory.findChildrenOfType(ResourceIds.Action, typeId)
+//      if (existingActions exists { _.name == actionName }) 
+//        ConflictResult(s"Action '$actionName' already exists for this resource type")
+//      else {
+//        // Create the Action Resource.
+//        ???
+//      }
+//    }
+    ???
+  }
+  
+  
+  // --------------------------------------------------------------------------
   // GROUPS
   // --------------------------------------------------------------------------   
   def postGroupFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -95,6 +118,49 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       Security.createGroup, createNewMetaGroup[JsValue])
   }
   
+  /**
+   * 
+   * Add one or more users to a group.
+   * 
+   */
+  def patchGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+    println("QUERYSTRING : " + request.queryString)
+    val qs = request.queryString
+    
+    val uids = Try {
+      if (!qs.contains("id"))
+        throw new BadRequestException("Must provide at least one user-id in querystring.")
+      else {
+        // -------------------------------------------------------------------------        
+        // TODO: Need to manually validate the UUIDs since java.util.UUID.fromString
+        // *fixes* broken strings if it thinks it can.
+        // -------------------------------------------------------------------------
+        val ids = qs("id") map { UUID.fromString(_) }
+        val users = ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, ids)
+
+        // TODO: Ensure we got all the users we searched for.
+        users map { _.id }
+      }
+    }
+    println("Attempting to add following users to group: " + uids)
+    uids match {
+      case Success(ids) => {
+        Security.addAccountsToGroup(group, ids) match {
+          case Success(groups) => Ok(Json.toJson(groups))
+          case Failure(errors) => HandleExceptions(errors)
+        }
+      }
+      case Failure(err) => HandleExceptions(err)
+    }
+    
+    
+  }
+  
+  
+  // Remove a user from a group
+  def deleteGroupUsers(fqon: String) = Authenticate(fqon) { implicit request =>
+    ???  
+  }
   
   // --------------------------------------------------------------------------
   // USERS
@@ -108,7 +174,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     createUserCommon(org, request.body)
   }
 
-  
   def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createUserCommon(fqid(fqon), request.body)
   }
@@ -121,8 +186,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       Security.createAccount, createNewMetaUser[JsValue])    
   }  
   
-  
-  
+    
   // --------------------------------------------------------------------------
   // GENERIC RESOURCE
   // --------------------------------------------------------------------------

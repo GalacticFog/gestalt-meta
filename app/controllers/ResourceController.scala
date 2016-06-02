@@ -165,6 +165,17 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  def getTypeActionsFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+//    handleExpansion(
+//        ResourceFactory.findChildrenOfSubType(ResourceIds.Action, typeId),
+//        request.queryString, META_URL)
+    ???
+  }
+  
+  def getTypeActionByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    ???  
+  }
+  
   def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(
       ResourceFactory.findAll(ResourceIds.Group, fqid(fqon)),
@@ -176,7 +187,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
       r => 
         // TODO: Inject dynamic 'users' list into r.
-        Ok(Output.renderInstance(r, META_URL)) 
+        Security.getGroupAccounts(r.id, request.identity) match {
+          case Success(acs) => {
+            
+            val acids = (acs map { _.id.toString }).mkString(",")
+            val props = if (acids.isEmpty) None
+              else Some(r.properties.get ++ Map("users" -> acids))
+            
+            Ok(Output.renderInstance(r.copy(properties = props), META_URL))
+            
+          }
+          case Failure(err) => HandleExceptions(err)
+        }
     }
   }
   
@@ -202,7 +224,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
               request.queryString, META_URL)
         }
       }
-      case Failure(er) => HandleExceptions(er)
+      case Failure(err) => HandleExceptions(err)
     }
   }
   
@@ -557,11 +579,31 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
-        case Some(res) => Ok(Output.renderInstance(res, META_URL))
+        case Some(res) => res.typeId match {
+          case u if res.typeId == ResourceIds.User => Ok(Output.renderInstance(buildUserOutput(res), META_URL))
+          case _ => Ok(Output.renderInstance(res, META_URL))
+        }
         case None => NotFoundResult(request.uri)
       }
     }
   }  
+  
+  /**
+   * Build the dynamic 'groups' property on a User instance.
+   */
+  private def buildUserOutput(res: GestaltResourceInstance)(implicit request: SecuredRequest[_]) = {
+    Security.getAccountGroups(res.id,request.identity) match {
+      case Success(gs) => {
+        val gids = gs map { _.id.toString }
+        val props = if (gids.isEmpty) None 
+          else Some(res.properties.get ++ Map("groups" -> gids.mkString(",")))
+        res.copy(properties = props)
+      }
+      case Failure(er) => throw new RuntimeException(s"Failed looking up groups for user '${res.id}': ${er.getMessage}")
+    }
+    
+  }
+  
   
   private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
     if (references.isReferenceType(typeId)) {
@@ -578,7 +620,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     val refs = references.findAll(org, typeId) map { r => "{\"id\": \"%s\", \"name\": \"%s\"}".format(r.id, r.name) }
     Json.parse("[%s]".format(refs.mkString(",")))
   }
-  
   
   /**
    * Get a List of ResourceLinks by Org UUID
@@ -711,8 +752,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case None => OrgNotFound(fqon)
     }
   }
-  
-  
   
   def getEnvironmentApis(org: UUID, environment: UUID) = Authenticate(org) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Api, environment)))
