@@ -129,7 +129,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     
     val uids = Try {
       if (!qs.contains("id"))
-        throw new BadRequestException("Must provide at least one user-id in querystring.")
+        throw new BadRequestException("Must provide 'id' in querystring.")
       else {
         // -------------------------------------------------------------------------        
         // TODO: Need to manually validate the UUIDs since java.util.UUID.fromString
@@ -142,24 +142,50 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         users map { _.id }
       }
     }
+    
     println("Attempting to add following users to group: " + uids)
     uids match {
       case Success(ids) => {
         Security.addAccountsToGroup(group, ids) match {
-          case Success(groups) => Ok(Json.toJson(groups))
+          case Success(users) => Ok(Json.toJson(users))
           case Failure(errors) => HandleExceptions(errors)
         }
       }
       case Failure(err) => HandleExceptions(err)
     }
     
-    
   }
   
   
   // Remove a user from a group
-  def deleteGroupUsers(fqon: String) = Authenticate(fqon) { implicit request =>
-    ???  
+  def deleteGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+    
+    val qs = request.queryString
+    
+    val uids = Try {
+      if (!qs.contains("id"))
+        throw new BadRequestException("Must provide 'id' parameter in querystring.")
+      else {
+        // Make sure we actually got a value for 'id'
+        val ids = {
+          if (qs("id").isEmpty) throw new BadRequestException("Must provide at least one user-id")
+          else qs("id")(0).trim.split(",") map { UUID.fromString(_) }
+        }
+        // TODO: Ensure we find all the users contained in 'ids'
+        ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, ids) map { _.id }
+      }
+    }
+
+    uids match {
+      case Success(ids) => {
+        Security.removeAccountsFromGroup(group, ids) match {
+          case Success(members) => Ok(Json.toJson(members))
+          case Failure(errors)  => HandleExceptions(errors)
+        }    
+      }
+      case Failure(err) => HandleExceptions(err)
+    }
+
   }
   
   // --------------------------------------------------------------------------
