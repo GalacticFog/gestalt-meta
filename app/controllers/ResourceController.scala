@@ -191,8 +191,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
           case Success(acs) => {
             
             val acids = (acs map { _.id.toString }).mkString(",")
-            val props = r.properties.get ++ Map("users" -> acids)
-            Ok(Output.renderInstance(r.copy(properties = Some(props)), META_URL))
+            val props = if (acids.isEmpty) None
+              else Some(r.properties.get ++ Map("users" -> acids))
+            
+            Ok(Output.renderInstance(r.copy(properties = props), META_URL))
             
           }
           case Failure(err) => HandleExceptions(err)
@@ -593,8 +595,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Security.getAccountGroups(res.id,request.identity) match {
       case Success(gs) => {
         val gids = gs map { _.id.toString }
-        val props = res.properties.get ++ Map("groups" -> gids.mkString(","))
-        res.copy(properties = Some(props))
+        val props = if (gids.isEmpty) None 
+          else Some(res.properties.get ++ Map("groups" -> gids.mkString(",")))
+        res.copy(properties = props)
       }
       case Failure(er) => throw new RuntimeException(s"Failed looking up groups for user '${res.id}': ${er.getMessage}")
     }
