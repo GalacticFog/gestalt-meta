@@ -51,42 +51,74 @@ import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 
 object AuthorizationController extends MetaController with NonLoggingTaskEvents {
   
+  def postEntitlementOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    postEntitlementCommon(org, ResourceIds.Org, org)
+  }
   
-  def postEntitlement(fqon: UUID, typeId: UUID, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    postEntitlementCommon(fqid(fqon), typeId, resourceId)
+  }
     
-    Future {
-      val user = request.identity
-      ResourceFactory.findById(typeId, resourceId) match {
-        case None => NotFoundResult(request.uri)
-        case Some(_) => {
-          CreateResource(
-            ResourceIds.User, user.account.id, 
-            fqid(fqon), request.body, user, 
-            typeId = Some(ResourceIds.Entitlement), 
-            parentId = Some(resourceId)) match {
-              case Success(res) => Ok(Output.renderInstance(res, META_URL))
-              case Failure(err) => HandleExceptions(err)
-          }
+  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+    ???
+  }
+  
+  def patchEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    getEntitlementsCommon(org, ResourceIds.Org, org)  
+  }
+  
+  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
+  }
+  
+  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Entitlement, id) match {
+      case Some(res) => Ok(Output.renderInstance(res, META_URL))
+      case None => NotFoundResult(request.uri)
+    }
+  }
+  
+  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
+    ???
+  }
+  
+  
+  private def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
+    val user = request.identity
+    ResourceFactory.findById(typeId, resourceId) match {
+      case None => NotFoundResult(request.uri)
+      case Some(_) => {
+        CreateResource(
+          ResourceIds.User, user.account.id, 
+          org, request.body, user, 
+          typeId = Some(ResourceIds.Entitlement), 
+          parentId = Some(resourceId)) match {
+            case Success(res) => Ok(Output.renderInstance(res, META_URL))
+            case Failure(err) => HandleExceptions(err)
         }
       }
     }
   }
   
-  def deleteEntitlement(fqon: UUID, typeId: UUID, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-    ???
+  private def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+    ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
+      case Some(res) => Ok(Output.renderInstance(res, META_URL))
+      case None => NotFoundResult(request.uri)
+    }
   }
   
-  def patchEntitlement(fqon: UUID, typeId: UUID, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
+  private def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
+    handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId),
+        request.queryString, META_URL)    
   }
   
-  def getEntitlementsFqon(fqon: UUID, typeId: UUID, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-    ???  
-  }
   
-  def getEntitlementFqon(fqon: UUID, typeId: UUID, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    ???  
-  }  
   
   
   
