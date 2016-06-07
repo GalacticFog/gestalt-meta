@@ -62,6 +62,7 @@ package object api {
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
       case "actions"          => Some(ResourceIds.TypeAction)
+      case "entitlements"     => Some(ResourceIds.Entitlement)
       case _                  => None
     }
   }
@@ -92,7 +93,7 @@ package object api {
       case ResourceIds.ApiEndpoint     => Some("apiendpoints")
       case ResourceIds.Domain          => Some("domains")
       case ResourceIds.Container       => Some("containers")      
-      
+      case ResourceIds.Entitlement     => Some("entitlements")
       case ResourceIds.NodeType        => Some("nodetypes")
       case ResourceIds.EnvironmentType => Some("environmenttypes")
       case ResourceIds.DataType        => Some("datatypes")

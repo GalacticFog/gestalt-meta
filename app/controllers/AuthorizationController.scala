@@ -59,9 +59,26 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
-    
-  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-    ???
+   
+  def deleteEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    deleteEntitlementCommon(org, org, id)
+  }
+  
+  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    deleteEntitlementCommon(fqid(fqon), resourceId, id)
+  }
+  
+  private [controllers] def deleteEntitlementCommon(org: UUID, parent: UUID, id: UUID) = {
+    ResourceFactory.findChildOfType(ResourceIds.Entitlement, parent, id) match {
+      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
+      case Some(res) => {
+        ResourceFactory.hardDeleteResource(ResourceIds.Entitlement, id) match {
+          case Success(_) => NoContent
+          case Failure(e) => HandleExceptions(e)
+        }
+      }
+    }
   }
   
   def patchEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -70,7 +87,9 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   
   def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
-    getEntitlementsCommon(org, ResourceIds.Org, org)  
+    //getEntitlementsCommon(org, ResourceIds.Org, org)
+    val ents = ResourceFactory.findEffectiveEntitlements(org)
+    handleExpansion(entitlementsAll(ents), request.queryString, META_URL)
   }
   
   def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
@@ -88,38 +107,63 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     ???
   }
   
-  
-  private def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
-    val user = request.identity
-    ResourceFactory.findById(typeId, resourceId) match {
+//  ***
+//  
+//  Write rollup for entitlements and variables
+//  
+//  ***
+
+  private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
+      implicit request: SecuredRequest[JsValue]) = Future {
+    
+    // This is the resource we're creating the Entitlement for.
+    val parentResource = ResourceFactory.findById(typeId, resourceId)
+    
+    parentResource match {
       case None => NotFoundResult(request.uri)
       case Some(_) => {
-        CreateResource(
-          ResourceIds.User, user.account.id, 
-          org, request.body, user, 
-          typeId = Some(ResourceIds.Entitlement), 
-          parentId = Some(resourceId)) match {
-            case Success(res) => Ok(Output.renderInstance(res, META_URL))
-            case Failure(err) => HandleExceptions(err)
+        
+        validateEntitlementPayload(request.body) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(_) => CreateResourceResult(org, ResourceIds.Entitlement, resourceId)
         }
       }
     }
   }
   
-  private def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+  
+//  Implement type-hierarchy:
+//  Resource->Runnable->ResourceContainer->{Org, Workspace}
+//  Resource->Runnable->{Container,Lambda}
+  
+  private[controllers] def validateEntitlementPayload(payload: JsValue): Try[Unit] = Try {
+    /*
+     * Validations:
+     * 1.) Caller has SetEntitlements permission
+     * 2.) Action is valid
+     * 3.) Entitlement for given action DOES NOT already exist
+     * 4.) Given identities ALL exist
+     */
+    log.warn("AuthorizationController::validateEntitlementPayload() IS NOT IMPLEMENTED!!!")
+  }
+  
+  
+  private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
     ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
       case Some(res) => Ok(Output.renderInstance(res, META_URL))
       case None => NotFoundResult(request.uri)
     }
   }
   
+  
+  private def entitlementsAll(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
+    es flatMap { case (_,v) => v } toSeq
+  }  
+  
   private def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
     handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId),
         request.queryString, META_URL)    
   }
-  
-  
-  
   
   
 }
