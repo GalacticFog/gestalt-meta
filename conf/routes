@@ -211,6 +211,31 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController
 
 
 ############################
+# ENTITLEMENTS
+############################
+
+
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements							controllers.AuthorizationController.postEntitlementOrgFqon(fqon: String)
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements			controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements			controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
+
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements							controllers.AuthorizationController.getEntitlementsOrgFqon(fqon: String)
+#GET	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements			controllers.AuthorizationController.getEntitlementsFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
+#GET	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements			controllers.AuthorizationController.getEntitlementsFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
+
+#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id
+#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements/:id
+#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements/:id
+
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id						controllers.AuthorizationController.deleteEntitlementOrgFqon(fqon: String, id: java.util.UUID)
+#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements/:id
+#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements/:id
+
+
+
+
+
+############################
 # GROUPS
 ############################
 
@@ -225,6 +250,9 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group  controllers.DeleteController.hardDeleteGroup(fqon: String, group: java.util.UUID)
 
 PATCH	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users controllers.Meta.patchGroupUsers(fqon: String, group: java.util.UUID)
+
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users  controllers.Meta.deleteGroupUsers(fqon: String, group: java.util.UUID)
+
 
 
 ############################
