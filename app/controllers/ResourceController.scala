@@ -57,7 +57,6 @@ import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
   
-  
   def health() = Action {
     MetaHealth.selfCheck(verbose = false) match {
       case Left(err) => InternalServerError(err)
@@ -586,7 +585,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         case None => NotFoundResult(request.uri)
       }
     }
-  }  
+  }
   
   /**
    * Build the dynamic 'groups' property on a User instance.

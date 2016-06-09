@@ -223,7 +223,8 @@ GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements							controllers.Au
 #GET	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements			controllers.AuthorizationController.getEntitlementsFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
 #GET	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements			controllers.AuthorizationController.getEntitlementsFqon(fqon: String, typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", id: java.util.UUID)
 
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id						controllers.AuthorizationController.getEntitlementByIdOrgFqon(fqon: String, id: java.util.UUID)
+
 #GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements/:id
 #GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements/:id
 

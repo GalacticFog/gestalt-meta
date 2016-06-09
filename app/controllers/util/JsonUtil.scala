@@ -11,6 +11,22 @@ object JsonUtil {
   implicit def str2js(s: String) = JsString(s)
   
   /**
+   * Replace a top-level JSON key name with a new name. If a new value is given it will be used
+   * otherwise the new key will have the old value.
+   */
+  def replaceKey(obj: JsObject, oldName: String, newName: String, newValue: Option[JsValue] = None) = {
+    obj \ oldName match {
+      case u: JsUndefined => obj
+      case v => {
+        val value = {
+          if (newValue.isDefined) newValue.get else v
+        }
+        (obj - oldName) ++ Json.obj(newName -> value)
+      }
+    }
+  }
+  
+  /**
    * Replace the named property value in resource.properties 
    * with the given value. Returns *JUST* the properties JSON.
    */
@@ -53,15 +69,23 @@ object JsonUtil {
   
   /**
    * Update or Insert an item into the properties collection.
+   * @param obj a JSON serialized GestaltResourceInstance
+   * @param name name of the property to upsert
+   * @param value value of the property as a JsValue
    */
   def upsertProperty(obj: JsObject, name: String, value: JsValue) = Try {
+    
+    println("-----OBJ-----")
+    println(Json.prettyPrint(obj))
+    
     obj \ "properties" \ name match {
-      case u : JsUndefined => {
+      case u : JsUndefined => obj
+      case _ => {
         val ps  = replaceJsonPropValue(obj, name, value)
         replaceJsonProps(obj, ps)
       }
-      case _ => obj
-    }        
-  }    
+    }
+  }  
   
 }
+
