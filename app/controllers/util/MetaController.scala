@@ -83,7 +83,20 @@ trait MetaController extends SecureController with SecurityResources {
         fp.mkString.toBoolean
       } match {
         case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+        case Failure(_) => throw new BadRequestException(s"Value of 'expand' parameter must be true or false. found: $fp")
+      }
+    }
+  }
+  
+  def booleanParam(paramName: String, qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains(paramName)) false
+    else {
+      val fp = qs(paramName)
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of '$paramName' parameter must be true or false. found: $fp")
       }
     }
   }  

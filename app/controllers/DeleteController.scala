@@ -380,7 +380,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def hardDeleteGroup(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
-    hardDeleteSecure(fqid(fqon), request.identity, Security.deleteGroup)
+    hardDeleteSecure(group/*fqid(fqon)*/, request.identity, Security.deleteGroup)
   }
   
   /**

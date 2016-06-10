@@ -4,6 +4,8 @@ package controllers.util
 import play.api.libs.json._
 
 import scala.util.{Try,Success,Failure}
+import play.api.{ Logger => log }
+import scala.annotation.tailrec
 
 
 object JsonUtil {
@@ -33,7 +35,7 @@ object JsonUtil {
   def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
     val newprop = Json.obj(name -> value)
     (obj \ "properties") match {
-      case u: JsUndefined => /*obj ++*/ newprop
+      case u: JsUndefined => newprop
       case v => v.as[JsObject] ++ newprop
     }
   }
@@ -69,23 +71,33 @@ object JsonUtil {
   
   /**
    * Update or Insert an item into the properties collection.
+   * 
    * @param obj a JSON serialized GestaltResourceInstance
    * @param name name of the property to upsert
    * @param value value of the property as a JsValue
    */
   def upsertProperty(obj: JsObject, name: String, value: JsValue) = Try {
-    
-    println("-----OBJ-----")
-    println(Json.prettyPrint(obj))
-    
-    obj \ "properties" \ name match {
-      case u : JsUndefined => obj
-      case _ => {
-        val ps  = replaceJsonPropValue(obj, name, value)
-        replaceJsonProps(obj, ps)
+    val ps  = replaceJsonPropValue(obj, name, value)
+    replaceJsonProps(obj, ps)    
+  }  
+  
+  
+  def find(obj: JsObject, path: String): Option[JsValue] = {  
+    @tailrec 
+    def go(cmps: List[String], path: String => JsValue): JsValue = {
+      cmps match {
+        case Nil    => JsNull
+        case h :: t => if (t.size == 0) path(h) else go(t, (path(h) \_) )
       }
     }
-  }  
+    go(toPath(path), obj \ _) match {
+      case u: JsUndefined => None
+      case v => Option(v)
+    }
+  }
+  
+  private def toPath(path: String) = path.trim.stripPrefix("/").stripSuffix("/").split("/").toList
+    
   
 }
 

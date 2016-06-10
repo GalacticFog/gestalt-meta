@@ -139,10 +139,26 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   
   def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
-    //getEntitlementsCommon(org, ResourceIds.Org, org)
     val ents = ResourceFactory.findEffectiveEntitlements(org)
     val entitlements = entitlementsAll(ents)
-    handleExpansion(entitlements, request.queryString, META_URL)
+    
+    handleEntitlementExpansion(org, entitlements, request.queryString, META_URL)
+    
+    //handleExpansion(entitlements, request.queryString, META_URL)
+  }
+  
+  
+  def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
+    val merge = booleanParam("effective", qs)
+    val filter = qs.get("action")
+    
+    
+  }
+  
+  def handleEntitlementExpansion(org: UUID, es: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
+    if (getExpandParam(qs)) {
+      Ok(Json.toJson(transformEntitlements(es, org, baseUrl)))
+    } else Ok(Output.renderLinks(es, baseUrl))
   }
   
   def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
@@ -152,10 +168,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Entitlement, id) match {
       case Some(res) => {
-        println("STARTING-JSON:\n" + Json.prettyPrint(Json.toJson(res)))
         val output = transformEntitlement(res, fqid(fqon), META_URL)
-        println("---WE GOT OUTPUT---\n" + output)
-        //Ok(Output.renderInstance(output, META_URL))
         Ok(output)
       }
       case None => NotFoundResult(request.uri)
@@ -296,6 +309,50 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   
   private def entitlementsAll(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
     es flatMap { case (_,v) => v } toSeq
+  }  
+  
+  def entitlementsFiltered(es: Map[Int, Seq[GestaltResourceInstance]], actions: Seq[String]): Seq[GestaltResourceInstance] = {
+    es flatMap { case (_,v) => v } filter { e => actions.contains(entitlementAction(e)) } toSeq
+  }  
+  
+  def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]) = {
+
+    // Highest key corresponds with highest level in the hierarchy.
+    val max = es.keys.max
+    val topLevel = es(max)
+    val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
+
+    // Add all top-level entitlements to map
+    val output = topLevel map { e => (entitlementAction(e), e) } toMap
+    
+    def go(
+        exclude: Map[String, GestaltResourceInstance], 
+        ez: List[(Int, Seq[GestaltResourceInstance])], 
+        acc: Map[String, GestaltResourceInstance])  : Map[String, GestaltResourceInstance] = {
+      ez match {
+        case Nil => acc
+        case h :: t => go(exclude, t, acc ++ accumulateEnts(acc, h._2))
+      }
+    }
+    (output ++ go(output, ents.toList, Map())).values.toSeq
+  }  
+  
+  def accumulateEnts(exclude: Map[String,GestaltResourceInstance], ents: Seq[GestaltResourceInstance]) = {
+    println("accumulateEnts()-----------------------")
+    def go(es: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
+      es match {
+        case Nil => acc
+        case h :: t => {
+          val action = entitlementAction(h)
+          println("Checking for action : " + action)
+          println("Action Exists : " + acc.contains(action))
+          val newacc = if (acc.contains(action)) acc else acc ++ Map(action -> h)
+          println("---NEW-ACC : " + newacc)
+          go(t, newacc /*(if (acc.contains(action)) acc else acc ++ Map(action -> h))*/)
+        }
+      }
+    }
+    go(ents, exclude)
   }  
   
   private def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
