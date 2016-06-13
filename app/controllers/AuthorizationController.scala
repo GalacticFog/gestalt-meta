@@ -178,7 +178,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
     ???
   }
-
+  
   private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
@@ -338,16 +338,13 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   }  
   
   def accumulateEnts(exclude: Map[String,GestaltResourceInstance], ents: Seq[GestaltResourceInstance]) = {
-    println("accumulateEnts()-----------------------")
     def go(es: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
       es match {
         case Nil => acc
         case h :: t => {
           val action = entitlementAction(h)
-          println("Checking for action : " + action)
-          println("Action Exists : " + acc.contains(action))
           val newacc = if (acc.contains(action)) acc else acc ++ Map(action -> h)
-          println("---NEW-ACC : " + newacc)
+          
           go(t, newacc /*(if (acc.contains(action)) acc else acc ++ Map(action -> h))*/)
         }
       }
