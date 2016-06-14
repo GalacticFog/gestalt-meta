@@ -175,6 +175,71 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     ???  
   }
   
+  def getEnvVariablesOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    Ok(Json.toJson(getEnvVariablesCommon(org, org)))
+  }
+  
+  def getEnvVariablesFqon(fqon: String, typeId: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(UUID.fromString(typeId), id) match {
+      case None => NotFoundResult(request.uri)
+      case Some(_) => Ok(Json.toJson(getEnvVariablesCommon(fqid(fqon), id)))
+    }
+  }
+  
+  
+  
+  
+  
+  protected def merge(map1: Map[String,String], map2: Map[String,String]): Map[String,String] = {
+    
+    //def getOrNew(m: Option[Hstore]) = m getOrElse Map() 
+    
+    def safeAdd(m: Map[String,String], key: String, value: String) = {
+      if (!m.contains( key )) m ++ Map(key -> value) else m
+    }
+    
+    def loop(rs: List[(String,String)], acc: Map[String,String]): Map[String,String] = {
+      rs match {
+        case Nil    => acc
+        case h :: t => loop( t, safeAdd( acc, h._1, h._2 ) )
+      }      
+    }
+    if ( map2.isEmpty ) map1 else {
+      loop( map2.toList, map1 )
+    }
+  }
+  
+    
+  def mergeBottomUp(vs: Seq[(Int,Map[String,String])]): Map[String,String] = {
+
+    def go(vars: Seq[(Int,Map[String,String])], acc: Map[String,String]): Map[String,String] = {
+      vars match {
+        case Nil => acc
+        case h :: t => go(t, merge(acc, h._2))
+      }    
+    }
+    go(vs.sortWith((a,b) => a._1 < b._1), Map())
+  }  
+  
+
+  def getEnvVariablesCommon(org: UUID, instanceId: UUID) = {
+    
+    val rs = ResourceFactory.findEnvironmentVariables(instanceId)
+    
+    val all = rs map { case (k,v) =>
+      if (v.properties.isEmpty) None
+      else v.properties.get.get("env") match {
+          case None => None
+          case Some(vars) => {
+            Option(k -> Json.parse(vars).validate[Map[String,String]].get)
+        }
+      }
+    } filter { _.isDefined } flatMap { v => v }
+    
+    mergeBottomUp(all)
+  }
+  
   def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(
       ResourceFactory.findAll(ResourceIds.Group, fqid(fqon)),
