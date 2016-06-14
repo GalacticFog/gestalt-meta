@@ -509,6 +509,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   /**
    * Gets the list of API Gateway providers from gestalt-apigateway and transforms them into
    * JSON that can be ingested by Meta.
+   * 
    * Currently this is used only in create workspace where we're temporarily creating
    * gateway providers for the workspace at workspace creation. This will probably go away
    * once we add UI support for attaching providers at various points in the tree.
