@@ -57,7 +57,7 @@ import com.galacticfog.gestalt.laser._
 
 object LaserController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents with SecurityResources {
-
+  
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
   
   case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[String])

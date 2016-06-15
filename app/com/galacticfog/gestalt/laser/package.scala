@@ -23,6 +23,7 @@ package object laser {
   case class LaserGateway(
       id: Option[String], 
       name: String, 
+      locationId: String,
       gatewayInfo: JsValue)  
   
   case class LaserApi(
@@ -66,9 +67,9 @@ package object laser {
       artifactDescription: LaserArtifactDescription)
 
 
-  def toLaserGateway(input: GestaltResourceInput) = {
-    LaserGateway(id = None, name = input.name, gatewayInfo = input.properties.get("gateway_info"))
-  }
+//  def toLaserGateway(input: GestaltResourceInput) = {
+//    LaserGateway(id = None, name = input.name, gatewayInfo = input.properties.get("gateway_info"))
+//  }
 
   def getApiId(apiName: String) = ???
   
