@@ -7,11 +7,44 @@ import com.galacticfog.gestalt.meta.api.sdk._
 
 import play.api.{ Logger => log }
 
+import java.nio.charset.StandardCharsets;
+import java.nio.charset.Charset
+import java.util.Base64;
 
-class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig) {
-
-  private val client = new JsonWebClient(gatewayConfig)
-  private val lambdaClient = new JsonWebClient(lambdaConfig)
+class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
+  
+  
+  def base64(s: String, charset: Charset = StandardCharsets.UTF_8): String = {
+    Base64.getEncoder().encodeToString(s.getBytes(charset))
+  }
+  
+  def configureClient(config: HostConfig) = {
+    val authHeader = if (key.isDefined && secret.isDefined) {
+      val auth = Option("Authorization" ->
+      base64("%s:%s".format(key.get, secret.get)) )
+      println("FOUND AUTH INFO : " + auth)
+      auth
+    } else None
+    
+    new JsonWebClient(config, authHeader)
+  }
+  
+//  private val client = {
+//    val authHeader = if (key.isDefined && secret.isDefined) {
+//      val auth = Option("Authorization" ->
+//      base64("%s:%s".format(key.get, secret.get)))
+//      println("FOUND AUTH INFO : " + auth)
+//      auth
+//    } else None
+//    new JsonWebClient(gatewayConfig, authHeader)
+//  }
+//  private val lambdaClient = new JsonWebClient(lambdaConfig)
+  
+  
+  
+  private val client = configureClient(gatewayConfig)
+  private val lambdaClient = configureClient(lambdaConfig)
+  
   
   // --------------------------------------------------------------------------
   // GATEWAYS
@@ -88,6 +121,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig) {
   
   def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
     val json = Json.toJson(lambda)
+    println(Json.prettyPrint(json))
     lambdaClient.post("/lambdas", json, Seq(200,201,202))
   }
   
