@@ -19,6 +19,9 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val lambda = System.getenv("GESTALT_LAMBDA")
   private lazy val marathon = System.getenv("GESTALT_MARATHON_PROVIDER")
 
+  lazy val securityKey = System.getenv("GESTALT_SECURITY_KEY")
+  lazy val securitySecret = System.getenv("GESTALT_SECURITY_SECRET")
+  
   lazy val rabbitHost = System.getenv("RABBIT_HOST")
   lazy val rabbitPort = System.getenv("RABBIT_PORT")
   lazy val rabbitExchange = System.getenv("RABBIT_EXCHANGE")
