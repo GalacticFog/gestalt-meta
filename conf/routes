@@ -502,14 +502,16 @@ GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id
 DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  	controllers.DeleteController.hardDeleteWorkspaceDomainFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
 
+
 ############################
 # VARIABLES
 ############################
 
-
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/env						controllers.ResourceController.getEnvVariablesOrgFqon(fqon: String)
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/env		controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/env 		controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/env 			controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", id: java.util.UUID)
+
 
 
 ############################
@@ -521,7 +523,8 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health				controllers.ResourceCon
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.ResourceController.getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: java.util.UUID)
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.DeleteController.hardDeleteResourceByNameFqon(fqon: String, restName: String, id: java.util.UUID) 
- 
+
+
 #
 # MARATHON ENDPOINTS...
 #
