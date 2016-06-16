@@ -64,13 +64,11 @@ class JsonUtilSpec extends Specification {
     
     "replace an existing JSON key name, leaving the original value when newValue == None" in new JsonTestScope {
       failure
-    }
+    }.pendingUntilFixed
     
     "replace an existing JSON key name using a new value when one is given" in new JsonTestScope {
       failure
-    }
-    
-    
+    }.pendingUntilFixed
     
   }
   
