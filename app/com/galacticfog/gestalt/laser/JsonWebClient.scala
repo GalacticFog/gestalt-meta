@@ -45,7 +45,7 @@ object JsonWebClient {
   def apply(config: HostConfig) = new JsonWebClient(config)
 }
 
-class JsonWebClient(config: HostConfig) {
+class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = None) {
   
   implicit lazy val apiResponseFormat = Json.format[ApiResponse]
   
@@ -90,10 +90,23 @@ class JsonWebClient(config: HostConfig) {
   def request(resource: String) = {
     val res = if (resource.trim.startsWith("/")) resource.trim else "/" + resource.trim
     val url = baseUrl + res
-    val ws = if (config.creds.isDefined) {
-      val c = config.creds.get
-      client.url(url).withAuth(c.username, c.password, c.scheme)
+    
+//    val ws = if (config.creds.isDefined) {
+//      val c = config.creds.get
+//      if (authHeader.isDefined) {
+//        val auth = authHeader.get
+//        client.url(url).withHeaders(auth._1 -> auth._2)
+//      }
+//      client.url(url).withAuth(c.username, c.password, c.scheme)
+//      
+//    } else client.url(url)
+
+    val ws = if (authHeader.isDefined) {
+      println("*****MAKING AUTHENTICATED REQUEST : " + authHeader)
+        val auth = authHeader.get
+        client.url(url).withHeaders(auth._1 -> s"Basic ${auth._2}")
     } else client.url(url)
+    
     ws.withRequestTimeout(timeout * 1000)
   }
 

@@ -239,7 +239,11 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  lazy val laser = new Laser(gatewayConfig, lambdaConfig)
+  //lazy val laser = new Laser(gatewayConfig, lambdaConfig)
+  lazy val laser = new Laser(
+    gatewayConfig, lambdaConfig, 
+    Option(EnvConfig.securityKey), 
+    Option(EnvConfig.securitySecret))
   
   
   def deleteLaserApi(id: UUID) = ???
@@ -380,7 +384,7 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def hardDeleteGroup(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
-    hardDeleteSecure(fqid(fqon), request.identity, Security.deleteGroup)
+    hardDeleteSecure(group/*fqid(fqon)*/, request.identity, Security.deleteGroup)
   }
   
   /**

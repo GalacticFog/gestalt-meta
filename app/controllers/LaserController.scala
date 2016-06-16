@@ -57,14 +57,18 @@ import com.galacticfog.gestalt.laser._
 
 object LaserController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with NonLoggingTaskEvents with SecurityResources {
-
+  
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
   
-  case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[String])
+  case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[JsValue])
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  lazy val laser = new Laser(gatewayConfig, lambdaConfig)
+  
+  lazy val laser = new Laser(
+      gatewayConfig, lambdaConfig, 
+      Option(EnvConfig.securityKey), 
+      Option(EnvConfig.securitySecret))
   
   
   def postApi(org: UUID, environment: UUID) = Authenticate(org).async(parse.json) { implicit request =>
@@ -277,9 +281,13 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
         case Nil => acc
         case h :: t => h.locations map { loc =>
           
+          //val locationName = (loc \ "name").as[String]
+          
+          val locationName = parseLocationName(loc)
+          
           val providerObj = Json.obj("id" -> h.id, "location" -> loc)
           val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
-          val api = ResourceFactory.findApiId(lambda.get.id, h.id, loc)
+          val api = ResourceFactory.findApiId(lambda.get.id, h.id, /*loc*/locationName)
           
           // Use client-supplied ID if given.
           val endpointId = request.body \ "id" match {
@@ -329,7 +337,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           }
           
           // Write lambda_x_endpoint map
-          ResourceFactory.mapLaserType(ResourceIds.ApiEndpoint, endpointId, endpointId, h.id, loc)
+          ResourceFactory.mapLaserType(ResourceIds.ApiEndpoint, endpointId, endpointId, h.id, /*loc*/locationName)
           out
         }
       }
@@ -430,6 +438,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
         case Some(mp) => mp.properties.get("external_id")
         case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
       }
+      
       (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
         case lpi: LambdaProviderInfo => lpi
       }.recoverTotal { e =>
@@ -455,9 +464,11 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           val nids: Seq[UUID] = h.locations map { loc =>
             val id = UUID.randomUUID
 
+            val locationName = (loc \ "name").as[String]
+            
             // Create Laser API
             val laserjson = LaserApi(id = Some(id), name = lambdaName,description = None,
-              provider = Some(Json.obj("id" -> h.external_id.toString, "location" -> loc)))
+              provider = Some(Json.obj("id" -> h.external_id.toString, "location" -> /*loc*/locationName)))
 
             laser.createApi(laserjson) match {
               case Success(_) => println("***LASER API CREATED***")
@@ -469,8 +480,8 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
             val res = createApiCommon(org, parent, Json.toJson(metaApiJson))
 
             // Write Record to association table
-            ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, loc)
-            ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, loc)
+            ResourceFactory.mapLambdaApi(metaLambdaId, id, h.id, /*loc*/locationName)
+            ResourceFactory.mapLaserType(ResourceIds.Api, id, id, h.id, /*loc*/locationName)
             id
           }
           go(t, (acc ++ nids))
@@ -482,16 +493,30 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   
   def createLaserLambdas(metaLambdaId: UUID, input: GestaltResourceInput, providers: Seq[LambdaProviderInfo]) = Try {
     
-    log.debug("In createLaserLambda(...)")
-    
+    log.debug("In createLaserLambdas(...)")
+    println()
     for (p <- providers; l <- p.locations) {
       val laserId = Some(metaLambdaId)
-      val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, l)
+      
+      val locationName = parseLocationName(l)
+
+      val lambda = toLaserLambda(input.copy(id = laserId), p.external_id, /*l*/locationName)
+      println("*****LAMBDA:\n" + lambda)
       
       laser.createLambda(lambda) map { m =>
-        ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, l)
+        ResourceFactory.mapLaserType(ResourceIds.Lambda, metaLambdaId, laserId.get, p.id, /*l*/locationName)
         
       }
+    }
+  }
+  
+  def parseLocationName(locationJson: JsValue) = {
+    (locationJson \ "name") match {
+      case u: JsUndefined => {
+        val msg = "location is a JSON object of form: { name: <string>, enabled: <boolean> }"
+        throw new BadRequestException(s"Could not parse 'name' from location. ${msg}")
+      }
+      case v => v.as[String]
     }
   }
   
@@ -509,6 +534,7 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
   /**
    * Gets the list of API Gateway providers from gestalt-apigateway and transforms them into
    * JSON that can be ingested by Meta.
+   * 
    * Currently this is used only in create workspace where we're temporarily creating
    * gateway providers for the workspace at workspace creation. This will probably go away
    * once we add UI support for attaching providers at various points in the tree.

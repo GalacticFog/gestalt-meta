@@ -289,51 +289,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         case Failure(e) => HandleExceptions(e)
         case Success(workspace) => {
           
-          // TODO: [TEMPORARY]: Create ApiGatewayProvider under workspace
-          val gateway = LaserController.getLaserProviders(org) foreach { p =>
-            
-            // Get LaserProvider ID, inject into properties.external_id
-            val laserProviderId = p \ "id" match {
-              case u: JsUndefined => throw new RuntimeException(s"Unable to parse provider JSON from gestalt-apigateway. recieved: ${p.toString}")
-              case v => v
-            }
-            
-            log.debug("LASER-PROVIDER-JSON: " + Json.prettyPrint(p))
-            log.debug("LASER-PROVIDER-ID: " + laserProviderId)
-            
-            // Use unique ID for Meta provider
-            val json = withJsonPropValue(
-                  obj       = p ++ Json.obj("id" -> UUID.randomUUID.toString),
-                  propName  = "external_id",
-                  propValue = laserProviderId)
-                  
-            val parentJson = Json.toJson(toLink(workspace, None))
-            log.debug("PARENT-LINK:\n" + Json.prettyPrint(parentJson))
-            
-            val json2 = JsonUtil.upsertProperty(json.as[JsObject], "parent", parentJson).get
-
-            log.debug("FINAL:\n" + Json.prettyPrint(json2))
-            
-            log.debug("Attaching GatewayProvider to workspace:\n" + Json.prettyPrint(json))
-            CreateResource(ResourceIds.User, user.account.id, org, 
-                json2, 
-                user,
-              Some(ResourceIds.ApiGatewayProvider), Some(workspace.id)) match {
-              case Failure(e) => throw new RuntimeException("Unable to create GatewayProvider: " + e.getMessage)
-              case Success(r) => log.debug(s"Successfully create GatewayProvider: ${r.id.toString}");
-            }
-          }
-          
-//          // TODO: [TEMPORARY]: Create MarathonProvider under workspace
-//          val marathon = newMarathonProvider("Marathon::" + UUID.randomUUID.toString)
-//          log.debug("Attaching MarathonProvider to workspace:\n" + Json.prettyPrint(marathon))
-//          
-//          CreateResource(ResourceIds.User, user.account.id, org, marathon, user,
-//              Some(ResourceIds.MarathonProvider), Some(workspace.id)) match {
-//            case Success(instance) => log.debug("Successfully created MarathonProvider: " + instance.id)
-//            case Failure(error)    => throw new RuntimeException("Unable to create MarathonProvider: " + error.getMessage)
-//          }
-          
           Created(Output.renderInstance(workspace, baseUri))
         }
       }
@@ -413,6 +368,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     }
   }  
   
+  
   // --------------------------------------------------------------------------
   // GATEWAY_PROVIDERS
   // --------------------------------------------------------------------------
@@ -427,7 +383,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
             (p.name -> p.id) 
           }.toMap
-
+          
         log.debug("Parsed provider-type as : " + v.as[String])
         v.as[String] match {
           case a if types.contains(a) => types(a)
@@ -436,30 +392,195 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       }
     }    
   }
+
+  
+  /*
+   * 
+   * TODO: Move classess and formatters to package
+   * Move rest of gateway provider code to some utility class
+   * Maybe an ApiGatewayService object makes sense???
+   * 
+   */
+  
+  case class GatewayInputLocation(name: String, enabled: Boolean = true)
+  case class GatewayInputAuth(scheme: String, username: String, password: String)
+  case class GatewayInputConfig(auth: GatewayInputAuth, url: String, extra: Option[String] = None)
+  case class GatewayInputProperties(config: GatewayInputConfig, locations: Seq[GatewayInputLocation])
+  case class GatewayInput(name: String, description: Option[String], resource_type: String, properties: GatewayInputProperties)
+
+  implicit lazy val gatewayInputLocationFormat = Json.format[GatewayInputLocation]
+  implicit lazy val gatewayInputAuth = Json.format[GatewayInputAuth]
+  implicit lazy val gatewayInputConfig = Json.format[GatewayInputConfig]
+  implicit lazy val gatewayInputProperties = Json.format[GatewayInputProperties]
+  implicit lazy val gatewayInput = Json.format[GatewayInput]
+
+  
+  import java.net.URL
+  import java.net.MalformedURLException
+
+  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+  lazy val laser = new Laser(
+      gatewayConfig, lambdaConfig, 
+      Option(EnvConfig.securityKey), 
+      Option(EnvConfig.securitySecret))
+  
+  /*
+   * 
+   * TODO: This function needs transaction enforcement. The workflow entails creating three resources on the
+   * gateway service: 1) Provider, 2) Location, 3) Gateway.  If any of them fail, nothing is to be created
+   * in Meta, and any gateway resources that *were* successfully created should deleted (or otherwise scrubbed).
+   * 
+   */
+  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
+    
+    // TODO: Check resource_type if not gateway-type.
+    
+    val input = request.body.validate[GatewayInput].map {
+      case success: GatewayInput => success
+    }.recoverTotal { e =>
+      throw new BadRequestException("Failed to parse provider JSON : " + JsError.toFlatJson(e).toString)  
+    }
+
+    // Create Provider in gateway service.
+    val laserProvider = LaserProvider(None, name = input.name)
+    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
+    
+    
+    // Create Location in gateway service.
+    val location = getGatewayLocation(input)
+    val laserLocation = LaserLocation(None, name = location.name, providerId)
+    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
+    
+    
+    // Create Gateway in gateway service.     
+    val gatewayInfo = buildGatewayInfo(input)
+    val laserGateway = LaserGateway(None, input.name, locationId, gatewayInfo)
+    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
+
+    
+    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
+      case Failure(err) => Future { HandleExceptions(err) }
+      case Success(jsn) => {
+        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
+      }
+    }
+    
+  }
+  
+  
+  private def setMetaGatewayProps(obj: JsValue, id: UUID, externalId: UUID, parent: JsValue): Try[JsObject] = {
+    val json = (obj.as[JsObject] ++ Json.obj("id" -> JsString(id.toString))) ++ Json.obj("resource_type" -> ResourceIds.ApiGatewayProvider)
+    upsertProperties(json ++ Json.obj("id" -> JsString(id.toString)),
+      ("parent" -> parent),
+      ("external_id" -> JsString(externalId)))
+  }
+  
+  
+  import com.galacticfog.gestalt.laser.ApiResponse
+  
+  
+  private def parseJsonId(json: JsValue) = {
+    (json \ "id") match {
+      case u: JsUndefined => throw new RuntimeException(
+        "Could not find 'id' in JSON returned from gateway server.")
+      case v => UUID.fromString(v.as[String]) // TODO: Test for FormatException
+    }
+  }  
+  
+  private def parseLaserResponseId(response: => Try[ApiResponse]) = {
+    response match {
+      case Failure(err) => throw err
+      case Success(res) => {
+        log.debug("Successfully created Resource in gateway service. Response:\n" + res)
+        parseJsonId(res.output.get)
+      }
+    }
+  }
+  
+  
+  def getGatewayLocation(input: GatewayInput) = {
+    val numLocations = input.properties.locations.size
+    numLocations match {
+      case z if z <= 0 => throw new BadRequestException("You must provide a location.")
+      case n if n > 1  => throw new ConflictException("Multiple locations found. The current implementation only supports a SINGLE location.")
+      case _ => input.properties.locations(0)
+    }     
+  }
+  
+  /**
+   * Build the 'gatewayInfo' JSON object for the POST /gateways payload in apigateway service.
+   */
+  def buildGatewayInfo(input: GatewayInput) = {
+
+    def normalizeUrl(url: String) = {
+       if (url.trim.toLowerCase.startsWith("http")) url else s"http://$url"
+    }
+     
+    def getKongPublicInfo(serviceAddress: String, publicAddress: Option[String]) = {
+      val out = publicAddress match {
+        case Some(address) => new URL(normalizeUrl(address))
+        case None => {
+          val u = new URL(normalizeUrl(serviceAddress))
+          new URL("%s://%s:%d".format(u.getProtocol, "admin." + u.getHost, u.getPort))
+        }
+      }
+      (out.getHost, if (out.getPort == -1) 80 else out.getPort)
+    }
+    
+    val kongServiceUrl = new URL(normalizeUrl(input.properties.config.url))
+    val kongServiceAddress = kongServiceUrl.getHost
+    val kongServicePort = if (kongServiceUrl.getPort == -1) 80 else kongServiceUrl.getPort
+    
+    val username = input.properties.config.auth.username
+    val password = input.properties.config.auth.password
+    
+    val (kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
+    
+    Json.obj(
+      "host" -> kongServiceAddress,
+      "port" -> kongServicePort,
+      "username" -> username,
+      "password" -> password,
+      "gatewayHost" -> kongPublicHost,
+      "gatewayPort" -> kongPublicPort)
+
+  }    
+  
   
   def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+
     val providerType = resolveProviderType(json)
-    log.debug("Translated provider-type to UUID => " + providerType)
-    
-    ResourceFactory.findById(UUID.fromString(parentType), parent) match {
-      case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
-      case Some(p) => {
-        // inject resource_type and parent
-        JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
-          case Failure(e) => Future(HandleRepositoryExceptions(e))
-          case Success(j) => {
-            val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
-            createResourceCommon(org, parent, providerType, newjson)
+    val parentTypeId = UUID.fromString(parentType)
+
+    ResourceFactory.findById(parentTypeId, parent) match {
+      case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
+      case Some(parentResource) => {
+
+        if (providerType == ResourceIds.ApiGatewayProvider) {
+          postGatewayProvider(org, parentResource)
+        } 
+        else {
+          val providerParent = ResourceFactory.findById(UUID.fromString(parentType), parent)
+
+          providerParent match {
+            case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
+            case Some(p) => {
+
+              // We found the parent, inject resource_type and parent into the incoming JSON.
+              JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
+                case Failure(e) => Future(HandleRepositoryExceptions(e))
+                case Success(j) => {
+                  val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
+                  createResourceCommon(org, parent, providerType, newjson)
+                }
+              }
+            }
           }
         }
       }
+      
     }
-
-//    val newjson = {
-//      json.as[JsObject] ++ 
-//        Json.obj("resource_type" -> providerType.toString) 
-//    }
-//    createResourceCommon(org, parent, providerType, newjson)
   }
   
   def postProviderConfig(org: UUID, parentType: String, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
@@ -474,9 +595,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
-
-  
-  
 
 
   // --------------------------------------------------------------------------
@@ -493,7 +611,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       safeGetInputJson(typeId, json) match {
         case Failure(error) => BadRequestResult(error.getMessage)
         case Success(input) => {
-          println("INPUT:\n" + input)
           HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
         }
       }

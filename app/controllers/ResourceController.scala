@@ -57,7 +57,6 @@ import com.galacticfog.gestalt.meta.api.BuildInfo
 
 object ResourceController extends MetaController with NonLoggingTaskEvents {
   
-  
   def health() = Action {
     MetaHealth.selfCheck(verbose = false) match {
       case Left(err) => InternalServerError(err)
@@ -103,7 +102,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Success(m) => Ok(Json.toJson(m))
       case Failure(e) => HandleRepositoryExceptions(e)
     }
-
+  }
+  
+  def providerTypeIds(): Seq[UUID] = {
+    ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
+     p.id 
+    }
+  }
+  
+  def providerTypes() = {
+    ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
+      (p.name -> p.id) 
+    }.toMap  
   }
   
   def getGenericTopLevel(targetTypeId: String) = Authenticate() { implicit request =>
@@ -134,7 +144,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getGenericByIdFqon(targetTypeId: String, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     getById(fqid(fqon), uuid(targetTypeId), id)  
   }
-
+  
   def getGenericChildAll(targetTypeId: String, parentType: String, parentId: UUID, org: UUID) = Authenticate(org) { implicit request =>
     handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), parentId),
         request.queryString, META_URL)
@@ -149,9 +159,36 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     getProvidersCommon(org, parentType, parent, request.queryString, META_URL)
   }
   
+  def getProvidersOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    getProvidersCommon(org, ResourceIds.Org, org, request.queryString, META_URL)
+  }
+  
   def getProvidersFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon) { implicit request =>
     getProvidersCommon(fqid(fqon), parentType, parent, request.queryString, META_URL)
   }
+  
+  def getProviderByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    getProviderByIdCommon(id)
+  }
+  
+  def getProviderByIdFqon(fqon: String, parentType: String, parentId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+    val parentTypeId = UUID.fromString(parentType)
+    ResourceFactory.findById(parentTypeId, parentId) match {
+      case None => NotFoundResult(request.uri)
+      case Some(_) => getProviderByIdCommon(id)
+    }  
+  }
+  
+  def getProviderByIdCommon(id: UUID)(implicit request: SecuredRequest[_]) = {
+    ResourceFactory.findById(id) match {
+      case None => NotFoundResult(s"Provider with ID '${id}' not found.")
+      case Some(p) => {
+        if (providerTypeIds.contains(p.typeId)) Ok(Output.renderInstance(p, META_URL))
+        else NotFoundResult(s"Provider with ID '${id}' not found.")
+      }
+    }
+  }  
   
   def getProvidersCommon(org: UUID, parentType: String, parent: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
     ResourceFactory.findById(parentType, parent) match {
@@ -175,6 +212,67 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getTypeActionByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     ???  
   }
+  
+  def getEnvVariablesOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    Ok(Json.toJson(getEnvVariablesCommon(org, org)))
+  }
+  
+  def getEnvVariablesFqon(fqon: String, typeId: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(UUID.fromString(typeId), id) match {
+      case None => NotFoundResult(request.uri)
+      case Some(_) => Ok(Json.toJson(getEnvVariablesCommon(fqid(fqon), id)))
+    }
+  }
+  
+  
+  protected def merge(map1: Map[String,String], map2: Map[String,String]): Map[String,String] = {
+    
+    def safeAdd(m: Map[String,String], key: String, value: String) = {
+      if (!m.contains( key )) m ++ Map(key -> value) else m
+    }
+    
+    def loop(rs: List[(String,String)], acc: Map[String,String]): Map[String,String] = {
+      rs match {
+        case Nil    => acc
+        case h :: t => loop( t, safeAdd( acc, h._1, h._2 ) )
+      }      
+    }
+    if ( map2.isEmpty ) map1 else {
+      loop( map2.toList, map1 )
+    }
+  }
+  
+    
+  def mergeBottomUp(vs: Seq[(Int,Map[String,String])]): Map[String,String] = {
+
+    def go(vars: Seq[(Int,Map[String,String])], acc: Map[String,String]): Map[String,String] = {
+      vars match {
+        case Nil => acc
+        case h :: t => go(t, merge(acc, h._2))
+      }    
+    }
+    go(vs.sortWith((a,b) => a._1 < b._1), Map())
+  }
+  
+  
+  def getEnvVariablesCommon(org: UUID, instanceId: UUID) = {
+    
+    val rs = ResourceFactory.findEnvironmentVariables(instanceId)
+    
+    val all = rs map { case (k,v) =>
+      if (v.properties.isEmpty) None
+      else v.properties.get.get("env") match {
+          case None => None
+          case Some(vars) => {
+            Option(k -> Json.parse(vars).validate[Map[String,String]].get)
+        }
+      }
+    } filter { _.isDefined } flatMap { v => v }
+    
+    mergeBottomUp(all)
+  }
+  
   
   def getGroupsFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(
@@ -233,9 +331,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       
       val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
       log.debug("Filtering providers for type : " + typeName)
-      
-      //val validTypes = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
-      
+
       val typeId = typeName match {
         case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
         case b if b == Resources.MarathonProvider.toString => ResourceIds.MarathonProvider
@@ -265,31 +361,14 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   def getGenericChildByIdOrgFqon(targetTypeId: String, fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-
-    //getGenericChildByIdFqon(targetTypeId, ResourceIds.Org, fqid(fqon), fqon, id)
     val org = fqid(fqon)
     getGenericChildById(targetTypeId, ResourceIds.Org, org, org, id)
-    
-//    def notfound(label: String, id: UUID) = "%s with ID %s not found.".format(label, id)
-//    
-//    ResourceFactory.findById(ResourceId, fqid(fqon)) match {
-//      case None => NotFoundResult(notfound(ResourceLabel(parentType), parentId))
-//      case Some(p) => {
-//        ResourceFactory.findById(targetTypeId, id) match {
-//          case None => NotFoundResult(notfound(ResourceLabel(targetTypeId), id))
-//          case Some(t) => Ok(Output.renderInstance(t, META_URL))
-//        }
-//      }
-//    }
-  }   
+  }
   
   def getGenericChildAllOrgFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), fqid(fqon)),
         request.queryString, META_URL)
   }    
-  
-  
-  //def getGenericChildAll(targetTypeId: String, parentType: String, parentId: UUID, targetId: UUID) = Authenticate(org) { implicit request =>  
   
   private val qs = ResourceQueryService
 
@@ -314,7 +393,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
             
     Ok(Json.toJson(result))
   }
-
 
   
   import com.galacticfog.gestalt.laser._
@@ -396,39 +474,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
 
-//  def getEnvContainers(fqon: String, environment: UUID, provider: UUID, qs: QueryString)(implicit request: SecuredRequest[AnyContent]) = {
-//    log.debug(s"Entered ResourceController::getEnvContainers($fqon, $environment, $provider)")
-//
-//    val targets = Try {
-//      val prv = ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
-//        throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
-//      }
-//      val we = ResourceController.findWorkspaceEnvironment(environment).get
-//      (we._1, we._2, prv)
-//    }
-//
-//    targets match {
-//      case Failure(e) => Future { HandleRepositoryExceptions(e) }
-//      case Success((wrk, env, prv)) => {
-//
-//        log.debug("workspace   : %s - %s".format(wrk.id, wrk.name))
-//        log.debug("environment : %s - %s".format(env.id, env.name))
-//        log.debug("provider    : %s - %s".format(prv.id, prv.name))
-//
-//        val providerUrl = {
-//          (Json.parse(prv.properties.get("config")) \ "url").as[String]
-//        }
-//        log.debug("provider.url: %s".format(providerUrl))
-//
-//        val marathonClient = MarathonClient(WS.client, providerUrl)
-//        marathonClient.listApplicationsInEnvironment(fqon, wrk.name, env.name).map { cs =>
-//          cs.map { toGestaltContainer(fqon, _, Some(prv)) }
-//        }
-//        .map { handleExpansion(_, request.queryString, META_URL) }
-//        .recover { case e: Throwable => BadRequest(e.getMessage) }
-//      }
-//    }
-//  }
 
   /**
    * Convert ContainerApp to GestaltResourceInstance
@@ -586,7 +631,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         case None => NotFoundResult(request.uri)
       }
     }
-  }  
+  }
   
   /**
    * Build the dynamic 'groups' property on a User instance.
@@ -601,9 +646,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       }
       case Failure(er) => throw new RuntimeException(s"Failed looking up groups for user '${res.id}': ${er.getMessage}")
     }
-    
   }
-  
   
   private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
     if (references.isReferenceType(typeId)) {
@@ -621,18 +664,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     Json.parse("[%s]".format(refs.mkString(",")))
   }
   
-  /**
-   * Get a List of ResourceLinks by Org UUID
-   * [Implements]: GET /orgs/:uuid/:resources, i.e. /orgs/:uuid/workspaces
-   */
-//  def getAllByOrgId(org: UUID, resource: String) = GestaltFrameworkAuthAction(Some(org)) { implicit securedRequest =>
-//    trace(s"getAllByOrgId($org, $resource)")
-//    resourceUUID(resource) match {
-//      case Some(id) => getAll(org, id)  
-//      case None => NotFound(s"Invalid resource-type: $resource")
-//    }
-//  }
-
   
   /**
    * Get a List of ResourceLinks by FQON
@@ -929,7 +960,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Some(org) => getEndpoints(org.id, environment, request.queryString)
       case None => OrgNotFound(fqon)
     }
-  }    
+  }
+  
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
   // --------------------------------------------------------------------------   
@@ -938,18 +970,11 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     FindByIdResult(org, ResourceIds.Environment, id)
   }
   
-//  def getEnvironmentByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-//    orgFqon(fqon) match {
-//      case Some(org) => FindByIdResult(org.id, ResourceIds.Environment, id)
-//      case None => OrgNotFound(fqon)
-//    }
-//  }
-  
   
   def FindByIdResult(org: UUID, typeId: UUID, id: UUID) = {
     ResourceFactory.findById(typeId, id) match {
       case Some(res) => Ok(Output.renderInstance(res))
-      case None       => NotFoundResult(s"${ResourceLabel(typeId)} '${id}' not found.")
+      case None      => NotFoundResult(s"${ResourceLabel(typeId)} '${id}' not found.")
     }    
   }
   
@@ -985,43 +1010,8 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }
   
   
-  def getWorkspaceProviderByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
-        ResourceFactory.findById(id) match {
-          case Some(res) => Ok(Output.renderInstance(res))
-          case None => NotFoundResult(request.uri)
-        }
-      }
-    }  
-  }
-  
-  
   def filterProviders() = {
-    
-  }
-  
-  def getWorkspaceProvidersFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => {
-        val gateways = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
-        val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
-        val qs = request.queryString
-        
-        val providers = if (qs.contains("type")) {
-          val typeId = "Gestalt::Configuration::Provider::" + qs("type")(0) match {
-            case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
-            case b if b == Resources.MarathonProvider.toString   => ResourceIds.MarathonProvider
-            case e => throw new BadRequestException(s"Unknown provider type : '$e'")
-          }
-          (gateways ++ marathons) filter { _.typeId == typeId }
-        } else (gateways ++ marathons)
-        
-        handleExpansion(providers, request.queryString, META_URL)
-      }
-      case None => OrgNotFound(fqon)
-    }
+    ???
   }
   
   
@@ -1057,11 +1047,11 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     } 
   }  
   
-
+  
   private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = {
     okNotFound(qs.findById(org, resourceTypeId, id))
   }
-
+  
   
   import scala.reflect.runtime.{ universe => ru }
   import scala.reflect.runtime.currentMirror
