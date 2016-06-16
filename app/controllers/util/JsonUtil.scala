@@ -81,6 +81,19 @@ object JsonUtil {
     replaceJsonProps(obj, ps)    
   }  
   
+  def upsertProperties(obj: JsObject, props: (String,JsValue)*): Try[JsObject] = {
+    
+    def go(ps: Seq[(String,JsValue)], o: JsObject): Try[JsObject] = {
+      ps match {
+        case Nil => Success(o)
+        case h :: t => {
+          upsertProperty(o, h._1, h._2) flatMap { x => go(t, x) }
+        }
+      }
+    }
+    go(props.toList, obj)
+  }
+  
   
   def find(obj: JsObject, path: String): Option[JsValue] = {  
     @tailrec 
