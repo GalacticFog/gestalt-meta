@@ -63,6 +63,7 @@ package object laser {
   case class LaserLambda(
       id: Option[String], 
       eventFilter: Option[String],
+      public: Boolean,
       provider: Option[JsValue],
       artifactDescription: LaserArtifactDescription)
 
@@ -123,16 +124,23 @@ package object laser {
    * TODO: This may translate into multiple LaserLambdas
    */
   def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
-
+    
+    println("toLaserLambda(...)")
+    
     val props = lambda.properties.get
     val (handler,function) = parseHandlerFunction(lambda)
     val artifactUri = {
       if (props.contains("package_url")) Some(props("package_url").as[String])
       else None
     }
+    
+    
+    val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
+    
     LaserLambda(
       id = Some(lambda.id.get.toString), 
       eventFilter = Some(UUID.randomUUID.toString),
+      public = isPublic,
       provider = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")), //props("provider"),
       LaserArtifactDescription(
           artifactUri = artifactUri,
