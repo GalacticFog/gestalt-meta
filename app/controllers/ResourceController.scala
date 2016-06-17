@@ -314,15 +314,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getGroupByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
       r => 
-        // TODO: Inject dynamic 'users' list into r.
+
         Security.getGroupAccounts(r.id, request.identity) match {
           case Success(acs) => {
-            println("Got group accounts: " + acs)
+            // String list of all users in current group.
             val acids = (acs map { _.id.toString }).mkString(",")
-            val props = if (acids.isEmpty) None
-              else Some(r.properties.get ++ Map("users" -> acids))
             
-            Ok(Output.renderInstance(r.copy(properties = props), META_URL))
+            // Inject users into group properties.
+            val groupProps = if (r.properties.isDefined) r.properties.get else Map()
+            val outputProps = if (acids.isEmpty) None
+              else Some(groupProps ++ Map("users" -> acids))
+            
+            Ok(Output.renderInstance(r.copy(properties = outputProps), META_URL))
             
           }
           case Failure(err) => {
@@ -338,7 +341,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Success(gs) => {
         val userids = gs map { _.id }
         if (userids.isEmpty) Ok(Json.parse("[]")) else {
-        handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, userids),
+        handleExpansion(ResourceFactory.findAllIn(ResourceIds.User, userids),
             request.queryString, META_URL)
         }
       }
