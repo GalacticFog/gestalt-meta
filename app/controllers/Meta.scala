@@ -124,7 +124,6 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
    * 
    */
   def patchGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
-    println("QUERYSTRING : " + request.queryString)
     val qs = request.queryString
     
     val uids = Try {
@@ -136,10 +135,13 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
         // *fixes* broken strings if it thinks it can.
         // -------------------------------------------------------------------------
         val ids = qs("id") map { UUID.fromString(_) }
-        val users = ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, ids)
-
-        // TODO: Ensure we got all the users we searched for.
-        users map { _.id }
+        val users = ResourceFactory.findAllIn(ResourceIds.User, ids)
+        val found = users map { _.id }
+        
+        // Ensure we got all the users we asked for.
+        val delta = ids.diff(found)
+        if (!delta.isEmpty) throw new BadRequestException("The following user(s) not found: " + delta.mkString(","))
+        else found
       }
     }
     
