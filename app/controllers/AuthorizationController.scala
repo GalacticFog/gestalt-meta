@@ -358,5 +358,39 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   }
 
   
+  def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
+    entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
+  }
+  
+  
+  def isAuthorized(resourceId: UUID, identityId: UUID, actionName: String): Try[Boolean] = {
+    val ents = AuthorizationController.getEntitlementsMerged(resourceId)
+  
+    
+    // Find an entitlement that matches the current action
+    
+    
+    Success(true)    
+  }
+  
+  /**
+   * Determine if an identity is found in a list of users and groups
+   * 
+   * @param identity the user ID to test
+   * @param allowed list of User and Group IDs
+   */
+  def isInRole(identity: UUID, allowed: Seq[UUID]) = {
+    val (users,groups) = ResourceFactory.findAllIn(allowed) partition { _.typeId == ResourceIds.User }
+    
+    val userids = users map { _.id }
+    if (userids.contains(identity)) true
+    else {
+      // Check if the user exists in one of the groups.
+      
+      ???
+    }
+    
+  }
+  
 }
 
