@@ -230,7 +230,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
-  
+  /*
+   * TODO: This method is currently not authenticated.
+   */
   def getTopLevelLambdaEnv(lambdaId: UUID) = Action {
     
     ResourceFactory.findById(lambdaId) match {
