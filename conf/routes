@@ -393,7 +393,6 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas/:id 	
 
 
 
-
 ############################
 # API_ENDPOINTS
 ############################
@@ -426,9 +425,11 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers   		controllers.Meta.p
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers		  	controllers.ResourceController.getProvidersOrgFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id	  	controllers.ResourceController.getProviderByIdOrgFqon(fqon: String, id: java.util.UUID)
 
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id		controllers.DeleteController.deleteProviderOrgFqon(fqon: String, id: java.util.UUID)
+
+
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers  		controllers.ResourceController.getGenericChildAllOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String)
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id  	controllers.ResourceController.getGenericChildByIdOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String, id: java.util.UUID)
-
 
 #DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id controllers.ResourceController.hardDeleteChildFqon(fqon: String, childType: UUID, childId: UUID, parentType: UUID, parentId: Some[UUID])
 
@@ -492,6 +493,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourc
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  		controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceId: java.util.UUID)
 
 
+
 ############################
 # DOMAINS
 ############################
@@ -511,7 +513,7 @@ GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/env						controllers.ResourceContr
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/env		controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/env 		controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
 GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/env 			controllers.ResourceController.getEnvVariablesFqon(fqon: String, typeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", id: java.util.UUID)
-
+GET /lambdas/:id/env													controllers.ResourceController.getTopLevelLambdaEnv(id: java.util.UUID)
 
 
 ############################

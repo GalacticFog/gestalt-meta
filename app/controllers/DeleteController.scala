@@ -50,6 +50,8 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   
   
+  
+  
   def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => {
@@ -131,6 +133,64 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
     Ok(s"DELETING $restName2 : ${id2.toString}")  
   }
   
+  
+  // =========================================================
+  
+  
+  def deleteProviderFqon(fqon: String, parentType: String, parentId: UUID) = Authenticate(fqon) { implicit request =>
+    ???  
+  }
+  
+  
+  def deleteProviderOrgFqon(fqon: String, provider: UUID) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    println("Calling delete Common...")
+    deleteProviderCommon(org, org, provider)
+  }  
+  
+  
+  def deleteProviderCommon(org: UUID, parentId: UUID, provider: UUID) = {
+    val types = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
+    
+    ResourceFactory.findById(provider) match {
+      
+      case None    => NotFoundResult(s"Provider with ID '$provider' not found.")
+      case Some(p) => {
+        
+        // TODO: Ensure the resource we found is actually a child of 'parent'
+        
+        // We found a resource with the ID, now check if it's actually a provider...
+        if (!types.contains(p.typeId)) NotFoundResult(s"Provider with ID '$provider' not found.")
+        else {
+          
+          // Check if it's a gateway provider
+          if (p.typeId == ResourceIds.ApiGatewayProvider) {
+            
+            val laserProviderId = p.properties.get("external_id")
+
+            laser.deleteProvider(laserProviderId) match {
+              case Failure(e) => HandleExceptions(e)
+              case Success(_) => {
+                
+                // Now delete the provider from Meta
+                ResourceFactory.hardDeleteResource(provider) match {
+                  case Failure(e) => HandleExceptions(e)
+                  case Success(_) => NoContent
+                }
+              }
+            }
+          } else {
+            ResourceFactory.hardDeleteResource(provider) match {
+              case Failure(e) => HandleExceptions(e)  
+              case Success(_) => NoContent
+            }
+          }
+          
+        }
+      }
+    }    
+  }  
+  
   def hardDeleteWorkspaceProvider(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
     hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
   }
@@ -140,14 +200,20 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def hardDeleteEnvironmentProviderFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    hardDeleteMetaResource(id, ResourceIds.MarathonProvider)  
+    //hardDeleteMetaResource(id, ResourceIds.MarathonProvider)
+    
+    // TODO: Ensure the given provider is a chid of this Environment.
+    deleteProviderCommon(fqid(fqon), environment, id)
   }
   
   def hardDeleteWorkspaceProviderFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
-      case None => OrgNotFound(fqon)
-    }
+//    orgFqon(fqon) match {
+//      case Some(org) => hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
+//      case None => OrgNotFound(fqon)
+//    }
+    
+    // TODO: Ensure the given provider is a child of this Workspace.
+    deleteProviderCommon(fqid(fqon), workspace, id)
   }
   
   def hardDeleteChildFqon(fqon: String, childType: UUID, childId: UUID, parentType: UUID, parentId: Some[UUID]) = Authenticate(fqon) { implicit request =>

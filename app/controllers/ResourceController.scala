@@ -93,7 +93,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         }
       }
     }
-
+    
     val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
     val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
     val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
@@ -124,10 +124,15 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     getById(org, ResourceIds.Org, org)  
   }
   
+  
   def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val orgId = fqid(fqon)
+    
+    AuthorizationController.isAuthorized(orgId, request.identity.account.id, "org.view")
+    
     getById(orgId, ResourceIds.Org, orgId)
-  }  
+  }
+  
   
   def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
     handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), org), request.queryString, META_URL)
@@ -225,6 +230,33 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  /*
+   * TODO: This method is currently not authenticated.
+   */
+  def getTopLevelLambdaEnv(lambdaId: UUID) = Action {
+    
+    ResourceFactory.findById(lambdaId) match {
+      case None => NotFoundResult(s"Lambda with ID '$lambdaId' not found.")
+      case Some(lambda) => {
+        val rs = ResourceFactory.findEnvironmentVariables(lambdaId)
+        
+        val all = rs map { case (k,v) =>
+          if (v.properties.isEmpty) None
+          else v.properties.get.get("env") match {
+              case None => None
+              case Some(vars) => {
+                Option(k -> Json.parse(vars).validate[Map[String,String]].get)
+            }
+          }
+        } filter { _.isDefined } flatMap { v => v }
+        
+        Ok(Json.toJson(mergeBottomUp(all)))        
+      }
+    }
+    
+  }
+  
+  
   
   protected def merge(map1: Map[String,String], map2: Map[String,String]): Map[String,String] = {
     
@@ -284,18 +316,24 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getGroupByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
       r => 
-        // TODO: Inject dynamic 'users' list into r.
+
         Security.getGroupAccounts(r.id, request.identity) match {
           case Success(acs) => {
-            
+            // String list of all users in current group.
             val acids = (acs map { _.id.toString }).mkString(",")
-            val props = if (acids.isEmpty) None
-              else Some(r.properties.get ++ Map("users" -> acids))
             
-            Ok(Output.renderInstance(r.copy(properties = props), META_URL))
+            // Inject users into group properties.
+            val groupProps = if (r.properties.isDefined) r.properties.get else Map()
+            val outputProps = if (acids.isEmpty) None
+              else Some(groupProps ++ Map("users" -> acids))
+            
+            Ok(Output.renderInstance(r.copy(properties = outputProps), META_URL))
             
           }
-          case Failure(err) => HandleExceptions(err)
+          case Failure(err) => {
+            println("ERROR Getting group accounts : " + err)
+            HandleExceptions(err)
+          }
         }
     }
   }
@@ -305,7 +343,7 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
       case Success(gs) => {
         val userids = gs map { _.id }
         if (userids.isEmpty) Ok(Json.parse("[]")) else {
-        handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, userids),
+        handleExpansion(ResourceFactory.findAllIn(ResourceIds.User, userids),
             request.queryString, META_URL)
         }
       }

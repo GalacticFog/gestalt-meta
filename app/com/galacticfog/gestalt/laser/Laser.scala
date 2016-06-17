@@ -155,6 +155,9 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     client.post("/providers", json, Seq(200,201,202))
   }
   
+  def deleteProvider(id: String): Try[ApiResponse] = {
+    client.delete(s"/providers/${id}", Seq(200,204))
+  }
   
   // --------------------------------------------------------------------------
   // LOCATIONS
