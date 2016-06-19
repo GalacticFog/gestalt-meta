@@ -174,7 +174,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
           else qs("id")(0).trim.split(",") map { UUID.fromString(_) }
         }
         // TODO: Ensure we find all the users contained in 'ids'
-        ResourceFactory.findAllIn(fqid(fqon), ResourceIds.User, ids) map { _.id }
+        ResourceFactory.findAllIn(ResourceIds.User, ids) map { _.id }
       }
     }
 
