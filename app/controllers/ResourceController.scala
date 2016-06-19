@@ -116,23 +116,67 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }.toMap  
   }
   
+  def ActionPrefix(typeId: UUID) = typeId match {
+    case ResourceIds.Org => "org"
+    case ResourceIds.Workspace => "workspace"
+    case ResourceIds.Environment => "environment"
+    case ResourceIds.Lambda => "lambda"
+    case ResourceIds.Container => "container"
+  }
+  
   def getGenericTopLevel(targetTypeId: String) = Authenticate() { implicit request =>
-    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId)), request.queryString, META_URL)  
+    val typeId = uuid(targetTypeId)
+    val action = s"${ActionPrefix(typeId)}.view"
+    
+    AuthorizeList(action) {
+      ResourceFactory.findAll(typeId)
+    }
   }  
+  
+
   
   def getOrg(org: UUID) = Authenticate(org) { implicit request =>
     getById(org, ResourceIds.Org, org)  
   }
   
-  
-  def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    val orgId = fqid(fqon)
+  def getWorkspacesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     
-    AuthorizationController.isAuthorized(orgId, request.identity.account.id, "org.view")
-    
-    getById(orgId, ResourceIds.Org, orgId)
+    ???
   }
   
+  def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    
+    AuthorizeById(org, "org.view") {    
+      getById(org, ResourceIds.Org, org)
+    }
+    
+  }
+  
+  
+  def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+    val caller = request.identity
+    val output = resources filter { r =>
+      AuthorizationController.isAuthorized(r.id, caller.account.id, action, caller) getOrElse false
+    }
+    handleExpansion(output, request.queryString, META_URL)
+  }
+  
+  def AuthorizeById(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]) = {
+    AuthorizationController.isAuthorized(
+        target, request.identity.account.id, actionName, request.identity) match {
+      case Failure(err) => HandleExceptions(err)
+      case Success(auth) => if (auth) block else ForbiddenResult("You do not have permission to access this resource")
+    }
+  }
+  
+//  def AuthById(action: String)(resource: => GestaltResourceInstance)(implicit request: SecuredRequest[_]) = {
+//    val caller = request.identity
+//    AuthorizationController.isAuthorized(resource.id, caller.account.id, action, caller) match {
+//      case Failure(err) => HandleExceptions(err)
+//      case Success(auth) => if (auth) block else ForbiddenResult("You do not have permission to access this resource")
+//    }
+//  }
   
   def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
     handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), org), request.queryString, META_URL)
@@ -643,7 +687,13 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
           case m if m == ResourceIds.Lambda => getDescendantLambdas(org)
           case _ => ResourceFactory.findAll(typeId, org)
         }
-        handleExpansion(resources, request.queryString, baseUri = META_URL)
+        
+        val action = s"${ActionPrefix(typeId)}.view"
+        AuthorizeList(action) {
+          ResourceFactory.findAll(typeId, org)
+        }
+        
+        //handleExpansion(resources, request.queryString, baseUri = META_URL)
       }
     }
   }
@@ -658,18 +708,43 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+//  def getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    extractByName(fqon, restName) match {
+//      case Left(result) => result
+//      case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
+//        case Some(res) => res.typeId match {
+//          case u if res.typeId == ResourceIds.User => Ok(Output.renderInstance(buildUserOutput(res), META_URL))
+//          case _ => {
+//            Ok(Output.renderInstance(res, META_URL))
+//          }
+//        }
+//        case None => NotFoundResult(request.uri)
+//      }
+//    }
+//  }
+
   def getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: UUID) = Authenticate(fqon) { implicit request =>
     extractByName(fqon, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => ResourceFactory.findById(typeId, id) match {
-        case Some(res) => res.typeId match {
-          case u if res.typeId == ResourceIds.User => Ok(Output.renderInstance(buildUserOutput(res), META_URL))
-          case _ => Ok(Output.renderInstance(res, META_URL))
+        case None      => NotFoundResult(request.uri)
+        case Some(res) => {
+          
+          val action = s"${ActionPrefix(typeId)}.view"
+          AuthorizeById(res.id, action) {
+            val output = res.typeId match {
+              case u if res.typeId == ResourceIds.User => buildUserOutput(res)
+              case _ => res
+            }
+            Ok(Output.renderInstance(output, META_URL))
+          }
+          
+          
         }
-        case None => NotFoundResult(request.uri)
       }
     }
-  }
+  }  
+  
   
   /**
    * Build the dynamic 'groups' property on a User instance.
