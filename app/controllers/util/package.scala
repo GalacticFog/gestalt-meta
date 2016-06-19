@@ -23,6 +23,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
 import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
+
 import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => SecurityBadRequestException }
 import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ ForbiddenAPIException => SecurityForbiddenAPIException }
@@ -37,6 +38,8 @@ package object util {
   def NotFoundResult(message: String) = NotFound(new ResourceNotFoundException(message).asJson)
   def BadRequestResult(message: String) = BadRequest(new BadRequestException(message).asJson)
   def ConflictResult(message: String) = Conflict(new ConflictException(message).asJson)
+  def ForbiddenResult(message: String) = Forbidden(new ForbiddenException(message).asJson)
+  def UnauthorizedResult(message: String) = Unauthorized(new UnauthorizedException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
 def HandleExceptions(e: Throwable) = {
