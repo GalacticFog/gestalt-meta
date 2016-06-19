@@ -355,7 +355,7 @@ package object marathon {
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonApp(name: String, inputJson: JsObject): MarathonApp = {
+  def toMarathonApp(name: String, inputJson: JsObject, provider: GestaltResourceInstance): MarathonApp = {
     
     val props = (inputJson \ "properties").validate[InputContainerProperties].map {
       case ps: InputContainerProperties => ps
