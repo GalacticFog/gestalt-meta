@@ -125,7 +125,8 @@ object Security {
       parentOrgId = parent,
       create = GestaltOrgCreate(
         name = org.name,
-        createDefaultUserGroup = true,
+        createDefaultUserGroup = false,
+        inheritParentMappings = Some(true),
         description = org.description
       ))(client.withCreds(auth.creds)), 5 seconds )}
   }
