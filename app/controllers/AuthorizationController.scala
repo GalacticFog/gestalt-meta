@@ -186,7 +186,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     val parentResource = ResourceFactory.findById(typeId, resourceId)
     
     parentResource match {
-      case None => NotFoundResult(request.uri)
+      case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
       case Some(_) => {
 
         validateEntitlementPayload(org, request.identity, request.body) match {
@@ -320,7 +320,12 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     // Highest key corresponds with highest level in the hierarchy.
     val max = es.keys.max
     val topLevel = es(max)
-    val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
+    
+    // Top-Down evaluation
+    //val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
+    
+    // Bottom-Up evaluation
+    val ents = (es - max).toSeq.sortWith((a,b) => a._1 < b._1)
 
     // Add all top-level entitlements to map
     val output = topLevel map { e => (entitlementAction(e), e) } toMap
@@ -345,13 +350,16 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
           val action = entitlementAction(h)
           val newacc = if (acc.contains(action)) acc else acc ++ Map(action -> h)
           
-          go(t, newacc /*(if (acc.contains(action)) acc else acc ++ Map(action -> h))*/)
+          go(t, newacc)
         }
       }
     }
     go(ents, exclude)
   }  
   
+  /**
+   * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
+   */
   private def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
     handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId),
         request.queryString, META_URL)    
@@ -361,16 +369,48 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
     entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
   }
+
   
+  def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
+    findMatchingEntitlement(resource, action) match {
+      case None => false
+      case Some(entitlement) => {
+        val allowed = getAllowedIdentities(entitlement)
+        val membership = getUserMembership(identity, account)
+        (allowed intersect membership).isDefinedAt(0)
+      }
+    }
+  }
   
-  def isAuthorized(resourceId: UUID, identityId: UUID, actionName: String, account: AuthAccountWithCreds): Try[Boolean] = {
-    val ents = AuthorizationController.getEntitlementsMerged(resourceId)
+  def getUserMembership(user: UUID, account: AuthAccountWithCreds): Seq[UUID] = {
+    user +: (Security.getAccountGroups(user, account).get map { _.id })
+  }
   
-    
-    // Find an entitlement that matches the current action
-    
-    Try { isInRole(identityId, Seq(""), account) }
-    Success(true)    
+  def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+    val ents = AuthorizationController.getEntitlementsMerged(resource) filter { ent =>
+      ent.properties.get("action") == action
+    }
+    println("-----ENTITLEMENT:\n" + ents)
+    if (ents.isEmpty) None
+    else if (ents.size > 1) {
+      throw new RuntimeException(s"Multiple entitlements found for action '$action'. Data is corrupt.")
+    } 
+    else Option(ents(0))    
+  }
+  
+  def getAllowedIdentities(entitlement: GestaltResourceInstance): Seq[UUID] = {
+    entitlement.properties.get.get("identities") match {
+      case None => Seq()
+      case Some(identities) => {
+        
+        Json.parse(identities).validate[Seq[String]].map {
+          case sq: Seq[String] => sq map { UUID.fromString(_) }
+        }.recoverTotal { e =>
+          throw new RuntimeException(
+              s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
+        }
+      }
+    }
   }
   
   /**
@@ -379,24 +419,27 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
    * @param identity the user ID to test
    * @param allowed list of User and Group IDs
    */
-  def isInRole(identity: UUID, identities: Seq[UUID], account: AuthAccountWithCreds) = {
-    val (users,groups) = ResourceFactory.findAllIn(identities) partition { _.typeId == ResourceIds.User }
-    
-    val userids = users map { _.id }
-    if (userids.contains(identity)) true
-    else {
-      // Check if the user exists in one of the groups.
-      groups exists { g => isInGroup(g.id, identity, account) }
-    }
-  }
+//  def isInRole(identity: UUID, identities: Seq[UUID], account: AuthAccountWithCreds) = {
+//    val (users,groups) = ResourceFactory.findAllIn(identities) partition { _.typeId == ResourceIds.User }
+//    
+//    println("USERS  : " + (users map { _.id }))
+//    println("GROUPS : " + (groups map { _.id }))
+//    
+//    val userids = users map { _.id }
+//    if (userids.contains(identity)) true
+//    else {
+//      // Check if the user exists in one of the groups.
+//      groups exists { g => isInGroup(g.id, identity, account) }
+//    }
+//  }
   
-  def isInGroup(groupId: UUID, target: UUID, auth: AuthAccountWithCreds) = {
-    val users = Security.getGroupAccounts(groupId, auth) match {
-      case Failure(err) => throw err
-      case Success(users) => users map { _.id }
-    } 
-    users contains target
-  }
+//  def isInGroup(groupId: UUID, target: UUID, auth: AuthAccountWithCreds) = {
+//    val users = Security.getGroupAccounts(groupId, auth) match {
+//      case Failure(err) => throw err
+//      case Success(users) => users map { _.id }
+//    } 
+//    users contains target
+//  }
   
   
 }
