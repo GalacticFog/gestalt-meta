@@ -2,6 +2,7 @@ package controllers.util
 
 
 import controllers.ResourceController
+import org.specs2.specification.core.Fragments
 import play.api._
 import play.api.test._
 import play.api.test.Helpers._
