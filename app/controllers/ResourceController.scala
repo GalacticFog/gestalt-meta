@@ -135,11 +135,14 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   
   
   def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
-    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), org), request.queryString, META_URL)
+    val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), org) filterNot(_.id == org)
+    handleExpansion(allMinusSelf, request.queryString, META_URL)
   }
   
   def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
-    handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), fqid(fqon)), request.queryString, META_URL)
+    val id = fqid(fqon)
+    val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
+    handleExpansion(allMinusSelf, request.queryString, META_URL)
   }
   
   def getGenericById(targetTypeId: String, org: UUID, id: UUID) = Authenticate(org) { implicit request =>
