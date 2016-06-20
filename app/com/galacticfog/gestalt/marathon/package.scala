@@ -375,6 +375,8 @@ package object marathon {
           "Could not parse container properties: " + JsError.toFlatJson(e).toString)
     }
 
+    val isDocker = props.container_type.toUpperCase == "DOCKER"
+
     val providerNetworkNames = (for {
       providerProps <- provider.properties
       networksStr <- {
@@ -391,7 +393,8 @@ package object marathon {
       }
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
-    
+
+
     def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
       ps map {pm => MarathonPortMapping(
         protocol = Some(pm.protocol),
@@ -405,12 +408,32 @@ package object marathon {
       case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
     }.toMap
 
-    val docker = if(props.container_type.toUpperCase == "DOCKER") Some(MarathonDocker(
+    val docker = if (isDocker) {
+      val requestedNetwork = props.network.toUpperCase
+      val (dockerNet,dockerParams) = if (providerNetworkNames.isEmpty) {
+        (requestedNetwork, None)
+      } else {
+        providerNetworkNames.find(_.toUpperCase == requestedNetwork) match {
+          case None => throw new BadRequestException(
+            message = "invalid network name: container network was not among list of provider networks",
+            payload = Some(inputJson)
+          )
+          case Some(stdNet) if stdNet.toUpperCase == "HOST" || stdNet.toUpperCase == "BRIDGE" =>
+            (stdNet, None)
+          case Some(calicoNet) =>
+            ("HOST", Some(Seq(
+              KeyValuePair("net", calicoNet)
+            )))
+        }
+      }
+      Some(MarathonDocker(
         image = props.image,
-        network = props.network,
+        network = dockerNet,
         forcePullImage = Some(props.force_pull),
-        portMappings = Some(portmap(props.port_mappings))
-    )) else None
+        portMappings = Some(portmap(props.port_mappings)),
+        parameters = dockerParams
+      ))
+    } else None
 
     val container = MarathonContainer(
         docker = docker,
