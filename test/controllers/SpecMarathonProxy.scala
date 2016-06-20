@@ -150,18 +150,16 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
 
     def marathonProviderWithNetworks = {
       val p = mock[GestaltResourceInstance]
+      val config = Json.obj(
+        "networks" -> Json.arr(Json.obj(
+          "name" -> "apps",
+          "id" -> "8332a2e4711a",
+          "description" -> "full ingress/egress",
+          "sub_net" -> "192.168.0.0/16"
+        ))
+      ).toString
       p.properties returns Some(Map(
-        "networks" -> Json.parse(
-          """[
-            |  {
-            |    "name": "apps",
-            |    "id": "8332a2e4711a",
-            |    "description": "full ingress/egress",
-            |    "sub_net": "192.168.0.0/16"
-            |  }
-            |]
-          """.stripMargin
-        ).toString
+        "config" -> config
       ))
       val pid = UUID.randomUUID()
       p.id returns pid
@@ -178,18 +176,19 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
 
     def marathonProviderWithStdNetworks = {
       val p = mock[GestaltResourceInstance]
-      p.properties returns Some(Map(
+      val config = Json.obj(
         "networks" -> Json.parse(
           """[
-            |  {
-            |    "name": "bridge"
-            |  },
-            |  {
-            |    "name": "host"
-            |  }
+            |  {"name": "bridge"},
+            |  {"name": "host"},
+            |  {"name": "web-net"},
+            |  {"name": "db-net"}
             |]
           """.stripMargin
-        ).toString
+        )
+      ).toString
+      p.properties returns Some(Map(
+        "config" -> config
       ))
       val pid = UUID.randomUUID()
       p.id returns pid
@@ -280,18 +279,19 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          provider = InputProvider(id = marathonProviderWithNetworks.id),
           port_mappings = Seq(
             PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
             PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
           ),
-          network = "BRIDGE",
+          network = "apps",
           num_instances = 1
         ))
-      ), marathonProviderWithoutNetworks)
+      ), marathonProviderWithNetworks)
       marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.container.docker.get.parameters must beNone
+      marApp.container.docker.get.network.toUpperCase must beOneOf("BRIDGE","HOST")
+      marApp.container.docker.get.parameters must beSome
+      marApp.container.docker.get.parameters.get must containTheSameElementsAs(Seq(KeyValuePair("net", "apps")))
       marApp.ports must beNone
       marApp.portDefinitions must beSome
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(

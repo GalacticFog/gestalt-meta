@@ -325,7 +325,7 @@ package object marathon {
         portMappings = port_mappings map portmap
       )
       container = MarathonContainer(
-        docker = if (ctype.toUpperCase == "DOCKER") docker else None,
+        docker = if (ctype.equalsIgnoreCase("DOCKER")) docker else None,
         containerType = ctype,
         volumes = volumes
       )
@@ -375,24 +375,21 @@ package object marathon {
           "Could not parse container properties: " + JsError.toFlatJson(e).toString)
     }
 
-    val isDocker = props.container_type.toUpperCase == "DOCKER"
+    val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
     val providerNetworkNames = (for {
       providerProps <- provider.properties
-      networksStr <- {
-        val s = providerProps.get("networks")
-        log.debug(s"found provider networks string: $s")
-        s
-      }
-      networksJson <- Try{ Json.parse(networksStr) }.toOption
-      networks <- networksJson.validate[Seq[JsObject]] match {
+      configStr <- providerProps.get("config")
+      config <- Try{Json.parse(configStr)}.toOption
+      networks <- (config \ "networks").validate[Seq[JsObject]] match {
         case JsSuccess(list,_) => Some(list)
         case JsError(_) =>
-          log.debug("error parsing network list to Seq[JsObject]")
+          log.warn("error parsing network list to Seq[JsObject]")
           None
       }
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
+    log.debug("found provider networks" + providerNetworkNames)
 
 
     def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
@@ -409,16 +406,16 @@ package object marathon {
     }.toMap
 
     val docker = if (isDocker) {
-      val requestedNetwork = props.network.toUpperCase
+      val requestedNetwork = props.network
       val (dockerNet,dockerParams) = if (providerNetworkNames.isEmpty) {
         (requestedNetwork, None)
       } else {
-        providerNetworkNames.find(_.toUpperCase == requestedNetwork) match {
+        providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
           case None => throw new BadRequestException(
             message = "invalid network name: container network was not among list of provider networks",
             payload = Some(inputJson)
           )
-          case Some(stdNet) if stdNet.toUpperCase == "HOST" || stdNet.toUpperCase == "BRIDGE" =>
+          case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
             (stdNet, None)
           case Some(calicoNet) =>
             ("HOST", Some(Seq(
