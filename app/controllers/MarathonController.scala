@@ -425,7 +425,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       provider: GestaltResourceInstance): Future[JsValue] = {
 
     // Create app in Marathon
-    val app = toMarathonApp(appName, inputJson)
+    val app = toMarathonApp(appName, inputJson, provider)
     val marathonPayload = Json.toJson(app).as[JsObject]
 
     // TODO: Parse result JsValue for error response.

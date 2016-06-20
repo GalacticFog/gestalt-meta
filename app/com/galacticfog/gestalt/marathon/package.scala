@@ -93,6 +93,11 @@ package object marathon {
                           timeoutSeconds: Option[Int] = None,
                           maxConsecutiveFailures: Option[Int] = None)
 
+  case class PortDefinition(port: Int,
+                            protocol: Option[String],
+                            name: Option[String],
+                            labels: Option[JsObject])
+
   case class MarathonApp(
     id: String,
     container: MarathonContainer,
@@ -105,7 +110,8 @@ package object marathon {
     tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
     args: Option[Iterable[String]] = None,
-    ports: Iterable[Int] = Seq(),
+    ports: Option[Iterable[Int]] = None,
+    portDefinitions: Option[Iterable[PortDefinition]] = None,
     labels: Option[Map[String, String]] = None,
     healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
     env: Option[Map[String, String]] = None,
@@ -144,6 +150,7 @@ package object marathon {
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
   implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
   implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
+  implicit lazy val marathonPortDefintionFormat = Json.format[PortDefinition]
   implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
 
   implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
@@ -170,7 +177,8 @@ package object marathon {
       (__ \ "tasksUnhealthy").readNullable[Int] and
       (__ \ "cmd").readNullable[String] and
       (__ \ "args").readNullable[Iterable[String]] and
-      (__ \ "ports").read[Iterable[Int]] and
+      (__ \ "ports").readNullable[Iterable[Int]] and
+      (__ \ "portDefinitions").readNullable[Iterable[PortDefinition]] and
       (__ \ "labels").readNullable[Map[String,String]] and
       (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
       (__ \ "env").readNullable[Map[String,String]] and
@@ -329,7 +337,10 @@ package object marathon {
       instances = num_instances,
       cmd = cmd,
       args = args,
-      ports = port_mappings map { _.map {_.service_port} } getOrElse Seq(),
+      ports = None,
+      portDefinitions = port_mappings map {_.map {
+        pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
+      } },
       labels = labels,
       healthChecks = health_checks map {_.map { hc => MarathonHealthCheck(
         protocol = Some(hc.protocol),
@@ -355,7 +366,7 @@ package object marathon {
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonApp(name: String, inputJson: JsObject): MarathonApp = {
+  def toMarathonApp(name: String, inputJson: JsObject, provider: GestaltResourceInstance): MarathonApp = {
     
     val props = (inputJson \ "properties").validate[InputContainerProperties].map {
       case ps: InputContainerProperties => ps
@@ -363,7 +374,27 @@ package object marathon {
       throw new IllegalArgumentException(
           "Could not parse container properties: " + JsError.toFlatJson(e).toString)
     }
-    
+
+    val isDocker = props.container_type.toUpperCase == "DOCKER"
+
+    val providerNetworkNames = (for {
+      providerProps <- provider.properties
+      networksStr <- {
+        val s = providerProps.get("networks")
+        log.debug(s"found provider networks string: $s")
+        s
+      }
+      networksJson <- Try{ Json.parse(networksStr) }.toOption
+      networks <- networksJson.validate[Seq[JsObject]] match {
+        case JsSuccess(list,_) => Some(list)
+        case JsError(_) =>
+          log.debug("error parsing network list to Seq[JsObject]")
+          None
+      }
+      names = networks flatMap {n => (n \ "name").asOpt[String]}
+    } yield names) getOrElse Seq.empty
+
+
     def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
       ps map {pm => MarathonPortMapping(
         protocol = Some(pm.protocol),
@@ -377,12 +408,32 @@ package object marathon {
       case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
     }.toMap
 
-    val docker = if(props.container_type.toUpperCase == "DOCKER") Some(MarathonDocker(
+    val docker = if (isDocker) {
+      val requestedNetwork = props.network.toUpperCase
+      val (dockerNet,dockerParams) = if (providerNetworkNames.isEmpty) {
+        (requestedNetwork, None)
+      } else {
+        providerNetworkNames.find(_.toUpperCase == requestedNetwork) match {
+          case None => throw new BadRequestException(
+            message = "invalid network name: container network was not among list of provider networks",
+            payload = Some(inputJson)
+          )
+          case Some(stdNet) if stdNet.toUpperCase == "HOST" || stdNet.toUpperCase == "BRIDGE" =>
+            (stdNet, None)
+          case Some(calicoNet) =>
+            ("HOST", Some(Seq(
+              KeyValuePair("net", calicoNet)
+            )))
+        }
+      }
+      Some(MarathonDocker(
         image = props.image,
-        network = props.network,
+        network = dockerNet,
         forcePullImage = Some(props.force_pull),
-        portMappings = Some(portmap(props.port_mappings))
-    )) else None
+        portMappings = Some(portmap(props.port_mappings)),
+        parameters = dockerParams
+      ))
+    } else None
 
     val container = MarathonContainer(
         docker = docker,
@@ -397,7 +448,10 @@ package object marathon {
       instances = props.num_instances,
       cmd = props.cmd,
       args = props.args,
-      ports = props.port_mappings map { _.service_port },
+      ports = None,
+      portDefinitions = Some(props.port_mappings map {
+        pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
+      }),
       labels = props.labels,
       healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
         protocol = Some(hc.protocol),
