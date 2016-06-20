@@ -1,13 +1,15 @@
 package controllers
 
+
 import java.util.UUID
 
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-import com.galacticfog.gestalt.data.ResourceFactory
-
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.data._ //ResourceFactory
+import com.galacticfog.gestalt.data.models._ //GestaltResourceInstance
 
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
@@ -18,9 +20,11 @@ import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 
 import controllers.util._
 import play.api.{Logger => log}
+import play.api.libs.json._
 
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
+
 
 
 object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
@@ -85,6 +89,10 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }
   
+  def rootUser(auth: AuthAccountWithCreds) = {
+    Security.getRootUser(auth)
+  }
+  
   def deleteResources(identity: UUID, ids: Iterable[UUID]) = {
     for (id <- ids) ResourceFactory.hardDeleteResource(id).get
   }
@@ -106,25 +114,114 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }
   
-  def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], auth: AuthAccountWithCreds) = {
+  
+  def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
+    
     for (org <- rs) {
+      
       log.debug(s"Creating Org : ${org.name}")
-      val parent = parentOrgId(org, auth)
-      createNewMetaOrg(creator, parent, org, properties = None, None).get
-    }
-  }
+      val parent = parentOrgId(org, account)
+      val admin = getAdminUser(account)
+      
+      // Create new Org in Meta and add CRUD entitlements for admin user.
+      createNewMetaOrg(admin.account.id, parent, org, properties = None, None) match {
+        case Failure(err) => throw err
+        case Success(org) => {
 
+          // Successfully created Org - create CRUD entitlements for 'admin' user.
+          val crud = resourceEntitlements(
+              admin.account.id, org.id, org.id, ResourceIds.Org,
+              Seq("create", "view", "update", "delete") )
+
+          crud map { e => 
+            CreateResource(
+              ResourceIds.User, admin.account.id, org.id, Json.toJson(e), account, 
+              Option(ResourceIds.Entitlement), Option(parent)).get
+
+          }
+          
+        }    
+      }
+      
+    }
+    
+  }
+  
+  
+  def getActionName(typeId: UUID, action: String) = {
+    s"${ActionPrefix(typeId)}.${action}"
+  }
+  
+  
+  def resourceEntitlements(
+      creator: UUID, 
+      org: UUID, 
+      resource: UUID, 
+      resourceType: UUID, 
+      actions: Seq[String]): Seq[Entitlement] = {
+    
+    val ids = Option(Seq(creator))
+    actions map { action =>
+      newEntitlementResource(creator, org, resource, getActionName(resourceType, action), ids, None, None)
+    }  
+  }
+  
+  
+  def newCreatorEntitlement(creator: UUID, org: UUID, resource: UUID, action: String) = {
+    newEntitlementResource(creator, org, resource, action, Option(Seq(creator)), None, None)
+  }
+  
+  
+  def newEntitlementResource(
+      creator: UUID,
+      org: UUID, 
+      resource: UUID, 
+      action: String, 
+      identities: Option[Seq[UUID]],
+      name: Option[String] = None, 
+      description: Option[String] = None): Entitlement = {
+    
+    log.error("newEntitlementResource(...)")
+    
+    val ent = Entitlement(
+      id = UUID.randomUUID,
+      org = org,
+      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
+      description = description,
+      properties = 
+        EntitlementProps(
+          action = action,
+          value = None,
+          identities = identities) )
+          
+    println("NEW-ENTITLEMENT:\n" + ent)
+    println("AS-JSON:")
+    println(Json.prettyPrint(Json.toJson(ent)))
+    println
+    
+    ent
+
+  }
+  
   
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg]) = {
     for (org <- rs) {
       log.debug(s"Updating Org : ${org.name}")
+      
       // TODO: ignore it if it doesn't exist, for now
       ResourceFactory.findById(org.id) foreach { o =>
         ResourceFactory.update(o.copy(name = org.name), creator)
       }
+      
     }
   }
-
+  
+  def getAdminUser(account: AuthAccountWithCreds): AuthAccountWithCreds = {
+    // TODO: Actually look up the 'admin' user - waiting on a change to the
+    // security /sync payload to be able to identify this user.
+    account  
+  }
+  
   def getRootOrgId(account: AuthAccountWithCreds): UUID = {
     val root = Security.getRootOrg(account)
     root.get.id
@@ -144,15 +241,47 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
-    val root = getRootOrgId(account)
+    //val root = getRootOrgId(account)
+    
+    val admin = getAdminUser(account)
+    
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
-      createNewMetaUser(creator, acc.directory.orgId, acc,
-        properties = Some(
-          (userProps(acc) ++ Seq("gestalt_home" -> getRootOrgFqon(account))).toMap
-        ),
-        description = acc.description ).get
+      
+      val org = acc.directory.orgId
+      
+      createNewMetaUser(creator, org, acc,
+          properties = Some(
+            (userProps(acc) ++ Seq("gestalt_home" -> getRootOrgFqon(account))).toMap
+          ),
+          description = acc.description ) match {
+        case Failure(err) => throw err
+        case Success(usr) => {
+          
+          println("<////////////////////[ Creating User Entitlements ]////////////////////>")
+          println("ORG: " + org)
+          println("ADMIN: " + admin.account.id)
+          println("RESOURCE: " + usr.id)
+          
+          val crud = resourceEntitlements(
+              admin.account.id, 
+              org,
+              resource = usr.id,
+              resourceType = ResourceIds.User,
+              actions = Seq("create", "view", "update", "delete") )
+
+          crud map { e =>
+            CreateResource(
+              ResourceIds.User, admin.account.id, org, Json.toJson(e), account, 
+              Option(ResourceIds.Entitlement), Option(org)).get            
+          }
+          
+        }
+      }
+    
     }
+
+    
   }
   
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount]) = {
