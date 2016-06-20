@@ -6,6 +6,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.laser.MarathonClient
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import org.bouncycastle.util.IPAddress
 import org.specs2.matcher.Expectations
 
 import org.specs2.mock._
@@ -239,8 +240,10 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beNone
+      marApp.container.docker.get.portMappings must beNone
       marApp.ports must beNone
       marApp.portDefinitions must beSome
+      marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
         PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
         PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
@@ -266,6 +269,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker.get.parameters must beNone
       marApp.ports must beNone
       marApp.portDefinitions must beSome
+      marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
         PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
         PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
@@ -293,10 +297,14 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker.get.parameters must beSome
       marApp.container.docker.get.parameters.get must containTheSameElementsAs(Seq(KeyValuePair("net", "apps")))
       marApp.ports must beNone
-      marApp.portDefinitions must beSome
-      marApp.portDefinitions.get must containTheSameElementsAs(Seq(
-        PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
-        PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
+      marApp.portDefinitions must beNone
+      marApp.ipAddress must beSome(IPPerTaskInfo(
+        discovery = Some(DiscoveryInfo(
+          ports = Some(Seq(
+            PortDiscovery(number = 80, name = "http", protocol = "tcp"),
+            PortDiscovery(number = 443, name = "https", protocol = "tcp")
+          ))
+        ))
       ))
     }
 
@@ -318,8 +326,10 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beNone
+      marApp.container.docker.get.portMappings must beNone
       marApp.ports must beNone
       marApp.portDefinitions must beSome
+      marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
         PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
         PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
@@ -344,6 +354,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
       marApp.container.docker.get.parameters must beNone
       marApp.ports must beNone
+      marApp.ipAddress must beNone
       marApp.portDefinitions must beSome
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
         PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
