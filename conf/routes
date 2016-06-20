@@ -50,6 +50,10 @@ GET /users/self		controllers.ResourceController.getUserSelf
 
 # NOTE: These will be taken over by elastic.
 
+GET 	/groups/search  																					controllers.SearchController.getGroupByPropertyGlobal()
+GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/groups/search 	controllers.SearchController.getGroupByPropertyOrgId(orgId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/search  											controllers.SearchController.getGroupByPropertyFqon(fqon: String)
+
 GET 	/users/search  																						controllers.SearchController.getUserByPropertyGlobal()
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/search 	controllers.SearchController.getUserByPropertyOrgId(orgId: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/search  											controllers.SearchController.getUserByPropertyFqon(fqon: String)
