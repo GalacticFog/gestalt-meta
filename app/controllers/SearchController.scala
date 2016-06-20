@@ -126,7 +126,9 @@ object SearchController extends GestaltFrameworkSecuredController[DummyAuthentic
 
     validateUserSearchCriteria(qs) match {
       case Success((name,value)) => {
-        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+        // TODO: workaround until passthrough to gestalt-security is implemented
+        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
       }
       case Failure(error) => error match {
         case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
@@ -144,7 +146,9 @@ object SearchController extends GestaltFrameworkSecuredController[DummyAuthentic
         val qs = request.queryString
         validateUserSearchCriteria(qs) match {
           case Success((name,value)) => {
-            Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
+            // TODO: workaround until passthrough to gestalt-security is implemented
+            // Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.User, Criterion(name,value))))
+            Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
           }
           case Failure(error) => error match {
             case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
@@ -156,7 +160,6 @@ object SearchController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
     
   }
-
 
   def getUserByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
     trace(s"getUserByProperty()")
@@ -173,7 +176,65 @@ object SearchController extends GestaltFrameworkSecuredController[DummyAuthentic
       }
     }
   }
-  
+
+  def getGroupByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+    trace(s"getGroupByProperty()")
+
+    val qs = request.queryString
+
+    validateGroupSearchCriteria(qs) match {
+      case Success((name,value)) => {
+        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.Group, Criterion(name,value))))
+      }
+      case Failure(error) => error match {
+        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+        case _ => GenericErrorResult(500, error.getMessage)
+      }
+    }
+  }
+
+  def getGroupByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+    trace(s"getGroupByPropertyOrgId($org)")
+
+    val qs = request.queryString
+
+    validateGroupSearchCriteria(qs) match {
+      case Success((name,value)) => {
+        // TODO: workaround until passthrough to gestalt-security is implemented
+        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.Group, Criterion(name,value))))
+        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.Group, Criterion(name,value))))
+      }
+      case Failure(error) => error match {
+        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+        case _ => GenericErrorResult(500, error.getMessage)
+      }
+    }
+  }
+
+  def getGroupByPropertyFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+    trace(s"getGroupByPropertyFqon($fqon)")
+    orgFqon(fqon) match {
+      case None => OrgNotFound(fqon)
+      case Some(org) => {
+
+        val qs = request.queryString
+        validateGroupSearchCriteria(qs) match {
+          case Success((name,value)) => {
+            // TODO: workaround until passthrough to gestalt-security is implemented
+            // Ok(Output.renderLinks(getResourceByPropertyOrg(org.id, ResourceIds.Group, Criterion(name,value))))
+            Ok(Output.renderLinks(getResourceByProperty(ResourceIds.Group, Criterion(name,value))))
+          }
+          case Failure(error) => error match {
+            case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+            case _ => GenericErrorResult(500, error.getMessage)
+          }
+        }
+
+      }
+    }
+
+  }
+
   private def extractNameValue(qs: Map[String, Seq[String]]) = Try {
     val key = qs.keys.toList
     if (key.isEmpty) badRequest(s"Must provide a search term.")
@@ -203,6 +264,24 @@ object SearchController extends GestaltFrameworkSecuredController[DummyAuthentic
     if (value(0).isEmpty()) badRequest(s"Must provide a value for ${name}")
     (name, value(0))
   }
-  
+
+  private def validateGroupSearchCriteria(qs: Map[String, Seq[String]]) = Try {
+    val good = List("name")
+    val key = qs.keys.toList
+    if (key.isEmpty) badRequest(s"Must provide a search term. One of : ${good.mkString(",")}")
+    if (key.size > 1) badRequest(s"Must provide a SINGLE search term. One of : ${good.mkString(",")}")
+    if (!good.contains(key(0))) badRequest(s"Unknown search term '${key(0)}. Valid terms: ${good.mkString(",")}")
+    val name = key(0)
+
+    val value = qs(name)
+
+    // NOTE: value is never 'empty' - contains a Buffer()
+    //if (value.isEmpty) badRequest(s"Must provide a value for ${name}")
+    if (value.size > 1) badRequest(s"Must provide a SINGLE value for ${name}")
+    if (value(0).isEmpty()) badRequest(s"Must provide a value for ${name}")
+    (name, value(0))
+  }
+
   def badRequest(message: String) = throw new BadRequestException(message)
+
 }
