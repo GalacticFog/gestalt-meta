@@ -100,7 +100,7 @@ package object marathon {
 
   case class PortDiscovery(number: Int, name: String, protocol: String)
   case class DiscoveryInfo(ports: Option[Seq[PortDiscovery]] = None)
-  case class IPPerTaskInfo(discovery: Option[DiscoveryInfo] = None, groups: Option[Seq[String]] = None, labels: Option[JsObject] = None)
+  case class IPPerTaskInfo(discovery: Option[DiscoveryInfo])
 
   case class MarathonApp(
     id: String,
@@ -197,7 +197,7 @@ package object marathon {
 
   implicit lazy val marathonAppWrites = new Writes[MarathonApp] {
     override def writes(o: MarathonApp): JsValue = {
-      Json.obj(
+      val base = Json.obj(
         "id" -> o.id,
         "container" -> Json.toJson(o.container),
         "cpus" -> o.cpus,
@@ -205,7 +205,6 @@ package object marathon {
         "instances" -> o.instances,
         "cmd" -> o.cmd.getOrElse(null),
         "args" -> o.args.getOrElse(Seq()).map(Json.toJson(_)),
-        "ports" -> Json.toJson(o.ports),
         "labels" -> Json.toJson(o.labels.getOrElse(Map())),
         "healthChecks" -> Json.toJson(o.healthChecks.getOrElse(Seq())),
         "env" -> Json.toJson(o.env.getOrElse(Map())),
@@ -215,6 +214,8 @@ package object marathon {
         "tasksHealthy" -> Json.toJson(o.tasksHealthy.getOrElse(0)),
         "tasksUnhealthy" -> Json.toJson(o.tasksUnhealthy.getOrElse(0))
       )
+      base ++ o.portDefinitions.map(pd => Json.obj("portDefinitions" -> Json.toJson(pd))).getOrElse(Json.obj()) ++
+              o.ipAddress.map(ip => Json.obj("ipAddress" -> Json.toJson(ip))).getOrElse(Json.obj())
     }
   }
 

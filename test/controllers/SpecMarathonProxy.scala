@@ -14,6 +14,7 @@ import org.specs2.mock.mockito._
 import org.specs2.mutable._
 import org.specs2.specification._
 import org.specs2.specification.Scope
+import play.api.Logger
 import play.api.libs.json._
 
 
@@ -224,7 +225,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
     }
 
     "generate marathon payload with support for standard host networking" in {
-      val marApp = toMarathonApp("test-container", Json.obj(
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
@@ -236,7 +237,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           network = "HOST",
           num_instances = 1
         ))
-      ), marathonProviderWithoutNetworks)
+      ), marathonProviderWithoutNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beNone
@@ -251,7 +252,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
     }
 
     "generate marathon payload with support for standard bridge networking" in {
-      val marApp = toMarathonApp("test-container", Json.obj(
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
@@ -263,7 +264,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           network = "BRIDGE",
           num_instances = 1
         ))
-      ), marathonProviderWithoutNetworks)
+      ), marathonProviderWithoutNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
       marApp.container.docker.get.parameters must beNone
@@ -279,7 +280,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
 
 
     "generate marathon payload using provider networks" in {
-      val marApp = toMarathonApp("test-container", Json.obj(
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
@@ -291,11 +292,10 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           network = "apps",
           num_instances = 1
         ))
-      ), marathonProviderWithNetworks)
+      ), marathonProviderWithNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must beOneOf("BRIDGE","HOST")
-      marApp.container.docker.get.parameters must beSome
-      marApp.container.docker.get.parameters.get must containTheSameElementsAs(Seq(KeyValuePair("net", "apps")))
+      marApp.container.docker.get.network.toUpperCase must_== "HOST"
+      marApp.container.docker.get.parameters must beSome(Seq(KeyValuePair("net", "apps")))
       marApp.ports must beNone
       marApp.portDefinitions must beNone
       marApp.ipAddress must beSome(IPPerTaskInfo(
@@ -308,9 +308,8 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ))
     }
 
-
     "generate marathon payload with support for standard host networking on calico provider" in {
-      val marApp = toMarathonApp("test-container", Json.obj(
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
@@ -322,7 +321,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           network = "host",
           num_instances = 1
         ))
-      ), marathonProviderWithStdNetworks)
+      ), marathonProviderWithStdNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beNone
@@ -337,7 +336,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
     }
 
     "generate marathon payload with support for standard bridge networking on calico provider" in {
-      val marApp = toMarathonApp("test-container", Json.obj(
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
         "properties" -> Json.toJson(InputContainerProperties(
           container_type = "DOCKER",
           image = "nginx:latest",
@@ -349,7 +348,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           network = "bridge",
           num_instances = 1
         ))
-      ), marathonProviderWithStdNetworks)
+      ), marathonProviderWithStdNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
       marApp.container.docker.get.parameters must beNone
