@@ -3,6 +3,7 @@ package com.galacticfog.gestalt
 import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 
+import scala.collection.generic
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
@@ -120,9 +121,23 @@ package object marathon {
     healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
     env: Option[Map[String, String]] = None,
     deployments: Option[Seq[JsObject]] = None,
-    ipAddress: Option[IPPerTaskInfo] = None)
+    ipAddress: Option[IPPerTaskInfo] = None,
+    user: Option[String] = None)
     
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
+
+  lazy val marathonVolumeReads = (
+    (__ \ "containerPath").read[String] and
+      (__ \ "hostPath").read[String] and
+      (__ \ "mode").read[String]
+    )(Volume.apply _)
+
+  lazy val marathonVolumeWrites = (
+    (__ \ "containerPath").write[String] and
+      (__ \ "hostPath").write[String] and
+      (__ \ "mode").write[String]
+    )(unlift(Volume.unapply))
+
   implicit lazy val volumeFormat = Json.format[Volume]
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
 
@@ -162,16 +177,18 @@ package object marathon {
   implicit lazy val discoveryInfoFormat = Json.format[DiscoveryInfo]
   implicit lazy val ipPerTaskInfoFormat = Json.format[IPPerTaskInfo]
 
+  def getICBF()(implicit bf: generic.CanBuildFrom[Iterable[_], Volume, Iterable[Volume]]) = bf
+
   implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
     (__ \ "docker").readNullable[MarathonDocker] and
       (__ \ "type").read[String] and
-      (__ \ "volumes").readNullable[Iterable[Volume]]
+      (__ \ "volumes").readNullable[Iterable[Volume]](Reads.traversableReads[Iterable,Volume](getICBF(), marathonVolumeReads))
     )(MarathonContainer.apply _)
 
   implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
     (__ \ "docker").writeNullable[MarathonDocker] and
       (__ \ "type").write[String] and
-      (__ \ "volumes").writeNullable[Iterable[Volume]]
+      (__ \ "volumes").writeNullable[Iterable[Volume]](Writes.traversableWrites[Volume](marathonVolumeWrites))
     )(unlift(MarathonContainer.unapply))
 
   implicit lazy val marathonAppReads: Reads[MarathonApp] = (
@@ -192,7 +209,8 @@ package object marathon {
       (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
       (__ \ "env").readNullable[Map[String,String]] and
       (__ \ "deployments").readNullable[Seq[JsObject]] and
-      (__ \ "ipAddress").readNullable[IPPerTaskInfo]
+      (__ \ "ipAddress").readNullable[IPPerTaskInfo] and
+      (__ \ "user").readNullable[String]
     )(MarathonApp.apply _)
 
   implicit lazy val marathonAppWrites = new Writes[MarathonApp] {
@@ -215,7 +233,8 @@ package object marathon {
         "tasksUnhealthy" -> Json.toJson(o.tasksUnhealthy.getOrElse(0))
       )
       base ++ o.portDefinitions.map(pd => Json.obj("portDefinitions" -> Json.toJson(pd))).getOrElse(Json.obj()) ++
-              o.ipAddress.map(ip => Json.obj("ipAddress" -> Json.toJson(ip))).getOrElse(Json.obj())
+        o.ipAddress.map(ip => Json.obj("ipAddress" -> Json.toJson(ip))).getOrElse(Json.obj()) ++
+        o.user.map(user => Json.obj("user" -> user)).getOrElse(Json.obj())
     }
   }
 

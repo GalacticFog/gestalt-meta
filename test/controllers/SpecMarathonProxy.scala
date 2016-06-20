@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.laser.MarathonClient
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import org.bouncycastle.util.IPAddress
-import org.specs2.matcher.Expectations
+import org.specs2.matcher.{JsonMatchers, Expectations}
 
 import org.specs2.mock._
 import org.specs2.mock.mockito._
@@ -18,7 +18,7 @@ import play.api.Logger
 import play.api.libs.json._
 
 
-class SpecMarathonProxy extends Specification with MocksCreation with MockitoStubs with CapturedArgument with MockitoMatchers with ArgThat with Expectations {
+class SpecMarathonProxy extends Specification with MocksCreation with MockitoStubs with CapturedArgument with MockitoMatchers with ArgThat with Expectations with JsonMatchers {
 
   val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"
@@ -362,6 +362,51 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
     }
 
   }
+
+  "serialize marathon volumes appropriately" in {
+    val marValidJson =  Json.obj(
+      "type" -> "ctype",
+      "volumes" -> Json.arr(Json.obj(
+        "containerPath" -> "cpath",
+        "hostPath" -> "hpath",
+        "mode" -> "RW"
+      ))
+    )
+
+    val marContainer = MarathonContainer(
+      docker = None, containerType = "ctype", volumes = Some(Seq(Volume(
+        container_path = "cpath", host_path = "hpath", mode = "RW"
+      )))
+    )
+
+    Json.toJson(marContainer) must_== marValidJson
+    marValidJson.as[MarathonContainer] must_== marContainer
+  }
+
+//  "serialize marathon app appropriately" in {
+//    val marContainer = MarathonContainer(docker = None, containerType = "ctype")
+//
+//    val marApp = MarathonApp(
+//      id = "someId",
+//      container = marContainer,
+//      user = Some("someUser"),
+//      ipAddress = Some(IPPerTaskInfo(discovery = None)),
+//      portDefinitions = Some(Seq())
+//    )
+//
+//    val marValidJson = Json.obj(
+//      "id" -> "someId",
+//      "container" -> Json.obj(
+//        "type" -> "ctype"
+//      ),
+//      "user" -> "someUser",
+//      "ipAddress" -> Json.obj(),
+//      "portDefinitions" -> Json.arr()
+//    )
+//
+//    Json.toJson(marApp) must_== marValidJson
+//    marValidJson.as[MarathonApp] must_== marApp
+//  }
 
 }
 
