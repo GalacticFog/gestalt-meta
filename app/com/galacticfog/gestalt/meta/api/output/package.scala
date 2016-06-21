@@ -48,8 +48,6 @@ package object output {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)
     
-    println("TYPENAME : " + typename)
-    
     ResourceFactory.findById(orgId) match {
       case None => toHref_old(typeId, id, orgId, baseUri)
       case Some(org) => {
