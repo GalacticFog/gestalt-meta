@@ -248,10 +248,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   
   def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
-    val ents = ResourceFactory.findEffectiveEntitlements(org)
-    val entitlements = entitlementsAll(ents)
-    
-    handleEntitlementExpansion(org, entitlements, request.queryString, META_URL)
+    getEntitlementsCommon(org, ResourceIds.Org, org)
   }
   
   
