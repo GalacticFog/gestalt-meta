@@ -134,14 +134,16 @@ object ResourceController extends /*MetaController with*/ Authorization {
   
 
   def getOrg(org: UUID) = Authenticate(org) { implicit request =>
-    getById(org, ResourceIds.Org, org)  
+    Authorize(org, Actions.Org.View, request.identity) {
+      getById(org, ResourceIds.Org, org)  
+    }
   }
   
 
   def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
     
-    AuthorizeById(org, "org.view") {    
+    Authorize(org, Actions.Org.View, request.identity) {    
       getById(org, ResourceIds.Org, org)
     }
   }
@@ -153,8 +155,12 @@ object ResourceController extends /*MetaController with*/ Authorization {
   
   def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
     val id = fqid(fqon)
-    val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
-    handleExpansion(allMinusSelf, request.queryString, META_URL)
+    
+    Authorize(id, Actions.Org.View, request.identity) {
+      val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
+      handleExpansion(allMinusSelf, request.queryString, META_URL)
+    }
+    
   }
   
   def getGenericById(targetTypeId: String, org: UUID, id: UUID) = Authenticate(org) { implicit request =>

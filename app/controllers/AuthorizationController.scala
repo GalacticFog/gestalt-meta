@@ -252,19 +252,6 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   }
   
   
-  def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
-    val merge = booleanParam("effective", qs)
-    val filter = qs.get("action")
-    
-    
-  }
-  
-  def handleEntitlementExpansion(org: UUID, es: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(transformEntitlements(es, org, baseUrl)))
-    } else Ok(Output.renderLinks(es, baseUrl))
-  }
-  
   def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
     getEntitlementsCommon(fqid(fqon), typeId, resourceId)
   }
@@ -277,7 +264,19 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
     getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
   }
-
+  
+  def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
+    val merge = booleanParam("effective", qs)
+    val filter = qs.get("action")
+    
+    
+  }
+  
+  def handleEntitlementExpansion(org: UUID, es: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
+    if (getExpandParam(qs)) {
+      Ok(Json.toJson(transformEntitlements(es, org, baseUrl)))
+    } else Ok(Output.renderLinks(es, baseUrl))
+  }
   
   private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
     ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {

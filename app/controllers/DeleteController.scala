@@ -63,7 +63,7 @@ object DeleteController extends Authorization {/*extends GestaltFrameworkSecured
   
   def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
 
-    AuthorizeById(fqid(fqon), "workspace.delete", request.identity) {
+    Authorize(fqid(fqon), "workspace.delete", request.identity) {
       HardDeleteWorkspace.delete(workspace, true) match {
         case Success(_) => NoContent
         case Failure(e) => HandleRepositoryExceptions(e)

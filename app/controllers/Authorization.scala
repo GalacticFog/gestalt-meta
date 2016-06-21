@@ -11,7 +11,51 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import controllers.util._
 import play.api.{Logger => log}
+import play.api.libs.json._
 
+
+object Actions {
+
+  object Org {
+    private val prefix = "org"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+
+  object Workspace {
+    private val prefix = "workspace"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+
+  object Environment {
+    private val prefix = "environment"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+
+  object Lambda {
+    private val prefix = "lambda"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+
+  object Container {
+    private val prefix = "container"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+}  
 
 trait Authorization extends MetaController with SecurityResources {
 
@@ -125,6 +169,27 @@ trait Authorization extends MetaController with SecurityResources {
     EntitlementProps(action, value, identities map { uuidsFromString(_) })
   }  
   
+  /**
+   * @param org Org the Entitlements belong to
+   * @param resourceType UUID of the type to create the Entitlements for
+   * @param resourceId UUID of the instance to create the Entitlements for
+   * @param parent UUID of the parent of the resource the Entitlements are created for. If parent
+   * is provided, the given Entitlements will be merged with corresponding Entitlements specified
+   * on the resource's parent.
+   */
+  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, parent: Option[UUID])(entitlements: => Seq[Entitlement])(implicit request: SecuredRequest[_]): Seq[Try[GestaltResourceInstance]] = {
+    Entitle(org, resourceType, resourceId, request.identity, parent)(entitlements)
+  }
+  
+  
+  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, user: AuthAccountWithCreds, parent: Option[UUID])(entitlements: => Seq[Entitlement])= {
+    (if (parent.isEmpty) entitlements else
+      mergeParentEntitlements(entitlements, resourceType, parent.get)) map { e =>
+      CreateResource(
+        ResourceIds.User, user.account.id, org, Json.toJson(e), user,
+        Option(ResourceIds.Entitlement), Option(resourceId))
+    }
+  }  
   
   def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     val caller = request.identity
@@ -134,7 +199,7 @@ trait Authorization extends MetaController with SecurityResources {
     handleExpansion(output, request.queryString, META_URL)
   }
   
-  def AuthorizeById(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result) = {//(implicit request: SecuredRequest[_]) = {
+  def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result) = {//(implicit request: SecuredRequest[_]) = {
     AuthorizationController.isAuthorized(
         target, caller.account.id, actionName, caller) match {
       case Failure(err) => HandleExceptions(err)
@@ -163,6 +228,19 @@ trait Authorization extends MetaController with SecurityResources {
   
   val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
 
+  def generateEntitlements(
+    creator: UUID,
+    org: UUID,
+    resource: UUID,
+    resourceTypes: Seq[UUID],
+    actions: Seq[String]): Seq[Entitlement] = {
+
+    for {
+      t <- resourceTypes
+      o <- resourceEntitlements(creator, org, resource, t, actions)
+    } yield o
+
+  }
   
   def resourceEntitlements(
       creator: UUID, 

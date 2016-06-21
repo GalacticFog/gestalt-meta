@@ -26,7 +26,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
 
-object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
+object SyncController extends Authorization /*MetaController with NonLoggingTaskEvents with SecurityResources*/ {
 
   private var adminId: UUID = null
   
@@ -65,7 +65,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       
       val (orgsCreate,orgsDelete,orgsUpdate)   = computeResourceDiffs(secOrgIds, metaOrgIds)
       val (usersCreate,usersDelete,usersUpdate) = computeResourceDiffs(secAccIds, metaUserIds)
-      //val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
+      val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
       
       /*
        * TODO: Refactor this - as it is, errors are swallowed. 
@@ -75,19 +75,19 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       log.debug(s"Deleting ${orgsDelete.size} Orgs.")
       deleteResources(creator, orgsDelete)
       
-//      log.debug(s"Deleting ${usersDelete.size} Users.")
-//      deleteResources(creator, usersDelete)
-//      
-//      log.debug(s"Deleting ${groupsDelete.size} Groups.")
-//      deleteResources(creator, groupsDelete)
+      log.debug(s"Deleting ${usersDelete.size} Users.")
+      deleteResources(creator, usersDelete)
+      
+      log.debug(s"Deleting ${groupsDelete.size} Groups.")
+      deleteResources(creator, groupsDelete)
       
       createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
       createUsers(ResourceIds.User, creator, (usersCreate map secAccMap), request.identity )
-//      createGroups(ResourceIds.User, creator, (groupsCreate map secGroupMap), request.identity)
+      createGroups(ResourceIds.User, creator, (groupsCreate map secGroupMap), request.identity)
       
       updateOrgs (creator, (orgsUpdate map secOrgMap), request.identity)
-//      updateUsers(creator, (usersUpdate map secAccMap), request.identity)
-//      updateGroups(creator, (groupsUpdate map secGroupMap), request.identity)
+      updateUsers(creator, (usersUpdate map secAccMap), request.identity)
+      updateGroups(creator, (groupsUpdate map secGroupMap), request.identity)
 
     } match {
       case Success(_) => NoContent
@@ -96,17 +96,45 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
 
   }
   
-  def rootUser(auth: AuthAccountWithCreds) = {
-    Security.getRootUser(auth)
-  }
   
   def deleteResources(identity: UUID, ids: Iterable[UUID]) = {
     for (id <- ids) ResourceFactory.hardDeleteResource(id).get
   }
   
-  def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
-    //val admin = getAdminUser(account)
+  
+  def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     
+    for (org <- rs) {
+      log.debug(s"Creating Org : ${org.name}")
+      
+      val parent = parentOrgId(org, account)
+      
+      createNewMetaOrg(adminId, parent, org, properties = None, None) match {
+        case Failure(err) => throw err
+        case Success(org) => {
+     
+          //
+          // TODO: Raise error if any of the Entitlements fail Create.
+          //
+          
+          Entitle(org.id, ResourceIds.Org, org.id, account, Option(parent)) { 
+            generateEntitlements( 
+              adminId, org.id, org.id, 
+              resourceTypes = Seq(
+                  ResourceIds.Org, 
+                  ResourceIds.Workspace, 
+                  ResourceIds.User, 
+                  ResourceIds.Group),
+              actions = ACTIONS_CRUD )
+          }
+          
+        } 
+      }
+    }
+  }  
+  
+  def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
+
     for (group <- rs) {
       log.debug(s"Creating Group: ${group.name}")
       
@@ -147,35 +175,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   
-  def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
-    
-    for (org <- rs) {
-      
-      log.debug(s"Creating Org : ${org.name}")
-      val parent = parentOrgId(org, account)
-      
-      // Create new Org in Meta and add CRUD entitlements for admin user.
-      createNewMetaOrg(adminId, parent, org, properties = None, None) match {
-        case Failure(err) => throw err
-        case Success(org) => {
-          
-          val orgEntitlements = generateEntitlements(
-              adminId, org.id, org.id, 
-              resourceTypes = Seq(ResourceIds.Org, ResourceIds.Workspace, ResourceIds.User, ResourceIds.Group),
-              actions = Seq("create", "view", "update", "delete") )
-              
-          orgEntitlements map { e => 
-            CreateResource(
-              ResourceIds.User, adminId, /*org.id*/parent, Json.toJson(e), account, 
-              Option(ResourceIds.Entitlement), Option(org.id)).get
-          }
-          
-        }    
-      }
-      
-    }
-    rs foreach { o => println("ORG : " + o.name)}
-  }
+
   
   
   
@@ -183,19 +183,19 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     s"${ActionPrefix(typeId)}.${action}"
   }
   
-  def generateEntitlements(
-      creator: UUID, 
-      org: UUID, 
-      resource: UUID, 
-      resourceTypes: Seq[UUID], 
-      actions: Seq[String]): Seq[Entitlement] = {
- 
-    for {
-      t <- resourceTypes
-      o <- resourceEntitlements(creator, org, resource, t, actions)
-    } yield o
-    
-  }
+//  def generateEntitlements(
+//      creator: UUID, 
+//      org: UUID, 
+//      resource: UUID, 
+//      resourceTypes: Seq[UUID], 
+//      actions: Seq[String]): Seq[Entitlement] = {
+// 
+//    for {
+//      t <- resourceTypes
+//      o <- resourceEntitlements(creator, org, resource, t, actions)
+//    } yield o
+//    
+//  }
 
 //    def go(types: Seq[UUID], acc: Seq[Entitlement]): Seq[Entitlement] = {
 //      types match {
@@ -210,49 +210,49 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
 //    }
 //    go(resourceTypes, Seq())  
   
-  def resourceEntitlements(
-      creator: UUID, 
-      org: UUID, 
-      resource: UUID, 
-      resourceType: UUID, 
-      actions: Seq[String]): Seq[Entitlement] = {
-    
-    val ids = Option(Seq(creator))
-    actions map { action =>
-      newEntitlementResource(creator, org, resource, getActionName(resourceType, action), ids, None, None)
-    }  
-  }
-  
-  
-  def newCreatorEntitlement(creator: UUID, org: UUID, resource: UUID, action: String) = {
-    newEntitlementResource(creator, org, resource, action, Option(Seq(creator)), None, None)
-  }
-  
-  
-  def newEntitlementResource(
-      creator: UUID,
-      org: UUID, 
-      resource: UUID, 
-      action: String, 
-      identities: Option[Seq[UUID]],
-      name: Option[String] = None, 
-      description: Option[String] = None): Entitlement = {
-    
-    log.error("newEntitlementResource(...)")
-    
-    val ent = Entitlement(
-      id = UUID.randomUUID,
-      org = org,
-      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
-      description = description,
-      properties = 
-        EntitlementProps(
-          action = action,
-          value = None,
-          identities = identities) )
-    ent
-
-  }
+//  def resourceEntitlements(
+//      creator: UUID, 
+//      org: UUID, 
+//      resource: UUID, 
+//      resourceType: UUID, 
+//      actions: Seq[String]): Seq[Entitlement] = {
+//    
+//    val ids = Option(Seq(creator))
+//    actions map { action =>
+//      newEntitlementResource(creator, org, resource, getActionName(resourceType, action), ids, None, None)
+//    }  
+//  }
+//  
+//  
+//  def newCreatorEntitlement(creator: UUID, org: UUID, resource: UUID, action: String) = {
+//    newEntitlementResource(creator, org, resource, action, Option(Seq(creator)), None, None)
+//  }
+//  
+//  
+//  def newEntitlementResource(
+//      creator: UUID,
+//      org: UUID, 
+//      resource: UUID, 
+//      action: String, 
+//      identities: Option[Seq[UUID]],
+//      name: Option[String] = None, 
+//      description: Option[String] = None): Entitlement = {
+//    
+//    log.error("newEntitlementResource(...)")
+//    
+//    val ent = Entitlement(
+//      id = UUID.randomUUID,
+//      org = org,
+//      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
+//      description = description,
+//      properties = 
+//        EntitlementProps(
+//          action = action,
+//          value = None,
+//          identities = identities) )
+//    ent
+//
+//  }
   
 
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
