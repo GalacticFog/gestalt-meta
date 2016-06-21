@@ -26,9 +26,10 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 
 
-
 object SyncController extends MetaController with NonLoggingTaskEvents with SecurityResources {
 
+  private var adminId: UUID = null
+  
   def sync() = Authenticate() { implicit request =>
     trace("sync")
     
@@ -38,7 +39,12 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
         case Success(data) => data
         case Failure(err)  => throw err
       }
-  
+
+      adminId = sd.admin map { a => UUID.fromString(a.id) } getOrElse {
+        throw new ConflictException(
+          "No 'admin' user found in gestalt-security. Cannot synchronize - no changes made.")
+      }
+
       val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
       val metausers = ResourceFactory.findAll(ResourceIds.User)
       val metagroups = ResourceFactory.findAll(ResourceIds.Group)
@@ -59,7 +65,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       
       val (orgsCreate,orgsDelete,orgsUpdate)   = computeResourceDiffs(secOrgIds, metaOrgIds)
       val (usersCreate,usersDelete,usersUpdate) = computeResourceDiffs(secAccIds, metaUserIds)
-      val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
+      //val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
       
       /*
        * TODO: Refactor this - as it is, errors are swallowed. 
@@ -69,19 +75,19 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
       log.debug(s"Deleting ${orgsDelete.size} Orgs.")
       deleteResources(creator, orgsDelete)
       
-      log.debug(s"Deleting ${usersDelete.size} Users.")
-      deleteResources(creator, usersDelete)
-      
-      log.debug(s"Deleting ${groupsDelete.size} Groups.")
-      deleteResources(creator, groupsDelete)
+//      log.debug(s"Deleting ${usersDelete.size} Users.")
+//      deleteResources(creator, usersDelete)
+//      
+//      log.debug(s"Deleting ${groupsDelete.size} Groups.")
+//      deleteResources(creator, groupsDelete)
       
       createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
       createUsers(ResourceIds.User, creator, (usersCreate map secAccMap), request.identity )
-      createGroups(ResourceIds.User, creator, (groupsCreate map secGroupMap), request.identity)
+//      createGroups(ResourceIds.User, creator, (groupsCreate map secGroupMap), request.identity)
       
       updateOrgs (creator, (orgsUpdate map secOrgMap), request.identity)
-      updateUsers(creator, (usersUpdate map secAccMap), request.identity)
-      updateGroups(creator, (groupsUpdate map secGroupMap), request.identity)
+//      updateUsers(creator, (usersUpdate map secAccMap), request.identity)
+//      updateGroups(creator, (groupsUpdate map secGroupMap), request.identity)
 
     } match {
       case Success(_) => NoContent
@@ -99,7 +105,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
-    val admin = getAdminUser(account)
+    //val admin = getAdminUser(account)
     
     for (group <- rs) {
       log.debug(s"Creating Group: ${group.name}")
@@ -112,7 +118,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
         case Success(group) => {
           
           val crud = resourceEntitlements(
-              admin.account.id, 
+              adminId, 
               org,
               resource = group.id,
               resourceType = ResourceIds.Group,
@@ -120,7 +126,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
               
           crud map { e =>
             CreateResource(
-              ResourceIds.User, admin.account.id, org, Json.toJson(e), account, 
+              ResourceIds.User, adminId, org, Json.toJson(e), account, 
               Option(ResourceIds.Entitlement), Option(group.id)).get            
           }
           
@@ -141,30 +147,27 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   }
   
   
-  
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     
     for (org <- rs) {
       
       log.debug(s"Creating Org : ${org.name}")
       val parent = parentOrgId(org, account)
-      val admin = getAdminUser(account)
       
       // Create new Org in Meta and add CRUD entitlements for admin user.
-      createNewMetaOrg(admin.account.id, parent, org, properties = None, None) match {
+      createNewMetaOrg(adminId, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
-
-          // Successfully created Org - create CRUD entitlements for 'admin' user.
-          val crudOrg = resourceEntitlements(
-              admin.account.id, org.id, org.id, ResourceIds.Org,
-              Seq("create", "view", "update", "delete") )
+          
+          val orgEntitlements = generateEntitlements(
+              adminId, org.id, org.id, 
+              resourceTypes = Seq(ResourceIds.Org, ResourceIds.Workspace, ResourceIds.User, ResourceIds.Group),
+              actions = Seq("create", "view", "update", "delete") )
               
-          crudOrg map { e => 
+          orgEntitlements map { e => 
             CreateResource(
-              ResourceIds.User, admin.account.id, org.id, Json.toJson(e), account, 
-              Option(ResourceIds.Entitlement), Option(/*parent*/org.id)).get
-
+              ResourceIds.User, adminId, /*org.id*/parent, Json.toJson(e), account, 
+              Option(ResourceIds.Entitlement), Option(org.id)).get
           }
           
         }    
@@ -193,8 +196,6 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     } yield o
     
   }
-
-  
 
 //    def go(types: Seq[UUID], acc: Seq[Entitlement]): Seq[Entitlement] = {
 //      types match {
@@ -256,7 +257,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
 
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     
-    val admin = getAdminUser(account)
+    //val admin = getAdminUser(account)
    
     for (org <- rs) {
       log.debug(s"Updating Org : ${org.name}")
@@ -273,20 +274,20 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
             
             // Successfully created Org - create CRUD entitlements for 'admin' user.
             val crud = resourceEntitlements(
-                admin.account.id, org.id, org.id, ResourceIds.Org,
+                adminId, org.id, org.id, ResourceIds.Org,
                 Seq("create", "view", "update", "delete") )
                 
             val usercrud = resourceEntitlements(
-                admin.account.id, org.id, org.id, ResourceIds.User,
+                adminId, org.id, org.id, ResourceIds.User,
                 Seq("create", "view", "update", "delete") )
                 
             val groupcrud = resourceEntitlements(
-                admin.account.id, org.id, org.id, ResourceIds.Group,
+                adminId, org.id, org.id, ResourceIds.Group,
                 Seq("create", "view", "update", "delete") )     
                 
             (crud ++ usercrud ++ groupcrud) map { e => 
               CreateResource(
-                ResourceIds.User, admin.account.id, org.id, Json.toJson(e), account, 
+                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
                 Option(ResourceIds.Entitlement), Option(org.id)).get            
             }
             
@@ -298,7 +299,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
     }
   }  
   
-  def getAdminUser(account: AuthAccountWithCreds): AuthAccountWithCreds = {
+  def getAdminUserId(account: AuthAccountWithCreds): AuthAccountWithCreds = {
     // TODO: Actually look up the 'admin' user - waiting on a change to the
     // security /sync payload to be able to identify this user.
     account  
@@ -324,7 +325,7 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
 
-    val admin = getAdminUser(account)
+    val admin = getAdminUserId(account)
     
     for (acc <- rs) {
       log.debug(s"Creating User : ${acc.name}")
