@@ -2,7 +2,6 @@ package controllers
 
 
 import play.api.{ Logger => log }
-
 import play.api.Play.current
 import play.api.libs.ws._
 import play.api.libs.ws.ning.NingAsyncHttpClientConfigBuilder
@@ -55,8 +54,12 @@ import com.galacticfog.gestalt.laser._
 
 import com.galacticfog.gestalt.meta.api.BuildInfo
 
-object ResourceController extends MetaController with NonLoggingTaskEvents {
+
+object ResourceController extends /*MetaController with*/ Authorization {
   
+  /**
+   * Unauthenticated health-check endpoint. Gives status as simple healthy/unhealthy.
+   */
   def health() = Action {
     MetaHealth.selfCheck(verbose = false) match {
       case Left(err) => InternalServerError(err)
@@ -64,12 +67,16 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }
   }
   
+  /**
+   * Authenticated health-check endpoint. Gives detailed information if status is 'unhealthy'
+   */
   def healthAuthenticated(fqon: String) = Authenticate(fqon) { implicit request =>
     MetaHealth.selfCheck(verbose = true) match {
       case Left(err) => InternalServerError(err)
       case Right(success) => Ok(success)
     }
   }
+  
   
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
@@ -116,14 +123,6 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
     }.toMap  
   }
   
-  def ActionPrefix(typeId: UUID) = typeId match {
-    case ResourceIds.Org => "org"
-    case ResourceIds.Workspace => "workspace"
-    case ResourceIds.Environment => "environment"
-    case ResourceIds.Lambda => "lambda"
-    case ResourceIds.Container => "container"
-  }
-  
   def getGenericTopLevel(targetTypeId: String) = Authenticate() { implicit request =>
     val typeId = uuid(targetTypeId)
     val action = s"${ActionPrefix(typeId)}.view"
@@ -134,49 +133,18 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   }  
   
 
-  
   def getOrg(org: UUID) = Authenticate(org) { implicit request =>
     getById(org, ResourceIds.Org, org)  
   }
   
-  def getWorkspacesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    
-    ???
-  }
-  
+
   def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
     
     AuthorizeById(org, "org.view") {    
       getById(org, ResourceIds.Org, org)
     }
-    
   }
-  
-  
-  def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
-    val caller = request.identity
-    val output = resources filter { r =>
-      AuthorizationController.isAuthorized(r.id, caller.account.id, action, caller) getOrElse false
-    }
-    handleExpansion(output, request.queryString, META_URL)
-  }
-  
-  def AuthorizeById(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]) = {
-    AuthorizationController.isAuthorized(
-        target, request.identity.account.id, actionName, request.identity) match {
-      case Failure(err) => HandleExceptions(err)
-      case Success(auth) => if (auth) block else ForbiddenResult("You do not have permission to access this resource")
-    }
-  }
-  
-//  def AuthById(action: String)(resource: => GestaltResourceInstance)(implicit request: SecuredRequest[_]) = {
-//    val caller = request.identity
-//    AuthorizationController.isAuthorized(resource.id, caller.account.id, action, caller) match {
-//      case Failure(err) => HandleExceptions(err)
-//      case Success(auth) => if (auth) block else ForbiddenResult("You do not have permission to access this resource")
-//    }
-//  }
   
   def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
     handleExpansion(ResourceFactory.findAll(uuid(targetTypeId), org), request.queryString, META_URL)
@@ -360,7 +328,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
   def getGroupByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
       r => 
-
+          AuthorizeById(fqid(fqon), "group.view") {    
+            //getById(org, ResourceIds.Org, org)
+            //???
+          
         Security.getGroupAccounts(r.id, request.identity) match {
           case Success(acs) => {
             // String list of all users in current group.
@@ -379,6 +350,9 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
             HandleExceptions(err)
           }
         }
+      
+      } // AuthorizeByid
+          
     }
   }
   
@@ -689,8 +663,13 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         }
         
         val action = s"${ActionPrefix(typeId)}.view"
+        
         AuthorizeList(action) {
-          ResourceFactory.findAll(typeId, org)
+          val rss = ResourceFactory.findAll(typeId, org)
+          
+          rss foreach { r => println(s"${r.id} - ${r.name}")}
+          
+          rss
         }
         
         //handleExpansion(resources, request.queryString, baseUri = META_URL)
@@ -731,6 +710,10 @@ object ResourceController extends MetaController with NonLoggingTaskEvents {
         case Some(res) => {
           
           val action = s"${ActionPrefix(typeId)}.view"
+          
+          println("\n----AUTHORIZING ACTION : " + action)
+          println
+        
           AuthorizeById(res.id, action) {
             val output = res.typeId match {
               case u if res.typeId == ResourceIds.User => buildUserOutput(res)

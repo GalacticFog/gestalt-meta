@@ -242,7 +242,7 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id						controlle
 
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.Meta.postGroupFqon(fqon: String)
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.ResourceController.getGroupsFqon(fqon: String)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.ResourceController.getGroupsFqon(fqon: String)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:id	controllers.ResourceController.getGroupByIdFqon(fqon: String, id: java.util.UUID)
   

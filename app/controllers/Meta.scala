@@ -53,8 +53,7 @@ import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
  * Code for POST and PATCH of all resource types.
  *
  */
-object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with NonLoggingTaskEvents with SecurityResources {
+object Meta extends MetaController with Authorization with SecurityResources {
   
 
   // --------------------------------------------------------------------------
@@ -77,7 +76,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   def postOrgFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
     createOrgCommon(fqid(fqon), request.body)
   }
-
+  
   def createOrgCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     CreateSynchronizedResult(org, ResourceIds.Org, json)(
       Security.createOrg, createNewMetaOrg[JsValue])    
@@ -279,22 +278,50 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
     createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
   }
 
+  
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
+    
     Future {
-      /* Create the workspace */
-      val workspace = CreateResource(
-          ResourceIds.User, user.account.id, org, json, user, Some(ResourceIds.Workspace),
-          parentId = Some(org)) 
+
+      AuthorizeById(org, "workspace.create", user) {
       
-      /* Add ALL gateway providers to new workspace. */
-      workspace match {
+      /* Create the workspace */
+      CreateResource(
+          ResourceIds.User, 
+          user.account.id, org, json, user, 
+          Some(ResourceIds.Workspace),
+          parentId = Some(org)) match {
         case Failure(e) => HandleExceptions(e)
         case Success(workspace) => {
-          
-          Created(Output.renderInstance(workspace, baseUri))
+
+            // Create Entitlements for all Workspace Actions
+            val crud = resourceEntitlements(
+              user.account.id,
+              org,
+              workspace.id,
+              ResourceIds.Workspace,
+              ACTIONS_CRUD)
+
+            val mergedEntitlements = mergeParentEntitlements(crud, ResourceIds.Workspace, parent = org)
+
+            mergedEntitlements map { e =>
+              
+              log.debug(s"Creating Entitlement: user=${user.account.id}, action=${e.properties.action}")
+
+              CreateResource(
+                ResourceIds.User, user.account.id, org, Json.toJson(e), user,
+                Option(ResourceIds.Entitlement), Option(workspace.id)).get
+            }
+
+            Created(Output.renderInstance(workspace, baseUri))
+
+          }
         }
+
       }
+      
     }
+    
   }
 
   /** 
@@ -312,49 +339,125 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
   // --------------------------------------------------------------------------
 
   def postEnvironment(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    postEnvironmentResult(org)
+    Future { 
+      //postEnvironmentResult(org)
+//      parseWorkspaceId(request.body) match {
+//        case Failure(err) => HandleExceptions(err)
+//        case Success(workspace) => postEnvironmentResult(org, workspace)
+//      }      
+      postEnvironmentCommon(org)
+    }
   }
 
   def postEnvironmentFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => postEnvironmentResult(org.id)
-      case None      => Future { OrgNotFound(fqon) }
+    Future {
+//      orgFqon(fqon) match {
+//        case Some(org) => postEnvironmentResult(org.id)
+//        case None      => OrgNotFound(fqon) 
+//      }
+//      val workspace = request.body \ "properties" \ "workspace" match {
+//        case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
+//        case j => UUID.fromString(j.as[String])
+//      }
+      
+//      parseWorkspaceId(request.body) match {
+//        case Failure(err) => HandleExceptions(err)
+//        case Success(workspace) => postEnvironmentResult(fqid(fqon), workspace)
+//      }
+      postEnvironmentCommon(fqid(fqon))
     }
+    
   }
   
-  def postEnvironmentResult(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    val workspace = request.body \ "properties" \ "workspace" match {
-      case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
-      case j => UUID.fromString(j.as[String])
-    }
-    (for {
-      a <- normalizeResourceType(request.body, ResourceIds.Environment)
-      b <- normalizeEnvironmentType(a)
-    } yield b) match {
-      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
-      case Failure(err) => Future { HandleRepositoryExceptions(err) }
+  def postEnvironmentCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    parseWorkspaceId(request.body) match {
+      case Failure(err) => HandleExceptions(err)
+      case Success(workspace) => postEnvironmentResult(org, workspace)
+    }          
+  }
+  
+  def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    log.debug(s"ResourceController::postEnvironmentResult($org, $workspace")
+    AuthorizeById(workspace, "environment.create", request.identity) {
+      
+//      parseWorkspaceId(request.body) match {
+//        case Failure(err) => HandleExceptions(err)
+//        case Success(workspace) => {    
+//          (for {
+//            a <- normalizeResourceType(request.body, ResourceIds.Environment)
+//            b <- normalizeEnvironmentType(a)
+//          } yield b) match {
+//            case Success(env) => createResourceD2(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
+//            case Failure(err) => HandleExceptions(err)
+//          }
+          this.normalizeEnvironment(request.body, Option(workspace)) match {
+            case Success(env) => createResourceD2(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
+            case Failure(err) => HandleExceptions(err)
+          }
+          
+//        }
+//      }
+      
     }
   }
   
   def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    normalizeEnvironment(request.body, Some(workspaceId)) match {
-      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment))
-      case Failure(err) => Future { HandleRepositoryExceptions(err) }
+//    normalizeEnvironment(request.body, Some(workspaceId)) match {
+//      case Success(env) => createResourceD(org, env, Some(ResourceIds.Environment))
+//      case Failure(err) => Future { HandleRepositoryExceptions(err) }
+//    }
+    Future {
+      postEnvironmentResult(org, workspaceId)
     }
   }
   
   def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    orgFqon(fqon) match {
-      case None => Future { OrgNotFound(fqon) }  
-      case Some(org) => {
-        normalizeEnvironment(request.body, Some(workspaceId)) match {
-          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment), parentId = Some(workspaceId))
-          case Failure(err) => Future { HandleRepositoryExceptions(err) }
-        }        
-      }
+    
+    Future {
+      postEnvironmentResult(fqid(fqon), workspaceId)
+    }
+    
+//    orgFqon(fqon) match {
+//      case None => Future { OrgNotFound(fqon) }  
+//      case Some(org) => {
+//        normalizeEnvironment(request.body, Some(workspaceId)) match {
+//          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment), parentId = Some(workspaceId))
+//          case Failure(err) => Future { HandleRepositoryExceptions(err) }
+//        }        
+//      }
+//    }
+    
+  }
+  
+  
+  /**
+   * Parse properties.workspace from Environment input JSON.
+   */
+  private def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
+    json \ "properties" \ "workspace" match {
+      case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
+      case j => UUID.fromString(j.as[String])
     }
   }
-
+  
+//  def postEnvironmentResult(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
+//    ResourceController.AuthById(org, "workspace.create", request.identity) {
+//      
+//      val workspace = request.body \ "properties" \ "workspace" match {
+//        case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
+//        case j => UUID.fromString(j.as[String])
+//      }
+//      (for {
+//        a <- normalizeResourceType(request.body, ResourceIds.Environment)
+//        b <- normalizeEnvironmentType(a)
+//      } yield b) match {
+//        case Success(env) => createResourceD2(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
+//        case Failure(err) => HandleRepositoryExceptions(err) 
+//      }
+//      
+//    }
+//  }  
+  
   // --------------------------------------------------------------------------
   // DOMAINS
   // --------------------------------------------------------------------------
@@ -368,7 +471,7 @@ object Meta extends GestaltFrameworkSecuredController[DummyAuthenticator]
       case Some(org) => createResourceCommon(org.id, parent, ResourceIds.Domain, request.body)
       case None => Future { OrgNotFound(fqon) }
     }
-  }  
+  }
   
   
   // --------------------------------------------------------------------------

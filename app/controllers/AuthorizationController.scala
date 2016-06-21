@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 import java.net.URL
 import play.api.http.HttpVerbs
@@ -44,9 +45,121 @@ import com.galacticfog.gestalt.meta.api.errors._
 import controllers.util.stringmap
 import controllers.util.trace
 import com.galacticfog.gestalt.meta.api._
-import play.api.mvc.Result
+
 import com.galacticfog.gestalt.laser._
 import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
+
+import play.api.mvc.Result
+
+
+case class Entitlement(
+    id: UUID,
+    org: UUID,
+    name: String,
+    description: Option[String] = None,  
+    properties: EntitlementProps,
+    variables: Option[Hstore] = None,
+    tags: Option[List[String]] = None)
+
+object Entitlement {
+  
+  /**
+   * Convert a GestaltResourceInstance to an Entitlement object.
+   */
+  def make(r: GestaltResourceInstance) = {
+    Entitlement(
+      id = r.id,
+      org = r.orgId,
+      name = r.name,
+      description = r.description,
+      properties = EntitlementProps.make(r),
+      variables = r.variables,
+      tags = r.tags
+    )
+  }
+  
+  /**
+   * Convert an Entitlement object to a GestaltResourceInstance.
+   */
+  def toGestalt(creator: UUID, ent: Entitlement) = {
+    
+    GestaltResourceInstance(
+      id = ent.id,
+      typeId = ResourceIds.Entitlement,
+      orgId = ent.org, // this needs to be org from URI
+      owner = ResourceOwnerLink(ResourceIds.User, creator),
+      name = ent.name,
+      description = ent.description,
+      properties = Option(EntitlementProps.toMap(ent.properties)) 
+    ) 
+  }  
+
+  implicit lazy val entitlementPropsFormat = Json.format[EntitlementProps]
+  implicit lazy val entitlementFormat = Json.format[Entitlement]
+}
+
+
+object EntitlementProps {
+ /**
+  * Convert EntitlementProps object to Map[String,String]
+  */
+  def toMap(props: EntitlementProps) = {
+    val v = props.value map { v => Map("value" -> v) } getOrElse Map()
+    val i = props.identities map { ids => 
+      Map(
+        "identities" -> Json.toJson(ids).as[JsArray].toString.replaceAll("\\\\", "")
+      )
+    } getOrElse Map()
+    
+    Map("action" -> props.action) ++ v ++ i
+  }
+  
+  /**
+   * Convert GestaltResourceInstance.properties to EntitlementProps object.
+   */
+  def make(r: GestaltResourceInstance): EntitlementProps = {
+    val props = r.properties.get
+    val action = props("action")
+    val value = if (props.contains("value")) Some(props("value")) else None
+    val identities = if (props.contains("identities")) Some(props("identities")) else None
+    
+    // TODO: Combine ops to regex for replaceAll
+    def uuidsFromString(str: String) = str.
+      stripPrefix("[").
+      stripSuffix("]").
+      replaceAll("\"", "").
+      split(",").
+      toSeq.
+      map { UUID.fromString(_)
+    }
+    EntitlementProps(action, value, identities map { uuidsFromString(_) })
+  }    
+  
+}
+
+
+case class EntitlementProps(
+    action: String, 
+    value: Option[String], 
+    identities: Option[Seq[UUID]]) {
+
+  /**
+   * Validates that action name is valid for the resource type and that all identities given are valid.
+   */
+  def validate(): Either[String, Unit] = {
+    if (identities.isEmpty) Right(())
+    else {
+      val given = identities.get
+      val found = ResourceFactory.findAllIn(given) map { _.id }
+      val notFound = given.diff(found)
+      
+      if (notFound.isEmpty) Right(())
+      else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
+    }
+    
+  }
+}
+
 
 
 object AuthorizationController extends MetaController with NonLoggingTaskEvents {
@@ -91,7 +204,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   
   def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
 
-    val props = eprops(ent)
+    val props = EntitlementProps.make(ent)
     
     val output = props.identities match {
       case None => None
@@ -118,22 +231,18 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
                   JsonUtil.replaceKey(newres, "typeId", "resource_type"),
                     "state", "resource_state"),
                       "orgId", "org", Some(orgLink))
-            
-            //Option(newres.as[JsValue])
-              Option(out.as[JsValue])
+
+            Option(out.as[JsValue])
           }
         }
       }
-    }
+    }  
     if (output.isDefined) output.get else Json.toJson(ent) 
   }
-
+  
   
   def transformEntitlements(ents: Seq[GestaltResourceInstance], org: UUID, baseUrl: Option[String]) = {
-    
     ents map { e => transformEntitlement(e, org, baseUrl) }
-    
-    // ents.isDefinedAt(idx)
   }
   
   
@@ -143,8 +252,6 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     val entitlements = entitlementsAll(ents)
     
     handleEntitlementExpansion(org, entitlements, request.queryString, META_URL)
-    
-    //handleExpansion(entitlements, request.queryString, META_URL)
   }
   
   
@@ -178,7 +285,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
     ???
   }
-  
+
   private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
@@ -234,7 +341,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     toResource(org, creator, payload) match {
       case Failure(err) => throw err
       case Success(res) => {
-        eprops(res).validate match {
+        EntitlementProps.make(res).validate match {
           case Left(err) => throw new BadRequestException(err)
           case Right(_) => res
         }
@@ -246,45 +353,8 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   def entitlementAction(e: GestaltResourceInstance) = {
     e.properties.get("action")
   }  
-  
-  
-  case class EntitlementProps(action: String, value: Option[String], identities: Option[Seq[UUID]]) {
-    
-    /**
-     * Validates that action name is valid for the resource type and that all identities given are valid.
-     */
-    def validate(): Either[String, Unit] = {
-      if (identities.isEmpty) Right(())
-      else {
-        val given = identities.get
-        val found = ResourceFactory.findAllIn(given) map { _.id }
-        val notFound = given.diff(found)
-        
-        if (notFound.isEmpty) Right(())
-        else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
-        
-      }
-    }
-    
-  }
-  
-  def eprops(r: GestaltResourceInstance) = {
-    val props = r.properties.get
-    val action = props("action")
-    val value = if (props.contains("value")) Some(props("value")) else None
-    val identities = if (props.contains("identities")) Some(props("identities")) else None
+ 
 
-    // TODO: Combine ops to regex for replaceAll
-    def uuidsFromString(str: String) = str.
-      stripPrefix("[").
-      stripSuffix("]").
-      replaceAll("\"", "").
-      split(",").
-      toSeq.
-      map { UUID.fromString(_)
-    }
-    EntitlementProps(action, value, identities map { uuidsFromString(_) })
-  }
 
   /**
    * TODO: Get rid of unnecessary pattern-matching
@@ -315,21 +385,9 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     es flatMap { case (_,v) => v } filter { e => actions.contains(entitlementAction(e)) } toSeq
   }  
   
-  def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]) = {
+  
+  def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
 
-    // Highest key corresponds with highest level in the hierarchy.
-    val max = es.keys.max
-    val topLevel = es(max)
-    
-    // Top-Down evaluation
-    //val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
-    
-    // Bottom-Up evaluation
-    val ents = (es - max).toSeq.sortWith((a,b) => a._1 < b._1)
-
-    // Add all top-level entitlements to map
-    val output = topLevel map { e => (entitlementAction(e), e) } toMap
-    
     def go(
         exclude: Map[String, GestaltResourceInstance], 
         ez: List[(Int, Seq[GestaltResourceInstance])], 
@@ -339,7 +397,27 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
         case h :: t => go(exclude, t, acc ++ accumulateEnts(acc, h._2))
       }
     }
-    (output ++ go(output, ents.toList, Map())).values.toSeq
+
+    if (es.isEmpty) {
+      
+      Seq()
+    }
+    else {
+      // Highest key corresponds with highest level in the hierarchy.
+      val max = es.keys.max
+      val topLevel = es(max)
+      
+      // Top-Down evaluation
+      //val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
+      
+      // Bottom-Up evaluation
+      val ents = (es - max).toSeq.sortWith((a,b) => a._1 < b._1)
+  
+      // Add all top-level entitlements to map
+      val output = topLevel map { e => (entitlementAction(e), e) } toMap    
+      
+      (output ++ go(output, ents.toList, Map())).values.toSeq
+    }    
   }  
   
   def accumulateEnts(exclude: Map[String,GestaltResourceInstance], ents: Seq[GestaltResourceInstance]) = {
@@ -360,13 +438,14 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   /**
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
-  private def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
+  def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
     handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId),
         request.queryString, META_URL)    
   }
 
   
   def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
+    println("---- Looking up entitlements for Resource : " + resourceId)
     entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
   }
 
@@ -390,7 +469,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     val ents = AuthorizationController.getEntitlementsMerged(resource) filter { ent =>
       ent.properties.get("action") == action
     }
-    println("-----ENTITLEMENT:\n" + ents)
+    println("-----Matching Entitlements:\n" + ents)
     if (ents.isEmpty) None
     else if (ents.size > 1) {
       throw new RuntimeException(s"Multiple entitlements found for action '$action'. Data is corrupt.")

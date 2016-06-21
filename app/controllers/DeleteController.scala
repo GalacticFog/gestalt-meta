@@ -31,8 +31,8 @@ import play.api.{Logger => log}
 import com.galacticfog.gestalt.data.models._
 
 
-object DeleteController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
-    with MetaController with NonLoggingTaskEvents with SecurityResources {
+object DeleteController extends Authorization {/*extends GestaltFrameworkSecuredController[DummyAuthenticator] 
+    with MetaController with NonLoggingTaskEvents with SecurityResources {*/
   
   val handlers = Map(
       "workspaces" -> HardDeleteWorkspace,
@@ -49,9 +49,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   
-  
-  
-  
   def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon) match {
       case Some(org) => {
@@ -65,14 +62,12 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => {
-        HardDeleteWorkspace.delete(workspace, true) match {
-          case Success(_) => NoContent
-          case Failure(e) => HandleRepositoryExceptions(e)
-        }
+
+    AuthorizeById(fqid(fqon), "workspace.delete", request.identity) {
+      HardDeleteWorkspace.delete(workspace, true) match {
+        case Success(_) => NoContent
+        case Failure(e) => HandleRepositoryExceptions(e)
       }
-      case None => OrgNotFound(fqon)
     }
   }
   

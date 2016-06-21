@@ -281,6 +281,23 @@ trait MetaController extends SecureController with SecurityResources {
       parentId)
   }
   
+  def createResourceD2(
+      org: UUID, 
+      json: JsValue, 
+      typeId: Option[UUID] = None, 
+      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId,
+          parentId)
+        
+  }    
+  
   def createResourceD(
       org: UUID, 
       json: JsValue, 
