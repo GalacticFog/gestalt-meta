@@ -159,15 +159,6 @@ object SyncController extends MetaController with NonLoggingTaskEvents with Secu
           val crudOrg = resourceEntitlements(
               admin.account.id, org.id, org.id, ResourceIds.Org,
               Seq("create", "view", "update", "delete") )
-          
-              
-          orgEntitlements = generateEntitlements(
-              admin.account.id, org.id, 
-              resource = org.id, 
-              resourceTypes = Seq(ResourceIds.Org,ResourceIds.Workspace),
-              Seq("create", "view", "update", "delete") )
-          
-          
               
           crudOrg map { e => 
             CreateResource(
