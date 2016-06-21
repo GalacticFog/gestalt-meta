@@ -76,7 +76,7 @@ object Security {
   }
   
   def getGroups(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltGroup]] = {
-    Try(Await.result(GestaltGroup.getGroups()(client.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltGroup.listGroups()(client.withCreds(auth.creds)), 5 seconds))
   }
   
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltAccount]] = {
@@ -125,7 +125,8 @@ object Security {
       parentOrgId = parent,
       create = GestaltOrgCreate(
         name = org.name,
-        createDefaultUserGroup = true,
+        createDefaultUserGroup = false,
+        inheritParentMappings = Some(true),
         description = org.description
       ))(client.withCreds(auth.creds)), 5 seconds )}
   }
@@ -155,7 +156,7 @@ object Security {
   }
 
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltAccount]] = {
-    Try{Await.result(GestaltOrg.getOrgAccounts(org.get)(client.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltOrg.listAccounts(org.get)(client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def deleteAccount(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {

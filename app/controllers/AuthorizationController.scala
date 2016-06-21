@@ -273,17 +273,20 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
   }
   
   def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    ResourceFactory.findById(ResourceIds.Entitlement, id) match {
-      case Some(res) => {
-        val output = transformEntitlement(res, fqid(fqon), META_URL)
-        Ok(output)
-      }
-      case None => NotFoundResult(request.uri)
-    }
+    val org = fqid(fqon)
+    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
   }
   
   def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
-    ???
+    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
+  }
+
+  
+  private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+    ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
+      case Some(res) => Ok(Output.renderInstance(res, META_URL))
+      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
+    }
   }
 
   private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
@@ -370,12 +373,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     }
   }
   
-  private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
-    ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
-      case Some(res) => Ok(Output.renderInstance(res, META_URL))
-      case None => NotFoundResult(request.uri)
-    }
-  }
+
   
   private def entitlementsAll(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
     es flatMap { case (_,v) => v } toSeq

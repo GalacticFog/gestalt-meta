@@ -2,6 +2,7 @@ package controllers.util
 
 
 import controllers.ResourceController
+import org.specs2.specification.core.Fragments
 import play.api._
 import play.api.test._
 import play.api.test.Helpers._
@@ -55,7 +56,7 @@ class SpecGlobal extends PlaySpecification  with GestaltPlaySpecification {
   def get(uri: String) = FakeRequest(GET, uri).withHeaders(auth)
   
   
-  "Global" should {
+//  "Global" should {
     
 //    "handle invalid routes with a 404" in new WithApplication {
 //      val request = get("/orgs/foo") //FakeRequest(GET, "/orgs/foo").withHeaders(basicAuthHeader(user, password))
@@ -71,6 +72,6 @@ class SpecGlobal extends PlaySpecification  with GestaltPlaySpecification {
 //      //status(result) === OK
 //    }
     
-  }
+//  }
    
 }
