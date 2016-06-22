@@ -134,34 +134,16 @@ trait Authorization extends MetaController with SecurityResources {
 //  }
   
   
-  private def findByAction(ents: Seq[Entitlement], action: String): Option[Entitlement] = {
-    val found = ents filter { e => e.properties.action == action }
-    found size match {
-      case 0 => None
-      case 1 => Option(found(0))
-      case _ => throw new RuntimeException(s"Multiple entitlements found for action '$action'")
-    }
-  }
+//  private def findByAction(ents: Seq[Entitlement], action: String): Option[Entitlement] = {
+//    val found = ents filter { e => e.properties.action == action }
+//    found size match {
+//      case 0 => None
+//      case 1 => Option(found(0))
+//      case _ => throw new RuntimeException(s"Multiple entitlements found for action '$action'")
+//    }
+//  }
   
-  
-  def eprops(r: GestaltResourceInstance): EntitlementProps = {
-    val props = r.properties.get
-    val action = props("action")
-    val value = if (props.contains("value")) Some(props("value")) else None
-    val identities = if (props.contains("identities")) Some(props("identities")) else None
-    
-    // TODO: Combine ops to regex for replaceAll
-    def uuidsFromString(str: String) = str.
-      stripPrefix("[").
-      stripSuffix("]").
-      replaceAll("\"", "").
-      split(",").
-      toSeq.
-      map { UUID.fromString(_)
-    }
-    EntitlementProps(action, value, identities map { uuidsFromString(_) })
-  }  
-  
+
   /**
    * 
    * @param org Org the Entitlements belong to
@@ -193,6 +175,10 @@ trait Authorization extends MetaController with SecurityResources {
     handleExpansion(output, request.queryString, META_URL)
   }
   
+//  def Authorize[T](target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => T): Try[T] = Try {
+//    
+//    ???
+//  }
   
   def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result): play.api.mvc.Result = {
     AuthorizationController.isAuthorized(
@@ -211,6 +197,18 @@ trait Authorization extends MetaController with SecurityResources {
     Authorize(target, actionName, request.identity)(block)
   }  
   
+  
+  
+//  def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
+//    findMatchingEntitlement(resource, action) match {
+//      case None => false
+//      case Some(entitlement) => {
+//        val allowed = getAllowedIdentities(entitlement)
+//        val membership = getUserMembership(identity, account)
+//        (allowed intersect membership).isDefinedAt(0)
+//      }
+//    }
+//  }  
   
   val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
 

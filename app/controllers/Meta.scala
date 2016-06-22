@@ -69,18 +69,18 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }
   }  
 
-  def postOrg(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
+  def postOrg(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
     createOrgCommon(org, request.body)
   }
 
-  def postOrgFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
+  def postOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createOrgCommon(fqid(fqon), request.body)
   }
   
   def createOrgCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    CreateSynchronizedResult(org, ResourceIds.Org, json)(
-      Security.createOrg, createNewMetaOrg[JsValue])    
+    CreateSynchronizedResult(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue])    
   }
+  
   
   // --------------------------------------------------------------------------
   // ACTIONS

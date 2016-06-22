@@ -66,8 +66,6 @@ object ResourceController extends Authorization {
   private val references = ReferenceFactory
   
   
-
-  
   
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
