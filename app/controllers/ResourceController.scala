@@ -156,9 +156,10 @@ object ResourceController extends /*MetaController with*/ Authorization {
   def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
     val id = fqid(fqon)
     
-    Authorize(id, Actions.Org.View, request.identity) {
-      val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
-      handleExpansion(allMinusSelf, request.queryString, META_URL)
+    AuthorizeList(Actions.Org.View) {
+      //val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
+      //handleExpansion(allMinusSelf, request.queryString, META_URL)
+      ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
     }
     
   }
