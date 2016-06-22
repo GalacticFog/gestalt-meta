@@ -79,7 +79,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createOrgCommon(fqid(fqon))
   }
   
-
+  
   def createOrgCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
     
     val json = request.body
@@ -110,9 +110,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
         }
       }
 
-    }
-    
-    //CreateSynchronizedResult(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue])    
+    }    
   }
   
     private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)

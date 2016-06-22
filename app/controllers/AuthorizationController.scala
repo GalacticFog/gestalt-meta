@@ -144,6 +144,62 @@ object AuthorizationController extends Authorization {
   }
   
   
+  def validateEntitlementUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = {
+    val oldaction = old.properties.get("action")
+    val newaction = newent.properties.get("action")
+    
+    for {
+      r1 <- Try { if (old.id == newent.id) newent else throw new ConflictException("You may not modify the resource ID.") }
+      r2 <- Try { if (oldaction == newaction) newent else throw new ConflictException(s"You may not modify the entitlement action. Found: '$newaction', Expected: '$oldaction'") }
+    } yield r2
+    
+  }
+  
+  def copyEntitlementForUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = Try {
+     newent.copy(created = old.created)
+  }  
+  
+  def putEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    putEntitlementCommon(fqid(fqon), id)
+  }
+  
+  def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val parentType = UUID.fromString(parentTypeId)
+    ResourceFactory.findById(parentTypeId, parentId) match {
+      case None => Future(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
+      case Some(_) => {
+        putEntitlementCommon(fqid(fqon), id)
+      }
+    }
+  }
+  
+  private[controllers] def putEntitlementCommon(org: UUID, id: UUID)(
+      implicit request: SecuredRequest[JsValue]) = Future {
+    
+    val user = request.identity
+    val json = request.body
+    
+    ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
+      for {
+        r1 <- validateEntitlementPayload(org, user, json)
+        r2 <- validateEntitlementUpdate(ent, r1)
+        r3 <- copyEntitlementForUpdate(ent, r2)
+        r4 <- ResourceFactory.update(r3, user.account.id)
+      } yield r4
+      
+    } getOrElse {
+      
+     throw new ResourceNotFoundException(s"Entitlement with ID '$id' not found.")
+     
+    } match {
+      case Failure(e) => HandleExceptions(e)
+      case Success(r) => Ok(transformEntitlement(r, org, META_URL))
+    }
+    
+  }
+  
+
+  
   private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
@@ -171,6 +227,9 @@ object AuthorizationController extends Authorization {
     }
   }
 
+  
+  
+  
   /**
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
