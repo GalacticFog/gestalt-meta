@@ -14,14 +14,8 @@ import scala.util.Success
 import scala.util.Try
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.data.Hstore
-import com.galacticfog.gestalt.data.PropertyValidator
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.ResourceType
-import com.galacticfog.gestalt.data.illegal
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.{ PatchOp, PatchDocument, PatchHandler }
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
@@ -50,134 +44,71 @@ import com.galacticfog.gestalt.laser._
 import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 
 import play.api.mvc.Result
+import scala.annotation.tailrec
 
 
-case class Entitlement(
-    id: UUID,
-    org: UUID,
-    name: String,
-    description: Option[String] = None,  
-    properties: EntitlementProps,
-    variables: Option[Hstore] = None,
-    tags: Option[List[String]] = None)
+//
+// TODO: Rename to 'EntitlementController'
+//
 
-object Entitlement {
+object AuthorizationController extends Authorization {
+  
+  // --------------------------------------------------------------------------
+  // POST
+  // --------------------------------------------------------------------------
   
   /**
-   * Convert a GestaltResourceInstance to an Entitlement object.
+   * POST /{fqon}/entitlements
    */
-  def make(r: GestaltResourceInstance) = {
-    Entitlement(
-      id = r.id,
-      org = r.orgId,
-      name = r.name,
-      description = r.description,
-      properties = EntitlementProps.make(r),
-      variables = r.variables,
-      tags = r.tags
-    )
-  }
-  
-  /**
-   * Convert an Entitlement object to a GestaltResourceInstance.
-   */
-  def toGestalt(creator: UUID, ent: Entitlement) = {
-    
-    GestaltResourceInstance(
-      id = ent.id,
-      typeId = ResourceIds.Entitlement,
-      orgId = ent.org, // this needs to be org from URI
-      owner = ResourceOwnerLink(ResourceIds.User, creator),
-      name = ent.name,
-      description = ent.description,
-      properties = Option(EntitlementProps.toMap(ent.properties)) 
-    ) 
-  }  
-
-  implicit lazy val entitlementPropsFormat = Json.format[EntitlementProps]
-  implicit lazy val entitlementFormat = Json.format[Entitlement]
-}
-
-
-object EntitlementProps {
- /**
-  * Convert EntitlementProps object to Map[String,String]
-  */
-  def toMap(props: EntitlementProps) = {
-    val v = props.value map { v => Map("value" -> v) } getOrElse Map()
-    val i = props.identities map { ids => 
-      Map(
-        "identities" -> Json.toJson(ids).as[JsArray].toString.replaceAll("\\\\", "")
-      )
-    } getOrElse Map()
-    
-    Map("action" -> props.action) ++ v ++ i
-  }
-  
-  /**
-   * Convert GestaltResourceInstance.properties to EntitlementProps object.
-   */
-  def make(r: GestaltResourceInstance): EntitlementProps = {
-    val props = r.properties.get
-    val action = props("action")
-    val value = if (props.contains("value")) Some(props("value")) else None
-    val identities = if (props.contains("identities")) Some(props("identities")) else None
-    
-    // TODO: Combine ops to regex for replaceAll
-    def uuidsFromString(str: String) = str.
-      stripPrefix("[").
-      stripSuffix("]").
-      replaceAll("\"", "").
-      split(",").
-      toSeq.
-      map { UUID.fromString(_)
-    }
-    EntitlementProps(action, value, identities map { uuidsFromString(_) })
-  }    
-  
-}
-
-
-case class EntitlementProps(
-    action: String, 
-    value: Option[String], 
-    identities: Option[Seq[UUID]]) {
-
-  /**
-   * Validates that action name is valid for the resource type and that all identities given are valid.
-   */
-  def validate(): Either[String, Unit] = {
-    if (identities.isEmpty) Right(())
-    else {
-      val given = identities.get
-      val found = ResourceFactory.findAllIn(given) map { _.id }
-      val notFound = given.diff(found)
-      
-      if (notFound.isEmpty) Right(())
-      else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
-    }
-    
-  }
-}
-
-
-
-object AuthorizationController extends MetaController with NonLoggingTaskEvents {
-  
   def postEntitlementOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
     postEntitlementCommon(org, ResourceIds.Org, org)
   }
   
+  /**
+   * POST /{fqon}/{resource-type}/entitlements
+   */
   def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
   
+  
+  // --------------------------------------------------------------------------
+  // GET
+  // --------------------------------------------------------------------------
+  
+  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    getEntitlementsCommon(org, ResourceIds.Org, org)
+  }
+  
+  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
+  }
+  
+  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    val org = fqid(fqon)
+    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
+  }
+  
+  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
+    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
+  }
+  
+  
+ 
+  
+  /**
+   * DELETE /{fqon}/entitlements/{id}
+   */
   def deleteEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
     deleteEntitlementCommon(org, org, id)
   }
   
+  /**
+   * DELETE /{fqon}/{resource-type}/entitlements/{id}
+   */
   def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
     deleteEntitlementCommon(fqid(fqon), resourceId, id)
   }
@@ -198,93 +129,21 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     ???
   }
   
-  /*
-   * TODO: All the GET methods need to dynamically build the identities list
-   */
-  
-  def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
-
-    val props = EntitlementProps.make(ent)
-    
-    val output = props.identities match {
-      case None => None
-      case Some(ids) => {
-        val identities = ResourceFactory.findAllIn(ids)
-        
-        // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
-        val idJson = Output.renderLinks(identities, baseUrl)
-        
-        JsonUtil.upsertProperty(Json.toJson(ent).as[JsObject], "identities", idJson) match {
-          case Failure(e) => throw e
-          case Success(newres) => {
-            
-            val orgLink = {
-              Json.toJson {
-                com.galacticfog.gestalt.meta.api.output.toLink(
-                  ResourceFactory.findById(org).get, baseUrl)
-              }
-            }
-            
-            val out =
-              JsonUtil.replaceKey(
-                JsonUtil.replaceKey(
-                  JsonUtil.replaceKey(newres, "typeId", "resource_type"),
-                    "state", "resource_state"),
-                      "orgId", "org", Some(orgLink))
-
-            Option(out.as[JsValue])
-          }
-        }
-      }
-    }  
-    if (output.isDefined) output.get else Json.toJson(ent) 
-  }
-  
-  
-  def transformEntitlements(ents: Seq[GestaltResourceInstance], org: UUID, baseUrl: Option[String]) = {
-    ents map { e => transformEntitlement(e, org, baseUrl) }
-  }
-  
-  
-  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    getEntitlementsCommon(org, ResourceIds.Org, org)
-  }
-  
-  
-  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
-  }
-  
-  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
-  }
-  
-  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
-    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
-  }
   
   def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
     val merge = booleanParam("effective", qs)
     val filter = qs.get("action")
     
-    
   }
   
-  def handleEntitlementExpansion(org: UUID, es: Seq[GestaltResourceInstance], qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(transformEntitlements(es, org, baseUrl)))
-    } else Ok(Output.renderLinks(es, baseUrl))
+  
+  def handleEntitlementExpansion(org: UUID)(entitlements: Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+    if (getExpandParam(request.queryString)) {
+      Ok(Json.toJson(transformEntitlements(org)(entitlements)))
+    } else Ok(Output.renderLinks(entitlements, META_URL))
   }
   
-  private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
-    ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
-      case Some(res) => Ok(Output.renderInstance(res, META_URL))
-      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
-    }
-  }
-
+  
   private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
@@ -305,19 +164,30 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
                 case Failure(err) => HandleExceptions(err)
                 case Success(res) => Created(transformEntitlement(res, org, META_URL)) 
               }
-              
-            //CreateResourceResult(org, ResourceIds.Entitlement, resourceId)
+
           }
-        }
-        
+        }   
       }
     }
-    
   }
 
-//  Implement type-hierarchy:
-//  Resource->Runnable->ResourceContainer->{Org, Workspace}
-//  Resource->Runnable->{Container,Lambda}
+  /**
+   * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
+   */
+  private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
+    handleEntitlementExpansion(org) {
+      ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId)
+    }
+  }
+  
+  private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(
+      implicit request: SecuredRequest[_]) = {
+
+    ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
+      case Some(res) => Ok(transformEntitlement(res, org, META_URL))
+      case None      => NotFoundResult(s"Entitlement with ID '$id' not found.")
+    }
+  }
 
   private[controllers] def validateEntitlementPayload(org: UUID, creator: AuthAccountWithCreds, payload: JsValue): Try[GestaltResourceInstance] = Try {
     log.debug("Entered: validateEntitlementPayload(...)")
@@ -331,8 +201,11 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
      */
     
     //
+    // TODO: Validate user has 'setEntitlements' permission
+    //???
+    
     // TODO: Validate that 'action' is unique for this resource (specified at most once).
-    //
+    // ???
     
     //
     // TODO: Remove unnecessary pattern matching
@@ -375,14 +248,15 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     es flatMap { case (_,v) => v } toSeq
   }  
   
-  def entitlementsFiltered(es: Map[Int, Seq[GestaltResourceInstance]], actions: Seq[String]): Seq[GestaltResourceInstance] = {
+
+  private[controllers] def entitlementsFiltered(es: Map[Int, Seq[GestaltResourceInstance]], actions: Seq[String]): Seq[GestaltResourceInstance] = {
     es flatMap { case (_,v) => v } filter { e => actions.contains(entitlementAction(e)) } toSeq
   }  
   
   
   def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
 
-    def go(
+    @tailrec def go(
         exclude: Map[String, GestaltResourceInstance], 
         ez: List[(Int, Seq[GestaltResourceInstance])], 
         acc: Map[String, GestaltResourceInstance])  : Map[String, GestaltResourceInstance] = {
@@ -392,11 +266,8 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
       }
     }
 
-    if (es.isEmpty) {
+    if (es.isEmpty) Seq() else {
       
-      Seq()
-    }
-    else {
       // Highest key corresponds with highest level in the hierarchy.
       val max = es.keys.max
       val topLevel = es(max)
@@ -411,7 +282,7 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
       val output = topLevel map { e => (entitlementAction(e), e) } toMap    
       
       (output ++ go(output, ents.toList, Map())).values.toSeq
-    }    
+    }   
   }  
   
   def accumulateEnts(exclude: Map[String,GestaltResourceInstance], ents: Seq[GestaltResourceInstance]) = {
@@ -429,22 +300,8 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
     go(ents, exclude)
   }  
   
-  /**
-   * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
-   */
-  def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
-    handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId),
-        request.queryString, META_URL)    
-  }
-
   
-  def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
-    println("---- Looking up entitlements for Resource : " + resourceId)
-    entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
-  }
-
-  
-  def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
+  private[controllers] def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
@@ -453,25 +310,49 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
         (allowed intersect membership).isDefinedAt(0)
       }
     }
-  }
+  }  
   
-  def getUserMembership(user: UUID, account: AuthAccountWithCreds): Seq[UUID] = {
+
+  def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
+    entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
+  }
+
+  
+  /**
+   * Get a Seq containing the User ID and the IDs of all Groups the User is a
+   * member of.
+   */
+  private[controllers] def getUserMembership(user: UUID, account: AuthAccountWithCreds): Seq[UUID] = {
     user +: (Security.getAccountGroups(user, account).get map { _.id })
   }
   
-  def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+  /**
+   * Search the effective entitlements on the given resource for the given action name.
+   * 
+   * @param resource ID of Resource to search for the matching entitlement
+   * @param action   exact name of the action to search for
+   */
+  private[controllers] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
     val ents = AuthorizationController.getEntitlementsMerged(resource) filter { ent =>
       ent.properties.get("action") == action
     }
-    println("-----Matching Entitlements:\n" + ents)
+    
     if (ents.isEmpty) None
     else if (ents.size > 1) {
-      throw new RuntimeException(s"Multiple entitlements found for action '$action'. Data is corrupt.")
+      throw new RuntimeException(
+          s"Multiple entitlements found for action '$action'. Data is corrupt.")
     } 
     else Option(ents(0))    
   }
   
-  def getAllowedIdentities(entitlement: GestaltResourceInstance): Seq[UUID] = {
+  
+  /**
+   * Parse the array of identities defined in an entitlement Resource. 
+   * (resource.properties.identities)
+   * 
+   */
+  private[controllers] def getAllowedIdentities(entitlement: GestaltResourceInstance): Seq[UUID] = {
+    
     entitlement.properties.get.get("identities") match {
       case None => Seq()
       case Some(identities) => {
@@ -482,38 +363,63 @@ object AuthorizationController extends MetaController with NonLoggingTaskEvents 
           throw new RuntimeException(
               s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
         }
+        
       }
     }
   }
   
-  /**
-   * Determine if an identity is found in a list of users and groups
-   * 
-   * @param identity the user ID to test
-   * @param allowed list of User and Group IDs
+  
+  /*
+   * HACK: This is temporary. the 'transformEntitlement' methods are used to transform 'entitlement.properties.identities' 
+   * from a Seq[UUID] to a Seq[ResourceLink]. This is necessary because 'identity' is a polymorphic reference
+   * (either a User or a Group), and the type system has no way to indicate this fact for reference properties.
    */
-//  def isInRole(identity: UUID, identities: Seq[UUID], account: AuthAccountWithCreds) = {
-//    val (users,groups) = ResourceFactory.findAllIn(identities) partition { _.typeId == ResourceIds.User }
-//    
-//    println("USERS  : " + (users map { _.id }))
-//    println("GROUPS : " + (groups map { _.id }))
-//    
-//    val userids = users map { _.id }
-//    if (userids.contains(identity)) true
-//    else {
-//      // Check if the user exists in one of the groups.
-//      groups exists { g => isInGroup(g.id, identity, account) }
-//    }
+//  private[this] def transformEntitlements(ents: Seq[GestaltResourceInstance], org: UUID, baseUrl: Option[String]) = {
+//    ents map { e => transformEntitlement(e, org, baseUrl) }
 //  }
   
-//  def isInGroup(groupId: UUID, target: UUID, auth: AuthAccountWithCreds) = {
-//    val users = Security.getGroupAccounts(groupId, auth) match {
-//      case Failure(err) => throw err
-//      case Success(users) => users map { _.id }
-//    } 
-//    users contains target
-//  }
+  private[this] def transformEntitlements(org: UUID)(entitlements: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+    entitlements map { transformEntitlement(_, org, META_URL) }    
+  }
   
+  private[this] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
+
+    val props = EntitlementProps.make(ent)
+    
+    val output = props.identities match {
+      case None => None
+      case Some(ids) => {
+        val identities = ResourceFactory.findAllIn(ids)
+        
+        // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
+        val idJson = Output.renderLinks(identities, baseUrl)
+        
+        JsonUtil.upsertProperty(Json.toJson(ent).as[JsObject], "identities", idJson) match {
+          case Failure(e) => throw e
+          case Success(newres) => {
+            
+            val orgLink = {
+              Json.toJson {
+                com.galacticfog.gestalt.meta.api.output.toLink(
+                  ResourceFactory.findById(org).get, baseUrl)
+              }
+            }
+            
+            val out =
+              JsonUtil.replaceKey(
+                JsonUtil.replaceKey(
+                  JsonUtil.replaceKey(newres, "typeId", "resource_type"),
+                    "state", "resource_state"),
+                      "orgId", "org", Some(orgLink))
+
+            Option(out.as[JsValue])
+          }
+        }
+      }
+    }  
+    if (output.isDefined) output.get else Json.toJson(ent) 
+  }
+
   
 }
 
