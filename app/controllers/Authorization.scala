@@ -59,7 +59,6 @@ object Actions {
 
 trait Authorization extends MetaController with SecurityResources {
 
-  
   def getResourceEntitlements(resource: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
   }
@@ -104,16 +103,16 @@ trait Authorization extends MetaController with SecurityResources {
             // We already have the property, merge identities
             // -----------------------------------------------
             // 
-            // Merge merge h->identities with dup->identities
+            // Merge h->identities with dup->identities
             val duplicate = dup(0)
-            val theirIds = h.properties.identities getOrElse Seq()
-            val ourIds = duplicate.properties.identities getOrElse Seq()
+            val theirIds  = h.properties.identities getOrElse Seq()
+            val ourIds    = duplicate.properties.identities getOrElse Seq()
             
             // Merge ids found in parent that we don't have.
             val allIds = ourIds ++ theirIds.diff(ourIds)
             
             // Copy properties (with new ids) into the duplicate entitlement.
-            val newProperties = duplicate.properties.copy(identities = Option(allIds))
+            val newProperties  = duplicate.properties.copy(identities = Option(allIds))
             val newEntitlement = duplicate.copy(properties = newProperties)
             
             // Replace duplicate with newEntitlement in acc
@@ -126,16 +125,14 @@ trait Authorization extends MetaController with SecurityResources {
       }
     }
     
-    val prefix = ActionPrefix(ourType)
-    println("||||||||||||||Using prefix : " + prefix)
-    go(theirs filter { e => e.properties.action.startsWith(prefix) }, ours)
-    
+    go(theirs filter { e => e.properties.action.startsWith(ActionPrefix(ourType)) }, ours)
   }
   
   
-  private def seq2map(ents: Seq[Entitlement]): Map[String,Entitlement] = {
-    ents map { e => (e.properties.action, e) } toMap
-  }
+//  private def seq2map(ents: Seq[Entitlement]): Map[String,Entitlement] = {
+//    ents map { e => (e.properties.action, e) } toMap
+//  }
+  
   
   private def findByAction(ents: Seq[Entitlement], action: String): Option[Entitlement] = {
     val found = ents filter { e => e.properties.action == action }
@@ -144,10 +141,6 @@ trait Authorization extends MetaController with SecurityResources {
       case 1 => Option(found(0))
       case _ => throw new RuntimeException(s"Multiple entitlements found for action '$action'")
     }
-  }
-  
-  def mergeEntitlementsKeepLeft(ours: Seq[GestaltResourceInstance], theirs: Seq[GestaltResourceInstance]) = {
-    
   }
   
   
@@ -170,6 +163,7 @@ trait Authorization extends MetaController with SecurityResources {
   }  
   
   /**
+   * 
    * @param org Org the Entitlements belong to
    * @param resourceType UUID of the type to create the Entitlements for
    * @param resourceId UUID of the instance to create the Entitlements for
@@ -199,7 +193,8 @@ trait Authorization extends MetaController with SecurityResources {
     handleExpansion(output, request.queryString, META_URL)
   }
   
-  def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result) = {//(implicit request: SecuredRequest[_]) = {
+  
+  def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result): play.api.mvc.Result = {
     AuthorizationController.isAuthorized(
         target, caller.account.id, actionName, caller) match {
       case Failure(err) => HandleExceptions(err)
@@ -212,22 +207,17 @@ trait Authorization extends MetaController with SecurityResources {
     }
   }  
   
-  def AuthorizeById(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]) = {
-    AuthorizationController.isAuthorized(
-        target, request.identity.account.id, actionName, request.identity) match {
-      case Failure(err) => HandleExceptions(err)
-      case Success(auth) => {
-        if (auth) {
-          log.info(s"{Authorized: user=${request.identity.account.id}, resource=${target}, action=${actionName}")
-          block 
-        } else ForbiddenResult("You do not have permission to access this resource")
-      }
-    }
+  def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
+    Authorize(target, actionName, request.identity)(block)
   }  
   
   
   val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
 
+  
+  /**
+   * Generate a list of Entitlements on a list of Resource types.
+   */
   def generateEntitlements(
     creator: UUID,
     org: UUID,
@@ -239,9 +229,12 @@ trait Authorization extends MetaController with SecurityResources {
       t <- resourceTypes
       o <- resourceEntitlements(creator, org, resource, t, actions)
     } yield o
-
   }
   
+  
+  /**
+   * Generate a list of Entitlements for a given Resource of a given type.
+   */
   def resourceEntitlements(
       creator: UUID, 
       org: UUID, 
@@ -251,16 +244,11 @@ trait Authorization extends MetaController with SecurityResources {
     
     val ids = Option(Seq(creator))
     actions map { action =>
-      newEntitlementResource(creator, org, resource, getActionName(resourceType, action), ids, None, None)
+      newEntitlementResource(creator, org, resource, mkActionName(resourceType, action), ids, None, None)
     }  
   }
   
-  
-  def newCreatorEntitlement(creator: UUID, org: UUID, resource: UUID, action: String) = {
-    newEntitlementResource(creator, org, resource, action, Option(Seq(creator)), None, None)
-  }
-  
-  
+
   def newEntitlementResource(
       creator: UUID,
       org: UUID, 
@@ -284,7 +272,7 @@ trait Authorization extends MetaController with SecurityResources {
     ent
   }  
   
-  private def getActionName(typeId: UUID, action: String) = {
+  def mkActionName(typeId: UUID, action: String) = {
     s"${ActionPrefix(typeId)}.${action}"
   }
   

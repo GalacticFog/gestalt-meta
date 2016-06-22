@@ -174,96 +174,17 @@ object SyncController extends Authorization /*MetaController with NonLoggingTask
     }
   }
   
-  
-
-  
-  
-  
-  def getActionName(typeId: UUID, action: String) = {
-    s"${ActionPrefix(typeId)}.${action}"
-  }
-  
-//  def generateEntitlements(
-//      creator: UUID, 
-//      org: UUID, 
-//      resource: UUID, 
-//      resourceTypes: Seq[UUID], 
-//      actions: Seq[String]): Seq[Entitlement] = {
-// 
-//    for {
-//      t <- resourceTypes
-//      o <- resourceEntitlements(creator, org, resource, t, actions)
-//    } yield o
-//    
-//  }
-
-//    def go(types: Seq[UUID], acc: Seq[Entitlement]): Seq[Entitlement] = {
-//      types match {
-//        case Nil => acc
-//        case h :: t => {
-//          go(t, acc ++ resourceEntitlements(creator, org, resource, h, actions))
-//        }
-//      }
-//    }
-//    val output = resourceTypes flatMap { t =>
-//        resourceEntitlements(creator, org, resource, t, actions)
-//    }
-//    go(resourceTypes, Seq())  
-  
-//  def resourceEntitlements(
-//      creator: UUID, 
-//      org: UUID, 
-//      resource: UUID, 
-//      resourceType: UUID, 
-//      actions: Seq[String]): Seq[Entitlement] = {
-//    
-//    val ids = Option(Seq(creator))
-//    actions map { action =>
-//      newEntitlementResource(creator, org, resource, getActionName(resourceType, action), ids, None, None)
-//    }  
-//  }
-//  
-//  
-//  def newCreatorEntitlement(creator: UUID, org: UUID, resource: UUID, action: String) = {
-//    newEntitlementResource(creator, org, resource, action, Option(Seq(creator)), None, None)
-//  }
-//  
-//  
-//  def newEntitlementResource(
-//      creator: UUID,
-//      org: UUID, 
-//      resource: UUID, 
-//      action: String, 
-//      identities: Option[Seq[UUID]],
-//      name: Option[String] = None, 
-//      description: Option[String] = None): Entitlement = {
-//    
-//    log.error("newEntitlementResource(...)")
-//    
-//    val ent = Entitlement(
-//      id = UUID.randomUUID,
-//      org = org,
-//      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
-//      description = description,
-//      properties = 
-//        EntitlementProps(
-//          action = action,
-//          value = None,
-//          identities = identities) )
-//    ent
-//
-//  }
-  
 
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
-    
-    //val admin = getAdminUser(account)
    
     for (org <- rs) {
+   
       log.debug(s"Updating Org : ${org.name}")
       
       // TODO: ignore it if it doesn't exist, for now
+      
       ResourceFactory.findById(org.id) foreach { o =>
+        
         ResourceFactory.update(o.copy(name = org.name), creator) match {
           case Failure(err) => throw err
           case Success(org) => {
@@ -291,13 +212,13 @@ object SyncController extends Authorization /*MetaController with NonLoggingTask
                 Option(ResourceIds.Entitlement), Option(org.id)).get            
             }
             
-            
           }
         }
       }
       
     }
   }  
+
   
   def getAdminUserId(account: AuthAccountWithCreds): AuthAccountWithCreds = {
     // TODO: Actually look up the 'admin' user - waiting on a change to the
@@ -360,7 +281,6 @@ object SyncController extends Authorization /*MetaController with NonLoggingTask
     
     }
 
-    
   }
   
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {

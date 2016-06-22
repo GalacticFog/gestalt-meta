@@ -3,11 +3,11 @@
 # ~~~~
 
 
-GET		/health controllers.ResourceController.health()
+GET		/health controllers.InfoController.health()
 
 GET 	/rules  controllers.PolicyController.getRulesGlobal()
 
-GET		/about			controllers.ResourceController.about()
+GET		/about			controllers.InfoController.about()
 
 POST 	/bootstrap  	controllers.BootstrapController.bootstrap()
 
@@ -529,7 +529,7 @@ GET /lambdas/:id/env													controllers.ResourceController.getTopLevelLambd
 # 
 ############################
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health				controllers.ResourceController.healthAuthenticated(fqon: String) 
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health				controllers.InfoController.healthAuthenticated(fqon: String) 
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.ResourceController.getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: java.util.UUID)

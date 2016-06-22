@@ -145,6 +145,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }
     
     println("Attempting to add following users to group: " + uids)
+    
     uids match {
       case Success(ids) => {
         Security.addAccountsToGroup(group, ids) match {
@@ -278,35 +279,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
   }
 
-  /*
-   * 
-   * (newEntitlements, targetResourceType, parentId)
-   * 
-   * def writeResourceEntitlements(resourceType: UUID, parent: UUID)(entitlements: => Seq[Entitlement]) = {
-   *  
-   * }
-   */
-  
 
-
-  
-//  object Actions {
-//    object Workspace {
-//      private val prefix = "workspace"
-//      val Create = s"$prefix.create"
-//      val View   = s"$prefix.view"
-//      val Update = s"$prefix.update"
-//      val Delete = s"$prefix.delete"
-//    }
-//    object Org {
-//      private val prefix = "org"
-//      val Create = s"$prefix.create"
-//      val View   = s"$prefix.view"
-//      val Update = s"$prefix.update"
-//      val Delete = s"$prefix.delete"      
-//    }
-//  }
-  
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
 
     Future {
@@ -395,21 +368,9 @@ object Meta extends MetaController with Authorization with SecurityResources {
   }
   
   def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    
     Future {
       postEnvironmentResult(fqid(fqon), workspaceId)
     }
-    
-//    orgFqon(fqon) match {
-//      case None => Future { OrgNotFound(fqon) }  
-//      case Some(org) => {
-//        normalizeEnvironment(request.body, Some(workspaceId)) match {
-//          case Success(env) => createResourceD(org.id, env, Some(ResourceIds.Environment), parentId = Some(workspaceId))
-//          case Failure(err) => Future { HandleRepositoryExceptions(err) }
-//        }        
-//      }
-//    }
-    
   }
   
   
@@ -422,25 +383,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
       case j => UUID.fromString(j.as[String])
     }
   }
-  
-//  def postEnvironmentResult(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
-//    ResourceController.AuthById(org, "workspace.create", request.identity) {
-//      
-//      val workspace = request.body \ "properties" \ "workspace" match {
-//        case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
-//        case j => UUID.fromString(j.as[String])
-//      }
-//      (for {
-//        a <- normalizeResourceType(request.body, ResourceIds.Environment)
-//        b <- normalizeEnvironmentType(a)
-//      } yield b) match {
-//        case Success(env) => createResourceD2(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
-//        case Failure(err) => HandleRepositoryExceptions(err) 
-//      }
-//      
-//    }
-//  }  
-  
+
   // --------------------------------------------------------------------------
   // DOMAINS
   // --------------------------------------------------------------------------
