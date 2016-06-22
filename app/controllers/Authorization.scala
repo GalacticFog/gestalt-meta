@@ -169,16 +169,32 @@ trait Authorization extends MetaController with SecurityResources {
   
   def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     val caller = request.identity
+    
+    log.info(s"AUTHORIZE-LISTING : user=${caller.account.id}, action=${action}")
+    
     val output = resources filter { r =>
       AuthorizationController.isAuthorized(r.id, caller.account.id, action, caller) getOrElse false
     }
     handleExpansion(output, request.queryString, META_URL)
   }
   
+  
 //  def Authorize[T](target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => T): Try[T] = Try {
 //    
 //    ???
 //  }
+  
+  import org.joda.time.DateTime
+  case class AuthorizationMessage(timestamp: DateTime = DateTime.now, status: String, user: UUID, resource: UUID, action: String, message: Option[String] = None)
+  object AuthorizationMessage {
+    implicit lazy val authorizationMessageFormat = Json.format[AuthorizationMessage]
+  }
+  
+  
+  
+  //
+  // TODO: Use AuthorizationMessage for trace logging.
+  //
   
   def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result): play.api.mvc.Result = {
     AuthorizationController.isAuthorized(
@@ -186,19 +202,19 @@ trait Authorization extends MetaController with SecurityResources {
       case Failure(err) => HandleExceptions(err)
       case Success(auth) => {
         if (auth) {
-          log.info(s"{Authorized: user=${caller.account.id}, resource=${target}, action=${actionName}")
+          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}")
           block 
         } else ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
       }
     }
   }  
   
+  
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
   }  
   
-  
-  
+
 //  def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
 //    findMatchingEntitlement(resource, action) match {
 //      case None => false

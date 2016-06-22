@@ -121,7 +121,7 @@ object ResourceController extends Authorization {
     }
   }  
   
-
+  
   def getOrg(org: UUID) = Authenticate(org) { implicit request =>
     Authorize(org, Actions.Org.View, request.identity) {
       getById(org, ResourceIds.Org, org)  
@@ -144,11 +144,9 @@ object ResourceController extends Authorization {
   
   def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
     val id = fqid(fqon)
-    
     AuthorizeList(Actions.Org.View) {
       ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
     }
-    
   }
   
   def getGenericById(targetTypeId: String, org: UUID, id: UUID) = Authenticate(org) { implicit request =>

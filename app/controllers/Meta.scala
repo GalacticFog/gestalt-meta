@@ -61,26 +61,69 @@ object Meta extends MetaController with Authorization with SecurityResources {
   // --------------------------------------------------------------------------  
   
   def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
+    
     Security.getRootOrg(request.identity) match {
-      case Success(root) =>
-        CreateSynchronizedResult(root.id, ResourceIds.Org, request.body)(
-          Security.createOrg, createNewMetaOrg[JsValue])
-      case Failure(err) => Future { HandleExceptions(err) }
-    }
+      case Failure(err)  => { 
+        log.error(s"Failed to create top-level Org.")
+        Future(HandleExceptions(err)) 
+      }
+      case Success(root) => createOrgCommon(root.id)
+    }  
   }  
 
   def postOrg(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createOrgCommon(org, request.body)
+    createOrgCommon(org)
   }
 
   def postOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createOrgCommon(fqid(fqon), request.body)
+    createOrgCommon(fqid(fqon))
   }
   
-  def createOrgCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    CreateSynchronizedResult(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue])    
+
+  def createOrgCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
+    
+    val json = request.body
+    val user = request.identity
+    
+    Authorize(org, Actions.Org.Create, request.identity) {
+      
+      CreateSynchronized(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
+        case Failure(err) => HandleExceptions(err)
+        case Success(res) => {
+          
+          
+          //
+          // TODO: Raise error if any Entitlement create fails.
+          //
+          
+          Entitle(org, ResourceIds.Org, res.id, user, None) {
+            generateEntitlements(
+              user.account.id, org, res.id,
+              Seq(
+                  ResourceIds.Org, 
+                  ResourceIds.Workspace, 
+                  ResourceIds.User, 
+                  ResourceIds.Group),
+              ACTIONS_CRUD)
+          }
+          Created(Output.renderInstance(res, META_URL))
+        }
+      }
+
+    }
+    
+    //CreateSynchronizedResult(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue])    
   }
   
+    private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
+      (sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
+
+      safeGetInputJson(typeId, json) match {
+        case Failure(error) => throw error
+        case Success(input) => createSynchronized(org, typeId, input)(sc, mc)
+      }
+    }  
+
   
   // --------------------------------------------------------------------------
   // ACTIONS
