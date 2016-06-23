@@ -249,6 +249,22 @@ trait MetaController extends SecureController with SecurityResources {
   }
   
   protected[controllers] def CreateResource(
+    org: UUID,
+    resourceJson: JsValue,
+    caller: AuthAccountWithCreds,
+    typeId: UUID,
+    parentId: UUID): Try[GestaltResourceInstance] = {
+    
+    
+    safeGetInputJson(resourceJson) flatMap { input =>
+      val tid = assertValidTypeId(input, Option(typeId))
+      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+        inputWithDefaults(org, input.copy(resource_type = Some(tid)), caller), parentId = Option(parentId))
+    }
+
+  }     
+  
+  protected[controllers] def CreateResource(
     creatorType: UUID,
     creator: UUID,
     org: UUID,
@@ -280,6 +296,23 @@ trait MetaController extends SecureController with SecurityResources {
       typeId,
       parentId)
   }
+  
+  def createResourceD2(
+      org: UUID, 
+      json: JsValue, 
+      typeId: Option[UUID] = None, 
+      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+    
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId,
+          parentId)
+        
+  }    
   
   def createResourceD(
       org: UUID, 

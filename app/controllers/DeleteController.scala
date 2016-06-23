@@ -1,44 +1,38 @@
 package controllers
 
 
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
-
-import java.util.UUID
 import java.net.URL
+import java.util.UUID
 
-import scala.util.Failure
-import scala.util.Success
-
-import com.galacticfog.gestalt.meta.api.sdk._
+import scala.{Either,Left,Right}
+import scala.math.BigDecimal.int2bigDecimal
+import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.laser.Laser
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.output.toLink
+import com.galacticfog.gestalt.meta.api.resourceUUID
+import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
-import com.galacticfog.gestalt.laser._
 
 import controllers.util._
-import controllers.util.db._
+import controllers.util.db.EnvConfig
+
+import play.api.libs.json._
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+
 import play.api.{Logger => log}
 
-import com.galacticfog.gestalt.data.models._
 
 
-object DeleteController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
-    with MetaController with NonLoggingTaskEvents with SecurityResources {
+object DeleteController extends Authorization {
   
   val handlers = Map(
       "workspaces" -> HardDeleteWorkspace,
       "environments" -> HardDeleteEnvironment )
-  
-  import com.galacticfog.gestalt.meta.api._
   
   
   def lookupfn(restName: String) = {
@@ -47,9 +41,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
       case None => throw new ResourceNotFoundException("")
     }
   }
-  
-  
-  
   
   
   def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
@@ -65,23 +56,21 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => {
-        HardDeleteWorkspace.delete(workspace, true) match {
-          case Success(_) => NoContent
-          case Failure(e) => HandleRepositoryExceptions(e)
-        }
+
+    Authorize(fqid(fqon), Actions.Workspace.Delete, request.identity) {
+      HardDeleteWorkspace.delete(workspace, true) match {
+        case Success(_) => NoContent
+        case Failure(e) => HandleRepositoryExceptions(e)
       }
-      case None => OrgNotFound(fqon)
     }
   }
   
   
   def removeEndpointImplementation(endpoint: UUID) = {
-      
+    ???
   }
   
-  import play.api.libs.json._
+  
   def deleteLambda(org: UUID, lambda: UUID) = Authenticate(org) { implicit request =>
     /*
      * 1.) Get list of associated endpoints.
@@ -200,18 +189,11 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def hardDeleteEnvironmentProviderFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    //hardDeleteMetaResource(id, ResourceIds.MarathonProvider)
-    
     // TODO: Ensure the given provider is a chid of this Environment.
     deleteProviderCommon(fqid(fqon), environment, id)
   }
   
   def hardDeleteWorkspaceProviderFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-//    orgFqon(fqon) match {
-//      case Some(org) => hardDeleteMetaResource(id, ResourceIds.ApiGatewayProvider)
-//      case None => OrgNotFound(fqon)
-//    }
-    
     // TODO: Ensure the given provider is a child of this Workspace.
     deleteProviderCommon(fqid(fqon), workspace, id)
   }
@@ -305,7 +287,6 @@ object DeleteController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  //lazy val laser = new Laser(gatewayConfig, lambdaConfig)
   lazy val laser = new Laser(
     gatewayConfig, lambdaConfig, 
     Option(EnvConfig.securityKey), 
