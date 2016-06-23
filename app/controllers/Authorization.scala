@@ -84,10 +84,8 @@ trait Authorization extends MetaController with SecurityResources {
         case Nil => acc
         case h :: t => {
           
-          
           val currentAction = h.properties.action
           val dup = acc filter { e => e.properties.action == currentAction }
-          
           
           if (dup.isEmpty) { 
             
@@ -127,22 +125,6 @@ trait Authorization extends MetaController with SecurityResources {
     
     go(theirs filter { e => e.properties.action.startsWith(ActionPrefix(ourType)) }, ours)
   }
-  
-  
-//  private def seq2map(ents: Seq[Entitlement]): Map[String,Entitlement] = {
-//    ents map { e => (e.properties.action, e) } toMap
-//  }
-  
-  
-//  private def findByAction(ents: Seq[Entitlement], action: String): Option[Entitlement] = {
-//    val found = ents filter { e => e.properties.action == action }
-//    found size match {
-//      case 0 => None
-//      case 1 => Option(found(0))
-//      case _ => throw new RuntimeException(s"Multiple entitlements found for action '$action'")
-//    }
-//  }
-  
 
   /**
    * 
