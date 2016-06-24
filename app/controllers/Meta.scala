@@ -322,7 +322,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
 
 
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-
+  
     Future {
       
       Authorize(org, Actions.Workspace.Create, user) {
@@ -393,12 +393,41 @@ object Meta extends MetaController with Authorization with SecurityResources {
   def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
     log.debug(s"ResourceController::postEnvironmentResult($org, $workspace")
     
+    
     Authorize(workspace, "environment.create", request.identity) {
       normalizeEnvironment(request.body, Option(workspace)) match {
-        case Success(env) => createResourceD2(org, env, Some(ResourceIds.Environment), parentId = Some(workspace))
+          
         case Failure(err) => HandleExceptions(err)
+        case Success(envJson) => {
+          
+          val user = request.identity
+          
+          CreateResource(org, envJson, user, ResourceIds.Environment, workspace) match {
+                      
+            case Failure(e) => HandleExceptions(e)
+            case Success(environment) => {
+        
+              Entitle(org, ResourceIds.Environment, environment.id, user, Option(org)) {
+                
+                generateEntitlements(
+                  user.account.id, org, environment.id,
+                  Seq(
+                      ResourceIds.Environment,
+                      ResourceIds.Lambda,
+                      ResourceIds.Container), 
+                  ACTIONS_CRUD)
+                  
+              }
+              Created(Output.renderInstance(environment, META_URL))
+          
+//          createResourceD2(org, envJson, Some(ResourceIds.Environment), parentId = Some(workspace))
+            }
+        }
+        
       }
     }
+    }
+
     
   }
   
