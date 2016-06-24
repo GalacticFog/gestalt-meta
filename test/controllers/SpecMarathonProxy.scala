@@ -130,7 +130,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
         id = "cli-example-server",
         container = MarathonContainer(containerType = "DOCKER", docker = Some(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
           MarathonPortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
-        )), parameters = None)), volumes = None),
+        )))), volumes = None),
         cpus = 0.1,
         mem = 128,
         instances = 1,
@@ -240,7 +240,6 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ), marathonProviderWithoutNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
-      marApp.container.docker.get.parameters must beNone
       marApp.container.docker.get.portMappings must beNone
       marApp.ports must beNone
       marApp.portDefinitions must beSome
@@ -267,7 +266,6 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ), marathonProviderWithoutNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.container.docker.get.parameters must beNone
       marApp.ports must beNone
       marApp.portDefinitions must beSome
       marApp.ipAddress must beNone
@@ -383,30 +381,103 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
     marValidJson.as[MarathonContainer] must_== marContainer
   }
 
-//  "serialize marathon app appropriately" in {
-//    val marContainer = MarathonContainer(docker = None, containerType = "ctype")
-//
-//    val marApp = MarathonApp(
-//      id = "someId",
-//      container = marContainer,
-//      user = Some("someUser"),
-//      ipAddress = Some(IPPerTaskInfo(discovery = None)),
-//      portDefinitions = Some(Seq())
-//    )
-//
-//    val marValidJson = Json.obj(
-//      "id" -> "someId",
-//      "container" -> Json.obj(
-//        "type" -> "ctype"
-//      ),
-//      "user" -> "someUser",
-//      "ipAddress" -> Json.obj(),
-//      "portDefinitions" -> Json.arr()
-//    )
-//
-//    Json.toJson(marApp) must_== marValidJson
-//    marValidJson.as[MarathonApp] must_== marApp
-//  }
+  "serialize marathon app appropriately" in {
+    val marContainer = MarathonContainer(docker = None, containerType = "ctype")
+
+    val marApp = MarathonApp(
+      id = "someId",
+      container = marContainer,
+      user = Some("someUser"),
+      ipAddress = Some(IPPerTaskInfo(discovery = None)),
+      portDefinitions = Some(Seq()),
+      cpus = 0.2,
+      mem = 128.0,
+      instances = 1
+    )
+
+    val marValidJson = Json.obj(
+      "id" -> "someId",
+      "container" -> Json.obj(
+        "type" -> "ctype"
+      ),
+      "cpus" -> 0.2,
+      "mem" -> 128.0,
+      "instances" -> 1,
+      "user" -> "someUser",
+      "ipAddress" -> Json.obj(),
+      "portDefinitions" -> Json.arr()
+    )
+
+    Json.toJson(marApp) must_== marValidJson
+    marValidJson.as[MarathonApp] must_== marApp
+  }
+
+  "transform to Marathon API appropriately (host-style)" in {
+    val providerId = UUID.randomUUID()
+    val name = "/some/app/id"
+    val resourceJson = Json.obj(
+      "properties" -> Json.obj(
+        "container_type" -> "DOCKER",
+        "image" -> "some/image:tag",
+        "provider" -> Json.obj(
+          "id" -> providerId
+        ),
+        "port_mappings" -> Json.arr(),
+        "cmd" -> "/usr/bin/someCmd",
+        "cpus" -> 2.0,
+        "memory" -> 256.0,
+        "num_instances" -> 3,
+        "network" -> "HOST",
+        "force_pull" -> true,
+        "user" -> "someUser",
+        "env" -> Json.obj(
+          "env_var_1" -> "env_val_1"
+        )
+      )
+    )
+    val provider = mock[GestaltResourceInstance]
+    val config = Json.obj(
+      "networks" -> Json.arr(Json.obj(
+        "name" -> "HOST",
+        "id" -> "8332a2e4711a",
+        "description" -> "",
+        "sub_net" -> "192.168.0.0/16"
+      ))
+    ).toString
+    provider.properties returns Some(Map(
+      "config" -> config
+    ))
+    provider.id returns providerId
+
+    val marApp = MarathonApp(
+      id = name,
+      container = MarathonContainer(
+        docker = Some(MarathonDocker(
+          image = "some/image:tag",
+          network = "HOST",
+          forcePullImage = Some(true),
+          parameters = None
+        )),
+        containerType = "DOCKER"
+      ),
+      cpus = 2.0,
+      mem = 256.0,
+      instances = 3,
+      cmd = Some("/usr/bin/someCmd"),
+      args = None,
+      ipAddress = None,
+      labels = None,
+      portDefinitions = Some(Seq()),
+      healthChecks = None,
+      env = Some(Map(
+        "env_var_1" -> "env_val_1"
+      )),
+      user = Some("someUser")
+    )
+
+    marApp must_== toMarathonApp(name, resourceJson, provider)
+  }
+
 
 }
 
