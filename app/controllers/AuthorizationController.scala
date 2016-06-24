@@ -182,7 +182,7 @@ object AuthorizationController extends Authorization {
     
     ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
       for {
-        r1 <- validateEntitlementPayload(org, parent, user, json)
+        r1 <- validateEntitlementPayload(org, parent, user, json, "update")
         r2 <- validateEntitlementUpdate(ent, r1)
         r3 <- copyEntitlementForUpdate(ent, r2)
         r4 <- ResourceFactory.update(r3, user.account.id)
@@ -211,7 +211,7 @@ object AuthorizationController extends Authorization {
       case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
       case Some(parent) => {
 
-        validateEntitlementPayload(org, parent.id, request.identity, request.body) match {
+        validateEntitlementPayload(org, parent.id, request.identity, request.body, "create") match {
           case Failure(e) => HandleExceptions(e)
           case Success(r) => {
             createResourceInstance(
@@ -249,7 +249,13 @@ object AuthorizationController extends Authorization {
     }
   }
 
-  private[controllers] def validateEntitlementPayload(org: UUID, parent: UUID, creator: AuthAccountWithCreds, payload: JsValue): Try[GestaltResourceInstance] = Try {
+  private[controllers] def validateEntitlementPayload(
+      org: UUID, 
+      parent: UUID, 
+      creator: AuthAccountWithCreds, 
+      payload: JsValue,
+      accessType: String): Try[GestaltResourceInstance] = Try {
+    
     log.debug("Entered: validateEntitlementPayload(...)")
     
     /*
@@ -277,14 +283,31 @@ object AuthorizationController extends Authorization {
         EntitlementProps.make(resource).validate match {
           case Left(err) => throw new BadRequestException(err)
           case Right(props) => {
-            val existing = entitlementsByAction(parent, props.action)
-            println
-            println("EXISTING-ENTITLEMENTS:")
-            existing foreach {e => println(e.properties.get)}
-            if (existing.isEmpty) resource else {
-              throw new ConflictException(
-                  s"Found existing entitlement for action '${props.action}'. There can be only one.")
+
+            
+            /*
+             * If we're trying to create, existing must be empty.
+             */
+            
+            
+            if (accessType == "update") resource
+            else if (accessType == "create") { 
+              
+              val existing = entitlementsByAction(parent, props.action)
+              
+              println("EXISTING-ENTITLEMENTS:")
+              existing foreach {e => println(e.properties.get)}
+              
+              if (existing.isEmpty) resource
+              else {
+                throw new ConflictException(
+                    s"Found existing entitlement for action '${props.action}'. There can be only one.")
+              }
+              
+            } else {
+              throw new RuntimeException(s"Unhandled accessType: '$accessType'")
             }
+            
           }
         }
       }
