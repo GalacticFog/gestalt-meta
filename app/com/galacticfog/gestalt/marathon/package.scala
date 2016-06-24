@@ -56,8 +56,9 @@ package object marathon {
       health_checks: Option[Iterable[HealthCheck]] = None,
       volumes: Option[Iterable[Volume]] = None,
       labels: Option[Map[String,String]] = None,
-      env: Option[Map[String,String]] = None)
-  
+      env: Option[Map[String,String]] = None,
+      user: Option[String] = None)
+
   case class InputContainer(
       id: UUID = UUID.randomUUID,
       name: String,
@@ -123,7 +124,7 @@ package object marathon {
     deployments: Option[Seq[JsObject]] = None,
     ipAddress: Option[IPPerTaskInfo] = None,
     user: Option[String] = None)
-    
+
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
 
   lazy val marathonVolumeReads = (
@@ -213,34 +214,36 @@ package object marathon {
       (__ \ "user").readNullable[String]
     )(MarathonApp.apply _)
 
-  implicit lazy val marathonAppWrites = new Writes[MarathonApp] {
-    override def writes(o: MarathonApp): JsValue = {
-      val base = Json.obj(
-        "id" -> o.id,
-        "container" -> Json.toJson(o.container),
-        "cpus" -> o.cpus,
-        "mem" -> o.mem,
-        "instances" -> o.instances,
-        "cmd" -> o.cmd.getOrElse(null),
-        "args" -> o.args.getOrElse(Seq()).map(Json.toJson(_)),
-        "labels" -> Json.toJson(o.labels.getOrElse(Map())),
-        "healthChecks" -> Json.toJson(o.healthChecks.getOrElse(Seq())),
-        "env" -> Json.toJson(o.env.getOrElse(Map())),
-        "deployments" -> Json.toJson(o.deployments.getOrElse(Seq())),
-        "tasksStaged" -> Json.toJson(o.tasksStaged.getOrElse(0)),
-        "tasksRunning" -> Json.toJson(o.tasksRunning.getOrElse(0)),
-        "tasksHealthy" -> Json.toJson(o.tasksHealthy.getOrElse(0)),
-        "tasksUnhealthy" -> Json.toJson(o.tasksUnhealthy.getOrElse(0))
-      )
-      base ++ o.portDefinitions.map(pd => Json.obj("portDefinitions" -> Json.toJson(pd))).getOrElse(Json.obj()) ++
-        o.ipAddress.map(ip => Json.obj("ipAddress" -> Json.toJson(ip))).getOrElse(Json.obj()) ++
-        o.user.map(user => Json.obj("user" -> user)).getOrElse(Json.obj())
-    }
-  }
+  implicit lazy val marathonAppWrites = (
+    (__ \ "id").write[String] and
+      (__ \ "args").writeNullable[Seq[String]] and
+      (__ \ "container").write[MarathonContainer] and
+      (__ \ "cmd").writeNullable[String] and
+      (__ \ "cpus").write[Double] and
+      (__ \ "env").writeNullable[Map[String,String]] and
+      (__ \ "healthChecks").writeNullable[Seq[MarathonHealthCheck]] and
+      (__ \ "instances").write[Int] and
+      (__ \ "ipAddress").writeNullable[IPPerTaskInfo] and
+      (__ \ "labels").writeNullable[Map[String,String]] and
+      (__ \ "mem").write[Double] and
+      (__ \ "portDefinitions").writeNullable[Seq[PortDefinition]] and
+      (__ \ "ports").writeNullable[Seq[Int]] and
+      (__ \ "user").writeNullable[String] and
+      (__ \ "deployments").writeNullable[Seq[JsObject]] and
+      (__ \ "tasksStaged").writeNullable[Int] and
+      (__ \ "tasksRunning").writeNullable[Int] and
+      (__ \ "tasksHealthy").writeNullable[Int] and
+      (__ \ "tasksUnhealthy").writeNullable[Int]
+    )(
+    (a: MarathonApp) => (
+      a.id, a.args.map(_.toSeq), a.container, a.cmd, a.cpus, a.env, a.healthChecks.map(_.toSeq), a.instances, a.ipAddress, a.labels,
+      a.mem, a.portDefinitions.map(_.toSeq), a.ports.map(_.toSeq), a.user, a.deployments.map(_.toSeq),
+      a.tasksStaged, a.tasksRunning, a.tasksHealthy, a.tasksUnhealthy
+    )
+  )
 
   import com.galacticfog.gestalt.data.ResourceFactory
-  
-  
+
   /**
    * Convert Marathon App JSON to Meta Container JSON
    */
@@ -344,6 +347,7 @@ package object marathon {
       tasks_healthy = props.get("tasks_healthy") map {_.toInt}
       tasks_unhealthy = props.get("tasks_unhealthy") map {_.toInt}
       tasks_staged = props.get("tasks_staged") map {_.toInt}
+      user = props.get("user")
       docker = for {
         image <- props.get("image")
         network = props.get("network") getOrElse "HOST"
@@ -385,7 +389,8 @@ package object marathon {
       tasksStaged = tasks_staged,
       tasksRunning = tasks_running,
       tasksHealthy = tasks_healthy,
-      tasksUnhealthy = tasks_unhealthy
+      tasksUnhealthy = tasks_unhealthy,
+      user = user
     )
     mc recoverWith {
       case e: Throwable => throw new IllegalArgumentException("Could not parse container properties",e)
@@ -430,10 +435,6 @@ package object marathon {
         servicePort = Some(pm.service_port)
       )}
     }
-
-    val portLabelToIndex = props.port_mappings.zipWithIndex.map {
-      case (m,i) => (m.label getOrElse s"${m.protocol}/${m.container_port}") -> i
-    }.toMap
 
     val (docker,ipPerTask) = if (isDocker) {
       val requestedNetwork = props.network
@@ -480,7 +481,7 @@ package object marathon {
         volumes = props.volumes)
 
     MarathonApp(
-      id = "/" + name,
+      id = "/" + name.stripPrefix("/"),
       container = container,
       cpus = props.cpus,
       mem = props.memory,
@@ -502,7 +503,8 @@ package object marathon {
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
       )}},
       env = props.env,
-      ipAddress = ipPerTask
+      ipAddress = ipPerTask,
+      user = props.user
     )
   }
   
