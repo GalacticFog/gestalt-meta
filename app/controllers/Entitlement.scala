@@ -109,14 +109,14 @@ case class EntitlementProps(
   /**
    * Validates that action name is valid for the resource type and that all identities given are valid.
    */
-  def validate(): Either[String, Unit] = {
-    if (identities.isEmpty) Right(())
+  def validate(): Either[String,EntitlementProps] = {
+    if (identities.isEmpty) Right((this))
     else {
       val given = identities.get
       val found = ResourceFactory.findAllIn(given) map { _.id }
       val notFound = given.diff(found)
       
-      if (notFound.isEmpty) Right(())
+      if (notFound.isEmpty) Right((this))
       else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
     }
   }

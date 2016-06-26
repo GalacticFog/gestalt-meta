@@ -160,20 +160,21 @@ object AuthorizationController extends Authorization {
   }  
   
   def putEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    putEntitlementCommon(fqid(fqon), id)
+    val org = fqid(fqon)
+    putEntitlementCommon(org, org, id)
   }
   
   def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val parentType = UUID.fromString(parentTypeId)
     ResourceFactory.findById(parentTypeId, parentId) match {
       case None => Future(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
-      case Some(_) => {
-        putEntitlementCommon(fqid(fqon), id)
+      case Some(parent) => {
+        putEntitlementCommon(fqid(fqon), parent.id, id)
       }
     }
   }
   
-  private[controllers] def putEntitlementCommon(org: UUID, id: UUID)(
+  private[controllers] def putEntitlementCommon(org: UUID, parent: UUID, id: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
     val user = request.identity
@@ -181,7 +182,7 @@ object AuthorizationController extends Authorization {
     
     ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
       for {
-        r1 <- validateEntitlementPayload(org, user, json)
+        r1 <- validateEntitlementPayload(org, parent, user, json, "update")
         r2 <- validateEntitlementUpdate(ent, r1)
         r3 <- copyEntitlementForUpdate(ent, r2)
         r4 <- ResourceFactory.update(r3, user.account.id)
@@ -208,9 +209,9 @@ object AuthorizationController extends Authorization {
     
     parentResource match {
       case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
-      case Some(_) => {
+      case Some(parent) => {
 
-        validateEntitlementPayload(org, request.identity, request.body) match {
+        validateEntitlementPayload(org, parent.id, request.identity, request.body, "create") match {
           case Failure(e) => HandleExceptions(e)
           case Success(r) => {
             createResourceInstance(
@@ -248,7 +249,13 @@ object AuthorizationController extends Authorization {
     }
   }
 
-  private[controllers] def validateEntitlementPayload(org: UUID, creator: AuthAccountWithCreds, payload: JsValue): Try[GestaltResourceInstance] = Try {
+  private[controllers] def validateEntitlementPayload(
+      org: UUID, 
+      parent: UUID, 
+      creator: AuthAccountWithCreds, 
+      payload: JsValue,
+      accessType: String): Try[GestaltResourceInstance] = Try {
+    
     log.debug("Entered: validateEntitlementPayload(...)")
     
     /*
@@ -266,15 +273,42 @@ object AuthorizationController extends Authorization {
     // TODO: Validate that 'action' is unique for this resource (specified at most once).
     // ???
     
+    
     //
     // TODO: Remove unnecessary pattern matching
     //
     toResource(org, creator, payload) match {
       case Failure(err) => throw err
-      case Success(res) => {
-        EntitlementProps.make(res).validate match {
+      case Success(resource) => {
+        EntitlementProps.make(resource).validate match {
           case Left(err) => throw new BadRequestException(err)
-          case Right(_) => res
+          case Right(props) => {
+
+            
+            /*
+             * If we're trying to create, existing must be empty.
+             */
+            
+            
+            if (accessType == "update") resource
+            else if (accessType == "create") { 
+              
+              val existing = entitlementsByAction(parent, props.action)
+              
+              println("EXISTING-ENTITLEMENTS:")
+              existing foreach {e => println(e.properties.get)}
+              
+              if (existing.isEmpty) resource
+              else {
+                throw new ConflictException(
+                    s"Found existing entitlement for action '${props.action}'. There can be only one.")
+              }
+              
+            } else {
+              throw new RuntimeException(s"Unhandled accessType: '$accessType'")
+            }
+            
+          }
         }
       }
     }
@@ -291,7 +325,7 @@ object AuthorizationController extends Authorization {
    * TODO: Get rid of unnecessary pattern-matching
    */
   def toResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = Try {
-    log.debug("Entered: toResource(...)")
+    
     safeGetInputJson(ResourceIds.Entitlement, json) match {
       case Failure(error) => throw error
       case Success(input) => {
@@ -364,9 +398,16 @@ object AuthorizationController extends Authorization {
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
+        println("*******************GOT ENTITLEMENTS**********************")
         val allowed = getAllowedIdentities(entitlement)
         val membership = getUserMembership(identity, account)
+        
+        println("***ALLOWED IDENTITIES:\n" + allowed)
+        println("***MEMBERSHIP:\n" + membership)
+        println("INTERSECT: " + (allowed intersect membership))
+        
         (allowed intersect membership).isDefinedAt(0)
+        
       }
     }
   }  
@@ -382,8 +423,25 @@ object AuthorizationController extends Authorization {
    * member of.
    */
   private[controllers] def getUserMembership(user: UUID, account: AuthAccountWithCreds): Seq[UUID] = {
-    user +: (Security.getAccountGroups(user, account).get map { _.id })
+    //user +: (Security.getAccountGroups(user, account).get map { _.id })
+    user +: account.groups.map( _.id )
   }
+  
+  
+  object PermissionSet {
+    val SELF = "self"
+    val MERGED = "merged"
+  }
+  
+  def entitlementsByAction(resource: UUID, action: String, setType: String = PermissionSet.SELF) = {
+    val entitlements = setType match {
+      case PermissionSet.SELF => ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
+      case PermissionSet.MERGED => ResourceFactory.findEffectiveEntitlements(resource) flatMap { _._2 } toList
+      case e => throw new IllegalArgumentException(s"Invalid PermissionSet type '$e'")
+    } 
+    entitlements filter { _.properties.get("action") == action }
+  }
+  
   
   /**
    * Search the effective entitlements on the given resource for the given action name.
@@ -395,7 +453,7 @@ object AuthorizationController extends Authorization {
     val ents = AuthorizationController.getEntitlementsMerged(resource) filter { ent =>
       ent.properties.get("action") == action
     }
-    
+    println("**********Entitlements Found:\n" + ents)
     if (ents.isEmpty) None
     else if (ents.size > 1) {
       throw new RuntimeException(
@@ -419,6 +477,7 @@ object AuthorizationController extends Authorization {
         Json.parse(identities).validate[Seq[String]].map {
           case sq: Seq[String] => sq map { UUID.fromString(_) }
         }.recoverTotal { e =>
+          log.error("Failed parsing 'identities' to Seq[UUID].")
           throw new RuntimeException(
               s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
         }
