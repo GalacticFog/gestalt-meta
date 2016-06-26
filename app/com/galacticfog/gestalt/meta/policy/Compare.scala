@@ -1,10 +1,15 @@
 package com.galacticfog.gestalt.meta.policy
 
-  trait Compare[T] {
-    def compare(a: T, b: T, op: String): Boolean
+  trait Compare[A,B] {
+    /**
+     * 
+     * @param a the control value to test
+     * @param b the value to use for comparison
+     */
+    def compare(a: A, b: B, op: String): Boolean
   }
   
-  object CompareString extends Compare[String] {
+  object CompareString extends Compare[String,String] {
     def compare(a: String, b: String, op: String) = {
       op.trim.toLowerCase match {
         case "=="         => a == b
@@ -15,8 +20,42 @@ package com.galacticfog.gestalt.meta.policy
       }
     }
   }
+
+  /*
+   * compareSingleToList
+   * compareListToList
+   */
   
-  object CompareInt extends Compare[Int] {
+  object CompareSingleToList {
+    def apply[A]() = new CompareSingleToList[A]()
+  }
+  
+  class CompareSingleToList[A] extends Compare[Seq[A],A] {
+    def compare(a: Seq[A], b: A, op: String) = {
+      op.trim.toLowerCase match {
+        case "contains"   => a contains b
+        case "inlist"   => a contains b
+        case "oneof"   => a contains b
+        case "except" => !(a contains b)
+        case _ => throw new IllegalArgumentException(s"Invalid String comparison: '$op'")
+      }
+    }
+  }  
+  
+  object CompareListToList {
+    def apply[A]() = new CompareListToList[A]()
+  }
+  class CompareListToList[A] extends Compare[Seq[A], Seq[A]] {
+    def compare(a: Seq[A], b: Seq[A], op: String) = {
+      op.trim.toLowerCase match {
+        case "inlist" => b.diff(a).isEmpty
+        case _ => throw new IllegalArgumentException(s"Invalid String comparison: '$op'")
+      }
+    }
+  }
+  
+  
+  object CompareInt extends Compare[Int,Int] {
     def compare(a: Int, b: Int, op: String) = {
       op.trim.toLowerCase match {
         case "==" => a == b
