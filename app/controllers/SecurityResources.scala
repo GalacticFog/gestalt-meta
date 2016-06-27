@@ -67,7 +67,7 @@ trait SecurityResources {
   /**
    * Create a ResourceOwnerLink from AuthAccountWithCreds
    */
-  protected def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
+  def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
     account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId )  
   
   /**
