@@ -182,7 +182,8 @@ trait ResourceProperties {
     
     override val properties = baseResourceProperties ++ Map( 
       "containers.count"         -> "int",
-      "container.cpus"           ->  "float",
+      "container.name"           -> "string",
+      "container.cpus"           -> "float",
       "container.memory"         -> "int",
       "container.numInstances"   -> "int",       
       "container.image"          -> "string",
@@ -212,6 +213,7 @@ trait ResourceProperties {
          */
         containerCount(res.id).toString
       }
+      case a if a == "container.name"         => res.name
       case a if a == "container.user"         => getOrEmpty(res, "user")
       case a if a == "container.cpus"         => getOrEmpty(res, "cpus")
       case a if a == "container.memory"       => getOrEmpty(res, "memory")             
