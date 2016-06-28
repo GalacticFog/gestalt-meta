@@ -319,6 +319,17 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typepropertie
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.PropertyController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
 
 
+
+############################
+# SPECIAL PATCH - FOR ENV VARS
+############################
+
+PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>						controllers.Meta.patchResourceOrgFqon(fqon: String)
+PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id			controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+
+
 ############################
 # RESOURCES
 ############################

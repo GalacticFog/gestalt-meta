@@ -334,7 +334,7 @@ trait MetaController extends SecureController with SecurityResources {
  /**
    * Inspect a GestaltResourceInput, supplying default values where appropriate.
    */
-  protected[controllers] def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
     val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
     val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
@@ -344,7 +344,7 @@ trait MetaController extends SecureController with SecurityResources {
   /**
    * Convert GestaltResourceInput to GestaltResourceInstance
    */
-  protected[controllers] def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
     GestaltResourceInstance(
       id = in.id getOrElse UUID.randomUUID,
       typeId = in.resource_type.get,
@@ -384,7 +384,7 @@ trait MetaController extends SecureController with SecurityResources {
    */
   protected[controllers] def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
     log.debug(s"safeGetInputJson([json]")
-    log.debug(Json.prettyPrint(json))
+    //log.debug(Json.prettyPrint(json))
     implicit def jsarray2str(arr: JsArray) = arr.toString
 
     json.validate[GestaltResourceInput].map {
@@ -517,4 +517,42 @@ object MetaDS extends {
     }  
   }
 
+}
+
+object MetaController {
+  def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
+    account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId ) 
+    
+  def resolveResourceState(state: Option[String]) = {
+    ResourceState.id( state getOrElse ResourceStates.Active )
+  }  
+ /**
+   * Inspect a GestaltResourceInput, supplying default values where appropriate.
+   */
+  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
+  }
+  
+  /**
+   * Convert GestaltResourceInput to GestaltResourceInstance
+   */
+  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      
+      /* TODO: Here is where we transform from map(any) to map(string) */
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }  
 }

@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 
 import com.galacticfog.gestalt.marathon._
@@ -32,7 +33,9 @@ import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.events._
-  
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
+
 object MarathonController extends GestaltFrameworkSecuredController[DummyAuthenticator]
   with MetaController with SecurityResources {
 
@@ -249,7 +252,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
       }
     }
   }
-
+  
   
   protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
     val newStats = stats match {
@@ -295,7 +298,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   protected [controllers] def normalizeInputContainer(inputJson: JsValue): JsObject = {
     val defaults = containerWithDefaults(inputJson)
     val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
-    inputJson.as[JsObject] ++ Json.obj("properties" -> newprops)
+    (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
   }
 
   def postMarathonApp(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -315,8 +318,9 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
         }
         
         val provider = marathonProvider(providerId)
-
-        processPolicy(env, ContainerEvents.Create) match {
+        val org = fqid(fqon)
+        
+        processPolicy(request.identity, org, env, inputJson, ContainerEvents.Create) match {
           case Failure(e) => e match {
             case c: ConflictException => 
               Future(HandleExceptions(new ConflictException("Failed Pre-Condition : " + e.getMessage)))
@@ -324,6 +328,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
           }
           case Success(_) => {
           
+            log.debug("About to create Container in Marathon...")
             // Create app in Marathon
             createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) flatMap {
               r =>
@@ -339,7 +344,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
                 // Create app in Meta
                 log.debug("Creating Container in Meta:\n" + Json.prettyPrint(resourceJson))
                 
-                createResourceInstance(fqid(fqon), resourceJson, Some(ResourceIds.Container), Some(environment)) match {
+                
+                createResourceInstance(org, resourceJson, Some(ResourceIds.Container), Some(environment)) match {
                   case Failure(err) => Future { HandleExceptions(err) }
                   case Success(container) => {
     
@@ -355,6 +361,8 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
             } recover {
               case e: Throwable => HandleExceptions(e)
             }
+            
+             //Future { Ok("Testing create Container") }
           }
         }
       }
@@ -365,21 +373,33 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   
   def toPredicate(s: String) = {
     val j = Json.parse(s)
-    Predicate[Int](
+    
+    println("*****J :\n" + Json.prettyPrint(j))
+    println("property = " + (j \ "property").as[String])
+    println("operator = " + (j \ "operator").as[String])
+    val value = (j \ "value")
+    println("value    = " +  value)
+    println("value.getClass : " + value.getClass.getName)
+    
+    val p = Predicate[Any](
       property = (j \ "property").as[String],
       operator = (j \ "operator").as[String],
-      value    = (j \ "value").as[Int]
+      value    = (j \ "value").as[JsValue]
     )
+    println(s"MarathonController.toPredicate($s) => " + p)
+    p
   }
   
-  def processPolicy(target: GestaltResourceInstance, action: String) = Try {
+  def processPolicy(user: AuthAccountWithCreds, org: UUID, target: GestaltResourceInstance, payload: JsValue, action: String) = Try {
     log.debug(s"entered processPolicy([target], action = '$action')")
+    
     effectiveRules(target.id, Some(ResourceIds.RuleLimit), Seq(action)) foreach { r =>
       val predicate = toPredicate(r.properties.get("eval_logic"))
-      val decision = decide(target, predicate)
+      val decision = decide(user, org, target, payload, predicate)
       
       if (decision.isLeft) throw new ConflictException(decision.left.get)
-    }          
+    }
+    
   }
   
   def processContainerEvent(
@@ -606,13 +626,14 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
     
     println("RULES:")
     rules foreach { r => 
-      println("%s - %s - %s - %s".format(r.id, r.typeId, r.name, r.properties.get("actions")))
+      println("%s - %s - %s - %s".format(
+          r.id, r.typeId, r.name, r.properties.get("actions")))
     }
-
+    
     def array(sa: String) = Json.parse(sa).validate[Seq[String]].get
     def matchAction(a: Seq[String], b: Seq[String]) = !(a intersect b).isEmpty
     def matchType(test: UUID) = ( test == (ruleType getOrElse test) )
-
+    
     if (actions.isEmpty) rules else {
       rules filter { r =>
         matchType(r.typeId) &&
@@ -657,7 +678,7 @@ object MarathonController extends GestaltFrameworkSecuredController[DummyAuthent
   protected [controllers] def eventsClient() = {  
     AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
   }
-    
+  
   
   /**
    * Extract and validate the 'provider' querystring parameter. 
