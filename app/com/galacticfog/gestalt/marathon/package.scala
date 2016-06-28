@@ -518,7 +518,7 @@ package object marathon {
       )}},
       env = props.env,
       ipAddress = ipPerTask,
-      user = props.user.filter(_.trim.nonEmpty)
+      user = None
     )
   }
   

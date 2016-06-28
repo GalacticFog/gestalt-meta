@@ -473,7 +473,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
         env = Some(Map(
           "env_var_1" -> "env_val_1"
         )),
-        user = Some("someUser")
+        user = None
       )
 
       marApp must_== toMarathonApp(name, resourceJson, provider)
@@ -530,7 +530,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
         env = Some(Map(
           "env_var_1" -> "env_val_1"
         )),
-        user = Some("someUser")
+        user = None
       )
 
       marApp must_== toMarathonApp(name, resourceJson, provider)
