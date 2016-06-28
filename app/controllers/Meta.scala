@@ -287,6 +287,10 @@ object Meta extends MetaController with Authorization with SecurityResources {
     resourcePatch(id)
   }
   
+  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    resourcePatch(fqid(fqon))
+  }
+  
   def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     resourcePatch(id)
   }

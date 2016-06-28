@@ -105,8 +105,6 @@ package object policy {
    * created when the operator is '<='.
    */
   protected [policy] def normalizedPredicate(predicate: Predicate[_]) = {
-    log.debug(s"**************************normalizedPredicate($predicate)")
-    log.debug("--Property : " + predicate.property)
     if (predicate.property == "containers.count") {
       predicate operator match {
         case "<=" => predicate.copy(operator = "<")

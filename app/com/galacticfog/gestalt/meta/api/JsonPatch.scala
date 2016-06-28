@@ -95,7 +95,7 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
 
   /*
    * ops that DO NOT target properties, must be targeting attributes. Ensure
-   * that anythin not targeting a property is a valid attribute name. Properties
+   * that anything not targeting a property is a valid attribute name. Properties
    * will be validated by the resource factory when it attempts to actually
    * update the resource. 
    */
@@ -172,18 +172,68 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     }
   }
   
+  def jsonMap(json: JsValue) = {
+    json.validate[Map[String,String]].get
+  }
+  def map2json(map: Map[String,String]) = {
+    
+  }
+  def updateEnvironmentVar(property: String, p: PatchOp, res: GestaltResourceInstance) = {
+    log.debug(s"updateEnvironmentVar($property, $p, <resource>)")
+    val existingProps = res.properties getOrElse Map()
+    val vars = existingProps.get("env") map { e => jsonMap(Json.parse(e)) } getOrElse Map()
+    
+    val (key,value) = {
+      val obj = jsonMap(p.value)
+      val key = obj.keys.toSeq(0)
+      val value = obj(key)
+      (key -> value)
+    }
+    
+    val newvars = p.op match {
+      case "add" | "replace" => {
+        val nv = mapPatchUpsert(key, value, vars)
+        println("***NEW-VARS : " + nv)
+        nv
+      }
+      case "remove" => mapPatchRemove(key, value, vars)
+    }
+    res.copy(properties = Option(existingProps ++ Map("env" -> 
+      Json.stringify(Json.toJson(newvars)))) )
+  }
+
+  
+  def mapPatchRemove(key: String, value: String, map: Map[String,String]): Map[String,String] = {
+    log.debug(s"JsonPatch.mapPatchRemove($key, $value, $map)")
+    if (map.get(key).isDefined) map - key
+    else {
+      throw new BadRequestException(s"Environment Variable '$key' not found. No changes made.")
+    }
+  }
+  
+  def mapPatchUpsert(key: String, value: String, map: Map[String,String]): Map[String,String] = {
+    log.debug(s"JsonPatch.mapPatchUpsert($key, $value, $map)")
+    map ++ Map(key -> value)
+  }
+  
   def updateProperties(ps: Seq[PatchOp], res: GestaltResourceInstance): GestaltResourceInstance = {
     ps match {
       case Nil    => res
       case h :: t => {
         val pname = getPropertyName(h.path).get
-        log.debug("Updating property: " + pname)
+        val op = h.op
+        log.debug(s"Updating property: $op, $pname")
+        
         // TODO: invoke appropriate function by op-type - here we just replace.
-        updateProperties(t, replaceProperty(pname, h.value, res))
+        
+        if (pname == "env") {
+          updateProperties(t, updateEnvironmentVar(pname, h, res))
+        }
+        else updateProperties(t, replaceProperty(pname, h.value, res))
       }
     }
   }
-
+  
   def getPropertyName(s: String): Try[String] = Try {
     if (!s.trim.startsWith(PROPERTY_PREFIX)) {
       throw new BadRequestException(s"Invalid path to property '$s'")
@@ -205,12 +255,12 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
 }
 
 case class PatchOp(op: String, path: String, value: JsValue) {
-  if (List("add", "remove", "move", "copy", "test").contains(op.toLowerCase)) {
+  if (List(/*"add", "remove", */"move", "copy", "test").contains(op.toLowerCase)) {
     throw new RuntimeException(s"The '$op' op is not currently supported.")
   }
-  else if (!List("replace").contains(op.toLowerCase)) {
-    throw new BadRequestException(s"Illegal op value '$op'.")
-  }
+//  else if (!List("replace").contains(op.toLowerCase)) {
+//    throw new BadRequestException(s"Illegal op value '$op'.")
+//  }
 }
 
 case class PatchDocument(op: PatchOp*) extends Iterable[PatchOp] {
