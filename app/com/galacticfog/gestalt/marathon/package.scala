@@ -436,10 +436,17 @@ package object marathon {
       )}
     }
 
-    val (docker,ipPerTask) = if (isDocker) {
+    def toDocker(props: InputContainerProperties): (Option[MarathonDocker], Option[IPPerTaskInfo]) = {
       val requestedNetwork = props.network
-      val (dockerNet,dockerParams,ipPerTask) = if (providerNetworkNames.isEmpty) {
-        (requestedNetwork, None, None)
+      val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(KeyValuePair("user",u)))
+      if (providerNetworkNames.isEmpty) {
+        (Some(MarathonDocker(
+          image = props.image,
+          network = requestedNetwork,
+          forcePullImage = Some(props.force_pull),
+          portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
+          parameters = dockerParams
+        )), None)
       } else {
         providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
           case None => throw new BadRequestException(
@@ -447,14 +454,24 @@ package object marathon {
             payload = Some(inputJson)
           )
           case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
-            (stdNet, None, None)
+            (Some(MarathonDocker(
+              image = props.image,
+              network = stdNet,
+              forcePullImage = Some(props.force_pull),
+              portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
+              parameters = dockerParams
+            )), None)
           case Some(calicoNet) =>
-            (
-              "HOST",
-              Some(Seq(
+            val docker = MarathonDocker(
+              image = props.image,
+              network = "HOST",
+              forcePullImage = Some(props.force_pull),
+              portMappings = None,
+              parameters = Some(Seq(
                 KeyValuePair("net", calicoNet)
-              )),
-              Some(IPPerTaskInfo(
+              ) ++ dockerParams.getOrElse(Seq()))
+            )
+            val ippertask = IPPerTaskInfo(
                 discovery = Some(DiscoveryInfo(
                   ports = Some(props.port_mappings.map(pm => PortDiscovery(
                     number = pm.container_port,
@@ -462,18 +479,15 @@ package object marathon {
                     protocol = pm.protocol
                   )).toSeq)
                 ))
-              ))
-            )
+              )
+            (Some(docker), Some(ippertask))
         }
       }
-      (Some(MarathonDocker(
-        image = props.image,
-        network = dockerNet,
-        forcePullImage = Some(props.force_pull),
-        portMappings = if (dockerNet.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
-        parameters = dockerParams
-      )), ipPerTask)
-    } else (None,None) // no support for non-docker ipPerTask right now
+    }
+
+    val (docker,ipPerTask) =
+      if (isDocker) toDocker(props)
+      else (None,None) // no support for non-docker ipPerTask right now
 
     val container = MarathonContainer(
         docker = docker,
@@ -504,7 +518,7 @@ package object marathon {
       )}},
       env = props.env,
       ipAddress = ipPerTask,
-      user = props.user
+      user = None
     )
   }
   

@@ -359,123 +359,183 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ))
     }
 
-  }
 
-  "serialize marathon volumes appropriately" in {
-    val marValidJson =  Json.obj(
-      "type" -> "ctype",
-      "volumes" -> Json.arr(Json.obj(
-        "containerPath" -> "cpath",
-        "hostPath" -> "hpath",
-        "mode" -> "RW"
-      ))
-    )
+    "serialize marathon volumes appropriately" in {
+      val marValidJson =  Json.obj(
+        "type" -> "ctype",
+        "volumes" -> Json.arr(Json.obj(
+          "containerPath" -> "cpath",
+          "hostPath" -> "hpath",
+          "mode" -> "RW"
+        ))
+      )
 
-    val marContainer = MarathonContainer(
-      docker = None, containerType = "ctype", volumes = Some(Seq(Volume(
-        container_path = "cpath", host_path = "hpath", mode = "RW"
-      )))
-    )
+      val marContainer = MarathonContainer(
+        docker = None, containerType = "ctype", volumes = Some(Seq(Volume(
+          container_path = "cpath", host_path = "hpath", mode = "RW"
+        )))
+      )
 
-    Json.toJson(marContainer) must_== marValidJson
-    marValidJson.as[MarathonContainer] must_== marContainer
-  }
+      Json.toJson(marContainer) must_== marValidJson
+      marValidJson.as[MarathonContainer] must_== marContainer
+    }
 
-  "serialize marathon app appropriately" in {
-    val marContainer = MarathonContainer(docker = None, containerType = "ctype")
+    "serialize marathon app appropriately" in {
+      val marContainer = MarathonContainer(docker = None, containerType = "ctype")
 
-    val marApp = MarathonApp(
-      id = "someId",
-      container = marContainer,
-      user = Some("someUser"),
-      ipAddress = Some(IPPerTaskInfo(discovery = None)),
-      portDefinitions = Some(Seq()),
-      cpus = 0.2,
-      mem = 128.0,
-      instances = 1
-    )
+      val marApp = MarathonApp(
+        id = "someId",
+        container = marContainer,
+        user = Some("someUser"),
+        ipAddress = Some(IPPerTaskInfo(discovery = None)),
+        portDefinitions = Some(Seq()),
+        cpus = 0.2,
+        mem = 128.0,
+        instances = 1
+      )
 
-    val marValidJson = Json.obj(
-      "id" -> "someId",
-      "container" -> Json.obj(
-        "type" -> "ctype"
-      ),
-      "cpus" -> 0.2,
-      "mem" -> 128.0,
-      "instances" -> 1,
-      "user" -> "someUser",
-      "ipAddress" -> Json.obj(),
-      "portDefinitions" -> Json.arr()
-    )
-
-    Json.toJson(marApp) must_== marValidJson
-    marValidJson.as[MarathonApp] must_== marApp
-  }
-
-  "transform to Marathon API appropriately (host-style)" in {
-    val providerId = UUID.randomUUID()
-    val name = "/some/app/id"
-    val resourceJson = Json.obj(
-      "properties" -> Json.obj(
-        "container_type" -> "DOCKER",
-        "image" -> "some/image:tag",
-        "provider" -> Json.obj(
-          "id" -> providerId
+      val marValidJson = Json.obj(
+        "id" -> "someId",
+        "container" -> Json.obj(
+          "type" -> "ctype"
         ),
-        "port_mappings" -> Json.arr(),
-        "cmd" -> "/usr/bin/someCmd",
-        "cpus" -> 2.0,
-        "memory" -> 256.0,
-        "num_instances" -> 3,
-        "network" -> "HOST",
-        "force_pull" -> true,
+        "cpus" -> 0.2,
+        "mem" -> 128.0,
+        "instances" -> 1,
         "user" -> "someUser",
-        "env" -> Json.obj(
-          "env_var_1" -> "env_val_1"
+        "ipAddress" -> Json.obj(),
+        "portDefinitions" -> Json.arr()
+      )
+
+      Json.toJson(marApp) must_== marValidJson
+      marValidJson.as[MarathonApp] must_== marApp
+    }
+
+    "transform to Marathon API appropriately (host-style)" in {
+      val providerId = UUID.randomUUID()
+      val name = "/some/app/id"
+      val resourceJson = Json.obj(
+        "properties" -> Json.obj(
+          "container_type" -> "DOCKER",
+          "image" -> "some/image:tag",
+          "provider" -> Json.obj(
+            "id" -> providerId
+          ),
+          "port_mappings" -> Json.arr(),
+          "cmd" -> "/usr/bin/someCmd",
+          "cpus" -> 2.0,
+          "memory" -> 256.0,
+          "num_instances" -> 3,
+          "network" -> "HOST",
+          "force_pull" -> true,
+          "user" -> "someUser",
+          "env" -> Json.obj(
+            "env_var_1" -> "env_val_1"
+          )
         )
       )
-    )
-    val provider = mock[GestaltResourceInstance]
-    val config = Json.obj(
-      "networks" -> Json.arr(Json.obj(
-        "name" -> "HOST",
-        "id" -> "8332a2e4711a",
-        "description" -> "",
-        "sub_net" -> "192.168.0.0/16"
+      val provider = mock[GestaltResourceInstance]
+      val config = Json.obj(
+        "networks" -> Json.arr(Json.obj(
+          "name" -> "HOST",
+          "id" -> "8332a2e4711a",
+          "description" -> "",
+          "sub_net" -> "192.168.0.0/16"
+        ))
+      ).toString
+      provider.properties returns Some(Map(
+        "config" -> config
       ))
-    ).toString
-    provider.properties returns Some(Map(
-      "config" -> config
-    ))
-    provider.id returns providerId
+      provider.id returns providerId
 
-    val marApp = MarathonApp(
-      id = name,
-      container = MarathonContainer(
-        docker = Some(MarathonDocker(
-          image = "some/image:tag",
-          network = "HOST",
-          forcePullImage = Some(true),
-          parameters = None
+      val marApp = MarathonApp(
+        id = name,
+        container = MarathonContainer(
+          docker = Some(MarathonDocker(
+            image = "some/image:tag",
+            network = "HOST",
+            forcePullImage = Some(true),
+            parameters = Some(Seq(
+              KeyValuePair("user","someUser")
+            ))
+          )),
+          containerType = "DOCKER"
+        ),
+        cpus = 2.0,
+        mem = 256.0,
+        instances = 3,
+        cmd = Some("/usr/bin/someCmd"),
+        args = None,
+        ipAddress = None,
+        labels = None,
+        portDefinitions = Some(Seq()),
+        healthChecks = None,
+        env = Some(Map(
+          "env_var_1" -> "env_val_1"
         )),
-        containerType = "DOCKER"
-      ),
-      cpus = 2.0,
-      mem = 256.0,
-      instances = 3,
-      cmd = Some("/usr/bin/someCmd"),
-      args = None,
-      ipAddress = None,
-      labels = None,
-      portDefinitions = Some(Seq()),
-      healthChecks = None,
-      env = Some(Map(
-        "env_var_1" -> "env_val_1"
-      )),
-      user = Some("someUser")
-    )
+        user = None
+      )
 
-    marApp must_== toMarathonApp(name, resourceJson, provider)
+      marApp must_== toMarathonApp(name, resourceJson, provider)
+    }
+
+    "transform to Marathon API appropriately (calico-style)" in {
+      val provider = marathonProviderWithStdNetworks
+      val name = "/some/app/id"
+      val resourceJson = Json.obj(
+        "properties" -> Json.obj(
+          "container_type" -> "DOCKER",
+          "image" -> "some/image:tag",
+          "provider" -> Json.obj(
+            "id" -> provider.id
+          ),
+          "port_mappings" -> Json.arr(),
+          "cmd" -> "/usr/bin/someCmd",
+          "cpus" -> 2.0,
+          "memory" -> 256.0,
+          "num_instances" -> 3,
+          "network" -> "web-net",
+          "force_pull" -> true,
+          "user" -> "someUser",
+          "env" -> Json.obj(
+            "env_var_1" -> "env_val_1"
+          )
+        )
+      )
+
+      val marApp = MarathonApp(
+        id = name,
+        container = MarathonContainer(
+          docker = Some(MarathonDocker(
+            image = "some/image:tag",
+            network = "HOST",
+            forcePullImage = Some(true),
+            parameters = Some(Seq(
+              KeyValuePair("net", "web-net"),
+              KeyValuePair("user","someUser")
+            ))
+          )),
+          containerType = "DOCKER"
+        ),
+        cpus = 2.0,
+        mem = 256.0,
+        instances = 3,
+        cmd = Some("/usr/bin/someCmd"),
+        args = None,
+        ipAddress = Some(IPPerTaskInfo(Some(DiscoveryInfo(Some(Seq(
+        )))))),
+        labels = None,
+        portDefinitions = None,
+        healthChecks = None,
+        env = Some(Map(
+          "env_var_1" -> "env_val_1"
+        )),
+        user = None
+      )
+
+      marApp must_== toMarathonApp(name, resourceJson, provider)
+    }
+
   }
 
 
