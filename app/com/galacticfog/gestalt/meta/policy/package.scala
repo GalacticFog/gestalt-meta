@@ -105,11 +105,15 @@ package object policy {
    * created when the operator is '<='.
    */
   protected [policy] def normalizedPredicate(predicate: Predicate[_]) = {
-    predicate operator match {
-      case "<=" => predicate.copy(operator = "<")
-      case ">=" => predicate.copy(operator = ">")
-      case _ => predicate
-    }
+    log.debug(s"**************************normalizedPredicate($predicate)")
+    log.debug("--Property : " + predicate.property)
+    if (predicate.property == "containers.count") {
+      predicate operator match {
+        case "<=" => predicate.copy(operator = "<")
+        case ">=" => predicate.copy(operator = ">")
+        case _ => predicate
+      }
+    } else predicate
   }
   
   protected [policy] def propertyHandler(typeId: UUID): ResourceProperties = {
@@ -120,7 +124,7 @@ package object policy {
         throw new IllegalArgumentException(s"No property handler for type '${typeId.toString}'.")
     }
   }
-
+  
   protected [policy] def getEffect(effect: String) = {
     if (effect.isEmpty) false
     else {

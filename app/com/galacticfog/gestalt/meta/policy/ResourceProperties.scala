@@ -39,24 +39,40 @@ trait ResourceProperties {
         val op = predicate.operator
         val datatype = properties(predicate.property)
         
-        def jstring(js: T) = js.asInstanceOf[JsValue].as[String]
-        
+        def jstring(js: T) = {
+          println(s"*** jstring($js)")
+          println(s"js.toString : " + js.toString)
+          val out = Json.parse(js.toString).as[String]
+          println("***" + out)
+          out
+          //js.asInstanceOf[JsValue].as[String]
+        }
+        def jsint(js: Int) = {
+          JsNumber(js).as[String].toInt
+        }
         datatype match {
-          case "string" => CompareString.compare(test.toString, b.asInstanceOf[JsValue].as[String]/*toString*/, op)
-          case "int"    => CompareInt.compare(test.toString.toInt, /*jstring(b).toInt*/b.toString.toInt, op)
-          case "float"  => CompareFloat.compare(test.toString.toDouble, jstring(b).toDouble/*b.toString.toDouble*/, op)
+          case "string" => CompareString.compare(test.toString, b.asInstanceOf[JsValue].as[String], op)
+          case "int"    => CompareInt.compare(/*jstring(test).toInt*/test.toString.toInt, jstring(b).toInt /*b.toString.toInt*/, op)
+          case "float"  => CompareFloat.compare(test.toString.toDouble, jstring(b).toDouble, op)
           case "string->string::list" => {
-            CompareSingleToList().compare(toSeqString(b.toString),test.toString, op)
+            CompareSingleToList().compare(csv2seq(jstring(b))/*toSeqString(b.toString)*/, test.toString, op)
           }
           case "string::list->string::list" => {
-            CompareListToList().compare(toSeqString(b.toString), toSeqString(test.toString), op)
+            CompareListToList().compare(csv2seq(jstring(b))/*toSeqString(b.toString)*/, toSeqString(test.toString), op)
           }
           case _ => throw new IllegalArgumentException(s"Unsupported datatype: '$datatype'")
         }
       }
     }
     
+    
     import play.api.libs.json._
+    
+    
+    def csv2seq(csv: String) = {
+      csv.split(",").map(_.trim).toList
+    }
+    
     
     def toSeqString(s: String): Seq[String] = {
       log.debug(s"ResourceProperties.toSeq($s)")
@@ -185,15 +201,15 @@ trait ResourceProperties {
       "container.name"           -> "string",
       "container.cpus"           -> "float",
       "container.memory"         -> "int",
-      "container.numInstances"   -> "int",       
-      "container.image"          -> "string",
+      "container.numInstances"   -> "int",
+      "container.image"          -> "string->string::list",
       "container.user"           -> "string->string::list",
       "container.acceptedResourceRoles" -> "string::list->string::list", 
       "container.labels"        -> "string::list->string::list",
       "container.constraints"   -> "string::list->string::list",
       "container.network"       -> "string->string::list"
     )
-
+    
     def getValue(res: ResourceLike, propertyName: String): Try[String] = Try {
       val getprop = {
         matchBaseProperty(res)    orElse 
