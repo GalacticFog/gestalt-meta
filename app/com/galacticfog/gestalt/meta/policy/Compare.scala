@@ -55,6 +55,7 @@ import play.api.{Logger => log}
       op.trim.toLowerCase match {
         case "=="         => a == b
         case "equals"     => a == b
+        case "!="         => a != b
         case "contains"   => a contains b
         case "startswith" => a startsWith b
         case "endswith"   => a endsWith b
@@ -65,8 +66,10 @@ import play.api.{Logger => log}
   
   object CompareInt extends Compare[Int,Int] {
     def compare(a: Int, b: Int, op: String) = {
+      log.debug(s"CompareInt.compare($a, $b)")
       op.trim.toLowerCase match {
         case "==" => a == b
+        case "!=" => a != b
         case "<=" => a <= b
         case ">=" => a >= b
         case ">"  => a > b
@@ -82,6 +85,7 @@ import play.api.{Logger => log}
       log.debug(s"CompareFloat.compare($a, $b)")
       op.trim.toLowerCase match {
         case "==" => a == b
+        case "!=" => a != b
         case "<=" => a <= b
         case ">=" => a >= b
         case ">"  => a > b
