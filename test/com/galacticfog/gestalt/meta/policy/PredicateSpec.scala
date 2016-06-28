@@ -32,27 +32,27 @@ class PredicateSpec extends Specification with MetaResourceScope {
   val fakeContainer = newInstance(ResourceIds.Container, "fake-container")
   
   
-  "decide()" should {
-    
-    "be successful when making a valid comparison" in {
-      
-      val nameEquals = Predicate("name", "==", "fake-container")
-      
-      //val res = newInstance(ResourceIds.Environment, "TEST")
-      
-      val decision = decide(fakeContainer, nameEquals)
-      decision must beRight      
-    }
-    
-    "fail when making an invalid comparison" in {
-       
-      val res = newInstance(ResourceIds.Environment, "TEST")
-      val predicate = Predicate("name", "==", "NOT-THIS")
-      
-      val decision = decide(res, predicate)
-      decision must beLeft
-    }    
-    
-  }
+//  "decide()" should {
+//    
+//    "be successful when making a valid comparison" in {
+//      
+//      val nameEquals = Predicate("name", "==", "fake-container")
+//      
+//      //val res = newInstance(ResourceIds.Environment, "TEST")
+//      
+//      val decision = decide(fakeContainer, nameEquals)
+//      decision must beRight      
+//    }
+//    
+//    "fail when making an invalid comparison" in {
+//       
+//      val res = newInstance(ResourceIds.Environment, "TEST")
+//      val predicate = Predicate("name", "==", "NOT-THIS")
+//      
+//      val decision = decide(res, predicate)
+//      decision must beLeft
+//    }    
+//    
+//  }
   
 }

@@ -65,7 +65,7 @@ class ResourcePropertiesSpec extends Specification {
         
         EnvironmentProperties.exists("id") must beTrue
         EnvironmentProperties.exists("containers.count") must beTrue
-        EnvironmentProperties.exists("container.cpu") must beTrue
+        EnvironmentProperties.exists("container.cpus") must beTrue
         EnvironmentProperties.exists("container.memory") must beTrue
         EnvironmentProperties.exists("container.numInstances") must beTrue
         EnvironmentProperties.exists("container.image") must beTrue
