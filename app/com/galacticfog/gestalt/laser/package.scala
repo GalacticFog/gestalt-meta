@@ -181,11 +181,14 @@ package object laser {
     
     //
     // TODO: Validation parsing.
+    // TODO: I think i have the naming of this backward,
+    // What I'm calling the function is actually the handler. It still works
+    // just confusing. Fix.
     //
     val function = fmap.keys.toSeq(0)
 
     runtime.as[String] match {
-      case "dotnet" => ("", function)
+      case "csharp" => (function, "")
       case _        => splitEntrypoint(function)
     }
   }
