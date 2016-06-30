@@ -51,54 +51,94 @@ package object policy {
    * Use the property name to decide whether tests are performed against the 'target' or the payload 
    * converted to a resource.
    */
-  def resolveTestTarget(
-      user: AuthAccountWithCreds,
-      org: UUID, 
-      target: ResourceLike, 
-      payload: JsValue, 
-      predicate: Predicate[Any]): ResourceLike = {
-    
-    val input = safeGetInputJson(payload).get
-    
-    /*
-     * TODO: Obviously we can't test for all individual properties like this.
-     * Need some component that can figure this out based on target.resourceType (or something).
-     */
-    
-    if (predicate.property == "containers.count") target
-    else {
-      controllers.util.MetaController.inputWithDefaults(
-          org = org, 
-          input = input, 
-          creator = user)
-    }
-  }
+  
+// THIS METHOD IS CURRENTLY UNUSED - BUT DO NOT DELETE YET! (sy)
+//  def resolveTestTarget(
+//      user: AuthAccountWithCreds,
+//      org: UUID, 
+//      target: ResourceLike, 
+//      payload: JsValue, 
+//      predicate: Predicate[Any]): ResourceLike = {
+//    
+//    val input = safeGetInputJson(payload).get
+//    
+//    /*
+//     * TODO: Obviously we can't test for all individual properties like this.
+//     * Need some component that can figure this out based on target.resourceType (or something).
+//     */
+//    
+//    if (predicate.property == "containers.count") target
+//    else {
+//      controllers.util.MetaController.inputWithDefaults(
+//          org = org, 
+//          input = input, 
+//          creator = user)
+//    }
+//  }
+
   
   def decide(
       user: AuthAccountWithCreds, 
-      org: UUID,
       target: ResourceLike, 
-      payload: JsValue, 
       predicate: Predicate[Any], 
-      effect: Option[String] = None): Either[String,Unit] =  {
+      effect: Option[String]): Either[String,Unit] =  {
     
+    val effectiveTarget = target
     
-    val effectiveTarget = resolveTestTarget(user, org, target, payload, predicate)
     val props = propertyHandler(effectiveTarget.typeId)
     val test = props.getValue(effectiveTarget, predicate.property).get
-
-    //if (test == EmptyProperty) throw new RuntimeException(s"Found EmptyProperty for => ${predicate}")
     
     log.debug(s"Testing: ${predicate.toString}")
     log.debug(s"Test-Value: " + test)
     
-    //
-    // TODO: To test containers.count, i need the environment. To test container.image, i need the container Json as a resource.
-    //
-    
     if (props.compare(test, normalizedPredicate(predicate))) Right(Unit) else Left(predicate.toString)
+  }  
+  
+  
+  def toPredicate(s: String) = {
+    val j = Json.parse(s)
+    val value = (j \ "value")
+    Predicate[Any](
+      property = (j \ "property").as[String],
+      operator = (j \ "operator").as[String],
+      value    = (j \ "value").as[JsValue]
+    )
   }
   
+  
+  def DebugLogRules(parentId: UUID, rules: Seq[GestaltResourceInstance]) {
+    if (log.isDebugEnabled) {
+      if (rules.isEmpty) log.debug(s"No Policy Rules found for resource $parentId")
+      else {
+        log.debug(s"Policy Rules found for resource $parentId")
+        rules foreach { r => 
+          log.debug("%s - %s - %s".format(
+              r.id, r.name, r.properties.get("actions")))
+        }
+      }
+    }
+  }
+  
+  
+  def effectiveRules(parentId: UUID, ruleType: Option[UUID] = None, actions: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+    val rules = for {
+      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
+      r <- ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id)
+    } yield r
+    
+    DebugLogRules(parentId, rules)
+    
+    def array(sa: String) = Json.parse(sa).validate[Seq[String]].get
+    def matchAction(a: Seq[String], b: Seq[String]) = !(a intersect b).isEmpty
+    def matchType(test: UUID) = ( test == (ruleType getOrElse test) )
+    
+    if (actions.isEmpty) rules else {
+      rules filter { r =>
+        matchType(r.typeId) &&
+        matchAction(array(r.properties.get("actions")), actions)
+      }
+    }
+  }  
   
   /*
    * TODO: This is temporary. This gets us around the issue where we allow limit + 1 containers to be

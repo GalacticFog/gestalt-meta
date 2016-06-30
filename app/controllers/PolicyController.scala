@@ -255,7 +255,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   def getRulesGlobal() = Authenticate() { implicit request =>
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
   }  
-
+  
   def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
     val resourceType = Try {
