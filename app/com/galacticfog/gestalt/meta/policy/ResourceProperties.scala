@@ -10,6 +10,7 @@ import com.galacticfog.gestalt.data.models._
 import scala.util.{Try,Success,Failure}
 
 import java.util.UUID
+import play.api.libs.json._
 
 
 trait ResourceProperties {
@@ -27,9 +28,9 @@ trait ResourceProperties {
     
     def compare[T](test: T, predicate: Predicate[T]): Boolean = {
       
-      log.debug("compare : PROPERTIES : ")
-      properties foreach { case (k,v) => println(s"$k = $v") }
-      
+      def jstring(js: T) = Json.parse(js.toString).as[String]
+      def jsint(js: Int) = JsNumber(js).as[String].toInt
+    
       val property = predicate.property
       if (!properties.contains(property)) 
         throw new IllegalArgumentException(s"Unknown property: '$property'")
@@ -38,35 +39,20 @@ trait ResourceProperties {
         val b = predicate.value //.asInstanceOf[JsValue].as[String]
         val op = predicate.operator
         val datatype = properties(predicate.property)
-        
-        def jstring(js: T) = {
-          println(s"*** jstring($js)")
-          println(s"js.toString : " + js.toString)
-          val out = Json.parse(js.toString).as[String]
-          println("***" + out)
-          out
-          //js.asInstanceOf[JsValue].as[String]
-        }
-        def jsint(js: Int) = {
-          JsNumber(js).as[String].toInt
-        }
+  
         datatype match {
           case "string" => CompareString.compare(test.toString, b.asInstanceOf[JsValue].as[String], op)
-          case "int"    => CompareInt.compare(/*jstring(test).toInt*/test.toString.toInt, jstring(b).toInt /*b.toString.toInt*/, op)
+          case "int"    => CompareInt.compare(test.toString.toInt, jstring(b).toInt, op)
           case "float"  => CompareFloat.compare(test.toString.toDouble, jstring(b).toDouble, op)
-          case "string->string::list" => {
-            CompareSingleToList().compare(csv2seq(jstring(b))/*toSeqString(b.toString)*/, test.toString, op)
-          }
-          case "string::list->string::list" => {
-            CompareListToList().compare(csv2seq(jstring(b))/*toSeqString(b.toString)*/, toSeqString(test.toString), op)
-          }
+          case "string->string::list" => CompareSingleToList().compare(csv2seq(jstring(b)), test.toString, op)
+          case "string::list->string::list" => CompareListToList().compare(csv2seq(jstring(b)), toSeqString(test.toString), op)
           case _ => throw new IllegalArgumentException(s"Unsupported datatype: '$datatype'")
         }
       }
     }
     
     
-    import play.api.libs.json._
+    
     
     
     def csv2seq(csv: String) = {
