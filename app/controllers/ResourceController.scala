@@ -419,16 +419,8 @@ object ResourceController extends Authorization {
   def getGenericChildAllOrgFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
     handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), fqid(fqon)),
         request.queryString, META_URL)
-  }    
-  
-
-
-  def getContainersFqon(fqon: String) = Authenticate().async { implicit request =>
-    orgFqon(fqon) match {
-      case None => Future { OrgNotFound(fqon) }
-      case Some(org) => getContainers(org.id, request.queryString)
-    }
   }
+
 
   def findWorkspaceEnvironment(envId: UUID) = Try {
     val p = ResourceFactory.findParent(ResourceIds.Workspace, envId) getOrElse {
@@ -530,34 +522,8 @@ object ResourceController extends Authorization {
               created = None, modified = None,
               properties = props)
   }
-  
-  /**
-   * TODO: This is still used by /{org}/containers - delete when that endpoint goes away.
-   */
-  def getContainers(org: UUID, qs: Map[String,Seq[String]])(implicit request: SecuredRequest[AnyContent]) = {
-    val out = GestaltResourceInstance(
-      id = UUID.randomUUID(),
-      typeId = ResourceIds.Container,
-      orgId = org,
-      owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
-      name = UUID.randomUUID.toString)
 
-    Future { Ok(Output.renderInstance(out, META_URL)) }
 
-    val marathonClient = MarathonClient(
-      WS.client, EnvConfig.marathonUrl stripSuffix ("/"))
-    
-    val outs = marathonClient.listApplications map { s =>
-      s map { i =>
-        out.copy(
-          name = i.id + "-" + UUID.randomUUID.toString, created = None, modified = None,
-          properties = Some(instance2map(i).asInstanceOf[Map[String, String]]))
-      }
-    }
-    outs map { s => handleExpansion(s, request.queryString, META_URL) }    
-  }
-  
-  
   /**
    * Get the Meta User corresponding with the caller identity.
    * NOTE: The 'empty' call to Authenticate means the caller MUST be able

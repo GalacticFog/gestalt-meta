@@ -366,8 +366,6 @@ DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id  	controllers
 # CONTAINERS
 ############################
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 						        controllers.ResourceController.getContainersFqon(fqon: String)
-
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   		        controllers.ResourceController.getEnvironmentContainersFqon2(fqon: String, envId: java.util.UUID)
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.MarathonController.postMarathonApp(fqon: String, envId: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid           controllers.ResourceController.getEnvironmentContainersIdFqon(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
