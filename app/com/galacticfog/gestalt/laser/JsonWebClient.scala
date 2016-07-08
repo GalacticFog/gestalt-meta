@@ -1,5 +1,8 @@
 package com.galacticfog.gestalt.laser
 
+import java.nio.charset.StandardCharsets
+import java.util.Base64
+
 import play.api.Play.current
 import play.api.libs.ws._
 import play.api.libs.ws.ning.NingAsyncHttpClientConfigBuilder
@@ -41,8 +44,13 @@ case class ApiResponse(status: Int, output: Option[JsValue], error: Option[Strin
 
 object JsonWebClient {
   val ALL_GOOD = Seq((200 to 299):_*)
-  
-  def apply(config: HostConfig) = new JsonWebClient(config)
+
+  def base64(s: String): String = Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8))
+
+  def apply(config: HostConfig) = {
+    val auth = config.creds.map ( creds => "Authorization" -> base64("%s:%s".format(creds.username, creds.password)) )
+    new JsonWebClient(config, auth)
+  }
 }
 
 class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = None) {
