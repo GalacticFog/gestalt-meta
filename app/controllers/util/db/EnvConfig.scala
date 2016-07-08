@@ -23,6 +23,7 @@ object EnvConfig extends JdbcConfiguration {
   
   lazy val rabbitHost = System.getenv("RABBIT_HOST")
   lazy val rabbitPort = System.getenv("RABBIT_PORT")
+  lazy val rabbitHttpPort = Option(System.getenv("RABBIT_HTTP_PORT")) getOrElse "80"
   lazy val rabbitExchange = System.getenv("RABBIT_EXCHANGE")
   lazy val rabbitRoute = System.getenv("RABBIT_ROUTE")
   
