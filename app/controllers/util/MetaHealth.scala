@@ -37,7 +37,7 @@ object MetaHealth {
   
   val DEFAULT_SERVICE_TIMEOUT_SECONDS = 5
 
-  val rabbitWebUrl = "http://%s".format(EnvConfig.rabbitHost)
+  val rabbitWebUrl = "http://%s:%s".format(EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
   val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
