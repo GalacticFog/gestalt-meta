@@ -360,16 +360,6 @@ object Meta extends MetaController with Authorization with SecurityResources {
 
   }
 
-  /** 
-   *  TODO: [TEMPORARY]: Create a new MarathonProvider configuration using URL
-   *  contained in the GESTALT_MARATHON_PROVIDER environment variable.
-   */
-  def newMarathonProvider(name: String) = {
-    Json.obj("name" -> name, 
-        "properties" -> Json.obj("config" -> 
-          Json.obj("url" -> EnvConfig.marathonUrl)))
-  }
-  
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
   // --------------------------------------------------------------------------

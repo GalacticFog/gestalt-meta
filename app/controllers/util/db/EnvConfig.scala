@@ -17,7 +17,6 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val timeout = System.getenv("DATABASE_TIMEOUT_MS")
   private lazy val apigateway = System.getenv("GESTALT_APIGATEWAY")
   private lazy val lambda = System.getenv("GESTALT_LAMBDA")
-  private lazy val marathon = System.getenv("GESTALT_MARATHON_PROVIDER")
 
   lazy val securityKey = System.getenv("GESTALT_SECURITY_KEY")
   lazy val securitySecret = System.getenv("GESTALT_SECURITY_SECRET")
@@ -30,12 +29,10 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val security_protocol = System.getenv("GESTALT_SECURITY_PROTOCOL")
   private lazy val security_hostname = System.getenv("GESTALT_SECURITY_HOSTNAME")
   private lazy val security_port = System.getenv("GESTALT_SECURITY_PORT")
-  
-  
+
   val gatewayUrl  = apigateway
   val lambdaUrl   = lambda
-  val marathonUrl = marathon
-  
+
   val databaseUrl = {
     "jdbc:postgresql://%s:%s/%s?user=%s&password=*****".format(host, port, dbname, username)
   }
@@ -51,7 +48,7 @@ object EnvConfig extends JdbcConfiguration {
   
   def isValid() = {
     !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
-        empty(apigateway) && empty(lambda) && empty(marathon) && 
+        empty(apigateway) && empty(lambda) &&
         empty(security_protocol) && empty(security_hostname) &&
         empty(rabbitHost) &&
         empty(rabbitPort) &&
@@ -76,7 +73,6 @@ object EnvConfig extends JdbcConfiguration {
       |  database = ${databaseUrl},
       |  apigateway = ${gatewayUrl},
       |  lambda = ${lambdaUrl},
-      |  marathon = ${marathonUrl},
       |  security = ${securityUrl},
       |  events = ${Json.prettyPrint(rabbit)})
     """.stripMargin
