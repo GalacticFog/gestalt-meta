@@ -286,7 +286,13 @@ object LaserController extends GestaltFrameworkSecuredController[DummyAuthentica
           val locationName = parseLocationName(loc)
           
           val providerObj = Json.obj("id" -> h.id, "location" -> loc)
-          val upstream = s"http://${lambdaConfig.host}/lambdas/${lambda.get.id.toString}/invoke"
+          val lambdaBaseUrl = lambdaConfig.port match {
+            case Some(port) =>
+              s"${lambdaConfig.protocol}://${lambdaConfig.host}:${port}"
+            case None =>
+              s"${lambdaConfig.protocol}://${lambdaConfig.host}"
+          }
+          val upstream = s"$lambdaBaseUrl/lambdas/${lambda.get.id.toString}/invoke"
           val api = ResourceFactory.findApiId(lambda.get.id, h.id, /*loc*/locationName)
           
           // Use client-supplied ID if given.
