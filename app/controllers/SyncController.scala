@@ -204,9 +204,13 @@ object SyncController extends Authorization /*MetaController with NonLoggingTask
                 
             val groupcrud = resourceEntitlements(
                 adminId, org.id, org.id, ResourceIds.Group,
-                Seq("create", "view", "update", "delete") )     
+                Seq("create", "view", "update", "delete") )   
                 
-            (crud ++ usercrud ++ groupcrud) map { e => 
+            val licensecrud = resourceEntitlements(
+                adminId, org.id, org.id, ResourceIds.License,
+                Seq("create", "view", "update", "delete") )
+                
+            (crud ++ usercrud ++ groupcrud ++ licensecrud) map { e => 
               CreateResource(
                 ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
                 Option(ResourceIds.Entitlement), Option(org.id)).get            
