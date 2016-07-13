@@ -247,13 +247,30 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createUserCommon(fqid(fqon), request.body)
   }
 
-  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    val root = Security.getRootOrg(request.identity).get.fqon
-    val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", JsString(root))
+  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
     
-    CreateSynchronizedResult(org, ResourceIds.User, userJson.get)(
-      Security.createAccount, createNewMetaUser[JsValue])    
+    Authorize(org, Actions.User.Create, request.identity) {
+      
+      val root = Security.getRootOrg(request.identity).get.fqon
+      val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", JsString(root))
+      
+      CreateSynchronized(org, ResourceIds.User, userJson.get)(
+          Security.createAccount, createNewMetaUser[JsValue]) match {
+            case Failure(err) => HandleExceptions(err)
+            case Success(res) => {
+          
+            val user = request.identity
+            
+            Entitle(org, ResourceIds.User, res.id, user, Option(org)) {
+              generateEntitlements(user.account.id, org, res.id, Seq(ResourceIds.User), ACTIONS_CRUD)
+            }
+            Created(Output.renderInstance(res, META_URL))
+        }
+      }
+
+    }
   }  
+    
   
     
   // --------------------------------------------------------------------------
@@ -324,42 +341,37 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
   }
 
-
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-  
+
     Future {
-      
+
       Authorize(org, Actions.Workspace.Create, user) {
 
         CreateResource(
-          org, 
-          json, 
-          caller   = user,
-          typeId   = ResourceIds.Workspace,
+          org,
+          json,
+          caller = user,
+          typeId = ResourceIds.Workspace,
           parentId = org) match {
-          
-          case Failure(e) => HandleExceptions(e)
-          case Success(workspace) => {
 
-            Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
-              
-              generateEntitlements(
-                user.account.id, org, workspace.id,
-                Seq(ResourceIds.Workspace, ResourceIds.Environment), 
-                ACTIONS_CRUD)
-                
+            case Failure(e) => HandleExceptions(e)
+            case Success(workspace) => {
+
+              Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
+                generateEntitlements(
+                  user.account.id, org, workspace.id,
+                  Seq(ResourceIds.Workspace, ResourceIds.Environment),
+                  ACTIONS_CRUD)
+              }
+
+              Created(Output.renderInstance(workspace, baseUri))
             }
-
-            Created(Output.renderInstance(workspace, baseUri))
-
           }
-        }
       }
-
     }
-
   }
 
+  
   /** 
    *  TODO: [TEMPORARY]: Create a new MarathonProvider configuration using URL
    *  contained in the GESTALT_MARATHON_PROVIDER environment variable.
@@ -384,8 +396,8 @@ object Meta extends MetaController with Authorization with SecurityResources {
     Future {
       postEnvironmentCommon(fqid(fqon))
     }
-    
   }
+  
   
   def postEnvironmentCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
     parseWorkspaceId(request.body) match {
@@ -393,6 +405,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
       case Success(workspace) => postEnvironmentResult(org, workspace)
     }          
   }
+  
   
   def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
     log.debug(s"ResourceController::postEnvironmentResult($org, $workspace")
@@ -488,7 +501,8 @@ object Meta extends MetaController with Authorization with SecurityResources {
           ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
             (p.name -> p.id) 
           }.toMap
-          
+         
+          println("TYPES : " + types)
         log.debug("Parsed provider-type as : " + v.as[String])
         v.as[String] match {
           case a if types.contains(a) => types(a)
@@ -657,11 +671,13 @@ object Meta extends MetaController with Authorization with SecurityResources {
 
     val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
-
+    
     ResourceFactory.findById(parentTypeId, parent) match {
       case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
       case Some(parentResource) => {
 
+        println("PROVIDER-TYPE : " + providerType)
+        println("GATEWAY-TYPE  : " + ResourceIds.ApiGatewayProvider)
         if (providerType == ResourceIds.ApiGatewayProvider) {
           postGatewayProvider(org, parentResource)
         } 
@@ -708,6 +724,9 @@ object Meta extends MetaController with Authorization with SecurityResources {
   //
   // --------------------------------------------------------------------------
 
+  
+
+  
   private def CreateSynchronizedResult[T](org: UUID, typeId: UUID, json: JsValue)
       (sc: SecurityResourceFunction, mc: MetaResourceFunction)
       (implicit request: SecuredRequest[T]) = {
