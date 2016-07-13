@@ -55,6 +55,14 @@ object Actions {
     val Update = s"$prefix.update"
     val Delete = s"$prefix.delete"
   }
+  
+  object License {
+    private val prefix = "license"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }  
 }  
 
 trait Authorization extends MetaController with SecurityResources {
