@@ -181,6 +181,16 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     }
   }
 
+  def deleteApplication(externalId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
+//    val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+//    val longAppId = appGroupId + appId.stripPrefix("/")
+
+    client.url(s"${marathonAddress}/v2/apps${externalId}").delete() map { marResp =>
+      Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
+        marResp.json
+    }    
+  }  
+  
   def scaleApplication(appId: String, numInstances: Int)(implicit ex: ExecutionContext): Future[JsValue] = {
     client.url(s"${marathonAddress}/v2/apps/${appId}").put(Json.obj(
       "instances" -> numInstances
