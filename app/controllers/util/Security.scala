@@ -135,7 +135,7 @@ object Security {
     log.debug(s"Attempting to DELETE Org ${org.toString}. Account: ${auth.account}")
     Try{Await.result(GestaltOrg.deleteOrg(org)(client.withCreds(auth.creds)), 5 seconds)}
   }
-
+  
   def createAccount(org: UUID, auth: AuthAccountWithCreds, user: GestaltResourceInput)(implicit client: GestaltSecurityClient): Try[GestaltAccount] = {
     val props = stringmap(user.properties) getOrElse { 
       throw new BadRequestException(s"Invalid user. Cannot create.") 
@@ -160,6 +160,7 @@ object Security {
   }
   
   def deleteAccount(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
+    log.debug(s"Attempting to delete Account ${id} from Gestalt Security.")
     Try(Await.result(GestaltAccount.deleteAccount(id)(client.withCreds(auth.creds)), 5 seconds))
   }
 
