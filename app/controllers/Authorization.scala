@@ -24,6 +24,22 @@ object Actions {
     val Delete = s"$prefix.delete"
   }
 
+  object User {
+    private val prefix = "user"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+  
+  object Group {
+    private val prefix = "group"
+    val Create = s"$prefix.create"
+    val View   = s"$prefix.view"
+    val Update = s"$prefix.update"
+    val Delete = s"$prefix.delete"
+  }
+  
   object Workspace {
     private val prefix = "workspace"
     val Create = s"$prefix.create"
@@ -135,7 +151,8 @@ trait Authorization extends MetaController with SecurityResources {
    * is provided, the given Entitlements will be merged with corresponding Entitlements specified
    * on the resource's parent.
    */
-  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, parent: Option[UUID])(entitlements: => Seq[Entitlement])(implicit request: SecuredRequest[_]): Seq[Try[GestaltResourceInstance]] = {
+  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, parent: Option[UUID])
+      (entitlements: => Seq[Entitlement])(implicit request: SecuredRequest[_]): Seq[Try[GestaltResourceInstance]] = {
     Entitle(org, resourceType, resourceId, request.identity, parent)(entitlements)
   }
   
@@ -177,8 +194,11 @@ trait Authorization extends MetaController with SecurityResources {
   //
   // TODO: Use AuthorizationMessage for trace logging.
   //
+  import play.api.mvc.Result
+  import scala.concurrent.Future
+  import scala.concurrent.ExecutionContext.Implicits.global
   
-  def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => play.api.mvc.Result): play.api.mvc.Result = {
+  def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Result): Result = {
     AuthorizationController.isAuthorized(
         target, caller.account.id, actionName, caller) match {
       case Failure(err) => HandleExceptions(err)
@@ -189,8 +209,20 @@ trait Authorization extends MetaController with SecurityResources {
         } else ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
       }
     }
-  }  
+  }
   
+  def AuthorizeAsync(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Future[Result]): Future[Result] = {
+    AuthorizationController.isAuthorized(
+        target, caller.account.id, actionName, caller) match {
+      case Failure(err) => Future(HandleExceptions(err))
+      case Success(auth) => {
+        if (auth) {
+          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}")
+          block 
+        } else Future(ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'"))
+      }
+    }
+  }  
   
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
