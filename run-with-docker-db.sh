@@ -77,7 +77,6 @@ export GESTALT_SECURITY_PROTOCOL=http
 
 export GESTALT_APIGATEWAY=http://apigateway.dev.galacticfog.com
 export GESTALT_LAMBDA=http://lambda.dev.galacticfog.com
-export GESTALT_MARATHON_PROVIDER=http://v2.galacticfog.com:8080
 
 export GESTALT_VERSION=1.0
 export GESTALT_ENV="appliance; DEV"
