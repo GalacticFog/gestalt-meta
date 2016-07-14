@@ -54,7 +54,15 @@ object LicenseController extends Authorization {
           
           // Set CRUD entitlements for creating User    
           setCreatorEntitlements(license.id, org, request.identity)
-          
+
+          // Install the license
+          val licenseText = (inputJson \ "properties" \ "data").as[String]
+          if (licenseText == "") {
+            GestaltLicense.instance().install()
+          } else {
+            GestaltLicense.instance().install(licenseText)
+          }
+
           // Render resource to JSON and return 201
           Created(Output.renderInstance(license, META_URL))
           
@@ -72,12 +80,17 @@ object LicenseController extends Authorization {
      * val license = findById(ResourceIds.License, licenseId).get
      * val licenseText = license.properties.get("data")
      */
-    
-    findById(ResourceIds.License, licenseId).fold {
-      LicenseNotFound(licenseId) 
-    } { 
-      license => Ok(Output.renderInstance(license, META_URL)) 
-    }
+
+     val transform = (params.getOrElse("transform", "true") == "false")
+     if (transform) {
+       Ok(Output.renderInstance(GestaltLicense.instance().view()), META_URL)
+     } else {
+       findById(ResourceIds.License, licenseId).fold {
+       LicenseNotFound(licenseId)
+       } {
+         license => Ok(Output.renderInstance(license, META_URL))
+       }
+     }
   }
   
   /**
@@ -85,15 +98,14 @@ object LicenseController extends Authorization {
    */
   def deleteLicense(fqon: String, licenseId: UUID) = Authenticate(fqon) { implicit request =>
 
+    GestaltLicense.instance.uninstall()
     findById(ResourceIds.License, licenseId).fold {
       LicenseNotFound(licenseId)
     } { _ =>
-      
       hardDeleteResource(licenseId) match {
         case Failure(e) => HandleExceptions(e)
         case Success(_) => NoContent
       }
-      
     }
   }
   
