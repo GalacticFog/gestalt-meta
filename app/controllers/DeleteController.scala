@@ -52,7 +52,12 @@ object DeleteController extends Authorization {
         ResourceIds.ApiEndpoint -> deleteExternalEndpoint))
   
   
+  /*
+   * TODO: More validation on path
+   * Don't assume last component is UUID - protect
+   */
   def resourceFromPath(p: String): Option[GestaltResourceInstance] = {
+    
     val cmps = { p.trim
         .stripPrefix("/")
         .stripSuffix("/")
@@ -67,15 +72,37 @@ object DeleteController extends Authorization {
     
     val resourceId = UUID.fromString(cmps.last)
     
-    if (typeName == "providers") {
-      ResourceFactory.findById(UUID.fromString(cmps.last)) match {
-        case None => throw new ResourceNotFoundException(s"Provider with ID '${cmps.last}' not found.")
-        case Some(provider) => {
-          log.debug(s"Looking up ${ResourceLabel(provider.typeId)}, ${resourceId}")
-          ResourceFactory.findById(provider.typeId, resourceId)
+    def lookupResource(resourceId: UUID) = {
+      ResourceFactory.findById(resourceId) match {
+        case None => throw new ResourceNotFoundException(s"Resource with ID '${resourceId}' not found.")
+        case Some(resource) => {
+          log.debug(s"Looking up ${ResourceLabel(resource.typeId)}, ${resourceId}")
+          ResourceFactory.findById(resource.typeId, resourceId)
         }
       }
+    } 
+    
+    if (Seq("providers", "rules").contains(typeName)) {
+      lookupResource(resourceId)
     } else Resource.findByPath(p)
+    
+//    if (typeName == "providers") {
+//      ResourceFactory.findById(resourceId) match {
+//        case None => throw new ResourceNotFoundException(s"Provider with ID '${resourceId}' not found.")
+//        case Some(provider) => {
+//          log.debug(s"Looking up ${ResourceLabel(provider.typeId)}, ${resourceId}")
+//          ResourceFactory.findById(provider.typeId, resourceId)
+//        }
+//      }
+//    } else if(typeName == "rules") {
+//      ResourceFactory.findById(resourceId) match {
+//        case None => throw new ResourceNotFoundException(s"Rule with ID '${resourceId}' not found.")
+//        case Some(rule) => {
+//          log.debug(s"Looking up ${ResourceLabel(rule.typeId)}, ${resourceId}")
+//          ResourceFactory.findById(rule.typeId, resourceId)
+//        }
+//      }
+//    } else Resource.findByPath(p)
     
   }
   
