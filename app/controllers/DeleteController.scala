@@ -38,7 +38,7 @@ import play.api.{Logger => log}
   import scala.concurrent.duration._
   import scala.concurrent.Await
 
-  
+
 object DeleteController extends Authorization {
  
   private val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
@@ -51,20 +51,49 @@ object DeleteController extends Authorization {
         ResourceIds.Api -> deleteExternalApi,
         ResourceIds.ApiEndpoint -> deleteExternalEndpoint))
   
-        
+  
+  def resourceFromPath(p: String): Option[GestaltResourceInstance] = {
+    val cmps = { p.trim
+        .stripPrefix("/")
+        .stripSuffix("/")
+        .split("/").toList filter { _.trim != "" }
+    }
+    
+    val typeName = cmps size match {
+      case 0 => throw new BadRequestException(s"Invalid path. found: '$p'")
+      case 1 => cmps(0)
+      case _ => cmps(cmps.size - 2)
+    }
+    
+    val resourceId = UUID.fromString(cmps.last)
+    
+    if (typeName == "providers") {
+      ResourceFactory.findById(UUID.fromString(cmps.last)) match {
+        case None => throw new ResourceNotFoundException(s"Provider with ID '${cmps.last}' not found.")
+        case Some(provider) => {
+          log.debug(s"Looking up ${ResourceLabel(provider.typeId)}, ${resourceId}")
+          ResourceFactory.findById(provider.typeId, resourceId)
+        }
+      }
+    } else Resource.findByPath(p)
+    
+  }
+  
   def hardDeleteTest(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
     
-    Resource.findByPath( p ) match {
-      case None => NotFoundResult(request.uri)
-      case Some(r) => {
-        DeleteHandler.handle(r, request.identity) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(a) => NoContent
-        }
+    resourceFromPath( p ).fold {
+      NotFoundResult(request.uri)
+    } { resource =>
+      
+      DeleteHandler.handle(resource, request.identity) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(a) => NoContent
       }
+      //DefaultRequestRouter.route( resource )
     }
+    
   }
 
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
@@ -96,53 +125,7 @@ object DeleteController extends Authorization {
     val api = UUID.fromString(res.properties.get("api"))
     laser.deleteEndpoint(api, res.id) map ( _ => () )
   }
-  
-  /*
-   * 
-   */
-  sealed trait HttpVerb
-  case object GET extends HttpVerb
-  case object POST extends HttpVerb
-  case object PUT extends HttpVerb
-  case object PATCH extends HttpVerb
-  case object DELETE extends HttpVerb
-  
-  object Methods {
-    val Get = "GET"
-    val Put = "PUT"
-    val Patch = "PATCH"
-    val Post = "POST"
-    val Delete = "DELETE"
-  }
 
-  trait RequestRouter {
-    import Methods._
-    
-    def route(resource: ResourceLike)(implicit request: SecuredRequest[_]): Result 
-    
-    def assertAllowedMethod(request: RequestHeader) = {
-      if (!Seq(Post, Get, Put, Patch, Delete).contains(request.method))
-        throw new IllegalArgumentException(s"HTTP Method '${request.method}' is not supported.")
-    }
-  }
-  
-  object DefaultRequestRouter extends RequestRouter {
-    
-    val handlers = Map(Methods.Delete -> DeleteHandler)
-    
-    def route(resource: ResourceLike)(implicit request: SecuredRequest[_]): Result = {     
-      assertAllowedMethod(request)
-        
-      val handler = handlers.get(request.method) getOrElse {
-        throw new RuntimeException(s"RequestHandler for method '${request.method}' not found.")
-      }
-      
-      handler.handle(resource, request.identity) match {
-        case Failure(e) => HandleExceptions(e)
-        case Success(_) => NoContent
-      }
-    }
-  }
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
@@ -152,28 +135,40 @@ object DeleteController extends Authorization {
   /*
    * TODO: convert to class and construct with Map of DeleteFunctions.
    */
+  
   object DeleteHandler extends RequestHandler[ResourceLike,Try[Unit]] {
-
-    def handle(res: ResourceLike, account: AuthAccountWithCreds)(implicit request: RequestHeader): Try[Unit] = {
-
-      val result = manager.delete(
-          res.asInstanceOf[GestaltResourceInstance], account, 
-          getForceParam(request.queryString))
-          
-      println("**result : " + result)
-      
-      result map { Success(_) }
-    }
     
+    def handle(res: ResourceLike, account: AuthAccountWithCreds)(implicit request: RequestHeader): Try[Unit] = {
+      manager.delete(
+        res.asInstanceOf[GestaltResourceInstance], 
+        account, 
+        singleParamBoolean(request.queryString, "force"),
+        skipExternals(res, request.queryString)) map { Success(_) }
+    }
+  
   }
   
   
+  /**
+   * Get the type ID for any resources that should have their external delete function skipped.
+   * Currently only used for MarathonProvider - if 'deleteContainers' is false (or missing), we
+   * need to skip the delete from Marathon.
+   */
+  protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
+    if (res.typeId == ResourceIds.MarathonProvider &&
+        !singleParamBoolean(qs, "deleteContainers")) {
+      
+      log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")
+      log.debug("Containers WILL NOT be deleted from Marathon.")
+      
+      Seq(ResourceIds.Container)
+    } else Seq()
+  }
   
 
   
   protected [controllers] def deleteMarathonApp[A <: ResourceLike](container: A): Future[JsValue] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
-    println("providerId : " + providerId)
     val provider = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
     }
@@ -261,6 +256,20 @@ object DeleteController extends Authorization {
       } match {
         case Success(b) => b == true
         case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+      }
+    }
+  }
+  
+  
+  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
+    if (!qs.contains(param)) false
+    else {
+      val bp = qs(param)
+      Try {
+        bp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
       }
     }
   }
