@@ -205,6 +205,7 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 #####
 
 
+
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>	    controllers.DeleteController.hardDeleteOrgFqon(fqon: String, fqon)
 
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>		controllers.DeleteController.hardDeleteTest(fqon: String, path: String = "")
@@ -213,6 +214,17 @@ DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.DeleteContro
 
 
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName1/$id<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>
+
+############################
+# LICENSE
+############################
+
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 	 controllers.LicenseController.postLicense(fqon: String)
+GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.getLicense(fqon: String, id: java.util.UUID)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses controllers.LicenseController.getLicenses(fqon: String)
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.deleteLicense(fqon: String, id: java.util.UUID)
+
 
 
 ############################
@@ -376,8 +388,6 @@ POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments			controllers.Meta
 ############################
 # CONTAINERS
 ############################
-
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers	 						        controllers.ResourceController.getContainersFqon(fqon: String)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers   		        controllers.ResourceController.getEnvironmentContainersFqon2(fqon: String, envId: java.util.UUID)
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.MarathonController.postMarathonApp(fqon: String, envId: java.util.UUID)

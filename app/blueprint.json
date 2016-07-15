@@ -1,0 +1,108 @@
+
+
+{
+  "name":"MyWebAppBlueprint",
+  "description": "A classic three-tier web-app.",
+  "tags": [ "web", "oldschool", "sexy" ],
+  "state": "Gestalt::Resource::State::Disabled",
+  "properties": {
+  	"constrain_environment": [ "dev", "test" ]
+  },
+  "root_cluster": {
+    "name":"root",
+    "clusters":[
+      {
+        "name":"load-balancers",
+        "nodes":[
+          {
+            "name":"lb-001",
+            "node_type":"Gestalt::NodeType::webservice",
+            "service":"4ba4d63e-b10a-4b16-88d6-467869938501",
+            "spec":"centos_71-large",
+            "num_instances":2
+          }
+        ]
+      },
+      {
+        "name":"web-servers",
+        "nodes":[
+          {
+            "name":"web-primary",
+            "node_type":"Gestalt::NodeType::webservice",
+            "service":"c5327aff-cd38-4ff3-a0f4-4b270ef15ee2",
+            "spec":"centos_71-large",
+            "num_instances":2
+          },
+          {
+            "name":"web-standby",
+            "node_type":"Gestalt::NodeType::webservice",
+            "service":"c8991c35-143b-4798-9d49-60fdd00ff4fc",
+            "spec":"centos_71-large",
+            "num_instances":2
+          }
+        ]
+      },
+      {
+        "name":"data-servers",
+        "clusters":[
+          {
+            "name":"writes",
+            "nodes":[
+              {
+                "name":"write-master",
+                "node_type":"Gestalt::NodeType::dataservice",
+                "service":"57aa1a71-2fd5-4a40-8c30-389f237b3c1d",
+                "spec":"centos_71-xlarge",
+                "num_instances":1
+              },
+              {
+                "name":"warm-standby",
+                "node_type":"Gestalt::NodeType::dataservice",
+                "service":"8d3c32e8-f587-414d-9c3e-0992e4702449",
+                "spec":"centos_71-xlarge",
+                "num_instances":1
+              },
+              {
+                "name":"replicant",
+                "node_type":"Gestalt::NodeType::dataservice",
+                "service":"2b847c97-c822-4382-9e49-6710949fcd53",
+                "num_instances":1,
+                "spec_def":{
+                  "name":"centos71-replicant-large",
+                  "num_cpus":1,
+                  "num_ports":1,
+                  "disk_size":"1TB",
+                  "mem_size":"128GB",
+                  "arch":"x86_64",
+                  "type":"linux",
+                  "distro":"centos",
+                  "version":"7.1"
+                }
+              }
+            ]
+          },
+          {
+            "name":"reads",
+            "nodes":[
+              {
+                "name":"read-slave-primary",
+                "node_type":"Gestalt::NodeType::dataservice",
+                "service":"4831b39c-bd13-462a-9a08-78860639bcd8",
+                "spec":"Gestalt::MachineSpec::dataservice-xlarge",
+                "num_instances":4
+              },
+              {
+                "name":"read-slave-backup",
+                "node_type":"Gestalt::NodeType::dataservice",
+                "service":"6b646a7f-a38b-41e5-b2a6-e375853d339c",
+                "spec":"Gestalt::MachineSpec::dataservice-xlarge",
+                "num_instances":4
+              }
+            ]
+          }
+        ]
+      }
+    ]
+  }
+}
+

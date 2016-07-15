@@ -1,0 +1,77 @@
+
+
+DELETE  /{fqon}/*path
+DELETE /{fqon}/environments/:envId/providers/:id/v2/apps/:marathonAppId
+DELETE /{fqon}/policies/:resourceId
+DELETE /{fqon}/workspaces/:parentId/policies/:resourceId 
+DELETE /{fqon}/environments/:parentId/policies/:resourceId
+DELETE /{fqon}/:restName/:id
+
+#DELETE /{fqon}/:restName1/:uuid
+#DELETE /{fqon}/entitlements/:id
+#DELETE /{fqon}/workspaces/:parent/entitlements/:id
+#DELETE /{fqon}/environments/:parent/entitlements/:id
+#DELETE /{fqon}/lambdas/:parent/entitlements/:id
+#DELETE /{fqon}/groups/:group
+#DELETE /{fqon}/groups/:group/users
+#DELETE /{fqon}/users/:uuid
+#DELETE /{fqon}/resourcetypes/:typeId
+#DELETE /{fqon}/resourcetypes/:typeId/actions/:id
+#DELETE /{fqon}/resources/:resourceId
+#DELETE /{fqon}/workspaces/:id
+#DELETE /{fqon}/environments/:id
+#DELETE /{fqon}/environments/:envId/containers/:cid
+#DELETE /{fqon}/containers/:cid
+#DELETE /{fqon}/apis/:id
+#DELETE /{fqon}/lambdas/:id
+#DELETE /{fqon}/apiendpoints/:id
+#DELETE	/{fqon}/providers/:id
+#DELETE	/{fqon}/workspaces/:workspace/providers/:id 
+#DELETE /{fqon}/workspaces/:workspace/domains/:id
+
+
+
+"name": "Gestalt::Resource::Type"
+"name": "Gestalt::Resource::TypeProperty",
+
+"name": "Gestalt::Resource::User",
+"name": "Gestalt::Resource::Group",
+
+"name": "Gestalt::Resource::Org",        
+"name": "Gestalt::Resource::Workspace",
+"name": "Gestalt::Resource::Environment",
+"name": "Gestalt::Resource::Container",
+
+"name": "Gestalt::Resource::Api",
+"name": "Gestalt::Resource::ApiEndpoint",                
+"name": "Gestalt::Resource::Node::Lambda",
+"name": "Gestalt::Resource::Domain",
+
+"name": "Gestalt::Resource::Entitlement",
+"name": "Gestalt::Resource::Policy",
+"name": "Gestalt::Resource::Rule::Event",
+"name": "Gestalt::Resource::Rule::Limit",
+
+"name": "Gestalt::Configuration::Provider::Events",
+"name": "Gestalt::Configuration::Provider::Marathon",
+"name": "Gestalt::Configuration::Provider::ApiGateway",        
+
+"name": "Gestalt::Resource::License",
+
+
+
+#
+# I think we can get rid of these (at least for now)
+#
+"name": "Gestalt::Configuration",
+"name": "Gestalt::Resource::Service",
+"name": "Gestalt::Resource::Blueprint",
+
+"name": "Gestalt::Resource::Deployment",
+"name": "Gestalt::Resource::MachineSpec",
+"name": "Gestalt::Resource::Node",
+"name": "Gestalt::Resource::Cluster",
+"name": "Gestalt::Resource::ClusterTemplate",
+"name": "Gestalt::Resource::NodeTemplate",
+
+        
