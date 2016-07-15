@@ -2,6 +2,8 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
@@ -12,10 +14,10 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.keymgr._
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFoundException}
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
-import play.api.libs.json.{JsValue, Json}
+import play.api.libs.json.{JsArray, JsValue, Json}
 
 
 object LicenseController extends Authorization {
@@ -47,31 +49,48 @@ object LicenseController extends Authorization {
        * val licenseText = (inputJson \ "properties" \ "data").as[String]
        * 
        */
+      // Install the license
+      try {
+        val licenseText = (request.body \ "properties" \ "data").as[String]
+        GestaltLicense.instance().install(licenseText)
+        createLicense(org) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(license) => {
 
-      createLicense(org) match {
-        case Failure(e) => HandleExceptions(e)
-        case Success(license) => {
-          
-          // Set CRUD entitlements for creating User    
-          setCreatorEntitlements(license.id, org, request.identity)
+            // Set CRUD entitlements for creating User
+            setCreatorEntitlements(license.id, org, request.identity)
 
-          // Install the license
-          val licenseText = (request.body \ "properties" \ "data").as[String]
-          if (licenseText == "") {
-            // TODO - if resource exists, retrieve and install
-            GestaltLicense.instance().install()
-          } else {
-            GestaltLicense.instance().install(licenseText)
+            // Render resource to JSON and return 201
+            Created(Output.renderInstance(license, META_URL))
+
           }
-
-          // Render resource to JSON and return 201
-          Created(Output.renderInstance(license, META_URL))
-          
         }
+      } catch {
+        case e: Throwable => HandleExceptions(ConflictException(e.getMessage))
       }
     }
   }
   
+
+  /**
+   * GET /{fqon}/licenses
+   */
+  def getLicenses(fqon: String) = Authenticate(fqon) { implicit request =>
+     val transform = request.queryString.getOrElse("transform", "true") != "false"
+        try {
+          val org = fqid(fqon)
+          val licenses = ResourceFactory.findAll(ResourceIds.License, org)
+          if (getExpandParam(request.queryString)) {
+            val licenses = JsArray().append(Json.parse(GestaltLicense.instance().view()))
+            Ok( licenses )
+          } else {
+            Ok(Output.renderLinks(licenses, META_URL))
+          }
+        } catch {
+          case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
+        }
+  }
+
 
   /**
    * GET /{fqon}/licenses/{id}
@@ -81,9 +100,10 @@ object LicenseController extends Authorization {
      * val license = findById(ResourceIds.License, licenseId).get
      * val licenseText = license.properties.get("data")
      */
-     val transform = (request.queryString.getOrElse("transform", "true") == "false")
-     if (transform) {
+     val transform = request.queryString.getOrElse("transform", "true") != "false"
+     if (transform == true) {
         try {
+          println(GestaltLicense.instance().view())
           Ok(Json.parse(GestaltLicense.instance().view()))
         } catch {
           case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
@@ -96,7 +116,7 @@ object LicenseController extends Authorization {
        }
      }
   }
-  
+
   /**
    * DELETE /{fqon}/licenses/{id}
    */
