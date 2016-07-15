@@ -31,12 +31,29 @@ package object api {
    */
   def resourceUUID(resource: String): Option[UUID] = {
     resource match {
+      
       case "resources"        => Some(ResourceIds.Resource)
       case "orgs"             => Some(ResourceIds.Org)
       case "users"            => Some(ResourceIds.User)
       case "groups"           => Some(ResourceIds.Group)
       case "workspaces"       => Some(ResourceIds.Workspace)
       case "environments"     => Some(ResourceIds.Environment)
+      case "containers"       => Some(ResourceIds.Container)   
+            
+      case "lambdas"          => Some(ResourceIds.Lambda)
+      case "apis"             => Some(ResourceIds.Api)
+      case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
+      case "domains"          => Some(ResourceIds.Domain)
+   
+      case "entitlements"     => Some(ResourceIds.Entitlement)
+      case "policies"         => Some(ResourceIds.Policy)
+      
+      /*
+       * - providers 2
+       * - rules  2
+       * - licenses
+       */      
+      
       case "clustertemplates" => Some(ResourceIds.ClusterTemplate)
       case "nodetemplates"    => Some(ResourceIds.NodeTemplate)
       case "machinespecs"     => Some(ResourceIds.MachineSpec)
@@ -46,14 +63,13 @@ package object api {
       case "clusters"         => Some(ResourceIds.Cluster)
       case "nodes"            => Some(ResourceIds.Node)
       case "tasks"            => Some(ResourceIds.Task)
+      
 
-      case "lambdas"          => Some(ResourceIds.Lambda)
-      case "apis"             => Some(ResourceIds.Api)
-      case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
-      case "domains"          => Some(ResourceIds.Domain)
-      case "containers"       => Some(ResourceIds.Container)
+      
+
       
       case "nodetypes"        => Some(ResourceIds.NodeType)
+      
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
       case "datatypes"        => Some(ResourceIds.DataType)
       case "requirementtypes" => Some(ResourceIds.RequirementType)
@@ -62,7 +78,7 @@ package object api {
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
       case "actions"          => Some(ResourceIds.TypeAction)
-      case "entitlements"     => Some(ResourceIds.Entitlement)
+      
       case _                  => None
     }
   }
