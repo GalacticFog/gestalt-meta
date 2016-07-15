@@ -30,7 +30,7 @@ import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
+
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import controllers.util.JsonUtil._
@@ -48,7 +48,8 @@ import com.galacticfog.gestalt.meta.api._
 import play.api.mvc.Result
 import com.galacticfog.gestalt.laser._
 import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-
+ import com.galacticfog.gestalt.laser.ApiResponse
+  
 /**
  * Code for POST and PATCH of all resource types.
  *
@@ -271,8 +272,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }
   }  
     
-  
-    
+
   // --------------------------------------------------------------------------
   // GENERIC RESOURCE
   // --------------------------------------------------------------------------
@@ -295,7 +295,6 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }
   }
 
-  
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
   // --------------------------------------------------------------------------
@@ -376,11 +375,11 @@ object Meta extends MetaController with Authorization with SecurityResources {
    *  TODO: [TEMPORARY]: Create a new MarathonProvider configuration using URL
    *  contained in the GESTALT_MARATHON_PROVIDER environment variable.
    */
-  def newMarathonProvider(name: String) = {
-    Json.obj("name" -> name, 
-        "properties" -> Json.obj("config" -> 
-          Json.obj("url" -> EnvConfig.marathonUrl)))
-  }
+//  def newMarathonProvider(name: String) = {
+//    Json.obj("name" -> name, 
+//        "properties" -> Json.obj("config" -> 
+//          Json.obj("url" -> EnvConfig.marathonUrl)))
+//  }
   
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
@@ -408,8 +407,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
   
   
   def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    log.debug(s"ResourceController::postEnvironmentResult($org, $workspace")
-    
+    log.debug(s"Meta::postEnvironmentResult($org, $workspace")
     
     Authorize(workspace, "environment.create", request.identity) {
       normalizeEnvironment(request.body, Option(workspace)) match {
@@ -420,7 +418,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
           val user = request.identity
           
           CreateResource(org, envJson, user, ResourceIds.Environment, workspace) match {
-                      
+            
             case Failure(e) => HandleExceptions(e)
             case Success(environment) => {
         
@@ -435,6 +433,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
                   ACTIONS_CRUD)
                   
               }
+              
               Created(Output.renderInstance(environment, META_URL))
           
 //          createResourceD2(org, envJson, Some(ResourceIds.Environment), parentId = Some(workspace))
@@ -595,10 +594,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
       ("external_id" -> JsString(externalId)))
   }
   
-  
-  import com.galacticfog.gestalt.laser.ApiResponse
-  
-  
+
   private def parseJsonId(json: JsValue) = {
     (json \ "id") match {
       case u: JsUndefined => throw new RuntimeException(
@@ -678,6 +674,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
 
         println("PROVIDER-TYPE : " + providerType)
         println("GATEWAY-TYPE  : " + ResourceIds.ApiGatewayProvider)
+        
         if (providerType == ResourceIds.ApiGatewayProvider) {
           postGatewayProvider(org, parentResource)
         } 

@@ -258,6 +258,8 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   
   def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
+    log.debug(s"Received request to create new Rule for Policy($policy)")
+    
     val resourceType = Try {
       (request.body \ "resource_type") match {
         case u: JsUndefined => 
@@ -270,23 +272,22 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
         }
       }
     }
-    log.debug("Resource-Type : " + resourceType)
+
     resourceType match {
       case Failure(e) => Future(HandleExceptions(e))
       case Success(tpe) => {
-        ResourceFactory.findById(ResourceIds.Policy, policy) match {
-          case None => Future(NotFoundResult(s"Policy with ID '$policy' not found."))
-          case Some(pol) => {
-            val json = updateRuleJson(request.body, tpe.get, pol)
-            log.debug("Creating Rule:\n" + Json.prettyPrint(json))
-            createResourceD(fqid(fqon), json, tpe, Some(policy))
-          }
+        ResourceFactory.findById(ResourceIds.Policy, policy).fold {
+          Future(NotFoundResult(s"Policy with ID '$policy' not found."))
+        }{ pol =>  
+          val json = updateRuleJson(request.body, tpe.get, pol)
+          log.debug("Creating Rule:\n" + Json.prettyPrint(json))
+          createResourceD(fqid(fqon), json, tpe, Some(policy))
         }
       }
     }
   }
   
-
+ 
 
   
 
