@@ -34,6 +34,8 @@ import com.galacticfog.gestalt.meta.api.output._
 
 import com.galacticfog.gestalt.keymgr.GestaltLicense
 import com.galacticfog.gestalt.keymgr.GestaltFeature
+import play.api.mvc.Result
+
 
 
 object PolicyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
@@ -168,11 +170,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
-  
-  
-  import play.api.mvc.Result
-  
-  
   def WithFeature(feature: GestaltFeature, failMessage: String)(block: => Future[Result]) = {
     if (!GestaltLicense.instance.isFeatureActive(feature)) {
       log.warn(s"Attempt to use feature '${feature.toString}' denied due to license.")
@@ -224,34 +221,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
-  // --------------------------------------------------------------------------
-  // DELETE POLICY
-  // --------------------------------------------------------------------------    
-  
-//  def deletePolicyOrgFqon(fqon: String, policy: UUID) = Authenticate(fqon) { implicit request =>
-//    //deletePolicyCommon(policy)
-//    val org = fqid(fqon)
-//    hardDeleteSimple(org, ResourceIds.Org, org, policy)
-//  }
-//  
-//  def deletePolicyFqon(fqon: String, parentType: String, parentId: UUID, policy: UUID) = Authenticate(fqon) { implicit request =>
-//    val ptid = UUID.fromString(parentType)
-//    ResourceFactory.findById(ptid, parentId) match {
-//      case None => ResourceNotFound(ptid, parentId)
-//      case Some(_) => deletePolicyCommon(policy)
-//    }
-//    val org = fqid(fqon)
-//    hardDeleteSimple(org, UUID.fromString(parentType), parentId, policy)
-//  }
-//  
-//  def deletePolicyCommon(policy: UUID) = {
-//    ResourceFactory.hardDeleteResource(ResourceIds.Policy, policy) match {
-//      case Failure(e) => HandleExceptions(e)
-//      case Success(_) => NoContent
-//    }    
-//  }  
-  
-  
+
   def hardDeleteSimpleOrgFqon(fqon: String, targetId: UUID) = Authenticate(fqon) {
     val org = fqid(fqon)
     hardDeleteSimple(org, ResourceIds.Org, org, targetId)
@@ -387,7 +357,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   }  
   
   protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {
-    println("QS : " + qs)
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
