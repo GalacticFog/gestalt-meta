@@ -6,16 +6,15 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
-
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.ResourceFactory.hardDeleteResource
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.keymgr._
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
-import play.api.libs.json.JsValue
+import play.api.libs.json.{JsValue, Json}
 
 
 object LicenseController extends Authorization {
@@ -56,7 +55,7 @@ object LicenseController extends Authorization {
           setCreatorEntitlements(license.id, org, request.identity)
 
           // Install the license
-          val licenseText = (inputJson \ "properties" \ "data").as[String]
+          val licenseText = (request.body \ "properties" \ "data").as[String]
           if (licenseText == "") {
             GestaltLicense.instance().install()
           } else {
@@ -80,10 +79,9 @@ object LicenseController extends Authorization {
      * val license = findById(ResourceIds.License, licenseId).get
      * val licenseText = license.properties.get("data")
      */
-
-     val transform = (params.getOrElse("transform", "true") == "false")
+     val transform = (request.queryString.getOrElse("transform", "true") == "false")
      if (transform) {
-       Ok(Output.renderInstance(GestaltLicense.instance().view()), META_URL)
+       Ok(Json.parse(GestaltLicense.instance().view()))
      } else {
        findById(ResourceIds.License, licenseId).fold {
        LicenseNotFound(licenseId)
@@ -98,7 +96,7 @@ object LicenseController extends Authorization {
    */
   def deleteLicense(fqon: String, licenseId: UUID) = Authenticate(fqon) { implicit request =>
 
-    GestaltLicense.instance.uninstall()
+    GestaltLicense.instance().uninstall()
     findById(ResourceIds.License, licenseId).fold {
       LicenseNotFound(licenseId)
     } { _ =>
