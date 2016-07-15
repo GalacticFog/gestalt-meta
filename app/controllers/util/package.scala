@@ -51,6 +51,7 @@ def HandleExceptions(e: Throwable) = {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
     case e: BadRequestException           => BadRequest(e.asJson)
     case e: UnrecognizedResourceException => BadRequest(e.asJson)
+    case e: NotAcceptableException        => NotAcceptable(e.asJson)
     case e: ConflictException             => Conflict(e.asJson)    
   }
   

@@ -14,8 +14,8 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
 
 import com.galacticfog.gestalt.laser.MarathonClient
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
+//import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
@@ -31,6 +31,11 @@ import scala.concurrent.{ ExecutionContext, ExecutionContext$, Future, Promise, 
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.output._
+
+import com.galacticfog.gestalt.keymgr.GestaltLicense
+import com.galacticfog.gestalt.keymgr.GestaltFeature
+import play.api.mvc.Result
+
 
 
 object PolicyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
@@ -160,18 +165,37 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   }
   
   def postPolicyFqon(fqon: String, parentType: String, parentId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createPolicyCommon(fqid(fqon), UUID.fromString(parentType), parentId)
-  }
-  
-  def createPolicyCommon(org: UUID, parentType: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    ResourceFactory.findById(parentType, parentId) match {
-      case None => Future(ResourceNotFound(parentType, parentId))
-      case Some(parent) => {
-        val json = updatePolicyJson(request.body, parentId)
-        createResourceD(org, json, Some(ResourceIds.Policy), Some(parentId))
-      }
+    createPolicyCommon(fqid(fqon), UUID.fromString(parentType), parentId) recoverWith { case e =>
+      Future(HandleExceptions(e))
     }
   }
+  
+  def WithFeature(feature: GestaltFeature, failMessage: String)(block: => Future[Result]) = {
+    if (!GestaltLicense.instance.isFeatureActive(feature)) {
+      log.warn(s"Attempt to use feature '${feature.toString}' denied due to license.")
+      Future(throw new NotAcceptableException(failMessage))
+    } else block
+  }
+  
+  //
+  // TODO: Add entitlements and authorization.
+  //
+  
+  def createPolicyCommon(org: UUID, parentType: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    
+    WithFeature(GestaltFeature.Policy, "Policy creation is disabled under your current license.") {
+      
+      ResourceFactory.findById(parentType, parentId) match {
+        case None => Future(ResourceNotFound(parentType, parentId))
+        case Some(parent) => {
+          val json = updatePolicyJson(request.body, parentId)
+          createResourceD(org, json, Some(ResourceIds.Policy), Some(parentId))
+        }
+      }
+      
+    }
+  }
+  
   
   def postResourceCommon(
       org: UUID, 
@@ -197,34 +221,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     }
   }
   
-  // --------------------------------------------------------------------------
-  // DELETE POLICY
-  // --------------------------------------------------------------------------    
-  
-//  def deletePolicyOrgFqon(fqon: String, policy: UUID) = Authenticate(fqon) { implicit request =>
-//    //deletePolicyCommon(policy)
-//    val org = fqid(fqon)
-//    hardDeleteSimple(org, ResourceIds.Org, org, policy)
-//  }
-//  
-//  def deletePolicyFqon(fqon: String, parentType: String, parentId: UUID, policy: UUID) = Authenticate(fqon) { implicit request =>
-//    val ptid = UUID.fromString(parentType)
-//    ResourceFactory.findById(ptid, parentId) match {
-//      case None => ResourceNotFound(ptid, parentId)
-//      case Some(_) => deletePolicyCommon(policy)
-//    }
-//    val org = fqid(fqon)
-//    hardDeleteSimple(org, UUID.fromString(parentType), parentId, policy)
-//  }
-//  
-//  def deletePolicyCommon(policy: UUID) = {
-//    ResourceFactory.hardDeleteResource(ResourceIds.Policy, policy) match {
-//      case Failure(e) => HandleExceptions(e)
-//      case Success(_) => NoContent
-//    }    
-//  }  
-  
-  
+
   def hardDeleteSimpleOrgFqon(fqon: String, targetId: UUID) = Authenticate(fqon) {
     val org = fqid(fqon)
     hardDeleteSimple(org, ResourceIds.Org, org, targetId)
@@ -360,7 +357,6 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
   }  
   
   protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {
-    println("QS : " + qs)
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
