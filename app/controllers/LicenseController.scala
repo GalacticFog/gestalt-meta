@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.keymgr._
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
 import play.api.libs.json.{JsValue, Json}
@@ -57,6 +58,7 @@ object LicenseController extends Authorization {
           // Install the license
           val licenseText = (request.body \ "properties" \ "data").as[String]
           if (licenseText == "") {
+            // TODO - if resource exists, retrieve and install
             GestaltLicense.instance().install()
           } else {
             GestaltLicense.instance().install(licenseText)
@@ -81,7 +83,11 @@ object LicenseController extends Authorization {
      */
      val transform = (request.queryString.getOrElse("transform", "true") == "false")
      if (transform) {
-       Ok(Json.parse(GestaltLicense.instance().view()))
+        try {
+          Ok(Json.parse(GestaltLicense.instance().view()))
+        } catch {
+          case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
+        }
      } else {
        findById(ResourceIds.License, licenseId).fold {
        LicenseNotFound(licenseId)
