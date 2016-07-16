@@ -34,7 +34,6 @@ package object policy {
   import com.galacticfog.gestalt.meta.api.errors._
   
   def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
-    log.debug(s"safeGetInputJson([json]")
 
     implicit def jsarray2str(arr: JsArray) = arr.toString
 
@@ -45,8 +44,8 @@ package object policy {
       throw new BadRequestException(JsError.toFlatJson(e).toString)
     }
   }
-
-
+  
+  
   /* TODO:
    * Use the property name to decide whether tests are performed against the 'target' or the payload 
    * converted to a resource.

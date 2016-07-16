@@ -9,11 +9,12 @@ import scala.math.BigDecimal.int2bigDecimal
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data._
+import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.laser.Laser
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.resourceUUID
+import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -26,44 +27,213 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 
 import play.api.{Logger => log}
 
+  import play.api.mvc.Result
+  import play.api.mvc.RequestHeader
+  import play.api.mvc.{Security => PlaySecurity}
+  import play.api.libs.ws.WS
+  import play.api.Play.current
+  import com.galacticfog.gestalt.laser.MarathonClient
+  import scala.concurrent.ExecutionContext.Implicits.global
+  import scala.concurrent.Future
+  import scala.concurrent.duration._
+  import scala.concurrent.Await
 
 
 object DeleteController extends Authorization {
+ 
+  private val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
+      external = Map(
+        ResourceIds.Org -> deleteExternalOrg,
+        ResourceIds.User -> deleteExternalUser,
+        ResourceIds.Group -> deleteExternalGroup,
+        ResourceIds.Container -> deleteExternalContainer,
+        ResourceIds.Lambda -> deleteExternalLambda,
+        ResourceIds.Api -> deleteExternalApi,
+        ResourceIds.ApiEndpoint -> deleteExternalEndpoint))
   
-  val handlers = Map(
-      "workspaces" -> HardDeleteWorkspace,
-      "environments" -> HardDeleteEnvironment )
   
-  
-  def lookupfn(restName: String) = {
-    resourceUUID(restName) match {
-      case Some(id) => ResourceFactory.findById(typeId = id, _ : UUID)
-      case None => throw new ResourceNotFoundException("")
+  /*
+   * TODO: More validation on path
+   * Don't assume last component is UUID - protect
+   */
+  def resourceFromPath(p: String): Option[GestaltResourceInstance] = {
+    
+    val cmps = { p.trim
+        .stripPrefix("/")
+        .stripSuffix("/")
+        .split("/").toList filter { _.trim != "" }
     }
-  }
-  
-  
-  def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => {
-        HardDeleteEnvironment.delete(environment, true) match {
-          case Success(_) => NoContent
-          case Failure(e) => HandleRepositoryExceptions(e)
+    
+    val typeName = cmps size match {
+      case 0 => throw new BadRequestException(s"Invalid path. found: '$p'")
+      case 1 => cmps(0)
+      case _ => cmps(cmps.size - 2)
+    }
+    
+    val resourceId = UUID.fromString(cmps.last)
+    
+    def lookupResource(resourceId: UUID) = {
+      ResourceFactory.findById(resourceId) match {
+        case None => throw new ResourceNotFoundException(s"Resource with ID '${resourceId}' not found.")
+        case Some(resource) => {
+          log.debug(s"Looking up ${ResourceLabel(resource.typeId)}, ${resourceId}")
+          ResourceFactory.findById(resource.typeId, resourceId)
         }
       }
-      case None => OrgNotFound(fqon)
-    }
+    } 
+    
+    if (Seq("providers", "rules").contains(typeName)) {
+      lookupResource(resourceId)
+    } else Resource.findByPath(p)
+    
+//    if (typeName == "providers") {
+//      ResourceFactory.findById(resourceId) match {
+//        case None => throw new ResourceNotFoundException(s"Provider with ID '${resourceId}' not found.")
+//        case Some(provider) => {
+//          log.debug(s"Looking up ${ResourceLabel(provider.typeId)}, ${resourceId}")
+//          ResourceFactory.findById(provider.typeId, resourceId)
+//        }
+//      }
+//    } else if(typeName == "rules") {
+//      ResourceFactory.findById(resourceId) match {
+//        case None => throw new ResourceNotFoundException(s"Rule with ID '${resourceId}' not found.")
+//        case Some(rule) => {
+//          log.debug(s"Looking up ${ResourceLabel(rule.typeId)}, ${resourceId}")
+//          ResourceFactory.findById(rule.typeId, resourceId)
+//        }
+//      }
+//    } else Resource.findByPath(p)
+    
   }
   
-  def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
-
-    Authorize(fqid(fqon), Actions.Workspace.Delete, request.identity) {
-      HardDeleteWorkspace.delete(workspace, true) match {
-        case Success(_) => NoContent
-        case Failure(e) => HandleRepositoryExceptions(e)
+  def hardDeleteTest(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+    
+    val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
+    
+    resourceFromPath( p ).fold {
+      NotFoundResult(request.uri)
+    } { resource =>
+      
+      DeleteHandler.handle(resource, request.identity) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(a) => NoContent
       }
+      //DefaultRequestRouter.route( resource )
     }
+    
   }
+
+  def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    Security.deleteOrg(res.id, account) map ( _ => () )
+  }
+  
+  def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    Security.deleteAccount(res.id, account) map ( _ => () )
+  }  
+
+  def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    Security.deleteGroup(res.id, account) map ( _ => () )
+  }
+  
+  def deleteExternalContainer[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
+    val result = Await.result(deleteMarathonApp(res), 5 seconds)
+  }
+  
+  def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    laser.deleteLambda(res.id) map ( _ => () )
+  }
+
+  
+  def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    laser.deleteApi(res.id) map ( _ => () )
+  }
+  
+  def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    val api = UUID.fromString(res.properties.get("api"))
+    laser.deleteEndpoint(api, res.id) map ( _ => () )
+  }
+
+  
+  trait RequestHandler[A,B] {
+    def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
+  }
+  
+  
+  /*
+   * TODO: convert to class and construct with Map of DeleteFunctions.
+   */
+  
+  object DeleteHandler extends RequestHandler[ResourceLike,Try[Unit]] {
+    
+    def handle(res: ResourceLike, account: AuthAccountWithCreds)(implicit request: RequestHeader): Try[Unit] = {
+      manager.delete(
+        res.asInstanceOf[GestaltResourceInstance], 
+        account, 
+        singleParamBoolean(request.queryString, "force"),
+        skipExternals(res, request.queryString)) map { Success(_) }
+    }
+  
+  }
+  
+  
+  /**
+   * Get the type ID for any resources that should have their external delete function skipped.
+   * Currently only used for MarathonProvider - if 'deleteContainers' is false (or missing), we
+   * need to skip the delete from Marathon.
+   */
+  protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
+    if (res.typeId == ResourceIds.MarathonProvider &&
+        !singleParamBoolean(qs, "deleteContainers")) {
+      
+      log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")
+      log.debug("Containers WILL NOT be deleted from Marathon.")
+      
+      Seq(ResourceIds.Container)
+    } else Seq()
+  }
+  
+
+  
+  protected [controllers] def deleteMarathonApp[A <: ResourceLike](container: A): Future[JsValue] = {
+    val providerId = Json.parse(container.properties.get("provider")) \ "id"
+    val provider = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
+      throw new RuntimeException("Could not find Provider : " + providerId)
+    }
+    val externalId = container.properties.get("external_id")
+    
+    marathonClient(provider).deleteApplication(externalId)
+  }
+  
+  protected [controllers] def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
+    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
+    log.debug("Marathon URL: " + providerUrl)
+    MarathonClient(WS.client, providerUrl)
+  }
+  
+  
+
+
+//  def deleteEnvironmentFqon(fqon: String, environment: UUID) = Authenticate(fqon) { implicit request =>
+//    orgFqon(fqon) match {
+//      case Some(org) => {
+//        HardDeleteEnvironment.delete(environment, true) match {
+//          case Success(_) => NoContent
+//          case Failure(e) => HandleRepositoryExceptions(e)
+//        }
+//      }
+//      case None => OrgNotFound(fqon)
+//    }
+//  }
+//  
+//  def deleteWorkspaceFqon(fqon: String, workspace: UUID) = Authenticate(fqon) { implicit request =>
+//
+//    Authorize(fqid(fqon), Actions.Workspace.Delete, request.identity) {
+//      HardDeleteWorkspace.delete(workspace, true) match {
+//        case Success(_) => NoContent
+//        case Failure(e) => HandleRepositoryExceptions(e)
+//      }
+//    }
+//  }
   
   
   def removeEndpointImplementation(endpoint: UUID) = {
@@ -84,23 +254,23 @@ object DeleteController extends Authorization {
   }
   
   
-  def deleteLevel1Resource(org: UUID, restName1: String, id1: UUID) = Authenticate(org) { implicit request =>
-    trace(s"deleteLevel1Resource($org, $restName1, $id1)")
-    if (!handlers.contains(restName1)) NotFoundResult(request.path)
-    else {
-      lookupfn(restName1)(id1) match {
-        case None => NotFoundResult("not found.")
-        case Some(_) => {
-          val force = getForceParam(request.queryString)
-          handlers(restName1).delete(id1, force) match {
-            case Success(_) => NoContent
-            case Failure(e) => HandleRepositoryExceptions(e)
-          }
-          
-        }
-      }
-    }
-  }
+//  def deleteLevel1Resource(org: UUID, restName1: String, id1: UUID) = Authenticate(org) { implicit request =>
+//    trace(s"deleteLevel1Resource($org, $restName1, $id1)")
+//    if (!handlers.contains(restName1)) NotFoundResult(request.path)
+//    else {
+//      lookupfn(restName1)(id1) match {
+//        case None => NotFoundResult("not found.")
+//        case Some(_) => {
+//          val force = getForceParam(request.queryString)
+//          handlers(restName1).delete(id1, force) match {
+//            case Success(_) => NoContent
+//            case Failure(e) => HandleRepositoryExceptions(e)
+//          }
+//          
+//        }
+//      }
+//    }
+//  }
   
   import scala.util.{Try,Success,Failure}
   
@@ -113,6 +283,20 @@ object DeleteController extends Authorization {
       } match {
         case Success(b) => b == true
         case Failure(_) => throw new BadRequestException(s"Value of 'force' parameter must be true or false. found: $fp")
+      }
+    }
+  }
+  
+  
+  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
+    if (!qs.contains(param)) false
+    else {
+      val bp = qs(param)
+      Try {
+        bp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
       }
     }
   }
@@ -244,8 +428,7 @@ object DeleteController extends Authorization {
     }
   }
   
-  import com.galacticfog.gestalt.meta.api.output._
-  
+
   def hardDeleteLambda(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     hardDeleteLambdaCommon(org, id)
   }
@@ -256,7 +439,6 @@ object DeleteController extends Authorization {
     
     if (associatedRules.isEmpty) {
       log.debug("Deleting Lambda...")
-      //Ok("Testing delete Lambda.")
         hardDeleteMetaResource(id, ResourceIds.Lambda) 
       } else {
     
@@ -298,105 +480,107 @@ object DeleteController extends Authorization {
   def deleteLaserLambda(id: UUID) = ???
   
   
-  def hardDeleteApiFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
-        ResourceFactory.findById(ResourceIds.Api, id) match {
-          case None => NotFoundResult(request.uri)
-          case Some(api) => {
-            laser.deleteApi(id.toString) match {
-              case Failure(e) => HandleRepositoryExceptions(e)
-              case Success(_) => HardDeleteApi.delete(id, true) match {
-                case Success(_) => NoContent
-                case Failure(e) => HandleRepositoryExceptions(e)
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+//  def hardDeleteApiFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    orgFqon(fqon) match {
+//      case None => OrgNotFound(fqon)
+//      case Some(org) => {
+//        ResourceFactory.findById(ResourceIds.Api, id) match {
+//          case None => NotFoundResult(request.uri)
+//          case Some(api) => {
+//            laser.deleteApi(id.toString) match {
+//              case Failure(e) => HandleRepositoryExceptions(e)
+//              case Success(_) => HardDeleteApi.delete(id, true) match {
+//                case Success(_) => NoContent
+//                case Failure(e) => HandleRepositoryExceptions(e)
+//              }
+//            }
+//          }
+//        }
+//      }
+//    }
+//  }
   
   
-  def deleteApiCommon(id: UUID) = Try {
-    ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
-      case None => throw new ResourceNotFoundException(s"API with ID $id not found.")
-      case Some(ep) => {
-        val apiId = ep.properties.get("api")
-        
-        // 2.) Delete endpoint in laser
-        laser.deleteEndpoint(apiId, id) match {
-          case Failure(e) => throw e
-          case Success(_) => {
-            // 3.) Delete endpoint in meta
-            HardDeleteEndpoint.delete(id, true).get
-          }
-        }
-      }
-    }
-  }
+//  def deleteApiCommon(id: UUID) = Try {
+//    ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
+//      case None => throw new ResourceNotFoundException(s"API with ID $id not found.")
+//      case Some(ep) => {
+//        val apiId = ep.properties.get("api")
+//        
+//        // 2.) Delete endpoint in laser
+//        laser.deleteEndpoint(apiId, id) match {
+//          case Failure(e) => throw e
+//          case Success(_) => {
+//            // 3.) Delete endpoint in meta
+//            HardDeleteEndpoint.delete(id, true).get
+//          }
+//        }
+//      }
+//    }
+//  }
   
+
   
-  def hardDeleteEndpointFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    trace(s"hardDeleteEndpointFqon($fqon, $id)")
-    orgFqon(fqon) match {
-      case None => OrgNotFound(fqon)
-      case Some(org) => {
-        println(s"Looking up endpoint $id")
-        // 1.) Lookup given endpoint
-        ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
-          case None => NotFoundResult(request.uri)
-          case Some(ep) => {
-            
-            val apiId = ep.properties.get("api")
-            println(s"FOUND ENDPOINT: API-ID => $apiId")
-            // 2.) Delete endpoint in laser
-            laser.deleteEndpoint(apiId, id) match {
-              case Failure(e) => HandleRepositoryExceptions(e)
-              case Success(_) => {
-                // 3.) Delete endpoint in meta
-                HardDeleteEndpoint.delete(id, true) match {
-                  case Success(_) => NoContent
-                  case Failure(e) => {
-                    log.error(e.getMessage)
-                    HandleRepositoryExceptions(e)
-                  }
-                }                
-              }
-            }
-          }
-        }
-      }
-    }
-  }
+//  def hardDeleteEndpointFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    trace(s"hardDeleteEndpointFqon($fqon, $id)")
+//
+//    orgFqon(fqon) match {
+//      case None => OrgNotFound(fqon)
+//      case Some(org) => {
+//        println(s"Looking up endpoint $id")
+//        // 1.) Lookup given endpoint
+//        ResourceFactory.findById(ResourceIds.ApiEndpoint, id) match {
+//          case None => NotFoundResult(request.uri)
+//          case Some(ep) => {
+//            
+//            val apiId = ep.properties.get("api")
+//            println(s"FOUND ENDPOINT: API-ID => $apiId")
+//            // 2.) Delete endpoint in laser
+//            laser.deleteEndpoint(apiId, id) match {
+//              case Failure(e) => HandleRepositoryExceptions(e)
+//              case Success(_) => {
+//                // 3.) Delete endpoint in meta
+//                HardDeleteEndpoint.delete(id, true) match {
+//                  case Success(_) => NoContent
+//                  case Failure(e) => {
+//                    log.error(e.getMessage)
+//                    HandleRepositoryExceptions(e)
+//                  }
+//                }                
+//              }
+//            }
+//          }
+//        }
+//      }
+//    }
+//  }
   
-  def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    
-    canDeleteLambda(fqid(fqon), id) match {
-      case Left(json) => Conflict(json)
-      case Right(_)   => {
-        ResourceFactory.findById(ResourceIds.Lambda, id) match {
-          case None => NotFoundResult(s"Lambda with ID '$id' not found.")
-          case Some(lambda) => {
-            
-            ResourceFactory.getLaserLambdaIds(id) foreach { lid => 
-              laser.deleteLambda(lid).get
-            }
-            
-            ResourceFactory.findAllApisByLambda(id) foreach { aid =>
-              laser.deleteApi(aid).get  
-            }
-            
-            HardDeleteLambda.delete(id, true) match {
-              case Success(_) => NoContent
-              case Failure(e) => HandleExceptions(e)
-            }
-          }
-        }
-      }
-    }
-  }  
+//  def hardDeleteLambdaFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    
+//    canDeleteLambda(fqid(fqon), id) match {
+//      case Left(json) => Conflict(json)
+//      case Right(_)   => {
+//        ResourceFactory.findById(ResourceIds.Lambda, id) match {
+//          case None => NotFoundResult(s"Lambda with ID '$id' not found.")
+//          case Some(lambda) => {
+//            
+//            ResourceFactory.getLaserLambdaIds(id) foreach { lid => 
+//              laser.deleteLambda(lid).get
+//            }
+//            
+//            ResourceFactory.findAllApisByLambda(id) foreach { aid =>
+//              laser.deleteApi(aid).get  
+//            }
+//            
+//            HardDeleteLambda.delete(id, true) match {
+//              case Success(_) => NoContent
+//              case Failure(e) => HandleExceptions(e)
+//            }
+//          }
+//        }
+//      }
+//    }
+//  }  
   
   
   def hardDeleteWorkspaceDomain(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
@@ -411,53 +595,49 @@ object DeleteController extends Authorization {
     }
   }
   
-  /**
-   * Permanently delete an Org from Security and Meta
-   */
-  def hardDeleteOrg(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"hardeDeleteOrg($org)")
-    hardDeleteSecure(org, request.identity, Security.deleteOrg)    
-  }
-  
-  /**
-   * 
-   */
-  def hardDeleteOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    trace(s"hardDeleteOrgFqon($fqon)")
-    orgFqon(fqon) match {
-      case Some(org) => hardDeleteSecure(org.id, request.identity, Security.deleteOrg)
-      case None      => OrgNotFound(fqon)
-    }    
-  }
-  
-  def hardDeleteGroup(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
-    hardDeleteSecure(group/*fqid(fqon)*/, request.identity, Security.deleteGroup)
-  }
-  
-  /**
-   * Permanently delete a User/Account from Security and Meta
-   */
-  def hardDeleteUser(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"hardDeleteUser(org = $org, user = $id")
-    hardDeleteSecure(id, request.identity, Security.deleteAccount)
-  }
-  
-  /**
-   * 
-   */
-  def hardDeleteUserFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    trace(s"hardDeleteUserFqon($fqon, user = $id")
-    orgFqon(fqon) match {
-      case Some(org) => hardDeleteSecure(id, request.identity, Security.deleteAccount)
-      case None      => OrgNotFound(fqon)
-    }
-  }
+//  /**
+//   * Permanently delete an Org from Security and Meta
+//   */
+//  def hardDeleteOrg(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    trace(s"hardeDeleteOrg($org)")
+//    hardDeleteSecure(org, request.identity, Security.deleteOrg)    
+//  }
+//  
+//  /**
+//   * 
+//   */
+//  def hardDeleteOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+//    orgFqon(fqon) match {
+//      case Some(org) => hardDeleteSecure(org.id, request.identity, Security.deleteOrg)
+//      case None      => OrgNotFound(fqon)
+//    }    
+//  }
+//  
+//  def hardDeleteGroup(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+//    hardDeleteSecure(group, request.identity, Security.deleteGroup)
+//  }
+//  
+//  /**
+//   * Permanently delete a User/Account from Security and Meta
+//   */
+//  def hardDeleteUser(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    hardDeleteSecure(id, request.identity, Security.deleteAccount)
+//  }
+//  
+//  /**
+//   * 
+//   */
+//  def hardDeleteUserFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+//    orgFqon(fqon) match {
+//      case Some(org) => hardDeleteSecure(id, request.identity, Security.deleteAccount)
+//      case None      => OrgNotFound(fqon)
+//    }
+//  }
   
   /**
    * Permanently delete a ResourceType along with any associated TypeProperties
    */
    def hardDeleteResourceTypeFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-     trace(s"hardDeleteResourceTypeFqon($fqon, $id)")
      orgFqon(fqon) match {
        case Some(org) => hardDeleteResourceType(id)
        case None      => OrgNotFound(fqon)
@@ -492,12 +672,42 @@ object DeleteController extends Authorization {
     }
   }
   
-  /**
-   * 
-   */
-  def hardDeleteEnvironment(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    ???
-  }
+  
+
+  def hardDeleteSecurityResource[A <: ResourceLike](res: A, auth: AuthAccountWithCreds, fn: SecurityDelete) = {
+    
+    hardDeleteSynchronized(res.id, auth, fn) map { _ => Unit } 
+//    match {
+//      case Success(_) => Success(Unit)
+//      case Failure(e) => HandleExceptions(e) 
+//        {
+//        log.error(s"hardDeleteSecure: ERROR: " + e.getMessage)
+//        
+//        e match {
+//          case s: SecurityRESTException     => HandleExceptions(s)
+//          case r: ResourceNotFoundException => NotFoundResult(r.getMessage)
+//          case _ => GenericErrorResult(500, e.getMessage)
+//        }
+//      }
+    //}
+  }  
+  
+  def hardDeleteSecure[A <: ResourceLike](res: A, auth: AuthAccountWithCreds, fn: SecurityDelete) = {
+    
+    hardDeleteSynchronized(res.id, auth, fn) match {
+      case Success(_) => NoContent
+      case Failure(e) => {
+        log.error(s"hardDeleteSecure: ERROR: " + e.getMessage)
+        e match {
+          case s: SecurityRESTException     => HandleExceptions(s)
+          case r: ResourceNotFoundException => NotFoundResult(r.getMessage)
+          case _ => GenericErrorResult(500, e.getMessage)
+        }
+      }
+    }
+  }  
+  
+
   
   
   // TODO: Simpler since resources aren't synced with security.

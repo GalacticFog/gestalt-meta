@@ -31,8 +31,7 @@ object SyncController extends Authorization /*MetaController with NonLoggingTask
   private var adminId: UUID = null
   
   def sync() = Authenticate() { implicit request =>
-    trace("sync")
-    
+
     Try {
       
       val sd = Security.getOrgSyncTree(None, request.identity) match {

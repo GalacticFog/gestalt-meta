@@ -76,7 +76,9 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   def createApi(api: LaserApi): Try[ApiResponse] = {
     val json = Json.toJson(api)
     println("CREATING LASER API - POSTING:\n" + Json.prettyPrint(json))
-    client.post("/apis", json, Seq(200,201,202))
+    val result = client.post("/apis", json, Seq(200,201,202))
+    log.debug("Laser.createApi Result:\n" + result)
+    result
   }
   
   def deleteApi(id: String) = {
@@ -122,7 +124,9 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
     val json = Json.toJson(lambda)
     println(Json.prettyPrint(json))
-    lambdaClient.post("/lambdas", json, Seq(200,201,202))
+    val result = lambdaClient.post("/lambdas", json, Seq(200,201,202))
+    println("CREATE LAMBDA RESULT:\n" + result)
+    result
   }
   
   def deleteLambda(id: String): Try[ApiResponse] = {

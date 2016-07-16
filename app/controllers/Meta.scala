@@ -30,7 +30,7 @@ import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
+
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import controllers.util.JsonUtil._
@@ -48,7 +48,8 @@ import com.galacticfog.gestalt.meta.api._
 import play.api.mvc.Result
 import com.galacticfog.gestalt.laser._
 import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-
+ import com.galacticfog.gestalt.laser.ApiResponse
+  
 /**
  * Code for POST and PATCH of all resource types.
  *
@@ -247,15 +248,31 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createUserCommon(fqid(fqon), request.body)
   }
 
-  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    val root = Security.getRootOrg(request.identity).get.fqon
-    val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", JsString(root))
+  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
     
-    CreateSynchronizedResult(org, ResourceIds.User, userJson.get)(
-      Security.createAccount, createNewMetaUser[JsValue])    
+    Authorize(org, Actions.User.Create, request.identity) {
+      
+      val root = Security.getRootOrg(request.identity).get.fqon
+      val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", JsString(root))
+      
+      CreateSynchronized(org, ResourceIds.User, userJson.get)(
+          Security.createAccount, createNewMetaUser[JsValue]) match {
+            case Failure(err) => HandleExceptions(err)
+            case Success(res) => {
+          
+            val user = request.identity
+            
+            Entitle(org, ResourceIds.User, res.id, user, Option(org)) {
+              generateEntitlements(user.account.id, org, res.id, Seq(ResourceIds.User), ACTIONS_CRUD)
+            }
+            Created(Output.renderInstance(res, META_URL))
+        }
+      }
+
+    }
   }  
-  
     
+
   // --------------------------------------------------------------------------
   // GENERIC RESOURCE
   // --------------------------------------------------------------------------
@@ -278,7 +295,6 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }
   }
 
-  
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
   // --------------------------------------------------------------------------
@@ -324,41 +340,36 @@ object Meta extends MetaController with Authorization with SecurityResources {
     createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
   }
 
-
   def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-  
+
     Future {
-      
+
       Authorize(org, Actions.Workspace.Create, user) {
 
         CreateResource(
-          org, 
-          json, 
-          caller   = user,
-          typeId   = ResourceIds.Workspace,
+          org,
+          json,
+          caller = user,
+          typeId = ResourceIds.Workspace,
           parentId = org) match {
-          
-          case Failure(e) => HandleExceptions(e)
-          case Success(workspace) => {
 
-            Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
-              
-              generateEntitlements(
-                user.account.id, org, workspace.id,
-                Seq(ResourceIds.Workspace, ResourceIds.Environment), 
-                ACTIONS_CRUD)
-                
+            case Failure(e) => HandleExceptions(e)
+            case Success(workspace) => {
+
+              Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
+                generateEntitlements(
+                  user.account.id, org, workspace.id,
+                  Seq(ResourceIds.Workspace, ResourceIds.Environment),
+                  ACTIONS_CRUD)
+              }
+
+              Created(Output.renderInstance(workspace, baseUri))
             }
-
-            Created(Output.renderInstance(workspace, baseUri))
-
           }
-        }
       }
-
     }
-
   }
+
 
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
@@ -374,8 +385,8 @@ object Meta extends MetaController with Authorization with SecurityResources {
     Future {
       postEnvironmentCommon(fqid(fqon))
     }
-    
   }
+  
   
   def postEnvironmentCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
     parseWorkspaceId(request.body) match {
@@ -384,9 +395,9 @@ object Meta extends MetaController with Authorization with SecurityResources {
     }          
   }
   
+  
   def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    log.debug(s"ResourceController::postEnvironmentResult($org, $workspace")
-    
+    log.debug(s"Meta::postEnvironmentResult($org, $workspace")
     
     Authorize(workspace, "environment.create", request.identity) {
       normalizeEnvironment(request.body, Option(workspace)) match {
@@ -397,7 +408,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
           val user = request.identity
           
           CreateResource(org, envJson, user, ResourceIds.Environment, workspace) match {
-                      
+            
             case Failure(e) => HandleExceptions(e)
             case Success(environment) => {
         
@@ -412,6 +423,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
                   ACTIONS_CRUD)
                   
               }
+              
               Created(Output.renderInstance(environment, META_URL))
           
 //          createResourceD2(org, envJson, Some(ResourceIds.Environment), parentId = Some(workspace))
@@ -478,7 +490,8 @@ object Meta extends MetaController with Authorization with SecurityResources {
           ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
             (p.name -> p.id) 
           }.toMap
-          
+         
+          println("TYPES : " + types)
         log.debug("Parsed provider-type as : " + v.as[String])
         v.as[String] match {
           case a if types.contains(a) => types(a)
@@ -571,10 +584,7 @@ object Meta extends MetaController with Authorization with SecurityResources {
       ("external_id" -> JsString(externalId)))
   }
   
-  
-  import com.galacticfog.gestalt.laser.ApiResponse
-  
-  
+
   private def parseJsonId(json: JsValue) = {
     (json \ "id") match {
       case u: JsUndefined => throw new RuntimeException(
@@ -647,11 +657,14 @@ object Meta extends MetaController with Authorization with SecurityResources {
 
     val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
-
+    
     ResourceFactory.findById(parentTypeId, parent) match {
       case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
       case Some(parentResource) => {
 
+        println("PROVIDER-TYPE : " + providerType)
+        println("GATEWAY-TYPE  : " + ResourceIds.ApiGatewayProvider)
+        
         if (providerType == ResourceIds.ApiGatewayProvider) {
           postGatewayProvider(org, parentResource)
         } 
@@ -698,6 +711,9 @@ object Meta extends MetaController with Authorization with SecurityResources {
   //
   // --------------------------------------------------------------------------
 
+  
+
+  
   private def CreateSynchronizedResult[T](org: UUID, typeId: UUID, json: JsValue)
       (sc: SecurityResourceFunction, mc: MetaResourceFunction)
       (implicit request: SecuredRequest[T]) = {

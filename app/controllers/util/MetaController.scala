@@ -63,6 +63,7 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = if (request.secure) "https" else "http"
     Some( "%s://%s".format(protocol, request.host) )
   }
+  
   def META_URL(host: String, secure: Boolean = false) = {
     val protocol = if (secure) "https" else "http"
     Some( "%s://%s".format(protocol, host) )
@@ -383,8 +384,7 @@ trait MetaController extends SecureController with SecurityResources {
    * Parse JSON to GestaltResourceInput
    */
   protected[controllers] def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
-    log.debug(s"safeGetInputJson([json]")
-    //log.debug(Json.prettyPrint(json))
+    
     implicit def jsarray2str(arr: JsArray) = arr.toString
 
     json.validate[GestaltResourceInput].map {
