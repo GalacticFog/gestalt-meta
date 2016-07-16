@@ -38,8 +38,7 @@ import play.api.mvc.Result
 
 
 
-object PolicyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with SecurityResources {
+object PolicyController extends Authorization {
   
   type FilterFunction = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
   type LookupFunction = ((UUID,UUID) => Try[ResourceLike])
@@ -132,9 +131,8 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
       resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
     }
-    if (r.typeId != ResourceIds.Policy) r else {
-      //throw new IllegalArgumentException("Not a policy.")
     
+    if (r.typeId != ResourceIds.Policy) r else {
       val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, r.id) map { r => 
         toLink(r, META_URL)  
       }
@@ -262,9 +260,7 @@ object PolicyController extends GestaltFrameworkSecuredController[DummyAuthentic
         case u: JsUndefined => 
           throw new BadRequestException("You must provide a 'resource_type'")
         case v => {
-          log.debug("***V : " + v)
           val expanded = expandRuleTypeName(v.as[String])
-          log.debug("***EXPANDED : " + expanded)
           ruleTypeId(expanded)
         }
       }

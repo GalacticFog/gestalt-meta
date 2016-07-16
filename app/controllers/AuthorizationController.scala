@@ -1,50 +1,36 @@
 package controllers
 
-
 import java.util.UUID
-import java.net.URL
-import play.api.http.HttpVerbs
-import play.api.libs.ws.WS
-import play.api.Play.current
 
+import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.meta.api.output._
+
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-import com.galacticfog.gestalt.meta.api.{ PatchOp, PatchDocument, PatchHandler }
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
+import com.galacticfog.gestalt.data.session
+import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
+import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util._
-import controllers.util.JsonUtil._
-import controllers.util.db._
-import controllers.util.MetaController
-import controllers.util.Security
-import play.api.{ Logger => log }
-import play.api.libs.json._
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import controllers.util.stringmap
-import controllers.util.trace
-import com.galacticfog.gestalt.meta.api._
 
-import com.galacticfog.gestalt.laser._
-import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-
-import play.api.mvc.Result
-import scala.annotation.tailrec
+import controllers.util.HandleExceptions
+import controllers.util.JsonUtil
+import controllers.util.NotFoundResult
+import play.api.{Logger => log}
+import play.api.libs.json.JsError
+import play.api.libs.json.JsObject
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
 
 
 //

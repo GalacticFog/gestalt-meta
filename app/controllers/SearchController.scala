@@ -1,57 +1,23 @@
 package controllers
 
-import play.api.{ Logger => log }
-
-import play.api.Play.current
-import play.api.libs.ws._
-import play.api.libs.ws.ning.NingAsyncHttpClientConfigBuilder
-import scala.concurrent.Future
-import play.api.mvc.Action
-import play.api.mvc.Controller
-import play.api.mvc.RequestHeader
-import play.api.mvc.AnyContent
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import scala.util.{ Try, Success, Failure }
-import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => MetaLink }
-
-import com.galacticfog.gestalt.meta.services.ResourceQueryService
-import com.galacticfog.gestalt.tasks.io.TaskStatus
-import com.galacticfog.gestalt.tasks.play.actors.TaskEventMessage
-import com.galacticfog.gestalt.tasks.play.io._
-import controllers.util._
-import controllers.util.db._
-import play.mvc.Result
 import java.util.UUID
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltBaseAuthProvider
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecuredController
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.mohiva.play.silhouette.api.services.AuthenticatorService
-import com.mohiva.play.silhouette.impl.authenticators.{ DummyAuthenticatorService, DummyAuthenticator }
-import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 
-import com.galacticfog.gestalt.security.api._
-import com.galacticfog.gestalt.security.api.json.JsonImports
-import play.api.libs.json._
-import com.galacticfog.gestalt.security.api.json.JsonImports.{ orgFormat, linkFormat, acctFormat }
-import com.mohiva.play.silhouette.api.util.Credentials
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
-import com.galacticfog.gestalt.meta.api.output._ //JsonImports._
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 
-import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
-
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
+import controllers.util.BadRequestResult
+import controllers.util.GenericErrorResult
+import controllers.util.trace
+import play.api.mvc.RequestHeader
 
 
-object SearchController extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with NonLoggingTaskEvents {
+object SearchController extends Authorization {
   
  case class Criterion(name: String, value: String)
  

@@ -1,26 +1,19 @@
 package controllers
 
-
-import play.api.{ Logger => log }
-
 import scala.util.Failure
 import scala.util.Success
 
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import controllers.util._
-import controllers.util.db._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
+import controllers.util.Security
+import controllers.util.db.ConnectionManager
+import controllers.util.trace
+import play.api.{Logger => log}
 
-object BootstrapController extends GestaltFrameworkSecuredController[DummyAuthenticator] 
-    with MetaController with NonLoggingTaskEvents {
+object BootstrapController extends Authorization {
   
   def bootstrap() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
     trace("bootstrap()")
