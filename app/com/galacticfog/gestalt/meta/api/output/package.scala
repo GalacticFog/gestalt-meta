@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.api
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.data.ResourceFactory
 
 import play.api.libs.json._
 import java.util.UUID
@@ -42,8 +43,6 @@ package object output {
   }
   
   
-  import com.galacticfog.gestalt.data.ResourceFactory
-  
   def toHref(typeId: UUID, id: UUID, orgId: UUID, baseUri: Option[String] = None) = {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)
@@ -61,23 +60,10 @@ package object output {
         }
         else "%s/%s/%s/%s".format(base, fqon, typename, id)
         
-        
-        
       }
     }
 
-    
-    
   }  
   
-  import com.galacticfog.gestalt.data._
-  
-  def getResource(typeId: UUID, id: UUID) = {
-    val r = typeId match {
-      case ResourceIds.ResourceType => TypeFactory.findById(id)
-      case ResourceIds.TypeProperty => PropertyFactory.findById(id)
-      case _                        => ResourceFactory.findById(id)
-    }
-  }
   
 }

@@ -29,7 +29,7 @@ import controllers.util.db.EnvConfig
 import play.api.{Logger => log}
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 /*
  * 

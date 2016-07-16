@@ -48,13 +48,15 @@ import com.galacticfog.gestalt.meta.api._
 import play.api.mvc.Result
 import com.galacticfog.gestalt.laser._
 import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
- import com.galacticfog.gestalt.laser.ApiResponse
-  
+import com.galacticfog.gestalt.laser.ApiResponse
+import com.galacticfog.gestalt.meta.auth.Actions 
+import com.galacticfog.gestalt.meta.auth.Authorization
+ 
 /**
  * Code for POST and PATCH of all resource types.
  *
  */
-object Meta extends MetaController with Authorization with SecurityResources {
+object Meta extends MetaController with Authorization {
   
 
   // --------------------------------------------------------------------------

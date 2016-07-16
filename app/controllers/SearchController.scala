@@ -15,7 +15,7 @@ import controllers.util.BadRequestResult
 import controllers.util.GenericErrorResult
 import controllers.util.trace
 import play.api.mvc.RequestHeader
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object SearchController extends Authorization {
   

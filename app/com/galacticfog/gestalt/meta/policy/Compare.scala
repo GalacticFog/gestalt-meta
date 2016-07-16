@@ -11,13 +11,7 @@ import play.api.{Logger => log}
     def compare(a: A, b: B, op: String): Boolean
   }
   
-  
-  
-  /*
-   * compareSingleToList
-   * compareListToList
-   */
-  
+
   object CompareSingleToList {
     def apply[A]() = new CompareSingleToList[A]()
   }

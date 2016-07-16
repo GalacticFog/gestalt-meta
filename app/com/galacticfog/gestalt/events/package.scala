@@ -173,9 +173,9 @@ package object events {
       "routing_key": "policy",
       "arguments": {}
     },
- */
+*/
   
-  /*
+/*
 {
   "rabbit_version": "3.6.1",
   "users": [
@@ -274,7 +274,7 @@ package object events {
     }
   ]
 }
-   */
+*/
 
   
 }

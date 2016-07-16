@@ -23,9 +23,6 @@ trait ResourceProperties {
       properties.keySet contains propertyName
     }
     
-    
-    import play.api.libs.json._
-    
     def compare[T](test: T, predicate: Predicate[T]): Boolean = {
       
       def jstring(js: T) = Json.parse(js.toString).as[String]
@@ -51,10 +48,7 @@ trait ResourceProperties {
       }
     }
     
-    
-    
-    
-    
+
     def csv2seq(csv: String) = {
       csv.split(",").map(_.trim).toList
     }
@@ -63,15 +57,13 @@ trait ResourceProperties {
     def toSeqString(s: String): Seq[String] = {
       log.debug(s"ResourceProperties.toSeq($s)")
       
-      val sq = Json.parse(s).validate[Seq[String]].map {
+      Json.parse(s).validate[Seq[String]].map {
         case v: Seq[String] => v
       }.recoverTotal { e =>
         val msg = "Failed parsing Predicate value to Seq[String]: " + JsError.toFlatJson(e).toString
         log.error(msg)
         throw new BadRequestException(msg)
       }
-      println("toSeqString => " + sq)
-      sq
     }
     
     def getProperty(r: ResourceLike, property: String): Option[String] = {
@@ -172,7 +164,6 @@ trait ResourceProperties {
   /*
    * TODO: This needs to be ResourceContainerProperties - should apply to Org, Workspace, and Environment
    * Difference is how to find things in the different scopes, i.e. containers.
-   * 
    * 
    * Environment pulls all child containers
    * Workspace pulls all environments, then containers

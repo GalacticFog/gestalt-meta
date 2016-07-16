@@ -22,8 +22,8 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.laser.ContainerStats
-import com.galacticfog.gestalt.laser.MarathonClient
+import com.galacticfog.gestalt.marathon.ContainerStats
+import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -53,6 +53,9 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.mvc.Action
 import play.api.mvc.AnyContent
 
+import com.galacticfog.gestalt.meta.auth.Actions
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.auth.ActionPrefix
 
 object ResourceController extends Authorization {
   

@@ -18,7 +18,7 @@ import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFo
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
 import play.api.libs.json.{JsArray, JsValue, Json}
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object LicenseController extends Authorization {
   

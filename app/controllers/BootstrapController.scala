@@ -12,6 +12,7 @@ import controllers.util.Security
 import controllers.util.db.ConnectionManager
 import controllers.util.trace
 import play.api.{Logger => log}
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object BootstrapController extends Authorization {
   

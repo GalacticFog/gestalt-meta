@@ -46,7 +46,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object PropertyController extends Authorization {
   //

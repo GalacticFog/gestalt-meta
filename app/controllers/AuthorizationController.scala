@@ -9,6 +9,7 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
+
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.session
@@ -32,6 +33,7 @@ import play.api.libs.json.JsObject
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
+import com.galacticfog.gestalt.meta.auth._
 
 //
 // TODO: Rename to 'EntitlementController'
@@ -301,9 +303,7 @@ object AuthorizationController extends Authorization {
   }
   
   
-  def entitlementAction(e: GestaltResourceInstance) = {
-    e.properties.get("action")
-  }  
+
  
 
 
@@ -322,157 +322,6 @@ object AuthorizationController extends Authorization {
   }
   
 
-  
-  private def entitlementsAll(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
-    es flatMap { case (_,v) => v } toSeq
-  }  
-  
-
-  private[controllers] def entitlementsFiltered(es: Map[Int, Seq[GestaltResourceInstance]], actions: Seq[String]): Seq[GestaltResourceInstance] = {
-    es flatMap { case (_,v) => v } filter { e => actions.contains(entitlementAction(e)) } toSeq
-  }  
-  
-  
-  def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
-
-    @tailrec def go(
-        exclude: Map[String, GestaltResourceInstance], 
-        ez: List[(Int, Seq[GestaltResourceInstance])], 
-        acc: Map[String, GestaltResourceInstance])  : Map[String, GestaltResourceInstance] = {
-      ez match {
-        case Nil => acc
-        case h :: t => go(exclude, t, acc ++ accumulateEnts(acc, h._2))
-      }
-    }
-
-    if (es.isEmpty) Seq() else {
-      
-      // Highest key corresponds with highest level in the hierarchy.
-      val max = es.keys.max
-      val topLevel = es(max)
-      
-      // Top-Down evaluation
-      //val ents = (es - max).toSeq.sortWith((a,b) => a._1 > b._1)
-      
-      // Bottom-Up evaluation
-      val ents = (es - max).toSeq.sortWith((a,b) => a._1 < b._1)
-  
-      // Add all top-level entitlements to map
-      val output = topLevel map { e => (entitlementAction(e), e) } toMap    
-      
-      (output ++ go(output, ents.toList, Map())).values.toSeq
-    }   
-  }  
-  
-  def accumulateEnts(exclude: Map[String,GestaltResourceInstance], ents: Seq[GestaltResourceInstance]) = {
-    def go(es: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
-      es match {
-        case Nil => acc
-        case h :: t => {
-          val action = entitlementAction(h)
-          val newacc = if (acc.contains(action)) acc else acc ++ Map(action -> h)
-          
-          go(t, newacc)
-        }
-      }
-    }
-    go(ents, exclude)
-  }  
-  
-  
-  private[controllers] def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    findMatchingEntitlement(resource, action) match {
-      case None => false
-      case Some(entitlement) => {
-        println("*******************GOT ENTITLEMENTS**********************")
-        val allowed = getAllowedIdentities(entitlement)
-        val membership = getUserMembership(identity, account)
-        
-        println("***ALLOWED IDENTITIES:\n" + allowed)
-        println("***MEMBERSHIP:\n" + membership)
-        println("INTERSECT: " + (allowed intersect membership))
-        
-        (allowed intersect membership).isDefinedAt(0)
-        
-      }
-    }
-  }  
-  
-
-  def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
-    entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
-  }
-
-  
-  /**
-   * Get a Seq containing the User ID and the IDs of all Groups the User is a
-   * member of.
-   */
-  private[controllers] def getUserMembership(user: UUID, account: AuthAccountWithCreds): Seq[UUID] = {
-    //user +: (Security.getAccountGroups(user, account).get map { _.id })
-    user +: account.groups.map( _.id )
-  }
-  
-  
-  object PermissionSet {
-    val SELF = "self"
-    val MERGED = "merged"
-  }
-  
-  def entitlementsByAction(resource: UUID, action: String, setType: String = PermissionSet.SELF) = {
-    val entitlements = setType match {
-      case PermissionSet.SELF => ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
-      case PermissionSet.MERGED => ResourceFactory.findEffectiveEntitlements(resource) flatMap { _._2 } toList
-      case e => throw new IllegalArgumentException(s"Invalid PermissionSet type '$e'")
-    } 
-    entitlements filter { _.properties.get("action") == action }
-  }
-  
-  
-  /**
-   * Search the effective entitlements on the given resource for the given action name.
-   * 
-   * @param resource ID of Resource to search for the matching entitlement
-   * @param action   exact name of the action to search for
-   */
-  private[controllers] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
-    val ents = AuthorizationController.getEntitlementsMerged(resource) filter { ent =>
-      ent.properties.get("action") == action
-    }
-    println("**********Entitlements Found:\n" + ents)
-    if (ents.isEmpty) None
-    else if (ents.size > 1) {
-      throw new RuntimeException(
-          s"Multiple entitlements found for action '$action'. Data is corrupt.")
-    } 
-    else Option(ents(0))    
-  }
-  
-  
-  /**
-   * Parse the array of identities defined in an entitlement Resource. 
-   * (resource.properties.identities)
-   * 
-   */
-  private[controllers] def getAllowedIdentities(entitlement: GestaltResourceInstance): Seq[UUID] = {
-    
-    entitlement.properties.get.get("identities") match {
-      case None => Seq()
-      case Some(identities) => {
-        
-        Json.parse(identities).validate[Seq[String]].map {
-          case sq: Seq[String] => sq map { UUID.fromString(_) }
-        }.recoverTotal { e =>
-          log.error("Failed parsing 'identities' to Seq[UUID].")
-          throw new RuntimeException(
-              s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
-        }
-        
-      }
-    }
-  }
-  
-  
   /*
    * HACK: This is temporary. the 'transformEntitlement' methods are used to transform 'entitlement.properties.identities' 
    * from a Seq[UUID] to a Seq[ResourceLink]. This is necessary because 'identity' is a polymorphic reference

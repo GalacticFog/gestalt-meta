@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
 import play.api.{ Logger => log }
-import play.api.libs.json.Reads._ // Custom validation helpers
+import play.api.libs.json.Reads._        // Custom validation helpers
 import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {

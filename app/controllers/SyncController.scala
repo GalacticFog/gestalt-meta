@@ -20,7 +20,7 @@ import controllers.util.GenericErrorResult
 import controllers.util.Security
 import play.api.{Logger => log}
 import play.api.libs.json.Json
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object SyncController extends Authorization {
 

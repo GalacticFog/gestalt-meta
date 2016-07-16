@@ -14,7 +14,7 @@ import scala.util.Try
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.MarathonClient
+import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
@@ -35,10 +35,10 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.events._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.policy._
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.marathon._
 
-
-object MarathonController extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with SecurityResources {
+object MarathonController extends Authorization {
 
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
 

@@ -12,37 +12,10 @@ import java.nio.charset.Charset
 import java.util.Base64;
 
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
+
+
   
-  
-  def base64(s: String, charset: Charset = StandardCharsets.UTF_8): String = {
-    Base64.getEncoder().encodeToString(s.getBytes(charset))
-  }
-  
-  def configureClient(config: HostConfig) = {
-    val authHeader = if (key.isDefined && secret.isDefined) {
-      val auth = Option("Authorization" ->
-      base64("%s:%s".format(key.get, secret.get)) )
-      println("FOUND AUTH INFO : " + auth)
-      auth
-    } else None
-    
-    new JsonWebClient(config, authHeader)
-  }
-  
-//  private val client = {
-//    val authHeader = if (key.isDefined && secret.isDefined) {
-//      val auth = Option("Authorization" ->
-//      base64("%s:%s".format(key.get, secret.get)))
-//      println("FOUND AUTH INFO : " + auth)
-//      auth
-//    } else None
-//    new JsonWebClient(gatewayConfig, authHeader)
-//  }
-//  private val lambdaClient = new JsonWebClient(lambdaConfig)
-  
-  
-  
-  private val client = configureClient(gatewayConfig)
+  private val gatewayClient = configureClient(gatewayConfig)
   private val lambdaClient = configureClient(lambdaConfig)
   
   
@@ -50,39 +23,36 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   // GATEWAYS
   // --------------------------------------------------------------------------  
   def gateways(): Seq[LaserGateway] = {
-    getSeq[LaserGateway](client, "/gateways", Seq(200))
+    getSeq[LaserGateway](gatewayClient, "/gateways", Seq(200))
   }
   
   def gateways(id: String): Option[LaserGateway] = {
-    get[LaserGateway](client, s"/gateways/$id", Seq(200))
+    get[LaserGateway](gatewayClient, s"/gateways/$id", Seq(200))
   }
   
   def createGateway(gateway: LaserGateway): Try[ApiResponse] = {
     val json = Json.toJson(gateway)
-    log.debug("Laser::createGateway(...):\n" + Json.prettyPrint(json))
-    client.post("/gateways", json, Seq(200,201,202))
+    gatewayClient.post("/gateways", json, Seq(200,201,202))
   }
   
-  def deleteGateway(id: String) = ???
-  
-  
+  def deleteGateway(id: String) = {
+    ???
+  }
+
   // --------------------------------------------------------------------------
   // APIS
   // --------------------------------------------------------------------------  
-  def apis() = getSeq[LaserApi](client, "/apis", Seq(200))
+  def apis() = getSeq[LaserApi](gatewayClient, "/apis", Seq(200))
   
-  def apis(id: String) = get[LaserApi](client, s"/apis/$id", Seq(200))
+  def apis(id: String) = get[LaserApi](gatewayClient, s"/apis/$id", Seq(200))
   
   def createApi(api: LaserApi): Try[ApiResponse] = {
     val json = Json.toJson(api)
-    println("CREATING LASER API - POSTING:\n" + Json.prettyPrint(json))
-    val result = client.post("/apis", json, Seq(200,201,202))
-    log.debug("Laser.createApi Result:\n" + result)
-    result
+    gatewayClient.post("/apis", json, Seq(200,201,202))
   }
   
   def deleteApi(id: String) = {
-    client.delete(s"/apis/$id", Seq(200,204))
+    gatewayClient.delete(s"/apis/$id", Seq(200,204))
   }
   
   def deleteApis(ids: Seq[String]) = {
@@ -99,13 +69,12 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def createEndpoint(endpoint: LaserEndpoint, apiId: String) = {
     val json = Json.toJson(endpoint)
-    println("CREATING LASER ENDPOINT:\n" + Json.prettyPrint(json))
-    client.post(s"/apis/$apiId/endpoints", json, Seq(200,201,202))
+    gatewayClient.post(s"/apis/$apiId/endpoints", json, Seq(200,201,202))
   }
   
   def deleteEndpoint(apiId: String, id: String) = {
     val uri = s"/apis/$apiId/endpoints/$id"
-    client.delete(uri, Seq(200,204))
+    gatewayClient.delete(uri, Seq(200,204))
   }
   
   
@@ -123,10 +92,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
     val json = Json.toJson(lambda)
-    println(Json.prettyPrint(json))
-    val result = lambdaClient.post("/lambdas", json, Seq(200,201,202))
-    println("CREATE LAMBDA RESULT:\n" + result)
-    result
+    lambdaClient.post("/lambdas", json, Seq(200,201,202))
   }
   
   def deleteLambda(id: String): Try[ApiResponse] = {
@@ -142,47 +108,55 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   // PROVIDERS
   // --------------------------------------------------------------------------  
   def providers(): Try[ApiResponse] = {
-    client.get("/providers", Seq(200))
+    gatewayClient.get("/providers", Seq(200))
   }
   
   def providers(id: String): Try[ApiResponse] = {
-    client.get(s"/providers/$id", Seq(200))
+    gatewayClient.get(s"/providers/$id", Seq(200))
   }
   
   def providerLocations(providerId: String): Try[ApiResponse] = {
-    client.get(s"/providers/$providerId/locations", Seq(200))
+    gatewayClient.get(s"/providers/$providerId/locations", Seq(200))
   }
   
   def createProvider(provider: LaserProvider): Try[ApiResponse] = {
     val json = Json.toJson(provider)
     log.debug("Laser::createProvider(...):\n" + Json.prettyPrint(json))
-    client.post("/providers", json, Seq(200,201,202))
+    gatewayClient.post("/providers", json, Seq(200,201,202))
   }
   
   def deleteProvider(id: String): Try[ApiResponse] = {
-    client.delete(s"/providers/${id}", Seq(200,204))
+    gatewayClient.delete(s"/providers/${id}", Seq(200,204))
   }
   
   // --------------------------------------------------------------------------
   // LOCATIONS
   // --------------------------------------------------------------------------  
   def locations(): Try[ApiResponse] = {
-    client.get("/locations", Seq(200))
+    gatewayClient.get("/locations", Seq(200))
   }
   
   def locations(id: String): Try[ApiResponse] = {
-    client.get(s"/locations/$id", Seq(200))
+    gatewayClient.get(s"/locations/$id", Seq(200))
   }
   
   def createLocation(location: LaserLocation): Try[ApiResponse] = {
     val json = Json.toJson(location)
-    log.debug("Laser::createLocation(...):\n" + Json.prettyPrint(json))
-    client.post("/locations", json, Seq(200,201,202))
+    gatewayClient.post("/locations", json, Seq(200,201,202))
   }
   
+  private[laser] def base64(s: String, charset: Charset = StandardCharsets.UTF_8): String = {
+    Base64.getEncoder().encodeToString(s.getBytes(charset))
+  }
   
+  private[laser] def configureClient(config: HostConfig) = {
+    val authHeader = if (key.isDefined && secret.isDefined) {
+      Option("Authorization" -> base64("%s:%s".format(key.get, secret.get)))
+    } else None
+    new JsonWebClient(config, authHeader)
+  }  
   
-  protected def get[T](client: JsonWebClient, resource: String, expected: Seq[Int])
+  private[laser] def get[T](client: JsonWebClient, resource: String, expected: Seq[Int])
       (implicit fmt: Format[T]): Option[T] = {
     
     client.get(resource, expected) match {
@@ -197,26 +171,20 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
       }
     }    
   }
-  
-  protected def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])
-      (implicit fmt: Format[T]): Seq[T] = {
-    
+
+  private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
     client.get(resource, expected) match {
       case Failure(err) => throw err
-      case Success(res) => {
-        println("GET-SEQ:\n" + res)
-        res.output match {
+      case Success(res) => res.output match {
         case Some(out) => out.validate[Seq[T]] match {
           case s: JsSuccess[Seq[T]] => s.get
-          case e: JsError => 
+          case e: JsError =>
             throw new RuntimeException(JsError.toFlatJson(e).toString)
         }
         case None => Seq()
       }
-      
     }
-      
-    }
-  }  
+    
+  }
   
 }

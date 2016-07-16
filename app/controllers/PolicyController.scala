@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
 
-import com.galacticfog.gestalt.laser.MarathonClient
+import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors._
 //import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -35,7 +35,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.keymgr.GestaltLicense
 import com.galacticfog.gestalt.keymgr.GestaltFeature
 import play.api.mvc.Result
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 
 object PolicyController extends Authorization {
