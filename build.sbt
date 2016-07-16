@@ -92,10 +92,8 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" % "gestalt-task-io_2.11" 	 	% "0.2.2",
 	"com.galacticfog" % "gestalt-task-play_2.11" 	% "0.2.2",	
 	"com.galacticfog" % "gestalt-streaming-io_2.11" % "0.1.4",
-
 	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.3.3-SNAPSHOT" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.3.3-SNAPSHOT",
-
 	"com.galacticfog" %% "gestalt-security-play" 	% "2.2.3-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.2.6-SNAPSHOT" withSources(),
 	"com.galacticfog" % "gestalt-license-keymgr" % "1.0.0-SNAPSHOT"
