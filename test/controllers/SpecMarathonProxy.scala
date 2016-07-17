@@ -3,7 +3,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.MarathonClient
+import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import org.bouncycastle.util.IPAddress
