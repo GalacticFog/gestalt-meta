@@ -1,4 +1,3 @@
-
 package controllers.util
 
 import play.api.{Logger => log}
@@ -11,61 +10,51 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
 
 
-case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long])
-
-object LoggingFilter extends Filter {
-  
-  implicit lazy val traceLogFormat = Json.format[TraceLog]
-  
-  def apply(nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
-    
-    
-    val startTime = System.currentTimeMillis
-    
-    nextFilter(requestHeader).map { result =>
-
-      val fqAction = if (requestHeader.tags.contains(Routes.ROUTE_CONTROLLER)) {
-        "%s.%s".format(
-          requestHeader.tags(Routes.ROUTE_CONTROLLER),
-          requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
-      } else "ERROR_ROUTE_NOT_FOUND"
-      
-      val requestUrl = "%s://%s%s".format(
-        if (requestHeader.secure) "https" else "http",
-        requestHeader.host,
-        requestHeader.uri)
-      
-      val requestTime = System.currentTimeMillis - startTime
-
-      log.debug ( Json.prettyPrint ( Json.toJson (
-        TraceLog(
-          requestHeader.method,
-          requestUrl, 
-          fqAction,
-          result.header.status,
-          Some(requestTime))
-      )))
-      
-      result.withHeaders("Request-Time" -> requestTime.toString)
-    }
-  }
-}
-
-
 object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   
+  private[this] var status: String = null
+  private[this] var health: JsValue = null
+  
+  def setServiceStatus() = {
+    log.info("Checking Meta service health...")
+    health = MetaHealth.selfCheck(verbose = true) match {
+      case Left(error) => {
+        log.warn("Service health is compromised.")
+        error
+      }
+      case Right(info) => {
+        log.info("Meta is healthy.")
+        info
+      }
+    }
+    log.info("Self-check results:\n" + Json.prettyPrint(health))
+    status = (health \ "status").as[String]    
+  }
+  
+  def unavailable() = Option(Action(ServiceUnavailable(health)))
+  
+  
+  override def onStart(app: Application) {
+    Logger.info("Starting Meta...")
+    setServiceStatus()
+  }
+  
   override def onRouteRequest(request: RequestHeader): Option[Handler] = {
-    super.onRouteRequest(request)  
+    
+//    if (request.uri == "/statusupdate") setServiceStatus()
+//    if (status == MetaHealth.Status.Unavailable) 
+//      Option(Action(ServiceUnavailable(health)))
+//    else super.onRouteRequest(request)
+    
+    super.onRouteRequest(request)
   }
   
   override def onError(request: RequestHeader, ex: Throwable) = {
-    Future.successful{ 
-      HandleExceptions(ex)
-    }
+    Future.successful( HandleExceptions(ex) )
   }
   
   override def onBadRequest(request: RequestHeader, error: String) = {
-    Future.successful(BadRequestResult(error))    
+    Future.successful( BadRequestResult(error) )    
   }  
   
   override def onHandlerNotFound(request: RequestHeader) = {
