@@ -63,7 +63,7 @@ trait Authorization extends MetaController {
       case Failure(err) => HandleExceptions(err)
       case Success(auth) => {
         if (auth) {
-          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}")
+          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
           block 
         } else ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
       }
@@ -208,17 +208,14 @@ trait Authorization extends MetaController {
   }
   
   private[auth] def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
+    log.debug(s"Finding entitlements matching: $action($resource)")
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
-        println("*******************GOT ENTITLEMENTS**********************")
+        
         val allowed = getAllowedIdentities(entitlement)
         val membership = getUserMembership(identity, account)
-        
-        println("***ALLOWED IDENTITIES:\n" + allowed)
-        println("***MEMBERSHIP:\n" + membership)
-        println("INTERSECT: " + (allowed intersect membership))
-        
+
         (allowed intersect membership).isDefinedAt(0)
         
       }
@@ -282,8 +279,11 @@ trait Authorization extends MetaController {
     val ents = getEntitlementsMerged(resource) filter { ent =>
       ent.properties.get("action") == action
     }
-    println("**********Entitlements Found:\n" + ents)
-    if (ents.isEmpty) None
+    
+    if (ents.isEmpty) {
+      log.info("No matching entitlements found.")
+      None
+    }
     else if (ents.size > 1) {
       throw new RuntimeException(
           s"Multiple entitlements found for action '$action'. Data is corrupt.")

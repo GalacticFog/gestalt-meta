@@ -322,7 +322,7 @@ object MarathonController extends Authorization {
         // This initializes all required properties if missing.
         val inputJson = normalizeInputContainer(request.body)
         val name = requiredJsString("name", (inputJson \ "name"))
-
+        
         val providerId = UUID.fromString {
           requiredJsString("id", (inputJson \ "properties" \ "provider" \ "id"))
         }
@@ -336,7 +336,6 @@ object MarathonController extends Authorization {
          * needed to check any attribute/property values against policy rules (if any).
          */
         val target = inputToResource(org, user, inputJson)
-        
         
         Policy(user, env, Option(target), ContainerEvents.Create) {
         

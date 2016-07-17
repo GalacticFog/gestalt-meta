@@ -48,6 +48,7 @@ package object events {
       eventContext: EventContext,
       lambdaArgs: EventLambdaArgs,
       providerId: UUID) {
+    
     def toJson() = Json.obj(
       "eventContext" -> Json.toJson(eventContext),
       "lambdaArgs" -> (Json.toJson(lambdaArgs).as[JsObject] ++ Json.obj("providerId" -> providerId))

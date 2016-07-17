@@ -91,7 +91,6 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
 //    } else client.url(url)
 
     val ws = if (authHeader.isDefined) {
-      println("*****MAKING AUTHENTICATED REQUEST : " + authHeader)
         val auth = authHeader.get
         client.url(url).withHeaders(auth._1 -> s"Basic ${auth._2}")
     } else client.url(url)
