@@ -1,32 +1,28 @@
 package controllers
 
-
 import java.util.UUID
 
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.data._ //ResourceFactory
-import com.galacticfog.gestalt.data.models._ //GestaltResourceInstance
-
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.session
+import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.GestaltGroup
-
+import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.tasks.play.io.NonLoggingTaskEvents
 
-import controllers.util._
+import controllers.util.GenericErrorResult
+import controllers.util.Security
 import play.api.{Logger => log}
-import play.api.libs.json._
+import play.api.libs.json.Json
+import com.galacticfog.gestalt.meta.auth.Authorization
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-
-
-object SyncController extends Authorization /*MetaController with NonLoggingTaskEvents with SecurityResources*/ {
+object SyncController extends Authorization {
 
   private var adminId: UUID = null
   

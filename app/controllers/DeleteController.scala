@@ -32,12 +32,12 @@ import play.api.{Logger => log}
   import play.api.mvc.{Security => PlaySecurity}
   import play.api.libs.ws.WS
   import play.api.Play.current
-  import com.galacticfog.gestalt.laser.MarathonClient
+  import com.galacticfog.gestalt.marathon.MarathonClient
   import scala.concurrent.ExecutionContext.Implicits.global
   import scala.concurrent.Future
   import scala.concurrent.duration._
   import scala.concurrent.Await
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object DeleteController extends Authorization {
  

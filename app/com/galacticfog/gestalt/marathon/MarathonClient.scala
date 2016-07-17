@@ -1,4 +1,4 @@
-package com.galacticfog.gestalt.laser
+package com.galacticfog.gestalt.marathon
 
 import com.galacticfog.gestalt.meta.api.errors.{ConflictException, BadRequestException, ResourceNotFoundException}
 import org.joda.time.DateTime
@@ -7,22 +7,11 @@ import play.api.libs.ws.WSClient
 import play.api.libs.json._
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
-
 import scala.concurrent.{ExecutionContext, Future}
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import scala.math.BigDecimal.int2bigDecimal
 
-case class ContainerStats(id: String,
-                          containerType: String,
-                          status: String,
-                          cpus: Double,
-                          memory: Double,
-                          image: String,
-                          age: DateTime,
-                          numInstances: Int,
-                          tasksStaged: Int,
-                          tasksRunning: Int,
-                          tasksHealthy: Int,
-                          tasksUnhealthy: Int
-                         )
+
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 

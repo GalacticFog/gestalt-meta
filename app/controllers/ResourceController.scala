@@ -1,59 +1,61 @@
 package controllers
 
+import java.util.UUID
 
-import play.api.{ Logger => log }
-import play.api.Play.current
-import play.api.libs.ws._
-import play.api.libs.ws.ning.NingAsyncHttpClientConfigBuilder
-import scala.concurrent.Future
-import play.api.mvc.Action
-import play.api.mvc.Controller
-import play.api.mvc.RequestHeader
-import play.api.mvc.AnyContent
+import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.{ Try, Success, Failure }
-import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => MetaLink }
+import scala.reflect.ClassTag
+import scala.reflect.runtime.currentMirror
+import scala.reflect.runtime.universe
+import scala.reflect.runtime.universe.MethodSymbol
+import scala.reflect.runtime.universe.typeOf
+import scala.reflect.runtime.universe.TypeTag
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
 
+import com.galacticfog.gestalt.data.CoVariant
+import com.galacticfog.gestalt.data.ReferenceFactory
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.data.uuid
+import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.marathon.ContainerStats
+import com.galacticfog.gestalt.marathon.MarathonClient
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.resourceRestName
+import com.galacticfog.gestalt.meta.api.resourceUUID
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+import com.galacticfog.gestalt.meta.api.sdk.Resources
+import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
 import com.galacticfog.gestalt.meta.services.ResourceQueryService
-import com.galacticfog.gestalt.tasks.io.TaskStatus
-import com.galacticfog.gestalt.tasks.play.actors.TaskEventMessage
-import com.galacticfog.gestalt.tasks.play.io._
+import com.galacticfog.gestalt.security.api.GestaltOrg
+import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.api.json.JsonImports.orgFormat
+
 import controllers.util._
-import controllers.util.db._
-import play.mvc.Result
-import java.util.UUID
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltBaseAuthProvider
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecuredController
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.mohiva.play.silhouette.api.services.AuthenticatorService
-import com.mohiva.play.silhouette.impl.authenticators.{ DummyAuthenticatorService, DummyAuthenticator }
-import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
+import controllers.util.JsonUtil.replaceJsonPropValue
+import controllers.util.JsonUtil.replaceJsonProps
+import play.api.{Logger => log}
+import play.api.libs.json.JsObject
+import play.api.libs.json.JsString
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.mvc.Action
+import play.api.mvc.AnyContent
 
-import com.galacticfog.gestalt.security.api._
-import com.galacticfog.gestalt.security.api.json.JsonImports
-import play.api.libs.json._
-import com.galacticfog.gestalt.security.api.json.JsonImports.{ orgFormat, linkFormat, acctFormat }
-import com.mohiva.play.silhouette.api.util.Credentials
-
-import com.galacticfog.gestalt.meta.api.output._ //JsonImports._
-
-import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
-import com.galacticfog.gestalt.meta.api.errors._
-
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import controllers.util.JsonUtil._
-import com.galacticfog.gestalt.laser._
-
-import com.galacticfog.gestalt.meta.api.BuildInfo
-
+import com.galacticfog.gestalt.meta.auth.Actions
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.auth.ActionPrefix
 
 object ResourceController extends Authorization {
   
@@ -65,8 +67,7 @@ object ResourceController extends Authorization {
   private val resources  = ResourceFactory
   private val references = ReferenceFactory
   
-  
-  
+
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
 
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
@@ -1014,11 +1015,6 @@ object ResourceController extends Authorization {
   }
   
   
-  def filterProviders() = {
-    ???
-  }
-  
-  
   def getWorkspaceDomains(org: UUID, workspace: UUID) = Authenticate(org) { implicit request =>
     handleExpansion(ResourceFactory.findChildrenOfType(ResourceIds.Domain, workspace), request.queryString)
   }
@@ -1057,14 +1053,7 @@ object ResourceController extends Authorization {
   }
   
   
-  import scala.reflect.runtime.{ universe => ru }
-  import scala.reflect.runtime.currentMirror
-  import scala.reflect.ClassTag
-  import ru.TypeTag
-  import ru.MethodSymbol
-  import ru.typeOf
-  import scala.collection.immutable.ListMap
-  import scala.annotation.tailrec  
+  
   
   def instance2map[T: ClassTag: TypeTag](inst: T) = {
     val im = currentMirror.reflect( inst )

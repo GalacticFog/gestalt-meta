@@ -20,9 +20,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => GestaltLink }
 
 import com.galacticfog.gestalt.meta.services.ResourceQueryService
-import com.galacticfog.gestalt.tasks.io.TaskStatus
-import com.galacticfog.gestalt.tasks.play.actors.TaskEventMessage
-import com.galacticfog.gestalt.tasks.play.io._
+
 import controllers.util._
 import controllers.util.db._
 import play.mvc.Result
@@ -48,10 +46,9 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.security.api.{ GestaltResource => SecuredResource }
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.auth.Authorization
 
-
-object PropertyController extends GestaltFrameworkSecuredController[DummyAuthenticator]
-  with MetaController with NonLoggingTaskEvents {
+object PropertyController extends Authorization {
   //
   // RESOURCE_TYPE_PROPERTIES
   //

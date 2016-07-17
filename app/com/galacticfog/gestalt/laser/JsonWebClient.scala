@@ -20,25 +20,6 @@ import java.net.URL
 
 import com.galacticfog.gestalt.meta.api.sdk._
 
-//case class BasicCredential(username: String, password: String) {
-//  val scheme = WSAuthScheme.BASIC
-//  def asOpt = Option(this)
-//}
-
-
-//case class HostConfig(protocol: String, host: String, port: Option[Long], timeout: Int = 10, creds: Option[BasicCredential] = None)
-
-//object HostConfig {
-//  def make(url: URL, timeout: Int = 10, creds: Option[BasicCredential] = None) = {
-//    HostConfig(
-//      protocol = url.getProtocol, 
-//      host = url.getHost, 
-//      port = if (url.getPort == -1) None else Some(url.getPort),
-//      timeout = timeout,
-//      creds = creds)  
-//  }
-//}
-
 
 case class ApiResponse(status: Int, output: Option[JsValue], error: Option[String] = None)
 
@@ -110,7 +91,6 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
 //    } else client.url(url)
 
     val ws = if (authHeader.isDefined) {
-      println("*****MAKING AUTHENTICATED REQUEST : " + authHeader)
         val auth = authHeader.get
         client.url(url).withHeaders(auth._1 -> s"Basic ${auth._2}")
     } else client.url(url)

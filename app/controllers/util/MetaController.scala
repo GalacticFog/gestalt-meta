@@ -9,8 +9,9 @@ import com.galacticfog.gestalt.data.util._
 
 import db._
 
-import play.api.{Logger => log}
+//import play.api.{Logger => log}
 
+import play.api.Logger
 import scala.util.{Success,Failure}
 
 import org.postgresql.util.PSQLException
@@ -53,6 +54,7 @@ import controllers.SecurityResources
 
 
 trait MetaController extends SecureController with SecurityResources {
+  val log = Logger(this.getClass)
 
   type QueryString = Map[String,Seq[String]]
   
@@ -472,7 +474,7 @@ object Session {
 
 
 object MetaDS extends {
-  
+  val log = Logger(this.getClass)
   lazy val online = metaOnline( ConnectionManager.config )
   
   def assertOnline(onFail: => Unit, failMessage: String) = {
@@ -487,7 +489,6 @@ object MetaDS extends {
       onFail
     }
   }
-  
 
   
   /**

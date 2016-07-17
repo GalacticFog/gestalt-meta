@@ -30,10 +30,15 @@ object MetaHealth {
    * - rabbit - for policy
    * 
    */
+  object Status {
+    val Healthy = "healthy"
+    val Degraded = "degraded"
+    val Unavailable = "unavailable"
+  }
   
-  val GESTALT_SERVICE_HEALTHY = "healthy"
-  val GESTALT_SERVICE_DEGRADED = "degraded"
-  val GESTALT_SERVICE_UNAVAILABLE = "unavailable"
+//  val GESTALT_SERVICE_HEALTHY = "healthy"
+//  val GESTALT_SERVICE_DEGRADED = "degraded"
+//  val GESTALT_SERVICE_UNAVAILABLE = "unavailable"
   
   val DEFAULT_SERVICE_TIMEOUT_SECONDS = 5
 
@@ -41,6 +46,7 @@ object MetaHealth {
   
   val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+  
   // TODO: We need to store creds for all of these service in env.
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
       creds = Option(BasicCredential("guest", "guest")))  
@@ -54,12 +60,9 @@ object MetaHealth {
     
     val stats  = checkAll(serviceMap, DEFAULT_SERVICE_TIMEOUT_SECONDS)
     val errors = stats collect { case (k,v) if v.isFailure => (k,v) }
-    
-    println("ERRORS : " + errors)
-    println("IS-EMPTY: " + errors.isEmpty)
-    
+
     if (errors.isEmpty) Right(goodHealthMessage()) 
-    else Left(badHealthMessage(GESTALT_SERVICE_UNAVAILABLE, errors, verbose))
+    else Left(badHealthMessage(Status.Unavailable, errors, verbose))
     
   }
   
@@ -72,8 +75,8 @@ object MetaHealth {
   def badHealthMessage(status: String, badServices: Map[String,Try[Boolean]], verbose: Boolean = false): JsObject = {
     
     def message(status: String) = status match {
-      case GESTALT_SERVICE_UNAVAILABLE => "Meta is not operational"
-      case GESTALT_SERVICE_DEGRADED => "Meta is operational but some features may be disabled."
+      case Status.Unavailable => "Meta is not operational"
+      case Status.Degraded => "Meta is operational but some features may be disabled."
     }
     
     val failed = badServices map { case (k,v) => 
@@ -126,12 +129,12 @@ object MetaHealth {
       case _   => throw new RuntimeException(
           s"Unexpected HTTP status from '$url'. expected: ${expectedStatus.mkString(",")}, found: ${receivedStatus}.")
     }
-    
   }
+  
   // TODO: Add .url accessor to HostConfig
   def mkurl(config: HostConfig) = {
     "%s://%s%s".format(config.protocol, config.host, 
-        (if (config.port.isDefined) s":${config.port}" else ""))
+        (if (config.port.isDefined) s":${config.port.get}" else ""))
   }
 
   

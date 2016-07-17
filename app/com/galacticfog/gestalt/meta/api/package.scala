@@ -17,14 +17,6 @@ import com.galacticfog.gestalt.data.Hstore
 
 package object api {
 
-  /**
-   * Move to 'errors' sub-package
-   */
-  
-  sealed abstract class ConfigStatus(content: String, ex: Option[Throwable])
-  case class OK(content: String, ex: Option[Throwable] = None) extends ConfigStatus(content, ex)
-  case class Wait(content: String, ex: Option[Throwable] = None) extends ConfigStatus(content, ex)
-  case class Fail(content: String, ex: Option[Throwable] = None) extends ConfigStatus(content, ex)
 
   /**
    * Translate resource REST name to Resource Type ID
@@ -63,11 +55,7 @@ package object api {
       case "clusters"         => Some(ResourceIds.Cluster)
       case "nodes"            => Some(ResourceIds.Node)
       case "tasks"            => Some(ResourceIds.Task)
-      
 
-      
-
-      
       case "nodetypes"        => Some(ResourceIds.NodeType)
       
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
@@ -78,7 +66,6 @@ package object api {
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
       case "actions"          => Some(ResourceIds.TypeAction)
-      case "entitlements"     => Some(ResourceIds.Entitlement)
       case "licenses"         => Some(ResourceIds.License)
       case _                  => None
     }
@@ -125,14 +112,5 @@ package object api {
     }
   }  
   
-  def stripSlash(s: String) = {
-    
-    lazy val err = throw new BadRequestException(s"Path must begin with '/', found: $s")
-    
-    (for {
-      a <- Option { if (s.trim.startsWith("/")) s.drop(1) else err }
-      b <- Option { if (a.endsWith("/")) a.dropRight(1) else a }
-    } yield b).get
-  }  
   
 }

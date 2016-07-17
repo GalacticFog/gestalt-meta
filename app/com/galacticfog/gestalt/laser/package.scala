@@ -1,10 +1,12 @@
 package com.galacticfog.gestalt
 
+
 import com.galacticfog.gestalt.data.models._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+
 
 package object laser {
 
@@ -183,7 +185,7 @@ package object laser {
     // TODO: Validation parsing.
     // TODO: I think i have the naming of this backward,
     // What I'm calling the function is actually the handler. It still works
-    // just confusing. Fix.
+    // just confusing. Fix it.
     //
     val function = fmap.keys.toSeq(0)
 

@@ -7,7 +7,7 @@ import controllers.util.db.EnvConfig
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.mvc.Action
-
+import com.galacticfog.gestalt.meta.auth.Authorization
 
 object InfoController extends Authorization {
   

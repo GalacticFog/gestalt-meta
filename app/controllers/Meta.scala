@@ -46,15 +46,18 @@ import controllers.util.stringmap
 import controllers.util.trace
 import com.galacticfog.gestalt.meta.api._
 import play.api.mvc.Result
+import play.api.mvc.Action
 import com.galacticfog.gestalt.laser._
-import  com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
- import com.galacticfog.gestalt.laser.ApiResponse
-  
+import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
+import com.galacticfog.gestalt.laser.ApiResponse
+import com.galacticfog.gestalt.meta.auth.Actions 
+import com.galacticfog.gestalt.meta.auth.Authorization
+ 
 /**
  * Code for POST and PATCH of all resource types.
  *
  */
-object Meta extends MetaController with Authorization with SecurityResources {
+object Meta extends Authorization {
   
 
   // --------------------------------------------------------------------------
@@ -79,7 +82,6 @@ object Meta extends MetaController with Authorization with SecurityResources {
   def postOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createOrgCommon(fqid(fqon))
   }
-  
   
   def createOrgCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
     

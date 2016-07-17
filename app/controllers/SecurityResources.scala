@@ -1,5 +1,7 @@
 package controllers
 
+import com.galacticfog.gestalt.meta.auth.Authorization
+
 import java.util.UUID
 import scala.util.Try
 import com.galacticfog.gestalt.data.Hstore

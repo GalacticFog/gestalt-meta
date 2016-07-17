@@ -1,32 +1,26 @@
 package com.galacticfog.gestalt.meta.services
 
-
-
-import play.api.{Logger => log}
-
-import com.galacticfog.gestalt.data._
-
-import com.galacticfog.gestalt.meta.api.sdk._
-
-import com.galacticfog.gestalt.data.models._
-
 import java.util.UUID
 
-import scala.util.{Try, Success, Failure}
+import scala.util.Try
 
-import play.api.libs.json._
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLink
+import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 
-import com.galacticfog.gestalt.meta.api._
+import play.api.{Logger => log}
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
 
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 
-/**
- * 
- * This object will become useful as we add the other System Resource Types
- * and more flexible query types.
- * 
+/*
+ * DELETE THIS FILE AS SOON AS POSSIBLE
  */
+
+
 
 object ResourceQueryService {
   

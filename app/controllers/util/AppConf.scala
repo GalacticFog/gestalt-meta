@@ -15,7 +15,7 @@ object AppConf {
   }
     
   def get(configItem: String): Option[Map[String,Object]] = {
-    AppConf.getConfigObject(configItem) match {
+    getConfigObject(configItem) match {
       case None    => throw new RuntimeException(ErrConfigNotFound.format(configItem))
       case Some(o) => Some(o.unwrapped.asScala.toMap)
     }    

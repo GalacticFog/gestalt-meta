@@ -1,4 +1,4 @@
-package controllers
+package com.galacticfog.gestalt.meta.auth
 
 
 import java.util.UUID

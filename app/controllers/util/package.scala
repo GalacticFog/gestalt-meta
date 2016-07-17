@@ -138,17 +138,6 @@ def HandleExceptions(e: Throwable) = {
     }
   }
   
-  
-  
-//  private def securedGetListFailure(err: Throwable) = {
-//    err match {
-//      case unauth: UnauthorizedException => {
-//        log.info( unauth.getMessage )
-//        Unauthorized( unauth.toErrorString )
-//      }
-//    }
-//  }
-  
   class OkNotFoundNoResultHandler 
     extends TryHandler[Unit,Result](trySuccessNoResult)(tryNotFoundFailure)
   
@@ -157,22 +146,5 @@ def HandleExceptions(e: Throwable) = {
   
   def okNotFound(f: Try[JsValue]) = new OkNotFoundHandler().handle( f )
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
-
-  
-//  abstract class ansi(text: String) {
-//    val code: String
-//    def colorize(code: String) = s"\u001B[${code}m${text}\u001B[0m"
-//    override def toString = colorize(code)
-//  }
-//  
-//  case class red(text: String) extends ansi(text) {
-//    override val code = "0;31"
-//  }
-//  case class blue(text: String) extends ansi(text) {
-//    override val code = "0;34"
-//  }
-//  case class green(text: String) extends ansi(text) {
-//    override val code = "0;32"
-//  }  
   
 }
