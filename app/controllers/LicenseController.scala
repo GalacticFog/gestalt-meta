@@ -10,6 +10,7 @@ import scala.util.Failure
 import scala.util.Success
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.ResourceFactory.hardDeleteResource
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -17,6 +18,7 @@ import com.galacticfog.gestalt.keymgr._
 import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFoundException}
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
+import play.api.{ Logger => log }
 import play.api.libs.json.{JsArray, JsValue, Json}
 
 
@@ -49,6 +51,16 @@ object LicenseController extends Authorization {
        * val licenseText = (inputJson \ "properties" \ "data").as[String]
        * 
        */
+      // Remove old license - currently there will be only 1 license
+      ResourceFactory.findAll(ResourceIds.License, org).headOption match {
+        case Some(oldlicense) =>
+          hardDeleteResource(oldlicense.asInstanceOf[GestaltResourceInstance].id) match {
+            case Failure(e) =>  log.warn(s"Error deleting old license '${oldlicense.id.toString}: ${e.getMessage}'")
+
+            case Success(_) => // Do nothing
+          }
+        case None =>  // Do nothing
+      }
       // Install the license
       try {
         val licenseText = (request.body \ "properties" \ "data").as[String]
