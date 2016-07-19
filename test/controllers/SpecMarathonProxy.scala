@@ -241,7 +241,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.portMappings must beNone
-      marApp.ports must beNone
+      marApp.ports must beSome(Iterable())
       marApp.portDefinitions must beSome
       marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
@@ -266,7 +266,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ), marathonProviderWithoutNetworks)).as[MarathonApp]
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.ports must beNone
+      marApp.ports must beSome(Iterable())
       marApp.portDefinitions must beSome
       marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
@@ -294,8 +294,8 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beSome(Seq(KeyValuePair("net", "apps")))
-      marApp.ports must beNone
-      marApp.portDefinitions must beNone
+      marApp.ports must beSome(Iterable())
+      marApp.portDefinitions must beSome(Iterable())
       marApp.ipAddress must beSome(IPPerTaskInfo(
         discovery = Some(DiscoveryInfo(
           ports = Some(Seq(
@@ -324,7 +324,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker.get.network.toUpperCase must_== "HOST"
       marApp.container.docker.get.parameters must beNone
       marApp.container.docker.get.portMappings must beNone
-      marApp.ports must beNone
+      marApp.ports must beSome(Iterable())
       marApp.portDefinitions must beSome
       marApp.ipAddress must beNone
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
@@ -350,7 +350,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp.container.docker must beSome
       marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
       marApp.container.docker.get.parameters must beNone
-      marApp.ports must beNone
+      marApp.ports must beSome(Iterable())
       marApp.ipAddress must beNone
       marApp.portDefinitions must beSome
       marApp.portDefinitions.get must containTheSameElementsAs(Seq(
@@ -391,20 +391,37 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
         portDefinitions = Some(Seq()),
         cpus = 0.2,
         mem = 128.0,
-        instances = 1
+        instances = 1,
+        ports = Some(Seq()),
+        env = Some(Map()),
+        acceptedResourceRoles = Some(Seq()),
+        args = Some(Seq()),
+        labels = Some(Map()),
+        deployments = Some(Seq()),
+        healthChecks = Some(Seq()),
+        constraints = Some(Seq())
       )
 
       val marValidJson = Json.obj(
         "id" -> "someId",
+        "acceptedResourceRoles" -> Json.arr(),
+        "args" -> Json.arr(),
+        "cmd" -> JsNull,
         "container" -> Json.obj(
           "type" -> "ctype"
         ),
+        "constraints" -> Json.arr(),
         "cpus" -> 0.2,
+        "deployments" -> Json.arr(),
+        "env" -> Json.obj(),
+        "healthChecks" -> Json.arr(),
         "mem" -> 128.0,
         "instances" -> 1,
+        "labels" -> Json.obj(),
         "user" -> "someUser",
         "ipAddress" -> Json.obj(),
-        "portDefinitions" -> Json.arr()
+        "portDefinitions" -> Json.arr(),
+        "ports" -> Json.arr()
       )
 
       Json.toJson(marApp) must_== marValidJson
