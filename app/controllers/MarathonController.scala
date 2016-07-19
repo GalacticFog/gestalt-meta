@@ -5,7 +5,8 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.output.Output
-import play.api.mvc.AnyContent
+import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
+import play.api.mvc._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
@@ -19,7 +20,7 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
+import com.galacticfog.gestalt.security.play.silhouette.{OrgContextRequestUUID, OrgContextRequest, GestaltFrameworkSecuredController, AuthAccountWithCreds}
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
 import controllers.util._
@@ -33,19 +34,42 @@ import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.events._
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.policy._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
 
 object MarathonController extends Authorization {
 
+  import com.galacticfog.gestalt.security.api.json.JsonImports._
+
+  class MarAuth(maybeGenFQON: Option[RequestHeader => Option[String]] = None) extends ActionBuilder[SecuredRequest] {
+    def invokeBlock[B](request: Request[B], block: SecuredRequest[B] => Future[Result]) = {
+      val ocr = OrgContextRequest(maybeGenFQON flatMap {_(request)}, request)
+      SecuredRequestHandler(ocr) { securedRequest =>
+        Future.successful(HandlerResult(Ok, Some(securedRequest)))
+      }.flatMap {
+        case HandlerResult(r, Some(sr)) => block(sr)
+        case HandlerResult(r, None) => Future{
+          lazy val org = ocr.orgFQON getOrElse "root"
+          lazy val defRealm = s"${securityConfig.protocol}://${securityConfig.hostname}:${securityConfig.port}/${org}/oauth/issue"
+          val realm: String = securityRealmOverride(org) getOrElse defRealm
+          val challenge: String = "acsjwt realm=\"" + realm
+          Unauthorized(Json.toJson(UnauthorizedAPIException("","Authentication required",""))).withHeaders(WWW_AUTHENTICATE -> challenge)
+        }
+      }
+    }
+  }
+
+  object MarAuth {
+    def apply(genFQON: => String): MarAuth = new MarAuth(Some({ rh: RequestHeader => Some(genFQON)}))
+  }
+
   type ProxyAppFunction = (String,String,String) => Future[JsValue]
 
   /**
     * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
     */
-  def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
+  def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     val provider = marathonProvider(providerId)
     execAppFunction(fqon, parentType, environment, provider, "v2/deployments") {
       marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2
@@ -57,7 +81,7 @@ object MarathonController extends Authorization {
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info
    */
-  def getInfo(fqon: String, environment: UUID, provider: UUID) = Authenticate(fqon).async { implicit request =>
+  def getInfo(fqon: String, environment: UUID, provider: UUID) = MarAuth(fqon).async { implicit request =>
     marathonClient(marathonProvider(provider)).getInfo.map { Ok( _ ) } recover {
       case e: Throwable => HandleExceptions(e)
     }
@@ -67,7 +91,7 @@ object MarathonController extends Authorization {
    * GET /{fqon}/environments/{eid}/containers
    * TODO: is this obsolete? or maybe code from here needs to be moved into ResourceController.getEnvironmentContainersFqon2
    */
-  def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
+  def getMarathonAppsAll(fqon: String, parentType: String, environment: UUID) = MarAuth(fqon).async { implicit request =>
 
     def go(
         ps: Seq[GestaltResourceInstance], wrk: String, env: String,
@@ -105,7 +129,7 @@ object MarathonController extends Authorization {
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def getMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async { implicit request =>
+  def getMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     // make a best effort to get updated stats from the Marathon provider and to update the resource with them
     MarathonController.appComponents(environment) match {
       case Failure(e) => Future.successful(HandleExceptions(e))
@@ -156,7 +180,7 @@ object MarathonController extends Authorization {
   /**
     * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
-  def getMarathonApp(fqon: String, parentType: String, envId: UUID, providerId: UUID, appId: String) = Authenticate(fqon).async { implicit request =>
+  def getMarathonApp(fqon: String, parentType: String, envId: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
     // make a best effort to get updated stats from the Marathon provider and to update the resource with them
     MarathonController.appComponents(envId) match {
       case Failure(e) => Future.successful(HandleExceptions(e))
@@ -194,7 +218,7 @@ object MarathonController extends Authorization {
   /**
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
-  def deleteMarathonAppDcos(fqon: String, parentType: String, environment: UUID, providerId: UUID, marathonAppId: String) = Authenticate(fqon).async { implicit request =>
+  def deleteMarathonAppDcos(fqon: String, parentType: String, environment: UUID, providerId: UUID, marathonAppId: String) = MarAuth(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")
     appComponents(environment) match {
       case Failure(e) => Future{HandleExceptions(e)}
@@ -231,7 +255,7 @@ object MarathonController extends Authorization {
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def postMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
     
     val inputJson = request.body.as[JsObject]
     val provider = marathonProvider(providerId)
@@ -313,7 +337,7 @@ object MarathonController extends Authorization {
           creator = creator)
   }
   
-  def postMarathonApp(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postMarathonApp(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
 
     appComponents(environment) match {
       case Failure(e) => Future { HandleExceptions(e) }
@@ -486,7 +510,7 @@ object MarathonController extends Authorization {
 
 
   
-  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = MarAuth(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")
 
     val org = fqid(fqon)
@@ -530,7 +554,7 @@ object MarathonController extends Authorization {
     }
 
   }
-  def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+  def migrateContainer(fqon: String, envId: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
 
     val updated = for {
       rule         <- Try(effectiveEventRules(envId, Some("container.migrate")) getOrElse {
@@ -557,7 +581,7 @@ object MarathonController extends Authorization {
     }
   }
   
-  def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+  def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
 
     appComponents(environment) match {
       case Failure(e) => HandleExceptions(e)
