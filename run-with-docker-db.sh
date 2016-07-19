@@ -9,6 +9,15 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
+if [ -z ${GESTALT_SECURITY_KEY+x} ]; then
+  echo must set environment variable GESTALT_SECURITY_KEY with key from gestalt-security
+  exit 1
+fi
+if [ -z ${GESTALT_SECURITY_SECRET+x} ]; then
+  echo must set environment variable GESTALT_SECURITY_SECRET with secret from gestalt-security
+  exit 1
+fi
+
 # it's easier to remove it and then start a new one than to try to restart it if it exists with fallback on creation
 
 echo Looking for DB in docker
@@ -77,14 +86,6 @@ export GESTALT_SECURITY_PROTOCOL=http
 
 export GESTALT_APIGATEWAY=http://apigateway.dev.galacticfog.com
 export GESTALT_LAMBDA=http://lambda.dev.galacticfog.com
-
-export GESTALT_VERSION=1.0
-export GESTALT_ENV="appliance; DEV"
-export GESTALT_NODE_ID=0
-export GESTALT_META=http://localhost:14374
-export GESTALT_SECRET=secret
-export GESTALT_ID=bd96d05a-7065-4fa2-bea2-98beebe8ebe4
-export GESTALT_ORG=com.galacticfog
 
 echo "
 Running gestalt-meta on http://localhost:14374
