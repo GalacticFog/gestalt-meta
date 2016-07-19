@@ -199,10 +199,9 @@ GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>	    controllers.DeleteController.hardDeleteOrgFqon(fqon: String, fqon)
 
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps/:marathonAppId      controllers.MarathonController.deleteMarathonAppDcos(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, marathonAppId)
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>		controllers.DeleteController.hardDeleteTest(fqon: String, path: String = "")
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.DeleteController.hardDeleteTest(fqon: String, path)
-
-
 
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName1/$id<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>
 
@@ -491,7 +490,6 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps                     controllers.MarathonController.getMarathonApps(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps                     controllers.MarathonController.postMarathonAppDCOS(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 
-DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps/:marathonAppId      controllers.MarathonController.deleteMarathonAppDcos(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, marathonAppId)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps/:appId              controllers.MarathonController.getMarathonApp(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, appId: String)
 
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/info		                controllers.MarathonController.getInfo(fqon: String, envId: java.util.UUID, id: java.util.UUID)
