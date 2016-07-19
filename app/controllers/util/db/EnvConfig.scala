@@ -23,7 +23,7 @@ object EnvConfig extends JdbcConfiguration {
   
   lazy val rabbitHost = System.getenv("RABBIT_HOST")
   lazy val rabbitPort = System.getenv("RABBIT_PORT")
-  lazy val rabbitHttpPort = Option(System.getenv("RABBIT_PORT")) getOrElse "80"
+  lazy val rabbitHttpPort = Option(System.getenv("RABBIT_HTTP_PORT")) getOrElse "80"
   lazy val rabbitExchange = System.getenv("RABBIT_EXCHANGE")
   lazy val rabbitRoute = System.getenv("RABBIT_ROUTE")
   
@@ -43,7 +43,7 @@ object EnvConfig extends JdbcConfiguration {
     "%s://%s%s".format(security_protocol, security_hostname, port)
   }
   
-  val rabbitUrl = "amqp://%s:%s".format(rabbitHost, rabbitHttpPort)
+  val rabbitUrl = "amqp://%s:%s".format(rabbitHost, rabbitPort)
   
   private val rabbit = Json.obj("url" -> rabbitUrl, "exchange" -> rabbitExchange, "route" -> rabbitRoute)
   
