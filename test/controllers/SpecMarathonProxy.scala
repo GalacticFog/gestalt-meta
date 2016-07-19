@@ -33,22 +33,22 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           |  "id" : "a0935106-6466-4019-b5b6-1388dedb0ba1",
           |  "version" : "2016-03-30T03:16:39.208Z",
           |  "affectedApps" : [
-          |     "/galacticfog.engineering.test/meta-workspace/test-environment/test-app",
-          |     "/galacticfog.engineering.test/meta-workspace/test-environment-2/another-test-app"
+          |     "/galacticfog/engineering/test/meta-workspace/test-environment/test-app",
+          |     "/galacticfog/engineering/test/meta-workspace/test-environment-2/another-test-app"
           |  ],
           |  "steps" : [ [ {
           |    "action" : "StartApplication",
-          |    "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |    "app" : "/galacticfog/engineering/test/meta-workspace/test-environment/test-app"
           |  } ], [ {
           |    "action" : "ScaleApplication",
-          |    "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |    "app" : "/galacticfog/engineering/test/meta-workspace/test-environment/test-app"
           |  } ] ],
           |  "currentActions" : [ {
           |      "action" : "ScaleApplication",
-          |      "app" : "/galacticfog.engineering.test/meta-workspace/test-environment/test-app"
+          |      "app" : "/galacticfog/engineering/test/meta-workspace/test-environment/test-app"
           |    }, {
           |      "action" : "ScaleApplication",
-          |      "app" : "/galacticfog.engineering.test/meta-workspace/test-environment-2/another-test-app"
+          |      "app" : "/galacticfog/engineering/test/meta-workspace/test-environment-2/another-test-app"
           |  } ],
           |  "currentStep" : 2,
           |  "totalSteps" : 2
@@ -80,7 +80,7 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
           |{
           |  "id" : "a0935106-6466-4019-b5b6-1388dedb0ba1",
           |  "version" : "2016-03-30T03:16:39.208Z",
-          |  "affectedApps" : [ "/galacticfog.engineering.test/meta-workspace/test-environment-2/test-app" ],
+          |  "affectedApps" : [ "/galacticfog/engineering/test/meta-workspace/test-environment-2/test-app" ],
           |  "steps" : [ ],
           |  "currentActions" : [ ],
           |  "currentStep" : 0,

@@ -161,19 +161,11 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     val longAppId = appGroupId + appId.stripPrefix("/")
     client.url(s"${marathonAddress}/v2/apps${longAppId}").delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
-//      marResp.status match {
-//        case 200 => true
-//        case 404 => false
-//        case _ => throw new RuntimeException((marResp.json \ "message").asOpt[String] getOrElse marResp.statusText)
-//      }
-        marResp.json
+      marResp.json
     }
   }
 
   def deleteApplication(externalId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-//    val appGroupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
-//    val longAppId = appGroupId + appId.stripPrefix("/")
-
     client.url(s"${marathonAddress}/v2/apps${externalId}").delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
@@ -293,7 +285,7 @@ case object MarathonClient {
   }
 
   def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {
-    ("/" + fqon + "/" + wrkName.replace("/","-") + "/" + envName.replace("/","-") + "/").replace(" ","-").toLowerCase
+    (fqon.toLowerCase.split('.').foldLeft("")(_ + "/" + _) + "/" + wrkName.replace(".","").replace("/","-").toLowerCase + "/" + envName.replace(".","").replace("/","-") + "/").replace(" ","-").toLowerCase
   }
 
 }

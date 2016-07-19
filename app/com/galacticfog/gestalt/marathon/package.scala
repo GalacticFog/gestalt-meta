@@ -390,6 +390,7 @@ package object marathon {
       tasksRunning = tasks_running,
       tasksHealthy = tasks_healthy,
       tasksUnhealthy = tasks_unhealthy,
+      deployments = Some(Seq.empty),
       user = user
     )
     mc recoverWith {
