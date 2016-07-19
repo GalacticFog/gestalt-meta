@@ -51,6 +51,8 @@ package object marathon {
       num_instances: Int = 1,
       network: String = "BRIDGE",
       cmd: Option[String] = None,
+      constraints: Option[Seq[Seq[String]]] = None,
+      acceptedResourceRoles: Option[Seq[String]] = None,
       args: Option[Iterable[String]] = None,
       force_pull: Boolean = false,
       health_checks: Option[Iterable[HealthCheck]] = None,
@@ -115,6 +117,8 @@ package object marathon {
     tasksHealthy: Option[Int] = None,
     tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
+    constraints: Option[Seq[Seq[String]]] = None,
+    acceptedResourceRoles: Option[Seq[String]] = None,
     args: Option[Iterable[String]] = None,
     ports: Option[Iterable[Int]] = None,
     portDefinitions: Option[Iterable[PortDefinition]] = None,
@@ -203,6 +207,8 @@ package object marathon {
       (__ \ "tasksHealthy").readNullable[Int] and
       (__ \ "tasksUnhealthy").readNullable[Int] and
       (__ \ "cmd").readNullable[String] and
+      (__ \ "constraints").readNullable[Seq[Seq[String]]] and
+      (__ \ "acceptedResourceRoles").readNullable[Seq[String]] and
       (__ \ "args").readNullable[Iterable[String]] and
       (__ \ "ports").readNullable[Iterable[Int]] and
       (__ \ "portDefinitions").readNullable[Iterable[PortDefinition]] and
@@ -216,28 +222,36 @@ package object marathon {
 
   implicit lazy val marathonAppWrites = (
     (__ \ "id").write[String] and
-      (__ \ "args").writeNullable[Seq[String]] and
+      (__ \ "acceptedResourceRoles").write[Seq[String]] and
+      (__ \ "args").write[Seq[String]] and
       (__ \ "container").write[MarathonContainer] and
-      (__ \ "cmd").writeNullable[String] and
+      (__ \ "cmd").write[JsValue] and
       (__ \ "cpus").write[Double] and
-      (__ \ "env").writeNullable[Map[String,String]] and
-      (__ \ "healthChecks").writeNullable[Seq[MarathonHealthCheck]] and
+      (__ \ "env").write[Map[String,String]] and
+      (__ \ "healthChecks").write[Seq[MarathonHealthCheck]] and
       (__ \ "instances").write[Int] and
-      (__ \ "ipAddress").writeNullable[IPPerTaskInfo] and
-      (__ \ "labels").writeNullable[Map[String,String]] and
+      (__ \ "ipAddress").write[JsValue] and
+      (__ \ "labels").write[Map[String,String]] and
       (__ \ "mem").write[Double] and
-      (__ \ "portDefinitions").writeNullable[Seq[PortDefinition]] and
-      (__ \ "ports").writeNullable[Seq[Int]] and
-      (__ \ "user").writeNullable[String] and
-      (__ \ "deployments").writeNullable[Seq[JsObject]] and
+      (__ \ "portDefinitions").write[Seq[PortDefinition]] and
+      (__ \ "ports").write[Seq[Int]] and
+      (__ \ "user").write[JsValue] and
+      (__ \ "constraints").write[Seq[Seq[String]]] and
+      (__ \ "deployments").write[Seq[JsObject]] and
       (__ \ "tasksStaged").writeNullable[Int] and
       (__ \ "tasksRunning").writeNullable[Int] and
       (__ \ "tasksHealthy").writeNullable[Int] and
       (__ \ "tasksUnhealthy").writeNullable[Int]
     )(
     (a: MarathonApp) => (
-      a.id, a.args.map(_.toSeq), a.container, a.cmd, a.cpus, a.env, a.healthChecks.map(_.toSeq), a.instances, a.ipAddress, a.labels,
-      a.mem, a.portDefinitions.map(_.toSeq), a.ports.map(_.toSeq), a.user, a.deployments.map(_.toSeq),
+      a.id, a.acceptedResourceRoles.getOrElse(Seq.empty),
+      a.args.map(_.toSeq).getOrElse(Seq.empty), a.container, a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
+      a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
+      a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
+      a.mem, a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty), a.ports.map(_.toSeq).getOrElse(Seq.empty),
+      a.user.fold[JsValue](JsNull)(JsString(_)),
+      a.constraints.getOrElse(Seq.empty),
+      a.deployments.getOrElse(Seq.empty),
       a.tasksStaged, a.tasksRunning, a.tasksHealthy, a.tasksUnhealthy
     )
   )
@@ -284,6 +298,8 @@ package object marathon {
       num_instances = app.instances,
       network = app.container.docker map {_.network} getOrElse "",
       cmd = app.cmd,
+      constraints = app.constraints,
+      acceptedResourceRoles = app.acceptedResourceRoles,
       args = app.args,
       force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
       health_checks = app.healthChecks map { _.map{ check => HealthCheck(
@@ -337,6 +353,8 @@ package object marathon {
       memory <- Try{props("memory").toInt}
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
+      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[Seq[String]]]}
+      acceptedResourceRoles = props.get("acceptedResourceRoles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
       volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
@@ -370,6 +388,8 @@ package object marathon {
       mem = memory,
       instances = num_instances,
       cmd = cmd,
+      constraints = constraints,
+      acceptedResourceRoles = acceptedResourceRoles,
       args = args,
       ports = None,
       portDefinitions = port_mappings map {_.map {
