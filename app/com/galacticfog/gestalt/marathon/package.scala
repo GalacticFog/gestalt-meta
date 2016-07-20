@@ -352,7 +352,13 @@ package object marathon {
       memory <- Try{props("memory").toInt}
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
-      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]].map(_.split(":").toSeq)}
+      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]].map(_.split(":") match {
+        case Array(f1,f2) =>
+          Seq(f1,f2.toUpperCase)
+        case Array(f1,f2,f3) =>
+          Seq(f1,f2.toUpperCase,f3)
+        case e => e.toSeq
+      })}
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
@@ -388,7 +394,7 @@ package object marathon {
       instances = num_instances,
       cmd = cmd,
       constraints = constraints,
-      acceptedResourceRoles = acceptedResourceRoles,
+      acceptedResourceRoles = acceptedResourceRoles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = args,
       ports = None,
       portDefinitions = port_mappings map {_.map {
@@ -517,12 +523,20 @@ package object marathon {
     MarathonApp(
       id = "/" + name.stripPrefix("/"),
       container = container,
-      constraints = props.constraints.map(_.map(_.split(":").toSeq)),
+      constraints = props.constraints.map(_.map(
+        _.split(":") match {
+          case Array(f1,f2) =>
+            Seq(f1,f2.toUpperCase)
+          case Array(f1,f2,f3) =>
+            Seq(f1,f2.toUpperCase,f3)
+          case e => e.toSeq
+        }
+      )),
       cpus = props.cpus,
       mem = props.memory,
       instances = props.num_instances,
       cmd = props.cmd,
-      acceptedResourceRoles = props.accepted_resource_roles,
+      acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
       ports = None,
       portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {

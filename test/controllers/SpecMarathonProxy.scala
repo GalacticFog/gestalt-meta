@@ -275,7 +275,40 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       ))
     }
 
+    "generate marathon payload with empty acceptedResourceRoles" in {
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          accepted_resource_roles = Option(Seq.empty),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).as[MarathonApp]
+      marApp.container.docker must beSome
+      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
+      marApp.acceptedResourceRoles must beNone
+    }
 
+    "generate marathon payload with lower case constraints" in {
+      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          constraints = Some(Seq("rack_id:like:1", "hostname:unique")),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).as[MarathonApp]
+      marApp.container.docker must beSome
+      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
+      marApp.constraints must beSome(containTheSameElementsAs(Seq(
+        Seq("rack_id","LIKE","1"),
+        Seq("hostname","UNIQUE")
+      )))
+    }
 
     "generate marathon payload using provider networks" in {
       val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
