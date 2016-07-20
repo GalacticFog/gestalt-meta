@@ -153,13 +153,12 @@ object Meta extends Authorization {
   // GROUPS
   // --------------------------------------------------------------------------   
   def postGroupFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createGroupCommon(fqid(fqon), request.body)  
+    Future {
+      createGroupCommon(fqid(fqon), request.body)  
+    }
   }
   
-  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    CreateSynchronizedResult(org, ResourceIds.Group, json)(
-      Security.createGroup, createNewMetaGroup[JsValue])
-  }
+
   
   /**
    * 
@@ -249,7 +248,28 @@ object Meta extends Authorization {
   def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createUserCommon(fqid(fqon), request.body)
   }
-
+  
+  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    
+    Authorize(org, Actions.Group.Create, request.identity) {
+      
+      CreateSynchronized(org, ResourceIds.Group, request.body)(
+          Security.createGroup, createNewMetaGroup[JsValue]) match {
+        case Failure(err) => HandleExceptions(err)
+        case Success(res) => {
+          val user = request.identity
+          Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
+            generateEntitlements(
+              user.account.id, org, res.id,
+              Seq(ResourceIds.Group), ACTIONS_CRUD)
+          }
+          Created(Output.renderInstance(res, META_URL))
+        }
+      }
+    }
+//    CreateSynchronizedResult(org, ResourceIds.Group, json)(
+//      Security.createGroup, createNewMetaGroup[JsValue])
+  }
   def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
     
     Authorize(org, Actions.User.Create, request.identity) {
