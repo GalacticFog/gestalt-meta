@@ -88,19 +88,19 @@ object LicenseController extends Authorization {
    * GET /{fqon}/licenses
    */
   def getLicenses(fqon: String) = Authenticate(fqon) { implicit request =>
-     val transform = request.queryString.getOrElse("transform", "true") != "false"
-        try {
+    val transform = request.queryString.getOrElse("transform", "true") != "false"
+    val expand = getExpandParam(request.queryString)
+    try {
+      if (transform == true && expand == true) {
+        Ok( JsArray().append(Json.parse(GestaltLicense.instance().view())) )
+      } else {
           val org = fqid(fqon)
           val licenses = ResourceFactory.findAll(ResourceIds.License, org)
-          if (getExpandParam(request.queryString)) {
-            val licenses = JsArray().append(Json.parse(GestaltLicense.instance().view()))
-            Ok( licenses )
-          } else {
-            Ok(Output.renderLinks(licenses, META_URL))
-          }
-        } catch {
-          case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
-        }
+          Ok(Output.renderLinks(licenses, META_URL))
+      }
+    } catch {
+      case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
+    }
   }
 
 
