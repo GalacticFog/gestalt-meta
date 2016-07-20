@@ -222,7 +222,7 @@ package object marathon {
 
   implicit lazy val marathonAppWrites = (
     (__ \ "id").write[String] and
-      (__ \ "acceptedResourceRoles").write[Seq[String]] and
+      (__ \ "acceptedResourceRoles").write[JsValue] and
       (__ \ "args").write[Seq[String]] and
       (__ \ "container").write[MarathonContainer] and
       (__ \ "cmd").write[JsValue] and
@@ -244,7 +244,7 @@ package object marathon {
       (__ \ "tasksUnhealthy").writeNullable[Int]
     )(
     (a: MarathonApp) => (
-      a.id, a.acceptedResourceRoles.getOrElse(Seq.empty),
+      a.id, a.acceptedResourceRoles.fold[JsValue](JsNull)(Json.toJson(_)),
       a.args.map(_.toSeq).getOrElse(Seq.empty), a.container, a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
       a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
       a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
@@ -354,7 +354,7 @@ package object marathon {
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
       constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[Seq[String]]]}
-      acceptedResourceRoles = props.get("acceptedResourceRoles") map {json => Json.parse(json).as[Seq[String]]}
+      acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
       volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
