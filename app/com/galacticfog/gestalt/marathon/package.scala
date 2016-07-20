@@ -40,33 +40,32 @@ package object marathon {
       host_port: Int = 0, 
       service_port: Int = 0,
       label: Option[String] = None)
-      
-  case class InputContainerProperties(
-      container_type: String,
-      image: String,
-      provider: InputProvider,
-      port_mappings: Iterable[PortMapping] = Seq(),
-      cpus: Double = 0.2,
-      memory: Int = 128,
-      num_instances: Int = 1,
-      network: String = "BRIDGE",
-      cmd: Option[String] = None,
-      constraints: Option[Seq[Seq[String]]] = None,
-      acceptedResourceRoles: Option[Seq[String]] = None,
-      args: Option[Iterable[String]] = None,
-      force_pull: Boolean = false,
-      health_checks: Option[Iterable[HealthCheck]] = None,
-      volumes: Option[Iterable[Volume]] = None,
-      labels: Option[Map[String,String]] = None,
-      env: Option[Map[String,String]] = None,
-      user: Option[String] = None)
+
+  case class InputContainerProperties(container_type: String,
+                                      image: String,
+                                      provider: InputProvider,
+                                      port_mappings: Iterable[PortMapping] = Seq(),
+                                      cpus: Double = 0.2,
+                                      memory: Int = 128,
+                                      num_instances: Int = 1,
+                                      network: String = "BRIDGE",
+                                      cmd: Option[String] = None,
+                                      constraints: Option[Seq[String]] = None,
+                                      accepted_resource_roles: Option[Seq[String]] = None,
+                                      args: Option[Iterable[String]] = None,
+                                      force_pull: Boolean = false,
+                                      health_checks: Option[Iterable[HealthCheck]] = None,
+                                      volumes: Option[Iterable[Volume]] = None,
+                                      labels: Option[Map[String,String]] = None,
+                                      env: Option[Map[String,String]] = None,
+                                      user: Option[String] = None)
 
   case class InputContainer(
       id: UUID = UUID.randomUUID,
       name: String,
       resource_type: UUID = ResourceIds.Container,
       properties: InputContainerProperties)
-      
+
   case class KeyValuePair(key: String, value: String)
 
   case class MarathonPortMapping(
@@ -171,7 +170,7 @@ package object marathon {
 
   implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
-  
+
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
   implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
   implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
@@ -265,13 +264,13 @@ package object marathon {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
-    
+
     val app = inputJson.validate[MarathonApp].map {
       case app: MarathonApp => app
     }.recoverTotal { e =>
       throw new BadRequestException("Could not parse Marathon App JSON: " + JsError.toFlatJson(e).toString)
     }
-    
+
     log.debug("Marathon App:\n" + app)
     log.debug("Looking up Provider : " + providerId)
     val provider = {
@@ -281,7 +280,7 @@ package object marathon {
       InputProvider(id = p.id, name = Some(p.name))
     }
     log.debug("Provider:\n" + provider)
-    
+
     val props = InputContainerProperties(
       container_type = "DOCKER",
       image = app.container.docker map {_.image} getOrElse "",
@@ -298,8 +297,8 @@ package object marathon {
       num_instances = app.instances,
       network = app.container.docker map {_.network} getOrElse "",
       cmd = app.cmd,
-      constraints = app.constraints,
-      acceptedResourceRoles = app.acceptedResourceRoles,
+      constraints = app.constraints.map(_.map(_.foldLeft("")(_ + ":" + _))),
+      accepted_resource_roles = app.acceptedResourceRoles,
       args = app.args,
       force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
       health_checks = app.healthChecks map { _.map{ check => HealthCheck(
