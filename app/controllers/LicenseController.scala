@@ -97,9 +97,12 @@ object LicenseController extends Authorization {
         } catch {
           case e: Throwable =>
             try {
+              log.info("Trying to install license from meta.")
               postLicense(dflt_lic)
+              log.info("Default license installed from meta.")
             } catch {
               case e: Throwable =>
+                log.error(s"ERROR - Installing default license from meta: ${e.getMessage}")
                 // be silent - shouldn't be posting on a get anyway - fix me
             }
         }
@@ -108,7 +111,7 @@ object LicenseController extends Authorization {
     val transform = request.queryString.getOrElse("transform", "true") != "false"
     val expand = getExpandParam(request.queryString)
     try {
-      if (transform == true && expand == true) {
+      if (expand == true) {
         Ok( JsArray().append(Json.parse(GestaltLicense.instance().view())) )
       } else {
           val org = fqid(fqon)
