@@ -353,7 +353,7 @@ package object marathon {
       memory <- Try{props("memory").toInt}
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
-      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[Seq[String]]]}
+      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]].map(_.split(":").toSeq)}
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
