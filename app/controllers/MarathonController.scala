@@ -388,9 +388,9 @@ object MarathonController extends Authorization {
               case Failure(err) => Future { HandleExceptions(err) }
               case Success(container) => {
 
-                processContainerEvent(env, container, provider.id, ContainerEvents.PostCreate) match {
+                processContainerEvent(env, container, provider.id, ContainerEvents.Create) match {
                   case Failure(e) => log.error("Failed Publishing Event: " + e.getMessage)
-                  case Success(_) => log.debug(s"Success: Published ${ContainerEvents.PostCreate}")
+                  case Success(_) => log.debug(s"Success: Published ${ContainerEvents.Create}")
                 }
                 
                 Future { Created(Output.renderInstance(container)) }

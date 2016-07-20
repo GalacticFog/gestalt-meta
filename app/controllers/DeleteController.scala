@@ -70,8 +70,7 @@ object DeleteController extends Authorization {
       case _ => cmps(cmps.size - 2)
     }
     
-    val resourceId = UUID.fromString(cmps.last)
-    
+
     def lookupResource(resourceId: UUID) = {
       ResourceFactory.findById(resourceId) match {
         case None => throw new ResourceNotFoundException(s"Resource with ID '${resourceId}' not found.")
@@ -83,6 +82,7 @@ object DeleteController extends Authorization {
     } 
     
     if (Seq("providers", "rules").contains(typeName)) {
+      val resourceId = UUID.fromString(cmps.last)
       lookupResource(resourceId)
     } else Resource.findByPath(p)
     
