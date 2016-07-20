@@ -38,6 +38,7 @@ object LicenseController extends Authorization {
    */
   def postLicense(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     
+    log.info(s"INFO - posting a new license in meta.")
     Future {
       
       // Get the Org UUID from its FQON
@@ -63,8 +64,11 @@ object LicenseController extends Authorization {
       }
       // Install the license
       try {
+        log.info(s"INFO - getting the license string from properties.data in meta.")
         val licenseText = (request.body \ "properties" \ "data").as[String]
+        log.info(s"INFO - installing the license with GestaltLicense.")
         GestaltLicense.instance().install(licenseText)
+        log.info(s"INFO - license installed.  Creating the license resource.")
         createLicense(org) match {
           case Failure(e) => HandleExceptions(e)
           case Success(license) => {
@@ -92,21 +96,20 @@ object LicenseController extends Authorization {
        "dg9PazNeO0oMPxx5jzrSJ3mCX8FbB4mXCe8jZ8L7vuLUrZclOYWtIVVhNfOtEAE/A0SyiSu2dVbvhA0qXyz4sfjSPJa67Ckkp4uKHycWjQ+GdDD8inTaZkvneCrXcfqq" +
        "4yPXfprZej9izVSOsMF/3R4lIip9rZXAGrGX3oUSvs6sW+DNrxl18/b24/2SMCoRUDKhf5CtTD5sX6Q2jQu82/C0LcGw6evdLp97zTBjtV5BNmiHyIkiohaxr+/F9kyP" +
        "O+brUjnyJBwP0mt87q2EdZIBKqBggdY24DEG92g6b3fjcuCyUkjPPSEuSBW6fjs4/+a6Ac3h"
+    log.info(s"INFO - verifying license from meta.")
+    try {
+      GestaltLicense.instance().verify()
+    } catch {
+      case e: Throwable =>
         try {
-          GestaltLicense.instance().verify()
+          log.info("Trying to install license from meta.")
+          postLicense(dflt_lic)
+          log.info("Default license installed from meta.")
         } catch {
           case e: Throwable =>
-            try {
-              log.info("Trying to install license from meta.")
-              postLicense(dflt_lic)
-              log.info("Default license installed from meta.")
-            } catch {
-              case e: Throwable =>
-                log.error(s"ERROR - Installing default license from meta: ${e.getMessage}")
-                // be silent - shouldn't be posting on a get anyway - fix me
-            }
+            log.error(s"ERROR - Installing default license from meta: ${e.getMessage}")
         }
-
+    }
 
     val transform = request.queryString.getOrElse("transform", "true") != "false"
     val expand = getExpandParam(request.queryString)
@@ -114,9 +117,9 @@ object LicenseController extends Authorization {
       if (expand == true) {
         Ok( JsArray().append(Json.parse(GestaltLicense.instance().view())) )
       } else {
-          val org = fqid(fqon)
-          val licenses = ResourceFactory.findAll(ResourceIds.License, org)
-          Ok(Output.renderLinks(licenses, META_URL))
+        val org = fqid(fqon)
+        val licenses = ResourceFactory.findAll(ResourceIds.License, org)
+        Ok(Output.renderLinks(licenses, META_URL))
       }
     } catch {
       case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
