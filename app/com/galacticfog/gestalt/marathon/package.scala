@@ -517,10 +517,12 @@ package object marathon {
     MarathonApp(
       id = "/" + name.stripPrefix("/"),
       container = container,
+      constraints = props.constraints.map(_.map(_.split(":").toSeq)),
       cpus = props.cpus,
       mem = props.memory,
       instances = props.num_instances,
       cmd = props.cmd,
+      acceptedResourceRoles = props.accepted_resource_roles,
       args = props.args,
       ports = None,
       portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {
