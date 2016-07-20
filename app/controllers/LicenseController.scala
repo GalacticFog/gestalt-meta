@@ -99,6 +99,7 @@ object LicenseController extends Authorization {
     log.info(s"INFO - verifying license from meta.")
     try {
       GestaltLicense.instance().verify()
+      GestaltLicense.instance().view()
     } catch {
       case e: Throwable =>
         try {
