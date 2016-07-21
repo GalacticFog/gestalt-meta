@@ -233,7 +233,7 @@ package object marathon {
       (__ \ "labels").write[Map[String,String]] and
       (__ \ "mem").write[Double] and
       (__ \ "portDefinitions").write[Seq[PortDefinition]] and
-      (__ \ "ports").write[Seq[Int]] and
+      (__ \ "ports").writeNullable[Iterable[Int]] and
       (__ \ "user").write[JsValue] and
       (__ \ "constraints").write[Seq[Seq[String]]] and
       (__ \ "deployments").write[Seq[JsObject]] and
@@ -247,7 +247,9 @@ package object marathon {
       a.args.map(_.toSeq).getOrElse(Seq.empty), a.container, a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
       a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
       a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
-      a.mem, a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty), a.ports.map(_.toSeq).getOrElse(Seq.empty),
+      a.mem,
+      a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty),
+      a.ports,
       a.user.fold[JsValue](JsNull)(JsString(_)),
       a.constraints.getOrElse(Seq.empty),
       a.deployments.getOrElse(Seq.empty),
@@ -396,7 +398,7 @@ package object marathon {
       constraints = constraints,
       acceptedResourceRoles = acceptedResourceRoles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = args,
-      ports = None,
+      ports = port_mappings map {_.map { _.host_port }},
       portDefinitions = port_mappings map {_.map {
         pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
       } },
