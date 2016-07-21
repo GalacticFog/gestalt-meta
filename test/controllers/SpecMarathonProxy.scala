@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import org.bouncycastle.util.IPAddress
-import org.specs2.matcher.{JsonMatchers, Expectations}
+import org.specs2.matcher.{Matcher, JsonType, JsonMatchers, Expectations}
 
 import org.specs2.mock._
 import org.specs2.mock.mockito._
@@ -17,12 +17,63 @@ import org.specs2.specification.Scope
 import play.api.Logger
 import play.api.libs.json._
 
+import scala.util.parsing.json.JSONArray
+
 
 class SpecMarathonProxy extends Specification with MocksCreation with MockitoStubs with CapturedArgument with MockitoMatchers with ArgThat with Expectations with JsonMatchers {
 
   val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"
   val fqon: String = "galacticfog.engineering.test"
+
+  def marathonProviderWithNetworks = {
+    val p = mock[GestaltResourceInstance]
+    val config = Json.obj(
+      "networks" -> Json.arr(Json.obj(
+        "name" -> "apps",
+        "id" -> "8332a2e4711a",
+        "description" -> "full ingress/egress",
+        "sub_net" -> "192.168.0.0/16"
+      ))
+    ).toString
+    p.properties returns Some(Map(
+      "config" -> config
+    ))
+    val pid = UUID.randomUUID()
+    p.id returns pid
+    p
+  }
+
+  def marathonProviderWithoutNetworks = {
+    val p = mock[GestaltResourceInstance]
+    p.properties returns Some(Map())
+    val pid = UUID.randomUUID()
+    p.id returns pid
+    p
+  }
+
+  def marathonProviderWithStdNetworks = {
+    val p = mock[GestaltResourceInstance]
+    val config = Json.obj(
+      "networks" -> Json.parse(
+        """[
+          |  {"name": "BRIDGE"},
+          |  {"name": "HOST"},
+          |  {"name": "web-net"},
+          |  {"name": "db-net"}
+          |]
+        """.stripMargin
+      )
+    ).toString
+    p.properties returns Some(Map(
+      "config" -> config
+    ))
+    val pid = UUID.randomUUID()
+    p.id returns pid
+    p
+  }
+
+
 
   "MarathonClient" should {
 
@@ -150,248 +201,6 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       )
     }
 
-    def marathonProviderWithNetworks = {
-      val p = mock[GestaltResourceInstance]
-      val config = Json.obj(
-        "networks" -> Json.arr(Json.obj(
-          "name" -> "apps",
-          "id" -> "8332a2e4711a",
-          "description" -> "full ingress/egress",
-          "sub_net" -> "192.168.0.0/16"
-        ))
-      ).toString
-      p.properties returns Some(Map(
-        "config" -> config
-      ))
-      val pid = UUID.randomUUID()
-      p.id returns pid
-      p
-    }
-
-    def marathonProviderWithoutNetworks = {
-      val p = mock[GestaltResourceInstance]
-      p.properties returns Some(Map())
-      val pid = UUID.randomUUID()
-      p.id returns pid
-      p
-    }
-
-    def marathonProviderWithStdNetworks = {
-      val p = mock[GestaltResourceInstance]
-      val config = Json.obj(
-        "networks" -> Json.parse(
-          """[
-            |  {"name": "bridge"},
-            |  {"name": "host"},
-            |  {"name": "web-net"},
-            |  {"name": "db-net"}
-            |]
-          """.stripMargin
-        )
-      ).toString
-      p.properties returns Some(Map(
-        "config" -> config
-      ))
-      val pid = UUID.randomUUID()
-      p.id returns pid
-      p
-    }
-
-    "throw exception for marathon payload with invalid provider network" in {
-      toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithNetworks.id),
-          network = "missing"
-        ))
-      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithNetworks.id),
-          network = "HOST"
-        ))
-      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithNetworks.id),
-          network = "BRIDGE"
-        ))
-      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-    }
-
-    "generate marathon payload with support for standard host networking" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
-          port_mappings = Seq(
-            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
-          ),
-          network = "HOST",
-          num_instances = 1
-        ))
-      ), marathonProviderWithoutNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "HOST"
-      marApp.container.docker.get.portMappings must beNone
-      marApp.ports must beSome(Iterable())
-      marApp.portDefinitions must beSome
-      marApp.ipAddress must beNone
-      marApp.portDefinitions.get must containTheSameElementsAs(Seq(
-        PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
-        PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
-      ))
-    }
-
-    "generate marathon payload with support for standard bridge networking" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
-          port_mappings = Seq(
-            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
-          ),
-          network = "BRIDGE",
-          num_instances = 1
-        ))
-      ), marathonProviderWithoutNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.ports must beSome(Iterable())
-      marApp.portDefinitions must beSome
-      marApp.ipAddress must beNone
-      marApp.portDefinitions.get must containTheSameElementsAs(Seq(
-        PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
-        PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
-      ))
-    }
-
-    "generate marathon payload with empty acceptedResourceRoles" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
-          accepted_resource_roles = Option(Seq.empty),
-          network = "BRIDGE",
-          num_instances = 1
-        ))
-      ), marathonProviderWithoutNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.acceptedResourceRoles must beNone
-    }
-
-    "generate marathon payload with lower case constraints" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
-          constraints = Some(Seq("rack_id:like:1", "hostname:unique")),
-          network = "BRIDGE",
-          num_instances = 1
-        ))
-      ), marathonProviderWithoutNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.constraints must beSome(containTheSameElementsAs(Seq(
-        Seq("rack_id","LIKE","1"),
-        Seq("hostname","UNIQUE")
-      )))
-    }
-
-    "generate marathon payload using provider networks" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithNetworks.id),
-          port_mappings = Seq(
-            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
-          ),
-          network = "apps",
-          num_instances = 1
-        ))
-      ), marathonProviderWithNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "HOST"
-      marApp.container.docker.get.parameters must beSome(Seq(KeyValuePair("net", "apps")))
-      marApp.ports must beSome(Iterable())
-      marApp.portDefinitions must beSome(Iterable())
-      marApp.ipAddress must beSome(IPPerTaskInfo(
-        discovery = Some(DiscoveryInfo(
-          ports = Some(Seq(
-            PortDiscovery(number = 80, name = "http", protocol = "tcp"),
-            PortDiscovery(number = 443, name = "https", protocol = "tcp")
-          ))
-        ))
-      ))
-    }
-
-    "generate marathon payload with support for standard host networking on calico provider" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithStdNetworks.id),
-          port_mappings = Seq(
-            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
-          ),
-          network = "host",
-          num_instances = 1
-        ))
-      ), marathonProviderWithStdNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "HOST"
-      marApp.container.docker.get.parameters must beNone
-      marApp.container.docker.get.portMappings must beNone
-      marApp.ports must beSome(Iterable())
-      marApp.portDefinitions must beSome
-      marApp.ipAddress must beNone
-      marApp.portDefinitions.get must containTheSameElementsAs(Seq(
-        PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
-        PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
-      ))
-    }
-
-    "generate marathon payload with support for standard bridge networking on calico provider" in {
-      val marApp = Json.toJson(toMarathonApp("test-container", Json.obj(
-        "properties" -> Json.toJson(InputContainerProperties(
-          container_type = "DOCKER",
-          image = "nginx:latest",
-          provider = InputProvider(id = marathonProviderWithStdNetworks.id),
-          port_mappings = Seq(
-            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
-          ),
-          network = "bridge",
-          num_instances = 1
-        ))
-      ), marathonProviderWithStdNetworks)).as[MarathonApp]
-      marApp.container.docker must beSome
-      marApp.container.docker.get.network.toUpperCase must_== "BRIDGE"
-      marApp.container.docker.get.parameters must beNone
-      marApp.ports must beSome(Iterable())
-      marApp.ipAddress must beNone
-      marApp.portDefinitions must beSome
-      marApp.portDefinitions.get must containTheSameElementsAs(Seq(
-        PortDefinition(80, Some("tcp"), name = Some("http"), labels = None),
-        PortDefinition(443, Some("tcp"), name = Some("https"), labels = None)
-      ))
-    }
-
 
     "serialize marathon volumes appropriately" in {
       val marValidJson =  Json.obj(
@@ -461,73 +270,21 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marValidJson.as[MarathonApp] must_== marApp
     }
 
-    "transform to Marathon API appropriately (host-style)" in {
-      val providerId = UUID.randomUUID()
-      val name = "/some/app/id"
-      val resourceJson = Json.obj(
-        "properties" -> Json.obj(
-          "container_type" -> "DOCKER",
-          "image" -> "some/image:tag",
-          "provider" -> Json.obj(
-            "id" -> providerId
-          ),
-          "port_mappings" -> Json.arr(),
-          "cmd" -> "/usr/bin/someCmd",
-          "cpus" -> 2.0,
-          "memory" -> 256.0,
-          "num_instances" -> 3,
-          "network" -> "HOST",
-          "force_pull" -> true,
-          "user" -> "someUser",
-          "env" -> Json.obj(
-            "env_var_1" -> "env_val_1"
-          )
-        )
-      )
-      val provider = mock[GestaltResourceInstance]
-      val config = Json.obj(
-        "networks" -> Json.arr(Json.obj(
-          "name" -> "HOST",
-          "id" -> "8332a2e4711a",
-          "description" -> "",
-          "sub_net" -> "192.168.0.0/16"
-        ))
-      ).toString
-      provider.properties returns Some(Map(
-        "config" -> config
-      ))
-      provider.id returns providerId
+  }
 
-      val marApp = MarathonApp(
-        id = name,
-        container = MarathonContainer(
-          docker = Some(MarathonDocker(
-            image = "some/image:tag",
-            network = "HOST",
-            forcePullImage = Some(true),
-            parameters = Some(Seq(
-              KeyValuePair("user","someUser")
-            ))
-          )),
-          containerType = "DOCKER"
-        ),
-        cpus = 2.0,
-        mem = 256.0,
-        instances = 3,
-        cmd = Some("/usr/bin/someCmd"),
-        args = None,
-        ipAddress = None,
-        labels = None,
-        portDefinitions = Some(Seq()),
-        healthChecks = None,
-        env = Some(Map(
-          "env_var_1" -> "env_val_1"
-        )),
-        user = None
-      )
+  "Marathon app payload generation" should {
 
-      marApp must_== toMarathonApp(name, resourceJson, provider)
-    }
+    def aPortWith(port: Matcher[JsonType], name: Matcher[JsonType],  protocol: Matcher[JsonType]): Matcher[String] =
+      /("port").andHave(port) and /("name").andHave(name) and /("protocol").andHave(protocol)
+
+    def aDiscoveryPortWith(port: Matcher[JsonType], name: Matcher[JsonType],  protocol: Matcher[JsonType]): Matcher[String] =
+      /("number").andHave(port) and /("name").andHave(name) and /("protocol").andHave(protocol)
+
+    def havePortDefinitions(ports: Matcher[String]*): Matcher[String] =
+      /("portDefinitions").andHave(allOf(ports:_*))
+
+    def haveIPPerTaskPortDiscovery(ports: Matcher[String]*): Matcher[String] =
+      /("ipAddress")./("discovery")./("ports").andHave(allOf(ports:_*))
 
     "transform to Marathon API appropriately (calico-style)" in {
       val provider = marathonProviderWithStdNetworks
@@ -586,8 +343,255 @@ class SpecMarathonProxy extends Specification with MocksCreation with MockitoStu
       marApp must_== toMarathonApp(name, resourceJson, provider)
     }
 
-  }
+    "transform to Marathon API appropriately (host-style)" in {
+      val providerId = UUID.randomUUID()
+      val name = "/some/app/id"
+      val resourceJson = Json.obj(
+        "properties" -> Json.obj(
+          "container_type" -> "DOCKER",
+          "image" -> "some/image:tag",
+          "provider" -> Json.obj(
+            "id" -> providerId
+          ),
+          "port_mappings" -> Json.arr(),
+          "cmd" -> "/usr/bin/someCmd",
+          "cpus" -> 2.0,
+          "memory" -> 256.0,
+          "num_instances" -> 3,
+          "network" -> "HOST",
+          "force_pull" -> true,
+          "user" -> "someUser",
+          "env" -> Json.obj(
+            "env_var_1" -> "env_val_1"
+          )
+        )
+      )
+      val provider = mock[GestaltResourceInstance]
+      val config = Json.obj(
+        "networks" -> Json.arr(Json.obj(
+          "name" -> "HOST",
+          "id" -> "8332a2e4711a",
+          "description" -> "",
+          "sub_net" -> "192.168.0.0/16"
+        ))
+      ).toString
+      provider.properties returns Some(Map(
+        "config" -> config
+      ))
+      provider.id returns providerId
 
+      val marApp = MarathonApp(
+        id = name,
+        container = MarathonContainer(
+          docker = Some(MarathonDocker(
+            image = "some/image:tag",
+            network = "HOST",
+            forcePullImage = Some(true),
+            parameters = Some(Seq(
+              KeyValuePair("user","someUser")
+            ))
+          )),
+          containerType = "DOCKER"
+        ),
+        cpus = 2.0,
+        mem = 256.0,
+        instances = 3,
+        cmd = Some("/usr/bin/someCmd"),
+        args = None,
+        ipAddress = None,
+        labels = None,
+        portDefinitions = Some(Seq()),
+        ports = None,
+        healthChecks = None,
+        env = Some(Map(
+          "env_var_1" -> "env_val_1"
+        )),
+        user = None
+      )
+
+      marApp must_== toMarathonApp(name, resourceJson, provider)
+    }
+
+    "throw exception for marathon payload with invalid provider network" in {
+      toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithNetworks.id),
+          network = "missing"
+        ))
+      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
+      toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithNetworks.id),
+          network = "HOST"
+        ))
+      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
+      toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithNetworks.id),
+          network = "BRIDGE"
+        ))
+      ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
+    }
+
+    "generate marathon payload with support for standard host networking" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          port_mappings = Seq(
+            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          ),
+          network = "HOST",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("HOST"))
+      marJson must not /("container") /("docker") /("portMappings")
+      marJson must not /("ports")
+      marJson must not /("ipAddress")
+      marJson must havePortDefinitions(
+        aPortWith(port = 80, name = "http", protocol = "tcp"),
+        aPortWith(port = 443, name = "https", protocol = "tcp")
+      )
+    }
+
+    "generate marathon payload with support for standard bridge networking" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          port_mappings = Seq(
+            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          ),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("BRIDGE"))
+      marJson must not /("ports")
+      marJson must not /("ipAddress")
+      marJson must havePortDefinitions(
+        aPortWith(port = 80, name = "http", protocol = "tcp"),
+        aPortWith(port = 443, name = "https", protocol = "tcp")
+      )
+    }
+
+    "generate marathon payload with empty acceptedResourceRoles" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          accepted_resource_roles = Option(Seq.empty),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("BRIDGE"))
+      marJson must not /("acceptedResourceRoles")
+    }
+
+    "generate valid marathon payload from lower case constraints" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithoutNetworks.id),
+          constraints = Some(Seq("rack_id:like:1", "hostname:unique")),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithoutNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("BRIDGE"))
+      marJson must /("constraints") */("UNIQUE")
+      marJson must /("constraints") */("LIKE")
+    }
+
+    "generate marathon payload using provider networks" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithNetworks.id),
+          port_mappings = Seq(
+            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          ),
+          network = "apps",
+          num_instances = 1
+        ))
+      ), marathonProviderWithNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("HOST"))
+      marJson must /("container") /("docker") /("parameters") /#(0) /#(0) / "net"
+      marJson must /("container") /("docker") /("parameters") /#(0) /#(1) / "apps"
+      marJson must not / "ports"
+      marJson must havePortDefinitions()
+      marJson must haveIPPerTaskPortDiscovery(
+        aDiscoveryPortWith(port = 80, name = "http", protocol = "tcp"),
+        aDiscoveryPortWith(port = 443, name = "https", protocol = "tcp")
+      )
+    }
+
+    "generate marathon payload with support for standard host networking on calico provider" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithStdNetworks.id),
+          port_mappings = Seq(
+            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          ),
+          network = "HOST",
+          num_instances = 1
+        ))
+      ), marathonProviderWithStdNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("HOST"))
+      marJson must not /("container") /("docker") / "portMappings"
+      marJson must not /("container") /("docker") / "parameters"
+      marJson must not / "ports"
+      marJson must not / "ipAddress"
+      marJson must havePortDefinitions(
+        aPortWith(port = 80, name = "http", protocol = "tcp"),
+        aPortWith(port = 443, name = "https", protocol = "tcp")
+      )
+    }
+
+    "generate marathon payload with support for standard bridge networking on calico provider" in {
+      val marJson = Json.toJson(toMarathonApp("test-container", Json.obj(
+        "properties" -> Json.toJson(InputContainerProperties(
+          container_type = "DOCKER",
+          image = "nginx:latest",
+          provider = InputProvider(id = marathonProviderWithStdNetworks.id),
+          port_mappings = Seq(
+            PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+            PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          ),
+          network = "BRIDGE",
+          num_instances = 1
+        ))
+      ), marathonProviderWithStdNetworks)).toString
+      marJson must /("container") /("docker") /("network" -> beEqualTo("BRIDGE"))
+      marJson must not /("container") /("docker") / "parameters"
+      marJson must not / "ports"
+      marJson must not / "ipAddress"
+      marJson must havePortDefinitions(
+        aPortWith(port = 80, name = "http", protocol = "tcp"),
+        aPortWith(port = 443, name = "https", protocol = "tcp")
+      )
+    }
+
+  }
 
 }
 

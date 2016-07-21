@@ -123,3 +123,9 @@ libraryDependencies += "com.typesafe.play" % "play-json_2.11" % "2.4.0-M2"
 libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
 
 
+libraryDependencies ++= Seq("org.specs2" %% "specs2-core" % "3.8.4" % "test")
+
+libraryDependencies ++= Seq("org.specs2" %% "specs2-matcher-extra" % "3.8.4" % "test")
+
+scalacOptions in Test ++= Seq("-Yrangepos")
+
