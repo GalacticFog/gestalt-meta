@@ -27,17 +27,18 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 
 import play.api.{Logger => log}
 
-  import play.api.mvc.Result
-  import play.api.mvc.RequestHeader
-  import play.api.mvc.{Security => PlaySecurity}
-  import play.api.libs.ws.WS
-  import play.api.Play.current
-  import com.galacticfog.gestalt.marathon.MarathonClient
-  import scala.concurrent.ExecutionContext.Implicits.global
-  import scala.concurrent.Future
-  import scala.concurrent.duration._
-  import scala.concurrent.Await
+import play.api.mvc.Result
+import play.api.mvc.RequestHeader
+import play.api.mvc.{Security => PlaySecurity}
+import play.api.libs.ws.WS
+import play.api.Play.current
+import com.galacticfog.gestalt.marathon.MarathonClient
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
+
 
 object DeleteController extends Authorization {
  
@@ -50,67 +51,13 @@ object DeleteController extends Authorization {
         ResourceIds.Lambda -> deleteExternalLambda,
         ResourceIds.Api -> deleteExternalApi,
         ResourceIds.ApiEndpoint -> deleteExternalEndpoint))
-  
-  
-  /*
-   * TODO: More validation on path
-   * Don't assume last component is UUID - protect
-   */
-  def resourceFromPath(p: String): Option[GestaltResourceInstance] = {
-    
-    val cmps = { p.trim
-        .stripPrefix("/")
-        .stripSuffix("/")
-        .split("/").toList filter { _.trim != "" }
-    }
-    
-    val typeName = cmps size match {
-      case 0 => throw new BadRequestException(s"Invalid path. found: '$p'")
-      case 1 => cmps(0)
-      case _ => cmps(cmps.size - 2)
-    }
-    
 
-    def lookupResource(resourceId: UUID) = {
-      ResourceFactory.findById(resourceId) match {
-        case None => throw new ResourceNotFoundException(s"Resource with ID '${resourceId}' not found.")
-        case Some(resource) => {
-          log.debug(s"Looking up ${ResourceLabel(resource.typeId)}, ${resourceId}")
-          ResourceFactory.findById(resource.typeId, resourceId)
-        }
-      }
-    } 
-    
-    if (Seq("providers", "rules").contains(typeName)) {
-      val resourceId = UUID.fromString(cmps.last)
-      lookupResource(resourceId)
-    } else Resource.findByPath(p)
-    
-//    if (typeName == "providers") {
-//      ResourceFactory.findById(resourceId) match {
-//        case None => throw new ResourceNotFoundException(s"Provider with ID '${resourceId}' not found.")
-//        case Some(provider) => {
-//          log.debug(s"Looking up ${ResourceLabel(provider.typeId)}, ${resourceId}")
-//          ResourceFactory.findById(provider.typeId, resourceId)
-//        }
-//      }
-//    } else if(typeName == "rules") {
-//      ResourceFactory.findById(resourceId) match {
-//        case None => throw new ResourceNotFoundException(s"Rule with ID '${resourceId}' not found.")
-//        case Some(rule) => {
-//          log.debug(s"Looking up ${ResourceLabel(rule.typeId)}, ${resourceId}")
-//          ResourceFactory.findById(rule.typeId, resourceId)
-//        }
-//      }
-//    } else Resource.findByPath(p)
-    
-  }
   
-  def hardDeleteTest(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+  def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
     
-    resourceFromPath( p ).fold {
+    Resource.fromPath( p ).fold {
       NotFoundResult(request.uri)
     } { resource =>
       
@@ -118,9 +65,7 @@ object DeleteController extends Authorization {
         case Failure(e) => HandleExceptions(e)
         case Success(a) => NoContent
       }
-      //DefaultRequestRouter.route( resource )
     }
-    
   }
 
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
