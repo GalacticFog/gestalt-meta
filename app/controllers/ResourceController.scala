@@ -57,6 +57,12 @@ import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.auth.ActionPrefix
 
+import play.api.mvc.Result
+import com.galacticfog.gestalt.meta.api.Resource
+import com.galacticfog.gestalt.meta.api.output.Output.{renderInstance => Render}
+  
+
+
 object ResourceController extends Authorization {
   
   
@@ -121,35 +127,112 @@ object ResourceController extends Authorization {
       ResourceFactory.findAll(typeId)
     }
   }  
+
+
+  def getResourceByPath(fqon: String, path: String) = Authenticate() { implicit request =>
+    orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
+      Authorize(org.id, Actions.Org.View, request.identity) {
+        resourceFromPath(fqon, path)
+      }
+    }      
+  }
+
   
-  
-  def getOrg(org: UUID) = Authenticate(org) { implicit request =>
-    Authorize(org, Actions.Org.View, request.identity) {
-      getById(org, ResourceIds.Org, org)  
+  def resourceFromPath(fqon: String, path: String)(implicit request: SecuredRequest[_]) = {
+    val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
+    Resource.fromPath(p).fold(NotFoundResult(request.uri)){ resource =>
+      Ok(Render(resource, META_URL))
     }
+  }
+  
+  def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
+    
+    orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
+      Authorize(org.id, Actions.Org.View, request.identity) {
+        findSystemResource(ResourceIds.Org, org.id)
+      }
+    }
+  }
+
+  /*
+   * 
+   * TODO: This only handles top-level (after FQON) resources. We need to go two levels deep.
+   * We need a function similar to Resource.fromPath that retrieves lists of resources by type.
+   * 
+   */
+  def listSystemResources(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
+    extractByName(fqon, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => {
+        //
+        // TODO: This is a hack for Lambda - getDescendantLambdas dynamically builds the endpoint function map.
+        //
+        val resources = typeId match {
+          case m if m == ResourceIds.Lambda => getDescendantLambdas(org)
+          case _ => ResourceFactory.findAll(typeId, org)
+        }
+        AuthorizeList(mkActionName(typeId, "view")) {
+          ResourceFactory.findAll(typeId, org)
+        }
+      }
+    }
+  }  
+  
+  
+  def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
+    extractByName(fqon, restName) match {
+      case Left(result) => result
+      case Right((org, typeId)) => {
+        
+        // TODO: This is a hack for Lambda - getChildLambdas dynamically builds the endpoint function map.
+        val resources = typeId match {
+          case m if m == ResourceIds.Lambda => getDescendantLambdas(org)
+          case _ => ResourceFactory.findAll(typeId, org)
+        }
+        
+        val action = s"${ActionPrefix(typeId)}.view"
+        
+        AuthorizeList(mkActionName(typeId, "view")) {
+          ResourceFactory.findAll(typeId, org)
+        }
+      }
+    }
+  }  
+
+  
+//  def FindWithFqon(fqon: String, action: String, typeId: UUID)(block: (UUID,UUID) => Result)(implicit request: SecuredRequest[_]) = {
+//    maybeFqid(fqon) match {
+//      case None => NotFoundResult(s"Org '$fqon' not found.")
+//      case Some(resourceId) => Authorize(resourceId, action, request.identity) { 
+//        block(typeId, resourceId) 
+//      }
+//    }
+//  }
+  
+  def findAuthorized(fqon: String, typeId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+    maybeFqid(fqon) match {
+      case None => NotFoundResult(s"Org '$fqon' not found.")
+      case Some(resourceId) => 
+        Authorize(resourceId, Actions.resourceAction(typeId, "view"), request.identity) { 
+          findSystemResource(typeId, resourceId) 
+        }
+    }
+  }
+  
+  def maybeFqid(fqon: String) = {
+    orgFqon(fqon) map { _.id }
   }
   
 
-  def getOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    
-    Authorize(org, Actions.Org.View, request.identity) {    
-      getById(org, ResourceIds.Org, org)
+  
+  protected [controllers] def findSystemResource(typeId: UUID, id: UUID)(implicit request: SecuredRequest[_]) = {
+    ResourceFactory.findById(typeId, id).fold {
+      ResourceNotFound(typeId, id)
+    } { res =>
+      Ok(Output.renderInstance(res, META_URL))
     }
   }
-  
-  def getGenericAll(targetTypeId: String, org: UUID) = Authenticate(org) { implicit request =>
-    val allMinusSelf = ResourceFactory.findAll(uuid(targetTypeId), org) filterNot(_.id == org)
-    handleExpansion(allMinusSelf, request.queryString, META_URL)
-  }
-  
-  def getGenericAllFqon(targetTypeId: String, fqon: String) = Authenticate(fqon) { implicit request =>
-    val id = fqid(fqon)
-    AuthorizeList(Actions.Org.View) {
-      ResourceFactory.findAll(uuid(targetTypeId), id) filterNot(_.id == id)
-    }
-  }
-  
+
   def getGenericById(targetTypeId: String, org: UUID, id: UUID) = Authenticate(org) { implicit request =>
     getById(org, uuid(targetTypeId), id)  
   }
@@ -167,6 +250,7 @@ object ResourceController extends Authorization {
     handleExpansion(ResourceFactory.findChildrenOfType(uuid(targetTypeId), parentId),
         request.queryString, META_URL)
   }  
+  
   
   def getProviders(org: UUID, parentType: String, parent: UUID) = Authenticate(org) { implicit request =>
     getProvidersCommon(org, parentType, parent, request.queryString, META_URL)
@@ -208,37 +292,27 @@ object ResourceController extends Authorization {
       case None => NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found.")
       case Some(_) => {
         val allProvidersInScope = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parent)
-        
         val filtered = filterProvidersByType(ResourceFactory.findAncestorProviders(parent), qs)
         handleExpansion(filtered, qs, baseUrl)
       }
     }
   }
   
-  def getTypeActionsFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-//    handleExpansion(
-//        ResourceFactory.findChildrenOfSubType(ResourceIds.Action, typeId),
-//        request.queryString, META_URL)
-    ???
-  }
-  
-  def getTypeActionByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    ???  
-  }
-  
   def getEnvVariablesOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
-    Ok(Json.toJson(getEnvVariablesCommon(org, org)))
+    Ok(Json.toJson(EnvironmentVars.get(org, org)))
   }
   
   def getEnvVariablesFqon(fqon: String, typeId: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(UUID.fromString(typeId), id) match {
       case None => NotFoundResult(request.uri)
-      case Some(_) => Ok(Json.toJson(getEnvVariablesCommon(fqid(fqon), id)))
+      case Some(_) => Ok(Json.toJson(EnvironmentVars.get(fqid(fqon), id)))
     }
   }
   
-  /*
+  /**
+   * Get Environment variables for the given lambda.
+   * 
    * TODO: This method is currently not authenticated.
    */
   def getTopLevelLambdaEnv(lambdaId: UUID) = Action {
@@ -258,59 +332,9 @@ object ResourceController extends Authorization {
           }
         } filter { _.isDefined } flatMap { v => v }
         
-        Ok(Json.toJson(mergeBottomUp(all)))        
+        Ok(Json.toJson(EnvironmentVars.mergeBottomUp(all)))        
       }
-    }
-    
-  }
-  
-  
-  
-  protected def merge(map1: Map[String,String], map2: Map[String,String]): Map[String,String] = {
-    
-    def safeAdd(m: Map[String,String], key: String, value: String) = {
-      if (!m.contains( key )) m ++ Map(key -> value) else m
-    }
-    
-    def loop(rs: List[(String,String)], acc: Map[String,String]): Map[String,String] = {
-      rs match {
-        case Nil    => acc
-        case h :: t => loop( t, safeAdd( acc, h._1, h._2 ) )
-      }      
-    }
-    if ( map2.isEmpty ) map1 else {
-      loop( map2.toList, map1 )
-    }
-  }
-  
-    
-  def mergeBottomUp(vs: Seq[(Int,Map[String,String])]): Map[String,String] = {
-
-    def go(vars: Seq[(Int,Map[String,String])], acc: Map[String,String]): Map[String,String] = {
-      vars match {
-        case Nil => acc
-        case h :: t => go(t, merge(acc, h._2))
-      }    
-    }
-    go(vs.sortWith((a,b) => a._1 < b._1), Map())
-  }
-  
-  
-  def getEnvVariablesCommon(org: UUID, instanceId: UUID) = {
-    
-    val rs = ResourceFactory.findEnvironmentVariables(instanceId)
-    
-    val all = rs map { case (k,v) =>
-      if (v.properties.isEmpty) None
-      else v.properties.get.get("env") match {
-          case None => None
-          case Some(vars) => {
-            Option(k -> Json.parse(vars).validate[Map[String,String]].get)
-        }
-      }
-    } filter { _.isDefined } flatMap { v => v }
-    
-    mergeBottomUp(all)
+    }    
   }
   
   
@@ -321,12 +345,12 @@ object ResourceController extends Authorization {
       META_URL)
   }
   
+  
   def getGroupByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    
     ResourceFactory.findById(ResourceIds.Group, id).fold(ResourceNotFound(ResourceIds.Group, id)) {
-      r => 
-          Authorize(fqid(fqon), "group.view") {    
-            //getById(org, ResourceIds.Org, org)
-            //???
+      
+      r => Authorize(fqid(fqon), Actions.Group.View) {    
           
         Security.getGroupAccounts(r.id, request.identity) match {
           case Success(acs) => {
@@ -341,16 +365,12 @@ object ResourceController extends Authorization {
             Ok(Output.renderInstance(r.copy(properties = outputProps), META_URL))
             
           }
-          case Failure(err) => {
-            println("ERROR Getting group accounts : " + err)
-            HandleExceptions(err)
-          }
+          case Failure(err) => HandleExceptions(err)
         }
-      
-      } // AuthorizeByid
-          
+      } 
     }
   }
+  
   
   def getGroupUsersFqon(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
     Security.getGroupAccounts(group, request.identity) match {
@@ -384,6 +404,9 @@ object ResourceController extends Authorization {
       val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
       log.debug("Filtering providers for type : " + typeName)
 
+      //
+      // TODO: No longer necessary to do this - use .findWithVariance()
+      //
       val typeId = typeName match {
         case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
         case b if b == Resources.MarathonProvider.toString => ResourceIds.MarathonProvider
@@ -433,57 +456,7 @@ object ResourceController extends Authorization {
     (p -> c)
   }
 
-  def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
-  def getEnvironmentContainersFqon2(fqon: String, environment: UUID) = Authenticate(fqon).async { implicit request =>
-    if (!getExpandParam(request.queryString)) {
-      // don't need to expand them, so we don't need to query marathon for status
-      Future{Ok(Output.renderLinks(ResourceFactory.findChildrenOfType(ResourceIds.Container, environment), META_URL))}
-    } else {
-      // make a best effort to get updated stats from the Marathon provider and to update the resource with them
-      MarathonController.appComponents(environment) match {
-        case Failure(e) => Future.successful(HandleExceptions(e))
-        case Success((wrk, env)) =>
-          val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
-          for {
-            metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
-            // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
-            metaCon2guid = (for {
-              metaCon <- metaCons
-              props <- metaCon.properties
-              providerProp <- props.get("provider")
-              pobj <- Try{Json.parse(providerProp)}.toOption
-              providerId <- (pobj \ "id").asOpt[UUID]
-              eid <- props.get("external_id")
-              // MarathonClient.listApplicationsInEnvironment strips env app group prefix
-              localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
-            } yield (metaCon.id -> (providerId,localEid))).toMap
-            // all the providers we care about
-            relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
-              pid => Try{MarathonController.marathonProvider(pid)}.toOption
-            }
-            // id is only unique inside a marathon provider, so we have to zip these with the provider ID
-            triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
-              val marCons = MarathonController.marathonClient(pid).listApplicationsInEnvironment(fqon, wrk.name, env.name)
-              val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
-              // wrap this in a try so that failures don't crash the whole list in Future.traverse
-              futureToFutureTry(pidsAndMarCons)
-            })
-            successfulContainerListings = triedContainerListings collect {case Success(x) => x}
-            marCons = successfulContainerListings.flatten
-            _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
-            mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
-            outputMetaContainers = metaCons map { originalMetaCon =>
-              val stats = for {
-                guid <- metaCon2guid.get(originalMetaCon.id)
-                marCon <- mapMarCons.get(guid)
-              } yield marCon
-              MarathonController.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
-            }
-          } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
-      }
-    }
-  }
 
   def getEnvironmentContainersIdFqon(fqon: String, environment: UUID, containerId: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, containerId) match {
@@ -494,70 +467,16 @@ object ResourceController extends Authorization {
 
 
   /**
-   * Convert ContainerApp to GestaltResourceInstance
-   * TODO: this is some leftover stuff that precedes Marathon container persistence (note the randomly assigned UUID below)
-   */
-  def toGestaltContainer(fqon: String, c: ContainerStats, provider: Option[GestaltResourceInstance] = None) = {
-
-    // If given, inject properties.provider = providerName
-    val providerProps = provider match {
-      case None => Map()
-      case Some(p) => {
-        Map("provider" -> Json.stringify(Json.obj("id" -> p.id.toString, "name" -> p.name)))
-      }
-    }
-    
-    val props = Some(instance2map(c).asInstanceOf[Map[String,String]] ++ providerProps)
-    
-    // drop leading slash from service name, and urlencode the rest in case 
-    // there are embedded slashes.
-    val containerName = java.net.URLEncoder.encode(c.id.trim.stripPrefix("/"), "utf-8")
-    
-    GestaltResourceInstance(
-      id = UUID.randomUUID(),
-      typeId = ResourceIds.Container,
-      orgId = fqid(fqon),
-      owner = ResourceOwnerLink(ResourceIds.User, UUID.randomUUID),
-      name = UUID.randomUUID.toString).copy(
-              name = containerName, 
-              created = None, modified = None,
-              properties = props)
-  }
-
-
-  /**
    * Get the Meta User corresponding with the caller identity.
-   * NOTE: The 'empty' call to Authenticate means the caller MUST be able
-   * to authenticate against the 'root' Org.
    */
   def getUserSelf() = Authenticate() { implicit request =>
     val id = request.identity.account.id
-    ResourceFactory.findById(ResourceIds.User, id) match {
-      case Some(user) => Ok(Output.renderInstance(user))
-      case None => InternalServerError(
-          s"User ID ${id.toString} was found in Security but not in Meta - this may be a synchronization error. Contact an administrator.")
-    }  
-  }
-  
-  /**
-   * Get a single user by ID
-   */
-  def getUserById(org: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    ResourceFactory.findById(ResourceIds.User, id) match {
-      case Some(user) => Ok(Output.renderInstance(user))
-      case None       => NotFoundResult(s"User '${id}' not found.")
-    }
+    ResourceFactory.findById(ResourceIds.User, request.identity.account.id).fold {
+      InternalServerError(
+        s"User ID ${id.toString} was found in Security but not in Meta - this may be a synchronization error. Contact an administrator.")
+    }{ user => Ok(Render(user)) }      
   }
 
-  def getUserByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => ResourceFactory.findById(ResourceIds.User, id) match {
-        case Some(user) => Ok(Output.renderInstance(user))
-        case None       => NotFoundResult(s"User '${id}' not found.")
-      }
-      case None => OrgNotFound(fqon)
-    } 
-  }
   
   /**
    * Get all Resources by Type ID
@@ -573,37 +492,12 @@ object ResourceController extends Authorization {
     }     
   }
 
-  def resourceLinks(org: UUID, typeId: UUID, baseurl: Option[String] = None): JsValue = {
-    Output.renderLinks(resources.findAll(typeId, org), baseurl)
-  }
-  
   def getAllSystemResourcesByName(org: UUID, restName: String) = Authenticate(org)  { implicit request =>
     extractByName(org, restName) match {
       case Left(result) => result
       case Right((org, typeId)) => handleExpansion(ResourceFactory.findAll(typeId, org), request.queryString, META_URL)      
     }
   }
-  
-  def getAllSystemResourcesByNameFqon(fqon: String, restName: String) = Authenticate(fqon) { implicit request =>
-    extractByName(fqon, restName) match {
-      case Left(result) => result
-      case Right((org, typeId)) => {
-        
-        // TODO: This is a hack for Lambda - getChildLambdas dynamically builds the endpoint function map.
-        val resources = typeId match {
-          case m if m == ResourceIds.Lambda => getDescendantLambdas(org)
-          case _ => ResourceFactory.findAll(typeId, org)
-        }
-        
-        val action = s"${ActionPrefix(typeId)}.view"
-        
-        AuthorizeList(mkActionName(typeId, "view")) {
-          ResourceFactory.findAll(typeId, org)
-        }
-      }
-    }
-  }
-  
   
   def getAllSystemResourcesByNameId(org: UUID, restName: String, id: UUID) = Authenticate(org) { implicit request =>
     extractByName(org, restName) match {
@@ -652,16 +546,7 @@ object ResourceController extends Authorization {
       case Failure(er) => throw new RuntimeException(s"Failed looking up groups for user '${res.id}': ${er.getMessage}")
     }
   }
-  
-  private def renderResourceLinks[T](org: UUID, typeId: UUID, url: Option[String]) = {
-    if (references.isReferenceType(typeId)) {
-      //"REFERENCE_TYPE"
-      referenceLinks(org, typeId)
-    }
-    else {
-      resourceLinks(org, typeId, url)
-    }
-  }
+
   
   /* TODO: This is extremely temporary */
   private def referenceLinks(org: UUID, typeId: UUID): JsValue = {
@@ -876,7 +761,6 @@ object ResourceController extends Authorization {
   }
   
   def getEnvironmentLambdaById(org: UUID, environment: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    trace(s"getEnvironmentLambdaById($org, $environment, $id)")
     getLambdaByIdCommon(id)
   }
   
@@ -1029,32 +913,28 @@ object ResourceController extends Authorization {
   }
   
   
-  def getWorkspaceDomainById(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
-    ResourceFactory.findById(ResourceIds.Domain, id) match {
-      case Some(res) => Ok(Output.renderInstance(res))
-      case None => NotFoundResult(request.uri)
-    }
-  }
-  
-  def getWorkspaceDomainByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) =>
-        ResourceFactory.findById(ResourceIds.Domain, id) match {
-          case Some(res) => Ok(Output.renderInstance(res))
-          case None => NotFoundResult(request.uri)
-        }
-      case None => OrgNotFound(fqon)
-    } 
-  }  
-  
+//  def getWorkspaceDomainById(org: UUID, workspace: UUID, id: UUID) = Authenticate(org) { implicit request =>
+//    ResourceFactory.findById(ResourceIds.Domain, id) match {
+//      case Some(res) => Ok(Output.renderInstance(res))
+//      case None => NotFoundResult(request.uri)
+//    }
+//  }
+//  
+//  def getWorkspaceDomainByIdFqon(fqon: String, workspace: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+//    orgFqon(fqon) match {
+//      case Some(org) =>
+//        ResourceFactory.findById(ResourceIds.Domain, id) match {
+//          case Some(res) => Ok(Output.renderInstance(res))
+//          case None => NotFoundResult(request.uri)
+//        }
+//      case None => OrgNotFound(fqon)
+//    } 
+//  }  
   
   private def getById(org: UUID, resourceTypeId: UUID, id: UUID) = {
     okNotFound(qs.findById(org, resourceTypeId, id))
   }
-  
-  
-  
-  
+
   def instance2map[T: ClassTag: TypeTag](inst: T) = {
     val im = currentMirror.reflect( inst )
     @tailrec def loop(acc: Map[String,Any], symbols: List[MethodSymbol]): Map[String,Any] = {

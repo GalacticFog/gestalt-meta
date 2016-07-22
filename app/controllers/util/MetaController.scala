@@ -430,6 +430,7 @@ trait MetaController extends SecureController with SecurityResources {
     org.id
   }  
   
+  
   def resolveResourceState(state: Option[String]) = {
     ResourceState.id( state getOrElse ResourceStates.Active )
   }  
