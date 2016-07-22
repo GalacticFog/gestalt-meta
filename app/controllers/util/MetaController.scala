@@ -281,8 +281,7 @@ trait MetaController extends SecureController with SecurityResources {
       ResourceFactory.create(creatorType, creator)(
         inputWithDefaults(org, input.copy(resource_type = Some(tid)), user), parentId = parentId)
     }
-
-  }    
+  }
   
   def createResourceInstance(
       org: UUID, 

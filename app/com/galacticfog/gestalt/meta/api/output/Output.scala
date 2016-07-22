@@ -153,7 +153,6 @@ object Output {
    * @return JsValue object containing all rendered property name/values.
    */
   def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
-    println("renderInstanceProperties: " + properties)
     /* Get a Map of the properties defined for the current ResourceType. */
     val templateProps = Properties.getTypePropertyMap(typeId)
     
@@ -282,7 +281,6 @@ object Output {
     Json.toJson(toLink(typeId, id, name = name, orgId = org, baseUri = baseUri))
   }  
   
-  
   /**
    * Convert Option[String] to Option[JsString]
    */
@@ -303,7 +301,6 @@ object Output {
   protected[output] implicit def jsonHstore(hs: Option[Hstore]): Option[JsValue] = {
     if (hs.isEmpty) None else Some(Json.toJson(hs))
   }
-
 
 }
 
