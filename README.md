@@ -1,4 +1,20 @@
-This is your new Play application
-=================================
+gestalt-meta
+---------------
 
-This file will be packaged with your application, when using `activator dist`.
+Persistence service for Gestalt Framework Resources. 
+
+
+  - Org
+  - User
+  - Group
+  - Workspace
+  - Environment
+  - Container
+  - Lambda
+  - ApiEndpoint
+  - ApiGateway
+  - Policy
+  - Rule
+  - Entitlement
+  - ApiGatewayProvider
+  - MarathonProvider
