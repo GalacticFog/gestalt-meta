@@ -10,6 +10,8 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import scala.util.Try
 import play.api.Logger
+import com.galacticfog.gestalt.data.ResourceFactory.findByPropertyValue
+
 
 object Resource {
 
@@ -26,6 +28,25 @@ object Resource {
   
   def findByPath(path: String): Option[GestaltResourceInstance] = {
     findResource(mapPathData(path))
+  }
+  
+//  def listFromPath(p: String): List[GestaltResourceInstance] = {
+//    ???
+//  }
+  
+  def isList(path: String): Boolean = {
+    val cs = components(path)
+    if (cs.size % 2 == 0) true else false
+  }
+  
+  def listFromPath(p: String): List[GestaltResourceInstance] = {
+    val info = mapListPathData(p)
+    val f = info.size match {
+      case 2 => findFirstLevelList _
+      case 4 => findSecondLevelList _
+      case _ => throw illegal(s"Invalid path. found '$p'")
+    }
+    f(info)
   }
   
   def fromPath(p: String): Option[GestaltResourceInstance] = {
@@ -45,7 +66,7 @@ object Resource {
       
       val resourceId = UUID.fromString(cmps.last)
       lookupResource(typeName, resourceId)
-    } else Resource.findByPath(p)
+    } else findByPath(p)
   }
   
   
@@ -83,7 +104,7 @@ object Resource {
     }  
   }
   
-
+  
   private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {
     typeName match {
       case "providers" => isSubTypeOf(ResourceIds.Provider, typeId)
@@ -129,6 +150,41 @@ object Resource {
     else ResourceFactory.findById(typeOrElse(targetTypeName), targetId)
   }
   
+
+  /*
+   * TODO: New signature:
+   *  findList(action: String, account: Account, info: Map[String,String])
+   */
+  
+  import com.galacticfog.gestalt.meta.auth.Actions
+  
+  protected[api] def findFirstLevelList(info: Map[String,String]) = {
+    val org = orgOrElse(info(Fqon))
+
+    val targetTypeId = typeOrElse(info(TargetType))
+    
+    //val targetTypeName = info(TargetType)    
+    //val action = Actions.resourceAction(targetTypeId, action)
+    
+    ResourceFactory.findAll(targetTypeId, org)
+  }
+  
+  protected[api] def findSecondLevelList(info: Map[String,String]) = {
+    val org = orgOrElse(info(Fqon))
+    
+    val parentId = UUID.fromString(info(ParentId))
+    
+    val parentType   = typeOrElse(info(ParentType))
+    val targetTypeId = typeOrElse(info(TargetType))
+    
+    //
+    // If the function takes an Account parameter, we can do the Authorization here and
+    // return a filtered list.
+    //
+    
+    ResourceFactory.findChildrenOfType(org, parentId, targetTypeId)
+  }
+  
   /**
    * Find a child Resource by Type and ID
    */
@@ -163,8 +219,29 @@ object Resource {
     
     cmps.size match {
       case 1 => Map(Fqon -> cmps(0))
-      case 3 => Map(Fqon -> cmps(0), TargetType -> cmps(1), TargetId -> cmps(2))
-      case 5 => Map(Fqon -> cmps(0), ParentType -> cmps(1), ParentId -> cmps(2), TargetType -> cmps(3), TargetId -> cmps(4))
+      case 3 => Map(Fqon -> cmps(0), TargetType -> cmps(1), TargetId -> validUUID(cmps(2)))
+      case 5 => Map(Fqon -> cmps(0), ParentType -> cmps(1), ParentId -> validUUID(cmps(2)), TargetType -> cmps(3), TargetId -> validUUID(cmps(4)))
+      case _ => throw illegal("Invalid path.")
+    }
+  }
+  
+  protected[api] def validUUID(id: String) = {
+    if (parseUUID(id).isDefined) id
+    else {
+      throw new BadRequestException(s"'$id' is not a valid v4 UUID.")
+    }
+  }
+  
+  protected[api] def mapListPathData(path: String): Map[String,String] = {
+    
+    val cmps = components(path)
+
+    if (!(cmps.size > 1 && cmps.size % 2 == 0)) {
+      throw illegal(s"Path does not identify a Resource. found: '/$path'")
+    }
+    cmps.size match {
+      case 2 => Map(Fqon -> cmps(0), TargetType -> cmps(1))
+      case 4 => Map(Fqon -> cmps(0), ParentType -> cmps(1), ParentId -> validUUID(cmps(2)), TargetType -> cmps(3))
       case _ => throw illegal("Invalid path.")
     }
   }
@@ -174,6 +251,12 @@ object Resource {
       throw new BadRequestException(s"Invalid Resource Type name: '${typeName}'")
     }
   }  
+  
+  protected[api] def orgOrElse(fqon: String) = {
+    findByPropertyValue(ResourceIds.Org, "fqon", fqon) map { _.id } getOrElse {
+      throw new BadRequestException(s"Invalid FQON: '$fqon'")
+    }
+  }
   
   protected[api] def illegal(message: String) = new IllegalArgumentException(message)
   

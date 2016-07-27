@@ -34,9 +34,9 @@ class ResourceSpec extends Specification {
     
     "throw an exception when the type name doesn't exist" in {
       Resource.typeOrElse("invalid_type") must throwA[BadRequestException]
-    }
-    
+    }  
   }
+  
   
   "mapPathData" should {
     
@@ -87,6 +87,44 @@ class ResourceSpec extends Specification {
     }
   }
   
+  
+  "mapListPathData" should {
+    
+    "succeed when the path points to a first-level resource type" in {
+      val m = Resource.mapListPathData("/fqon/target")
+      m.size === 2
+      m.get(Resource.Fqon) must beSome("fqon")
+      m.get(Resource.TargetType) must beSome("target")
+    }
+    
+    "succeed when the path points to a second-level resource type" in {
+      val m = Resource.mapListPathData("/fqon/parent/pid/target")
+      m.size === 4
+      m.get(Resource.Fqon) must beSome("fqon")
+      m.get(Resource.ParentType) must beSome("parent")
+      m.get(Resource.ParentId) must beSome("pid")
+      m.get(Resource.TargetType) must beSome("target")
+    }
+    
+    "fail if the path is empty" in {
+      Resource.mapListPathData("") must throwA[Throwable]
+    }
+    
+    "fail if the path contains an odd-number of components" in {
+      Resource.mapListPathData("foo") must throwA[Throwable]
+      Resource.mapListPathData("/foo") must throwA[Throwable]
+      Resource.mapListPathData("foo/") must throwA[Throwable]
+      Resource.mapListPathData("/foo/") must throwA[Throwable]
+      Resource.mapListPathData("/foo/bar/baz") must throwA[Throwable]
+    }
+    
+    "fail if the path contains more than 4 components" in {
+      Resource.mapListPathData("/foo/bar/baz/qux/thud") must throwA[Throwable]
+      Resource.mapListPathData("/foo/bar/baz/qux/quux/corge/grault/garply/waldo") must throwA[Throwable]      
+    }
+  }  
+  
+  
   "findFqon" should {
     
     "find an Org when given a valid FQON" in {
@@ -98,8 +136,8 @@ class ResourceSpec extends Specification {
     "return None when given an invalid FQON" in {
       Resource.findFqon(Map(Resource.Fqon -> "INVALID_FQON")) must beNone
     }
-    
   }
+  
   
   "isSubTypeOf" should {
     
@@ -150,9 +188,7 @@ class ResourceSpec extends Specification {
       findById(ResourceIds.Environment, eid) must beSome
       
       val fqon = org.get.properties.get("fqon")
-      
       val path1 = "/%s/workspaces/%s".format(fqon, wid)
-      
       val path2 = "/%s/environments/%s".format(fqon, eid)
       
       // Find the Workspace by path
@@ -250,6 +286,122 @@ class ResourceSpec extends Specification {
         Resource.lookupResource("rules", wid)    // wrong type
       }
     }    
+  }
+  
+  
+  "findFirstLevelList" should {
+    
+    "find first-level resources of the given type" in new ResourceScope {
+        val org = Resource.fromPath("galacticfog")
+        org must beSome
+        
+        val (wid,eid) = createWorkspaceEnvironment(org.get.id)
+        val w = ResourceFactory.findById(ResourceIds.Workspace, wid)
+        w must beSome
+        
+        val l1 = Resource.findFirstLevelList(Map(
+            Resource.Fqon -> "galacticfog",
+            Resource.TargetType -> "workspaces"))
+        
+        //l1.size === 1
+        l1(0).typeId === ResourceIds.Workspace
+        
+        val e = ResourceFactory.findById(ResourceIds.Environment, eid)
+        e must beSome
+        
+        val l2 = Resource.findFirstLevelList(Map(
+            Resource.Fqon -> "galacticfog",
+            Resource.TargetType -> "environments"))
+        //l2.size === 1
+        l2(0).typeId === ResourceIds.Environment
+    }
+    
+    
+    "find nothing when there are no resources of the given type" in {
+      failure
+    }.pendingUntilFixed("Need to work against clean database")
+    
+    
+    "throw an exception when the Org is invalid" in {
+      Resource.findFirstLevelList(Map(
+        Resource.Fqon -> ("INVALID-" + uuid.toString),
+        Resource.TargetType -> "environments")) must throwA[Throwable]
+    }
+    
+    
+    "throw an exception when the type-name is invalid" in {
+      Resource.findFirstLevelList(Map(
+        Resource.Fqon -> "galacticfog",
+        Resource.TargetType -> ("INVALID-" + uuid.toString))) must throwA[Throwable]  
+    }
+  }
+  
+  
+  "findSecondLevelList" should {
+    
+    "find second-level resources of the given type" in new ResourceScope {
+        val org = Resource.fromPath("galacticfog")
+        org must beSome
+        
+        val (wid,eid) = createWorkspaceEnvironment(org.get.id)
+
+        
+        val l1 = Resource.findSecondLevelList(Map(
+            Resource.Fqon -> "galacticfog",
+            Resource.ParentType -> "workspaces",
+            Resource.ParentId -> wid.toString,
+            Resource.TargetType -> "environments"))
+        
+        println("L1 : " + l1)
+        println("L1.SIZE : " + l1.size)
+        
+        (l1.size > 0) === true
+        l1(0).typeId === ResourceIds.Environment
+    }
+    
+    
+    "find nothing when there are no resources of the given type" in new ResourceScope {
+      failure
+    }.pendingUntilFixed("Need to work against a clean database")
+    
+    
+    "throw an exception when the given Org is invalid" in new ResourceScope {
+      val org = Resource.fromPath("galacticfog")
+      org must beSome
+      val (wid, eid) = createWorkspaceEnvironment(org.get.id)
+
+      Resource.findSecondLevelList(Map(
+        Resource.Fqon -> s"INVALID-${uuid.toString}",
+        Resource.ParentType -> "workspaces",
+        Resource.ParentId -> wid.toString,
+        Resource.TargetType -> "environments")) must throwA[Throwable]
+    }
+    
+    
+    "throw an exception when the given parent-type (first-level) is invalid" in new ResourceScope {
+      val org = Resource.fromPath("galacticfog")
+      org must beSome
+      val (wid, eid) = createWorkspaceEnvironment(org.get.id)
+
+      Resource.findSecondLevelList(Map(
+        Resource.Fqon -> "galacticfog",
+        Resource.ParentType -> s"INVALID-${uuid.toString}",
+        Resource.ParentId -> wid.toString,
+        Resource.TargetType -> "environments")) must throwA[Throwable]
+    }
+    
+    
+    "throw an exception when the given target-type (second-level) is invalid" in new ResourceScope {
+      val org = Resource.fromPath("galacticfog")
+      org must beSome
+      val (wid, eid) = createWorkspaceEnvironment(org.get.id)
+
+      Resource.findSecondLevelList(Map(
+        Resource.Fqon -> "galacticfog",
+        Resource.ParentType -> "workspaces",
+        Resource.ParentId -> wid.toString,
+        Resource.TargetType -> s"INVALID-${uuid.toString}")) must throwA[Throwable]
+    }
   }
   
 }
