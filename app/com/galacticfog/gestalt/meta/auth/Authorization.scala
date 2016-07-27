@@ -348,8 +348,8 @@ trait Authorization extends MetaController {
     
     val ids = Option(Seq(creator))
     actions map { action =>
-      newEntitlementResource(creator, org, resource, mkActionName(resourceType, action), ids, None, None)
-    }  
+      newEntitlementResource(creator, org, resource, Actions.actionName(resourceType, action), ids, None, None)
+    }
   }
   
 
@@ -372,10 +372,6 @@ trait Authorization extends MetaController {
           action = action,
           value = None,
           identities = identities) )
-  }
-  
-  def mkActionName(typeId: UUID, action: String) = {
-    s"${ActionPrefix(typeId)}.${action}"
   }
   
 }

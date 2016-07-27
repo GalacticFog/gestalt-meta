@@ -52,27 +52,6 @@ object Actions {
     }
   }
   
-  
-//  def resourceAction(typeId: UUID, action: String): String = {
-//    (typeId match {
-//      case ResourceIds.Org => Org
-//      case ResourceIds.User => User
-//      case ResourceIds.Group => Group
-//      case ResourceIds.Workspace => Workspace
-//      case ResourceIds.Environment => Environment
-//      case ResourceIds.Container => Container
-//      case ResourceIds.Lambda => Lambda
-//      case ResourceIds.License => License
-//      case ResourceIds.Provider => Provider
-//      case ResourceIds.Entitlement => Entitlement
-//      case ResourceIds.Policy => Policy
-//      case ResourceIds.Rule => Rule
-//      case e => {
-//        throw new RuntimeException(s"Unknown Action Object type '$typeId'.")
-//      }
-//    }).actions(action)
-//  }
-
   object Org extends ResourceActions("org")
   object User extends ResourceActions("user")
   object Group extends ResourceActions("group")
