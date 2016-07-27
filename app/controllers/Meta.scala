@@ -381,10 +381,13 @@ object Meta extends Authorization {
               Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
                 generateEntitlements(
                   user.account.id, org, workspace.id,
-                  Seq(ResourceIds.Workspace, ResourceIds.Environment),
-                  ACTIONS_CRUD)
+                  Seq(
+                      ResourceIds.Workspace, 
+                      ResourceIds.Environment,
+                      ResourceIds.Provider,
+                      ResourceIds.Entitlement),
+                    ACTIONS_CRUD)
               }
-
               Created(Output.renderInstance(workspace, baseUri))
             }
           }
