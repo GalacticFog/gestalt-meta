@@ -698,7 +698,7 @@ object MarathonController extends Authorization {
 
   
   protected [controllers] def appComponents(environment: UUID /*, provider: UUID*/) = Try {
-    val we = ResourceController.findWorkspaceEnvironment(environment).get
+    val we = findWorkspaceEnvironment(environment).get
     (we._1, we._2)
   }
 
@@ -759,6 +759,16 @@ object MarathonController extends Authorization {
     UUID.fromString(pid)
   }  
 
+  protected[controllers] def findWorkspaceEnvironment(envId: UUID) = Try {
+    val p = ResourceFactory.findParent(ResourceIds.Workspace, envId) getOrElse {
+      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$envId'.")
+    }
+    val c = ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
+      throw new ResourceNotFoundException(s"Environment with ID '$envId' not found.")
+    }
+    (p -> c)
+  }
+  
   private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
 
   private object ContainerEvents {
