@@ -20,8 +20,6 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => GestaltLink }
 
-import com.galacticfog.gestalt.meta.services.ResourceQueryService
-
 import controllers.util._
 import controllers.util.db._
 import play.mvc.Result
