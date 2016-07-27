@@ -18,6 +18,9 @@ class ResourcePath(val path: String) {
     if (isList) Resource.mapListPathData(path) else Resource.mapPathData(path)
   }
   
+  // Validate the parent resource type if it exists.
+  if (info.get(Resource.ParentType).isDefined) Resource.typeOrElse(info(Resource.ParentType))
+  
   val targetTypeId = {
     if (components.size == 1) ResourceIds.Org 
     else Resource.typeOrElse(info(Resource.TargetType)) 
