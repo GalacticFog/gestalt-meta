@@ -78,5 +78,35 @@ class ResourcePathSpec extends Specification {
     }
   }
   
+  "parentId" should {
+    
+    "contain the parent ID if the path refers to a second level resource or list" in {
+      val parentId = uuid.toString
+      new ResourcePath(s"/testorg/workspaces/$parentId/environments").parentId must beSome(uuid(parentId)) 
+      new ResourcePath(s"/testorg/workspaces/$parentId/environments/${uuid}").parentId must beSome(uuid(parentId))
+    }
+    
+    "be empty if the path refers to a first-level resource or list" in {
+      new ResourcePath(s"/testorg").parentId must beNone
+      new ResourcePath(s"/testorg/workspaces").parentId must beNone
+      new ResourcePath(s"/testorg/workspaces/${uuid}").parentId must beNone
+    }
+  }
+  
+  "parentTypeId" should {
+    
+    "contain the parent Type ID if the path refers to a second level resource or list" in {
+      println("PARENT-TYPE-ID: " + new ResourcePath(s"/testorg/workspaces/${uuid}/environments").parentTypeId)
+      new ResourcePath(s"/testorg/workspaces/${uuid}/environments").parentTypeId must beSome(ResourceIds.Workspace) 
+      new ResourcePath(s"/testorg/environments/${uuid}/lambdas/${uuid}").parentTypeId must beSome(ResourceIds.Environment)
+    }
+    
+    "be empty if the path refers to a first-level resource or list" in {
+      new ResourcePath(s"/testorg").parentId must beNone
+      new ResourcePath(s"/testorg/workspaces").parentTypeId must beNone
+      new ResourcePath(s"/testorg/workspaces/${uuid}").parentTypeId must beNone
+    }
+    
+  }
   
 }

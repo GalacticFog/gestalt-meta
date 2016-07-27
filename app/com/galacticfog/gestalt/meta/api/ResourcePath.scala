@@ -4,6 +4,9 @@ package com.galacticfog.gestalt.meta.api
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import play.api.Logger
 
+import com.galacticfog.gestalt.meta.api.Resource.typeOrElse
+import java.util.UUID
+
 
 class ResourcePath(val path: String) {
   
@@ -19,11 +22,15 @@ class ResourcePath(val path: String) {
   }
   
   // Validate the parent resource type if it exists.
-  if (info.get(Resource.ParentType).isDefined) Resource.typeOrElse(info(Resource.ParentType))
+//  if (info.get(Resource.ParentType).isDefined) Resource.typeOrElse(info(Resource.ParentType))
+
+  val parentTypeId = info.get(Resource.ParentType) map { typeOrElse(_) }
+  val parentId     = info.get(Resource.ParentId) map { UUID.fromString(_) }
   
+  // If path has only one component, assume it's the FQON and we're pointing to an Org.
   val targetTypeId = {
     if (components.size == 1) ResourceIds.Org 
     else Resource.typeOrElse(info(Resource.TargetType)) 
   }
-  val targetId = info.get(Resource.TargetId)
+  val targetId = info.get(Resource.TargetId)  
 }
