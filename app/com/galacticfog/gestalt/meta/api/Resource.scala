@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import scala.util.Try
 import play.api.Logger
 import com.galacticfog.gestalt.data.ResourceFactory.findByPropertyValue
+import com.galacticfog.gestalt.meta.auth.Actions
 
 
 object Resource {
@@ -26,19 +27,9 @@ object Resource {
   private[api] val polymorphic = Seq("providers", "rules")
   
   
-  def findByPath(path: String): Option[GestaltResourceInstance] = {
-    findResource(mapPathData(path))
-  }
-  
-//  def listFromPath(p: String): List[GestaltResourceInstance] = {
-//    ???
-//  }
-  
-  def isList(path: String): Boolean = {
-    val cs = components(path)
-    if (cs.size % 2 == 0) true else false
-  }
-  
+  /**
+   * Find a list of same-typed resources by fully-qualified path
+   */
   def listFromPath(p: String): List[GestaltResourceInstance] = {
     val info = mapListPathData(p)
     val f = info.size match {
@@ -69,8 +60,23 @@ object Resource {
     } else findByPath(p)
   }
   
+  /**
+   * Indicates whether or not the path points to a list of resources.
+   */
+  def isList(path: String): Boolean = {
+    val cs = components(path)
+    if (cs.size % 2 == 0) true else false
+  }  
   
-  def isSubTypeOf(superType: UUID, subType: UUID) = {
+
+  private[api] def findByPath(path: String): Option[GestaltResourceInstance] = {
+    findResource(mapPathData(path))
+  }    
+  
+  /**
+   * Determine if a given type is a sub-type of another.
+   */
+  private[api] def isSubTypeOf(superType: UUID, subType: UUID) = {
     log.debug(s"isSubTypeOf(super = $superType, sub = $subType)")
     
     ResourceFactory.findTypesWithVariance(CoVariant(superType)) exists {
@@ -81,7 +87,6 @@ object Resource {
   private[api] def isPolymorphic(typeRestName: String): Boolean = {
     polymorphic.contains(typeRestName)
   }
-  
   
   /**
    * Parse a URI path to a List. Ensure it is non-empty.
@@ -104,24 +109,18 @@ object Resource {
     }  
   }
   
-  
   private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {
+    log.debug(s"isValidSubType(typeName = $typeName, typeId = $typeId)")
     typeName match {
       case "providers" => isSubTypeOf(ResourceIds.Provider, typeId)
       case "rules" => isSubTypeOf(ResourceIds.Rule, typeId)
       case _ => {
         log.error("isValidSubType -> MatchError for type: " + typeName)
-        throw new RuntimeException(s"Type test for base-type '${typeName}' not implemented.")
+        throw new RuntimeException(s"Type-test for base-type '${typeName}' not implemented.")
       }
     }  
   }
-  
-//  def providerTypeIds(): Seq[UUID] = {
-//    ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
-//     p.id 
-//    }
-//  }
-  
+
   protected[api] def findResource(info: Map[String,String]) = {
     info.size match {
       case 1 => findFqon(info)
@@ -150,21 +149,9 @@ object Resource {
     else ResourceFactory.findById(typeOrElse(targetTypeName), targetId)
   }
   
-
-  /*
-   * TODO: New signature:
-   *  findList(action: String, account: Account, info: Map[String,String])
-   */
-  
-  import com.galacticfog.gestalt.meta.auth.Actions
-  
   protected[api] def findFirstLevelList(info: Map[String,String]) = {
     val org = orgOrElse(info(Fqon))
-
     val targetTypeId = typeOrElse(info(TargetType))
-    
-    //val targetTypeName = info(TargetType)    
-    //val action = Actions.resourceAction(targetTypeId, action)
     
     ResourceFactory.findAll(targetTypeId, org)
   }
