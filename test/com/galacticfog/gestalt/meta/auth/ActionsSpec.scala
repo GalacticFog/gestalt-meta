@@ -32,4 +32,18 @@ class ActionsSpec extends Specification {
     }
   }
   
+  "isValidAction" should {
+    
+    "return TRUE if the action is defined for the resource type" in {
+      Actions.Org.isValidAction("create") must beTrue
+      Actions.Org.isValidAction("view")   must beTrue
+      Actions.Org.isValidAction("update") must beTrue
+      Actions.Org.isValidAction("delete") must beTrue
+    }
+    
+    "return FALSE if the action is NOT defined for the resource type" in {
+      Actions.Org.isValidAction("INVALID_ACTION") must beFalse
+    }
+    
+  }
 }
