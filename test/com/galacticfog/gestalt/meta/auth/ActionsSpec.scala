@@ -31,6 +31,7 @@ class ActionsSpec extends Specification {
       Actions.actionName(ResourceIds.Org, "INVALID_ACTION") must throwA[BadRequestException]
     }
   }
+
   
   "isValidAction" should {
     
@@ -44,6 +45,15 @@ class ActionsSpec extends Specification {
     "return FALSE if the action is NOT defined for the resource type" in {
       Actions.Org.isValidAction("INVALID_ACTION") must beFalse
     }
-    
   }
+  
+  "Actions.Lambda" should {
+    
+    "have 'migrate' and 'scale' actions" in {
+      Actions.Lambda.isValidAction("migrate") must beTrue
+      Actions.Lambda.isValidAction("scale") must beTrue
+    }
+  }
+  
 }
+

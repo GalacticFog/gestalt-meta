@@ -6,7 +6,9 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 
 
-abstract class ResourceActions(prefix: String) {
+abstract class ResourceActions(
+    val prefix: String, 
+    additionalActions: Map[String,String] = Map()) {
   val Create = s"$prefix.create"
   val View   = s"$prefix.view"
   val Update = s"$prefix.update"
@@ -16,7 +18,7 @@ abstract class ResourceActions(prefix: String) {
     "create" -> Create,
     "view" -> View,
     "update" -> Update,
-    "delete" -> Delete)
+    "delete" -> Delete) ++ additionalActions
   
   def isValidAction(action: String) = {
     actions.keySet.contains(action)
@@ -57,7 +59,6 @@ object Actions {
   object Group extends ResourceActions("group")
   object Workspace extends ResourceActions("workspace")
   object Environment extends ResourceActions("environment")
-  object Lambda extends ResourceActions("lambda")
   object Container extends ResourceActions("container")
   object License extends ResourceActions("license")
   
@@ -65,4 +66,11 @@ object Actions {
   object Entitlement extends ResourceActions("entitlement")
   object Policy extends ResourceActions("policy")
   object Rule extends ResourceActions("rule")
+  
+  object Lambda extends ResourceActions("lambda",
+      additionalActions = Map("migrate" -> "migrate", "scale" -> "scale")) {
+    val Migrate = s"${prefix}.migrate"
+    val Scale   = s"${prefix}.scale"  
+  }
+  
 }
