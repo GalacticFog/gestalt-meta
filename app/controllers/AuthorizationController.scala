@@ -34,7 +34,8 @@ import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
 import com.galacticfog.gestalt.meta.auth._
-
+import com.galacticfog.gestalt.meta.auth.Actions
+  
 //
 // TODO: Rename to 'EntitlementController'
 //
@@ -83,9 +84,7 @@ object AuthorizationController extends Authorization {
     getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
   }
   
-  
- 
-  
+
   /**
    * DELETE /{fqon}/entitlements/{id}
    */
@@ -121,7 +120,6 @@ object AuthorizationController extends Authorization {
   def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
     val merge = booleanParam("effective", qs)
     val filter = qs.get("action")
-    
   }
   
   
@@ -140,7 +138,6 @@ object AuthorizationController extends Authorization {
       r1 <- Try { if (old.id == newent.id) newent else throw new ConflictException("You may not modify the resource ID.") }
       r2 <- Try { if (oldaction == newaction) newent else throw new ConflictException(s"You may not modify the entitlement action. Found: '$newaction', Expected: '$oldaction'") }
     } yield r2
-    
   }
   
   def copyEntitlementForUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = Try {
@@ -168,6 +165,10 @@ object AuthorizationController extends Authorization {
     val user = request.identity
     val json = request.body
     
+    /*
+     * TODO: Authorize 'entitlement.update'
+     */
+    
     ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
       for {
         r1 <- validateEntitlementPayload(org, parent, user, json, "update")
@@ -183,8 +184,7 @@ object AuthorizationController extends Authorization {
     } match {
       case Failure(e) => HandleExceptions(e)
       case Success(r) => Ok(transformEntitlement(r, org, META_URL))
-    }
-    
+    }    
   }
   
 
@@ -194,6 +194,10 @@ object AuthorizationController extends Authorization {
     
     // This is the resource we're creating the Entitlement for.
     val parentResource = ResourceFactory.findById(typeId, resourceId)
+    
+    /*
+     * TODO: Authorize 'entitlement.create'
+     */
     
     parentResource match {
       case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
@@ -215,15 +219,12 @@ object AuthorizationController extends Authorization {
       }
     }
   }
-
-  
-  
   
   /**
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
   private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
-    handleEntitlementExpansion(org) {
+    AuthorizeList(Actions.Entitlement.View) {
       ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId)
     }
   }
@@ -236,16 +237,16 @@ object AuthorizationController extends Authorization {
       case None      => NotFoundResult(s"Entitlement with ID '$id' not found.")
     }
   }
-
+  
   private[controllers] def validateEntitlementPayload(
       org: UUID, 
       parent: UUID, 
       creator: AuthAccountWithCreds, 
       payload: JsValue,
-      accessType: String): Try[GestaltResourceInstance] = Try {
+      accessType: String): Try[GestaltResourceInstance] = {
     
     log.debug("Entered: validateEntitlementPayload(...)")
-    
+
     /*
      * Validations:
      * 1.) Caller has SetEntitlements permission
@@ -253,69 +254,42 @@ object AuthorizationController extends Authorization {
      * 3.) Entitlement for given action DOES NOT already exist
      * 4.) Given identities ALL exist
      */
-    
-    //
-    // TODO: Validate user has 'setEntitlements' permission
-    //???
-    
-    // TODO: Validate that 'action' is unique for this resource (specified at most once).
-    // ???
-    
-    
-    //
-    // TODO: Remove unnecessary pattern matching
-    //
-    toResource(org, creator, payload) match {
-      case Failure(err) => throw err
-      case Success(resource) => {
-        EntitlementProps.make(resource).validate match {
-          case Left(err) => throw new BadRequestException(err)
-          case Right(props) => {
 
-            
-            /*
-             * If we're trying to create, existing must be empty.
-             */
-            
-            
-            if (accessType == "update") resource
-            else if (accessType == "create") { 
+    toResource(org, creator, payload) map { resource =>
+      
+      EntitlementProps.make(resource).validate match {
+        case Left(err)    => throw new BadRequestException(err)
+        case Right(props) => {
+
+          accessType match {
+            case "update" => resource
+            case "create" => {
               
-              val existing = entitlementsByAction(parent, props.action)
-              
-              println("EXISTING-ENTITLEMENTS:")
-              existing foreach {e => println(e.properties.get)}
-              
+              // If we're trying to create, existing must be empty.        
+              val existing = entitlementsByAction(parent, props.action)  
               if (existing.isEmpty) resource
-              else {
-                throw new ConflictException(
-                    s"Found existing entitlement for action '${props.action}'. There can be only one.")
-              }
-              
-            } else {
-              throw new RuntimeException(s"Unhandled accessType: '$accessType'")
+              else throw new ConflictException(Errors.ActionExists(props.action))
             }
-            
+            case e => throw new RuntimeException(s"Unhandled accessType: '$e'")
           }
         }
       }
     }
+    
   }
   
+  private[this] object Errors {
+    def ActionExists(action: String) = s"Found existing entitlement for action '${action}'. There can be only one."
+  }
   
-
- 
-
-
   /**
-   * TODO: Get rid of unnecessary pattern-matching
+   * 
    */
   def toResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = Try {
     
     safeGetInputJson(ResourceIds.Entitlement, json) match {
       case Failure(error) => throw error
       case Success(input) => {
-      
         inputWithDefaults(org, input.copy(resource_type = Option(ResourceIds.Entitlement)), creator)
       }
     }
@@ -327,16 +301,12 @@ object AuthorizationController extends Authorization {
    * from a Seq[UUID] to a Seq[ResourceLink]. This is necessary because 'identity' is a polymorphic reference
    * (either a User or a Group), and the type system has no way to indicate this fact for reference properties.
    */
-//  private[this] def transformEntitlements(ents: Seq[GestaltResourceInstance], org: UUID, baseUrl: Option[String]) = {
-//    ents map { e => transformEntitlement(e, org, baseUrl) }
-//  }
-  
   private[this] def transformEntitlements(org: UUID)(entitlements: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     entitlements map { transformEntitlement(_, org, META_URL) }    
   }
   
   private[this] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
-
+    
     val props = EntitlementProps.make(ent)
     
     val output = props.identities match {
@@ -373,6 +343,5 @@ object AuthorizationController extends Authorization {
     if (output.isDefined) output.get else Json.toJson(ent) 
   }
 
-  
 }
 
