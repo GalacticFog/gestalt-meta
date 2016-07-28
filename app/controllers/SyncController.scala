@@ -95,7 +95,7 @@ object SyncController extends Authorization {
   def deleteResources(identity: UUID, ids: Iterable[UUID]) = {
     for (id <- ids) ResourceFactory.hardDeleteResource(id).get
   }
-  
+
   
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     
@@ -108,21 +108,10 @@ object SyncController extends Authorization {
         case Failure(err) => throw err
         case Success(org) => {
      
-          //
-          // TODO: Raise error if any of the Entitlements fail Create.
-          //
-          
-          Entitle(org.id, ResourceIds.Org, org.id, account, Option(parent)) { 
-            generateEntitlements( 
-              adminId, org.id, org.id, 
-              resourceTypes = Seq(
-                  ResourceIds.Org, 
-                  ResourceIds.Workspace, 
-                  ResourceIds.User, 
-                  ResourceIds.Group),
-              actions = ACTIONS_CRUD )
-          }
-          
+          /*
+           * TODO: Raise error if any of the Entitlements fail Create.
+           */
+          setOrgEntitlements(org.id, account)
         } 
       }
     }

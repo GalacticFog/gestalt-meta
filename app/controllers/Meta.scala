@@ -83,6 +83,8 @@ object Meta extends Authorization {
     createOrgCommon(fqid(fqon))
   }
   
+  
+  
   def createOrgCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
     
     val json = request.body
@@ -93,22 +95,11 @@ object Meta extends Authorization {
       CreateSynchronized(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-          
-          
+
           //
           // TODO: Raise error if any Entitlement create fails.
           //
-          
-          Entitle(org, ResourceIds.Org, res.id, user, None) {
-            generateEntitlements(
-              user.account.id, org, res.id,
-              Seq(
-                  ResourceIds.Org, 
-                  ResourceIds.Workspace, 
-                  ResourceIds.User, 
-                  ResourceIds.Group),
-              ACTIONS_CRUD)
-          }
+          setOrgEntitlements(org, user)
           Created(Output.renderInstance(res, META_URL))
         }
       }
@@ -116,14 +107,31 @@ object Meta extends Authorization {
     }    
   }
   
-    private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
-      (sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
+  
+//  def setOrgEntitlements(org: UUID, user: AuthAccountWithCreds) = {
+//    Entitle(org, ResourceIds.Org, /*res.id*/ org, user, None) {
+//      generateEntitlements(
+//        user.account.id, org, /*res.id*/ org,
+//        Seq(
+//            ResourceIds.Org, 
+//            ResourceIds.Workspace, 
+//            ResourceIds.User, 
+//            ResourceIds.Group,
+//            ResourceIds.Provider,
+//            ResourceIds.Policy,
+//            ResourceIds.Entitlement),
+//        ACTIONS_CRUD)
+//    }
+//  }
+  
+  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
+    (sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
 
-      safeGetInputJson(typeId, json) match {
-        case Failure(error) => throw error
-        case Success(input) => createSynchronized(org, typeId, input)(sc, mc)
-      }
-    }  
+    safeGetInputJson(typeId, json) match {
+      case Failure(error) => throw error
+      case Success(input) => createSynchronized(org, typeId, input)(sc, mc)
+    }
+  }  
 
   
   // --------------------------------------------------------------------------

@@ -36,9 +36,13 @@ trait Authorization extends MetaController {
     Entitle(org, resourceType, resourceId, request.identity, parent)(entitlements)
   }
   
-  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, user: AuthAccountWithCreds, parent: Option[UUID])(entitlements: => Seq[Entitlement])= {
-    (if (parent.isEmpty) entitlements else
-      mergeParentEntitlements(entitlements, resourceType, parent.get)) map { e =>
+  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, user: AuthAccountWithCreds, parent: Option[UUID])(entitlements: => Seq[Entitlement])= {    
+    val newEntitlements = {
+      if (parent.isEmpty) entitlements else
+      mergeParentEntitlements(entitlements, resourceType, parent.get)
+    }
+    
+    newEntitlements map { e =>
       CreateResource(
         ResourceIds.User, user.account.id, org, Json.toJson(e), user,
         Option(ResourceIds.Entitlement), Option(resourceId))
@@ -46,6 +50,22 @@ trait Authorization extends MetaController {
   }  
   
 
+  def setOrgEntitlements(org: UUID, user: AuthAccountWithCreds) = {
+    Entitle(org, ResourceIds.Org, /*res.id*/ org, user, None) {
+      generateEntitlements(
+        user.account.id, org, /*res.id*/ org,
+        Seq(
+            ResourceIds.Org, 
+            ResourceIds.Workspace, 
+            ResourceIds.User, 
+            ResourceIds.Group,
+            ResourceIds.Provider,
+            ResourceIds.Policy,
+            ResourceIds.Entitlement),
+        ACTIONS_CRUD)
+    }
+  }  
+  
   
   
 //  def Authorize[T](target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => T): Try[T] = Try {
@@ -157,7 +177,6 @@ trait Authorization extends MetaController {
         }
       }
     }
-    
     go(theirs filter { e => e.properties.action.startsWith(ActionPrefix(ourType)) }, ours)
   }
 
@@ -253,8 +272,6 @@ trait Authorization extends MetaController {
   }  
 
   
-
-  
   object PermissionSet {
     val SELF = "self"
     val MERGED = "merged"
@@ -328,7 +345,7 @@ trait Authorization extends MetaController {
     resource: UUID,
     resourceTypes: Seq[UUID],
     actions: Seq[String]): Seq[Entitlement] = {
-
+    
     for {
       t <- resourceTypes
       o <- resourceEntitlements(creator, org, resource, t, actions)
@@ -352,7 +369,7 @@ trait Authorization extends MetaController {
     }
   }
   
-
+  
   def newEntitlementResource(
       creator: UUID,
       org: UUID, 
