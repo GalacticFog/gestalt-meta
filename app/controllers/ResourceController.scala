@@ -62,64 +62,53 @@ import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.output.Output.{renderInstance => Render}
 
+import com.galacticfog.gestalt.meta.api.ResourcePath
+import com.galacticfog.gestalt.data.models.ResourceLike
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
 
 object ResourceController extends Authorization {
   
   // TODO: Move these to MetaController (or somewhere up the chain)
   private val resources  = ResourceFactory
   private val references = ReferenceFactory
-  
-  
-  def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
-    
-    def mkuri(fqon: String, r: GestaltResourceInstance) = {
-      "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)
-    }
-    
-    def mkinfo(r: GestaltResourceInstance) = {
-      ResourceInfo(r.id, r.name, mkuri(fqon, r))
-    }
-    
-    def resolve(parent: UUID, cmps: List[(UUID,String)], dat: Map[String, ResourceInfo]): Try[Map[String,ResourceInfo]] = Try {
-      cmps match {
-        case Nil => dat
-        case h :: t => {
-          ResourceFactory.findChildByName(parent, h._1, h._2) match {
-            case None => throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
-            case Some(res) => 
-              resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
-          }
-        }
-      }
-    }
-    
-    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
-    val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
-    val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
-    
-    resolve(org.id, (keys zip values), Map("org" -> mkinfo(org))) match {
-      case Success(m) => Ok(Json.toJson(m))
-      case Failure(e) => HandleRepositoryExceptions(e)
-    }
-  }
-  
-  def providerTypeIds(): Seq[UUID] = {
-    ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
-     p.id 
-    }
-  }
-  
 
-
-
-  import com.galacticfog.gestalt.meta.api.ResourcePath
-  import com.galacticfog.gestalt.data.models.ResourceLike
-  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-  
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
-  type LookupFunction    = ((UUID,UUID) => Try[ResourceLike])
+
+  type Lookup = (ResourcePath, AuthAccountWithCreds) => Option[GestaltResourceInstance]
+  type LookupSeq = (ResourcePath, AuthAccountWithCreds) => Seq[GestaltResourceInstance]
   
+  private[controllers] val transformers: Map[UUID, TransformFunction] = Map(
+      ResourceIds.Group -> transformGroup,
+      ResourceIds.User  -> transformUser
+  )
+  
+  private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
+    ResourceIds.Provider -> lookupSeqProviders
+  )
+  
+  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds): List[GestaltResourceInstance] = {
+    log.debug(s"lookupSeqProviders(${path.path}, user = ${account.account.id}")
+    
+    val parentId = { 
+      if (path.parentId.isDefined) path.parentId.get
+      else orgFqon(path.fqon).fold(FqonNotFound(path.fqon)){ _.id }
+    }
+    ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, parentId)  
+  }
+  
+  
+  def FqonNotFound(fqon: String) = {
+    throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
+  }
+  
+  /*
+   * Add ability to override normal lookup function:
+   * lookup = (UUID, Account) => Option[GestaltResourceInstance]
+   * lookupSeq = (UUID,Account) => Seq[GestaltResourceInstance]
+   * 
+   */
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
     orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
@@ -128,7 +117,6 @@ object ResourceController extends Authorization {
       }
     }
   }
-  
   
   /**
    * Get a top-level resource list. Pulls resources from across all Orgs.
@@ -147,18 +135,13 @@ object ResourceController extends Authorization {
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
-    val action = Actions.resourceAction(rp.targetTypeId, "view")
+    val action = Actions.actionName(rp.targetTypeId, "view")
     
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)
   }  
   
-  
-  private[controllers] val transformers: Map[UUID, TransformFunction] = Map(
-      ResourceIds.Group -> transformGroup,
-      ResourceIds.User  -> transformUser
-  )
-  
+
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
@@ -179,7 +162,12 @@ object ResourceController extends Authorization {
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
-    val rss = Resource.listFromPath(path.path)
+    val rss = lookupSeqs.get(path.targetTypeId).fold {
+      Resource.listFromPath(path.path)
+    }{ f =>
+      f(path, request.identity).toList
+    }
+    
     val transform = transformers.get(path.targetTypeId)
     
     AuthorizeList(action) {
@@ -393,9 +381,6 @@ object ResourceController extends Authorization {
     }
   }
   
-  
-
-
 
   // --------------------------------------------------------------------------
   // CUSTOM-RESOURCES
@@ -543,6 +528,7 @@ object ResourceController extends Authorization {
     }
   }  
   
+
   /*
    * SPECIAL CASE: Providers are merged.
    */
@@ -551,11 +537,56 @@ object ResourceController extends Authorization {
     /*
      * TODO: Use findWithVariance to get ALL providers of all types and merge.
      */
-    val gateways  = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
-    val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
-    val providers = gateways ++ marathons
+//    val gateways  = ResourceFactory.findChildrenOfType(ResourceIds.ApiGatewayProvider, workspace)
+//    val marathons = ResourceFactory.findChildrenOfType(ResourceIds.MarathonProvider, workspace)
+//    val providers = gateways ++ marathons
     
+    val providers = ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, workspace)
     handleExpansion(providers, request.queryString, META_URL)
   }
-
+  
+  /**
+   * Get a list of valid provider-types. That is any resource type that is a sub-type
+   * of Provider.
+   */
+  private[controllers] def providerTypeIds(): Seq[UUID] = {
+    ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
+     p.id 
+    }
+  }  
+  
+  
+  def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+    
+    def mkuri(fqon: String, r: GestaltResourceInstance) = {
+      "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)
+    }
+    
+    def mkinfo(r: GestaltResourceInstance) = {
+      ResourceInfo(r.id, r.name, mkuri(fqon, r))
+    }
+    
+    def resolve(parent: UUID, cmps: List[(UUID,String)], dat: Map[String, ResourceInfo]): Try[Map[String,ResourceInfo]] = Try {
+      cmps match {
+        case Nil => dat
+        case h :: t => {
+          ResourceFactory.findChildByName(parent, h._1, h._2) match {
+            case None => throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
+            case Some(res) => 
+              resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
+          }
+        }
+      }
+    }
+    
+    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
+    val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
+    val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
+    
+    resolve(org.id, (keys zip values), Map("org" -> mkinfo(org))) match {
+      case Success(m) => Ok(Json.toJson(m))
+      case Failure(e) => HandleRepositoryExceptions(e)
+    }
+  }  
+  
 }
