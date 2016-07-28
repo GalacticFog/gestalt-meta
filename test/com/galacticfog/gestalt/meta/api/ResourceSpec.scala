@@ -19,6 +19,10 @@ import com.galacticfog.gestalt.data.ResourceFactory.findById
 
 class ResourceSpec extends Specification {
 
+  
+  stopOnFail
+  sequential
+  
   controllers.util.db.EnvConfig.getConnection()
   
   "typeOrElse" should {
@@ -48,25 +52,29 @@ class ResourceSpec extends Specification {
     }
     
     "succeed when the path points to a first-level resource" in {
-      val m = Resource.mapPathData("/alpha/bravo/charlie")
+      val id = uuid.toString
+      val m = Resource.mapPathData(s"/alpha/bravo/${id}")
       
       m must beAnInstanceOf[Map[_,_]]
       m.size === 3
       m(Resource.Fqon) === "alpha"
       m(Resource.TargetType) === "bravo"
-      m(Resource.TargetId) === "charlie"
+      m(Resource.TargetId) === id
     }
     
     "succeed when the path points to a second-level resource" in {
-      val m = Resource.mapPathData("/fqon/workspaces/123/environments/456")
+      
+      val pid = uuid.toString
+      val tid = uuid.toString
+      val m = Resource.mapPathData(s"/fqon/workspaces/${pid}/environments/${tid}")
       
       m must beAnInstanceOf[Map[_,_]]
       m.size === 5
       m(Resource.Fqon) === "fqon"
       m(Resource.ParentType) === "workspaces"
-      m(Resource.ParentId) === "123"
+      m(Resource.ParentId) === pid
       m(Resource.TargetType) === "environments"
-      m(Resource.TargetId) === "456"
+      m(Resource.TargetId) === tid
     }
     
     "fail with Exception if the path is empty" in {
@@ -98,11 +106,12 @@ class ResourceSpec extends Specification {
     }
     
     "succeed when the path points to a second-level resource type" in {
-      val m = Resource.mapListPathData("/fqon/parent/pid/target")
+      val pid = uuid.toString
+      val m = Resource.mapListPathData(s"/fqon/parent/${pid}/target")
       m.size === 4
       m.get(Resource.Fqon) must beSome("fqon")
       m.get(Resource.ParentType) must beSome("parent")
-      m.get(Resource.ParentId) must beSome("pid")
+      m.get(Resource.ParentId) must beSome(pid)
       m.get(Resource.TargetType) must beSome("target")
     }
     
@@ -229,8 +238,8 @@ class ResourceSpec extends Specification {
     }
     
     "throw an exception when the path contains an invalid UUID" in {
-      Resource.fromPath("/galacticfog/invalid_resource/foo") must throwAn[IllegalArgumentException]
-      Resource.fromPath(s"/galacticfog/workspaces/${uuid.toString}/environments/bar") must throwAn[IllegalArgumentException]
+      Resource.fromPath(s"/galacticfog/invalid_resource/${uuid.toString}") must throwAn[BadRequestException]
+      Resource.fromPath(s"/galacticfog/workspaces/${uuid.toString}/environments/INVALID_UUID") must throwAn[BadRequestException]
     }
     
     "CONDITION: typeName == 'providers" should {
