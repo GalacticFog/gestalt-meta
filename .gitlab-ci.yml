@@ -16,13 +16,27 @@ variables:
   DATABASE_PORT: "5432"
   DATABASE_USERNAME: gestaltdev
   DATABASE_PASSWORD: letmein
+  DATABASE_TIMEOUT_MS: 5000
   ROOT_USERNAME: root
   ROOT_PASSWORD: letmein
   DOCKER_IMG: "galacticfog/gestalt-meta"
+  GESTALT_SECURITY_PROTOCOL: http
+  GESTALT_SECURITY_HOSTNAME: galacticfog__gestalt-security
+  GESTALT_SECURITY_PORT: 80
+  GESTALT_SECURITY_KEY: missing
+  GESTALT_SECURITY_SECRET: missing
+  GESTALT_APIGATEWAY: "http://no-gateway"
+  GESTALT_LAMBDA: "http://no-lambda"
+  RABBIT_HOST: no-rabbit
+  RABBIT_PORT: 5672
+  RABBIT_HTTP_PORT: 15672
+  RABBIT_EXCHANGE: policy
+  RABBIT_ROUTE: test-route
 
 test:
   stage: test
   services:
+    #no database or security integration tests yet
     #- postgres:9.4
     #- galacticfog/gestalt-security:2.2.5-SNAPSHOT-b246c46b
   script:
