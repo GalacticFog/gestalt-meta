@@ -59,29 +59,12 @@ dockerRepository := Some("galacticfog.artifactoryonline.com")
 
 
 resolvers ++= Seq(
-  "gestalt"   at "http://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
+  "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
+  "gestalt-releases" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
   "snapshots" at "http://scala-tools.org/repo-snapshots",
   "releases"  at "http://scala-tools.org/repo-releases",
   "Atlassian Releases" at "https://maven.atlassian.com/public/"
 )
-
-credentials ++= {
-  (for {
-    realm 	 	    <- sys.env.get("GESTALT_RESOLVER_REALM")
-    username 		<- sys.env.get("GESTALT_RESOLVER_USERNAME")
-    resolverUrlStr  <- sys.env.get("GESTALT_RESOLVER_URL")
-    resolverUrl 	<- scala.util.Try{url(resolverUrlStr)}.toOption
-    password 		<- sys.env.get("GESTALT_RESOLVER_PASSWORD")
-  } yield {
-    Seq(Credentials(realm, resolverUrl.getHost, username, password))
-  }) getOrElse(Seq())
-}
-
-resolvers ++= {
-  sys.env.get("GESTALT_RESOLVER_URL") map {
-    url => Seq("gestalt-resolver" at url)
-  } getOrElse(Seq())
-}
 
 scalikejdbcSettings
 
@@ -92,7 +75,7 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.3.3-SNAPSHOT" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.3.3-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-security-play" 	% "2.2.4-SNAPSHOT" withSources(),
-  "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.2.6-SNAPSHOT" withSources(),
+	"com.galacticfog" %% "gestalt-security-sdk-scala" % "2.2.6-SNAPSHOT" withSources(),
 	"com.galacticfog" % "gestalt-license-keymgr" % "1.0.1-SNAPSHOT"
 )
 
