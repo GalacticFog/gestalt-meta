@@ -1,8 +1,22 @@
+import com.typesafe.sbt.packager.docker._
+
 name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
 version := "0.3.3-SNAPSHOT"
+
+maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
+
+dockerBaseImage := "java:8-jre-alpine"
+
+dockerCommands := dockerCommands.value.flatMap {
+  case cmd@Cmd("FROM",_) => List(
+    cmd,
+    Cmd("RUN", "apk add --update bash && rm -rf /var/cache/apk/*")     
+  )
+  case other => List(other)
+}
 
 //lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
@@ -36,11 +50,6 @@ EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 scalaVersion := "2.11.8"
 
-maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
-
-dockerUpdateLatest := true
-
-dockerRepository := Some("galacticfog.artifactoryonline.com")
 
 
 
