@@ -32,7 +32,6 @@ class ActionsSpec extends Specification {
     }
   }
 
-  
   "isValidAction" should {
     
     "return TRUE if the action is defined for the resource type" in {
@@ -47,11 +46,17 @@ class ActionsSpec extends Specification {
     }
   }
   
-  "Actions.Lambda" should {
+  "Actions.Container" should {
     
     "have 'migrate' and 'scale' actions" in {
-      Actions.Lambda.isValidAction("migrate") must beTrue
-      Actions.Lambda.isValidAction("scale") must beTrue
+      Actions.Container.isValidAction("migrate") must beTrue
+      Actions.Container.isValidAction("scale") must beTrue
+    }
+  }
+  
+  "Actions.Lambda" should {
+    "have an 'invoke' action" in {
+      Actions.Lambda.isValidAction("invoke") must beTrue
     }
   }
   

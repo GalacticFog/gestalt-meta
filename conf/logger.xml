@@ -15,6 +15,7 @@
   -->
   
   <logger name="play" level="INFO" />
+  <logger name="com.galacticfog" level="DEBUG"/>
   <logger name="application"  level="DEBUG" />
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="scalikejdbc" level="ERROR"/>

@@ -28,13 +28,6 @@ GET  	/path/:fqon/*components  controllers.ResourceController.mapPath(fqon, comp
 
 POST 	/orgs																						controllers.Meta.postTopLevelOrg()
 GET 	/orgs 																						controllers.ResourceController.getGlobalResourceList(targetTypeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e")
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}> 		controllers.ResourceController.getOrg(orgId: java.util.UUID)
-#DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>  		controllers.DeleteController.hardDeleteOrg(orgId: java.util.UUID)
-
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/orgs 	controllers.ResourceController.getGenericAll(targetTypeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", orgId: java.util.UUID)
-
-POST 	/orgs/$parent<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>		controllers.Meta.postOrg(parent: java.util.UUID)
-
 
 ############################
 # USERS
@@ -61,27 +54,6 @@ GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/search 					controllers.SearchController.getAllResourcesByTypePropertyFqon(fqon: String, typeId: java.util.UUID)
 
 
-############################
-# USERS
-############################
-
-POST 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users		controllers.Meta.postUser(orgId: java.util.UUID)
-
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users    	controllers.ResourceController.getAllUsers(orgId: java.util.UUID)
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/:uuid    controllers.ResourceController.getUserById(orgId: java.util.UUID, uuid: java.util.UUID)
-
-#DELETE  /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/users/:userId  controllers.DeleteController.hardDeleteUser(orgId: java.util.UUID, userId: java.util.UUID)
-
-
-
-############################
-# RESOURCE TYPES
-############################
-
-POST 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes  		controllers.TypeController.createResourceType(uuid: java.util.UUID)
-GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes  	    controllers.TypeController.getAllResourceTypes(uuid: java.util.UUID)
-GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:id 	controllers.TypeController.getResourceTypeById(uuid: java.util.UUID, id: java.util.UUID)
-
 
 ############################
 # TYPE PROPERTIES
@@ -95,101 +67,6 @@ GET 	/orgs/$uuid<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/typeproperties/:uuid    controllers.PropertyController.getPropertyById(orgId: java.util.UUID, typeId: java.util.UUID, uuid: java.util.UUID)
 
 GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/typeproperties  controllers.PropertyController.getAllProperties(orgId: java.util.UUID)
-
-
-############################
-# RESOURCES
-############################
-
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources       	controllers.ResourceController.getAllResources(orgId: java.util.UUID)
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources/:resId	controllers.ResourceController.getResourceById(orgId: java.util.UUID, resId: java.util.UUID)
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resourcetypes/:typeId/resources		controllers.ResourceController.getAllResourcesByTypeOrg(orgId: java.util.UUID, typeId: java.util.UUID)
-
-POST 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources    				controllers.Meta.postResource(orgId: java.util.UUID)
-PATCH  	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/resources/:resId		controllers.Meta.patchResource(orgId: java.util.UUID, resId: java.util.UUID)
-
-
-############################
-# WORKSPACES
-############################
-
-POST /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.Meta.postWorkspace(orgId: java.util.UUID)
-
-
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces 			controllers.ResourceController.getAllWorkspaces(orgId: java.util.UUID)
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id 		controllers.ResourceController.getWorkspaceById(orgId: java.util.UUID, id: java.util.UUID)
-
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:workspaceId/environments controllers.ResourceController.getGenericChildAll(targetTypeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", workspaceId: java.util.UUID, orgId: java.util.UUID) 
-
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id/environments  controllers.Meta.postEnvironmentWorkspace(orgId: java.util.UUID, id: java.util.UUID)
-
-
-############################
-# ENVIRONMENTS
-############################
-
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments  controllers.Meta.postEnvironment(orgId: java.util.UUID)
-
-#GET     /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id controllers.ResourceController.getEnvironmentById(orgId: java.util.UUID, id: java.util.UUID)
-#GET     /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName 	controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
-
-
-############################
-# LAMBDAS
-############################
-
-# Create lambda in a workspace
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:workspace/lambdas   controllers.LaserController.postLambda(orgId: java.util.UUID, workspace: java.util.UUID)
-
-# Create lambda in an environment
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:environment/lambdas   controllers.LaserController.postLambda(orgId: java.util.UUID, environment: java.util.UUID)
-
-
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id/lambdas  controllers.ResourceController.getWorkspaceLambdas(orgId: java.util.UUID, id: java.util.UUID)
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/lambdas  controllers.ResourceController.getEnvironmentLambdas(orgId: java.util.UUID, id: java.util.UUID)
-
-
-GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:envId/lambdas/:id controllers.ResourceController.getEnvironmentLambdaById(orgId: java.util.UUID, envId: java.util.UUID, id: java.util.UUID)
-
-############################
-# API_ENDPOINTS
-############################
-
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:envId/apiendpoints		controllers.ResourceController.getEnvironmentApiEndpoints(orgId: java.util.UUID, envId: java.util.UUID)
-
-
-#GET  	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:environment/apiendpoints/:id  
-
-
-############################
-# APIS
-############################
-
-
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/apis/:id  controllers.ResourceController.getApiById(orgId: java.util.UUID, id: java.util.UUID)
-
-GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/lambdas/:id/endpoints controllers.ResourceController.getEndpointsByLambda(orgId: java.util.UUID, id: java.util.UUID)
-
-# Create api_endpoint in environment
-POST    /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/apiendpoints		controllers.LaserController.postApiEndpoint(orgId: java.util.UUID , id: java.util.UUID)
-
-
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName controllers.ResourceController.getAllSystemResourcesByName(orgId: java.util.UUID, restName: String)
-
-#GET 	/orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:restName/:id   					controllers.ResourceController.getAllSystemResourcesByNameId(orgId: java.util.UUID, restName: String, id: java.util.UUID)
-
-############################
-# PROVIDERS
-############################
-
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/:id/providers
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/workspaces/:id/providers   controllers.ResourceController.getProviders(orgId: java.util.UUID, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
-
-#GET /orgs/$orgId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments/:id/providers  controllers.ResourceController.getProviders(orgId: java.util.UUID, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
-
-
-
-
 
 
 
@@ -214,10 +91,11 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.Licen
 ############################
 
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas 		controllers.LaserController.postLambdaFqon(fqon: String, envId: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id						controllers.ResourceController.getLambdaByIdFqon(fqon: String, id: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/lambdas  			controllers.ResourceController.getWorkspaceLambdasFqon(fqon: String, id: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/lambdas  		controllers.ResourceController.getEnvironmentLambdasFqon(fqon: String, id: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas/:id 	controllers.ResourceController.getEnvironmentLambdaByIdFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
+
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id						controllers.ResourceController.getLambdaByIdFqon(fqon: String, id: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/lambdas  			controllers.ResourceController.getWorkspaceLambdasFqon(fqon: String, id: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/lambdas  		controllers.ResourceController.getEnvironmentLambdasFqon(fqon: String, id: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas/:id 	controllers.ResourceController.getEnvironmentLambdaByIdFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 
 
 ############################
@@ -284,6 +162,48 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourc
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  		controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceId: java.util.UUID)
 
 
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.ResourceController.getGroupUsersFqon(fqon: String, group: java.util.UUID)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:id/groups  controllers.ResourceController.getUserGroupsFqon(fqon: String, id: java.util.UUID)
+
+
+############################
+# RESOURCE_TYPE
+############################
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.TypeController.createResourceTypeFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources 	controllers.ResourceController.getAllResourcesByTypeFqon(fqon: String, typeId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/schema  	controllers.TypeController.getPropertySchemaFqon(fqon: String, typeId: java.util.UUID)
+
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions  controllers.ResourceController.getTypeActionsFqon(fqon: String, typeId: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:id
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:id
+
+
+############################
+# TYPE_PROPERTY
+############################
+
+##### Add /{org}/typeproperties
+##### Add /{org}/typeproperties/:uuid
+
+
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties      		controllers.PropertyController.getAllPropertiesFqon(fqon: String)
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id  		controllers.PropertyController.getTypePropertyByIdFqon(fqon: String, id: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  						controllers.PropertyController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.PropertyController.getAllPropertiesByTypeFqon(fqon: String, uuid: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.PropertyController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
+
+############################
+# AUTHENTICATED HEALTH-CHECK
+############################
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health				controllers.InfoController.healthAuthenticated(fqon: String) 
+
+
 ############################
 # COMMON
 ############################
@@ -305,10 +225,6 @@ DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.DeleteContro
 
 
 
-
-
-
-
 ############################
 # ORGS
 ############################
@@ -316,23 +232,6 @@ DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.DeleteContro
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.Meta.postOrgFqon(fqon)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.ResourceController.getOrgFqon(fqon: String)
 #GET 	 /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/orgs		controllers.ResourceController.getGenericAllFqon(targetTypeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e", fqon: String)
-#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteOrgFqon(fqon: String)  
-
-
-
-
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id							controllers.AuthorizationController.getEntitlementByIdOrgFqon(fqon: String, id: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/entitlements/:id       controllers.AuthorizationController.getEntitlementByIdFqon(fqon: String, typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parent: java.util.UUID, id: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parent/entitlements/:id		controllers.AuthorizationController.getEntitlementByIdFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID, id: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:parent/entitlements/:id			controllers.AuthorizationController.getEntitlementByIdFqon(fqon: String, typeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", parent: java.util.UUID, id: java.util.UUID)
-
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id							controllers.AuthorizationController.deleteEntitlementOrgFqon(fqon: String, id: java.util.UUID)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/entitlements/:id		controllers.AuthorizationController.deleteEntitlementFqon(fqon: String, typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parent: java.util.UUID, id: java.util.UUID)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parent/entitlements/:id		controllers.AuthorizationController.deleteEntitlementFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID, id: java.util.UUID)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:parent/entitlements/:id			controllers.AuthorizationController.deleteEntitlementFqon(fqon: String, typeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", parent: java.util.UUID, id: java.util.UUID)
-
-
-
 
 
 ############################
@@ -343,9 +242,8 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.Meta.postGro
 
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups		controllers.ResourceController.getGroupsFqon(fqon: String)
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:id	controllers.ResourceController.getGroupByIdFqon(fqon: String, id: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:id	controllers.ResourceController.getGroupByIdFqon(fqon: String, id: java.util.UUID)
   
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.ResourceController.getGroupUsersFqon(fqon: String, group: java.util.UUID)
 
 #DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group  controllers.DeleteController.hardDeleteGroup(fqon: String, group: java.util.UUID)
 
@@ -361,47 +259,6 @@ PATCH	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users controllers.
 
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 		controllers.Meta.postUserFqon(fqon: String)
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:uuid  	controllers.DeleteController.hardDeleteUserFqon(fqon: String, uuid: java.util.UUID)
-
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:id/groups  controllers.ResourceController.getUserGroupsFqon(fqon: String, id: java.util.UUID)
-
-
-
-############################
-# RESOURCE_TYPE
-############################
-
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.TypeController.createResourceTypeFqon(fqon: String)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.DeleteController.hardDeleteResourceTypeFqon(fqon: String, typeId: java.util.UUID)
- 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources 	controllers.ResourceController.getAllResourcesByTypeFqon(fqon: String, typeId: java.util.UUID)
-
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/schema  	controllers.TypeController.getPropertySchemaFqon(fqon: String, typeId: java.util.UUID)
-
-#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions  controllers.ResourceController.getTypeActionsFqon(fqon: String, typeId: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:id
-#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:id
-
-
-#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId 
-#PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId
-
-############################
-# TYPE_PROPERTY
-############################
-
-##### Add /{org}/typeproperties
-##### Add /{org}/typeproperties/:uuid
-
-
-GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties      		controllers.PropertyController.getAllPropertiesFqon(fqon: String)
-GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id  		controllers.PropertyController.getTypePropertyByIdFqon(fqon: String, id: java.util.UUID)
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  						controllers.PropertyController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.PropertyController.getAllPropertiesByTypeFqon(fqon: String, uuid: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.PropertyController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
-
 
 
 ############################
@@ -429,13 +286,9 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId  		 controllers.
 # WORKSPACES
 ############################
 
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/$workspaceId<[a-f0-9]{8}-[a-f0-9]{4}-4[a-f0-9]{3}-[89aAbB][a-f0-9]{3}-[a-f0-9]{12}>/environments   controllers.ResourceController.getGenericChildAllFqon(targetTypeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", workspaceId: java.util.UUID, fqon: String)
+
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces					controllers.Meta.postWorkspaceFqon(fqon: String)
 
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments   controllers.ResourceController.getEnvironmentsByWorkspaceFqon(fqon: String, id: java.util.UUID)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id  				controllers.DeleteController.deleteWorkspaceFqon(fqon: String, id: java.util.UUID)
-
-# -- Create new Environment in Workspace
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments controllers.Meta.postEnvironmentWorkspaceFqon(fqon: String, id: java.util.UUID)
 
 
@@ -444,7 +297,6 @@ POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments co
 ############################
 
 POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments			controllers.Meta.postEnvironmentFqon(fqon: String)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id  	controllers.DeleteController.deleteEnvironmentFqon(fqon: String, id: java.util.UUID)
 
 
 ############################
@@ -470,24 +322,6 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:c
 
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.LaserController.postApiFqon(fqon: String, id: java.util.UUID)
 
-#GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/apis 		   controllers.ResourceController.getEnvironmentApisFqon(fqon: String, envId: java.util.UUID)
-#GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/apis/:id     controllers.ResourceController.getEnvironmentApiByIdFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
-
-
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
-#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis
-#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id
-
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id/apiendpoints
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:apiId/apiendpoints/:id
-
-#GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis/:id/apiendpoints
-#GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis/:id/apiendpoints/:id
-
-
-
-
 
 ############################
 # API_ENDPOINTS
@@ -495,20 +329,13 @@ POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	control
 
 # Workspace ApiEndpoints
 POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints				controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints  				controllers.ResourceController.getWorkspaceApiEndpointsFqon(fqon: String, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/apiendpoints/:id  	controllers.ResourceController.getApiEndpointFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
 # Environment ApiEndpoints
 POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints					controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints  			  	controllers.ResourceController.getEnvironmentApiEndpointsFqon(fqon: String, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:environment/apiendpoints/:id  	controllers.ResourceController.getApiEndpointFqon(fqon: String, environment: java.util.UUID, id: java.util.UUID)
 
 # Lambda ApiEndpoints
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  	controllers.LaserController.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
 GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
-
-
-#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apiendpoints/:id				controllers.DeleteController.hardDeleteEndpointFqon(fqon: String, id: java.util.UUID)
 
 
 ############################
@@ -518,74 +345,25 @@ GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		control
 # Org Providers
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers   		controllers.Meta.postProviderConfigOrgFqon(fqon: String)
 
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers		  	controllers.ResourceController.getProvidersOrgFqon(fqon: String)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id	  	controllers.ResourceController.getProviderByIdOrgFqon(fqon: String, id: java.util.UUID)
-
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers  		controllers.ResourceController.getGenericChildAllOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id  	controllers.ResourceController.getGenericChildByIdOrgFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", fqon: String, id: java.util.UUID)
-
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id controllers.ResourceController.hardDeleteChildFqon(fqon: String, childType: UUID, childId: UUID, parentType: UUID, parentId: Some[UUID])
-
-
 # Workspace Providers
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/providers   				controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
-#GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/providers 					controllers.ResourceController.getProvidersFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)   
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/providers/:id  	controllers.ResourceController.getWorkspaceProviderByIdFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/providers/:id		controllers.ResourceController.getProviderByIdFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", workspace: java.util.UUID, id: java.util.UUID)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/providers/:id  		controllers.DeleteController.hardDeleteWorkspaceProviderFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
-
 
 # Environment Providers
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers   					controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers  				controllers.ResourceController.getProvidersFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id 			controllers.ResourceController.getGenericChildByIdFqon(targetTypeId: String = "783bdeb5-415a-4030-b1b5-f341754b7d1c", parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, fqon: String, id: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id				controllers.ResourceController.getProviderByIdFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
-#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id   			controllers.DeleteController.hardDeleteEnvironmentProviderFqon(fqon: String, envId: java.util.UUID, id: java.util.UUID)
-
 
 # Direct to Marathon Endpoints
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps                     controllers.MarathonController.getMarathonApps(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps                     controllers.MarathonController.postMarathonAppDCOS(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
-
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/apps/:appId              controllers.MarathonController.getMarathonApp(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID, appId: String)
-
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/info		                controllers.MarathonController.getInfo(fqon: String, envId: java.util.UUID, id: java.util.UUID)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id/v2/deployments	            controllers.MarathonController.getDeployments(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", envId: java.util.UUID, id: java.util.UUID)
-
-#PUT 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/:id
-
-
-
-
 
 ############################
 # DOMAINS
 ############################
 
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains			controllers.ResourceController.getWorkspaceDomainsFqon(fqon: String, workspace: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  	controllers.ResourceController.getWorkspaceDomainByIdFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
-#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains/:id  	controllers.DeleteController.hardDeleteWorkspaceDomainFqon(fqon: String, workspace: java.util.UUID, id: java.util.UUID)
 
-
-
-
-############################
-# 
-############################
-
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health				controllers.InfoController.healthAuthenticated(fqon: String) 
-
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName  			controllers.ResourceController.getAllSystemResourcesByNameFqon(fqon: String, restName: String)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.ResourceController.getAllSystemResourcesByNameIdFqon(fqon: String, restName: String, id: java.util.UUID)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/:restName/:id 		controllers.DeleteController.hardDeleteResourceByNameFqon(fqon: String, restName: String, id: java.util.UUID) 
-
-
-#
-# MARATHON ENDPOINTS...
-#
-#GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/
- 
 # Map static resources from the /public folder to the /assets URL path
 #GET     /assets/*file               controllers.Assets.versioned(path="/public", file: Asset)
 

@@ -8,6 +8,8 @@ import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.uuid
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
+import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
 trait MetaResourceScope extends Scope {
@@ -22,10 +24,11 @@ trait MetaResourceScope extends Scope {
     GestaltResourceInstance(
       id = id,
       typeId = typeId,
-      state = uuid(),
+      state = ResourceState.id(ResourceStates.Active),
       orgId = org,
       owner = owner,
       name = name,
       properties = properties)
   }
+  
 }

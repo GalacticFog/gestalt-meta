@@ -7,9 +7,7 @@ import com.galacticfog.gestalt.meta.api._
 
 import com.galacticfog.gestalt.data.util._
 
-import db._
-
-//import play.api.{Logger => log}
+import controllers.util.db._
 
 import play.api.Logger
 import scala.util.{Success,Failure}
@@ -54,8 +52,11 @@ import controllers.SecurityResources
 
 
 trait MetaController extends SecureController with SecurityResources {
+  
   val log = Logger(this.getClass)
-
+  
+  protected val connection = Session.connection
+  
   type QueryString = Map[String,Seq[String]]
   
   /**
@@ -66,13 +67,31 @@ trait MetaController extends SecureController with SecurityResources {
     Some( "%s://%s".format(protocol, request.host) )
   }
   
-  def META_URL(host: String, secure: Boolean = false) = {
-    val protocol = if (secure) "https" else "http"
-    Some( "%s://%s".format(protocol, host) )
+  /**
+   * Render a single GestaltResourceInstance to JSON
+   */
+  private[controllers] def RenderSingle(res: GestaltResourceInstance)
+      (implicit request: SecuredRequest[_]): JsValue = {
+    Output.renderInstance(res, META_URL)
   }
   
-  protected [controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
+  /**
+   * Render a Seq of GestaltResourceInstances to Result[Ok(JsValue)]
+   */
+  private[controllers] def RenderList(rss: Seq[GestaltResourceInstance])
+      (implicit request: SecuredRequest[_]): Result = {
+    handleExpansion(rss, request.queryString, META_URL)  
+  }
+  
+  protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
     NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
+  
+  /** 
+   * Format a 404 for 'Org Not Found' 
+   */
+  protected[controllers] def OrgNotFound(orgIdentifier: String) = {
+    NotFoundResult(Errors.ORG_NOT_FOUND(orgIdentifier))
+  }
   
   /*
    * TODO: This only handles true | false. Extend to allow for expansion
@@ -102,123 +121,40 @@ trait MetaController extends SecureController with SecurityResources {
         case Failure(_) => throw new BadRequestException(s"Value of '$paramName' parameter must be true or false. found: $fp")
       }
     }
-  }  
-  /*
-   * TODO: This could be much simpler if Output.render* returned JsValue instead of String.
+  }
+
+  /**
+   * Handles the 'expand' querystring parameter.
    */
-  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String,Seq[String]], baseUri: Option[String] = None) = {
+  def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
       Ok(Json.toJson(rs map { r => Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
     }
     else Ok(Output.renderLinks(rs, baseUri))
   }
-  
-  
-  
-  /**
-   * Get the Org and ResourceType Ids when given FQON and REST name.
-   * 
-   * @param fqon FQON of the target Org
-   * @param rest REST name of ResourceType (i.e., workspaces, environments)
-   */
-//  protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
-//    orgFqon(fqon) match {
-//      case None => Left(OrgNotFound(fqon))
-//      case Some(org) => resourceUUID(rest) match {
-//        case None => Left(Errors.INVALID_RESOURCE_TYPE(rest))
-//        case Some(typeId) => Right((org.id, typeId))
-//      }
-//    }
-//  }
-  
 
-  
-  protected def extractByName(fqon: String, rest: String): Either[play.api.mvc.Result,(UUID,UUID)] = {
-    orgFqon(fqon) match {
-      case Some(org) => extractByName(org.id, rest)
-      case None      => Left(OrgNotFound(fqon))
-    }
-  }
-  
-  protected def extractByName(org: UUID, rest: String): Either[play.api.mvc.Result, (UUID, UUID)] = {
-    resourceUUID(rest) match {
-      case Some(typeId) => Right((org, typeId))  
-      case None         => Left(Errors.INVALID_RESOURCE_TYPE(rest))
-    }
-  }
 
-  protected val connection = Session.connection
-//  protected def getApiPrefix() = "https://gf.com/api/v1.1"
-  
-  /* 
-   * 'Null' functions for SecuredAuthAction - can't just pass None to function
-   * since it can't figure out if it's a None:String, or None:UUID (???)
+  /** 
+   * Get an Org by FQON 
    */
-  protected def nullOptString(n: Option[String]) = n
-  protected def nullOptUUID(n: Option[UUID]) = n
-  
-  /*
-   * Test connection to Meta's DataStore.
-   */
-  protected def verifyDataStore() = {
-    MetaDS.assertOnline( onFail = System.exit(1), failMessage = "SHUTTING DOWN" )
-  }
-  
-  /** Get an Org by FQON */
   protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
-    log.debug("Looking up FQON : " + fqon)
     ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
   }
-  
-  
-  /** Format a 404 for 'Org Not Found' */
-  protected[controllers] def OrgNotFound(orgIdentifier: String) = {
-    NotFoundResult(Errors.ORG_NOT_FOUND(orgIdentifier))
-  }
-  
- 
-  protected object Errors {
-    def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
-    def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
-    def TYPE_NOT_FOUND(id: String) = s"ResourceType '${id}' not found."
-    def RESOURCE_NOT_FOUND(id: String) = s"Resource '${id}' not found."
-    def INVALID_OWNER_TYPE(id: UUID) = s"Type ID must be Gestalt Org or User. Found: ${id.toString}"
-    def INVALID_RESOURCE_TYPE(identifier: String) = NotFoundResult(s"Invalid resource type '${identifier}'")
-  }
-  
-  
-  /**
-   * Only return resources that the given account (user) has 'read' access to.
-   */
-  private def filterReads(rs: Seq[GestaltResourceInstance], account: AuthAccountWithCreds, auth: Option[Hstore]) = {
-    // TODO: What do we do if there is no authorization data on a resource?
-    if (auth.isEmpty) Seq()
-    else {
 
-    }
-    ???
-  }
-
-
-  protected[controllers] def createResourceCommon(org: UUID, parentId: UUID, typeId: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+  
+  private[controllers] def createResourceCommon(
+      org: UUID, 
+      parentId: UUID, 
+      typeId: UUID, 
+      json: JsValue)(implicit request: SecuredRequest[JsValue]): Future[Result] = {
+    
     Future {
-      
       safeGetInputJson(typeId, json) match {
-        case Failure(e)     => BadRequestResult(e.getMessage)
-        case Success(input) => {
-          CreateResourceResult(ResourceIds.User, 
-              request.identity.account.id,
-              org, json, request.identity,
-              typeId = Some(typeId), 
-              parentId = Some(parentId))
-        }
-      }
+        case Failure(e) => HandleExceptions(e)
+        case Success(input) => 
+          CreateNewResourceResult(org, request.identity, input, Option(typeId), Option(parentId))  
+      } 
     }
-  }  
-  
-  protected[controllers] def CreateResourceResult(
-      org: UUID, typeId: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]): Result = {
-    CreateResourceResult(org, request.body, request.identity, typeId, parentId)
   }
   
   protected[controllers] def CreateResourceResult(
@@ -226,15 +162,37 @@ trait MetaController extends SecureController with SecurityResources {
       resourceJson: JsValue, 
       user: AuthAccountWithCreds, 
       typeId: UUID,
-      parentId: UUID) = {
+      parentId: UUID): Result = {
     
     log.trace(s"CreateResourceResult($org, [json], [account])")
     
     HandleCreate {
       CreateResource(ResourceIds.User, user.account.id, org, resourceJson, user, Some(typeId), Some(parentId))
     }
-  }  
+  }
   
+  def createResourceD(
+      org: UUID, 
+      json: JsValue, 
+      typeId: Option[UUID] = None, 
+      parentId: Option[UUID] = None)
+     (implicit request: SecuredRequest[JsValue]): Future[Result] = {
+    Future {
+      CreateResourceResult(
+          ResourceIds.User, 
+          request.identity.account.id, 
+          org, 
+          json, 
+          request.identity, 
+          typeId,
+          parentId)
+    }    
+  }    
+  
+  
+  /**
+   * TODO: Remove - we don't care about different creator-types right now.
+   */
   protected[controllers] def CreateResourceResult(
       creatorType: UUID, 
       creatorId: UUID, 
@@ -252,22 +210,6 @@ trait MetaController extends SecureController with SecurityResources {
   }
   
   protected[controllers] def CreateResource(
-    org: UUID,
-    resourceJson: JsValue,
-    caller: AuthAccountWithCreds,
-    typeId: UUID,
-    parentId: UUID): Try[GestaltResourceInstance] = {
-    
-    
-    safeGetInputJson(resourceJson) flatMap { input =>
-      val tid = assertValidTypeId(input, Option(typeId))
-      ResourceFactory.create(ResourceIds.User, caller.account.id)(
-        inputWithDefaults(org, input.copy(resource_type = Some(tid)), caller), parentId = Option(parentId))
-    }
-
-  }     
-  
-  protected[controllers] def CreateResource(
     creatorType: UUID,
     creator: UUID,
     org: UUID,
@@ -281,13 +223,99 @@ trait MetaController extends SecureController with SecurityResources {
       ResourceFactory.create(creatorType, creator)(
         inputWithDefaults(org, input.copy(resource_type = Some(tid)), user), parentId = parentId)
     }
+  }  
+  
+  /*
+   * owningOrgId
+   * creatorId
+   * resourceJson
+   * typeId: Option[UUID],
+   * parentId: Option[UUID]
+   * 
+   */
+  
+  
+  /* 
+   * 
+   * TODO: Replace other Create* : Try[Instance] methods with this!
+   * 
+   */
+  protected[controllers] def CreateNewResource(
+      owningOrgId: UUID,
+      creator: AuthAccountWithCreds,
+      resourceJson: JsValue,
+      typeId: Option[UUID],
+      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+    
+    safeGetInputJson(resourceJson) flatMap { input =>
+      val tid = Option(assertValidTypeId(input, typeId))
+      val newResource = inputWithDefaults(owningOrgId, input, tid, creator)
+      ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId)
+    }
   }
+  
+  protected[controllers] def CreateNewResource(
+      owningOrgId: UUID,
+      creator: AuthAccountWithCreds,
+      resourceInput: GestaltResourceInput,
+      typeId: Option[UUID],
+      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+    
+    val tid = Option(assertValidTypeId(resourceInput, typeId))
+    val newResource = inputWithDefaults(owningOrgId, resourceInput, tid, creator) 
+    ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId)
+  }  
+  
+  protected[controllers] def CreateNewResourceResult(
+      owningOrgId: UUID,
+      creator: AuthAccountWithCreds,
+      resourceJson: JsValue,
+      typeId: Option[UUID],
+      parentId: Option[UUID]): Result = {  
+  
+    HandleCreate {
+      CreateNewResource(owningOrgId, creator, resourceJson, typeId, parentId)
+    } 
+  }
+  
+  protected[controllers] def CreateNewResourceResult(
+      owningOrgId: UUID,
+      creator: AuthAccountWithCreds,
+      resourceInput: GestaltResourceInput,
+      typeId: Option[UUID],
+      parentId: Option[UUID]): Result = {  
+  
+    HandleCreate {
+      CreateNewResource(owningOrgId, creator, resourceInput, typeId, parentId)
+    }
+  }
+  
+  /*
+   * this is only used by Meta.createWorkspaceCommon and Meta.postEnvironmentResult
+   */
+  protected[controllers] def CreateResource(
+    org: UUID,
+    resourceJson: JsValue,
+    caller: AuthAccountWithCreds,
+    typeId: UUID,
+    parentId: UUID): Try[GestaltResourceInstance] = {
+    
+    safeGetInputJson(resourceJson) flatMap { input =>
+      val tid = assertValidTypeId(input, Option(typeId))
+      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+        inputWithDefaults(org, input.copy(resource_type = Some(tid)), caller), parentId = Option(parentId))
+    }
+
+  }     
+  
+
   
   def createResourceInstance(
       org: UUID, 
       json: JsValue, 
       typeId: Option[UUID] = None, 
-      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
+      parentId: Option[UUID] = None)
+    (implicit request: SecuredRequest[JsValue]): Try[GestaltResourceInstance] = {
     
     CreateResource(
       ResourceIds.User,
@@ -298,71 +326,9 @@ trait MetaController extends SecureController with SecurityResources {
       typeId,
       parentId)
   }
-  
-  def createResourceD2(
-      org: UUID, 
-      json: JsValue, 
-      typeId: Option[UUID] = None, 
-      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
-    
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          org, 
-          json, 
-          request.identity, 
-          typeId,
-          parentId)
-        
-  }    
-  
-  def createResourceD(
-      org: UUID, 
-      json: JsValue, 
-      typeId: Option[UUID] = None, 
-      parentId: Option[UUID] = None)(implicit request: SecuredRequest[JsValue]) = {
-    Future {
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          org, 
-          json, 
-          request.identity, 
-          typeId,
-          parentId)
-    }    
-  }  
-  
- /**
-   * Inspect a GestaltResourceInput, supplying default values where appropriate.
-   */
-  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
-    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
-    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
-  }
-  
-  /**
-   * Convert GestaltResourceInput to GestaltResourceInstance
-   */
-  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-    GestaltResourceInstance(
-      id = in.id getOrElse UUID.randomUUID,
-      typeId = in.resource_type.get,
-      state = resolveResourceState(in.resource_state),
-      orgId = org,
-      owner = in.owner.get,
-      name = in.name,
-      description = in.description,
-      
-      /* TODO: Here is where we transform from map(any) to map(string) */
-      properties = stringmap(in.properties),
-      variables = in.variables,
-      tags = in.tags,
-      auth = in.auth)
-  }
-  
+
+
+
   def HandleCreate(typeId: UUID, json: JsValue)(resource : => Try[GestaltResourceInstance]): Result = {
     safeGetInputJson(typeId, json) match {
       case Failure(error) => BadRequestResult(error.getMessage)
@@ -385,68 +351,52 @@ trait MetaController extends SecureController with SecurityResources {
    * Parse JSON to GestaltResourceInput
    */
   protected[controllers] def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
-    
-    implicit def jsarray2str(arr: JsArray) = arr.toString
 
     json.validate[GestaltResourceInput].map {
       case resource: GestaltResourceInput => resource
     }.recoverTotal { e => 
       log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
-      throw new BadRequestException(JsError.toFlatJson(e).toString)
+      throwBadRequest(JsError.toFlatJson(e).toString)
     }
   }
 
   /**
    * Parse JSON to GestaltResourceInput and validate type-properties.
    */
-  protected[controllers] def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = Try {
+  protected[controllers] def safeGetInputJson(typeId: UUID, json: JsValue): Try[GestaltResourceInput] = {
     log.debug(s"safeGetInputJson($typeId, [json])")
 
-    safeGetInputJson(json) match {
-      case Failure(e)   => throw e
-      case Success(res) => {
-        val validation = PropertyValidator.validate(typeId, stringmap(res.properties))
-        if (validation._1) res else throw new BadRequestException(validation._2.get)
-      }
+    safeGetInputJson(json) map { input =>
+      val validation = PropertyValidator.validate(typeId, stringmap(input.properties))
+      if (validation._1) input else throwBadRequest(validation._2.get)
     }
   }
-  
-
-  
-  protected[controllers] object Err {
-    def RESOURCE_TYPE_NOT_FOUND(m: UUID) = s"Given ResourceType 'resource_type : $m' does not exist."
-    val RESOURCE_TYPE_NOT_GIVEN = "resource_type must be specified."
-  }
-  
   
   /**
    * Convert a string FQON to corresponding Org UUID.
    */
-  def fqid(fqon: String): UUID = {
-    val org = orgFqon(fqon) getOrElse {
-      throw new ResourceNotFoundException(s"Org FQON '$fqon' not found.")
-    }
-    org.id
-  }  
+  def fqid(fqon: String): UUID = orgFqon(fqon) map { _.id } getOrElse {
+    throw new ResourceNotFoundException(s"Org FQON '$fqon' not found.")
+  }
   
-  
-  def resolveResourceState(state: Option[String]) = {
+  /**
+   * Convert a string to a resource-state UUID. If state is empty, state = Active.
+   */
+  protected[controllers] def resolveResourceState(state: Option[String]) = {
     ResourceState.id( state getOrElse ResourceStates.Active )
-  }  
+  }
   
   protected[controllers] def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
     PatchDocument.fromJsValue(json)
   }  
   
-  
   protected[controllers] def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty  
   
-  def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
-    val id = resolveTypeId(r, typeId) getOrElse {
-      throw new BadRequestException(Err.RESOURCE_TYPE_NOT_GIVEN)
+  protected[controllers] def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
+    resolveTypeId(r, typeId).fold(throw new BadRequestException(Errors.RESOURCE_TYPE_NOT_GIVEN)) {
+      id => if (typeExists(id)) id 
+      else throwBadRequest(Errors.TYPE_NOT_FOUND(id))
     }
-    if (typeExists(id)) id
-    else throw new BadRequestException(Err.RESOURCE_TYPE_NOT_FOUND(id))
   }
   
   def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
@@ -455,8 +405,57 @@ trait MetaController extends SecureController with SecurityResources {
     else None
   }      
   
-}
+ /**
+   * Inspect a GestaltResourceInput, supplying default values where appropriate.
+   */
+  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
+  }
 
+  def inputWithDefaults(
+      org: UUID, 
+      input: GestaltResourceInput, 
+      typeId: Option[UUID], 
+      creator: AuthAccountWithCreds) = {
+    
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    val tpeid = Option(assertValidTypeId(input, typeId))
+    
+    val newInput = input.copy(
+        id = resid, 
+        owner = owner,
+        resource_type = tpeid,
+        resource_state = state)
+    
+    fromResourceInput(org, newInput)    
+  }  
+  
+  /**
+   * Convert GestaltResourceInput to GestaltResourceInstance
+   */
+  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }    
+  
+  protected[controllers] def throwBadRequest(message: String) =
+    throw new BadRequestException(message)
+}
 
 /**
  * Singleton holder for objects shared amongst Controllers.
@@ -472,88 +471,4 @@ object Session {
   implicit val session: DBSession = AutoSession  
 }
 
-
-object MetaDS extends {
-  val log = Logger(this.getClass)
-  lazy val online = metaOnline( ConnectionManager.config )
-  
-  def assertOnline(onFail: => Unit, failMessage: String) = {
-    if ( online ) {
-      log.info("Meta Data-Store ONLINE")
-    } 
-    else {
-      log.error("FATAL: Cannot connect to Meta Data-Store")
-      log.error("Current configuration:")
-      log.error(ConnectionManager.toString)
-      log.error(failMessage)
-      onFail
-    }
-  }
-
-  
-  /**
-   * Ensure we can reach the server specified in configuration and
-   * that the specified database exists.
-   */
-  def metaOnline(config: JdbcConnectionInfo): Boolean = {
-    
-    log.info("Pinging Meta Repository...")
-    
-    PostgresHealth.verifyDataStore( config.database ) match {
-      case Success( _ )  => {
-        log.info( "data-store: " + /*green(*/"Available"/*)*/ )
-        log.info( ConnectionManager.toString )
-        true
-      }
-      case Failure( ex ) => ex match {
-        case p: PSQLException => {
-          log.error( s"data-store: ${p.getMessage}" )
-          false
-        }
-        case e: Throwable => {
-          log.error( "Unexpected-Error : " + e.getMessage )
-          false
-        }
-      }
-    }  
-  }
-
-}
-
-object MetaController {
-  def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
-    account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId ) 
-    
-  def resolveResourceState(state: Option[String]) = {
-    ResourceState.id( state getOrElse ResourceStates.Active )
-  }  
- /**
-   * Inspect a GestaltResourceInput, supplying default values where appropriate.
-   */
-  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
-    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
-    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
-  }
-  
-  /**
-   * Convert GestaltResourceInput to GestaltResourceInstance
-   */
-  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-    GestaltResourceInstance(
-      id = in.id getOrElse UUID.randomUUID,
-      typeId = in.resource_type.get,
-      state = resolveResourceState(in.resource_state),
-      orgId = org,
-      owner = in.owner.get,
-      name = in.name,
-      description = in.description,
-      
-      /* TODO: Here is where we transform from map(any) to map(string) */
-      properties = stringmap(in.properties),
-      variables = in.variables,
-      tags = in.tags,
-      auth = in.auth)
-  }  
-}
+object MetaController {}

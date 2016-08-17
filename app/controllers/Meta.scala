@@ -75,65 +75,33 @@ object Meta extends Authorization {
     }  
   }  
 
-  def postOrg(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createOrgCommon(org)
-  }
-
   def postOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createOrgCommon(fqid(fqon))
   }
   
-  
-  
-  def createOrgCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
+  def createOrgCommon(parentOrg: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
     
     val json = request.body
     val user = request.identity
     
-    Authorize(org, Actions.Org.Create, request.identity) {
+    Authorize(parentOrg, Actions.Org.Create, request.identity) {
       
-      CreateSynchronized(org, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
+      CreateSynchronized(parentOrg, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
 
           //
           // TODO: Raise error if any Entitlement create fails.
           //
-          setOrgEntitlements(org, user)
+          setNewOrgEntitlements(parentOrg, res.id, user, Option(parentOrg))
+
           Created(Output.renderInstance(res, META_URL))
         }
       }
 
     }    
   }
-  
-  
-//  def setOrgEntitlements(org: UUID, user: AuthAccountWithCreds) = {
-//    Entitle(org, ResourceIds.Org, /*res.id*/ org, user, None) {
-//      generateEntitlements(
-//        user.account.id, org, /*res.id*/ org,
-//        Seq(
-//            ResourceIds.Org, 
-//            ResourceIds.Workspace, 
-//            ResourceIds.User, 
-//            ResourceIds.Group,
-//            ResourceIds.Provider,
-//            ResourceIds.Policy,
-//            ResourceIds.Entitlement),
-//        ACTIONS_CRUD)
-//    }
-//  }
-  
-  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
-    (sc: SecurityResourceFunction, mc: MetaResourceFunction)(implicit request: SecuredRequest[T]) = {
 
-    safeGetInputJson(typeId, json) match {
-      case Failure(error) => throw error
-      case Success(input) => createSynchronized(org, typeId, input)(sc, mc)
-    }
-  }  
-
-  
   // --------------------------------------------------------------------------
   // ACTIONS
   // --------------------------------------------------------------------------    
@@ -167,7 +135,27 @@ object Meta extends Authorization {
   }
   
 
+  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    
+    Authorize(org, Actions.Group.Create, request.identity) {
+      
+      CreateSynchronized(org, ResourceIds.Group, request.body)(
+          Security.createGroup, createNewMetaGroup[JsValue]) match {
+        case Failure(err) => HandleExceptions(err)
+        case Success(res) => {
+          val user = request.identity
+          Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
+            generateEntitlements(
+              user.account.id, org, res.id,
+              Seq(ResourceIds.Group), ACTIONS_CRUD)
+          }
+          Created(Output.renderInstance(res, META_URL))
+        }
+      }
+    }
+  }
   
+
   /**
    * 
    * Add one or more users to a group.
@@ -247,43 +235,24 @@ object Meta extends Authorization {
   
   /**
    * Create a User Account in Security, then in Meta
-   * API implements => POST /orgs/:uuid/users
    */
-  def postUser(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createUserCommon(org, request.body)
-  }
 
   def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createUserCommon(fqid(fqon), request.body)
   }
   
-  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    
-    Authorize(org, Actions.Group.Create, request.identity) {
-      
-      CreateSynchronized(org, ResourceIds.Group, request.body)(
-          Security.createGroup, createNewMetaGroup[JsValue]) match {
-        case Failure(err) => HandleExceptions(err)
-        case Success(res) => {
-          val user = request.identity
-          Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
-            generateEntitlements(
-              user.account.id, org, res.id,
-              Seq(ResourceIds.Group), ACTIONS_CRUD)
-          }
-          Created(Output.renderInstance(res, META_URL))
-        }
-      }
-    }
-//    CreateSynchronizedResult(org, ResourceIds.Group, json)(
-//      Security.createGroup, createNewMetaGroup[JsValue])
-  }
+
   def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
+    log.debug(s"createUserCommon($org, ...) => JSON: ${json.toString}")
     
     Authorize(org, Actions.User.Create, request.identity) {
       
       val root = Security.getRootOrg(request.identity).get.fqon
-      val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", JsString(root))
+      val home = JsonUtil.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
+      
+      log.debug(s"Setting 'gestalt_home' to $home")
+      
+      val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", /*JsString(root)*/ home)
       
       CreateSynchronized(org, ResourceIds.User, userJson.get)(
           Security.createAccount, createNewMetaUser[JsValue]) match {
@@ -300,21 +269,11 @@ object Meta extends Authorization {
       }
 
     }
-  }  
-    
+  }        
 
   // --------------------------------------------------------------------------
   // GENERIC RESOURCE
   // --------------------------------------------------------------------------
-  
-  def postResource(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    Future {
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          org, request.body, request.identity)
-    }
-  }
   
   def postResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     Future {
@@ -328,11 +287,7 @@ object Meta extends Authorization {
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
   // --------------------------------------------------------------------------
-  
-  def patchResource(org: UUID, id: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    resourcePatch(id)
-  }
-  
+
   def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     resourcePatch(fqid(fqon))
   }
@@ -362,134 +317,172 @@ object Meta extends Authorization {
   // WORKSPACES
   // --------------------------------------------------------------------------
   
-  def postWorkspace(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createWorkspaceCommon(org, request.body, request.identity, META_URL)
-  }
 
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createWorkspaceCommon(fqid(fqon), request.body, request.identity, META_URL)
+    createWorkspaceResult(fqid(fqon), request.body, request.identity, META_URL)
   }
 
-  def createWorkspaceCommon(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
+  private[controllers] def createWorkspaceResult2(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
 
     Future {
-
+      
       Authorize(org, Actions.Workspace.Create, user) {
-
-        CreateResource(
-          org,
-          json,
-          caller = user,
-          typeId = ResourceIds.Workspace,
-          parentId = org) match {
-
-            case Failure(e) => HandleExceptions(e)
-            case Success(workspace) => {
-
-              Entitle(org, ResourceIds.Workspace, workspace.id, user, Option(org)) {
-                generateEntitlements(
-                  user.account.id, org, workspace.id,
-                  Seq(
-                      ResourceIds.Workspace, 
-                      ResourceIds.Environment,
-                      ResourceIds.Provider,
-                      ResourceIds.Entitlement),
-                    ACTIONS_CRUD)
-              }
-              Created(Output.renderInstance(workspace, baseUri))
-            }
+        CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(w) => {
+            setNewWorkspaceEntitlements(org, w.id, user)
+            Created(Output.renderInstance(w, baseUri))
           }
+        }
       }
+      
     }
   }
 
+  
+//  val options = RequestOptions(
+//      authTarget   = Option(uuid),
+//      policyOwner  = Option(uuid),
+//      policyTarget = Option(uuid))
+//  
+//  val operations = List(
+//      Feature("containers"), 
+//      Authorize("container.create")/*, 
+//      Policy("container.precreate", "container.postcreate")*/)
+//  
+//  case class User(id: UUID, name: String)
+//  
+//  val user = User(uuid(), "user1")
+//  
+//  SafeRequest (user, operations, options) Protect { maybeState =>
+//    
+//    val state = maybeState getOrElse STATE_ACTIVE
+//    println("Creating Resource with state : " + state)
+//
+//  }
+//
+  
+  import com.galacticfog.gestalt.keymgr.GestaltLicense
+  import com.galacticfog.gestalt.keymgr.GestaltFeature
 
+  implicit def featureToString(feature: GestaltFeature) = feature.getLabel
+  
+  private[controllers] def createWorkspaceResult(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
+
+    Future {
+      
+      val operations = List(
+          controllers.util.Feature(GestaltFeature.Policy), 
+          controllers.util.Authorize(Actions.Workspace.Create),
+          controllers.util.PolicyCheck(Actions.Workspace.Create),
+          controllers.util.EventsPre(Actions.Workspace.Create))
+      
+      val options = RequestOptions(user, 
+          authTarget = Option(org), 
+          policyOwner = Option(org), 
+          policyTarget = Option(j2r(org, user, json, Option(ResourceIds.Workspace))))
+    
+      SafeRequest (operations, options) Protect { maybeState =>      
+        
+        CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(w) => {
+            setNewWorkspaceEntitlements(org, w.id, user)
+            Created(Output.renderInstance(w, baseUri))
+          }
+        }
+   
+      }
+      
+    }
+  }  
+  
+  /**
+   * Convert input JSON to an in-memory GestaltResourceInstance
+   */
+  def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
+    inputWithDefaults(
+          org = org, 
+          typeId = typeId,
+          input = safeGetInputJson(json).get, 
+          creator = creator)
+  }
+
+// /**
+//   * Inspect a GestaltResourceInput, supplying default values where appropriate.
+//   */
+//  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+//    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+//    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+//    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+//    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
+//  }
+//  /**
+//   * Convert GestaltResourceInput to GestaltResourceInstance
+//   */
+//  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+//    GestaltResourceInstance(
+//      id = in.id getOrElse UUID.randomUUID,
+//      typeId = in.resource_type.get,
+//      state = resolveResourceState(in.resource_state),
+//      orgId = org,
+//      owner = in.owner.get,
+//      name = in.name,
+//      description = in.description,
+//      properties = stringmap(in.properties),
+//      variables = in.variables,
+//      tags = in.tags,
+//      auth = in.auth)
+//  }      
   // --------------------------------------------------------------------------
   // ENVIRONMENTS
   // --------------------------------------------------------------------------
 
-  def postEnvironment(org: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    Future { 
-      postEnvironmentCommon(org)
-    }
-  }
-
+  /*
+   * POST /{fqon}/environments
+   */
   def postEnvironmentFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      postEnvironmentCommon(fqid(fqon))
-    }
-  }
-  
-  
-  def postEnvironmentCommon(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
     parseWorkspaceId(request.body) match {
-      case Failure(err) => HandleExceptions(err)
-      case Success(workspace) => postEnvironmentResult(org, workspace)
+      case Failure(err) => Future { HandleExceptions(err) }
+      case Success(workspace) => createEnvironmentResult(fqid(fqon), workspace)
     }          
   }
   
+  /*
+   * POST /{fqon}/workspaces/{id}/environments
+   */
+  def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    createEnvironmentResult(fqid(fqon), workspaceId)
+  }
   
-  def postEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    log.debug(s"Meta::postEnvironmentResult($org, $workspace")
+  private[controllers] def createEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    log.debug(s"createEnvironmentResult($org, $workspace)")
     
-    Authorize(workspace, "environment.create", request.identity) {
-      normalizeEnvironment(request.body, Option(workspace)) match {
-          
-        case Failure(err) => HandleExceptions(err)
-        case Success(envJson) => {
-          
-          val user = request.identity
-          
-          CreateResource(org, envJson, user, ResourceIds.Environment, workspace) match {
-            
-            case Failure(e) => HandleExceptions(e)
-            case Success(environment) => {
-        
-              Entitle(org, ResourceIds.Environment, environment.id, user, Option(org)) {
-                
-                generateEntitlements(
-                  user.account.id, org, environment.id,
-                  Seq(
-                      ResourceIds.Environment,
-                      ResourceIds.Lambda,
-                      ResourceIds.Container), 
-                  ACTIONS_CRUD)
-                  
-              }
-              
-              Created(Output.renderInstance(environment, META_URL))
-          
-//          createResourceD2(org, envJson, Some(ResourceIds.Environment), parentId = Some(workspace))
-            }
-        }
-        
+    Future {
+      val user = request.identity
+      Authorize(workspace, Actions.Environment.Create, user) {
+        (for {
+          json <- normalizeEnvironment(request.body, Option(workspace))
+          env  <- CreateNewResource(org, user, json, Option(ResourceIds.Environment), Option(workspace))
+        } yield env) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(env) => {
+            setNewEnvironmentEntitlements(org, env.id, user, workspace)
+            Created(Output.renderInstance(env, META_URL))
+          }
+        }             
       }
     }
-    }
-
-    
   }
-  
-  def postEnvironmentWorkspace(org: UUID, workspaceId: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    Future {
-      postEnvironmentResult(org, workspaceId)
-    }
-  }
-  
-  def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      postEnvironmentResult(fqid(fqon), workspaceId)
-    }
-  }
-  
   
   /**
    * Parse properties.workspace from Environment input JSON.
    */
-  private def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
-    json \ "properties" \ "workspace" match {
-      case u: JsUndefined => throw new BadRequestException(s"You must provide a valid 'workspace' property.")
-      case j => UUID.fromString(j.as[String])
+  private[controllers] def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
+    JsonUtil.find(json.as[JsObject], "/properties/workspace").fold {
+      throw new BadRequestException(s"You must provide a valid 'workspace' property.")
+    } { workspace =>
+      UUID.fromString(workspace.as[String])
     }
   }
 
@@ -501,10 +494,21 @@ object Meta extends Authorization {
     createResourceCommon(org, parent, ResourceIds.Domain, request.body)
   }
   
+  
   def postDomainFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => createResourceCommon(org.id, parent, ResourceIds.Domain, request.body)
-      case None => Future { OrgNotFound(fqon) }
+    Future {      
+      val org = fqid(fqon)
+      val user = request.identity
+      
+      Authorize(parent, Actions.Domain.Create) {
+        CreateNewResource(org, user, request.body, Option(ResourceIds.Domain), Option(parent)) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(d) => {
+            setNewDomainEntitlements(org, d.id, user, parent)        
+            Created(Output.renderInstance(d, META_URL))
+          }
+        }
+      }
     }
   }
   
@@ -519,213 +523,23 @@ object Meta extends Authorization {
         throw new BadRequestException("You must supply 'resource_type', i.e., resource_type = Provider::Type::Name")
       case v => {
         
-        val types: Map[String,UUID] = 
+        val validProviderTypes: Map[String,UUID] = 
           ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.Provider)).map { p =>
             (p.name -> p.id) 
           }.toMap
-         
-          println("TYPES : " + types)
+
         log.debug("Parsed provider-type as : " + v.as[String])
-        v.as[String] match {
-          case a if types.contains(a) => types(a)
-          case e => throw new BadRequestException(s"Unknown provider type : '$e'")
-        }
+//        v.as[String] match {
+//          case a if validProviderTypes.contains(a) => validProviderTypes(a)
+//          case e => throw new BadRequestException(s"Unknown provider type : '$e'")
+//        }
+          
+        validProviderTypes.get(v.as[String]).fold {
+          throw new BadRequestException(s"Unknown provider type : '${v.as[String]}'")
+        }{ id => id }
+        
       }
     }    
-  }
-
-  
-  /*
-   * 
-   * TODO: Move classess and formatters to package
-   * Move rest of gateway provider code to some utility class
-   * Maybe an ApiGatewayService object makes sense???
-   * 
-   */
-  
-  case class GatewayInputLocation(name: String, enabled: Boolean = true)
-  case class GatewayInputAuth(scheme: String, username: String, password: String)
-  case class GatewayInputConfig(auth: GatewayInputAuth, url: String, extra: Option[String] = None)
-  case class GatewayInputProperties(config: GatewayInputConfig, locations: Seq[GatewayInputLocation])
-  case class GatewayInput(name: String, description: Option[String], resource_type: String, properties: GatewayInputProperties)
-
-  implicit lazy val gatewayInputLocationFormat = Json.format[GatewayInputLocation]
-  implicit lazy val gatewayInputAuth = Json.format[GatewayInputAuth]
-  implicit lazy val gatewayInputConfig = Json.format[GatewayInputConfig]
-  implicit lazy val gatewayInputProperties = Json.format[GatewayInputProperties]
-  implicit lazy val gatewayInput = Json.format[GatewayInput]
-
-  
-  import java.net.URL
-  import java.net.MalformedURLException
-
-  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  lazy val laser = new Laser(
-      gatewayConfig, lambdaConfig, 
-      Option(EnvConfig.securityKey), 
-      Option(EnvConfig.securitySecret))
-  
-  /*
-   * 
-   * TODO: This function needs transaction enforcement. The workflow entails creating three resources on the
-   * gateway service: 1) Provider, 2) Location, 3) Gateway.  If any of them fail, nothing is to be created
-   * in Meta, and any gateway resources that *were* successfully created should deleted (or otherwise scrubbed).
-   * 
-   */
-  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
-    
-    // TODO: Check resource_type if not gateway-type.
-    
-    val input = request.body.validate[GatewayInput].map {
-      case success: GatewayInput => success
-    }.recoverTotal { e =>
-      throw new BadRequestException("Failed to parse provider JSON : " + JsError.toFlatJson(e).toString)  
-    }
-
-    // Create Provider in gateway service.
-    val laserProvider = LaserProvider(None, name = input.name)
-    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
-    
-    
-    // Create Location in gateway service.
-    val location = getGatewayLocation(input)
-    val laserLocation = LaserLocation(None, name = location.name, providerId)
-    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
-    
-    
-    // Create Gateway in gateway service.     
-    val gatewayInfo = buildGatewayInfo(input)
-    val laserGateway = LaserGateway(None, input.name, locationId, gatewayInfo)
-    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
-
-    
-    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
-      case Failure(err) => Future { HandleExceptions(err) }
-      case Success(jsn) => {
-        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
-      }
-    }
-    
-  }
-  
-  
-  private def setMetaGatewayProps(obj: JsValue, id: UUID, externalId: UUID, parent: JsValue): Try[JsObject] = {
-    val json = (obj.as[JsObject] ++ Json.obj("id" -> JsString(id.toString))) ++ Json.obj("resource_type" -> ResourceIds.ApiGatewayProvider)
-    upsertProperties(json ++ Json.obj("id" -> JsString(id.toString)),
-      ("parent" -> parent),
-      ("external_id" -> JsString(externalId)))
-  }
-  
-
-  private def parseJsonId(json: JsValue) = {
-    (json \ "id") match {
-      case u: JsUndefined => throw new RuntimeException(
-        "Could not find 'id' in JSON returned from gateway server.")
-      case v => UUID.fromString(v.as[String]) // TODO: Test for FormatException
-    }
-  }  
-  
-  private def parseLaserResponseId(response: => Try[ApiResponse]) = {
-    response match {
-      case Failure(err) => throw err
-      case Success(res) => {
-        log.debug("Successfully created Resource in gateway service. Response:\n" + res)
-        parseJsonId(res.output.get)
-      }
-    }
-  }
-  
-  
-  def getGatewayLocation(input: GatewayInput) = {
-    val numLocations = input.properties.locations.size
-    numLocations match {
-      case z if z <= 0 => throw new BadRequestException("You must provide a location.")
-      case n if n > 1  => throw new ConflictException("Multiple locations found. The current implementation only supports a SINGLE location.")
-      case _ => input.properties.locations(0)
-    }     
-  }
-  
-  /**
-   * Build the 'gatewayInfo' JSON object for the POST /gateways payload in apigateway service.
-   */
-  def buildGatewayInfo(input: GatewayInput) = {
-
-    def normalizeUrl(url: String) = {
-       if (url.trim.toLowerCase.startsWith("http")) url else s"http://$url"
-    }
-     
-    def getKongPublicInfo(serviceAddress: String, publicAddress: Option[String]) = {
-      val out = publicAddress match {
-        case Some(address) => new URL(normalizeUrl(address))
-        case None => {
-          val u = new URL(normalizeUrl(serviceAddress))
-          new URL("%s://%s:%d".format(u.getProtocol, "admin." + u.getHost, u.getPort))
-        }
-      }
-      (out.getHost, if (out.getPort == -1) 80 else out.getPort)
-    }
-    
-    val kongServiceUrl = new URL(normalizeUrl(input.properties.config.url))
-    val kongServiceAddress = kongServiceUrl.getHost
-    val kongServicePort = if (kongServiceUrl.getPort == -1) 80 else kongServiceUrl.getPort
-    
-    val username = input.properties.config.auth.username
-    val password = input.properties.config.auth.password
-    
-    val (kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
-    
-    Json.obj(
-      "host" -> kongServiceAddress,
-      "port" -> kongServicePort,
-      "username" -> username,
-      "password" -> password,
-      "gatewayHost" -> kongPublicHost,
-      "gatewayPort" -> kongPublicPort)
-
-  }    
-  
-  
-  def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-
-    val providerType = resolveProviderType(json)
-    val parentTypeId = UUID.fromString(parentType)
-    
-    ResourceFactory.findById(parentTypeId, parent) match {
-      case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
-      case Some(parentResource) => {
-
-        println("PROVIDER-TYPE : " + providerType)
-        println("GATEWAY-TYPE  : " + ResourceIds.ApiGatewayProvider)
-        
-        if (providerType == ResourceIds.ApiGatewayProvider) {
-          postGatewayProvider(org, parentResource)
-        } 
-        else {
-          val providerParent = ResourceFactory.findById(UUID.fromString(parentType), parent)
-
-          providerParent match {
-            case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
-            case Some(p) => {
-
-              // We found the parent, inject resource_type and parent into the incoming JSON.
-              JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
-                case Failure(e) => Future(HandleRepositoryExceptions(e))
-                case Success(j) => {
-                  val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
-                  createResourceCommon(org, parent, providerType, newjson)
-                }
-              }
-            }
-          }
-        }
-      }
-      
-    }
-  }
-  
-  def postProviderConfig(org: UUID, parentType: String, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    postProviderCommon(org, parentType, parent, request.body)
   }
   
   def postProviderConfigOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -737,49 +551,160 @@ object Meta extends Authorization {
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
 
+  def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
 
+    val providerType = resolveProviderType(json)
+    val parentTypeId = UUID.fromString(parentType)
+
+    ResourceFactory.findById(parentTypeId, parent).fold {
+      Future(ResourceNotFound(parentTypeId, parent))
+    } { parentResource =>
+        
+      if (providerType == ResourceIds.ApiGatewayProvider) {
+        log.debug("Creating ApiGatewayProvider...")
+        postGatewayProvider(org, parentResource)
+      } 
+      else {
+
+        ResourceFactory.findById(UUID.fromString(parentType), parent).fold {
+          Future(ResourceNotFound(parentType, parent))
+        }{ p =>
+          // We found the parent, inject resource_type and parent into the incoming JSON.
+          JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
+            case Failure(e) => Future(HandleRepositoryExceptions(e))
+            case Success(j) => {
+              val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
+              createResourceCommon(org, parent, providerType, newjson)
+            }
+          }
+        }
+      }
+
+    }    
+
+//    ResourceFactory.findById(parentTypeId, parent) match {
+//      case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
+//      case Some(parentResource) => {
+//        
+//        if (providerType == ResourceIds.ApiGatewayProvider) {
+//          postGatewayProvider(org, parentResource)
+//        } 
+//        else {
+//          val providerParent = ResourceFactory.findById(UUID.fromString(parentType), parent)
+//
+//          providerParent match {
+//            case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
+//            case Some(p) => {
+//
+//              // We found the parent, inject resource_type and parent into the incoming JSON.
+//              JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
+//                case Failure(e) => Future(HandleRepositoryExceptions(e))
+//                case Success(j) => {
+//                  val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
+//                  createResourceCommon(org, parent, providerType, newjson)
+//                }
+//              }
+//            }
+//          }
+//        }
+//      }
+//    }
+    
+  }
+  
+  def laserClient(lambdaUrl: String, gatewayUrl: String) = {
+    val gateway = HostConfig.make(new URL(gatewayUrl))
+    val lambda  = HostConfig.make(new URL(lambdaUrl))
+    new Laser(gateway, lambda, Option(EnvConfig.securityKey), Option(EnvConfig.securitySecret))
+  }  
+  
+  
+  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+  lazy val laser = new Laser(
+      gatewayConfig, lambdaConfig, 
+      Option(EnvConfig.securityKey), 
+      Option(EnvConfig.securitySecret))  
+  
+  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
+    import ApiGateway._
+    
+    // TODO: Check resource_type if not gateway-type.
+    val input = JsonUtil.safeParse[GatewayInput](request.body)
+    
+    val url = input.properties.config.url
+    //val laser = client(url)
+    
+    log.debug("Creating provider resource in gestalt-apigateway...")
+    val laserProvider = LaserProvider(None, name = input.name)
+    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
+    
+    log.debug("Creating Location resource in gestalt-apigateway...")
+    val location = getGatewayLocation(input)
+    val laserLocation = LaserLocation(None, name = location.name, providerId)
+    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
+    
+    log.debug("Creating Gateway resource in gestalt-apigateway...")
+    val gatewayInfo = buildGatewayInfo(input)
+    val laserGateway = LaserGateway(None, input.name, locationId, gatewayInfo)
+    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
+
+    log.debug("Creating ApiGatewayProvider in Meta...")
+    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
+      case Failure(err) => Future { HandleExceptions(err) }
+      case Success(jsn) => {
+        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
+      }
+    }
+    
+  }  
+  
+  
   // --------------------------------------------------------------------------
   //
   // UTILITY FUNCTIONS
   //
   // --------------------------------------------------------------------------
-
   
-
+//  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
+//    (sc: SecurityResourceFunction, mc: MetaResourceFunction)
+//    (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
+//    
+//    log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
+//    
+//    safeGetInputJson(typeId, json) map { input =>
+//      createSynchronized(org, typeId, input)(sc, mc).get
+//    }
+//    for {
+//      input    <- safeGetInputJson(typeId, json)
+//      resource <- createSynchronized(org, typeId, input)(sc, mc)
+//    } yield resource
+//  }  
   
-  private def CreateSynchronizedResult[T](org: UUID, typeId: UUID, json: JsValue)
-      (sc: SecurityResourceFunction, mc: MetaResourceFunction)
-      (implicit request: SecuredRequest[T]) = {
+  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
+    (sc: SecurityResourceFunction, mc: MetaResourceFunction)
+    (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
+    
+    log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
-    Future {
-      safeGetInputJson(typeId, json) match {
-        case Failure(error) => BadRequestResult(error.getMessage)
-        case Success(input) => {
-          HandleCreate(createSynchronized(org, typeId, input)(sc, mc))
-        }
-      }
-    }
+    for {
+      input    <- safeGetInputJson(typeId, json)
+      resource <- syncWithSecurity(org, typeId, input)(sc, mc)
+    } yield resource
   }
   
-  
-  private def createSynchronized[T](org: UUID, typeId: UUID, input: GestaltResourceInput)
+  private def syncWithSecurity[T](org: UUID, typeId: UUID, input: GestaltResourceInput)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
     (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
 
-    /*
-     * Extract and validate resource.properties before attempting create.
-     */
     val stringprops = stringmap(input.properties)
     val creator = request.identity.account.id
     
-    PropertyValidator.validate(typeId, stringprops) match {
-      case (false, message) => Failure(illegal(message.get))
-      case _ => for {
-        sr <- sc(org, request.identity, input)
-        mr <- mc(creator, org,  sr, stringprops, input.description)
-      } yield mr
-    }
-  }  
+    for {
+      sr <- sc(org, request.identity, input)
+      mr <- mc(creator, org,  sr, stringprops, input.description)
+    } yield mr
+  }
   
   
   // TODO: Need to generalize name->uuid lookups
@@ -814,7 +739,7 @@ object Meta extends Authorization {
       }
       case _ => json
     }
-  }    
+  }
   
   def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
     (obj \ "resource_type" match {
@@ -826,7 +751,7 @@ object Meta extends Authorization {
         else obj
       }
     }).as[JsObject]    
-  }  
+  }
 
   /**
    * Unwrap the given UUID or get the root org_id if None.
@@ -837,6 +762,5 @@ object Meta extends Authorization {
       case Failure(ex)  => throw ex
     }
   }
-
 
 }

@@ -11,10 +11,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.charset.Charset
 import java.util.Base64;
 
-class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
+class GatewayClient(gatewayConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
 
   private val gatewayClient = configureClient(gatewayConfig)
-  private val lambdaClient = configureClient(lambdaConfig)
   
   // --------------------------------------------------------------------------
   // GATEWAYS
@@ -132,41 +131,16 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     
     client.get(resource, expected) match {
       case Failure(err) => throw err
-      case Success(res) => res.output match {
-        case Some(out) => out.validate[T] match {
-          case s: JsSuccess[T] => Some(s.get)
+      case Success(res) => res.output.map { out =>
+        out.validate[T] match {
+          case s: JsSuccess[T] => s.get
           case e: JsError => 
             throw new RuntimeException(JsError.toFlatJson(e).toString)
         }
-        case None => None
+
       }
     }    
-  }
-
-  // --------------------------------------------------------------------------
-  // LAMBDAS
-  // --------------------------------------------------------------------------  
-  
-  def lambdas(): Seq[LaserLambda] = {
-    getSeq[LaserLambda](lambdaClient, "/lambdas", Seq(200))
-  }
-  
-  def lambdas(id: String): Option[LaserLambda] = {
-    get[LaserLambda](lambdaClient, s"/lambdas/$id", Seq(200))  
-  }
-  
-  def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
-    val json = Json.toJson(lambda)
-    lambdaClient.post("/lambdas", json, Seq(200,201,202))
-  }
-  
-  def deleteLambda(id: String): Try[ApiResponse] = {
-    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204))
-  }
-  
-  def deleteLambdas(ids: Seq[String]) = {
-    ids map { i => deleteLambda(i) }
-  }  
+  } 
   
   private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
     client.get(resource, expected) match {
@@ -180,7 +154,6 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
         case None => Seq()
       }
     }
-    
-  }
+  }  
   
 }

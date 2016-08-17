@@ -127,7 +127,7 @@ object SearchController extends Authorization {
     
   }
 
-  def getUserByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+  def getUserByPropertyGlobal() = Authenticate() { implicit request =>
     trace(s"getUserByProperty()")
 
     val qs = request.queryString
@@ -143,7 +143,7 @@ object SearchController extends Authorization {
     }
   }
 
-  def getGroupByPropertyGlobal() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+  def getGroupByPropertyGlobal() = Authenticate() { implicit request =>
     trace(s"getGroupByProperty()")
 
     val qs = request.queryString

@@ -38,10 +38,17 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.auth.Actions
 
 
 object DeleteController extends Authorization {
  
+  /*
+   * Each of the types named by the keys in this map have representations both in
+   * Meta and in some external system. When delete is called on any of these types
+   * the given function is called to delete the resource (and whatever else) in the
+   * external system before the resource is deleted from Meta.
+   */
   private val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
       external = Map(
         ResourceIds.Org -> deleteExternalOrg,
@@ -50,8 +57,37 @@ object DeleteController extends Authorization {
         ResourceIds.Container -> deleteExternalContainer,
         ResourceIds.Lambda -> deleteExternalLambda,
         ResourceIds.Api -> deleteExternalApi,
-        ResourceIds.ApiEndpoint -> deleteExternalEndpoint))
+        ResourceIds.ApiEndpoint -> deleteExternalEndpoint,
+        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway))
 
+  
+  private def deleteOps(typeId: UUID) = {
+    val action = Actions.actionName(typeId, "delete")
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action),
+      controllers.util.EventsPost(action))
+  }
+  
+  
+  def requestOps(
+      user: AuthAccountWithCreds, 
+      policyOwner: UUID, 
+      target: GestaltResourceInstance): RequestOptions = {
+    
+    RequestOptions(user, 
+        authTarget = Option(policyOwner), 
+        policyOwner = Option(policyOwner), 
+        policyTarget = Option(target))    
+  }
+  
+  /*
+    val options = RequestOptions(user, 
+        authTarget = Option(environment), 
+        policyOwner = Option(environment), 
+        policyTarget = Option(target))
+   */
   
   def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
@@ -61,10 +97,19 @@ object DeleteController extends Authorization {
       NotFoundResult(request.uri)
     } { resource =>
       
-      DeleteHandler.handle(resource, request.identity) match {
-        case Failure(e) => HandleExceptions(e)
-        case Success(a) => NoContent
+      val owner      = findResourceParent(resource.id)
+      val operations = deleteOps(resource.typeId)
+      val options    = requestOps(request.identity, owner.id, resource)
+
+      log.debug(s"Policy Owner : " + owner.id)
+      
+      SafeRequest (operations, options) Protect { maybeState => 
+        DeleteHandler.handle(resource, request.identity) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(_) => NoContent
+        }      
       }
+      
     }
   }
 
@@ -92,11 +137,16 @@ object DeleteController extends Authorization {
     laser.deleteApi(res.id) map ( _ => () )
   }
   
+  def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    val externalId = res.properties.get("external_id")
+    laser.deleteGateway(externalId) map ( _ => () )
+  }
+  
   def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     val api = UUID.fromString(res.properties.get("api"))
     laser.deleteEndpoint(api, res.id) map ( _ => () )
   }
-
+  
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
@@ -184,6 +234,17 @@ object DeleteController extends Authorization {
     gatewayConfig, lambdaConfig, 
     Option(EnvConfig.securityKey), 
     Option(EnvConfig.securitySecret))
+  
+  
+  def findResourceParent(child: UUID) = {
+    ResourceFactory.findParent(child) getOrElse {
+      /* TODO:
+       * The only way this should happen is when trying to delete the root Org.
+       * Not sure we should allow that.
+       */
+      throw new ResourceNotFoundException("Could not find parent resource.")
+    }
+  }
   
   /**
    * Permanently delete a ResourceType along with any associated TypeProperties

@@ -21,11 +21,13 @@ import com.galacticfog.gestalt.security.api.GestaltPasswordCredential
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
-import play.api.{Logger => log}
+import play.api.Logger
 
 
 object Security {
 
+  private[this] val log = Logger(this.getClass)
+  
   def getRootOrg(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
     def unwrap(os: Seq[GestaltOrg]) = Try {
       os.size match {
@@ -117,6 +119,7 @@ object Security {
       rights = None,
       description = user.description
     )
+    log.debug(s"Creating account in gestalt-security (org = $org")
     Try{Await.result( GestaltOrg.createAccount(org, account)(client.withCreds(auth.creds)), 5 seconds )}
   }
 

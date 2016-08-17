@@ -87,7 +87,7 @@ class EnvironmentVarsSpec extends Specification with ResourceScope {
       org must beSome
       
       val (wid,eid) = createWorkspaceEnvironment(org.get.id,
-          workspaceProps = Map("env" -> Json.stringify(Json.toJson(Map("VAR1" -> "workspace")))),
+          workspaceProps   = Map("env" -> Json.stringify(Json.toJson(Map("VAR1" -> "workspace")))),
           environmentProps = Map("env" -> Json.stringify(Json.toJson(Map("VAR1" -> "environment", "VAR2" -> "environment")))))
       
       val wenv = EnvironmentVars.get(org.get.id, wid)

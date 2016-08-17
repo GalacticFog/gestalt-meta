@@ -14,6 +14,8 @@ import java.util.UUID
 
 import scala.util.{Try,Success,Failure}
 import play.api.libs.json.Json
+import com.galacticfog.gestalt.security.api.{GestaltDirectory,GestaltAccount, GestaltAPICredentials}
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 trait ResourceScope extends Scope {
   
@@ -21,6 +23,27 @@ trait ResourceScope extends Scope {
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   
+  def dummyAuthAccountWithCreds(
+      userInfo: Map[String,String] = Map(), 
+      authHeader: Option[String] = None): AuthAccountWithCreds = {
+    
+    val defaultStr  = "foo"
+    val header      = authHeader getOrElse s"Bearer ${uuid()}"
+    val credentials = GestaltAPICredentials.getCredentials(header).get    
+    val directory   = GestaltDirectory(uuid(), defaultStr, None, uuid())
+
+    val account = GestaltAccount(
+        userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),
+        userInfo.getOrElse("username",  defaultStr), 
+        userInfo.getOrElse("firstName", defaultStr),
+        userInfo.getOrElse("lastName",  defaultStr),
+        userInfo.get("description") orElse Option(defaultStr),
+        userInfo.get("email")       orElse Option(defaultStr),
+        userInfo.get("phoneNumber") orElse Option(defaultStr),
+        directory)
+        
+    AuthAccountWithCreds(account, Seq(), Seq(), credentials, uuid())
+  }
   
   def createPolicyRule(parent: UUID, ruleType: UUID = ResourceIds.RuleLimit, action: String = "foo.bar", org: UUID = dummyRootOrgId) = {
     val output = createInstance(ResourceIds.Policy,
@@ -52,6 +75,10 @@ trait ResourceScope extends Scope {
   def getParent(id: UUID) = {
     Json.stringify(Json.obj("id" -> id.toString))
   }
+  
+  
+  def getOrg(fqon: String) = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
+  
   
   def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map()): (UUID,UUID) = {
     

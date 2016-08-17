@@ -4,6 +4,8 @@ organization := "com.galacticfog"
 
 version := "0.3.3-SNAPSHOT"
 
+//javaOptions in run += "-agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=9999"
+
 //lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
 lazy val root = (project in file(".")).
@@ -44,10 +46,10 @@ dockerRepository := Some("galacticfog.artifactoryonline.com")
 
 
 
-//scalacOptions ++= Seq(
-  //"-deprecation", 		// Emit warning and location for usages of deprecated APIs.
+scalacOptions ++= Seq(
+  "-deprecation", 		// Emit warning and location for usages of deprecated APIs.
   //"-feature", 			// Emit warning and location for usages of features that should be imported explicitly.
-  //"-unchecked" 		// Enable additional warnings where generated code depends on assumptions.
+  "-unchecked") 		// Enable additional warnings where generated code depends on assumptions.
   // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
   //"-Xlint", 				// Enable recommended additional warnings.
   // "-Ywarn-adapted-args", 	// Warn if an argument list is modified to match the receiver.

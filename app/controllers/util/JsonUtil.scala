@@ -7,6 +7,8 @@ import scala.util.{Try,Success,Failure}
 import play.api.{ Logger => log }
 import scala.annotation.tailrec
 
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+
 
 object JsonUtil {
 
@@ -110,7 +112,19 @@ object JsonUtil {
   }
   
   private def toPath(path: String) = path.trim.stripPrefix("/").stripSuffix("/").split("/").toList
-    
+  
+  def safeParse[A](js: String)(implicit reads: Reads[A]): A = {
+    safeParse[A](Json.parse(js))
+  }
+ 
+  def safeParse[A](json: JsValue)(implicit reads: Reads[A]): A = {
+    json.validate[A].map {
+      case a => a
+    }.recoverTotal { e => 
+      throw new BadRequestException(
+          s"Failed parsing JSON string: " + JsError.toFlatJson(e).toString) 
+    }
+  }
   
 }
 

@@ -111,7 +111,8 @@ object SyncController extends Authorization {
           /*
            * TODO: Raise error if any of the Entitlements fail Create.
            */
-          setOrgEntitlements(org.id, account)
+          //setNewOrgEntitlements(org.id, account)
+          setNewOrgEntitlements(parent, org.id, account, Option(parent))
         } 
       }
     }
@@ -233,7 +234,7 @@ object SyncController extends Authorization {
   }
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
-
+  
     val admin = getAdminUserId(account)
     
     for (acc <- rs) {

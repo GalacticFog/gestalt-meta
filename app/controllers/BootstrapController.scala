@@ -16,7 +16,7 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 
 object BootstrapController extends Authorization {
   
-  def bootstrap() = GestaltFrameworkAuthAction(nullOptString(None)) { implicit request =>
+  def bootstrap() = Authenticate() { implicit request =>
     trace("bootstrap()")
     
     log.debug("Looking up root Org in gestalt-security...")

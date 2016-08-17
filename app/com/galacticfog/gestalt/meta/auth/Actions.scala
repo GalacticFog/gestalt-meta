@@ -18,7 +18,7 @@ abstract class ResourceActions(
     "create" -> Create,
     "view" -> View,
     "update" -> Update,
-    "delete" -> Delete) ++ additionalActions
+    "delete" -> Delete) ++ (additionalActions map { case (k,v) => (k -> s"$prefix.$v") })
   
   def isValidAction(action: String) = {
     actions.keySet.contains(action)
@@ -39,12 +39,28 @@ object Actions {
         ResourceIds.Provider -> Provider,
         ResourceIds.Entitlement -> Entitlement,
         ResourceIds.Policy -> Policy,
-        ResourceIds.Rule -> Rule)  
-  
-  
-  /*
-   * TODO: Test this as a replacement for 'resourceAction()' below.
-   */
+        ResourceIds.Rule -> Rule,
+        ResourceIds.Domain -> Domain,
+        ResourceIds.ApiEndpoint -> ApiEndpoint,
+        ResourceIds.ResourceType -> ResourceType,
+        ResourceIds.TypeProperty -> TypeProperty)  
+
+  def typePrefix(typeId: UUID) = typeId match {
+    case ResourceIds.Org => "org"
+    case ResourceIds.User => "user"
+    case ResourceIds.Group => "group"
+    case ResourceIds.Workspace => "workspace"
+    case ResourceIds.Environment => "environment"
+    case ResourceIds.Lambda => "lambda"
+    case ResourceIds.Container => "container"
+    case ResourceIds.License => "license"
+    case ResourceIds.Domain => "domain"
+    case ResourceIds.ApiEndpoint => "apiendpoint"
+    case ResourceIds.ResourceType => "resourcetype"
+    case ResourceIds.TypeProperty => "typeproperties"
+    case e => throw new IllegalArgumentException(s"Unknown action-prefix '$typeId'")
+  }
+
   def actionName(typeId: UUID, action: String) = {
     actionTypes.get(typeId).fold {
       throw new RuntimeException(s"Unknown Action Object type '$typeId'.")
@@ -59,18 +75,25 @@ object Actions {
   object Group extends ResourceActions("group")
   object Workspace extends ResourceActions("workspace")
   object Environment extends ResourceActions("environment")
-  object Container extends ResourceActions("container")
   object License extends ResourceActions("license")
-  
   object Provider extends ResourceActions("provider")
   object Entitlement extends ResourceActions("entitlement")
   object Policy extends ResourceActions("policy")
   object Rule extends ResourceActions("rule")
+  object Domain extends ResourceActions("domain")
+  object ApiEndpoint extends ResourceActions("apiendpoint")
+  object ResourceType extends ResourceActions("resourcetype")
+  object TypeProperty extends ResourceActions("typeproperty")
   
-  object Lambda extends ResourceActions("lambda",
+  object Container extends ResourceActions("container",
       additionalActions = Map("migrate" -> "migrate", "scale" -> "scale")) {
     val Migrate = s"${prefix}.migrate"
     val Scale   = s"${prefix}.scale"  
+  }  
+  
+  object Lambda extends ResourceActions("lambda",
+      additionalActions = Map("invoke" -> "invoke")) {
+    val Invoke = s"${prefix}.invoke"  
   }
   
 }
