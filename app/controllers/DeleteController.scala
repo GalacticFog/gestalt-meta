@@ -121,9 +121,6 @@ object DeleteController extends Authorization {
     val result = Await.result(deleteMarathonApp(res), 5 seconds)
   }
   
-  /**
-   * 
-   */
   def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     laser.deleteLambda(res.id) map ( _ => () )
   }

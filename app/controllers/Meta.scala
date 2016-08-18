@@ -371,11 +371,12 @@ object Meta extends Authorization {
 
     Future {
       
-      val operations = List(
-          controllers.util.Feature(GestaltFeature.Policy), 
-          controllers.util.Authorize(Actions.Workspace.Create),
-          controllers.util.PolicyCheck(Actions.Workspace.Create),
-          controllers.util.EventsPre(Actions.Workspace.Create))
+//      val operations = List(
+//          controllers.util.Authorize(Actions.Workspace.Create),
+//          controllers.util.PolicyCheck(Actions.Workspace.Create),
+//          controllers.util.EventsPre(Actions.Workspace.Create))
+      
+      val operations = standardMethods(ResourceIds.Workspace, "workspace.create")
       
       val options = RequestOptions(user, 
           authTarget = Option(org), 

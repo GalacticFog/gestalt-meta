@@ -118,17 +118,6 @@ def HandleExceptions(e: Throwable) = {
   }
   
   def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
-//    log.debug("stringmap(...) => " + m)
-//    m map { x => 
-//      x map { x =>
-//        val normalized = x._2 match {
-//          case s: JsString => trimquotes(s.toString)
-//          case _ => x._2.toString
-//        }
-//        (x._1, normalized)
-//      } 
-//    }
-    
     m map { _ map { case (k,v) =>
         (k -> (v match {
           case JsString(value) => value
@@ -170,5 +159,35 @@ def HandleExceptions(e: Throwable) = {
   
   def okNotFound(f: Try[JsValue]) = new OkNotFoundHandler().handle( f )
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
+ 
   
+  import com.galacticfog.gestalt.meta.auth._
+  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+  
+  /**
+   * Get a List of 'standard' request operations. Includes:
+   * - Authorization
+   * - Policy Checking
+   * - Pre-Operation Event
+   * - Post-Operation Event
+   */
+  def standardMethods(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action),
+      controllers.util.EventsPost(action))
+  }
+  
+  def requestOpts(
+      user: AuthAccountWithCreds, 
+      policyOwner: UUID, 
+      target: GestaltResourceInstance): RequestOptions = {
+    
+    RequestOptions(user, 
+        authTarget = Option(policyOwner), 
+        policyOwner = Option(policyOwner), 
+        policyTarget = Option(target))    
+  }
+
 }

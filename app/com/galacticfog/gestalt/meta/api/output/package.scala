@@ -41,7 +41,7 @@ package object output {
     if (typeId == ResourceIds.Org) "%s/orgs/%s".format(base, id)
     else "%s/orgs/%s/%s/%s".format(base, orgId, typename, id)
   }
-
+  
   def toHref(typeId: UUID, id: UUID, orgId: UUID, baseUri: Option[String] = None) = {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)

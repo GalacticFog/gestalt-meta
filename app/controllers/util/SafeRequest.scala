@@ -142,6 +142,11 @@ case class PolicyCheck(override val args: String*) extends Operation(args) {
   }
 }
 
+private object EventType {
+  val Pre = "pre"
+  val Post = "post"
+}
+
 trait EventMethods {
   
   private[this] val log = Logger(this.getClass)
@@ -165,11 +170,12 @@ trait EventMethods {
     if (fs.isEmpty) None else Some(fs(0))
   }
   
-  def publishEvent(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
-    val eventName = s"${actionName}.pre"
+  def publishEvent(user: UUID, target: UUID, actionName: String, eventType: String): Try[OperationResponse[Option[UUID]]] = Try {
+    val eventName = s"${actionName}.${eventType}"
     findEffectiveEventRules(target, Option(eventName)) match { 
       case None => Continue
-      case Some(rule) => {   
+      case Some(rule) => {
+        
         val event = EventMessage.make(
               id       = UUID.randomUUID, 
               identity = user, 
@@ -201,9 +207,11 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
   private val log = Logger(this.getClass)
   
   def proceed(opts: RequestOptions) = {
-    val eventName = s"${args(0)}.post"
     
-    publishEvent(opts.user.account.id, opts.policyOwner.get, eventName) match {
+    val actionName = args(0)
+    val eventName = s"${actionName}.${EventType.Post}"
+    
+    publishEvent(opts.user.account.id, opts.policyOwner.get, actionName, EventType.Post) match {
       case Success(_) => Continue
       case Failure(e) => {
         log.error(s"Failure publishing event : '$eventName'")
@@ -236,7 +244,7 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
      * TODO: 
      */
     val eventName = args(0)
-    evaluateEventRules(user.account.id, /*target.id*/policyOwner.id, eventName).get
+    evaluateEventRules(user.account.id, policyOwner.id, eventName).get
   }
   
   def evaluateEventRules(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
