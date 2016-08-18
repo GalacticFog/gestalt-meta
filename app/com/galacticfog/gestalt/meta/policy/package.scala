@@ -47,13 +47,10 @@ package object policy {
     }
   }
 
-  
   /* TODO:
    * Use the property name to decide whether tests are performed against the 'target' or the payload 
    * converted to a resource.
    */
-  
-  
   def propertyContainerCount(opts: RequestOptions): JsValue = {
     log.debug(s"propertyContainerCount(policyOwner = ${opts.policyOwner}")
     val env = opts.policyOwner.get
@@ -95,17 +92,7 @@ package object policy {
     }
     
     log.debug("Test-Value : " + testValue)
-    testValue.fold {
-      missingProperty(rule, predicate)
-//      log.debug("Value missing - deciding...")
-//      val propertyMap  = Properties.getTypePropertyMap(target.typeId)
-//      val propertyName = predicate.property.split("""\.""").last
-//      
-//      
-//      if (isStrict(rule)) Left(s"Missing property ${predicate.property}. The rule is strict.")
-//      else missingProperty(predicate, propertyMap)
-
-    }{ test =>
+    testValue.fold(missingProperty(rule, predicate)) { test =>
       val p1 = normalizedPredicate(predicate)
       if (compareJson(test, p1)) Right(Unit) else Left(predicate.toString)      
     }
@@ -131,29 +118,25 @@ package object policy {
   
   
   def compareJson[T](test: JsValue, predicate: Predicate[T]) = {
-    
     val value = toJsValue(predicate.value.toString)
     
     log.debug(s"TESTING : (${test.getClass.getSimpleName}, ${value.getClass.getSimpleName})")
     
     (test, value) match {
-      case (JsString(_),  JsString(_))  => {
+      case (JsString(_), JsString(_))   =>
         CompareSingle.compare(test, value, predicate.operator)
-      }
-      case (JsBoolean(_), JsBoolean(_)) => CompareSingle.compare(test, value, predicate.operator)
-      case (JsNumber(_),  JsNumber(_))  => 
+      case (JsBoolean(_), JsBoolean(_)) => 
+        CompareSingle.compare(test, value, predicate.operator)
+      case (JsNumber(_), JsNumber(_))   => 
         CompareSingleNumeric.compare(test.as[JsNumber], value.as[JsNumber], predicate.operator)
-      
-      case (JsArray(_),  JsArray(_))    => 
+      case (JsArray(_), JsArray(_))     => 
         CompareArrayToArray.compare(test.as[JsArray], value.as[JsArray], predicate.operator)
-      
       case (jsvalue, JsArray(_))        => 
         CompareSingleToArray.compare(value.as[JsArray], jsvalue, predicate.operator)
-        
       case _ => throw new RuntimeException(s"Unhandled comparison. found: (${test.getClass.getSimpleName}, ${value.getClass.getSimpleName})")
     }
-    
   }
+  
   
   def decide[U](
     user: U,
@@ -182,7 +165,7 @@ package object policy {
     }
     case _ => JsString(s.replaceAll("\"", ""))
   }
-
+  
   def isNumericString(s: String) = {
     val test = s.trim
     Try(test.toInt).isSuccess || Try(test.toDouble).isSuccess
@@ -192,12 +175,12 @@ package object policy {
     val test = s.trim.toLowerCase
     Try(test.toBoolean).isSuccess
   }
-
+  
   def isArrayString(s: String) = {
     val test = s.trim
     !isObjectString(s) && s.contains(",")
   }
-
+  
   def isObjectString(s: String): Boolean = {
     val test = s.trim
     (test startsWith "{") && (test endsWith "}")
@@ -211,7 +194,7 @@ package object policy {
       operator = (j \ "operator").as[String],
       value = (j \ "value").as[JsValue])
   }
-
+  
   def DebugLogRules(parentId: UUID, rules: Seq[GestaltResourceInstance]) {
     if (log.isDebugEnabled) {
       if (rules.isEmpty) log.debug(s"No Policy Rules found for resource $parentId")
@@ -265,8 +248,6 @@ package object policy {
       case ResourceIds.Container   => EnvironmentProperties
       case ResourceIds.Workspace   => DefaultResourceProperties
       case _                       => DefaultResourceProperties
-      //      case _ => 
-      //        throw new IllegalArgumentException(s"No property handler for type '${typeId.toString}'.")
     }
   }
 

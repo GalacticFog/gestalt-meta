@@ -24,8 +24,6 @@ trait EntitlementMethods {
   }
   
   /*
-   * TODO: This method should match entitlements with the same action-name, pulling identities from 'theirs' into ours.
-   *  
    * If (ours contains theirs)
    *   keep ours
    *   get theirs.identities
@@ -85,11 +83,9 @@ trait EntitlementMethods {
     go(theirs filter { e => e.properties.action.startsWith(Actions.typePrefix(ourType)) }, ours)
   }
 
-
   def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
     entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
   }
-
   
   def entitlementsMerged(es: Map[Int, Seq[GestaltResourceInstance]]): Seq[GestaltResourceInstance] = {
 
@@ -121,7 +117,6 @@ trait EntitlementMethods {
       (output ++ go(output, ents.toList, Map())).values.toSeq
     }   
   }    
-  
   
   /**
    * Get a Seq containing the User ID and the IDs of all Groups the User is a

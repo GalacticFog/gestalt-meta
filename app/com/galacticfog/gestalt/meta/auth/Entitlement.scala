@@ -57,11 +57,10 @@ object Entitlement {
       properties = Option(EntitlementProps.toMap(ent.properties)) 
     ) 
   }  
-
+  
   implicit lazy val entitlementPropsFormat = Json.format[EntitlementProps]
   implicit lazy val entitlementFormat = Json.format[Entitlement]
 }
-
 
 object EntitlementProps {
  /**
@@ -100,7 +99,6 @@ object EntitlementProps {
   }
 }
 
-
 case class EntitlementProps(
     action: String, 
     value: Option[String], 
@@ -119,7 +117,6 @@ case class EntitlementProps(
       if (notFound.isEmpty) Right((this))
       else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
     }
-  }
-  
+  }  
 }
 

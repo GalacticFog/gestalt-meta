@@ -204,7 +204,6 @@ object ResourceController extends Authorization {
   }
   
   private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
-    //injectLambdaFunctionMap(res)
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
     val resJson = Json.toJson(res).as[JsObject]
     
@@ -228,7 +227,7 @@ object ResourceController extends Authorization {
       case Success(gs) => {
         val gids  = gs map { _.id.toString }
         val props = {
-          if (gids.isEmpty) None 
+          if (gids.isEmpty) res.properties
           else Option(res.properties.get ++ Map("groups" -> gids.mkString(",")))
         }
         res.copy(properties = props)
@@ -271,7 +270,6 @@ object ResourceController extends Authorization {
       case Some(_) => Ok(Json.toJson(EnvironmentVars.get(fqid(fqon), id)))
     }
   }
-  
   
   /**
    * Get Environment variables for the given lambda.
@@ -353,7 +351,6 @@ object ResourceController extends Authorization {
     }
   }
   
-
   // --------------------------------------------------------------------------
   // CUSTOM-RESOURCES
   // --------------------------------------------------------------------------
@@ -380,7 +377,6 @@ object ResourceController extends Authorization {
       }
     }
   }
-
   
   // --------------------------------------------------------------------------
   // API_ENDPOINTS
@@ -390,13 +386,12 @@ object ResourceController extends Authorization {
    * Finding Endpoints by Lambda calls a different factory endpoint, because Endpoints are NOT
    * stored as children of Lambdas. Why not?
    */
-
+   
   def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Authenticate(fqon) { implicit request =>
     val org = fqid(fqon)
     handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
   }  
   
-
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
@@ -411,10 +406,10 @@ object ResourceController extends Authorization {
       cmps match {
         case Nil => dat
         case h :: t => {
-          ResourceFactory.findChildByName(parent, h._1, h._2) match {
-            case None => throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
-            case Some(res) => 
-              resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
+          ResourceFactory.findChildByName(parent, h._1, h._2).fold {
+            throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
+          }{ res => 
+            resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
           }
         }
       }

@@ -117,12 +117,9 @@ trait Authorization extends MetaController {
     setNewResourceEntitlements(org, ResourceIds.Lambda, newLambdaId, user, grants, Option(parent))
   }
   
-  
-  
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
   }
-  
   
   def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Result): Result = {
     isAuthorized(target, caller.account.id, actionName, caller) match {
@@ -136,8 +133,6 @@ trait Authorization extends MetaController {
     }
   }
   
-
-  
   def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     val caller = request.identity
     
@@ -148,7 +143,6 @@ trait Authorization extends MetaController {
     }
     handleExpansion(output, request.queryString, META_URL)
   }
-  
   
   def AuthorizeFuture(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Future[Result]): Future[Result] = {
     isAuthorized(
@@ -281,12 +275,10 @@ trait Authorization extends MetaController {
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
-        
         val allowed = getAllowedIdentities(entitlement)
         val membership = getUserMembership(identity, account)
 
         (allowed intersect membership).isDefinedAt(0)
-        
       }
     }
   }    
