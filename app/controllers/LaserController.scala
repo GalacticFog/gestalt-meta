@@ -160,16 +160,10 @@ object LaserController extends Authorization {
 //  }
   
   def getEndpointImplementation(json: JsValue): Try[Map[String,String]] = Try {
-    log.debug("getEndpointImplementation([json])")
-    
     getJsonPropertyField(json, "implementation").fold{
       throw new RuntimeException(LaserError.LAMBDA_IMPLEMENTATION_NOT_FOUND)
-    }{ impl =>
-      getImplementationProps(impl).get
-    }
-  }  
-  
-
+    }{ impl => getImplementationProps(impl).get }
+  }
   
   def createLaserEndpoint(input: GestaltResourceInput, api: UUID, upstream: String, provider: JsValue) = {
     val json = toLaserEndpoint(input, api, upstream, provider)
@@ -178,7 +172,7 @@ object LaserController extends Authorization {
       case Success(response) => JsonUtil.safeParse[LaserEndpoint](response.output.get)
     }
   }
-
+  
   def findLaserProviderId(metaProviderId: String) = {
     ResourceFactory.findById(metaProviderId).fold {
       throw new RuntimeException(LaserError.GATEWAY_NOT_FOUND(metaProviderId))
@@ -187,9 +181,7 @@ object LaserController extends Authorization {
   
   def postEndpoint(org: UUID, parent: UUID, json: JsValue)
       (implicit request: SecuredRequest[JsValue]): Try[Seq[GestaltResourceInstance]] = Try {
-    
-    log.debug("postEndpoint(...)")
-    
+
     /*
      * apiendpoint.properties.implementation gives us the lambda ID and the name of the function
      * to call on the lambda.
@@ -200,7 +192,6 @@ object LaserController extends Authorization {
       val lambda = ResourceFactory.findById(ResourceIds.Lambda, lambdaId).fold {
         throw new ResourceNotFoundException(LaserError.LAMBDA_NOT_FOUND(lambdaId))
       }{ resource => Option(resource) }
-      
       (lambda,implementation("function"))       
     }
     
