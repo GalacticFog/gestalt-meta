@@ -77,11 +77,12 @@ object JsonUtil {
    * @param obj a JSON serialized GestaltResourceInstance
    * @param name name of the property to upsert
    * @param value value of the property as a JsValue
+   * @return full resource JSON with the modified property
    */
   def upsertProperty(obj: JsObject, name: String, value: JsValue) = Try {
     val ps  = replaceJsonPropValue(obj, name, value)
     replaceJsonProps(obj, ps)    
-  }  
+  }
   
   def upsertProperties(obj: JsObject, props: (String,JsValue)*): Try[JsObject] = {
     
