@@ -484,35 +484,35 @@ object LaserController extends Authorization {
    * and all APIs from the configured gestalt-apigateway. Not for production use
    * but very useful during development.
    */
-  def resetLaser() = Authenticate() { implicit request =>
-    val lambdastats = laser.lambdas map { m =>
-      laser.deleteLambda(m.id.get) match {
-        case Success(_) => (m.id.get, "SUCCESS")
-        case Failure(e) => (m.id.get, "FAILURE: " + e.getMessage)
-      }
-    }
-
-    val apistats = laser.apis map { a =>
-      laser.deleteApi(a.id.get) match {
-        case Success(_) => (a.id.get, "SUCCESS")
-        case Failure(e) => (a.id.get, "FAILURE: " + e.getMessage)
-      }
-    }
-
-    val providerstats = laser.providers map { p =>
-      laser.deleteProvider(p.id.get) match {
-        case Success(_) => (p.id.get, "SUCCESS")
-        case Failure(e) => (p.id.get, "FAILURE: " + e.getMessage)
-      }
-    }
-    
-    val result = Json.obj(
-      "deleted_lambdas" -> Json.toJson(lambdastats.toMap),
-      "deleted_apis" -> Json.toJson(apistats.toMap),
-      "delete_gateway_providers" -> Json.toJson(providerstats.toMap))
-
-    Ok(result)
-  }
+//  def resetLaser() = Authenticate() { implicit request =>
+//    val lambdastats = laser.lambdas map { m =>
+//      laser.deleteLambda(m.id.get) match {
+//        case Success(_) => (m.id.get, "SUCCESS")
+//        case Failure(e) => (m.id.get, "FAILURE: " + e.getMessage)
+//      }
+//    }
+//
+//    val apistats = laser.apis map { a =>
+//      laser.deleteApi(a.id.get) match {
+//        case Success(_) => (a.id.get, "SUCCESS")
+//        case Failure(e) => (a.id.get, "FAILURE: " + e.getMessage)
+//      }
+//    }
+//
+//    val providerstats = laser.providers map { p =>
+//      laser.deleteProvider(p.id.get) match {
+//        case Success(_) => (p.id.get, "SUCCESS")
+//        case Failure(e) => (p.id.get, "FAILURE: " + e.getMessage)
+//      }
+//    }
+//    
+//    val result = Json.obj(
+//      "deleted_lambdas" -> Json.toJson(lambdastats.toMap),
+//      "deleted_apis" -> Json.toJson(apistats.toMap),
+//      "delete_gateway_providers" -> Json.toJson(providerstats.toMap))
+//
+//    Ok(result)
+//  }
 
   object LaserError {
     val LAMBDA_IMPLEMENTATION_NOT_SUPPORTED = "Only supporting implementations of type 'Lambda' at this time."

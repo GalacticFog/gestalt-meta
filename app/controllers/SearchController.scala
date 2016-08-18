@@ -23,9 +23,9 @@ object SearchController extends Authorization {
  
  def AuthFqon(fqon: Option[String]) = new GestaltFrameworkAuthActionBuilder(Some({rh: RequestHeader => fqon}))
  
-  def getAllResourcesByTypeOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org)))
-  }
+//  def getAllResourcesByTypeOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org)))
+//  }
   
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = AuthFqon(Some(fqon))/*GestaltFrameworkAuthAction(Some(fqon))*/ { implicit request =>
     orgFqon(fqon) match {
@@ -34,21 +34,21 @@ object SearchController extends Authorization {
     }     
   }
 
-  /* /orgs/:org-id/resourcetypes/:type-id/resources/search?... */
-  def getAllResourcesByTypePropertyOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getAllResourcesByTypeOrg($org)")
-    
-    val qs = request.queryString
-    extractNameValue(qs) match {
-      case Success((name,value)) => {
-        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
-        case _ => GenericErrorResult(500, error.getMessage)
-      }
-    }
-  }
+//  /* /orgs/:org-id/resourcetypes/:type-id/resources/search?... */
+//  def getAllResourcesByTypePropertyOrg(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    trace(s"getAllResourcesByTypeOrg($org)")
+//    
+//    val qs = request.queryString
+//    extractNameValue(qs) match {
+//      case Success((name,value)) => {
+//        Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+//      }
+//      case Failure(error) => error match {
+//        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+//        case _ => GenericErrorResult(500, error.getMessage)
+//      }
+//    }
+//  }
 
   /* /:fqon/resourcetypes/:type-id/resources/search?... */
   def getAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
@@ -85,23 +85,23 @@ object SearchController extends Authorization {
   }
   
   
-  def getUserByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getUserByPropertyOrgId($org)")
-
-    val qs = request.queryString
-
-    validateUserSearchCriteria(qs) match {
-      case Success((name,value)) => {
-        // TODO: workaround until passthrough to gestalt-security is implemented
-        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
-        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
-        case _ => GenericErrorResult(500, error.getMessage)
-      }
-    }
-  }
+//  def getUserByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    trace(s"getUserByPropertyOrgId($org)")
+//
+//    val qs = request.queryString
+//
+//    validateUserSearchCriteria(qs) match {
+//      case Success((name,value)) => {
+//        // TODO: workaround until passthrough to gestalt-security is implemented
+//        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.User, Criterion(name,value))))
+//        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.User, Criterion(name,value))))
+//      }
+//      case Failure(error) => error match {
+//        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+//        case _ => GenericErrorResult(500, error.getMessage)
+//      }
+//    }
+//  }
 
   def getUserByPropertyFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     trace(s"getUserByPropertyFqon($fqon)")
@@ -159,23 +159,23 @@ object SearchController extends Authorization {
     }
   }
 
-  def getGroupByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    trace(s"getGroupByPropertyOrgId($org)")
-
-    val qs = request.queryString
-
-    validateGroupSearchCriteria(qs) match {
-      case Success((name,value)) => {
-        // TODO: workaround until passthrough to gestalt-security is implemented
-        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.Group, Criterion(name,value))))
-        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.Group, Criterion(name,value))))
-      }
-      case Failure(error) => error match {
-        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
-        case _ => GenericErrorResult(500, error.getMessage)
-      }
-    }
-  }
+//  def getGroupByPropertyOrgId(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
+//    trace(s"getGroupByPropertyOrgId($org)")
+//
+//    val qs = request.queryString
+//
+//    validateGroupSearchCriteria(qs) match {
+//      case Success((name,value)) => {
+//        // TODO: workaround until passthrough to gestalt-security is implemented
+//        // Ok(Output.renderLinks(getResourceByPropertyOrg(org, ResourceIds.Group, Criterion(name,value))))
+//        Ok(Output.renderLinks(getResourceByProperty(ResourceIds.Group, Criterion(name,value))))
+//      }
+//      case Failure(error) => error match {
+//        case ill: IllegalArgumentException => BadRequestResult(ill.getMessage)
+//        case _ => GenericErrorResult(500, error.getMessage)
+//      }
+//    }
+//  }
 
   def getGroupByPropertyFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     trace(s"getGroupByPropertyFqon($fqon)")
