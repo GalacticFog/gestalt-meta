@@ -103,7 +103,7 @@ object PropertyController extends Authorization {
   def deleteTypeProperty(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
     ???
   }
-
+  
   /** 
    * Find a TypeProperty by ID or 404 Not Found 
    */

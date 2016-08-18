@@ -70,7 +70,6 @@ object DeleteController extends Authorization {
       controllers.util.EventsPost(action))
   }
   
-  
   def requestOps(
       user: AuthAccountWithCreds, 
       policyOwner: UUID, 
@@ -81,13 +80,7 @@ object DeleteController extends Authorization {
         policyOwner = Option(policyOwner), 
         policyTarget = Option(target))    
   }
-  
-  /*
-    val options = RequestOptions(user, 
-        authTarget = Option(environment), 
-        policyOwner = Option(environment), 
-        policyTarget = Option(target))
-   */
+
   
   def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
@@ -109,10 +102,9 @@ object DeleteController extends Authorization {
           case Success(_) => NoContent
         }      
       }
-      
     }
   }
-
+  
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     Security.deleteOrg(res.id, account) map ( _ => () )
   }
@@ -129,6 +121,9 @@ object DeleteController extends Authorization {
     val result = Await.result(deleteMarathonApp(res), 5 seconds)
   }
   
+  /**
+   * 
+   */
   def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     laser.deleteLambda(res.id) map ( _ => () )
   }
@@ -187,7 +182,7 @@ object DeleteController extends Authorization {
   
   protected [controllers] def deleteMarathonApp[A <: ResourceLike](container: A): Future[JsValue] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
-    val provider = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
+    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
     }
     val externalId = container.properties.get("external_id")
@@ -246,25 +241,12 @@ object DeleteController extends Authorization {
     }
   }
   
-  /**
-   * Permanently delete a ResourceType along with any associated TypeProperties
-   */
-   def hardDeleteResourceTypeFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-     orgFqon(fqon) match {
-       case Some(org) => hardDeleteResourceType(id)
-       case None      => OrgNotFound(fqon)
-     }
-   }
-   
-   def hardDeleteResourceType(typeId: UUID) = {
-     TypeFactory.hardDeleteType(typeId) match {
-       case Success(_) => NoContent
-       case Failure(e) => e match {
-         case iae : IllegalArgumentException => BadRequestResult(iae.getMessage)
-         case x => GenericErrorResult(500, x.getMessage)
-       }
-     }
-   }
+  def hardDeleteResourceType(typeId: UUID) = {
+    TypeFactory.hardDeleteType(typeId) match {
+      case Success(_) => NoContent
+      case Failure(e) => HandleExceptions(e)
+    }
+  }
   
 }
 

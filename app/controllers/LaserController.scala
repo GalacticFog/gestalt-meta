@@ -54,7 +54,7 @@ object LaserController extends Authorization {
       gatewayConfig, lambdaConfig, 
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))
-
+  
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     orgFqon(fqon).fold(Future( OrgNotFound(fqon) )) { org =>
       createResourceCommon(org.id, parent, ResourceIds.Api, request.body)
