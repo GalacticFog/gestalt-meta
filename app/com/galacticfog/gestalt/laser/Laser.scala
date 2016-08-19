@@ -52,7 +52,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def deleteApi(id: String) = {
-    gatewayClient.delete(s"/apis/$id", Seq(200,204))
+    gatewayClient.delete(s"/apis/$id", Seq(200,204,404))
   }
   
   def deleteApis(ids: Seq[String]) = {
@@ -74,7 +74,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def deleteEndpoint(apiId: String, id: String) = {
     val uri = s"/apis/$apiId/endpoints/$id"
-    gatewayClient.delete(uri, Seq(200,204))
+    gatewayClient.delete(uri, Seq(200,204,404))
   }
   
   
@@ -96,7 +96,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def deleteLambda(id: String): Try[ApiResponse] = {
-    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204))
+    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204,404))
   }
   
   def deleteLambdas(ids: Seq[String]) = {
@@ -126,7 +126,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def deleteProvider(id: String): Try[ApiResponse] = {
-    gatewayClient.delete(s"/providers/${id}", Seq(200,204))
+    gatewayClient.delete(s"/providers/${id}", Seq(200,204,404))
   }
   
   // --------------------------------------------------------------------------
