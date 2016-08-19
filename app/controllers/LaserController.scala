@@ -300,6 +300,8 @@ object LaserController extends Authorization {
           
           // Create LaserEndpoint
           val laserEndpoint = createLaserEndpoint(input, api.get, upstream, providerObj)
+
+          log.debug("Laser endpoint upstream url: " + laserEndpoint.upstreamUrl)
           
           // Inject 'gateway_url' and 'api' properties
           val metaJson = input.copy(

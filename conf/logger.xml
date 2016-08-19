@@ -20,6 +20,8 @@
   <logger name="scalikejdbc" level="ERROR"/>
   <logger name="com.ning" level="ERROR"/>
   <logger name="javax" level="ERROR"/>
+  <logger name="controllers.util.MetaController" level="DEBUG"/>
+  <logger name="controllers.LaserController" level="DEBUG"/>
   
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
