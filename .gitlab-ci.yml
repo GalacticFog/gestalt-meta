@@ -55,10 +55,6 @@ docker-publish:
     - docker push   $DOCKER_IMG:$DOCKER_TAG
     - docker rmi    $DOCKER_IMG:$DOCKER_TAG
     - docker rmi    $DOCKER_IMG:$CI_PIPELINE_ID
-  only:
-    - master
-    - /^release-.*$/
-    - tags
 
 .github-publish:
   stage: publish
@@ -76,7 +72,7 @@ docker-publish:
     - /^release-.*$/
     - tags
 
-deploy-to-test:
+.deploy-to-test:
   stage: deploy
   environment: test
   script: 

@@ -640,6 +640,15 @@ object Meta extends Authorization {
    */
   def buildGatewayInfo(input: GatewayInput) = {
 
+    def defaultPort(protocol: String): Int = protocol.toLowerCase match {
+      case "https" =>
+        log.warn("gateway info did not specify a port, using 443 because protocol is HTTPS")
+        443
+      case _ =>
+        log.warn("gateway info did not include a port, using 80")
+        80
+    }
+
     def normalizeUrl(url: String) = {
        if (url.trim.toLowerCase.startsWith("http")) url else s"http://$url"
     }
@@ -649,28 +658,34 @@ object Meta extends Authorization {
         case Some(address) => new URL(normalizeUrl(address))
         case None => {
           val u = new URL(normalizeUrl(serviceAddress))
-          new URL("%s://%s:%d".format(u.getProtocol, "admin." + u.getHost, u.getPort))
+          new URL("%s://%s:%d".format(u.getProtocol, u.getHost, defaultPort(u.getProtocol)))
         }
       }
-      (out.getHost, if (out.getPort == -1) 80 else out.getPort)
+      (out.getProtocol,
+        out.getHost,
+        if (out.getPort == -1) defaultPort(out.getProtocol) else out.getPort)
     }
-    
+
     val kongServiceUrl = new URL(normalizeUrl(input.properties.config.url))
+    val kongServiceProtocol = kongServiceUrl.getProtocol
     val kongServiceAddress = kongServiceUrl.getHost
-    val kongServicePort = if (kongServiceUrl.getPort == -1) 80 else kongServiceUrl.getPort
+    val kongServicePort = if (kongServiceUrl.getPort == -1) defaultPort(kongServiceProtocol) else kongServiceUrl.getPort
     
     val username = input.properties.config.auth.username
     val password = input.properties.config.auth.password
     
-    val (kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
+    val (kongPublicProtocol, kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
     
     Json.obj(
+      "protocol" -> kongServiceProtocol,
       "host" -> kongServiceAddress,
       "port" -> kongServicePort,
       "username" -> username,
       "password" -> password,
       "gatewayHost" -> kongPublicHost,
-      "gatewayPort" -> kongPublicPort)
+      "gatewayPort" -> kongPublicPort,
+      "gatewayProtocol" -> kongPublicProtocol
+    )
 
   }    
   
