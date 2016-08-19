@@ -665,10 +665,11 @@ object Meta extends Authorization {
         out.getHost,
         if (out.getPort == -1) defaultPort(out.getProtocol) else out.getPort)
     }
-    
+
     val kongServiceUrl = new URL(normalizeUrl(input.properties.config.url))
+    val kongServiceProtocol = kongServiceUrl.getProtocol
     val kongServiceAddress = kongServiceUrl.getHost
-    val kongServicePort = if (kongServiceUrl.getPort == -1) 80 else kongServiceUrl.getPort
+    val kongServicePort = if (kongServiceUrl.getPort == -1) defaultPort(kongServiceProtocol) else kongServiceUrl.getPort
     
     val username = input.properties.config.auth.username
     val password = input.properties.config.auth.password
@@ -676,6 +677,7 @@ object Meta extends Authorization {
     val (kongPublicProtocol, kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
     
     Json.obj(
+      "protocol" -> kongServiceProtocol,
       "host" -> kongServiceAddress,
       "port" -> kongServicePort,
       "username" -> username,
