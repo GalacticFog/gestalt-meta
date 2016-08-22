@@ -13,11 +13,8 @@ import java.util.Base64;
 
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
 
-
-  
   private val gatewayClient = configureClient(gatewayConfig)
   private val lambdaClient = configureClient(lambdaConfig)
-  
   
   // --------------------------------------------------------------------------
   // GATEWAYS
@@ -36,7 +33,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def deleteGateway(id: String) = {
-    ???
+    gatewayClient.delete(s"/providers/$id", Seq(200,204,404))
   }
 
   // --------------------------------------------------------------------------
@@ -77,38 +74,12 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     gatewayClient.delete(uri, Seq(200,204,404))
   }
   
-  
-  // --------------------------------------------------------------------------
-  // LAMBDAS
-  // --------------------------------------------------------------------------  
-  
-  def lambdas(): Seq[LaserLambda] = {
-    getSeq[LaserLambda](lambdaClient, "/lambdas", Seq(200))
-  }
-  
-  def lambdas(id: String): Option[LaserLambda] = {
-    get[LaserLambda](lambdaClient, s"/lambdas/$id", Seq(200))  
-  }
-  
-  def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
-    val json = Json.toJson(lambda)
-    lambdaClient.post("/lambdas", json, Seq(200,201,202))
-  }
-  
-  def deleteLambda(id: String): Try[ApiResponse] = {
-    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204,404))
-  }
-  
-  def deleteLambdas(ids: Seq[String]) = {
-    ids map { i => deleteLambda(i) }
-  }
-  
-  
   // --------------------------------------------------------------------------
   // PROVIDERS
   // --------------------------------------------------------------------------  
-  def providers(): Try[ApiResponse] = {
-    gatewayClient.get("/providers", Seq(200))
+  
+  def providers(): Seq[LaserProvider] = {
+    getSeq[LaserProvider](gatewayClient, "/providers", Seq(200))
   }
   
   def providers(id: String): Try[ApiResponse] = {
@@ -172,6 +143,31 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     }    
   }
 
+  // --------------------------------------------------------------------------
+  // LAMBDAS
+  // --------------------------------------------------------------------------  
+  
+  def lambdas(): Seq[LaserLambda] = {
+    getSeq[LaserLambda](lambdaClient, "/lambdas", Seq(200))
+  }
+  
+  def lambdas(id: String): Option[LaserLambda] = {
+    get[LaserLambda](lambdaClient, s"/lambdas/$id", Seq(200))  
+  }
+  
+  def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
+    val json = Json.toJson(lambda)
+    lambdaClient.post("/lambdas", json, Seq(200,201,202))
+  }
+  
+  def deleteLambda(id: String): Try[ApiResponse] = {
+    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204))
+  }
+  
+  def deleteLambdas(ids: Seq[String]) = {
+    ids map { i => deleteLambda(i) }
+  }  
+  
   private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
     client.get(resource, expected) match {
       case Failure(err) => throw err

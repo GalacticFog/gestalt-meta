@@ -12,16 +12,14 @@ import org.joda.time.DateTime
 
 import org.specs2.specification.Scope
 
-
+import play.api.libs.json._
 
 trait CompareScope extends Scope {
   
   val stringA = "whereiswaldo?"
   
   val stringListA = Seq("alpha", "bravo", "charlie")
-  
 }
-
 
 class CompareSpec extends Specification {
 
@@ -144,6 +142,106 @@ class CompareSpec extends Specification {
       
     }
       
+  }
+
+  def jv = toJsValue _
+  def ja(s: String*): JsArray = toJsValue(s.mkString(",")).as[JsArray]
+    
+  "CompareSingle" should {
+   
+    "equals" should {
+  
+      "return TRUE when OBJECT a equals OBJECT b" in {
+                
+        val a = jv("""{"alpha": "foo", "bravo": "bar", "charlie": "baz"}""")
+        val b = jv("""{"bravo": "bar", "charlie": "baz", "alpha": "foo"}""")
+        val c = jv("""{"alpha": "foo", "bravo": "bar", "charlie": "qux"}""")
+        val d = jv("""{"delta": "foo", "echo": "bar", "foxtrot": "baz"}""")
+        
+        
+        // object
+        CompareSingle.compare(a, b, "equals" ) must beTrue
+        CompareSingle.compare(a, c, "equals" ) must beFalse
+        CompareSingle.compare(a, d, "equals" ) must beFalse
+        
+        // string
+        CompareSingle.compare(jv("foo"), jv("foo"), "equals" ) must beTrue
+        CompareSingle.compare(jv("foo"), jv("bar"), "equals" ) must beFalse
+        
+        // array
+        CompareSingle.compare(ja("foo", "bar"), ja("foo", "bar"), "equals" ) must beTrue
+        CompareSingle.compare(ja("foo", "bar"), ja("bar", "baz"), "equals" ) must beFalse
+        
+        // boolean
+        CompareSingle.compare(jv("true"), jv("TRUE"), "equals" ) must beTrue
+        CompareSingle.compare(jv("FALSE"), jv("false"), "equals" ) must beTrue
+        CompareSingle.compare(jv("true"), jv("blue"), "equals" ) must beFalse
+        CompareSingle.compare(jv("true"), jv("false"), "equals" ) must beFalse
+        
+        // int
+        CompareSingle.compare(jv("123"), jv("123"), "equals" ) must beTrue
+        CompareSingle.compare(jv("123"), jv("foo"), "equals" ) must beFalse
+        CompareSingle.compare(jv("foo"), jv("123"), "equals" ) must beFalse
+        
+        // double
+        CompareSingle.compare(jv("1.23"), jv("1.23"), "equals" ) must beTrue
+        CompareSingle.compare(jv("1.23"), jv("foo"), "equals" ) must beFalse
+      } 
+      
+    }
+    
+    "contains" should {
+      "return TRUE if a contains character sequence b" in new CompareScope {
+        CompareSingle.compare(jv(stringA), jv("waldo"), "contains") must beTrue
+        CompareSingle.compare(jv(stringA), jv("fred"), "contains") must beFalse
+      }
+    }
+    
+    "startsWith" should {
+      "return TRUE if a starts with character sequence b" in new CompareScope {
+        CompareSingle.compare(jv(stringA), jv("where"), "startsWith") must beTrue
+        CompareSingle.compare(jv(stringA), jv("fred"), "startsWith") must beFalse        
+      }
+    }
+    
+    "endsWith" should {
+      "return TRUE if a ends with character sequence b" in new CompareScope {
+        CompareSingle.compare(jv(stringA), jv("waldo?"), "endsWith") must beTrue
+        CompareSingle.compare(jv(stringA), jv("fred"), "endsWith") must beFalse        
+      }
+    }
+  }
+  
+  "CompareSingleToArray" should {
+    
+    "contains" should {
+      
+      "return TRUE if value b is in array a" in {
+        CompareSingleToArray.compare(ja("1, 2, 3"), jv("1"), "contains") must beTrue
+        CompareSingleToArray.compare(ja("1, 2, 3"), jv("4"), "contains") must beFalse
+        CompareSingleToArray.compare(ja("1, 2, 3"), jv("foo"), "contains") must beFalse
+      }
+    }
+    
+    "except" should {
+      "return TRUE if value b is NOT in array a" in {
+        CompareSingleToArray.compare(ja("1, 2, 3"), jv("4"), "except") must beTrue
+        CompareSingleToArray.compare(ja("1, 2, 3"), jv("1"), "except") must beFalse
+      }
+    }
+  }
+  
+  "CompareArrayToArray" should {
+    
+    "inlist" should {
+      
+      "return TRUE if ALL OF the values in a exist in b" in {
+        CompareArrayToArray.compare(ja("1,2,3"), ja("1,2,3,4,5"), "inlist") must beTrue
+        CompareArrayToArray.compare(ja("4,5,6"), ja("1,2,3,4,5"), "inlist") must beFalse
+      }
+      
+    }
+    
   }
   
 }

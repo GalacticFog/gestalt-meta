@@ -50,7 +50,8 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   }
   
   override def onError(request: RequestHeader, ex: Throwable) = {
-    Future.successful( HandleExceptions(ex) )
+    log.warn("Caught exception at top-level.")
+    Future.successful( HandleExceptions(ex.getCause) )
   }
   
   override def onBadRequest(request: RequestHeader, error: String) = {

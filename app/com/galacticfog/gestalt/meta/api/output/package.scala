@@ -42,27 +42,19 @@ package object output {
     else "%s/orgs/%s/%s/%s".format(base, orgId, typename, id)
   }
   
-  
   def toHref(typeId: UUID, id: UUID, orgId: UUID, baseUri: Option[String] = None) = {
     val typename = resourceRestName(typeId) getOrElse { "resources" }
     "/%s/%s".format(typename, id.toString)
-    
-    ResourceFactory.findById(orgId) match {
-      case None => toHref_old(typeId, id, orgId, baseUri)
-      case Some(org) => {
-        
-        val base = if (baseUri.isDefined) baseUri.get else ""
-        val fqon = org.properties.get("fqon")
-        
-        if (typeId == ResourceIds.Org) {
-          val suborg = ResourceFactory.findById(id).get
-          "%s/%s".format(base, suborg.properties.get("fqon"))
-        }
-        else "%s/%s/%s/%s".format(base, fqon, typename, id)
-        
-      }
-    }
 
+    ResourceFactory.findById(orgId) map { org =>
+      val base = if (baseUri.isDefined) baseUri.get else ""
+      val fqon = org.properties.get("fqon")
+
+      if (typeId == ResourceIds.Org) {
+        val suborg = ResourceFactory.findById(id).get
+        "%s/%s".format(base, suborg.properties.get("fqon"))
+      } else "%s/%s/%s/%s".format(base, fqon, typename, id)
+    } getOrElse toHref_old(typeId, id, orgId, baseUri)
   }  
   
   

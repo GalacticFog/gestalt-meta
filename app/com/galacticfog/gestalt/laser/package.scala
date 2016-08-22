@@ -6,10 +6,12 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-
+import play.api.Logger
 
 package object laser {
 
+  private val log = Logger(this.getClass)
+  
   implicit lazy val laserApiFormat = Json.format[LaserApi]
   implicit lazy val laserGatewayInfoFormat = Json.format[LaserGatewayInfo]
   implicit lazy val laserGatewayFormat = Json.format[LaserGateway]
@@ -127,7 +129,7 @@ package object laser {
    */
   def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
     
-    println("toLaserLambda(...)")
+    log.debug("toLaserLambda(...)")
     
     val props = lambda.properties.get
     val (handler,function) = parseHandlerFunction(lambda)

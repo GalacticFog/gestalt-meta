@@ -40,11 +40,7 @@ package object api {
       case "entitlements"     => Some(ResourceIds.Entitlement)
       case "policies"         => Some(ResourceIds.Policy)
       
-      /*
-       * - providers 2
-       * - rules  2
-       * - licenses
-       */      
+      case "providers"        => Some(ResourceIds.Provider)
       
       case "clustertemplates" => Some(ResourceIds.ClusterTemplate)
       case "nodetemplates"    => Some(ResourceIds.NodeTemplate)

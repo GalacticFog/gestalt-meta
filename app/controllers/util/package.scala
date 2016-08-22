@@ -31,8 +31,24 @@ import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException =
 import com.galacticfog.gestalt.security.api.errors.{ ConflictException => SecurityConflictException }
 import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
+import java.util.UUID
+
 
 package object util {
+  
+  protected[controllers] object Errors {
+    def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
+    def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
+    def TYPE_NOT_FOUND(id: UUID) = s"ResourceType '${id.toString}' not found."
+    def RESOURCE_NOT_FOUND(id: String) = s"Resource '${id}' not found."
+    def INVALID_OWNER_TYPE(id: UUID) = s"Type ID must be Gestalt Org or User. Found: ${id.toString}"
+    def INVALID_RESOURCE_TYPE(identifier: String) = NotFoundResult(s"Invalid resource type '${identifier}'")
+    def USER_SYNCHRONIZATION(id: UUID) = s"User ID ${id.toString} was found in Security but not in Meta - this may be a synchronization error. Contact an administrator."
+    def USER_GROUP_LOOKUP_FAILED(userId: UUID, msg: String) = s"Failed looking up groups for user '${userId}': ${msg}"
+    
+    val LAMBDA_NO_IMPLEMENTATION = "No value for implementation.function was found."
+    val RESOURCE_TYPE_NOT_GIVEN = "resource_type must be specified."
+  }
   
   /* Return HTTP Results containing formatted system error JSON */
   def NotFoundResult(message: String) = NotFound(new ResourceNotFoundException(message).asJson)
@@ -96,24 +112,21 @@ def HandleExceptions(e: Throwable) = {
   }
   
   def trimquotes(s: String) = {
-    val trimmed = s.trim
-    val t1 = if (trimmed.startsWith("\"")) trimmed.drop(1) else trimmed
-    if (t1.endsWith("\"")) t1.dropRight(1) else t1
+    s.trim
+     .stripPrefix("\"")
+     .stripSuffix("\"")
   }
   
   def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
-    m map { x => 
-      x map { x =>
-        /* this bit removes the quotes the play parser includes with strings */
-        val normalized = x._2 match {
-          case s: JsString => trimquotes(s.toString)
-          case _ => x._2.toString
-        }
-        (x._1, normalized)
-      } 
+    m map { _ map { case (k,v) =>
+        (k -> (v match {
+          case JsString(value) => value
+          case other => other.toString
+        }))  
+      }
     }
-  }  
-
+  }
+  
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {
       case Success(out) => success(out)
@@ -146,5 +159,35 @@ def HandleExceptions(e: Throwable) = {
   
   def okNotFound(f: Try[JsValue]) = new OkNotFoundHandler().handle( f )
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
+ 
   
+  import com.galacticfog.gestalt.meta.auth._
+  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+  
+  /**
+   * Get a List of 'standard' request operations. Includes:
+   * - Authorization
+   * - Policy Checking
+   * - Pre-Operation Event
+   * - Post-Operation Event
+   */
+  def standardMethods(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action),
+      controllers.util.EventsPost(action))
+  }
+  
+  def requestOpts(
+      user: AuthAccountWithCreds, 
+      policyOwner: UUID, 
+      target: GestaltResourceInstance): RequestOptions = {
+    
+    RequestOptions(user, 
+        authTarget = Option(policyOwner), 
+        policyOwner = Option(policyOwner), 
+        policyTarget = Option(target))    
+  }
+
 }
