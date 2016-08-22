@@ -91,6 +91,6 @@ echo "
 Running gestalt-meta on http://localhost:14374
 
 "
-./activator run -Dhttp.port=14374 -Dlogger.application=TRACE 
+sbt run -Dhttp.port=14374 -Dlogger.application=TRACE 
 
 exit 0
