@@ -52,9 +52,9 @@ test:
 docker-publish:
   stage: publish
   script: 
-    - cd target/docker/stage
     - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
+    - cd target/docker/stage
     - echo building $DOCKER_IMG:$DOCKER_TAG
     - docker build -t $DOCKER_IMG:$DOCKER_TAG .
     - docker push     $DOCKER_IMG:$DOCKER_TAG
