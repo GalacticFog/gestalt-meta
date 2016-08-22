@@ -6,6 +6,7 @@ stages:
 cache:
   key: "$CI_PIPELINE_ID"
   untracked: false
+  paths: 
 
 variables:
   POSTGRES_DB: gestalt-meta
@@ -37,25 +38,26 @@ variables:
 test:
   stage: test
   services:
-    #no database or security integration tests yet
-    #- postgres:9.4
+    - postgres:9.4
     #- galacticfog/gestalt-security:2.2.5-SNAPSHOT-b246c46b
   script:
     - sbt clean update test docker:stage
-    - cd target/docker/stage
-    - echo building $DOCKER_IMG:$CI_PIPELINE_ID
-    - docker build -t $DOCKER_IMG:$CI_PIPELINE_ID .
+  artifacts:
+    expire_in: 1 hour
+    when: on_success
+    paths:
+    - target/docker/stage/
 
 docker-publish:
   stage: publish
   script: 
+    - cd target/docker/stage
     - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
-    - echo publishing $DOCKER_IMG:$DOCKER_TAG
-    - docker tag -f $DOCKER_IMG:$CI_PIPELINE_ID $DOCKER_IMG:$DOCKER_TAG
-    - docker push   $DOCKER_IMG:$DOCKER_TAG
-    - docker rmi    $DOCKER_IMG:$DOCKER_TAG
-    - docker rmi    $DOCKER_IMG:$CI_PIPELINE_ID
+    - echo building $DOCKER_IMG:$DOCKER_TAG
+    - docker build -t $DOCKER_IMG:$DOCKER_TAG .
+    - docker push     $DOCKER_IMG:$DOCKER_TAG
+    - docker rmi      $DOCKER_IMG:$DOCKER_TAG
 
 .github-publish:
   stage: publish
