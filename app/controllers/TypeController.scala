@@ -1,7 +1,7 @@
 package controllers
 
 
-import play.api.{ Logger => log }
+import play.api.Logger
 
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import play.api.Play.current
@@ -19,8 +19,6 @@ import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.sdk.{ ResourceLink => GestaltLink }
-
-import com.galacticfog.gestalt.meta.services.ResourceQueryService
 
 import controllers.util._
 import controllers.util.db._
@@ -53,66 +51,38 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 
 object TypeController extends Authorization {
   
+  private[this] val log = Logger(this.getClass)
 
-  def getAllResourceTypes(org: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    Ok(Output.renderLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
-  }
-  
-  def getTypesByName(org: UUID, names: List[String]): Seq[ResourceLike] = {
-    def go(nms: List[String], out: Seq[ResourceLike]): Seq[ResourceLike] = {
-      nms match {
-        case Nil => out
-        case h :: t => go(t, out ++ TypeFactory.findByName(org, h))
-      }
-    }
-    go(names, Seq())
-  }
-  
-
-  
-  def getAllResourceTypesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    orgFqon(fqon) match {
-      case None => NotFoundResult(Errors.ORG_NOT_FOUND(fqon))
-      case Some(org) => {
-        if (request.queryString.contains("name")) {
-          val names = request.queryString("name").toSeq
-          val tpes = names flatMap { TypeFactory.findByName(org.id, _)}
-          Ok(Output.renderLinks(tpes))
-        } else {
-          OkTypeLinksResult(org.id)
-        }
-      }
-    }
+  def getAllResourceTypesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     
-  }
-  
-  def getResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    OkTypeByIdResult(org, id)
-  }
-  
-  def getResourceTypeByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => OkTypeByIdResult(org.id, id)
-      case None => NotFoundResult(Errors.TYPE_NOT_FOUND(id))
+    orgFqon(fqon).fold(NotFoundResult(Errors.ORG_NOT_FOUND(fqon))) { org =>
+      if (!request.queryString.contains("name")) 
+        OkTypeLinksResult(org.id)
+      else {
+        val names = request.queryString("name").toSeq
+        val tpes = names flatMap (TypeFactory.findByName(org.id, _))
+        Ok(Output.renderLinks(tpes))
+      }
     }
   }
   
-  def createResourceType(org: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
-    CreateTypeWithPropertiesResult(org, request.body)
+  def getResourceTypeByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id))) { org =>
+      OkTypeByIdResult(org.id, id)
+    }
   }
   
-  def createResourceTypeFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)).async(parse.json) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => CreateTypeWithPropertiesResult(org.id, request.body)
-      case None      => Future { OrgNotFound(fqon) }
+  def createResourceTypeFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    orgFqon(fqon).fold(Future(OrgNotFound(fqon))) { org =>
+      CreateTypeWithPropertiesResult(org.id, request.body)  
     }
   }
 
   private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Future {
       createTypeWithProperties(org, typeJson) match {
-        case Failure(e) => GenericErrorResult(500, e.getMessage)
-        case Success(newtype) => Ok(Output.renderResourceTypeOutput( newtype ))
+        case Failure(e) => HandleExceptions(e)
+        case Success(newtype) => Created(Output.renderResourceTypeOutput( newtype ))
       }
     }
   }
@@ -126,14 +96,12 @@ object TypeController extends Authorization {
       (GestaltResourceType, Option[Seq[GestaltTypeProperty]]) = {    
     
     val input: GestaltResourceTypeInput = safeGetTypeJson(typeJson).get
-    
     val domain: GestaltResourceType = typeFromInput(org, owner, input).get
     
     val definitions: Option[Seq[GestaltTypeProperty]] = 
       input.property_defs map { ps => ps map { p => 
         PropertyController.propertyFromInput(org, owner, p.copy(applies_to = Some(domain.id))).get } 
     }
-    
     (domain, definitions)
   }
 
@@ -155,7 +123,7 @@ object TypeController extends Authorization {
           PropertyFactory.create(owner)(prop).get
         }
       }
-      trace("createTypeWithProperties => COMPLETE.")
+      log.debug("createTypeWithProperties => COMPLETE.")
       newtype
     }
   }
@@ -166,16 +134,19 @@ object TypeController extends Authorization {
     ???    
   }  
 
-  /** Get a list of ResourceTypes */
+  /** 
+   * Get a list of ResourceTypes 
+   */
   private def OkTypeLinksResult(org: UUID) = {
     Ok(Output.renderLinks(TypeFactory.findAll(ResourceIds.ResourceType, org)))
   }  
   
-  /** Get a single ResourceType by ID */
+  /** 
+   * Get a single ResourceType by ID 
+   */
   private def OkTypeByIdResult(org: UUID, id: UUID) = {
-    TypeFactory.findById(id) match {
-      case Some(t) => Ok(Output.renderResourceTypeOutput(t))
-      case None    => NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))
+    TypeFactory.findById(id).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))) {
+      typ => Ok(Output.renderResourceTypeOutput(typ))
     }
   }
   
@@ -199,6 +170,11 @@ object TypeController extends Authorization {
         auth = r.auth)
   }
 
+  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+    orgFqon(fqon).fold(OrgNotFound(fqon))( _ => getSchemaResult(typeId) )
+  }
+  
+  
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
     json.validate[GestaltResourceTypeInput].map{
       case resource: GestaltResourceTypeInput => resource
@@ -207,43 +183,25 @@ object TypeController extends Authorization {
     }
   }
   
-
-  def getPropertySchema(org: UUID, typeId: UUID) = Authenticate(org) { implicit request =>
-    getSchemaResult(typeId)
-  }
-  
-  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon) match {
-      case Some(org) => getSchemaResult(typeId)
-      case None => OrgNotFound(fqon)
-    }
-  }
-  
-  def getSchemaResult(typeId: UUID) = TypeFactory.findById(typeId) match {
-    case Some(tpe) => {
-      val ps = Properties.getTypeProperties(typeId)   
-      if (ps.isEmpty) Ok(s"There are no properties defined for type: ${tpe.name}")
-      else Ok(renderTypePropertySchema(ps))
-    }
-    case None => NotFoundResult(s"ResourceType ID '$typeId' not found.")
-  }    
-  
-  
-  
-  private def maxwidth(ps: Seq[GestaltTypeProperty]) = {
-    ps map { _.name.size } reduceLeft( _ max _)
-  }
-  
-  private def typename(tpe: UUID) = {
-    DataType.name(tpe) match {
-      case arr if arr.endsWith("::list") => {
-        val dt = arr.take(arr.indexOf(":"))
-        s"array_${dt}"
+  def getTypesByName(org: UUID, names: List[String]): Seq[ResourceLike] = {
+    def go(nms: List[String], out: Seq[ResourceLike]): Seq[ResourceLike] = {
+      nms match {
+        case Nil => out
+        case h :: t => go(t, out ++ TypeFactory.findByName(org, h))
       }
-      case ref if ref.contains("::uuid") => "string_uuid"
-      case "uuid" => "string_uuid"
-      case "json" => "json_object"        
-      case other => other
+    }
+    go(names, Seq())
+  }  
+  
+  def getSchemaResult(typeId: UUID) = {
+    TypeFactory.findById(typeId).fold{
+      NotFoundResult(s"ResourceType ID '$typeId' not found.")
+    }{ typ =>
+      val ps = Properties.getTypeProperties(typeId)
+      Ok {
+        if (ps.isEmpty) s"There are no properties defined for type: ${typ.name}"
+        else renderTypePropertySchema(ps)      
+      }
     }
   }
   
@@ -260,4 +218,20 @@ object TypeController extends Authorization {
     buf toString
   }  
   
+  private def typename(tpe: UUID) = {
+    DataType.name(tpe) match {
+      case arr if arr.endsWith("::list") => {
+        val dt = arr.take(arr.indexOf(":"))
+        s"array_${dt}"
+      }
+      case ref if ref.contains("::uuid") => "string_uuid"
+      case "uuid" => "string_uuid"
+      case "json" => "json_object"        
+      case other  => other
+    }
+  }
+
+  private def maxwidth(ps: Seq[GestaltTypeProperty]) = {
+    ps map ( _.name.size ) reduceLeft ( _ max _)
+  }  
 }

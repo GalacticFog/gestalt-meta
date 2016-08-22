@@ -23,14 +23,15 @@ object EnvConfig extends JdbcConfiguration {
   
   lazy val rabbitHost = System.getenv("RABBIT_HOST")
   lazy val rabbitPort = System.getenv("RABBIT_PORT")
-  lazy val rabbitHttpPort = Option(System.getenv("RABBIT_HTTP_PORT")) getOrElse "80"
+  lazy val rabbitHttpPort = sys.env.get("RABBIT_HTTP_PORT") getOrElse "80"
   lazy val rabbitExchange = System.getenv("RABBIT_EXCHANGE")
   lazy val rabbitRoute = System.getenv("RABBIT_ROUTE")
+  lazy val rabbitHttpProtocol = sys.env.get("RABBIT_HTTP_PROTOCOL") getOrElse "http"
   
   private lazy val security_protocol = System.getenv("GESTALT_SECURITY_PROTOCOL")
   private lazy val security_hostname = System.getenv("GESTALT_SECURITY_HOSTNAME")
-  private lazy val security_port = System.getenv("GESTALT_SECURITY_PORT")
-
+  private lazy val security_port = sys.env.get("GESTALT_SECURITY_PORT")
+  
   val gatewayUrl  = apigateway
   val lambdaUrl   = lambda
 
@@ -39,7 +40,7 @@ object EnvConfig extends JdbcConfiguration {
   }
   
   val securityUrl = {
-    val port = if (security_port.toInt > 0) ":"+security_port else ""
+    val port = if (security_port.isDefined) ":"+security_port.get else ""
     "%s://%s%s".format(security_protocol, security_hostname, port)
   }
   

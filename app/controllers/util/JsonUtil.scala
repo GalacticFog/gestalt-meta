@@ -7,6 +7,8 @@ import scala.util.{Try,Success,Failure}
 import play.api.{ Logger => log }
 import scala.annotation.tailrec
 
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+
 
 object JsonUtil {
 
@@ -75,11 +77,12 @@ object JsonUtil {
    * @param obj a JSON serialized GestaltResourceInstance
    * @param name name of the property to upsert
    * @param value value of the property as a JsValue
+   * @return full resource JSON with the modified property
    */
   def upsertProperty(obj: JsObject, name: String, value: JsValue) = Try {
     val ps  = replaceJsonPropValue(obj, name, value)
     replaceJsonProps(obj, ps)    
-  }  
+  }
   
   def upsertProperties(obj: JsObject, props: (String,JsValue)*): Try[JsObject] = {
     
@@ -110,7 +113,19 @@ object JsonUtil {
   }
   
   private def toPath(path: String) = path.trim.stripPrefix("/").stripSuffix("/").split("/").toList
-    
+  
+  def safeParse[A](js: String)(implicit reads: Reads[A]): A = {
+    safeParse[A](Json.parse(js))
+  }
+ 
+  def safeParse[A](json: JsValue)(implicit reads: Reads[A]): A = {
+    json.validate[A].map {
+      case a => a
+    }.recoverTotal { e => 
+      throw new BadRequestException(
+          s"Failed parsing JSON string: " + JsError.toFlatJson(e).toString) 
+    }
+  }
   
 }
 

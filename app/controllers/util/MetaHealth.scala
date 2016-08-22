@@ -16,11 +16,14 @@ import play.api.libs.json._
 import controllers.util.db.EnvConfig
 
 import scala.util.{Either,Left,Right}
+import play.api.Logger
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 
 object MetaHealth {
-
+  
+  val log = Logger(this.getClass)
+  
   /*
    * Check connectivity with the following services:
    * - security
@@ -35,14 +38,11 @@ object MetaHealth {
     val Degraded = "degraded"
     val Unavailable = "unavailable"
   }
-  
-//  val GESTALT_SERVICE_HEALTHY = "healthy"
-//  val GESTALT_SERVICE_DEGRADED = "degraded"
-//  val GESTALT_SERVICE_UNAVAILABLE = "unavailable"
-  
+
   val DEFAULT_SERVICE_TIMEOUT_SECONDS = 5
 
-  val rabbitWebUrl = "http://%s:%s".format(EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
+  val rabbitWebUrl = "%s://%s:%s".format(
+      EnvConfig.rabbitHttpProtocol, EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
   val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
@@ -51,7 +51,7 @@ object MetaHealth {
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
       creds = Option(BasicCredential("guest", "guest")))  
   
-
+  
   def selfCheck(verbose: Boolean): Either[JsValue,JsValue] = {
     val serviceMap = Map(
         lambdaConfig  -> "/health",
@@ -76,7 +76,7 @@ object MetaHealth {
     
     def message(status: String) = status match {
       case Status.Unavailable => "Meta is not operational"
-      case Status.Degraded => "Meta is operational but some features may be disabled."
+      case Status.Degraded    => "Meta is operational but some features may be disabled."
     }
     
     val failed = badServices map { case (k,v) => 
@@ -105,6 +105,8 @@ object MetaHealth {
     }
   }
   
+  import scala.util.control.NonFatal
+  
   def checkService(
       config: HostConfig, 
       resource: String, 
@@ -113,11 +115,17 @@ object MetaHealth {
     
     val client = WebClient(config)
     try {
-      val response = Await.result(client.request(resource).get, timeout seconds) 
+      val response = Await.result(client.request(resource).get, timeout seconds)
       response.status match {
         case s if expected.contains(s) => true 
         case e => unexpectedStatus(mkurl(config), expected, e)
       }
+    } catch { 
+        case NonFatal(e) => {
+          log.error(s"Error checking service status: ${resource} : " + e.getMessage)
+          throw e
+        }
+      
     } finally {
       client.close()
     }

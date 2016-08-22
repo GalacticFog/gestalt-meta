@@ -39,7 +39,7 @@ object Output {
    * TODO: Refactor renderLinks* to take ResourceLike args.
    */
 
-  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue /*String*/ = {
+  def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
   
     val res = GestaltResourceOutput(
       id = r.id,
@@ -70,24 +70,23 @@ object Output {
   
   private def mkTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
     GestaltResourceTypeOutput(
-          id = r.id,
-          name = r.name,
-          extend = jsonTypeName(r.extend),
-          resource_type = jsonTypeName(Option(r.typeId)).get,
-          resource_state = JsString(ResourceState.name(r.state)),
-    
-          org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
-          owner = Json.toJson(r.owner),
-          description = r.description,
-          created = Json.toJson(r.created),
-          modified = Json.toJson(r.modified),
-          properties = jsonHstore(r.properties),
-          variables = jsonHstore(r.variables),
-          tags = jsonArray(r.tags),
-          auth = jsonHstore(r.auth),
-          property_defs = jsonTypePropertyLinks(r.id))    
+      id = r.id,
+      name = r.name,
+      extend = jsonTypeName(r.extend),
+      resource_type = jsonTypeName(Option(r.typeId)).get,
+      resource_state = JsString(ResourceState.name(r.state)),
+
+      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+      owner = Json.toJson(r.owner),
+      description = r.description,
+      created = Json.toJson(r.created),
+      modified = Json.toJson(r.modified),
+      properties = jsonHstore(r.properties),
+      variables = jsonHstore(r.variables),
+      tags = jsonArray(r.tags),
+      auth = jsonHstore(r.auth),
+      property_defs = jsonTypePropertyLinks(r.id))    
   }
-  
   
   def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
     val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p, baseUri ) }
@@ -153,7 +152,6 @@ object Output {
    * @return JsValue object containing all rendered property name/values.
    */
   def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
-    println("renderInstanceProperties: " + properties)
     /* Get a Map of the properties defined for the current ResourceType. */
     val templateProps = Properties.getTypePropertyMap(typeId)
     
@@ -163,8 +161,8 @@ object Output {
         case Nil    => Option(acc)
         case property :: tail => {
           /*
-           * DEBUG-NOTE: You'll get "key not found 'h'" if key is not templateProps.
-           * That shouldn't happen as this is output (how did the rogue prop get in there).
+           * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
+           * That shouldn't happen as this is output (resource should be validated at create/update).
            * just a note to look here if you see that error pop up.
            */
           if (skipRender(templateProps(property), given)) loop(tail, given, acc)
@@ -282,7 +280,6 @@ object Output {
     Json.toJson(toLink(typeId, id, name = name, orgId = org, baseUri = baseUri))
   }  
   
-  
   /**
    * Convert Option[String] to Option[JsString]
    */
@@ -303,7 +300,6 @@ object Output {
   protected[output] implicit def jsonHstore(hs: Option[Hstore]): Option[JsValue] = {
     if (hs.isEmpty) None else Some(Json.toJson(hs))
   }
-
 
 }
 

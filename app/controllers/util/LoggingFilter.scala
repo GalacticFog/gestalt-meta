@@ -17,6 +17,7 @@ protected[util] object LoggingFilter extends Filter {
   private[this] implicit lazy val traceLogFormat = Json.format[TraceLog]
   
   def apply(nextFilter: (RequestHeader) => Future[Result])(requestHeader: RequestHeader): Future[Result] = {
+    log.debug("%s %s".format(requestHeader.method, requestHeader.uri))
     
     val startTime = System.currentTimeMillis
     

@@ -1,7 +1,7 @@
 package com.galacticfog.gestalt.meta.policy
 
 
-import play.api.{Logger => log}
+import play.api.Logger
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
@@ -12,8 +12,22 @@ import scala.util.{Try,Success,Failure}
 import java.util.UUID
 import play.api.libs.json._
 
+trait PolicyResource[A] {
+    private val log = Logger(this.getClass)
+    
+    protected val properties: Map[String,String]
+    
+    def getValue(res: A, propertyName: String): Try[String]
+    
+    def exists(propertyName: String): Boolean = {
+      properties.keySet contains propertyName
+    }
+    
+}
 
 trait ResourceProperties {
+  
+    private val log = Logger(this.getClass)
     
     protected val properties: Map[String,String]
     
@@ -23,20 +37,24 @@ trait ResourceProperties {
       properties.keySet contains propertyName
     }
     
+    //def compareJson
+    
     def compare[T](test: T, predicate: Predicate[T]): Boolean = {
       
       def jstring(js: T) = Json.parse(js.toString).as[String]
       def jsint(js: Int) = JsNumber(js).as[String].toInt
-    
+      
       val property = predicate.property
-      if (!properties.contains(property)) 
+      val selector = stripProperty(property)
+      
+      if (!properties.contains( selector )) 
         throw new IllegalArgumentException(s"Unknown property: '$property'")
       else {
         
-        val b = predicate.value //.asInstanceOf[JsValue].as[String]
+        val b = predicate.value
         val op = predicate.operator
-        val datatype = properties(predicate.property)
-  
+        val datatype = properties( selector )
+        
         datatype match {
           case "string" => CompareString.compare(test.toString, b.asInstanceOf[JsValue].as[String], op)
           case "int"    => CompareInt.compare(test.toString.toInt, jstring(b).toInt, op)
@@ -48,11 +66,9 @@ trait ResourceProperties {
       }
     }
     
-
     def csv2seq(csv: String) = {
       csv.split(",").map(_.trim).toList
     }
-    
     
     def toSeqString(s: String): Seq[String] = {
       log.debug(s"ResourceProperties.toSeq($s)")
@@ -96,70 +112,12 @@ trait ResourceProperties {
       case e => throw new BadRequestException(s"Unknown property: $e")
     }
     
+    private[policy] def stripProperty(property: String) = 
+      property.drop(1+property.lastIndexOf("."))
+      
   }
   
   
-//  object ContainerProperties extends ResourceProperties {
-//
-//    override val properties = baseResourceProperties ++ Map(
-//      "container.cpu" ->  "float",
-//      "container.memory" -> "int",
-//      "container.numInstances" -> "int",
-//      "container.image" -> "string",
-//      "container.user" -> "string",
-//      "container.acceptedResourceRoles" -> "string::list", 
-//      "container.labels" -> "string::list",
-//      "container.constraints" -> "string::list"
-//    )
-//    
-//    
-//    def getValue(res: ResourceLike, propertyName: String): Try[String] = Try {
-//      val getprop = {
-//        matchBaseProperty(res)    orElse 
-//        matchSpecialProperty(res) orElse 
-//        invalidProperty        
-//      }
-//      getprop(propertyName)
-//    }
-//    
-//    
-//    def matchSpecialProperty(res: ResourceLike): PartialFunction[String, String] = {
-//      
-//      case a if a == "container.cpu" => getProperty(res, "cpu")  getOrElse "[N/A]"//res.properties.get.get("cpus")
-//      
-//    }
-//
-///*
-//    ("cpus", "float", require = "optional")
-//    ("memory", "int", require = "optional")
-//    ("num_instances", "int", require = "optional") 
-//    ("labels", "json", require = "optional")
-//    ("user", "string", require = "optional")
-//    ("constraints", "string::list", require = "optional")
-//    ("acceptedResourceRoles", "string::list", require = "optional")    
-//    ("image", "string")
-//
-//
-//    newproperty(ResourceIds.Container)("container_type", "string")
-//    
-//    newproperty(ResourceIds.Container)("provider", "json")
-//    newproperty(ResourceIds.Container)("port_mappings", "json", require = "optional")
-//
-//    newproperty(ResourceIds.Container)("network", "string", require = "optional")
-//    newproperty(ResourceIds.Container)("cmd", "string", require = "optional")
-//    newproperty(ResourceIds.Container)("args", "string::list", require = "optional")
-//    newproperty(ResourceIds.Container)("force_pull", "boolean", require = "optional")
-//    newproperty(ResourceIds.Container)("health_checks", "json::list", require = "optional")
-//    newproperty(ResourceIds.Container)("volumes", "json::list", require = "optional")
-//
-//    newproperty(ResourceIds.Container)("env", "json", require = "optional")
-//    newproperty(ResourceIds.Container)("state", "string", require = "optional")
-//    newproperty(ResourceIds.Container)("external_id", "string", require = "optional")
-//    newproperty(ResourceIds.Container)("age", "datetime", require = "optional")
-//    newproperty(ResourceIds.Container)("status", "string", require = "optional")
-//*/
-//    
-//  }
 
   /*
    * TODO: This needs to be ResourceContainerProperties - should apply to Org, Workspace, and Environment
@@ -170,6 +128,30 @@ trait ResourceProperties {
    * Org pulls all child orgs, then each workspace in each org, then each environment in each workspace.
    * 
    */
+  object DefaultResourceProperties extends ResourceProperties {
+    
+    private val log = Logger(this.getClass)
+    
+    override val properties = baseResourceProperties
+    
+    def getValue(res: ResourceLike, propertyName: String): Try[String] = Try {
+      log.debug("Getting value of property: " + propertyName)
+      matchBaseProperty(res)(stripProperty(propertyName))
+    }
+  }
+  
+  object DefaultResourceProperties2 extends ResourceProperties {
+    
+    private val log = Logger(this.getClass)
+    
+    override val properties = baseResourceProperties
+    
+    def getValue(res: ResourceLike, propertyName: String): Try[String] = Try {
+
+      log.debug("Getting value of property: " + propertyName)
+      matchBaseProperty(res)(stripProperty(propertyName))
+    }
+  }  
   
   object EnvironmentProperties extends ResourceProperties {
     
