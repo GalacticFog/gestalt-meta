@@ -27,11 +27,12 @@ variables:
   GESTALT_SECURITY_SECRET: missing
   GESTALT_APIGATEWAY: "http://no-gateway"
   GESTALT_LAMBDA: "http://no-lambda"
+  RABBIT_HTTP_PROTOCOL: http
   RABBIT_HOST: no-rabbit
   RABBIT_PORT: "5672"
   RABBIT_HTTP_PORT: "15672"
-  RABBIT_EXCHANGE: policy
   RABBIT_ROUTE: test-route
+  RABBIT_EXCHANGE: policy
 
 test:
   stage: test

@@ -24,14 +24,14 @@ Persistence service for Gestalt Framework Resources.
 
     ### gestalt-security
     export GESTALT_SECURITY_PROTOCOL="https"
-    export GESTALT_SECURITY_HOSTNAME="security.galacticfog.com"
+    export GESTALT_SECURITY_HOSTNAME="https://security.yourcompany.com"
     export GESTALT_SECURITY_PORT=9455
-    export GESTALT_SECURITY_SECRET="{your-secret}"
     export GESTALT_SECURITY_KEY="{your-key}"
+    export GESTALT_SECURITY_SECRET="{your-secret}"
 
     ### gestalt-lambda and gestalt-apigateway
-    export GESTALT_LAMBDA="https://lambda.galacticfog.com"
-    export GESTALT_APIGATEWAY="https://gateway.galacticfog.com"
+    export GESTALT_LAMBDA="https://lambda.yourcompany.com"
+    export GESTALT_APIGATEWAY="https://gateway.yourcompany.com"
 
     ### RabbitMQ
     export RABBIT_HTTP_PROTOCOL="https"
