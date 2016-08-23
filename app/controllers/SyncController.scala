@@ -178,28 +178,38 @@ object SyncController extends Authorization {
             // TODO: These entitlements need to be created on 'root' in bootstrap.
             //
             
+            setNewOrgEntitlements(org.id, org.id, account, None)
+            
             // Successfully created Org - create CRUD entitlements for 'admin' user.
-            val crud = resourceEntitlements(
-                adminId, org.id, org.id, ResourceIds.Org,
-                Seq("create", "view", "update", "delete") )
-                
-            val usercrud = resourceEntitlements(
-                adminId, org.id, org.id, ResourceIds.User,
-                Seq("create", "view", "update", "delete") )
-                
-            val groupcrud = resourceEntitlements(
-                adminId, org.id, org.id, ResourceIds.Group,
-                Seq("create", "view", "update", "delete") )   
-                
-            val licensecrud = resourceEntitlements(
-                adminId, org.id, org.id, ResourceIds.License,
-                Seq("create", "view", "update", "delete") )
-                
-            (crud ++ usercrud ++ groupcrud ++ licensecrud) map { e => 
-              CreateResource(
-                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
-                Option(ResourceIds.Entitlement), Option(org.id)).get            
-            }
+//            val crud = resourceEntitlements(
+//                adminId, org.id, org.id, ResourceIds.Org,
+//                Seq("create", "view", "update", "delete") )
+//                
+//            val usercrud = resourceEntitlements(
+//                adminId, org.id, org.id, ResourceIds.User,
+//                Seq("create", "view", "update", "delete") )
+//                
+//            val groupcrud = resourceEntitlements(
+//                adminId, org.id, org.id, ResourceIds.Group,
+//                Seq("create", "view", "update", "delete") )   
+//                
+//            val licensecrud = resourceEntitlements(
+//                adminId, org.id, org.id, ResourceIds.License,
+//                Seq("create", "view", "update", "delete") )
+//            
+//            val providercrud = resourceEntitlements(
+//                adminId, org.id, org.id, ResourceIds.Provider,
+//                Seq("create", "view", "update", "delete") )
+//            (crud ++ usercrud ++ groupcrud ++ licensecrud) map { e => 
+//              CreateResource(
+//                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
+//                Option(ResourceIds.Entitlement), Option(org.id)).get            
+//            }
+//            
+//            this.create
+//            CreateResource(
+//                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
+//                Option(ResourceIds.Entitlement), Option(org.id))
             
           }
         }
