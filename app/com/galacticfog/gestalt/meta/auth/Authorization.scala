@@ -366,11 +366,10 @@ trait Authorization extends MetaController {
           throw new RuntimeException(
               s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
         }
-        
       }
     }
   }  
-
+  
   
   /**
    * Generate a list of Entitlements on a list of Resource types.
@@ -416,7 +415,9 @@ trait Authorization extends MetaController {
     
     val ids = Option(Seq(creator))
     actions map { action =>
-      newEntitlement(creator, org, resource, Actions.actionName(resourceType, action), ids, None, None, None)
+      newEntitlement(
+          creator, org, resource, 
+          Actions.actionName(resourceType, action), ids, None, None, None)
     }
   }
   
