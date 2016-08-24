@@ -1,77 +1,43 @@
 package controllers
 
-
 import java.util.UUID
 
-import scala.annotation.tailrec
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import scala.reflect.ClassTag
-import scala.reflect.runtime.currentMirror
-import scala.reflect.runtime.universe
-import scala.reflect.runtime.universe.MethodSymbol
-import scala.reflect.runtime.universe.typeOf
-import scala.reflect.runtime.universe.TypeTag
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
+import scala.util.{Try,Success,Failure}
 
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.data.ReferenceFactory
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.marathon.ContainerStats
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
-import com.galacticfog.gestalt.meta.api.resourceRestName
-import com.galacticfog.gestalt.meta.api.resourceUUID
+import com.galacticfog.gestalt.meta.api._
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.meta.api.errors._
+
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
 
-import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-import com.galacticfog.gestalt.security.api.json.JsonImports.orgFormat
-
-import controllers.util._
-import controllers.util.JsonUtil.replaceJsonPropValue
-import controllers.util.JsonUtil.replaceJsonProps
-import play.api.{Logger => log}
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.mvc.Action
-import play.api.mvc.AnyContent
-
 import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
-
-import play.api.mvc.Result
-import com.galacticfog.gestalt.meta.api.Resource
-import com.galacticfog.gestalt.meta.api.output.Output.{renderInstance => Render}
-
-import com.galacticfog.gestalt.meta.api.ResourcePath
-import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
+import controllers.util._
+import controllers.util.JsonUtil._
+
+import play.api.libs.json.{JsObject,JsString,Json}
+
+import play.api.mvc.{Action,Result}
 
 
 object ResourceController extends Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
-
-  type Lookup = (ResourcePath, AuthAccountWithCreds) => Option[GestaltResourceInstance]
+  
+  type Lookup    = (ResourcePath, AuthAccountWithCreds) => Option[GestaltResourceInstance]
   type LookupSeq = (ResourcePath, AuthAccountWithCreds) => Seq[GestaltResourceInstance]
   
   
@@ -89,17 +55,9 @@ object ResourceController extends Authorization {
     ResourceIds.Provider -> lookupSeqProviders
   )
   
-
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
-  
-  /*
-   * Add ability to override normal lookup function:
-   * lookup = (UUID, Account) => Option[GestaltResourceInstance]
-   * lookupSeq = (UUID,Account) => Seq[GestaltResourceInstance]
-   * 
-   */
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
     orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
@@ -121,7 +79,7 @@ object ResourceController extends Authorization {
       ResourceFactory.findAll(typeId)
     }
   }
-
+  
   /**
    * Get a Resource or list of Resources by path.
    */
@@ -132,7 +90,6 @@ object ResourceController extends Authorization {
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)
   }  
-  
   
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
@@ -166,30 +123,6 @@ object ResourceController extends Authorization {
     }
   }
 
-//  abstract class ViewHandler(
-//      transformers: Map[UUID, ResourceLike => ResourceLike], 
-//      filters: Map[UUID, ResourceLike => Boolean]) {
-//    
-//    def find[T](path: String): T
-//  }
-//  
-//  class ResourceViewHandler (
-//      transformers: Map[UUID, ResourceLike => ResourceLike], 
-//      filters: Map[UUID, ResourceLike => Boolean]) extends ViewHandler(transformers, filters) {
-//    
-//    def find[T](path: String) = {
-//      val rp = new ResourcePath(path)
-//      val typeId = rp.targetTypeId
-//      //
-//      // perform lookup
-//      //
-//      val transform = transformers.get(typeId)
-//      //
-//      // apply transformation function if appropriate.
-//      //
-//    }
-//  }
-
   /*
    * Type-Based Lookup Functions
    */ 
@@ -200,8 +133,35 @@ object ResourceController extends Authorization {
       if (path.parentId.isDefined) path.parentId.get
       else orgFqon(path.fqon).fold(FqonNotFound(path.fqon)){ _.id }
     }
-    ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, parentId)  
-  }
+    
+    ResourceFactory.findById(parentId).fold {
+      throw new ResourceNotFoundException(parentId.toString)
+    } { _ => ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) }
+  }  
+
+  /*
+   * 
+   * TODO: Need to 're-implement' this. Generalize filtering into resource lookups
+   * 
+   */
+  
+//  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+//    if (qs.contains("type")) {
+//
+//      val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
+//      log.debug("Filtering providers for type : " + typeName)
+//      //
+//      // TODO: No longer necessary to do this - use .findWithVariance()
+//      //
+//      val typeId = typeName match {
+//        case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
+//        case b if b == Resources.MarathonProvider.toString => ResourceIds.MarathonProvider
+//        case c if c == Resources.LambdaProvider.toString => ResourceIds.LambdaProvider
+//        case e => throw new BadRequestException(s"Unknown provider type : '$e'")
+//      }
+//      rs filter { _.typeId == typeId }
+//    } else rs
+//  }  
   
   private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
