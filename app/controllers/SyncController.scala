@@ -66,7 +66,7 @@ object SyncController extends Authorization {
        * TODO: Refactor this - as it is, errors are swallowed. 
        */
       val creator = request.identity.account.id
-
+      
       log.debug(s"Deleting ${orgsDelete.size} Orgs.")
       deleteResources(creator, orgsDelete)
       

@@ -340,28 +340,6 @@ object Meta extends Authorization {
   }
 
   
-//  val options = RequestOptions(
-//      authTarget   = Option(uuid),
-//      policyOwner  = Option(uuid),
-//      policyTarget = Option(uuid))
-//  
-//  val operations = List(
-//      Feature("containers"), 
-//      Authorize("container.create")/*, 
-//      Policy("container.precreate", "container.postcreate")*/)
-//  
-//  case class User(id: UUID, name: String)
-//  
-//  val user = User(uuid(), "user1")
-//  
-//  SafeRequest (user, operations, options) Protect { maybeState =>
-//    
-//    val state = maybeState getOrElse STATE_ACTIVE
-//    println("Creating Resource with state : " + state)
-//
-//  }
-//
-  
   import com.galacticfog.gestalt.keymgr.GestaltLicense
   import com.galacticfog.gestalt.keymgr.GestaltFeature
 
@@ -370,12 +348,7 @@ object Meta extends Authorization {
   private[controllers] def createWorkspaceResult(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
 
     Future {
-      
-//      val operations = List(
-//          controllers.util.Authorize(Actions.Workspace.Create),
-//          controllers.util.PolicyCheck(Actions.Workspace.Create),
-//          controllers.util.EventsPre(Actions.Workspace.Create))
-      
+
       val operations = standardMethods(ResourceIds.Workspace, "workspace.create")
       
       val options = RequestOptions(user, 
@@ -397,7 +370,7 @@ object Meta extends Authorization {
       
     }
   }  
-  
+
   /**
    * Convert input JSON to an in-memory GestaltResourceInstance
    */
@@ -409,35 +382,9 @@ object Meta extends Authorization {
           creator = creator)
   }
 
-// /**
-//   * Inspect a GestaltResourceInput, supplying default values where appropriate.
-//   */
-//  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
-//    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
-//    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-//    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-//    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
-//  }
-//  /**
-//   * Convert GestaltResourceInput to GestaltResourceInstance
-//   */
-//  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-//    GestaltResourceInstance(
-//      id = in.id getOrElse UUID.randomUUID,
-//      typeId = in.resource_type.get,
-//      state = resolveResourceState(in.resource_state),
-//      orgId = org,
-//      owner = in.owner.get,
-//      name = in.name,
-//      description = in.description,
-//      properties = stringmap(in.properties),
-//      variables = in.variables,
-//      tags = in.tags,
-//      auth = in.auth)
-//  }      
-  // --------------------------------------------------------------------------
-  // ENVIRONMENTS
-  // --------------------------------------------------------------------------
+// --------------------------------------------------------------------------
+// ENVIRONMENTS
+// --------------------------------------------------------------------------
 
   /*
    * POST /{fqon}/environments
@@ -530,11 +477,6 @@ object Meta extends Authorization {
           }.toMap
 
         log.debug("Parsed provider-type as : " + v.as[String])
-//        v.as[String] match {
-//          case a if validProviderTypes.contains(a) => validProviderTypes(a)
-//          case e => throw new BadRequestException(s"Unknown provider type : '$e'")
-//        }
-          
         validProviderTypes.get(v.as[String]).fold {
           throw new BadRequestException(s"Unknown provider type : '${v.as[String]}'")
         }{ id => id }
@@ -582,35 +524,6 @@ object Meta extends Authorization {
       }
 
     }    
-
-//    ResourceFactory.findById(parentTypeId, parent) match {
-//      case None => Future { NotFoundResult(s"${ResourceLabel(parentTypeId)} with ID '$parent' not found.") }
-//      case Some(parentResource) => {
-//        
-//        if (providerType == ResourceIds.ApiGatewayProvider) {
-//          postGatewayProvider(org, parentResource)
-//        } 
-//        else {
-//          val providerParent = ResourceFactory.findById(UUID.fromString(parentType), parent)
-//
-//          providerParent match {
-//            case None => Future(NotFoundResult(s"${ResourceLabel(parentType)} with ID '${parent}' not found."))
-//            case Some(p) => {
-//
-//              // We found the parent, inject resource_type and parent into the incoming JSON.
-//              JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
-//                case Failure(e) => Future(HandleRepositoryExceptions(e))
-//                case Success(j) => {
-//                  val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
-//                  createResourceCommon(org, parent, providerType, newjson)
-//                }
-//              }
-//            }
-//          }
-//        }
-//      }
-//    }
-    
   }
   
   def laserClient(lambdaUrl: String, gatewayUrl: String) = {
@@ -665,22 +578,7 @@ object Meta extends Authorization {
   // UTILITY FUNCTIONS
   //
   // --------------------------------------------------------------------------
-  
-//  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
-//    (sc: SecurityResourceFunction, mc: MetaResourceFunction)
-//    (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
-//    
-//    log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
-//    
-//    safeGetInputJson(typeId, json) map { input =>
-//      createSynchronized(org, typeId, input)(sc, mc).get
-//    }
-//    for {
-//      input    <- safeGetInputJson(typeId, json)
-//      resource <- createSynchronized(org, typeId, input)(sc, mc)
-//    } yield resource
-//  }  
-  
+
   private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
     (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
