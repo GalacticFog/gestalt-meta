@@ -37,11 +37,15 @@ object Actions {
         ResourceIds.Lambda -> Lambda,
         ResourceIds.License -> License,
         ResourceIds.Provider -> Provider,
+        ResourceIds.ApiGatewayProvider -> Provider,
+        ResourceIds.MarathonProvider -> Provider,
         ResourceIds.Entitlement -> Entitlement,
         ResourceIds.Policy -> Policy,
         ResourceIds.Rule -> Rule,
+        ResourceIds.RuleEvent -> Rule,
+        ResourceIds.RuleLimit -> Rule,
         ResourceIds.Domain -> Domain,
-        ResourceIds.ApiEndpoint -> ApiEndpoint,
+        ResourceIds.ApiEndpoint  -> ApiEndpoint,
         ResourceIds.ResourceType -> ResourceType,
         ResourceIds.TypeProperty -> TypeProperty)  
 
@@ -58,6 +62,10 @@ object Actions {
     case ResourceIds.ApiEndpoint => "apiendpoint"
     case ResourceIds.ResourceType => "resourcetype"
     case ResourceIds.TypeProperty => "typeproperties"
+    case ResourceIds.ApiGatewayProvider => "provider"
+    case ResourceIds.MarathonProvider => "provider"     
+    case ResourceIds.RuleEvent => "rule"
+    case ResourceIds.RuleLimit => "rule"
     case e => throw new IllegalArgumentException(s"Unknown action-prefix '$typeId'")
   }
 
