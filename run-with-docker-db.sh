@@ -1,7 +1,7 @@
 #!/bin/bash
 
 DBUSER=gestaltdev
-DBPASS=M8keitw0rk
+DBPASS=password
 DBNAME=metadev
 DOCKERDBCONTAINER=gestaltdb
 

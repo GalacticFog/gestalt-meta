@@ -146,36 +146,37 @@ object ApiGateway {
        if (url.trim.toLowerCase.startsWith("http")) url else s"http://$url"
     }
      
-    def getKongPublicInfo(serviceAddress: String, publicAddress: Option[String]) = {
-      val out = publicAddress match {
-        case Some(address) => new URL(normalizeUrl(address))
-        case None => {
-          val u = new URL(normalizeUrl(serviceAddress))
-          new URL("%s://%s:%d".format(u.getProtocol, "admin." + u.getHost, u.getPort))
-        }
+    def getKongPublicInfo(serviceUrl: URL, publicAddress: Option[String]) = {
+      publicAddress map {addr => new URL(normalizeUrl(addr))} getOrElse {
+        log.warn("Gateway provider did not include public address info; using service address")
+        serviceUrl
       }
-      (out.getHost, if (out.getPort == -1) 80 else out.getPort)
     }
     
     val kongServiceUrl = new URL(normalizeUrl(input.properties.config.url))
+    val kongServiceProtocol = kongServiceUrl.getProtocol
     val kongServiceAddress = kongServiceUrl.getHost
-    val kongServicePort = if (kongServiceUrl.getPort == -1) 80 else kongServiceUrl.getPort
+    val kongServicePort = Some(kongServiceUrl.getPort).filter(_ > 0)
     
     val username = input.properties.config.auth.username
     val password = input.properties.config.auth.password
     
-    val (kongPublicHost,kongPublicPort) = getKongPublicInfo(kongServiceAddress, input.properties.config.extra)
-    
-    Json.obj(
+    val kongPublicUrl = getKongPublicInfo(kongServiceUrl, input.properties.config.extra)
+    val kongPublicProtocol = kongPublicUrl.getProtocol
+    val kongPublicHost = kongPublicUrl.getHost
+    val kongPublicPort = Some(kongPublicUrl.getPort).filter(_ > 0)
+
+    val p1 = kongServicePort.map(p => (Json.obj("port"        -> p)))
+    val p2 = kongPublicPort.map(p =>  (Json.obj("gatewayPort" -> p)))
+    Seq(p1,p2).flatten.fold(Json.obj(
+      "protocol" -> kongServiceProtocol,
       "host" -> kongServiceAddress,
-      "port" -> kongServicePort,
       "username" -> username,
       "password" -> password,
-      "gatewayHost" -> kongPublicHost,
-      "gatewayPort" -> kongPublicPort)
-
-  }    
-  
+      "gatewayProtocol" -> kongPublicProtocol,
+      "gatewayHost" -> kongPublicHost
+    ))(_ ++ _)
+  }
 
   /*
    * END API_GATEWAY_PROVIDER code.
