@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 
 import scala.util.{Try,Success,Failure}
@@ -42,9 +43,10 @@ object ResourceController extends Authorization {
   
   
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
-      ResourceIds.Group -> transformGroup,
-      ResourceIds.User  -> transformUser,
-      ResourceIds.Lambda -> transformLambda
+      ResourceIds.Group  -> transformGroup,
+      ResourceIds.User   -> transformUser,
+      ResourceIds.Lambda -> transformLambda,
+      ResourceIds.Policy -> transformPolicy
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -52,7 +54,8 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
-    ResourceIds.Provider -> lookupSeqProviders
+    ResourceIds.Provider -> lookupSeqProviders,
+    ResourceIds.Org -> lookupSeqOrgs
   )
   
   def FqonNotFound(fqon: String) = {
@@ -122,7 +125,18 @@ object ResourceController extends Authorization {
       }
     }
   }
-
+  
+  /*
+   * This function is needed to keep root from showing up in the output of GET /root/orgs.
+   * The query that selects the orgs uses the 'owning org' as a filter. root is the only
+   * org that is owned by itself.
+   */
+  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds): List[GestaltResourceInstance] = {
+    Resource.listFromPath(path.path) filter { o =>
+      o.properties.get("fqon") != path.fqon  
+    }
+  }
+  
   /*
    * Type-Based Lookup Functions
    */ 
@@ -136,9 +150,9 @@ object ResourceController extends Authorization {
     
     ResourceFactory.findById(parentId).fold {
       throw new ResourceNotFoundException(parentId.toString)
-    } { _ => ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) }
-  }  
-
+    }{ _ => ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) }
+  }
+  
   /*
    * 
    * TODO: Need to 're-implement' this. Generalize filtering into resource lookups
@@ -162,6 +176,16 @@ object ResourceController extends Authorization {
 //      rs filter { _.typeId == typeId }
 //    } else rs
 //  }  
+  
+  private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+    }
+    val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map { r => 
+      toLink(res, None) 
+    }
+    upsertProperties(res, "rules" -> Json.stringify(Json.toJson(rs)))
+  }
   
   private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
