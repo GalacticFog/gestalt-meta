@@ -304,7 +304,8 @@ case class RequestOptions(
     user: AuthAccountWithCreds, 
     authTarget: Option[UUID], 
     policyOwner: Option[UUID], 
-    policyTarget: Option[GestaltResourceInstance])
+    policyTarget: Option[GestaltResourceInstance],
+    data: Option[Map[String,String]] = None)
 
 import scala.annotation.tailrec
 

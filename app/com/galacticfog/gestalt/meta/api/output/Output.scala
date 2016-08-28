@@ -239,12 +239,6 @@ object Output {
       "uuid::list"    -> renderStringList
   )
   
-  /*
-   * TODO: Determine which of these json helpers are really necessary
-   * and move up to package object.
-   */
- 
-  
   /**
    * Get the TypeProprties of any resource-type and convert to list of ResourceLinks.
    */

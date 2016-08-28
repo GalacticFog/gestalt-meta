@@ -346,35 +346,35 @@ object MarathonController extends Authorization {
 
   def inputToResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
     inputWithDefaults(
-          org = org, 
-          input = safeGetInputJson(json).get, 
-          creator = creator)
+      org = org, 
+      input = safeGetInputJson(json).get, 
+      creator = creator)
   }
   
-  
   import com.galacticfog.gestalt.keymgr.GestaltFeature
-  import com.galacticfog.gestalt.meta.auth.Actions  
+  import com.galacticfog.gestalt.meta.auth.Actions
   
- implicit def featureToString(feature: GestaltFeature) = feature.getLabel
-   
- 
+  implicit def featureToString(feature: GestaltFeature) = feature.getLabel
+  
   def containerRequestOptions(
-        user: AuthAccountWithCreds,
-        environment: UUID,
-        container: GestaltResourceInstance) = {
-    
-      RequestOptions(user, 
-        authTarget = Option(environment), 
-        policyOwner = Option(environment), 
-        policyTarget = Option(container))
-    } 
- 
+    user: AuthAccountWithCreds,
+    environment: UUID,
+    container: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(environment),
+      policyOwner = Option(environment),
+      policyTarget = Option(container),
+      data)
+  }
+
   def containerRequestOperations(action: String) = {
     List(
       controllers.util.Authorize(action),
-      controllers.util.PolicyCheck(action),
       controllers.util.EventsPre(action),
-      controllers.util.EventsPost(action))    
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
   }
   
   /*
@@ -400,10 +400,10 @@ object MarathonController extends Authorization {
         val user = request.identity
         val provider = marathonProvider(providerId)
           
-          /*
-           * Take the input JSON payload and convert it to a GestaltResourceInstance. This is
-           * needed to check any attribute/property values against policy rules (if any).
-           */
+        /*
+         * Take the input JSON payload and convert it to a GestaltResourceInstance. This is
+         * needed to check any attribute/property values against policy rules (if any).
+         */
         val target = inputToResource(org, user, inputJson)
         val operations = containerRequestOperations(Actions.Container.Create)
         val options = containerRequestOptions(user, environment, target)
@@ -433,78 +433,55 @@ object MarathonController extends Authorization {
     }
   }
   
-      
-def postMarathonApp2(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
+  
+def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = MarAuth(fqon).async { implicit request =>
+    log.debug("Looking up workspace and environment for container...")
+
+    val org = fqid(fqon)
 
     appComponents(environment) match {
-      case Failure(e) => Future { HandleExceptions(e) }
-      case Success((wrk,env)) => {
-
-        // This initializes all required properties if missing.
-        val inputJson = normalizeInputContainer(request.body)
-        val name = requiredJsString("name", (inputJson \ "name"))
+      case Failure(e) => Future.successful(HandleExceptions(e))
+      case Success((wrk, env)) => {
         
-        val providerId = UUID.fromString {
-          requiredJsString("id", (inputJson \ "properties" \ "provider" \ "id"))
-        }
-        
-        val org = fqid(fqon)
-        val user = request.identity
-        val provider = marathonProvider(providerId)
-        
-        /*
-         * Take the input JSON payload and convert it to a GestaltResourceInstance. This is
-         * needed to check any attribute/property values against policy rules (if any).
-         */
-        val target = inputToResource(org, user, inputJson)
-        
-         
-        
-        Policy(user, env, Option(target), ContainerEvents.Create) {
-        
-          /*
-           * TODO: Reverse the order of container creation.  Create FIRST in Meta - that way if it fails to create
-           * in Marathon, we can just delete it from Meta.
-           */
+        ResourceFactory.findById(ResourceIds.Container, id).fold {
+          Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
+        }{ c =>
           
-          log.debug("NEW : About to create Container in Marathon...")
-          // Create app in Marathon
-          createMarathonApp(fqon, name, wrk.name, env.name, inputJson, provider) flatMap { r =>
+            val operations = containerRequestOperations(Actions.Container.Scale)
+            val options    = containerRequestOptions(request.identity, environment, c, 
+                              data = Option(Map("scaleTo" -> numInstances.toString)))
             
-            log.debug("Marathon App created:\n" + Json.prettyPrint(r))
-
-            // Inject external_id property and full provider info
-            val marGroupId = groupId(fqon, wrk.name, env.name)
-            val metaContainerJson = Seq(
-              "external_id" -> externalIdJson(marGroupId, name),
-              "provider"    -> providerJson(provider) 
-            ).foldLeft(inputJson) { (json, prop) => JsonUtil.withJsonPropValue(json, prop) }
-
-            // Create app in Meta
-            log.debug("Creating Container in Meta:\n" + Json.prettyPrint(metaContainerJson))
+            val props     = c.properties.get ++ Map("num_instances" -> numInstances.toString)
+            val container = c.copy(properties = Option(props))
             
-            createResourceInstance(org, metaContainerJson, Some(ResourceIds.Container), Some(environment)) match {
-              case Failure(err) => Future { HandleExceptions(err) }
-              case Success(container) => {
-
-                processContainerEvent(env, container, provider.id, ContainerEvents.PostCreate) match {
-                  case Failure(e) => log.error("Failed Publishing Event: " + e.getMessage)
-                  case Success(_) => log.debug(s"Success: Published ${ContainerEvents.Create}")
+            Future {
+              
+              SafeRequest (operations, options) Protect { maybeState => 
+                log.debug(s"Scaling Marathon App to $numInstances instances...")
+                
+                // TODO: Check for failure!!!
+                val marathonJson = scaleMarathonAppSync(c, numInstances)
+                
+                ResourceFactory.update(c.copy(
+                  properties = transformScaleProps(c.properties, numInstances)),
+                  identity = request.identity.account.id) match {
+                  case Failure(error) => HandleExceptions(error)
+                  case Success(updatedContainer) => Accepted(RenderSingle(updatedContainer)) 
                 }
-                
-                Future { Created(Output.renderInstance(container)) }
-                
               }
             }
-              
-          } recover {
-            case e: Throwable => HandleExceptions(e)
           }
-        } 
-      } 
-      
-    }
-  }      
+        
+        }
+      }
+  }
+
+
+  def transformScaleProps(props: Option[Map[String,String]], numInstances: Int): Option[Map[String,String]] = {
+    val scaleProps = Seq("num_instances" -> numInstances.toString, "status" -> "SCALING")
+    props map { _ ++ scaleProps } orElse Option(Map(scaleProps:_*))
+  }
+
       
   def toMetaContainerJson(
       inputJson: JsObject, 
@@ -517,65 +494,8 @@ def postMarathonApp2(fqon: String, environment: UUID) = MarAuth(fqon).async(pars
         JsonUtil.withJsonPropValue(json, prop) 
     }      
   }
-      
   
-  def Policy(
-      user: AuthAccountWithCreds, 
-      policyOwner: GestaltResourceInstance, 
-      target: Option[GestaltResourceInstance], 
-      action: String)(block: => Future[play.api.mvc.Result]): Future[play.api.mvc.Result]  = {
-    
-    Try {
-      effectiveRules(policyOwner.id, Some(ResourceIds.RuleLimit), Seq(action)) foreach { r =>
-        val predicate = toPredicate(r.properties.get("eval_logic"))
-        val decision = decide(user, (target getOrElse policyOwner), predicate, None)
-        
-        def predicateMessage(p: Predicate[Any]) = {
-          val value = p.value.toString.replaceAll("\"", "")
-          "[%s %s %s]".format(p.property, p.operator, value)
-        }
-        
-        if (decision.isLeft) {
-          val message = s"Failed Policy Assertion: ${predicateMessage(predicate)}. Rule: ${r.id}"
-          throw new ConflictException(message)
-        }
-      }
-    } match {
-      case Failure(e) => e match {
-        case c: ConflictException =>
-          Future(HandleExceptions(new ConflictException(e.getMessage)))
-        case _ => Future(HandleExceptions(e))
-      }
-      case Success(_) => block
-    }
-  }
 
-  
-  def processContainerEvent(
-      parent: GestaltResourceInstance, 
-      container: GestaltResourceInstance,
-      provider: UUID,
-      eventName: String)(implicit request: SecuredRequest[_]): Try[Unit] = Try {
-    
-    log.debug(s"Searching for effective '${eventName}' rules...")
-    
-    effectiveEventRules(parent.id, Some(eventName)) match {
-      case None => Success(None)  
-      case Some(rule) => {
-        log.debug(s"Sending '$eventName'...")
-        for {
-          event  <- PolicyEvent.make(eventName, parent, container, rule, provider, META_URL.get)
-          status <- {
-            log.debug("Publishing Event:\n" + Json.toJson(event.toJson))
-            publishEvent(event)  
-          }
-        } yield status
-      }
-    }
-    
-  }
-  
-  
   def providerJson(provider: GestaltResourceInstance) = {
     Json.obj("id" -> provider.id.toString, "name" -> provider.name)
   }
@@ -640,49 +560,7 @@ def postMarathonApp2(fqon: String, environment: UUID) = MarAuth(fqon).async(pars
     }
   }
 
-
   
-  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = MarAuth(fqon).async { implicit request =>
-    log.debug("Looking up workspace and environment for container...")
-
-    val org = fqid(fqon)
-
-    appComponents(environment) match {
-      case Failure(e) => Future.successful(HandleExceptions(e))
-      case Success((wrk, env)) => {
-
-        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
-        ResourceFactory.findById(ResourceIds.Container, id).fold {
-          Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
-        }{ c =>
-            val props     = c.properties.get ++ Map("num_instances" -> numInstances.toString)
-            val container = c.copy(properties = Option(props))
-
-            Policy(request.identity, env, Option(container), ContainerEvents.Scale) {
-              
-              log.debug(s"Scaling Marathon App...")
-              
-              scaleMarathonApp(c, numInstances) map {
-                marathonJson =>
-                  Accepted(Output.renderInstance(c.copy(
-                    properties = c.properties map {
-                      _ ++ Seq(
-                        "num_instances" -> numInstances.toString,
-                        "status" -> "SCALING")
-                    } orElse Some(Map(
-                      "num_instances" -> numInstances.toString,
-                      "status" -> "SCALING"))), META_URL))
-              } recover {
-                case e: Throwable => HandleExceptions(e)
-              }
-            }
-        
-          }
-        }
-      }
-    
-
-  }
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
 
     val updated = for {
@@ -806,6 +684,18 @@ def postMarathonApp2(fqon: String, environment: UUID) = MarAuth(fqon).async(pars
     }
   }
 
+  protected [controllers] def scaleMarathonAppSync(container: GestaltResourceInstance, numInstances: Int) /*: Future[JsValue]*/ = {
+    val provider = marathonProvider(containerProviderId(container))
+    
+    container.properties.flatMap(_.get("external_id")).fold {
+      throw new RuntimeException("container.properties.external_id not found.")
+    }{ id =>
+      Await.result(
+          marathonClient(provider).scaleApplication(id, numInstances), 
+          5 seconds)
+    }
+  }
+  
   protected [controllers] def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance): Future[JsValue] = {
     val provider = marathonProvider(containerProviderId(container))
     marathonClient(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
