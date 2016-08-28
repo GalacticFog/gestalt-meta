@@ -20,21 +20,8 @@ object OrgOutput {
 
   /**
    * Injects parent and children Org properties into a given Org
-   * with data from the instance closure table.
+   * properties with data from the instance closure table.
    */  
-  def buildOrgProps2(org: UUID): Option[Hstore] = {
-    val os = ResourceFactory.findOrgParentAndChildren(org)
-    val (parent, other) = os partition { _._1 == -1 }
-    val (self, children) = other partition { _._1 == 0 }
-    
-    val pmap: Map[String,String] = if (parent.isEmpty) Map() else Map("parent" -> parent(0)._2.id)
-    val cmap: Map[String,String] = if (children.isEmpty) Map() else {
-      val cids = children.map( _._2.id.toString ).mkString(",")
-      Map("children" -> cids)
-    }
-    Option( self(0)._2.properties.get ++ pmap ++ cmap )
-  }
-  
   def buildOrgProps(org: UUID): Option[Hstore] = { 
     val os = ResourceFactory.findOrgParentAndChildren(org)
     val m  = os groupBy  { _._1 } map { x => 
