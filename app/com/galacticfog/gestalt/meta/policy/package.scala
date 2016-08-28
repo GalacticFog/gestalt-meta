@@ -34,45 +34,58 @@ package object policy {
       buf toString
     }
   }
-  
-  def safeGetInputJson(json: JsValue): Try[GestaltResourceInput] = Try {
 
-    implicit def jsarray2str(arr: JsArray) = arr.toString
-
-    json.validate[GestaltResourceInput].map {
-      case resource: GestaltResourceInput => resource
-    }.recoverTotal { e =>
-      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
-      throw new BadRequestException(JsError.toFlatJson(e).toString)
-    }
-  }
-
-  /* TODO:
-   * Use the property name to decide whether tests are performed against the 'target' or the payload 
-   * converted to a resource.
-   */
-  def propertyContainerCount(opts: RequestOptions): JsValue = {
+  def propertyContainerCount(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
     log.debug(s"propertyContainerCount(policyOwner = ${opts.policyOwner}")
     val env = opts.policyOwner.get
     JsNumber(ResourceFactory.findChildrenOfType(ResourceIds.Container, env).size)
   }
   
-  type PropertyLookup = RequestOptions => JsValue
+  /**
+   * Get container.properties.num_instances as a JsNumber.  This function is necessary because rules
+   * may check container.properties.num_instances in events other than 'scale' (i.e. on
+   * container creation).  This function determines the value to return in the order below
+   * (first value found will be used):
+   * 
+   * 1.) RequestOptions.data -> scaleTo
+   * 2.) container.properties.num_instances
+   * 3.) 1
+   */  
+  def propertyContainerNumInstances(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
+
+    opts.data.flatMap(_.get("scaleTo")).fold {
+      val path = dot2slash("container.properties.num_instances")
+      JsonUtil.find(resourceJson.as[JsObject], path).fold {
+        JsNumber(1)
+      }{ ni => JsNumber(ni.as[Int]) }
+    }{ scaleTo => JsNumber(scaleTo.toInt) }
+  }
+  
+
+  private def rte(message: String) = new RuntimeException(message)
+  
+  
+  type PropertyLookup = (Predicate[Any],RequestOptions,JsValue) => JsValue
   
   private val propertyFunctions: Map[String, PropertyLookup] = Map(
-    "containers.count" -> propertyContainerCount
+    "containers.count" -> propertyContainerCount,
+    "container.properties.num_instances" -> propertyContainerNumInstances
   )
-
+  
+  private[policy] def dot2slash(dotpath: String): String = {
+    dotpath.split("""\.""").drop(1).mkString("/")
+  }
+  
   def decideJson[U](
     user: U,
     target: GestaltResourceInstance,
     rule: GestaltResourceInstance,
     effect: Option[String],
     opts: RequestOptions): Either[String, Unit] = {
-
+    
     val json = Output.renderInstance(target)
     val predicate = toPredicate(rule.properties.get("eval_logic"))
-    val path = predicate.property.split("""\.""").drop(1).mkString("/")
+    val path = dot2slash(predicate.property) //.split("""\.""").drop(1).mkString("/")
     
     log.debug(s"Property path: $path")
     log.debug(s"Predicate.Property : ${predicate.property}")
@@ -88,7 +101,7 @@ package object policy {
       JsonUtil.find(json.as[JsObject], path)
     }{ f =>
       log.debug(s"Found lookup function for property : '${predicate.property}'")
-      Option(f(opts)) 
+      Option(f(predicate, opts, json)) 
     }
     
     log.debug("Test-Value : " + testValue)
@@ -135,25 +148,6 @@ package object policy {
         CompareSingleToArray.compare(value.as[JsArray], jsvalue, predicate.operator)
       case _ => throw new RuntimeException(s"Unhandled comparison. found: (${test.getClass.getSimpleName}, ${value.getClass.getSimpleName})")
     }
-  }
-  
-  
-  def decide[U](
-    user: U,
-    target: ResourceLike,
-    predicate: Predicate[Any],
-    effect: Option[String]): Either[String, Unit] = {
-
-    val effectiveTarget = target
-
-    val props = propertyHandler(effectiveTarget.typeId)
-    val test = props.getValue(effectiveTarget, predicate.property).get
-
-    log.debug(s"Predicate.Property : ${predicate.property}")
-    log.debug(s"Testing: ${predicate.toString}")
-    log.debug(s"Test-Value: " + test)
-
-    if (props.compare(test, normalizedPredicate(predicate))) Right(Unit) else Left(predicate.toString)
   }
 
   def toJsValue(s: String): JsValue = s.trim match {
@@ -233,7 +227,7 @@ package object policy {
    * created when the operator is '<='.
    */
   protected[policy] def normalizedPredicate(predicate: Predicate[_]) = {
-    if (predicate.property == "containers.count") {
+    if (Seq("containers.count", "container.scale").contains(predicate.property)) {
       predicate operator match {
         case "<=" => predicate.copy(operator = "<")
         case ">=" => predicate.copy(operator = ">")
