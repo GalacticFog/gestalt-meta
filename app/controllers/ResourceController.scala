@@ -6,6 +6,7 @@ import java.util.UUID
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.data.string2uuid
@@ -39,7 +40,7 @@ object ResourceController extends Authorization {
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
   
   type Lookup    = (ResourcePath, AuthAccountWithCreds) => Option[GestaltResourceInstance]
-  type LookupSeq = (ResourcePath, AuthAccountWithCreds) => Seq[GestaltResourceInstance]
+  type LookupSeq = (ResourcePath, AuthAccountWithCreds, QueryString) => Seq[GestaltResourceInstance]
   
   
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
@@ -117,7 +118,7 @@ object ResourceController extends Authorization {
     
     val rss = lookupSeqs.get(path.targetTypeId).fold {
       Resource.listFromPath(path.path)
-    }{ f => f(path, request.identity).toList }
+    }{ f => f(path, request.identity, request.queryString).toList }
     
     AuthorizeList(action) {
       transforms.get(path.targetTypeId).fold(rss) { f =>
@@ -131,7 +132,7 @@ object ResourceController extends Authorization {
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
    * org that is owned by itself.
    */
-  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds): List[GestaltResourceInstance] = {
+  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
     Resource.listFromPath(path.path) filter { o =>
       o.properties.get("fqon") != path.fqon  
     }
@@ -140,7 +141,7 @@ object ResourceController extends Authorization {
   /*
    * Type-Based Lookup Functions
    */ 
-  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds): List[GestaltResourceInstance] = {
+  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqProviders(${path.path}, user = ${account.account.id}")
     
     val parentId = { 
@@ -150,7 +151,10 @@ object ResourceController extends Authorization {
     
     ResourceFactory.findById(parentId).fold {
       throw new ResourceNotFoundException(parentId.toString)
-    }{ _ => ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) }
+    }{ _ => 
+      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) 
+      filterProvidersByType(rs, qs)
+    }
   }
   
   /*
@@ -158,24 +162,30 @@ object ResourceController extends Authorization {
    * TODO: Need to 're-implement' this. Generalize filtering into resource lookups
    * 
    */
-  
-//  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
-//    if (qs.contains("type")) {
-//
-//      val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
-//      log.debug("Filtering providers for type : " + typeName)
-//      //
-//      // TODO: No longer necessary to do this - use .findWithVariance()
-//      //
-//      val typeId = typeName match {
-//        case a if a == Resources.ApiGatewayProvider.toString => ResourceIds.ApiGatewayProvider
-//        case b if b == Resources.MarathonProvider.toString => ResourceIds.MarathonProvider
-//        case c if c == Resources.LambdaProvider.toString => ResourceIds.LambdaProvider
-//        case e => throw new BadRequestException(s"Unknown provider type : '$e'")
-//      }
-//      rs filter { _.typeId == typeId }
-//    } else rs
-//  }  
+  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+    if (qs.contains("type")) {
+
+      val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
+      log.debug("Filtering providers for type : " + typeName)
+
+      import com.galacticfog.gestalt.data.CoVariant
+      import com.galacticfog.gestalt.data.ResourceType
+      import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
+      
+      val validProviderTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider))
+      val typeId = Try(ResourceType.id(typeName)) match {
+        case Failure(err) => 
+          throw new BadRequestException(s"Unknown provider type : '$typeName'")
+        case Success(tid) => {
+          def validTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
+          if(validTypes.contains(tid)) tid
+          else throw new BadRequestException(s"Unknown provider type : '$typeName'")
+        }
+      }
+      log.debug(s"Filtering for type-id : $typeId")
+      rs filter { _.typeId == typeId }
+    } else rs
+  }  
   
   private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
