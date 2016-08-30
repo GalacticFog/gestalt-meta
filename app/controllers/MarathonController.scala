@@ -38,6 +38,10 @@ import com.galacticfog.gestalt.meta.policy._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
 
+import com.galacticfog.gestalt.keymgr.GestaltFeature
+import com.galacticfog.gestalt.meta.auth.Actions
+
+
 object MarathonController extends Authorization {
 
   import com.galacticfog.gestalt.security.api.json.JsonImports._
@@ -344,16 +348,6 @@ object MarathonController extends Authorization {
     (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
   }
 
-  def inputToResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
-    inputWithDefaults(
-      org = org, 
-      input = safeGetInputJson(json).get, 
-      creator = creator)
-  }
-  
-  import com.galacticfog.gestalt.keymgr.GestaltFeature
-  import com.galacticfog.gestalt.meta.auth.Actions
-  
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel
   
   def containerRequestOptions(
