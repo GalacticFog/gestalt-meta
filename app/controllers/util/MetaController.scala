@@ -405,6 +405,13 @@ trait MetaController extends SecureController with SecurityResources {
     else None
   }      
   
+  def inputToResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
+    inputWithDefaults(
+      org = org, 
+      input = safeGetInputJson(json).get, 
+      creator = creator)
+  }  
+  
  /**
    * Inspect a GestaltResourceInput, supplying default values where appropriate.
    */

@@ -55,6 +55,31 @@ object LaserController extends Authorization {
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))
   
+  import com.galacticfog.gestalt.keymgr.GestaltFeature
+  import com.galacticfog.gestalt.meta.auth.Actions  
+  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+  
+  def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    environment: UUID,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(environment),
+      policyOwner = Option(environment),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }  
+  
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     orgFqon(fqon).fold(Future( OrgNotFound(fqon) )) { org =>
       createResourceCommon(org.id, parent, ResourceIds.Api, request.body)
@@ -300,7 +325,21 @@ object LaserController extends Authorization {
   def postLambdaFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>    
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(NotFoundResult(s"Environment ID $parent not found."))
-    }{ env => createLambdaCommon(fqid(fqon), env) }
+    }{ env => 
+      Future {
+        val json       = request.body.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Lambda.toString)
+        val org        = fqid(fqon)
+        val user       = request.identity
+        val target     = inputToResource(org, user, json)
+        val options    = standardRequestOptions(user, parent, target)
+        val operations = standardRequestOperations(Actions.Lambda.Create)
+        
+        SafeRequest (operations, options) Protect { maybeState => 
+          createLambdaCommon(org, env)
+        }
+        
+      }
+    }
   }
   
   protected[controllers] def createApiCommon(org: UUID, parentId: UUID, json: JsValue)
@@ -314,37 +353,35 @@ object LaserController extends Authorization {
   
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[JsValue]) = {
-    
-    Future {
-      safeGetInputJson(ResourceIds.Lambda, request.body) match {
-        case Failure(e)     => BadRequestResult(e.getMessage)
-        case Success(input) => {
-          
-          val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
 
-          // Set ID for the Lambda.
-          val newjson = injectParentLink(
-              request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
-          
-          val ps = getProviderInfo(newjson)
+    safeGetInputJson(ResourceIds.Lambda, request.body) match {
+      case Failure(e)     => BadRequestResult(e.getMessage)
+      case Success(input) => {
+        
+        val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
 
-          /*
-           * TODO: This function needs a lot of help - currently lambdas will be created in laser
-           * but creating the API will fail if the request is bad (say the location name is bad).
-           * I can either verify location-names first, or is there any reason not to create the
-           * APIs first?
-           */
-          
-          val resource = for {
-            _ <- createLaserLambdas(lambdaId, input, ps)
-            _ <- createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
-            c <- createResourceInstance(org, newjson, Some(ResourceIds.Lambda), Some(parent.id))
-          } yield c 
-          
-          resource match {
-            case Failure(err) => HandleExceptions(err)
-            case Success(res) => Created(Output.renderInstance(res, META_URL))
-          }
+        // Set ID for the Lambda.
+        val newjson = injectParentLink(
+            request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
+        
+        val ps = getProviderInfo(newjson)
+
+        /*
+         * TODO: This function needs a lot of help - currently lambdas will be created in laser
+         * but creating the API will fail if the request is bad (say the location name is bad).
+         * I can either verify location-names first, or is there any reason not to create the
+         * APIs first?
+         */
+        
+        val resource = for {
+          _ <- createLaserLambdas(lambdaId, input, ps)
+          _ <- createApisSynchronized(org, parent.id, lambdaId, input.name, ps)
+          c <- createResourceInstance(org, newjson, Some(ResourceIds.Lambda), Some(parent.id))
+        } yield c 
+        
+        resource match {
+          case Failure(err) => HandleExceptions(err)
+          case Success(res) => Created(Output.renderInstance(res, META_URL))
         }
       }
     }
