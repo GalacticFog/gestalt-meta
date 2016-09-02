@@ -6,7 +6,6 @@ stages:
 cache:
   key: "$CI_PIPELINE_ID"
   untracked: false
-  paths: 
 
 variables:
   POSTGRES_DB: gestalt-meta
@@ -44,8 +43,7 @@ test:
     #- sbt clean update test docker:stage
     - sbt clean update      docker:stage
   artifacts:
-    expire_in: 1 hour
-    when: on_success
+    expire_in: 30 minutes
     paths:
     - target/docker/stage/
 
@@ -76,9 +74,26 @@ docker-publish:
     - /^release-.*$/
     - tags
 
-.deploy-to-test:
+.deploy_template: &deploy_to_test
+  image: galacticfog/gitlab-updater
   stage: deploy
   environment: test
+  tags: 
+    - test-cluster
   script: 
-    - echo checking for access to marathon
-    - curl http://marathon.mesos:8080/v2/apps/gestalt-test/meta || true
+    - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
+    - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
+    - /usr/local/bin/update-deployed-app.sh  marathon.mesos:8080 test-gestalt-tasks/meta  $DOCKER_IMG:$DOCKER_TAG
+  allow_failure: true
+  artifacts:
+
+auto-deploy-master:
+  <<: *deploy_to_test
+  only: 
+    - master
+
+manual-deploy-non-master:
+  <<: *deploy_to_test
+  except: 
+    - master
+  when: manual
