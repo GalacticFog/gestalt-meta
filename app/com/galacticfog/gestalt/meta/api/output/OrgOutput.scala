@@ -24,12 +24,15 @@ object OrgOutput {
    */  
   def buildOrgProps(org: UUID): Option[Hstore] = { 
     val os = ResourceFactory.findOrgParentAndChildren(org)
-    val m  = os groupBy  { _._1 } map { x => 
-      (x._1 -> (x._2 map { _._2.id })) }
-    
+    val m  = os
+      .groupBy { case(lvl,orgs) => lvl }
+      .map { case(lvl,lvlset) =>
+        lvl -> lvlset.map { _._2.id }
+      }
+
     Option {
-      os(0)._2.properties.get ++ 
-        (if (m.get(-1).isEmpty) Map() else Map("parent"   -> m(-1).mkString(",")) ) ++ 
+      os.find(_._1 == 0).get._2.properties.get ++
+        (if (m.get(-1).isEmpty) Map() else Map("parent"   -> m(-1).mkString(",")) ) ++
         (if (m.get(1).isEmpty ) Map() else Map("children" -> m(1).mkString(",")) )
     }
   }
