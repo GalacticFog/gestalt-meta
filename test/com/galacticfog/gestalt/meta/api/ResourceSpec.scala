@@ -6,11 +6,13 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
+import controllers.util.MetaController
 import controllers.util.db.ConnectionManager
 
 import org.specs2.mutable._
 import org.specs2.specification._
 import org.specs2.specification.Step
+import play.api.http.HeaderNames.HOST
 import play.api.libs.json._
 
 import java.util.UUID
@@ -18,10 +20,12 @@ import java.util.UUID
 import com.galacticfog.gestalt.meta.test.ResourceScope
 
 import com.galacticfog.gestalt.data.ResourceFactory.findById
+import play.api.mvc.AnyContentAsEmpty
+import play.api.test.{WithApplication, FakeHeaders, FakeRequest, PlaySpecification}
 
-class ResourceSpec extends Specification with ResourceScope with BeforeAll {
+class ResourceSpec extends PlaySpecification with ResourceScope with BeforeAll {
 
-  
+
   stopOnFail
   sequential
 
@@ -322,7 +326,7 @@ class ResourceSpec extends Specification with ResourceScope with BeforeAll {
   
   
   "findFirstLevelList" should {
-    
+
     "find first-level resources of the given type" in new ResourceScope {
         val org = Resource.fromPath("galacticfog")
         org must beSome
@@ -347,13 +351,13 @@ class ResourceSpec extends Specification with ResourceScope with BeforeAll {
         //l2.size === 1
         l2(0).typeId === ResourceIds.Environment
     }
-    
-    
+
+
     "find nothing when there are no resources of the given type" in {
       failure
     }.pendingUntilFixed("Need to work against clean database")
-    
-    
+
+
     "throw an exception when the Org is invalid" in {
       Resource.findFirstLevelList(Map(
         Resource.Fqon -> ("INVALID-" + uuid.toString),
@@ -434,6 +438,75 @@ class ResourceSpec extends Specification with ResourceScope with BeforeAll {
         Resource.ParentId -> wid.toString,
         Resource.TargetType -> s"INVALID-${uuid.toString}")) must throwA[Throwable]
     }
+  }
+
+  lazy val testController = new MetaController {}
+
+  def fakeRequest(secure: Boolean) = FakeRequest("GET","/",headers=FakeHeaders(),body=AnyContentAsEmpty,secure = secure)
+
+  "meta resource HREFs" should {
+
+    "abide header.secure in the absence of proxy headers" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co")
+      ) must beSome("http://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co")
+      ) must beSome("https://meta.company.co")
+    }
+
+    "abide X-FORWARDED-PROTO regardless of header.secure" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")
+      ) must beSome("https://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")
+      ) must beSome("https://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")
+      ) must beSome("http://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")
+      ) must beSome("http://meta.company.co")
+    }
+
+
+    "lower case X-FORWARDED-PROTO" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTPS")
+      ) must beSome("https://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTP")
+      ) must beSome("http://meta.company.co")
+    }
+
+    "prefer X-FORWARDED-HOST over request.host" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "some-node.company.co", X_FORWARDED_HOST -> "meta.company.co")
+      ) must beSome("http://meta.company.co")
+    }
+
+    "include port if provided by proxy header" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "14374")
+      ) must beSome("http://meta.company.co:14374")
+    }
+
+    "neglect default port even if provided by proxy header" in new WithApplication {
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "80")
+      ) must beSome("http://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http", X_FORWARDED_PORT -> "80")
+      ) must beSome("http://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "443")
+      ) must beSome("https://meta.company.co")
+      testController.META_URL(
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https", X_FORWARDED_PORT -> "443")
+      ) must beSome("https://meta.company.co")
+    }
+
   }
   
 }
