@@ -1,8 +1,9 @@
 package com.galacticfog.gestalt.marathon
 
-import com.galacticfog.gestalt.meta.api.errors.{ConflictException, BadRequestException, ResourceNotFoundException}
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import org.joda.time.DateTime
-import play.api.Logger
 import play.api.libs.ws.WSClient
 import play.api.libs.json._
 import play.api.libs.json.Reads._
@@ -11,10 +12,11 @@ import scala.concurrent.{ExecutionContext, Future}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import scala.math.BigDecimal.int2bigDecimal
 
-
+import play.api.Logger
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 
+  private[this] val log = Logger(this.getClass)
 
   def listApplications(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     for {
@@ -59,7 +61,30 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       }
     }
   }
-
+  
+  def getApplication_marathon_v3(uri: String)(implicit ex: ExecutionContext): Future[JsObject] = {
+    val url = "%s/v2/apps/%s".format(marathonAddress, uri.stripPrefix("/").stripSuffix("/"))
+    val group = uri.take(uri.lastIndexOf("/"))
+    
+    log.debug("Looking up Marathon application: " + url)
+    log.debug("Group ID: " + group)
+    
+    client.url(url).get map { response =>
+      response.status match {
+        case 404 => throw new ResourceNotFoundException(response.body)
+        case 200 => {
+          val xformApp = (response.json \ "app").asOpt[JsObject] flatMap {
+            MarathonClient.filterXformAppsByGroup(group)
+          }
+          xformApp getOrElse {
+            throw new RuntimeException("could not extract/transform app from Marathon REST response")
+          }
+        }
+        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+      }
+    }
+  }
+  
   /**
     * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
     * @param fqon fully-qualified org name
@@ -86,8 +111,8 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   /**
-    *Returns the raw json from Marathon, but transformed to remove the org structure
-    **/
+   * Returns the raw json from Marathon, but transformed to remove the org structure
+   */
   def getApplicationInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String, appId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
@@ -232,7 +257,7 @@ case object MarathonClient {
       case _ => None
     }
   }
-
+  
   def filterXformAppsByGroup(groupId: String)(app: JsObject): Option[JsObject] = {
     (app \ "id").asOpt[String] match {
       case Some(id) if id.startsWith(groupId) =>
@@ -246,7 +271,7 @@ case object MarathonClient {
       case _ => None
     }
   }
-
+  
   def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
           service <- (marApp \ "id").asOpt[String]
