@@ -1,10 +1,12 @@
 package com.galacticfog.gestalt.meta.api
 
 
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
+import controllers.util.db.ConnectionManager
 
 import org.specs2.mutable._
 import org.specs2.specification._
@@ -17,14 +19,30 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 
-class ResourceSpec extends Specification {
+class ResourceSpec extends Specification with ResourceScope with BeforeAll {
 
   
   stopOnFail
   sequential
-  
-  controllers.util.db.EnvConfig.getConnection()
-  
+
+  lazy val rootOrgId = UUID.randomUUID()
+  lazy val adminUserId = UUID.randomUUID()
+  lazy val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+
+  override def beforeAll(): Unit = {
+    controllers.util.db.EnvConfig.getConnection()
+
+    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
+
+    for {
+      a <- db.clean
+      b <- db.migrate
+      c <- db.loadReferenceData
+      d <- db.loadSystemTypes
+      e <- db.initialize("root")
+    } yield e
+  }
+
   "typeOrElse" should {
     
     "return the ResourceType ID for the given resource API name" in {
@@ -135,6 +153,11 @@ class ResourceSpec extends Specification {
   
   
   "findFqon" should {
+
+    "create an Org" in {
+      val gfOrg = createInstance(ResourceIds.Org, "galacticfog", id = UUID.randomUUID(), owner = owner, org = rootOrgId, properties = Some(Map("fqon" -> "galacticfog")), parent = Some(rootOrgId))
+      gfOrg must beSuccessfulTry
+    }
     
     "find an Org when given a valid FQON" in {
       val org = Resource.findFqon(Map(Resource.Fqon -> "galacticfog"))
