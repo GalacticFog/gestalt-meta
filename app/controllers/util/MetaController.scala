@@ -1,6 +1,8 @@
 package controllers.util
 
 
+import play.api.http.HeaderNames
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api._
@@ -58,13 +60,18 @@ trait MetaController extends SecureController with SecurityResources {
   protected val connection = Session.connection
 
   /**
-   * Get the base URL for this Meta instance
-   */
-  def META_URL[T](implicit request: SecuredRequest[T]) = { 
-    val protocol = if (request.secure) "https" else "http"
-    Some( "%s://%s".format(protocol, request.host) )
+    * Get the base URL for this Meta instance
+    */
+  def META_URL(implicit requestHeader: RequestHeader) = {
+    val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
+      if (requestHeader.secure) "https" else "http"
+    }).toLowerCase
+    val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
+    Some(
+      "%s://%s".format(protocol, host)
+    )
   }
-  
+
   /**
    * Render a single GestaltResourceInstance to JSON
    */

@@ -1,6 +1,10 @@
 package controllers.util
 
 
+import java.util.UUID
+
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import controllers.util.db.ConnectionManager
 import org.specs2.mutable._
 import org.specs2.specification._
 import org.specs2.specification.Scope
@@ -14,11 +18,28 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 
+import scala.util.Success
 
-class EnvironmentVarsSpec extends Specification with ResourceScope {
 
-  controllers.util.db.EnvConfig.getConnection()
-  
+class EnvironmentVarsSpec extends Specification with ResourceScope with BeforeAll {
+
+  override def beforeAll(): Unit = {
+    controllers.util.db.EnvConfig.getConnection()
+
+    val rootOrgId = UUID.randomUUID()
+    val adminUserId = UUID.randomUUID()
+    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
+
+    for {
+      a <- db.clean
+      b <- db.migrate
+      c <- db.loadReferenceData
+      d <- db.loadSystemTypes
+      e <- db.initialize("root")
+    } yield e
+  }
+
   "safeAdd" should {
     
     "add the given key/value to the map if it does not already exist." in {
@@ -83,7 +104,7 @@ class EnvironmentVarsSpec extends Specification with ResourceScope {
   "get" should {
     
     "get the merged Environment Variables for the given resources" in {
-      val org = Resource.fromPath("galacticfog")
+      val org = Resource.fromPath("root")
       org must beSome
       
       val (wid,eid) = createWorkspaceEnvironment(org.get.id,
@@ -100,5 +121,5 @@ class EnvironmentVarsSpec extends Specification with ResourceScope {
       eenv.get("VAR2") must beSome("environment")
     }
   }
-  
+
 }

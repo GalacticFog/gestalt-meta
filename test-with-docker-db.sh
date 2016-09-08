@@ -62,6 +62,7 @@ export RABBIT_EXCHANGE="policy-exchange"
 
 echo ""
 echo "Running tests!"
+#sbt "testOnly com.galacticfog.gestalt.meta.api.ResourceSpec"  || true
 sbt test || true
 
 exit 0
