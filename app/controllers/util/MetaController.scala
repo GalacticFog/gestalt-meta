@@ -68,14 +68,9 @@ trait MetaController extends SecureController with SecurityResources {
     val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
       if (requestHeader.secure) "https" else "http"
     }).toLowerCase
-    val port = requestHeader.headers.get(HeaderNames.X_FORWARDED_PORT) flatMap { _ match {
-      case "80" if protocol == "http" => None
-      case "443" if protocol == "https" => None
-      case p => Some(p)
-    } }
     val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
     Some(
-      "%s://%s%s".format(protocol, host, port map (":" + _) getOrElse "")
+      "%s://%s".format(protocol, host)
     )
   }
 

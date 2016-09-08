@@ -486,27 +486,6 @@ class ResourceSpec extends PlaySpecification with ResourceScope with BeforeAll {
       ) must beSome("http://meta.company.co")
     }
 
-    "include port if provided by proxy header" in new WithApplication {
-      testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "14374")
-      ) must beSome("http://meta.company.co:14374")
-    }
-
-    "neglect default port even if provided by proxy header" in new WithApplication {
-      testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "80")
-      ) must beSome("http://meta.company.co")
-      testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http", X_FORWARDED_PORT -> "80")
-      ) must beSome("http://meta.company.co")
-      testController.META_URL(
-        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PORT -> "443")
-      ) must beSome("https://meta.company.co")
-      testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https", X_FORWARDED_PORT -> "443")
-      ) must beSome("https://meta.company.co")
-    }
-
   }
   
 }
