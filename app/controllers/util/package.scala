@@ -36,6 +36,8 @@ import java.util.UUID
 
 package object util {
   
+  type QueryString = Map[String,Seq[String]]  
+  
   protected[controllers] object Errors {
     def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
@@ -58,7 +60,7 @@ package object util {
   def UnauthorizedResult(message: String) = Unauthorized(new UnauthorizedException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
-def HandleExceptions(e: Throwable) = {
+  def HandleExceptions(e: Throwable) = {
     log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
@@ -126,6 +128,37 @@ def HandleExceptions(e: Throwable) = {
       }
     }
   }
+  
+  
+  /*
+   * TODO: This only handles true | false. Extend to allow for expansion
+   * of individual resource attributes and properties.
+   */
+  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains("expand")) false
+    else {
+      val fp = qs("expand")
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of 'expand' parameter must be true or false. found: $fp")
+      }
+    }
+  }  
+  
+  def booleanParam(paramName: String, qs: Map[String,Seq[String]]): Boolean = {
+    if (!qs.contains(paramName)) false
+    else {
+      val fp = qs(paramName)
+      Try {
+        fp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of '$paramName' parameter must be true or false. found: $fp")
+      }
+    }
+  }  
   
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {

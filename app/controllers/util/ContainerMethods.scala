@@ -30,7 +30,7 @@ import play.api.libs.json._
 import play.api.libs.ws.WS
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.laser._
-import play.api.{ Logger => log }
+import play.api.Logger
 import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.api.output._
@@ -48,25 +48,32 @@ import controllers.MarathonController
 
 
 object ContainerMethods {
-
+  
+  private val log = Logger(this.getClass)
+  
   /**
    * Make a best effort to get updated stats from the Marathon provider and to update the resource with them  
    */
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
-    
-    Resource.fromPath(path.path) map { metaContainer =>
-    
-      val providerId  = getProviderId(metaContainer.properties.get("provider")) getOrElse {
+    Resource.fromPath(path.path) map transformMetaContainer
+  }
+  
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+    val rs = Resource.listFromPath(path.path)
+    if (getExpandParam(qs)) rs map transformMetaContainer else rs
+  }
+  
+  private[util] def transformMetaContainer(c: GestaltResourceInstance) = {
+      val providerId  = getProviderId(c.properties.get("provider")) getOrElse {
         throw new RuntimeException(s"Could not parse provider ID from Meta Container.")
       }
       val provider    = MarathonController.marathonProvider(providerId)
       val client      = MarathonController.marathonClient(provider)
-      val marathonId  = metaContainer.properties.get("external_id")
+      val marathonId  = c.properties.get("external_id")
       val application = Await.result(client.getApplication_marathon_v3(marathonId)(global), 5 seconds)
       val stats       = MarathonClient.marathon2Container(application)
       
-      updateWithStats(metaContainer, stats)
-    }
+      updateWithStats(c, stats)
   }
   
   private[util] def getProviderId(jstring: String): Option[UUID] = {    

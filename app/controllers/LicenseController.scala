@@ -21,6 +21,7 @@ import controllers.util.NotFoundResult
 import play.api.{ Logger => log }
 import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
+import controllers.util.getExpandParam
 
 object LicenseController extends Authorization {
   
