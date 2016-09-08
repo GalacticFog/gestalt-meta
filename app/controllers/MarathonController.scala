@@ -27,7 +27,7 @@ import controllers.util._
 import play.api.Play.current
 import play.api.libs.json._
 import play.api.libs.ws.WS
-import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.laser._
 import play.api.{ Logger => log }
 import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
@@ -168,9 +168,14 @@ object MarathonController extends Authorization {
                 if localEid == appId.stripPrefix("/")
               } yield testApp
             }
-            if (cons.size > 1) log.warn(s"found multiple container with the same external id a single provider (${providerId}); this represents a bug.")
+            if (cons.size > 1) { 
+              log.warn(s"found multiple container with the same external id a single provider (${providerId}); this represents a bug.")
+            }
             cons.headOption
-          } getOrElse(throw new ResourceNotFoundException(s"cannot find container with id ${appId} in environment ${envId}"))
+          } getOrElse {
+            throw new ResourceNotFoundException(s"cannot find container with id ${appId} in environment ${envId}")
+          }
+          
           provider = MarathonController.marathonProvider(providerId)
           client = MarathonController.marathonClient(provider)
           marConTry <- futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
@@ -178,6 +183,31 @@ object MarathonController extends Authorization {
           outputMetaContainer = updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
           outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not cover meta container to marathon container"))
         } yield Ok(Json.obj("app" -> outputMarathonContainer))
+    }
+  }
+
+  import com.galacticfog.gestalt.meta.api.{Resource,ResourcePath}
+  
+  def getProviderId(jstring: String): Option[UUID] = {    
+    JsonUtil.getJsonField(Json.parse(jstring), "id") map { _.as[UUID] }
+  }
+  
+  /**
+   * Make a best effort to get updated stats from the Marathon provider and to update the resource with them  
+   */
+  def containerStatus(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+    
+    Resource.fromPath(path.path) map { metaContainer =>
+    
+      val providerId = getProviderId(metaContainer.properties.get("providerId")) getOrElse {
+        throw new RuntimeException(s"Could not parse provider ID from Meta Container.")
+      }
+      val provider = MarathonController.marathonProvider(providerId)
+      val client   = MarathonController.marathonClient(provider)
+      val application = Await.result(client.getApplication_marathon_v3(path.path)(global), 5 seconds)
+      val stats = MarathonClient.marathon2Container(application)
+      
+      updateMetaContainerWithStats(metaContainer, stats, user.account.id)
     }
   }
 
@@ -299,7 +329,6 @@ object MarathonController extends Authorization {
       }
     }
   }
-  
   
   protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
     val newStats = stats match {
@@ -476,7 +505,7 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
     props map { _ ++ scaleProps } orElse Option(Map(scaleProps:_*))
   }
 
-      
+  
   def toMetaContainerJson(
       inputJson: JsObject, 
       containerName: String,

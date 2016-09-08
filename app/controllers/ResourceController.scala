@@ -51,7 +51,7 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    
+    ResourceIds.Container -> ContainerMethods.lookupContainer
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
@@ -99,17 +99,37 @@ object ResourceController extends Authorization {
       (implicit request: SecuredRequest[_]): Result = {
     
     Authorize(path.targetId.get, action) {
-      Resource.fromPath(path.path).fold( NotFoundResult(request.uri) ) { resource =>
-        transforms.get(resource.typeId).fold {
-          Ok( RenderSingle(resource) )
+      
+      val resource = lookups.get(path.targetTypeId).fold {
+        Resource.fromPath(path.path)
+      }{
+        log.debug(s"Found custom lookup function for Resource.")
+        _(path, request.identity) 
+      }
+      
+      resource.fold(NotFoundResult(request.uri)) { res =>
+        transforms.get(res.typeId).fold {
+          Ok( RenderSingle(res) )
         }{ 
-          log.debug(s"Found transformation function for Resource: ${resource.id}")
-          _ (resource, request.identity) match {
+          log.debug(s"Found custom transformation function for Resource: ${res.id}")
+          _ (res, request.identity) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
           }
-        }
+        }          
       }
+      
+//      Resource.fromPath(path.path).fold( NotFoundResult(request.uri) ) { resource =>
+//        transforms.get(resource.typeId).fold {
+//          Ok( RenderSingle(resource) )
+//        }{ 
+//          log.debug(s"Found transformation function for Resource: ${resource.id}")
+//          _ (resource, request.identity) match {
+//            case Failure(err) => HandleExceptions(err)
+//            case Success(res) => Ok( RenderSingle(res) )
+//          }
+//        }
+//      }
     }
   }
   
@@ -228,7 +248,7 @@ object ResourceController extends Authorization {
       }
     }
   }
-  
+
   /**
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
