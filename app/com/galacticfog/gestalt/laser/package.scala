@@ -192,7 +192,7 @@ package object laser {
     val function = fmap.keys.toSeq(0)
 
     runtime.as[String] match {
-      case "csharp" => (function, "")
+      case "csharp" | "python" | "ruby" | "golang" => (function, "")
       case _        => splitEntrypoint(function)
     }
   }
