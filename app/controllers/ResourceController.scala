@@ -56,7 +56,8 @@ object ResourceController extends Authorization {
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider -> lookupSeqProviders,
-    ResourceIds.Org -> lookupSeqOrgs
+    ResourceIds.Org -> lookupSeqOrgs,
+    ResourceIds.Container -> ContainerMethods.lookupContainers
   )
   
   def FqonNotFound(fqon: String) = {
@@ -118,18 +119,6 @@ object ResourceController extends Authorization {
           }
         }          
       }
-      
-//      Resource.fromPath(path.path).fold( NotFoundResult(request.uri) ) { resource =>
-//        transforms.get(resource.typeId).fold {
-//          Ok( RenderSingle(resource) )
-//        }{ 
-//          log.debug(s"Found transformation function for Resource: ${resource.id}")
-//          _ (resource, request.identity) match {
-//            case Failure(err) => HandleExceptions(err)
-//            case Success(res) => Ok( RenderSingle(res) )
-//          }
-//        }
-//      }
     }
   }
   
@@ -146,6 +135,7 @@ object ResourceController extends Authorization {
       }
     }
   }
+  
   
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
