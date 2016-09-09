@@ -155,7 +155,12 @@ object ResourceController extends Authorization {
   }
   
   def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
-    val rs = Resource.listFromPath(path.path)
+    
+    val rs = if (Resource.isTopLevel(path.path)) {
+      val org = fqid(Resource.getFqon(path.path))
+      ResourceFactory.findChildrenOfType(org, org, ResourceIds.Entitlement)
+    } else Resource.listFromPath(path.path)
+
     if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
   }
 
