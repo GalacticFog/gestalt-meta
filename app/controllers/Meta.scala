@@ -89,11 +89,11 @@ object Meta extends Authorization {
       CreateSynchronized(parentOrg, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-
+          
           //
           // TODO: Raise error if any Entitlement create fails.
           //
-          setNewOrgEntitlements(parentOrg, res.id, user, Option(parentOrg))
+          setNewOrgEntitlements(/*parentOrg*/res.id, res.id, user, Option(parentOrg))
 
           Created(Output.renderInstance(res, META_URL))
         }

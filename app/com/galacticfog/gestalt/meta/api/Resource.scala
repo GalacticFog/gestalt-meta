@@ -130,7 +130,6 @@ object Resource {
     }
   }
   
-  
   /**
    * Find an Org by FQON
    */
@@ -186,12 +185,19 @@ object Resource {
     ResourceFactory.findChildOfType(targetTypeId, parentId, targetId)
   }
   
+  def getFqon(path: String) = {
+    components(path)(0)
+  }
+  
+  def isTopLevel(path: String) = {
+    components(path).size == 2
+  }
   
   /**
    * Parse a resource URI into a Map naming the path components.
    */
-  protected[api] def mapPathData(path: String): Map[String,String] = {
-    
+  def mapPathData(path: String): Map[String,String] = {
+    log.debug(s"mapPathData($path)")
     val cmps = { path.trim
         .stripPrefix("/")
         .stripSuffix("/")

@@ -114,7 +114,7 @@ object LaserController extends Authorization {
     }
   }
   
-  def createLambdaEndpoint(lambdaId: UUID, json: JsObject) = {
+  def createLambdaEndpoint(lambdaId: UUID, json: JsObject): Try[JsObject] = {
     log.debug(s"createLambdaEndpoint($lambdaId, <json>)")
     /*
      * To post /lambdas/:id/endpoints, caller must supply implementation.function
@@ -208,8 +208,8 @@ object LaserController extends Authorization {
       (implicit request: SecuredRequest[JsValue]): Try[Seq[GestaltResourceInstance]] = Try {
 
     /*
-     * apiendpoint.properties.implementation gives us the lambda ID and the name of the function
-     * to call on the lambda.
+     * apiendpoint.properties.implementation gives us the lambda ID and 
+     * the name of the function to call on the lambda.
      */
     val implementation = getEndpointImplementation(json).get
     val (lambda,lambdaFunction) = {
