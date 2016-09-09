@@ -69,51 +69,51 @@ object AuthorizationController extends Authorization {
   // GET
   // --------------------------------------------------------------------------
   
-  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    getEntitlementsCommon(org, ResourceIds.Org, org)
-  }
-  
-  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
-  }
-  
-  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
-  }
-  
-  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
-    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
-  }
-  
+//  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+//    val org = fqid(fqon)
+//    getEntitlementsCommon(org, ResourceIds.Org, org)
+//  }
+//  
+//  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
+//    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
+//  }
+//  
+//  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    val org = fqid(fqon)
+//    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
+//  }
+//  
+//  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
+//    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
+//  }
+//  
 
-  /**
-   * DELETE /{fqon}/entitlements/{id}
-   */
-  def deleteEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    deleteEntitlementCommon(org, org, id)
-  }
-  
-  /**
-   * DELETE /{fqon}/{resource-type}/entitlements/{id}
-   */
-  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    deleteEntitlementCommon(fqid(fqon), resourceId, id)
-  }
-  
-  private [controllers] def deleteEntitlementCommon(org: UUID, parent: UUID, id: UUID) = {
-    ResourceFactory.findChildOfType(ResourceIds.Entitlement, parent, id) match {
-      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
-      case Some(res) => {
-        ResourceFactory.hardDeleteResource(ResourceIds.Entitlement, id) match {
-          case Success(_) => NoContent
-          case Failure(e) => HandleExceptions(e)
-        }
-      }
-    }
-  }
+//  /**
+//   * DELETE /{fqon}/entitlements/{id}
+//   */
+//  def deleteEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+//    val org = fqid(fqon)
+//    deleteEntitlementCommon(org, org, id)
+//  }
+//  
+//  /**
+//   * DELETE /{fqon}/{resource-type}/entitlements/{id}
+//   */
+//  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+//    deleteEntitlementCommon(fqid(fqon), resourceId, id)
+//  }
+//  
+//  private [controllers] def deleteEntitlementCommon(org: UUID, parent: UUID, id: UUID) = {
+//    ResourceFactory.findChildOfType(ResourceIds.Entitlement, parent, id) match {
+//      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
+//      case Some(res) => {
+//        ResourceFactory.hardDeleteResource(ResourceIds.Entitlement, id) match {
+//          case Success(_) => NoContent
+//          case Failure(e) => HandleExceptions(e)
+//        }
+//      }
+//    }
+//  }
   
   def patchEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ???
@@ -126,11 +126,11 @@ object AuthorizationController extends Authorization {
   }
   
   
-  def handleEntitlementExpansion(org: UUID)(entitlements: Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
-    if (getExpandParam(request.queryString)) {
-      Ok(Json.toJson(transformEntitlements(org)(entitlements)))
-    } else Ok(Output.renderLinks(entitlements, META_URL))
-  }
+//  def handleEntitlementExpansion(org: UUID)(entitlements: Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+//    if (getExpandParam(request.queryString)) {
+//      Ok(Json.toJson(transformEntitlements(org)(entitlements)))
+//    } else Ok(Output.renderLinks(entitlements, META_URL))
+//  }
   
   
   def validateEntitlementUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = {
