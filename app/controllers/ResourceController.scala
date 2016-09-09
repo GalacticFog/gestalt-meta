@@ -51,13 +51,15 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container -> ContainerMethods.lookupContainer
+    ResourceIds.Container   -> ContainerMethods.lookupContainer,
+    ResourceIds.Entitlement -> lookupEntitlement
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
-    ResourceIds.Provider -> lookupSeqProviders,
-    ResourceIds.Org -> lookupSeqOrgs,
-    ResourceIds.Container -> ContainerMethods.lookupContainers
+    ResourceIds.Provider    -> lookupSeqProviders,
+    ResourceIds.Org         -> lookupSeqOrgs,
+    ResourceIds.Container   -> ContainerMethods.lookupContainers,
+    ResourceIds.Entitlement -> lookupSeqEntitlements
   )
   
   def FqonNotFound(fqon: String) = {
@@ -148,6 +150,15 @@ object ResourceController extends Authorization {
     }
   }
   
+  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+    Resource.fromPath(path.path) map { transformEntitlement(_, account).get }
+  }
+  
+  def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+    val rs = Resource.listFromPath(path.path)
+    if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
+  }
+
   /*
    * Type-Based Lookup Functions
    */ 
@@ -196,6 +207,25 @@ object ResourceController extends Authorization {
       rs filter { _.typeId == typeId }
     } else rs
   }  
+  
+  import com.galacticfog.gestalt.meta.auth._
+  
+  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+    val props  = EntitlementProps.make(res)
+    val output = props.identities map { ids =>
+      
+      // Get expanded resource for each UUID in properties.identities
+      val identities = ResourceFactory.findAllIn(ids)
+      
+      // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
+      val idJson = Output.renderLinks(identities, /*baseUrl*/None)
+      
+      res.copy(properties = {
+        Option(res.properties.get ++ Map("identities" -> Json.stringify(idJson)))
+      })
+    }
+    if (output.isDefined) output.get else res
+  }
   
   private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
