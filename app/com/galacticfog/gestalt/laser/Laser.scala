@@ -152,7 +152,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def deleteLambda(id: String): Try[ApiResponse] = {
-    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204))
+    lambdaClient.delete(s"/lambdas/${id}", Seq(200,204,404))
   }
 
   private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
