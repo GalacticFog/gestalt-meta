@@ -51,12 +51,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   def deleteApi(id: String) = {
     gatewayClient.delete(s"/apis/$id", Seq(200,204,404))
   }
-  
-  def deleteApis(ids: Seq[String]) = {
-    ids map { i => deleteApi(i) }
-  }
-  
-  
+
   // --------------------------------------------------------------------------
   // ENDPOINTS
   // --------------------------------------------------------------------------  
@@ -95,11 +90,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     log.debug("Laser::createProvider(...):\n" + Json.prettyPrint(json))
     gatewayClient.post("/providers", json, Seq(200,201,202))
   }
-  
-  def deleteProvider(id: String): Try[ApiResponse] = {
-    gatewayClient.delete(s"/providers/${id}", Seq(200,204,404))
-  }
-  
+
   // --------------------------------------------------------------------------
   // LOCATIONS
   // --------------------------------------------------------------------------  
@@ -163,11 +154,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   def deleteLambda(id: String): Try[ApiResponse] = {
     lambdaClient.delete(s"/lambdas/${id}", Seq(200,204))
   }
-  
-  def deleteLambdas(ids: Seq[String]) = {
-    ids map { i => deleteLambda(i) }
-  }  
-  
+
   private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
     client.get(resource, expected) match {
       case Failure(err) => throw err
