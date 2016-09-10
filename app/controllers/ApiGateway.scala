@@ -56,17 +56,13 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 object ApiGateway {
 
  /*
-   * 
+   *
    * TODO: Move classess and formatters to package
    * Move rest of gateway provider code to some utility class
    * Maybe an ApiGatewayService object makes sense???
-   * 
+   *
    */
-  def client(gatewayUrl: String) = {
-    val gateway = HostConfig.make(new URL(gatewayUrl))
-    new GatewayClient(gateway, Option(EnvConfig.securityKey), Option(EnvConfig.securitySecret))
-  }    
-  
+
   case class GatewayInputLocation(name: String, enabled: Boolean = true)
   case class GatewayInputAuth(scheme: String, username: String, password: String)
   case class GatewayInputConfig(auth: GatewayInputAuth, url: String, extra: Option[String] = None)
@@ -79,7 +75,6 @@ object ApiGateway {
   implicit lazy val gatewayInputProperties = Json.format[GatewayInputProperties]
   implicit lazy val gatewayInput = Json.format[GatewayInput]
 
-  
   import java.net.URL
   import java.net.MalformedURLException
 
