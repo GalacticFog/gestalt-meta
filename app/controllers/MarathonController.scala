@@ -799,11 +799,4 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
   
   private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
 
-  private object ContainerEvents {
-    val Migrate = "container.migrate"
-    val PreCreate = "container.precreate"
-    val Create = "container.create"
-    val PostCreate = "container.postcreate"
-    val Scale = "container.scale"
-  }  
 }
