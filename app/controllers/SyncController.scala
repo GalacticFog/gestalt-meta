@@ -111,8 +111,7 @@ object SyncController extends Authorization {
           /*
            * TODO: Raise error if any of the Entitlements fail Create.
            */
-          //setNewOrgEntitlements(org.id, account)
-          setNewOrgEntitlements(/*parent*/org.id, org.id, account, Option(parent))
+          setNewOrgEntitlements(org.id, org.id, account, Option(parent))
         } 
       }
     }

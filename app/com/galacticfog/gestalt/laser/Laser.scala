@@ -61,6 +61,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def createEndpoint(endpoint: LaserEndpoint, apiId: String) = {
     val json = Json.toJson(endpoint)
+    log.debug("Creating ApiEndpoint in Laser:\n" + Json.prettyPrint(json))
     gatewayClient.post(s"/apis/$apiId/endpoints", json, Seq(200,201,202))
   }
   

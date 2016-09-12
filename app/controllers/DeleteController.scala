@@ -89,7 +89,7 @@ object DeleteController extends Authorization {
     Resource.fromPath( p ).fold {
       NotFoundResult(request.uri)
     } { resource =>
-      
+
       val owner      = findResourceParent(resource.id)
       val operations = deleteOps(resource.typeId)
       val options    = requestOps(request.identity, owner.id, resource)
@@ -110,7 +110,12 @@ object DeleteController extends Authorization {
   }
   
   def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    Security.deleteAccount(res.id, account) map ( _ => () )
+    //Security.deleteAccount(res.id, account) map ( _ => () )
+    val result = Security.deleteAccount(res.id, account) 
+    
+    //log.debug("Security.deleteAccount() result : " + result)
+    
+    result map ( _ => () )
   }  
 
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
