@@ -45,6 +45,7 @@ object Actions {
         ResourceIds.RuleEvent -> Rule,
         ResourceIds.RuleLimit -> Rule,
         ResourceIds.Domain -> Domain,
+        ResourceIds.Api -> Api,
         ResourceIds.ApiEndpoint  -> ApiEndpoint,
         ResourceIds.ResourceType -> ResourceType,
         ResourceIds.TypeProperty -> TypeProperty)  
@@ -59,6 +60,7 @@ object Actions {
     case ResourceIds.Container => "container"
     case ResourceIds.License => "license"
     case ResourceIds.Domain => "domain"
+    case ResourceIds.Api => "api"
     case ResourceIds.ApiEndpoint => "apiendpoint"
     case ResourceIds.ResourceType => "resourcetype"
     case ResourceIds.TypeProperty => "typeproperties"
@@ -92,6 +94,7 @@ object Actions {
   object ApiEndpoint extends ResourceActions("apiendpoint")
   object ResourceType extends ResourceActions("resourcetype")
   object TypeProperty extends ResourceActions("typeproperty")
+  object Api extends ResourceActions("api")
   
   object Container extends ResourceActions("container",
       additionalActions = Map("migrate" -> "migrate", "scale" -> "scale")) {

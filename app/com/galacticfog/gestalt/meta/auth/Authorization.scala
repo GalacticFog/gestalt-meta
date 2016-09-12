@@ -47,21 +47,22 @@ trait Authorization extends MetaController {
     }
   }  
   
-  val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
-  val UserActions        = (ResourceIds.User         -> ACTIONS_CRUD)
-  val GroupActions       = (ResourceIds.Group        -> ACTIONS_CRUD) 
-  val OrgActions         = (ResourceIds.Org          -> ACTIONS_CRUD)
-  val WorkspaceActions   = (ResourceIds.Workspace    -> ACTIONS_CRUD)  
-  val EnvironmentActions = (ResourceIds.Environment  -> ACTIONS_CRUD)
-  val PolicyActions      = (ResourceIds.Policy       -> ACTIONS_CRUD)  
-  val ProviderActions    = (ResourceIds.Provider     -> ACTIONS_CRUD)
-  val EntitlementActions = (ResourceIds.Entitlement  -> ACTIONS_CRUD)  
-  val DomainActions      = (ResourceIds.Domain       -> ACTIONS_CRUD)
-  val ApiEndpointActions = (ResourceIds.ApiEndpoint  -> ACTIONS_CRUD)
+  val ACTIONS_CRUD        = Seq("create", "view", "update", "delete")
+  val UserActions         = (ResourceIds.User         -> ACTIONS_CRUD)
+  val GroupActions        = (ResourceIds.Group        -> ACTIONS_CRUD) 
+  val OrgActions          = (ResourceIds.Org          -> ACTIONS_CRUD)
+  val WorkspaceActions    = (ResourceIds.Workspace    -> ACTIONS_CRUD)  
+  val EnvironmentActions  = (ResourceIds.Environment  -> ACTIONS_CRUD)
+  val PolicyActions       = (ResourceIds.Policy       -> ACTIONS_CRUD)  
+  val ProviderActions     = (ResourceIds.Provider     -> ACTIONS_CRUD)
+  val EntitlementActions  = (ResourceIds.Entitlement  -> ACTIONS_CRUD)  
+  val DomainActions       = (ResourceIds.Domain       -> ACTIONS_CRUD)
+  val ApiActions          = (ResourceIds.Api          -> Seq("view"))
+  val ApiEndpointActions  = (ResourceIds.ApiEndpoint  -> ACTIONS_CRUD)
   val ResourceTypeActions = (ResourceIds.ResourceType -> ACTIONS_CRUD)
   val TypePropertyActions = (ResourceIds.TypeProperty -> ACTIONS_CRUD)  
-  val ContainerActions   = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
-  val LambdaActions      = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
+  val ContainerActions    = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
+  val LambdaActions       = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
   
   
   def setNewResourceEntitlements(
@@ -83,17 +84,26 @@ trait Authorization extends MetaController {
   
   def setNewOrgEntitlements(owningOrg: UUID, org: UUID, user: AuthAccountWithCreds, parent: Option[UUID] = None) = {
     val grants = Map(
-        OrgActions, WorkspaceActions, UserActions, GroupActions, ProviderActions, PolicyActions, ResourceTypeActions, TypePropertyActions)
+        OrgActions, 
+        WorkspaceActions, 
+        UserActions, 
+        GroupActions, 
+        ProviderActions, 
+        PolicyActions, 
+        ResourceTypeActions, 
+        TypePropertyActions,
+        ApiActions)
     setNewResourceEntitlements(owningOrg, ResourceIds.Org, org, user, grants, parent)
   }
   
   def setNewWorkspaceEntitlements(org: UUID, workspace: UUID, user: AuthAccountWithCreds) = {
-    val grants = Map(WorkspaceActions, EnvironmentActions, PolicyActions, ProviderActions, DomainActions)
+    val grants = Map(
+        WorkspaceActions, EnvironmentActions, PolicyActions, ProviderActions, DomainActions, ApiActions)
     setNewResourceEntitlements(org, ResourceIds.Workspace, workspace, user, grants, Option(org))
   }
   
   def setNewEnvironmentEntitlements(org: UUID, env: UUID, user: AuthAccountWithCreds, parent: UUID) = {
-    val grants = Map(EnvironmentActions,LambdaActions,ContainerActions,PolicyActions)
+    val grants = Map(EnvironmentActions, LambdaActions, ContainerActions, PolicyActions, ApiActions)
     setNewResourceEntitlements(org, ResourceIds.Environment, env, user, grants, Option(parent))
   }
   

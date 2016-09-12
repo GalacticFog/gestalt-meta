@@ -44,7 +44,8 @@ trait SecurityResources {
     Try {
       val g = group.asInstanceOf[GestaltGroup]
       ResourceFactory.create(ResourceIds.Group, creator)(
-        fromSecurityResource(g, ResourceIds.Group, owningOrg, creator, properties, description)).get
+        fromSecurityResource(g, ResourceIds.Group, owningOrg, creator, properties, description),
+        Option(owningOrg)).get
     }
   }
   
@@ -53,7 +54,8 @@ trait SecurityResources {
     Try {
       val a = account.asInstanceOf[GestaltAccount]
       ResourceFactory.create(ResourceIds.User, creator)(
-          fromSecurityResource(a, ResourceIds.User, owningOrg, creator, properties, description)).get
+          fromSecurityResource(a, ResourceIds.User, owningOrg, creator, properties, description),
+          Option(owningOrg)).get
     }
   }
   

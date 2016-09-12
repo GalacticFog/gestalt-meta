@@ -93,7 +93,7 @@ object Meta extends Authorization {
           //
           // TODO: Raise error if any Entitlement create fails.
           //
-          setNewOrgEntitlements(/*parentOrg*/res.id, res.id, user, Option(parentOrg))
+          setNewOrgEntitlements(res.id, res.id, user, Option(parentOrg))
 
           Created(Output.renderInstance(res, META_URL))
         }
@@ -134,7 +134,7 @@ object Meta extends Authorization {
     }
   }
   
-
+  
   def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     
     Authorize(org, Actions.Group.Create, request.identity) {
@@ -143,6 +143,10 @@ object Meta extends Authorization {
           Security.createGroup, createNewMetaGroup[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
+          /*
+           * TODO: f the group was created with a users array, add the users!
+           * val users = res.properties.get.get("users")
+           */
           val user = request.identity
           Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
             generateEntitlements(
@@ -155,7 +159,7 @@ object Meta extends Authorization {
     }
   }
   
-
+  
   /**
    * 
    * Add one or more users to a group.
@@ -183,16 +187,16 @@ object Meta extends Authorization {
       }
     }
     
-    println("Attempting to add following users to group: " + uids)
+    log.debug("Attempting to add following users to group: " + uids)
     
     uids match {
+      case Failure(err) => HandleExceptions(err)
       case Success(ids) => {
         Security.addAccountsToGroup(group, ids) match {
           case Success(users) => Ok(Json.toJson(users))
           case Failure(errors) => HandleExceptions(errors)
         }
       }
-      case Failure(err) => HandleExceptions(err)
     }
     
   }
@@ -256,7 +260,10 @@ object Meta extends Authorization {
       
       CreateSynchronized(org, ResourceIds.User, userJson.get)(
           Security.createAccount, createNewMetaUser[JsValue]) match {
-            case Failure(err) => HandleExceptions(err)
+            case Failure(err) => {
+              log.error("Response from Security.createAccount() : " + err.getMessage)
+              HandleExceptions(err)
+            }
             case Success(res) => {
           
             val user = request.identity
