@@ -144,6 +144,11 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproper
 ###
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/health   controllers.InfoController.healthAuthenticated(fqon: String) 
 
+
+
+### Special delete used to remove a user from a group. Remove when group PATCH is fully implemented.
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.Meta.deleteGroupUsers(fqon: String, group: java.util.UUID)
+
 ############################
 # COMMON
 ############################
