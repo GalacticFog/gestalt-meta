@@ -202,7 +202,10 @@ object Meta extends Authorization {
   }
   
   
-  // Remove a user from a group
+  /* 
+   * Remove a user from a group - note if a user that is not in the group (or user that doesn't exist)
+   * is specified, no error is thrown.
+   */
   def deleteGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
     
     val qs = request.queryString
@@ -214,19 +217,19 @@ object Meta extends Authorization {
         // Make sure we actually got a value for 'id'
         val ids = {
           if (qs("id").isEmpty) throw new BadRequestException("Must provide at least one user-id")
-          else qs("id")(0).trim.split(",") map { UUID.fromString(_) }
+          else qs("id") map { UUID.fromString(_) }
         }
-        // TODO: Ensure we find all the users contained in 'ids'
         ResourceFactory.findAllIn(ResourceIds.User, ids) map { _.id }
       }
     }
 
     uids match {
       case Success(ids) => {
+        log.debug(s"Attempting to REMOVE ${ids.size} user(s) from group ($group): " + ids)
         Security.removeAccountsFromGroup(group, ids) match {
           case Success(members) => Ok(Json.toJson(members))
           case Failure(errors)  => HandleExceptions(errors)
-        }    
+        }
       }
       case Failure(err) => HandleExceptions(err)
     }
