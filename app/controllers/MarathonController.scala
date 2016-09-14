@@ -406,7 +406,7 @@ object MarathonController extends Authorization {
    * in Marathon, we can just delete it from Meta.
    */
  
-  def postMarathonApp(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
+  def createContainer(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
 
     appComponents(environment) match {
       case Failure(e) => Future { HandleExceptions(e) }

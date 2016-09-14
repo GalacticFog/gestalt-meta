@@ -14,9 +14,12 @@ import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
 
+  case class PersistentVolumeInfo(size: Int)
+
   case class Volume(
       container_path: String,
-      host_path: String,
+      host_path: Option[String],
+      persistent: Option[PersistentVolumeInfo],
       mode: String)
 
   // TODO: Marathon health checks require a port index, to specify which port the check is run against
@@ -130,19 +133,34 @@ package object marathon {
 
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
 
-  lazy val marathonVolumeReads = (
-    (__ \ "containerPath").read[String] and
-      (__ \ "hostPath").read[String] and
-      (__ \ "mode").read[String]
-    )(Volume.apply _)
+  implicit lazy val marathonVolumePersistenceFmt = Json.format[PersistentVolumeInfo]
 
-  lazy val marathonVolumeWrites = (
+  implicit lazy val marathonVolumeReads = new Reads[Volume] {
+    lazy val simpleVolumeReads = (
+      (__ \ "containerPath").read[String] and
+        (__ \ "hostPath").readNullable[String] and
+        (__ \ "persistent").readNullable[PersistentVolumeInfo] and
+        (__ \ "mode").read[String]
+      )(Volume.apply _)
+
+    override def reads(json: JsValue): JsResult[Volume] = {
+      json.validate[Volume](simpleVolumeReads) match {
+        case s @ JsSuccess(Volume(cPath, Some(hPath), None,         mode), _) => s
+        case s @ JsSuccess(Volume(cPath, None,        Some(pvInfo), mode), _) => s
+        case s @ JsSuccess(Volume(_, None,    None,    _), _) => JsError("container volume must contain one of hostPath or persistent")
+        case s @ JsSuccess(Volume(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of hostPath or persistent")
+        case e: JsError => e
+      }
+    }
+  }
+
+  implicit lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
-      (__ \ "hostPath").write[String] and
+      (__ \ "hostPath").writeNullable[String] and
+      (__ \ "persistent").writeNullable[PersistentVolumeInfo] and
       (__ \ "mode").write[String]
     )(unlift(Volume.unapply))
 
-  implicit lazy val volumeFormat = Json.format[Volume]
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
 
   implicit lazy val portMappingWrites = Json.writes[PortMapping]
@@ -222,7 +240,7 @@ package object marathon {
   implicit lazy val marathonAppWrites = (
     (__ \ "id").write[String] and
       (__ \ "acceptedResourceRoles").write[JsValue] and
-      (__ \ "args").write[Seq[String]] and
+      (__ \ "args").write[JsValue] and
       (__ \ "container").write[MarathonContainer] and
       (__ \ "cmd").write[JsValue] and
       (__ \ "cpus").write[Double] and
@@ -244,7 +262,9 @@ package object marathon {
     )(
     (a: MarathonApp) => (
       a.id, a.acceptedResourceRoles.fold[JsValue](JsNull)(Json.toJson(_)),
-      a.args.map(_.toSeq).getOrElse(Seq.empty), a.container, a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
+      a.args.map(as => JsArray(as.toSeq.map(JsString(_)))).getOrElse(if (a.cmd.isDefined) JsNull else JsArray()),
+      a.container,
+      a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
       a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
       a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
       a.mem,
