@@ -280,11 +280,6 @@ object PolicyController extends Authorization {
     }
   }
   
- 
-
-  
-
-  
   protected [controllers] def parentLink(pid: UUID, baseUri: Option[String]): Option[ResourceLink] = {
     ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
   }
@@ -308,8 +303,6 @@ object PolicyController extends Authorization {
     }
   }
 
-
-  
   /**
    * Get Rule type ID from its fully-qualified name.
    */

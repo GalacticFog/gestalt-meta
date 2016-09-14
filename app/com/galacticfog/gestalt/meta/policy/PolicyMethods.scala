@@ -76,8 +76,23 @@ case class EventMessage(
     action: String,
     args: EventArgs) {
   
-  def toJson() = Json.toJson(this)(EventMessage.eventMessageFormat)
-  
+  def toJson() = {
+    val msg = Json.toJson(this)(EventMessage.eventMessageFormat)
+    val rul = Output.renderInstance(args.rule).as[JsObject]
+    
+    val ags = (msg \ "args").as[JsObject]
+    val m2 = msg.as[JsObject] ++ Json.obj("args" -> (ags ++ Json.obj("rule" -> rul)))
+    
+    if (args.payload.isEmpty) 
+      msg.as[JsObject] ++ Json.obj("args" -> (ags ++ Json.obj("rule" -> rul)))
+    else {
+      val pay = Output.renderInstance(args.payload.get).as[JsObject]
+      msg.as[JsObject] ++ Json.obj(
+          "args" -> (ags ++ Json.obj(
+              "rule" -> rul,
+              "payload" -> pay)))
+    } 
+  }
 }
 
 object EventMessage {

@@ -364,8 +364,9 @@ object Meta extends Authorization {
       val options = RequestOptions(user, 
           authTarget = Option(org), 
           policyOwner = Option(org), 
-          policyTarget = Option(j2r(org, user, json, Option(ResourceIds.Workspace))))
-    
+          policyTarget = Option(j2r(org, user, json, Option(ResourceIds.Workspace))),
+          data = Option(Map("host" -> baseUri.get)))
+      
       SafeRequest (operations, options) Protect { maybeState =>      
         
         CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
