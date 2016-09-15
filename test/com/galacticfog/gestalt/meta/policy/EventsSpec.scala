@@ -90,7 +90,8 @@ class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope 
         policyTarget = None,
         data = Some(Map(
           "meta_url" -> metaUrl,
-          "provider_id" -> providerId
+          "provider_id" -> providerId,
+          "arbitrary" -> "value"
         ))
       )
       val hasMetaUrl = /("args") /("payload") /("meta_url" -> metaUrl)
@@ -101,6 +102,7 @@ class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope 
           val v = t.value
           result(((v \ "args" \ "payload" \ "meta_url").asOpt[String].contains(metaUrl), "contains meta_url", "does not contain meta_url"), t) and
             result(((v \ "args" \ "payload" \ "provider_id").asOpt[String].contains(providerId), "contains provider_id", "does not contain provider_id"), t) and
+            result(((v \ "args" \ "payload" \ "arbitrary").asOpt[String].contains("value"), "contains arbitrary value", "does not contain arbitrary value"), t) and
             result(((v \ "args" \ "rule" \ "name").asOpt[String].contains("some-rule"), "contains rule", "does not contain rule"), t)
         }
       })

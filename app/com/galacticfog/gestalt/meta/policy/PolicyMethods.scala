@@ -128,7 +128,7 @@ trait PolicyMethods {
     val fs = if (event.isEmpty) rs else {
       rs filter { _.properties.get("actions").contains(event.get) }
     }
-    // TODO: This is temporary. Need a strategy for multiple matching rules.
+
     if (fs.isEmpty) None else Some(fs(0))
   }
   

@@ -250,12 +250,13 @@ trait EventMethods {
     val eventJson = opts.data.fold(json) { dat =>
       val rule = (json \ "args" \ "rule").as[JsObject]
       val payload = (json \ "args" \ "payload").as[JsObject]
-      val p1 = if (dat.contains("meta_url"))  payload ++ Json.obj("meta_url" -> dat("meta_url")) else payload
-      val p2 = if (dat.contains("provider_id"))     p1 ++ Json.obj("provider_id" -> dat("provider_id")) else p1
+      val payloadPlus = dat.foldLeft[JsObject](payload)(
+        (p, kv) => p ++ Json.obj(kv._1 -> kv._2)
+      )
       json ++ Json.obj(
         "args" -> Json.obj(
           "rule" -> rule,
-          "payload" -> p2
+          "payload" -> payloadPlus
         )
       )
     }

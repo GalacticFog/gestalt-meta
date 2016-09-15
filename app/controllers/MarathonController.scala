@@ -604,8 +604,10 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
         policyOwner = Option(envId), 
         policyTarget = Option(container),
         data = Option(Map(
-            "meta_url" -> META_URL.get,
-            "provider_id" -> providerQueryParam(request.queryString).get.toString)))
+          "fqon" -> fqon,
+          "environment_id" -> envId.toString,
+          "meta_url" -> META_URL.get,
+          "provider_id" -> providerQueryParam(request.queryString).get.toString)))
     
 //    def MigrateRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
 //      SafeRequest(operations, options)
