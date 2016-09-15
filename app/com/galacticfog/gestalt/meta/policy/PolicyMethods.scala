@@ -71,7 +71,7 @@ case class EventMessage(
     id: UUID,
     identity: UUID,
     timestamp: DateTime,
-    resource: String,
+    /*resource: String,*/
     event: String,
     action: String,
     args: EventArgs) {
@@ -102,14 +102,14 @@ object EventMessage {
   def make(
     id: UUID,
     identity: UUID,
-    resource: String,
+    /*resource: String,*/
     event: String,
     action: String,
     rule: GestaltResourceInstance,
     payload: Option[GestaltResourceInstance]) = {
     
     EventMessage(
-        id, identity, DateTime.now, resource, event, action, 
+        id, identity, DateTime.now, /*resource,*/ event, action, 
         EventArgs(rule, payload))
   }
   

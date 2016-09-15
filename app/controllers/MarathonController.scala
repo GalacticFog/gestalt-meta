@@ -582,34 +582,95 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
       }
     }
   }
-
+  
   
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
-
-    val updated = for {
-      rule         <- Try(effectiveEventRules(envId, Some("container.migrate")) getOrElse {
-                        throw new ConflictException("There are no migration rules in scope. No changes made.")})
-
-      provider     <- providerQueryParam(request.queryString)
-      
-      environment  <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
-                        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
-      
-      container    <- getMigrationContainer(id)
-      
-      message      <- PolicyEvent.make("container.migrate", environment, container, rule, provider, META_URL.get)
-      
-      publish      <- publishEvent(message)
-      
-      newcontainer <- ResourceFactory.update(upsertProperties(container, "status" -> "MIGRATING"), request.identity.account.id)
-      
-    } yield newcontainer
-
-    updated match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+   
+//    val container = ResourceFactory.findChildOfType(ResourceIds.Container, envId, id) getOrElse {
+//      throw new ResourceNotFoundException(s"Container with ID $id not found in Environment $envId")
+//    }
+    
+    val container = getMigrationContainer(envId, id)
+    val user   = request.identity
+    val action = "container.migrate"
+    val operations = List(
+        controllers.util.Authorize(action),
+        controllers.util.PolicyCheck(action),
+        controllers.util.EventsPre(action))
+        
+    val options = RequestOptions(user, 
+        authTarget = Option(envId), 
+        policyOwner = Option(envId), 
+        policyTarget = Option(container),
+        data = Option(Map(
+            "host" -> META_URL.get,
+            "provider" -> providerQueryParam(request.queryString).get.toString)))
+    
+//    def MigrateRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
+//      SafeRequest(operations, options)
+//    }
+    
+    SafeRequest (operations, options) Protect { maybeState =>    
+      ResourceFactory.update(
+          upsertProperties(container, "status" -> "MIGRATING"), 
+          user.account.id) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+      }
     }
+
+    
+//    val updated = for {
+//      rule         <- Try(effectiveEventRules(envId, Some("container.migrate")) getOrElse {
+//                        throw new ConflictException("There are no migration rules in scope. No changes made.")})
+//      
+//      provider     <- providerQueryParam(request.queryString)
+//      
+//      environment  <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
+//                        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
+//      
+//      container    <- getMigrationContainer(id)
+//      
+//      message      <- PolicyEvent.make("container.migrate", environment, container, rule, provider, META_URL.get)
+//      
+//      publish      <- publishEvent(message)
+//      
+//      newcontainer <- ResourceFactory.update(upsertProperties(container, "status" -> "MIGRATING"), request.identity.account.id)
+//      
+//    } yield newcontainer
+//    
+//    updated match {
+//      case Failure(e) => HandleExceptions(e)
+//      case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+//    }
   }
+  
+//  def migrateContainer(fqon: String, envId: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
+//    
+//    val updated = for {
+//      rule         <- Try(effectiveEventRules(envId, Some("container.migrate")) getOrElse {
+//                        throw new ConflictException("There are no migration rules in scope. No changes made.")})
+//      
+//      provider     <- providerQueryParam(request.queryString)
+//      
+//      environment  <- Try(ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
+//                        throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Environment, envId))})
+//      
+//      container    <- getMigrationContainer(id)
+//      
+//      message      <- PolicyEvent.make("container.migrate", environment, container, rule, provider, META_URL.get)
+//      
+//      publish      <- publishEvent(message)
+//      
+//      newcontainer <- ResourceFactory.update(upsertProperties(container, "status" -> "MIGRATING"), request.identity.account.id)
+//      
+//    } yield newcontainer
+//    
+//    updated match {
+//      case Failure(e) => HandleExceptions(e)
+//      case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+//    }
+//  }
   
   def hardDeleteContainerFqon(fqon: String, environment: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
 
@@ -641,7 +702,7 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
    * Uniqueness is determined by provider URL.
    */
   protected [controllers] def findAllMarathonProvidersInScope(environment: UUID): Map[String,GestaltResourceInstance] = {
-
+    
     def go(ps: Seq[GestaltResourceInstance], acc: Map[String, GestaltResourceInstance]): Map[String,GestaltResourceInstance] = {
       ps match {
         case Nil => acc
@@ -656,8 +717,8 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
       p.typeId == ResourceIds.MarathonProvider
     }
     go(providers, Map())
-  }  
-
+  }
+  
   /**
    * Lookup and validate a Container for migration. Verifies that the container exists
    * and that it is in a state where migration is possible.
@@ -665,17 +726,52 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
    * @param  id the UUID of the Container to migrate.
    * @return    the requested Container as Try[GestaltResourceInstance]
    */
-  protected [controllers] def getMigrationContainer(id: UUID) = Try {
-    ResourceFactory.findById(ResourceIds.Container, id) match {
-      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
-      case Some(container) => {  
-        val props = container.properties.get
-        if (props.contains("status") && props("status") == "MIGRATING") {
-          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
-        } else container
-      }
-    }    
+//  protected [controllers] def getMigrationContainer(env: UUID, id: UUID) = Try {
+//    
+////    ResourceFactory.findById(ResourceIds.Container, id) match {
+////      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
+////      case Some(container) => {  
+////        val props = container.properties.get
+////        if (props.contains("status") && props("status") == "MIGRATING") {
+////          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+////        } else container
+////      }
+////    }
+//    
+//    ResourceFactory.findChildOfType(ResourceIds.Container, env, id).fold {
+//      throw new ResourceNotFoundException(
+//          notFoundMessage(ResourceIds.Container, id))
+//    }{ container =>
+//      val props = container.properties.get
+//      if (props.contains("status") && props("status") == "MIGRATING") {
+//        throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+//      } else container
+//    }
+//  }
+
+  protected [controllers] def getMigrationContainer(env: UUID, id: UUID) = {
+    
+//    ResourceFactory.findById(ResourceIds.Container, id) match {
+//      case None => throw new ResourceNotFoundException(notFoundMessage(ResourceIds.Container, id))
+//      case Some(container) => {  
+//        val props = container.properties.get
+//        if (props.contains("status") && props("status") == "MIGRATING") {
+//          throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+//        } else container
+//      }
+//    }
+    
+    ResourceFactory.findChildOfType(ResourceIds.Container, env, id).fold {
+      throw new ResourceNotFoundException(
+          notFoundMessage(ResourceIds.Container, id))
+    }{ container =>
+      val props = container.properties.get
+      if (props.contains("status") && props("status") == "MIGRATING") {
+        throw new ConflictException(s"Container '$id' is already migrating. No changes made.")
+      } else container
+    }
   }
+  
   
   /**
    * Get all Event-Rules that are in effect for the given parent Resource.

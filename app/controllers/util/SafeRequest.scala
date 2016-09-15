@@ -217,19 +217,22 @@ trait EventMethods {
     val target = opts.policyOwner.get //opts.policyTarget.get.id
     
     findEffectiveEventRules(target, Option(eventName)) match { 
-      case None => Continue
+      case None => {
+        log.debug(s"***No events matching $eventName found.")
+        Continue
+      }
       case Some(rule) => {
         
         val event = EventMessage.make(
               id       = UUID.randomUUID, 
               identity = opts.user.account.id, 
-              resource = "http://dummy.href", // TODO: Add RequestOptions.host
+              /*resource = "http://dummy.href", // TODO: Add RequestOptions.host*/
               event    = eventName, 
               action   = actionName, 
               rule     = rule, 
               payload  = opts.policyTarget)
         
-        publishEvent(event) match {
+        publishEvent(event, opts) match {
           case Success(_) => Accepted
           case Failure(e) => Halt(e.getMessage)
         }
@@ -237,10 +240,21 @@ trait EventMethods {
     }  
   }  
   
-  
-  def publishEvent(event: EventMessage): Try[Unit] = {
-    log.debug("Publishing event message:\n" + Json.prettyPrint(event.toJson))
-    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
+
+  //
+  // TODO: Clean this up once we know the message works!
+  //
+  def publishEvent(event: EventMessage, opts: RequestOptions): Try[Unit] = {
+    val json = event.toJson
+
+    val eventJson = opts.data.fold(json) { dat =>
+      val args = (json \ "args").as[JsObject]
+      val a1 = if (dat.contains("host"))     args ++ Json.obj("meta_url" -> dat("host")) else args
+      val a2 = if (dat.contains("provider")) a1 ++ Json.obj("provider" -> dat("provider")) else a1
+      json ++ Json.obj("args" -> a2)
+    }
+    log.debug("Publishing event message:\n" + Json.prettyPrint(eventJson))
+    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson/*event.toJson*/)
   }
   
   def eventsClient() = {  
@@ -257,7 +271,7 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
     val eventName = s"${actionName}.${EventType.Post}"
     
     log.debug("Publishing post event...")
-    publishEvent(/*opts.user.account.id, opts.policyOwner.get,*/ actionName, EventType.Post, opts) match {
+    publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
         log.error(s"Failure publishing event : '$eventName'")
@@ -277,6 +291,9 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     
     val user = opts.user
     
+    val actionName = args(0)
+    val eventName = s"${actionName}.${EventType.Pre}"
+    
     // policyOwner is the resource on which the policy was set.
     val policyOwner = ResourceFactory.findById(opts.policyOwner.get) getOrElse {
       throw new ResourceNotFoundException(
@@ -289,33 +306,46 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     /*
      * TODO: 
      */
-    val eventName = args(0)
-    evaluateEventRules(user.account.id, policyOwner.id, eventName).get
-  }
-  
-  def evaluateEventRules(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
+    //val eventName = args(0)
+    //evaluateEventRules(user.account.id, policyOwner.id, eventName).get
     
-    val eventName = s"${actionName}.pre"
-
-    findEffectiveEventRules(target, Option(eventName)) match { 
-      case None => Continue
-      case Some(rule) => {   
-        val event = EventMessage.make(
-              id       = UUID.randomUUID, 
-              identity = user, 
-              resource = "http://dummy.href", // TODO: Add RequestOptions.host
-              event    = eventName, 
-              action   = actionName, 
-              rule, 
-              None)
-        
-        publishEvent(event) match {
-          case Success(_) => Accepted
-          case Failure(e) => Halt(e.getMessage)
-        }
+    log.debug(s"Publishing PRE event: ${eventName}")
+    publishEvent(actionName, EventType.Pre, opts) match {
+      case Success(_) => {
+        log.debug(s"Successfully published $eventName")
+        Continue
       }
-    }
+      case Failure(e) => {
+        log.error(s"Failure publishing event : '$eventName'")
+        Continue
+      }
+    }    
+    
   }
+//  
+//  def evaluateEventRules(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
+//    
+//    val eventName = s"${actionName}.pre"
+//
+//    findEffectiveEventRules(target, Option(eventName)) match { 
+//      case None => Continue
+//      case Some(rule) => {   
+//        val event = EventMessage.make(
+//              id       = UUID.randomUUID, 
+//              identity = user, 
+//              /*resource = "http://dummy.href", // TODO: Add RequestOptions.host*/
+//              event    = eventName, 
+//              action   = actionName, 
+//              rule, 
+//              None)
+//        
+//        publishEvent(event) match {
+//          case Success(_) => Accepted
+//          case Failure(e) => Halt(e.getMessage)
+//        }
+//      }
+//    }
+//  }
 
 
 //  protected def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
