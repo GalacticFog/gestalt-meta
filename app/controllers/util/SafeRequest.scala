@@ -170,42 +170,6 @@ trait EventMethods {
     if (fs.isEmpty) None else Some(fs(0))
   }
   
-//  def publishEvent(
-//      user: UUID, 
-//      target: UUID, 
-//      actionName: String, 
-//      eventType: String,
-//      opts: RequestOptions): Try[OperationResponse[Option[UUID]]] = Try {
-//    
-//    val eventName = s"${actionName}.${eventType}"
-//    
-////    publishEvent(
-////        opts.user.account.id, 
-////        opts.policyOwner.get, 
-////        actionName, 
-////        EventType.Post, 
-////        opts)
-//        
-//    findEffectiveEventRules(target, Option(eventName)) match { 
-//      case None => Continue
-//      case Some(rule) => {
-//        
-//        val event = EventMessage.make(
-//              id       = UUID.randomUUID, 
-//              identity = user, 
-//              resource = "http://dummy.href", // TODO: Add RequestOptions.host
-//              event    = eventName, 
-//              action   = actionName, 
-//              rule     = rule, 
-//              payload  = opts.policyTarget)
-//        
-//        publishEvent(event) match {
-//          case Success(_) => Accepted
-//          case Failure(e) => Halt(e.getMessage)
-//        }
-//      }
-//    }  
-//  }
   
   def publishEvent( 
       actionName: String, 
@@ -240,7 +204,7 @@ trait EventMethods {
     }  
   }  
   
-
+  
   //
   // TODO: Clean this up once we know the message works!
   //
@@ -266,7 +230,7 @@ trait EventMethods {
   
   def eventsClient() = {  
     AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
-  }  
+  }
 }
 
 case class EventsPost(override val args: String*) extends Operation(args) with EventMethods {
@@ -286,7 +250,6 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
       }
     }
   }
-  
 }
 
 case class EventsPre(override val args: String*) extends Operation(args)  with EventMethods {
@@ -307,15 +270,6 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
         s"Given policy-owner '${opts.policyOwner.get}' not found.")
     }
     
-    // This is the resource we're executing policy against.    
-    // val target = opts.policyTarget getOrElse policyOwner
-    //log.debug(s"Event Target : ${target.id}")//
-    /*
-     * TODO: 
-     */
-    //val eventName = args(0)
-    //evaluateEventRules(user.account.id, policyOwner.id, eventName).get
-    
     log.debug(s"Publishing PRE event: ${eventName}")
     publishEvent(actionName, EventType.Pre, opts) match {
       case Success(_) => {
@@ -330,56 +284,11 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     
   }
 
-//  def evaluateEventRules(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
-//    
-//    val eventName = s"${actionName}.pre"
-//
-//    findEffectiveEventRules(target, Option(eventName)) match { 
-//      case None => Continue
-//      case Some(rule) => {   
-//        val event = EventMessage.make(
-//              id       = UUID.randomUUID, 
-//              identity = user, 
-//              /*resource = "http://dummy.href", // TODO: Add RequestOptions.host*/
-//              event    = eventName, 
-//              action   = actionName, 
-//              rule, 
-//              None)
-//        
-//        publishEvent(event) match {
-//          case Success(_) => Accepted
-//          case Failure(e) => Halt(e.getMessage)
-//        }
-//      }
-//    }
-//  }
-
-//  protected def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
-//    val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)//ResourceFactory.findAncestorsOfSubType(ResourceIds.Policy, parentId)
-//
-//    val rs = for {
-//      p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
-//      r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
-//    } yield r
-//    
-//    log.debug(s"Found ${rs.size} Event Rules:")
-//    
-//    rs foreach { r => log.debug(r.name) }
-//    
-//    val fs = if (event.isEmpty) rs else {
-//      rs filter { _.properties.get("actions").contains(event.get) }
-//    }
-//    // TODO: This is temporary. Need a strategy for multiple matching rules.
-//    if (fs.isEmpty) None else Some(fs(0))
-//  }
-
   private def predicateMessage(p: Predicate[Any]) = {
     val value = p.value.toString.replaceAll("\"", "")
     "[%s %s %s]".format(p.property, p.operator, value)
-  }
-  
+  }  
 }
-
 
 
 case class RequestOptions(

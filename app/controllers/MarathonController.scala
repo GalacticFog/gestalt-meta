@@ -586,10 +586,6 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
   
   
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = MarAuth(fqon) { implicit request =>
-   
-//    val container = ResourceFactory.findChildOfType(ResourceIds.Container, envId, id) getOrElse {
-//      throw new ResourceNotFoundException(s"Container with ID $id not found in Environment $envId")
-//    }
     
     val container = getMigrationContainer(envId, id)
     val user   = request.identity
@@ -608,10 +604,6 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
           "environment_id" -> envId.toString,
           "meta_url" -> META_URL.get,
           "provider_id" -> providerQueryParam(request.queryString).get.toString)))
-    
-//    def MigrateRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
-//      SafeRequest(operations, options)
-//    }
     
     SafeRequest (operations, options) Protect { maybeState =>    
       ResourceFactory.update(
