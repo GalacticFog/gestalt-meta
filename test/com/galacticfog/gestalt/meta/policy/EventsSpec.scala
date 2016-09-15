@@ -100,7 +100,8 @@ class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope 
         override def apply[S <: JsValue](t: Expectable[S]): MatchResult[S] = {
           val v = t.value
           result(((v \ "args" \ "payload" \ "meta_url").asOpt[String].contains(metaUrl), "contains meta_url", "does not contain meta_url"), t) and
-            result(((v \ "args" \ "payload" \ "providerId").asOpt[String].contains(providerId), "contains providerId", "does not contain providerId"), t)
+            result(((v \ "args" \ "payload" \ "providerId").asOpt[String].contains(providerId), "contains providerId", "does not contain providerId"), t) and
+            result(((v \ "args" \ "rule" \ "name").asOpt[String].contains("some-rule"), "contains rule", "does not contain rule"), t)
         }
       })
     }
