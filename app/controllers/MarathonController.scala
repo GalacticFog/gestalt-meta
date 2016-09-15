@@ -331,6 +331,7 @@ object MarathonController extends Authorization {
   }
   
   protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
+    // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
     val newStats = stats match {
       case Some(stats) => Seq(
         "age" -> stats.age.toString,
@@ -604,7 +605,7 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
         policyTarget = Option(container),
         data = Option(Map(
             "host" -> META_URL.get,
-            "provider" -> providerQueryParam(request.queryString).get.toString)))
+            "providerId" -> providerQueryParam(request.queryString).get.toString)))
     
 //    def MigrateRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
 //      SafeRequest(operations, options)
