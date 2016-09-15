@@ -43,7 +43,13 @@ object Output {
   
     val res = GestaltResourceOutput(
       id = r.id,
-      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+      org = r.properties.flatMap(_.get("fqon")).foldLeft(jsonLink(
+        typeId = ResourceIds.Org,
+        id = r.orgId,
+        org = r.orgId,
+        name = Some(r.name),
+        baseUri
+      ).as[JsObject])((js,fqon) => js ++ Json.obj("fqon" -> fqon)),
       resource_type = jsonTypeName(Option(r.typeId)).get,
       resource_state = JsString(ResourceState.name(r.state)),
       owner = Json.toJson(r.owner),
