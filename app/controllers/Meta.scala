@@ -143,17 +143,36 @@ object Meta extends Authorization {
           Security.createGroup, createNewMetaGroup[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-          /*
-           * TODO: f the group was created with a users array, add the users!
-           * val users = res.properties.get.get("users")
-           */
+          val addusers: Seq[UUID] = JsonUtil.find(request.body.as[JsObject], "/properties/users").fold {
+            Seq().asInstanceOf[Seq[UUID]]
+            }{
+            users => JsonUtil.safeParse[Seq[UUID]](users)
+          }
+          
+          val newjson = { 
+            if (addusers.isEmpty) Output.renderInstance(res, META_URL)
+            else {
+              log.debug(s"Adding ${addusers.size} users to new group.")
+              Security.addAccountsToGroup(res.id, addusers) match {
+                case Success(users) => {
+                  val jsonusers = Json.toJson(users)
+                  JsonUtil.upsertProperty(Output.renderInstance(res, META_URL).as[JsObject], "users", jsonusers).get
+                }
+                case Failure(error) => {
+                  log.error("Failed adding users to new group: " + error.getMessage)
+                  throw error
+                }
+              }
+            }
+          }
+
           val user = request.identity
           Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
             generateEntitlements(
               user.account.id, org, res.id,
               Seq(ResourceIds.Group), ACTIONS_CRUD)
           }
-          Created(Output.renderInstance(res, META_URL))
+          Created( newjson )
         }
       }
     }
