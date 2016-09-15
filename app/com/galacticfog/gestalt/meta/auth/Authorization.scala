@@ -64,7 +64,6 @@ trait Authorization extends MetaController {
   val ContainerActions    = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
   val LambdaActions       = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
   
-  
   def setNewResourceEntitlements(
       org: UUID, 
       resourceType: UUID, 
@@ -80,7 +79,7 @@ trait Authorization extends MetaController {
         resource = resource,
         grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
     }
-  }  
+  }
   
   def setNewOrgEntitlements(owningOrg: UUID, org: UUID, user: AuthAccountWithCreds, parent: Option[UUID] = None) = {
     val grants = Map(
@@ -121,7 +120,7 @@ trait Authorization extends MetaController {
     val grants = Map(DomainActions)
     setNewResourceEntitlements(org, ResourceIds.Domain, newDomainId, user, grants, Option(parent))
   }
-
+  
   def setNewLambdaEntitlements(org: UUID, newLambdaId: UUID, user: AuthAccountWithCreds, parent: UUID) = {
     val grants = Map(LambdaActions, ApiEndpointActions)
     setNewResourceEntitlements(org, ResourceIds.Lambda, newLambdaId, user, grants, Option(parent))
