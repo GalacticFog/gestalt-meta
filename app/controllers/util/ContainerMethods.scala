@@ -70,8 +70,14 @@ object ContainerMethods {
       val provider    = MarathonController.marathonProvider(providerId)
       val client      = MarathonController.marathonClient(provider)
       val marathonId  = c.properties.get("external_id")
-      val application = Await.result(client.getApplication_marathon_v3(marathonId)(global), 5 seconds)
-      val stats       = MarathonClient.marathon2Container(application)
+
+      val stats = Try {
+        val application = Await.result(client.getApplication_marathon_v3(marathonId)(global), 5 seconds)
+        MarathonClient.marathon2Container(application)
+      } match {
+        case Failure(e) => if (e.isInstanceOf[ResourceNotFoundException]) None else throw e
+        case Success(s) => s
+      }
       
       updateWithStats(c, stats)
   }
