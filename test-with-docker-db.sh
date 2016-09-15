@@ -62,7 +62,10 @@ export RABBIT_EXCHANGE="policy-exchange"
 
 echo ""
 echo "Running tests!"
-#sbt "~testOnly controllers.util.EventsSpec"  || true
-sbt test || true
+if [ $# -eq 0 ]; then 
+  sbt test || true
+else 
+  sbt "$*"  || true
+fi
 
 exit 0
