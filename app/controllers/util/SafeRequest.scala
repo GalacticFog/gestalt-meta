@@ -248,10 +248,17 @@ trait EventMethods {
     val json = event.toJson
 
     val eventJson = opts.data.fold(json) { dat =>
-      val args = (json \ "args").as[JsObject]
-      val a1 = if (dat.contains("host"))     args ++ Json.obj("meta_url" -> dat("host")) else args
-      val a2 = if (dat.contains("provider")) a1 ++ Json.obj("provider" -> dat("provider")) else a1
-      json ++ Json.obj("args" -> a2)
+      val rule = (json \ "args" \ "rule").as[JsObject]
+      val payload = (json \ "args" \ "payload").as[JsObject]
+      val payloadPlus = dat.foldLeft[JsObject](payload)(
+        (p, kv) => p ++ Json.obj(kv._1 -> kv._2)
+      )
+      json ++ Json.obj(
+        "args" -> Json.obj(
+          "rule" -> rule,
+          "payload" -> payloadPlus
+        )
+      )
     }
     log.debug("Publishing event message:\n" + Json.prettyPrint(eventJson))
     eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson/*event.toJson*/)
@@ -297,11 +304,11 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     // policyOwner is the resource on which the policy was set.
     val policyOwner = ResourceFactory.findById(opts.policyOwner.get) getOrElse {
       throw new ResourceNotFoundException(
-          s"Given policy-owner '${opts.policyOwner.get}' not found.")
+        s"Given policy-owner '${opts.policyOwner.get}' not found.")
     }
     
     // This is the resource we're executing policy against.    
-    val target = opts.policyTarget getOrElse policyOwner
+    // val target = opts.policyTarget getOrElse policyOwner
     //log.debug(s"Event Target : ${target.id}")//
     /*
      * TODO: 
@@ -322,7 +329,7 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     }    
     
   }
-//  
+
 //  def evaluateEventRules(user: UUID, target: UUID, actionName: String): Try[OperationResponse[Option[UUID]]] = Try {
 //    
 //    val eventName = s"${actionName}.pre"
@@ -346,7 +353,6 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
 //      }
 //    }
 //  }
-
 
 //  protected def effectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
 //    val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)//ResourceFactory.findAncestorsOfSubType(ResourceIds.Policy, parentId)
