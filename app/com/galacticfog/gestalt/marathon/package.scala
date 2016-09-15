@@ -135,7 +135,7 @@ package object marathon {
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[PersistentVolumeInfo]
 
-  implicit lazy val marathonVolumeReads = new Reads[Volume] {
+  lazy val marathonVolumeReads = new Reads[Volume] {
     lazy val simpleVolumeReads = (
       (__ \ "containerPath").read[String] and
         (__ \ "hostPath").readNullable[String] and
@@ -154,12 +154,28 @@ package object marathon {
     }
   }
 
-  implicit lazy val marathonVolumeWrites = (
+  lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
       (__ \ "hostPath").writeNullable[String] and
       (__ \ "persistent").writeNullable[PersistentVolumeInfo] and
       (__ \ "mode").write[String]
     )(unlift(Volume.unapply))
+
+
+  implicit lazy val metaVolumeWrites = Json.writes[Volume]
+
+  implicit lazy val metaVolumeReads = new Reads[Volume] {
+    lazy val simpleVolumeReads = Json.reads[Volume]
+    override def reads(json: JsValue): JsResult[Volume] = {
+      json.validate[Volume](simpleVolumeReads) match {
+        case s @ JsSuccess(Volume(cPath, Some(hPath), None,         mode), _) => s
+        case s @ JsSuccess(Volume(cPath, None,        Some(pvInfo), mode), _) => s
+        case s @ JsSuccess(Volume(_, None,    None,    _), _) => JsError("container volume must contain one of host_path or persistent")
+        case s @ JsSuccess(Volume(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of host_path or persistent")
+        case e: JsError => e
+      }
+    }
+  }
 
   implicit lazy val healthCheckFormat = Json.format[HealthCheck]
 

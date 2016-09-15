@@ -248,8 +248,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           "volumes" -> Json.arr(Json.obj(
             "containerPath" -> "cpath",
             "mode" -> "RW",
-            "persistent" -> Json.obj(
-            )
+            "persistent" -> Json.obj()
           ))
         )
         marValidJson.as[MarathonContainer] must throwA[JsResultException]
@@ -294,7 +293,14 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "serialize marathon app appropriately" in {
-      val marContainer = MarathonContainer(docker = None, containerType = "ctype")
+      val marContainer = MarathonContainer(
+        docker = None,
+        containerType = "ctype",
+        volumes = Some(Seq(
+          Volume("/cpath1", Some("/hpath1"), None, "RO"),
+          Volume("/cpath2", None, Some(PersistentVolumeInfo(10)), "RW")
+        ))
+      )
 
       val marApp = MarathonApp(
         id = "someId",
@@ -321,7 +327,11 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         "args" -> Json.arr(),
         "cmd" -> JsNull,
         "container" -> Json.obj(
-          "type" -> "ctype"
+          "type" -> "ctype",
+          "volumes" -> Json.arr(
+            Json.obj("containerPath" -> "/cpath1", "hostPath" -> "/hpath1", "mode" -> "RO"),
+            Json.obj("containerPath" -> "/cpath2", "mode" -> "RW", "persistent" -> Json.obj("size" -> 10))
+          )
         ),
         "constraints" -> Json.arr(),
         "cpus" -> 0.2,
