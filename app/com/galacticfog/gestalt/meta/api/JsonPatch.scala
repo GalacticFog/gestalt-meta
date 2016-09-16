@@ -150,9 +150,9 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
    * Replace the named property with the new value in the resource's properties collection.
    */
   def replaceProperty(pname: String, pvalue: JsValue, r: GestaltResourceInstance) = {
-    if (!r.properties.isDefined || !r.properties.get.contains(pname)) {
-      throw new BadRequestException(s"Property not defined '$pname'. No changes made.")
-    }
+//    if (!r.properties.isDefined || !r.properties.get.contains(pname)) {
+//      throw new BadRequestException(s"Property not defined '$pname'. No changes made.")
+//    }
     val props = r.properties.get
     val newprops = Some((props - pname) ++ Map(pname -> trimquotes(pvalue.toString)))
     r.copy(properties = newprops)

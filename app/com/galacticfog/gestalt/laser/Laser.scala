@@ -5,14 +5,14 @@ import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.meta.api.sdk._
 
-import play.api.{ Logger => log }
+import play.api.Logger
 
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.Charset
 import java.util.Base64;
 
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
-
+  private val log = Logger(this.getClass)
   private val gatewayClient = configureClient(gatewayConfig)
   private val lambdaClient = configureClient(lambdaConfig)
   
@@ -149,13 +149,23 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def createLambda(lambda: LaserLambda): Try[ApiResponse] = {
     val json = Json.toJson(lambda)
+    log.debug("Creating new Lambda in gestalt-lambda:\n" + Json.prettyPrint(json))
     lambdaClient.post("/lambdas", json, Seq(200,201,202))
+  }
+  
+  def updateLambda(lambda: LaserLambda): Try[ApiResponse] = {
+    val id = lambda.id getOrElse {
+      throw new RuntimeException("Cannot update Lambda without ID. found: " + lambda)
+    }
+    val json = Json.toJson(lambda)
+    log.debug("Updating Lambda in gestalt-lambda:\n" + Json.prettyPrint(json))
+    lambdaClient.put(s"/lambdas/${id}", json, Seq(200,201,202))
   }
   
   def deleteLambda(id: String): Try[ApiResponse] = {
     lambdaClient.delete(s"/lambdas/${id}", Seq(200,204,404))
   }
-
+  
   private[laser] def getSeq[T](client: JsonWebClient, resource: String, expected: Seq[Int])(implicit fmt: Format[T]): Seq[T] = {
     client.get(resource, expected) match {
       case Failure(err) => throw err

@@ -65,7 +65,6 @@ object Meta extends Authorization {
   // --------------------------------------------------------------------------  
   
   def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
-    
     Security.getRootOrg(request.identity) match {
       case Failure(err)  => { 
         log.error(s"Failed to create top-level Org.")
@@ -318,20 +317,26 @@ object Meta extends Authorization {
   // --------------------------------------------------------------------------
 
   def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    resourcePatch(fqid(fqon))
+    resourcePatch(ResourceIds.Org, fqid(fqon))
   }
+  
+
   
   def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    resourcePatch(id)
+    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
+      if (r.typeId == ResourceIds.Lambda) {
+        LambdaMethods.patchGestaltLambda(r, request.body).get
+      }
+      resourcePatch(r.typeId, id)
+    }
   }
   
-  def resourcePatch(id: UUID)(implicit request: SecuredRequest[JsValue]) = {
+  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
     Future {
       safeGetPatchDocument(request.body) match {
         case Failure(e) => BadRequestResult(e.getMessage)
         case Success(patch) => {
           
-          // TODO: Don't currently use typeId, but will in future.
           val identity = request.identity.account.id
           PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
             case Success(r) => Ok(Output.renderInstance(r))

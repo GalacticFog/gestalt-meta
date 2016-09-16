@@ -58,6 +58,11 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
     unwrapResponse(response, expected)
   }
 
+  def put(resource: String, payload: JsValue, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
+    val response = Await.result(request(resource).put(payload), timeout seconds)
+    unwrapResponse(response, expected)
+  }
+  
   def post(resource: String, payload: JsValue, expected: Seq[Int] = JsonWebClient.ALL_GOOD, timeout: Int = timeout): Try[ApiResponse] = Try {
     val response = Await.result(request(resource).post(payload), timeout seconds)
     unwrapResponse(response, expected)
@@ -98,6 +103,8 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
         case jpe: JsonParseException => throw new ApiResponseException("Response was not JSON: " + jpe.getMessage)
       }
     } else {
+      println("BODY: " + response.body)
+      println("UNDERLYING: " + response.underlying)
       println("ERROR: JsonWebClient.unwrapResponse => " + response.statusText)
       throw new ApiResponseException(
         Json.prettyPrint(Json.toJson(ApiResponse(response.status, None, error = Some(response.statusText))))
