@@ -406,7 +406,7 @@ object MarathonController extends Authorization {
    * in Marathon, we can just delete it from Meta.
    */
  
-  def postMarathonApp(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
+  def createContainer(fqon: String, environment: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
 
     appComponents(environment) match {
       case Failure(e) => Future { HandleExceptions(e) }
@@ -437,6 +437,7 @@ object MarathonController extends Authorization {
           SafeRequest (operations, options) Protect { maybeState => 
             
             log.debug("Creating Container in Marathon:\n" + Json.prettyPrint(inputJson))
+            // TODO: convert this to async, and build the meta container from the Marathon response: inputJson should be used only once, it's not authoritative
             createMarathonAppSync(fqon, name, wrk.name, env.name, inputJson, provider)
             
             // Inject external_id property and full provider info
@@ -532,23 +533,6 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
     MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
   }
 
-  def createMarathonApp(
-      fqon: String,
-      appName: String,
-      workspaceName: String,
-      environmentName: String,
-      inputJson: JsObject,
-      provider: GestaltResourceInstance): Future[JsValue] = {
-
-    // Create app in Marathon
-    val app = toMarathonApp(appName, inputJson, provider)
-    val marathonPayload = Json.toJson(app).as[JsObject]
-
-    // TODO: Parse result JsValue for error response.
-    log.debug("Creating App in Marathon:\n" + Json.prettyPrint(marathonPayload))
-    marathonClient(provider).launchContainer_marathon_v2(fqon, workspaceName, environmentName, marathonPayload)
-  }
-  
   def createMarathonAppSync(
       fqon: String,
       appName: String,
@@ -558,7 +542,14 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
       provider: GestaltResourceInstance): JsValue = {
 
     // Create app in Marathon
-    val app = toMarathonApp(appName, inputJson, provider)
+    val props = (inputJson \ "properties").validate[InputContainerProperties].map {
+      case ps: InputContainerProperties => ps
+    }.recoverTotal { e =>
+      throw new IllegalArgumentException(
+        "Could not parse container properties: " + JsError.toFlatJson(e).toString)
+    }
+
+    val app = toMarathonApp(appName, props, provider)
     val marathonPayload = Json.toJson(app).as[JsObject]
 
     // TODO: Parse result JsValue for error response.
