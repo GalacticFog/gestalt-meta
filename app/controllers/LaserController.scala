@@ -26,7 +26,7 @@ import controllers.util._
 import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
 
-import play.api.{Logger => log}
+import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
@@ -43,6 +43,7 @@ import scala.util.Either
  */
 
 object LaserController extends Authorization {
+  //private val log = Logger(this.getClass)
   
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
   

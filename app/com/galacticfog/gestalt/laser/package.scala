@@ -21,7 +21,6 @@ package object laser {
   implicit lazy val laserProviderFormat = Json.format[LaserProvider]
   implicit lazy val laserLocationFormat = Json.format[LaserLocation]
   
-  
   case class LaserGatewayInfo(host: String, port: Int, username: String, password: String)
   
   case class LaserGateway(
@@ -62,7 +61,8 @@ package object laser {
       publish: Boolean = false,
       role: String = "none",
       timeoutSecs: Int = 180,
-      code: Option[String] = None)
+      code: Option[String] = None,
+      synchronous: Option[Boolean] = Option(false))
   
   case class LaserLambda(
       id: Option[String], 
@@ -137,7 +137,6 @@ package object laser {
       if (props.contains("package_url")) Some(props("package_url").as[String])
       else None
     }
-    
     
     val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
     
