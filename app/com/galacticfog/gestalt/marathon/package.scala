@@ -14,13 +14,20 @@ import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
 
+  val DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES = UpgradeStrategy(
+    minimumHealthCapacity = 0.5,
+    maximumOverCapacity = 0.0
+  )
+
   case class PersistentVolumeInfo(size: Int)
 
   case class Volume(
       container_path: String,
       host_path: Option[String],
       persistent: Option[PersistentVolumeInfo],
-      mode: String)
+      mode: String) {
+    def isPersistent: Boolean = persistent.isDefined
+  }
 
   // TODO: Marathon health checks require a port index, to specify which port the check is run against
   // ours aren't well defined without something similar, like a label
@@ -108,6 +115,8 @@ package object marathon {
   case class DiscoveryInfo(ports: Option[Seq[PortDiscovery]] = None)
   case class IPPerTaskInfo(discovery: Option[DiscoveryInfo])
 
+  case class UpgradeStrategy(minimumHealthCapacity: Double, maximumOverCapacity: Double)
+
   case class MarathonApp(
     id: String,
     container: MarathonContainer,
@@ -129,11 +138,14 @@ package object marathon {
     env: Option[Map[String, String]] = None,
     deployments: Option[Seq[JsObject]] = None,
     ipAddress: Option[IPPerTaskInfo] = None,
+    upgradeStrategy: Option[UpgradeStrategy] = None,
     user: Option[String] = None)
 
   implicit lazy val inputProviderFormat = Json.format[InputProvider]
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[PersistentVolumeInfo]
+
+  implicit lazy val marathonUpgradeStrategyFmt = Json.format[UpgradeStrategy]
 
   lazy val marathonVolumeReads = new Reads[Volume] {
     lazy val simpleVolumeReads = (
@@ -250,6 +262,7 @@ package object marathon {
       (__ \ "env").readNullable[Map[String,String]] and
       (__ \ "deployments").readNullable[Seq[JsObject]] and
       (__ \ "ipAddress").readNullable[IPPerTaskInfo] and
+      (__ \ "upgradeStrategy").readNullable[UpgradeStrategy] and
       (__ \ "user").readNullable[String]
     )(MarathonApp.apply _)
 
@@ -268,6 +281,7 @@ package object marathon {
       (__ \ "mem").write[Double] and
       (__ \ "portDefinitions").write[Seq[PortDefinition]] and
       (__ \ "ports").writeNullable[Iterable[Int]] and
+      (__ \ "upgradeStrategy").writeNullable[UpgradeStrategy] and
       (__ \ "user").write[JsValue] and
       (__ \ "constraints").write[Seq[Seq[String]]] and
       (__ \ "deployments").write[Seq[JsObject]] and
@@ -286,6 +300,7 @@ package object marathon {
       a.mem,
       a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty),
       a.ports,
+      a.upgradeStrategy,
       a.user.fold[JsValue](JsNull)(JsString(_)),
       a.constraints.getOrElse(Seq.empty),
       a.deployments.getOrElse(Seq.empty),
@@ -464,15 +479,9 @@ package object marathon {
 
   /**
    * Convert Meta Container JSON to Marathon App object.
+   * TODO: convert this to a Future[MarathonApp]
    */
-  def toMarathonApp(name: String, inputJson: JsObject, provider: GestaltResourceInstance): MarathonApp = {
-    
-    val props = (inputJson \ "properties").validate[InputContainerProperties].map {
-      case ps: InputContainerProperties => ps
-    }.recoverTotal { e =>
-      throw new IllegalArgumentException(
-          "Could not parse container properties: " + JsError.toFlatJson(e).toString)
-    }
+  def toMarathonApp(name: String, props: InputContainerProperties, provider: GestaltResourceInstance): MarathonApp = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -515,7 +524,7 @@ package object marathon {
         providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
           case None => throw new BadRequestException(
             message = "invalid network name: container network was not among list of provider networks",
-            payload = Some(inputJson)
+            payload = Some(Json.toJson(props))
           )
           case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
             (Some(MarathonDocker(
@@ -558,6 +567,8 @@ package object marathon {
         containerType = props.container_type,
         volumes = props.volumes)
 
+    val upgradeStrategy = if( container.volumes.exists(_.exists(_.isPersistent)) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
+
     MarathonApp(
       id = "/" + name.stripPrefix("/"),
       container = container,
@@ -592,6 +603,7 @@ package object marathon {
       )}},
       env = props.env,
       ipAddress = ipPerTask,
+      upgradeStrategy = upgradeStrategy,
       user = None
     )
   }
