@@ -16,12 +16,126 @@ import scala.util.{Try,Success,Failure}
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.security.api.{GestaltDirectory,GestaltAccount, GestaltAPICredentials}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import controllers.util.db.ConnectionManager
+
 
 trait ResourceScope extends Scope {
   
-  
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
+  val adminUserId = UUID.randomUUID()
+  
+  def pristineDatabase() = {
+    controllers.util.db.EnvConfig.getConnection()
+
+    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+    val db = new Bootstrap(ResourceIds.Org, 
+        dummyRootOrgId, dummyRootOrgId, owner, 
+        ConnectionManager.currentDataSource())
+
+    for {
+      a <- db.clean
+      b <- db.migrate
+      c <- db.loadReferenceData
+      d <- db.loadSystemTypes
+      e <- db.initialize("root")
+    } yield e    
+  } 
+  
+  def newOrg(
+      id: UUID = uuid(), 
+      name: String = uuid.toString, 
+      parent: UUID = dummyRootOrgId,
+      properties: Option[Map[String,String]] = None) = {
+    
+    createInstance(ResourceIds.Org, name,
+        parent = Option(parent),
+        properties = properties)
+  }
+  
+  def newDummyEnvironment(org: UUID = dummyRootOrgId, children: Seq[UUID] = Seq()): Map[String,UUID] = {
+    val (wid, eid) = createWorkspaceEnvironment(org)
+    val container = newDummyContainer(eid)
+    val lambda = newDummyLambda(eid)
+
+    Map(
+      "workspace" -> wid,
+      "environment" -> eid,
+      "container" -> container.get.id,
+      "lambda" -> lambda.get.id
+    )
+
+  }  
+  def newDummyGateway(env: UUID, name: String = uuid()) = {
+    createInstance(ResourceIds.ApiGatewayProvider, 
+        name,
+        parent = Some(env),
+        properties = Some(Map(
+            "parent" -> getParent(env))))
+  }
+  
+  def createEventRule(
+      parent: UUID,  
+      lambda: UUID,
+      action: String = "foo.bar",
+      org: UUID = dummyRootOrgId) = {
+    
+    val output = createInstance(ResourceIds.Policy,
+        org = org,
+        name = uuid,
+        parent = Option(parent)) map { policy =>
+        val rule = createInstance(ResourceIds.RuleEvent,
+            org = org,
+            name = uuid,
+            parent = Option(policy.id),
+            properties = Option(Map(
+                "actions"    -> Json.toJson(List(action)).toString,
+                "defined_at" -> "foo",
+                "lambda" -> lambda.toString,
+                "parent"     -> policy.id.toString)))
+        (policy.id, rule.get.id)
+    }
+    output.get
+  }
+  
+  
+  /*
+  schema           : string        
+  config           : json_object   
+  locations        : array_json    
+  linked_providers : array_json    
+  environments     : array_string  
+  parent           : json_object   : [required]
+   */
+  
+  def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
+    createInstance(ResourceIds.MarathonProvider, name,
+        parent = Option(parent),
+        properties = Option(Map("parent" -> "{}")))
+  }
+  
+  def newDummyLambda(env: UUID, gateway: UUID = uuid()) = {
+    createInstance(ResourceIds.Lambda, uuid(),
+      parent = Some(env),
+      properties = Some(Map(
+          "providers" -> Json.stringify(Json.toJson(List(Json.obj("id" -> gateway.toString)))),
+          "public" -> "false",
+          "runtime" -> "none",
+          "code_type" -> "none",
+          "memory"  -> "1024",
+          "cpus"    -> "1.0",
+          "timeout" -> "0" )))
+  }
+  
+  def newDummyContainer(env: UUID) = {
+    createInstance(ResourceIds.Container, uuid(),
+      parent = Some(env),
+      properties = Some(Map(
+        "container_type" -> "foo",
+        "image" -> "bar",
+        "provider" -> "{}")))
+  }  
   
   def dummyAuthAccountWithCreds(
       userInfo: Map[String,String] = Map(), 

@@ -46,14 +46,79 @@ import com.galacticfog.gestalt.meta.api.{Resource,ResourcePath}
 
 import controllers.MarathonController
 
+import play.api.mvc.RequestHeader
 
-object ContainerMethods {
+object ContainerMethods extends MetaController {
   
-  private val log = Logger(this.getClass)
+  //private val log = Logger(this.getClass)
+  
+  
+  def setupMigrateRequest(
+      fqon: String, 
+      env: UUID, 
+      container: GestaltResourceInstance,
+      user: AuthAccountWithCreds,
+      metaUrl: String,
+      queryString: QueryString) = {
+
+    val action = "container.migrate"
+    val operations = List(
+        controllers.util.Authorize(action),
+        controllers.util.PolicyCheck(action),
+        controllers.util.EventsPre(action))
+        
+    val options = RequestOptions(
+        user, 
+        authTarget = Option(env), 
+        policyOwner = Option(env), 
+        policyTarget = Option(container),
+        data = Option(Map(
+          "fqon"           -> fqon,
+          "meta_url"       -> metaUrl,
+          "environment_id" -> env.toString,
+          "provider_id"    -> providerQueryParam(queryString).get.toString)))
+          
+    (operations,options)
+  }
+  
   
   /**
-   * Make a best effort to get updated stats from the Marathon provider and to update the resource with them  
-   */
+   * Extract and validate the 'provider' querystring parameter. 
+   * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
+   * 
+   * @param qs the complete, unmodified queryString from the original request.
+   */  
+  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = Try {
+    val PROVIDER_KEY = "provider"
+    
+    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
+      throw badRequest(
+          "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
+    else Try{
+      if (qs(PROVIDER_KEY).size > 1) {
+        throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
+      } else {
+        
+        val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
+        ResourceFactory.findById(ResourceIds.MarathonProvider, pid).fold {
+          throw badRequest(s"Provider with ID '$pid' not found.")
+        }{ _ => pid }
+      }
+    } match {
+      case Success(id) => id
+      case Failure(e)  => e match {
+        case i: IllegalArgumentException => 
+          throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
+        case e: Throwable => throw e
+      }
+    }
+  }
+  
+  
+  private def badRequest(message: String) = {
+    new BadRequestException(message)
+  }
+
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) map transformMetaContainer
   }
@@ -86,6 +151,9 @@ object ContainerMethods {
     JsonUtil.getJsonField(Json.parse(jstring), "id") map { _.as[UUID] }
   }
   
+  /**
+   * Make a best effort to get updated stats from the Marathon provider and to update the resource with them  
+   */  
   private[util] def updateWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
     val newStats = stats match {
       

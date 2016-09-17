@@ -151,9 +151,9 @@ trait EventMethods {
   
   private[this] val log = Logger(this.getClass)
   
-  protected def findEffectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
-    val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)//ResourceFactory.findAncestorsOfSubType(ResourceIds.Policy, parentId)
-
+  def findEffectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
+    //val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)//ResourceFactory.findAncestorsOfSubType(ResourceIds.Policy, parentId)
+    
     val rs = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
@@ -233,25 +233,6 @@ trait EventMethods {
   }
 }
 
-case class EventsPost(override val args: String*) extends Operation(args) with EventMethods {
-  private val log = Logger(this.getClass)
-  
-  def proceed(opts: RequestOptions) = {
-    log.debug("entered EventsPost.proceed()")
-    val actionName = args(0)
-    val eventName = s"${actionName}.${EventType.Post}"
-    
-    log.debug("Publishing post event...")
-    publishEvent(actionName, EventType.Post, opts) match {
-      case Success(_) => Continue
-      case Failure(e) => {
-        log.error(s"Failure publishing event : '$eventName'")
-        Continue
-      }
-    }
-  }
-}
-
 case class EventsPre(override val args: String*) extends Operation(args)  with EventMethods {
 
   private val log = Logger(this.getClass)
@@ -281,7 +262,6 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
         Continue
       }
     }    
-    
   }
 
   private def predicateMessage(p: Predicate[Any]) = {
@@ -289,6 +269,27 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     "[%s %s %s]".format(p.property, p.operator, value)
   }  
 }
+
+case class EventsPost(override val args: String*) extends Operation(args) with EventMethods {
+  private val log = Logger(this.getClass)
+  
+  def proceed(opts: RequestOptions) = {
+    log.debug("entered EventsPost.proceed()")
+    val actionName = args(0)
+    val eventName = s"${actionName}.${EventType.Post}"
+    
+    log.debug("Publishing post event...")
+    publishEvent(actionName, EventType.Post, opts) match {
+      case Success(_) => Continue
+      case Failure(e) => {
+        log.error(s"Failure publishing event : '$eventName'")
+        Continue
+      }
+    }
+  }
+}
+
+
 
 
 case class RequestOptions(
