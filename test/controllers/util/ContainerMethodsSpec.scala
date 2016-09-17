@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import play.api.test._
 import scala.util.{Try,Success,Failure}
+import org.joda.time.DateTime
 
 class ContainerMethodsSpec extends PlaySpecification with ResourceScope with BeforeAll {
 
@@ -72,5 +73,69 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
     
   }
   
+  "updateWithStats" should {
+    
+    "make NO CHANGES if the resource already has a 'status' property" in {
+      val given = "MIGRATING"
+      val props = Map(
+        "container_type" -> "foo",
+        "image" -> "bar",
+        "provider" -> "{}",
+        "status" -> given)      
+      
+      val org = newOrg(id = dummyRootOrgId).get
+      val (_,env) = createWorkspaceEnvironment(org.id)
+      val c = newDummyContainer(env, props)
+      c must beSuccessfulTry
+      
+      val test = ContainerMethods.updateWithStats(c.get, None)
+      val status = test.properties.get.get("status")
+      
+      status must beSome
+      status.get === given
+    }
+    
+    "use the supplied status when property is missing and ContainerStats is Some" in {
+      
+      val given = "LEAPING"
+      val stats = com.galacticfog.gestalt.marathon.ContainerStats(
+            id = uuid.toString,
+            containerType = "foo",
+            status = given,
+            cpus = 0.5,
+            memory = 0.5,
+            image = "image",
+            age = DateTime.now,
+            numInstances = 1,
+            tasksStaged = 0,
+            tasksRunning = 1,
+            tasksHealthy = 1,
+            tasksUnhealthy = 0)
+                    
+      val org = newOrg(id = dummyRootOrgId).get
+      val (_,env) = createWorkspaceEnvironment(org.id)
+      val c = newDummyContainer(env)
+      c must beSuccessfulTry
+
+      val test = ContainerMethods.updateWithStats(c.get, Option(stats))
+      val result = test.properties.get.get("status")
+      
+      result must beSome
+      result.get === given
+    }
+    
+    "set status to LOST when property is missing and ContainerStats is None" in {
+      val org = newOrg(id = dummyRootOrgId).get
+      val (_,env) = createWorkspaceEnvironment(org.id)
+      val c = newDummyContainer(env)
+      c must beSuccessfulTry
+      
+      val test = ContainerMethods.updateWithStats(c.get, None)
+      val status = test.properties.get.get("status")
+      
+      status must beSome
+      status.get === "LOST"
+    }
+  }
   
 }

@@ -155,29 +155,32 @@ object ContainerMethods extends MetaController {
    * Make a best effort to get updated stats from the Marathon provider and to update the resource with them  
    */  
   private[util] def updateWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
-    val newStats = stats match {
+
+    if (metaCon.properties.get.get("status").isDefined) metaCon
+    else {
+      val newStats = stats match {  
+        case Some(stats) => Seq(
+          "age"             -> stats.age.toString,
+          "status"          -> stats.status,
+          "num_instances"   -> stats.numInstances.toString,
+          "tasks_running"   -> stats.tasksRunning.toString,
+          "tasks_healthy"   -> stats.tasksHealthy.toString,
+          "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+          "tasks_staged"    -> stats.tasksStaged.toString)
+          
+        case None => Seq(
+          "status"          -> "LOST",
+          "num_instances"   -> "0",
+          "tasks_running"   -> "0",
+          "tasks_healthy"   -> "0",
+          "tasks_unhealthy" -> "0",
+          "tasks_staged"    -> "0")
+      }
       
-      case Some(stats) => Seq(
-        "age"             -> stats.age.toString,
-        "status"          -> stats.status,
-        "num_instances"   -> stats.numInstances.toString,
-        "tasks_running"   -> stats.tasksRunning.toString,
-        "tasks_healthy"   -> stats.tasksHealthy.toString,
-        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged"    -> stats.tasksStaged.toString)
-        
-      case None => Seq(
-        "status"          -> "LOST",
-        "num_instances"   -> "0",
-        "tasks_running"   -> "0",
-        "tasks_healthy"   -> "0",
-        "tasks_unhealthy" -> "0",
-        "tasks_staged"    -> "0")
+      metaCon.copy( properties = metaCon.properties map { _ ++ newStats } orElse {
+        Some(newStats toMap)
+      })
     }
-    
-    metaCon.copy( properties = metaCon.properties map { _ ++ newStats } orElse {
-      Some(newStats toMap)
-    })
   }    
   
 }

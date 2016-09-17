@@ -127,14 +127,15 @@ trait ResourceScope extends Scope {
           "cpus"    -> "1.0",
           "timeout" -> "0" )))
   }
-  
-  def newDummyContainer(env: UUID) = {
-    createInstance(ResourceIds.Container, uuid(),
-      parent = Some(env),
-      properties = Some(Map(
+  val defaultContainerProps = Map(
         "container_type" -> "foo",
         "image" -> "bar",
-        "provider" -> "{}")))
+        "provider" -> "{}")
+        
+  def newDummyContainer(env: UUID, props: Map[String,String] = defaultContainerProps) = {
+    createInstance(ResourceIds.Container, uuid(),
+      parent = Some(env),
+      properties = Option(props))
   }  
   
   def dummyAuthAccountWithCreds(
