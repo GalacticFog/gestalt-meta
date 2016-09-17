@@ -23,7 +23,7 @@ import com.galacticfog.gestalt.data._
 class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope with Mockito with BeforeAll {
 
   lazy val rootOrgId = UUID.randomUUID()
-  lazy val adminUserId = UUID.randomUUID()
+  //lazy val adminUserId = UUID.randomUUID()
   lazy val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
 
   stopOnFail

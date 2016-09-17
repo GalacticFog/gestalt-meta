@@ -30,7 +30,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with BeforeAll {
   sequential
 
   lazy val rootOrgId = UUID.randomUUID()
-  lazy val adminUserId = UUID.randomUUID()
+  //lazy val adminUserId = UUID.randomUUID()
   lazy val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
 
   override def beforeAll(): Unit = {
