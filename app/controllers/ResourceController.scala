@@ -98,6 +98,24 @@ object ResourceController extends Authorization {
     else AuthorizedResourceSingle(rp, action)
   }  
   
+  private[controllers] def findResource(path: ResourcePath, account: AuthAccountWithCreds)
+      : Option[GestaltResourceInstance] = {
+
+    val resource = lookups.get(path.targetTypeId).fold {
+      Resource.fromPath(path.path)
+    }{ f =>
+      log.debug(s"Found custom lookup function for Resource.")
+      f(path, account) 
+    }
+
+    resource map { res =>
+      transforms.get(res.typeId).fold(res){ f =>
+        log.debug(s"Found custom transformation function for Resource: ${res.id}")
+        f(res, account).get
+      }
+    }
+  }  
+  
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
@@ -137,6 +155,9 @@ object ResourceController extends Authorization {
       }
     }
   }
+  
+  
+
   
   
   /*

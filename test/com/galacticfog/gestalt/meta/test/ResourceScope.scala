@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.meta.test
 
+
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
@@ -63,10 +64,10 @@ trait ResourceScope extends Scope {
       "workspace" -> wid,
       "environment" -> eid,
       "container" -> container.get.id,
-      "lambda" -> lambda.get.id
-    )
-
-  }  
+      "lambda" -> lambda.get.id)
+  }
+  
+  
   def newDummyGateway(env: UUID, name: String = uuid()) = {
     createInstance(ResourceIds.ApiGatewayProvider, 
         name,
@@ -109,6 +110,7 @@ trait ResourceScope extends Scope {
   parent           : json_object   : [required]
    */
   
+  
   def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
     createInstance(ResourceIds.MarathonProvider, name,
         parent = Option(parent),
@@ -127,6 +129,7 @@ trait ResourceScope extends Scope {
           "cpus"    -> "1.0",
           "timeout" -> "0" )))
   }
+  
   val defaultContainerProps = Map(
         "container_type" -> "foo",
         "image" -> "bar",
@@ -216,6 +219,28 @@ trait ResourceScope extends Scope {
     result.get
   }  
   
+  def testUser(org: UUID, name: String = uuid.toString) = {
+    newInstance(ResourceIds.User, name, org = org, properties = Some(Map(
+        "email" -> "foo",
+        "firstName" -> "alpha",
+        "lastName" -> "omega",
+        "phoneNumber" -> "555-555-5555",
+        "password" -> "secret")))
+  }  
+  
+  def createNewUser(org: UUID, id: UUID = uuid(), name: String = uuid.toString) = {
+    ResourceFactory.create(ResourceIds.Org, org)(
+      GestaltResourceInstance(
+        id = id,
+        typeId = ResourceIds.User,
+        orgId = org,
+        owner = ResourceOwnerLink(ResourceIds.Org, org.toString),
+        name = name,
+        properties = Some(Map( 
+          "email" -> s"$name@example.com", "phoneNumber" -> "555", "firstName" -> "foo", "lastName" -> "bar"
+      )))).get
+  }
+  
   def createInstance(typeId: UUID, name: String, id: UUID = uuid(), owner: ResourceOwnerLink = dummyOwner, org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
     ResourceFactory.create(ResourceIds.Org, org)(
       newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties), parent
@@ -236,7 +261,8 @@ trait ResourceScope extends Scope {
       properties = properties)
   }
   
+
+  
   def uuid() = UUID.randomUUID
   
-
 }
