@@ -1,11 +1,14 @@
 package controllers
 
+
 import java.util.UUID
 
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.DeleteManager
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.uuid2string
@@ -22,12 +25,27 @@ import play.api.{Logger => log}
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth.Authorization
 
+
 object SyncController extends Authorization {
-
-  private var adminId: UUID = null
   
-  def sync() = Authenticate() { implicit request =>
+  private var adminId: UUID = null
 
+  implicit lazy val syncStatContainerFormat = Json.format[Stat]
+  implicit lazy val syncStatsFormat = Json.format[SyncStats]
+  
+  case class Stat(created: Seq[UUID], updated: Seq[UUID], deleted: Seq[UUID])
+  case class SyncStats(orgs: Stat, users: Stat, groups: Stat) {
+    def toJson() = Json.toJson(this)
+  }
+  
+  /*
+   * 
+   * TODO: We currently update all Orgs, Groups, and Users on every sync. Until we devise some
+   * method of performing diffs on the resource types, this can't be avoided.
+   * 
+   */
+  def sync() = Authenticate() { implicit request =>
+  
     Try {
       
       val sd = Security.getOrgSyncTree(None, request.identity) match {
@@ -39,7 +57,10 @@ object SyncController extends Authorization {
         throw new ConflictException(
           "No 'admin' user found in gestalt-security. Cannot synchronize - no changes made.")
       }
-
+      
+      val rootId = getRootOrgId(request.identity)
+      setNewOrgEntitlements(rootId, rootId, request.identity, None)
+      
       val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
       val metausers = ResourceFactory.findAll(ResourceIds.User)
       val metagroups = ResourceFactory.findAll(ResourceIds.Group)
@@ -68,13 +89,13 @@ object SyncController extends Authorization {
       val creator = request.identity.account.id
       
       log.debug(s"Deleting ${orgsDelete.size} Orgs.")
-      deleteResources(creator, orgsDelete)
+      deleteResources(request.identity, orgsDelete, "Org")
       
       log.debug(s"Deleting ${usersDelete.size} Users.")
-      deleteResources(creator, usersDelete)
+      deleteResources(request.identity, usersDelete, "User")
       
       log.debug(s"Deleting ${groupsDelete.size} Groups.")
-      deleteResources(creator, groupsDelete)
+      deleteResources(request.identity, groupsDelete, "Group")
       
       createOrgs (ResourceIds.User, creator, (orgsCreate  map secOrgMap), request.identity)
       createUsers(ResourceIds.User, creator, (usersCreate map secAccMap), request.identity )
@@ -83,19 +104,41 @@ object SyncController extends Authorization {
       updateOrgs (creator, (orgsUpdate map secOrgMap), request.identity)
       updateUsers(creator, (usersUpdate map secAccMap), request.identity)
       updateGroups(creator, (groupsUpdate map secGroupMap), request.identity)
+      
+      val stats = SyncStats(
+        orgs   = Stat(orgsCreate, orgsUpdate, orgsDelete),
+        groups = Stat(groupsCreate, groupsUpdate, groupsDelete),
+        users  = Stat(usersCreate, usersUpdate, usersDelete))
 
+      log.info("Synchronization complete. Statistics:")
+      log.info(Json.prettyPrint(stats.toJson))
+      
     } match {
       case Success(_) => NoContent
       case Failure(e) => GenericErrorResult(500, e.getMessage)
     }
 
   }
-  
-  
-  def deleteResources(identity: UUID, ids: Iterable[UUID]) = {
-    for (id <- ids) ResourceFactory.hardDeleteResource(id).get
-  }
 
+  def deleteResources(account: AuthAccountWithCreds, ids: Iterable[UUID], resType: String) = {
+    for (id <- ids) {
+      
+      ResourceFactory.findById(id).fold {
+        log.warn(s"Delete-Resource : $resType $id was not found in Meta. Nothing to do.")
+      }{ res =>
+        
+        log.warn(s"SYNC: Deleting $resType id = $id, name = ${res.name}")
+        /* 
+         * NOTE: We skip the external deletes for Orgs, Groups, and Users because they're
+         * already gone from security (that's why we're deleting them from Meta)
+         */
+        DeleteController.manager.delete(res, account, 
+          force = true, 
+          skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))  
+      }
+    }
+  }
+  
   
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     
@@ -107,7 +150,6 @@ object SyncController extends Authorization {
       createNewMetaOrg(adminId, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
-     
           /*
            * TODO: Raise error if any of the Entitlements fail Create.
            */
@@ -117,8 +159,28 @@ object SyncController extends Authorization {
     }
   }  
   
+  def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
+   
+    for (org <- rs) {
+      
+      log.debug(s"Updating Org : ${org.name}")
+      
+      // TODO: ignore it if it doesn't exist, for now
+      
+      ResourceFactory.findById(org.id) foreach { o =>
+        
+        ResourceFactory.update(o.copy(name = org.name), creator) match {
+          case Failure(err) => throw err
+          case Success(org) => {
+            log.info(s"Successfully updated Org[${o.id}]")
+          }
+        }
+      } 
+    }
+  }    
+  
   def createGroups(creatorType: UUID, creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
-
+    
     for (group <- rs) {
       log.debug(s"Creating Group: ${group.name}")
       
@@ -129,25 +191,13 @@ object SyncController extends Authorization {
         case Failure(err) => throw err
         case Success(group) => {
           
-          val crud = resourceEntitlements(
-              adminId, 
-              org,
-              resource = group.id,
-              resourceType = ResourceIds.Group,
-              actions = Seq("create", "view", "update", "delete") )
-              
-          crud map { e =>
-            CreateResource(
-              ResourceIds.User, adminId, org, Json.toJson(e), account, 
-              Option(ResourceIds.Entitlement), Option(group.id)).get            
-          }
-          
+          setNewGroupEntitlements(org, group.id, account)
+
         }
       }
          
     }
   }
-  
   
   def updateGroups(creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
     for (group <- rs) {
@@ -156,90 +206,6 @@ object SyncController extends Authorization {
         ResourceFactory.update(g.copy(name = group.name, description = group.description), creator)  
       }
     }
-  }
-  
-
-  def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
-   
-    for (org <- rs) {
-   
-      log.debug(s"Updating Org : ${org.name}")
-      
-      // TODO: ignore it if it doesn't exist, for now
-      
-      ResourceFactory.findById(org.id) foreach { o =>
-        
-        ResourceFactory.update(o.copy(name = org.name), creator) match {
-          case Failure(err) => throw err
-          case Success(org) => {
-            
-            //
-            // TODO: These entitlements need to be created on 'root' in bootstrap.
-            //
-            
-            setNewOrgEntitlements(org.id, org.id, account, None)
-            
-            // Successfully created Org - create CRUD entitlements for 'admin' user.
-//            val crud = resourceEntitlements(
-//                adminId, org.id, org.id, ResourceIds.Org,
-//                Seq("create", "view", "update", "delete") )
-//                
-//            val usercrud = resourceEntitlements(
-//                adminId, org.id, org.id, ResourceIds.User,
-//                Seq("create", "view", "update", "delete") )
-//                
-//            val groupcrud = resourceEntitlements(
-//                adminId, org.id, org.id, ResourceIds.Group,
-//                Seq("create", "view", "update", "delete") )   
-//                
-//            val licensecrud = resourceEntitlements(
-//                adminId, org.id, org.id, ResourceIds.License,
-//                Seq("create", "view", "update", "delete") )
-//            
-//            val providercrud = resourceEntitlements(
-//                adminId, org.id, org.id, ResourceIds.Provider,
-//                Seq("create", "view", "update", "delete") )
-//            (crud ++ usercrud ++ groupcrud ++ licensecrud) map { e => 
-//              CreateResource(
-//                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
-//                Option(ResourceIds.Entitlement), Option(org.id)).get            
-//            }
-//            
-//            this.create
-//            CreateResource(
-//                ResourceIds.User, adminId, org.id, Json.toJson(e), account, 
-//                Option(ResourceIds.Entitlement), Option(org.id))
-            
-          }
-        }
-      }
-      
-    }
-  }  
-
-  
-  def getAdminUserId(account: AuthAccountWithCreds): AuthAccountWithCreds = {
-    // TODO: Actually look up the 'admin' user - waiting on a change to the
-    // security /sync payload to be able to identify this user.
-    account  
-  }
-  
-  def getRootOrgId(account: AuthAccountWithCreds): UUID = {
-    val root = Security.getRootOrg(account)
-    root.get.id
-  }
-  
-  def getRootOrgFqon(account: AuthAccountWithCreds): String = {
-    Security.getRootOrg(account).get.fqon
-  }
-
-  private def userProps(acc: GestaltAccount): Seq[(String,String)] = {
-    Seq(
-      "firstName" -> acc.firstName,
-      "lastName" -> acc.lastName,
-      "email" -> acc.email.getOrElse(""),
-      "phoneNumber" -> acc.phoneNumber.getOrElse("")
-    )
   }
   
   def createUsers(creatorType: UUID, creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
@@ -258,21 +224,8 @@ object SyncController extends Authorization {
           description = acc.description ) match {
         case Failure(err) => throw err
         case Success(usr) => {
-
-          val crud = resourceEntitlements(
-              admin.account.id, 
-              org,
-              resource = usr.id,
-              resourceType = ResourceIds.User,
-              actions = Seq("create", "view", "update", "delete") )
-              
-          crud map { e =>
-            CreateResource(
-              ResourceIds.User, 
-              admin.account.id, 
-              org, Json.toJson(e), account, 
-              Option(ResourceIds.Entitlement), Option(usr.id)).get            
-          }
+          
+          setNewUserEntitlements(org, usr.id, account)
 
         }
       }
@@ -302,12 +255,37 @@ object SyncController extends Authorization {
         )
       }
     }
-  }  
+  }    
+  
+
+  def getAdminUserId(account: AuthAccountWithCreds): AuthAccountWithCreds = {
+    // TODO: Actually look up the 'admin' user - waiting on a change to the
+    // security /sync payload to be able to identify this user.
+    account  
+  }
+  
+  def getRootOrgId(account: AuthAccountWithCreds): UUID = {
+    val root = Security.getRootOrg(account)
+    root.get.id
+  }
+  
+  def getRootOrgFqon(account: AuthAccountWithCreds): String = {
+    Security.getRootOrg(account).get.fqon
+  }
+
+  private def userProps(acc: GestaltAccount): Seq[(String,String)] = {
+    Seq(
+      "firstName" -> acc.firstName,
+      "lastName" -> acc.lastName,
+      "email" -> acc.email.getOrElse(""),
+      "phoneNumber" -> acc.phoneNumber.getOrElse("")
+    )
+  }
   
   private def computeResourceDiffs(securityIds: Seq[UUID], metaIds: Seq[UUID]) = {
     val create = securityIds.diff(metaIds) // in security, not meta
     val delete = metaIds.diff(securityIds) // in meta, not security
-    val update = securityIds.diff(create)  // in security, but not new
+    val update = securityIds.diff(create)  // in security, and in meta
     (create, delete, update)
   }
   
