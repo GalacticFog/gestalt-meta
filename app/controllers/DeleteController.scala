@@ -49,7 +49,7 @@ object DeleteController extends Authorization {
    * the given function is called to delete the resource (and whatever else) in the
    * external system before the resource is deleted from Meta.
    */
-  private val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
+  private[controllers] val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
       external = Map(
         ResourceIds.Org -> deleteExternalOrg,
         ResourceIds.User -> deleteExternalUser,
