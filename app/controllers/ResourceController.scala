@@ -51,14 +51,14 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container   -> ContainerMethods.lookupContainer,
+    ResourceIds.Container   -> ContainerMethodsImpl.lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
-    ResourceIds.Container   -> ContainerMethods.lookupContainers,
+    ResourceIds.Container   -> ContainerMethodsImpl.lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements
   )
   

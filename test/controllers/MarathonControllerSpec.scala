@@ -29,12 +29,12 @@ class MarathonControllerSpec extends PlaySpecification with ResourceScope with B
       
       val data = newDummyEnvironment(dummyRootOrgId)
       
-      MarathonController.findMigrationRule(data("environment")).isEmpty must beTrue
+      ContainerController.findMigrationRule(data("environment")).isEmpty must beTrue
       
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
       
-      val event = MarathonController.findMigrationRule(data("environment"))
+      val event = ContainerController.findMigrationRule(data("environment"))
       
       event.isEmpty must beFalse
     }
