@@ -65,12 +65,12 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   }
 
   lazy val defaultContainerMethods = ContainerServiceImpl
-  lazy val defaultMarathonAPIController = new MarathonAPIController {}
+  lazy val defaultMarathonAPIController = new MarathonAPIController(ContainerServiceImpl)
 
   override def getControllerInstance[A](controllerClass: Class[A]): A = {
     if (classOf[ContainerService] == controllerClass) defaultContainerMethods.asInstanceOf[A]
     else if (classOf[MarathonAPIController] == controllerClass) defaultMarathonAPIController.asInstanceOf[A]
-    else ???
+    else super.getControllerInstance(controllerClass)
   }
 
 }

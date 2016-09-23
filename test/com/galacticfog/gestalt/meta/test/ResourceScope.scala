@@ -195,14 +195,14 @@ trait ResourceScope extends Scope {
   def getOrg(fqon: String) = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
   
   
-  def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map()): (UUID,UUID) = {
+  def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): (UUID,UUID) = {
     
-    val wrk1 = createInstance(ResourceIds.Workspace, uuid(),
+    val wrk1 = createInstance(ResourceIds.Workspace, wrkName,
         org = org,
         parent = Option(org),
         properties = Option(workspaceProps))
     
-    val env1 = createInstance(ResourceIds.Environment, uuid(),
+    val env1 = createInstance(ResourceIds.Environment, envName,
         org = org,
         parent = Option(wrk1.get.id),
         properties = Option(
