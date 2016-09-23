@@ -34,7 +34,7 @@ import com.galacticfog.gestalt.meta.auth.Actions
 object ContainerController extends Authorization {
 
   import com.galacticfog.gestalt.security.api.json.JsonImports._
-  import ContainerMethodsImpl.{marathonProvider, marathonClient, appComponents}
+  import ContainerServiceImpl.{marathonProvider, marathonClient, appComponents}
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
@@ -81,7 +81,7 @@ object ContainerController extends Authorization {
                 guid <- metaCon2guid.get(originalMetaCon.id)
                 marCon <- mapMarCons.get(guid)
               } yield marCon
-              ContainerMethodsImpl.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
+              ContainerServiceImpl.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
             }
           } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
       }
@@ -283,12 +283,12 @@ object ContainerController extends Authorization {
 
       val user = request.identity
       val container = getMigrationContainer(envId, id)
-      val (operations, options) = ContainerMethodsImpl.setupMigrateRequest(
+      val (operations, options) = ContainerServiceImpl.setupMigrateRequest(
           fqon, envId, container, user, META_URL.get, request.queryString)
       
       SafeRequest (operations, options) Protect { maybeState =>    
         ResourceFactory.update(
-            ContainerMethodsImpl.upsertProperties(container, "status" -> "MIGRATING"),
+            ContainerServiceImpl.upsertProperties(container, "status" -> "MIGRATING"),
             user.account.id) match {
           case Failure(e) => HandleExceptions(e)
           case Success(c) => Accepted(Output.renderInstance(c, META_URL))
@@ -309,7 +309,7 @@ object ContainerController extends Authorization {
           case Some(c) => {
 
             log.debug(s"Deleting Marathon App...")
-            ContainerMethodsImpl.deleteMarathonApp(fqon, wrk.name, env.name, c) map { js =>
+            ContainerServiceImpl.deleteMarathonApp(fqon, wrk.name, env.name, c) map { js =>
               log.info("marathon return from app deletion: " + js.toString)
             }
             log.debug(s"Deleting Meta Container...")
@@ -387,7 +387,7 @@ object ContainerController extends Authorization {
   }
   
   protected [controllers] def scaleMarathonApp(container: GestaltResourceInstance, numInstances: Int): Future[JsValue] = {
-    val provider = marathonProvider(ContainerMethodsImpl.containerProviderId(container))
+    val provider = marathonProvider(ContainerServiceImpl.containerProviderId(container))
     container.properties flatMap {_.get("external_id")} match {
       case Some(externalId) =>
         marathonClient(provider).scaleApplication(externalId, numInstances)
@@ -397,7 +397,7 @@ object ContainerController extends Authorization {
   }
 
   protected [controllers] def scaleMarathonAppSync(container: GestaltResourceInstance, numInstances: Int) /*: Future[JsValue]*/ = {
-    val provider = marathonProvider(ContainerMethodsImpl.containerProviderId(container))
+    val provider = marathonProvider(ContainerServiceImpl.containerProviderId(container))
     
     container.properties.flatMap(_.get("external_id")).fold {
       throw new RuntimeException("container.properties.external_id not found.")

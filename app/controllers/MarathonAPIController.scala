@@ -47,7 +47,7 @@ trait MarathonAPIController extends Authorization {
   import com.galacticfog.gestalt.security.api.json.JsonImports._
   import ContainerController.futureToFutureTry
 
-  def containerMethods: ContainerMethods = ContainerMethodsImpl
+  def containerMethods: ContainerService = play.api.Play.global.getControllerInstance(classOf[ContainerService])
 
   class MarAuth(maybeGenFQON: Option[RequestHeader => Option[String]] = None) extends ActionBuilder[SecuredRequest] {
     def invokeBlock[B](request: Request[B], block: SecuredRequest[B] => Future[Result]) = {

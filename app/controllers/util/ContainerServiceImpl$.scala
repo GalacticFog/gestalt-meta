@@ -24,7 +24,7 @@ import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{Resource,ResourcePath}
 import com.galacticfog.gestalt.events._
 
-trait ContainerMethods extends MetaController {
+trait ContainerService extends MetaController {
 
   //private val log = Logger(this.getClass)
 
@@ -249,4 +249,4 @@ trait ContainerMethods extends MetaController {
 
 }
 
-object ContainerMethodsImpl extends ContainerMethods {}
+object ContainerServiceImpl extends ContainerService {}
