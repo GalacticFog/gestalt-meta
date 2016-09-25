@@ -127,5 +127,13 @@ object JsonUtil {
     }
   }
   
+  def tryParse[A](json: JsValue)(implicit reads: Reads[A]): Try[A] = Try {
+    json.validate[A].map {
+      case a => a
+    }.recoverTotal { e => 
+      throw new BadRequestException(
+          s"Failed parsing JSON string: " + JsError.toFlatJson(e).toString) 
+    }
+  }  
 }
 

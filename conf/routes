@@ -2,10 +2,10 @@
 ###
 ###
 
-PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.PatchController.patchResource(fqon, path)
+PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  @controllers.PatchController.patchResource(fqon, path)
 
 POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
-POST	/sync					 controllers.SyncController.sync()
+POST	/sync					 @controllers.SyncController.sync()
 
 GET		/about					 controllers.InfoController.about()
 GET		/health 				 controllers.InfoController.health()

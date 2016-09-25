@@ -50,13 +50,25 @@ trait ResourceScope extends Scope {
       parent: UUID = dummyRootOrgId,
       properties: Option[Map[String,String]] = None) = {
     
+    val fqprop = Map("fqon" -> name)
+    val props = properties.fold(Option(fqprop))(
+        p => Option(p ++ fqprop )
+    )
+    
     createInstance(ResourceIds.Org, name,
         parent = Option(parent),
-        properties = properties)
+        properties = props)
   }
   
-  def newDummyEnvironment(org: UUID = dummyRootOrgId, children: Seq[UUID] = Seq()): Map[String,UUID] = {
-    val (wid, eid) = createWorkspaceEnvironment(org)
+  def newDummyEnvironment(
+      org: UUID = dummyRootOrgId, 
+      children: Seq[UUID] = Seq(),
+      properties: Map[String,Map[String,String]] = Map()): Map[String,UUID] = {
+    
+    val (wid, eid) = createWorkspaceEnvironment(org,
+        workspaceProps   = if (properties.contains("workspace")) properties("workspace") else Map.empty,
+        environmentProps = if (properties.contains("environment")) properties("environment") else Map.empty)
+        
     val container = newDummyContainer(eid)
     val lambda = newDummyLambda(eid)
 

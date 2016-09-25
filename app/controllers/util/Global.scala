@@ -66,4 +66,22 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
     }
   }
   
+  
+  import controllers._
+  
+  lazy val instances: Map[Class[_], _ <: Controller] = Map(
+    classOf[PatchController] -> new PatchController {},
+    classOf[SyncController]  -> new SyncController {}
+  )  
+  
+  def getInstance[A](cls: Class[A]) = instances.get(cls) getOrElse {
+    throw new RuntimeException(s"No handler configured for ${cls.getSimpleName}.")
+  }
+  
+  override def getControllerInstance[A](controllerClass: Class[A]): A = {
+    log.debug(s"Resolving Controller : ${controllerClass.getSimpleName}")
+    getInstance(controllerClass).asInstanceOf[A]
+  }
+  
+  
 }
