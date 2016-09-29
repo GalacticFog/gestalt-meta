@@ -193,29 +193,49 @@ trait ResourceScope extends Scope {
   
   
   def getOrg(fqon: String) = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
-  
-  
+
+  def createWorkEnv(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): Try[(Instance, Instance)] = {
+    for {
+      w <- createInstance(ResourceIds.Workspace, wrkName,
+        org = org,
+        parent = Option(org),
+        properties = Option(workspaceProps))
+      e <- createInstance(ResourceIds.Environment, envName,
+        org = org,
+        parent = Option(createInstance(ResourceIds.Workspace, wrkName,
+          org = org,
+          parent = Option(org),
+          properties = Option(workspaceProps)).get.id),
+        properties = Option(
+          (environmentProps ++ Map("workspace" -> createInstance(ResourceIds.Workspace, wrkName,
+            org = org,
+            parent = Option(org),
+            properties = Option(workspaceProps)).get.id.toString,
+            "environment_type" -> EnvironmentType.id("test").toString))))
+    } yield (w, e)
+  }
+
   def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): (UUID,UUID) = {
-    
+
     val wrk1 = createInstance(ResourceIds.Workspace, wrkName,
         org = org,
         parent = Option(org),
         properties = Option(workspaceProps))
-    
+
     val env1 = createInstance(ResourceIds.Environment, envName,
         org = org,
         parent = Option(wrk1.get.id),
         properties = Option(
-            (environmentProps ++ Map("workspace" -> wrk1.get.id.toString, 
+            (environmentProps ++ Map("workspace" -> wrk1.get.id.toString,
                 "environment_type" -> EnvironmentType.id("test").toString))))
-    
+
     val result = for {
       w <- wrk1
       e <- env1
     } yield (w.id, e.id)
     result.get
-  }  
-  
+  }
+
   def createInstance(typeId: UUID, name: String, id: UUID = uuid(), owner: ResourceOwnerLink = dummyOwner, org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
     ResourceFactory.create(ResourceIds.Org, org)(
       newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties), parent

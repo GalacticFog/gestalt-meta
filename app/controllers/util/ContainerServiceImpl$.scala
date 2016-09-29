@@ -10,7 +10,7 @@ import play.api.libs.json._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{Future, Await}
+import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration._
 
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -56,6 +56,13 @@ trait ContainerService extends MetaController {
     (operations,options)
   }
 
+  def launchContainer(fqon: String,
+                      workspace: GestaltResourceInstance,
+                      environment: GestaltResourceInstance,
+                      name: String,
+                      inputProperties: InputContainerProperties): Future[GestaltResourceInstance] = {
+    ???
+  }
 
   /**
     * Extract and validate the 'provider' querystring parameter.

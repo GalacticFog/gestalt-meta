@@ -176,10 +176,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           }
         """)
 
-      val app = inputJson.as[MarathonApp]
-      app must_== MarathonApp(
+      val app = inputJson.as[MarathonAppUpdate]
+      app must_== MarathonAppUpdate(
         id = "cli-example-server",
-        container = MarathonContainer(containerType = "DOCKER", docker = Some(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
+        container = MarathonContainer(`type` = "DOCKER", docker = Some(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
           MarathonPortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
         )))), volumes = None),
         cpus = 0.1,
@@ -187,17 +187,16 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         instances = 1,
         cmd = None,
         args = None,
-        ports = Some(Seq(0)),
-        portDefinitions = None,
-        labels = Some(Map("key" -> "value")),
-        healthChecks = Some(Seq(MarathonHealthCheck(
+        portDefinitions = Seq(),
+        labels = Map("key" -> "value"),
+        healthChecks = Seq(MarathonHealthCheck(
           protocol = Some("HTTP"),
           path = Some("/"),
           portIndex = Some(0),
           gracePeriodSeconds = Some(30),
           intervalSeconds = Some(3),
           maxConsecutiveFailures = Some(10)
-        )))
+        ))
       )
     }
 
@@ -214,10 +213,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           ))
         )
         val marContainer = MarathonContainer(
-          docker = None, containerType = "ctype", volumes = Some(Seq(Volume(
+          docker = None, `type` = "ctype", volumes = Some(Seq(Volume(
             container_path = "cpath", host_path = Some("hpath"), mode = "RW", persistent = None
-          )))
-        )
+          ))
+        ))
         Json.toJson(marContainer) must_== marValidJson
         marValidJson.as[MarathonContainer] must_== marContainer
       }
@@ -234,10 +233,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           ))
         )
         val marContainer = MarathonContainer(
-          docker = None, containerType = "ctype", volumes = Some(Seq(Volume(
+          docker = None, `type` = "ctype", volumes = Some(Seq(Volume(
             container_path = "cpath", host_path = None, mode = "RW", persistent = Some(PersistentVolumeInfo(size = 42))
-          )))
-        )
+          ))
+        ))
         Json.toJson(marContainer) must_== marValidJson
         marValidJson.as[MarathonContainer] must_== marContainer
       }
@@ -305,11 +304,11 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         ),
         network = "HOST",
         num_instances = 1,
-        volumes = Some(Seq(
+        volumes = Seq(
           Volume("cpath1", Some("/hpath1"), None, "RW"),
           Volume("cpath1", None, Some(PersistentVolumeInfo(10)), "RW"),
           Volume("cpath3", Some("/hpath3"), None, "RO")
-        ))
+        )
       ), marathonProviderWithoutNetworks)
       marApp.upgradeStrategy must beSome(UpgradeStrategy(
         0.5,
@@ -330,10 +329,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         ),
         network = "HOST",
         num_instances = 1,
-        volumes = Some(Seq(
+        volumes = Seq(
           Volume("cpath1", Some("/hpath1"), None, "RW"),
           Volume("cpath3", Some("/hpath3"), None, "RO")
-        ))
+        )
       ), marathonProviderWithoutNetworks)
       marApp.upgradeStrategy must beNone
     }
@@ -382,7 +381,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         )
       )
 
-      val marApp = MarathonApp(
+      val marApp = MarathonAppUpdate(
         id = name,
         container = MarathonContainer(
           docker = Some(MarathonDocker(
@@ -394,7 +393,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
               KeyValuePair("user","someUser")
             ))
           )),
-          containerType = "DOCKER"
+          `type` = "DOCKER",
+          volumes = Some(Seq())
         ),
         cpus = 2.0,
         mem = 256.0,
@@ -403,12 +403,12 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         args = None,
         ipAddress = Some(IPPerTaskInfo(Some(DiscoveryInfo(Some(Seq(
         )))))),
-        labels = None,
-        portDefinitions = None,
-        healthChecks = None,
-        env = Some(Map(
+        labels = Map(),
+        portDefinitions = Seq(),
+        healthChecks = Seq(),
+        env = Map(
           "env_var_1" -> "env_val_1"
-        )),
+        ),
         user = None
       )
 
@@ -523,7 +523,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       ))
       provider.id returns providerId
 
-      val marApp = MarathonApp(
+      val marApp = MarathonAppUpdate(
         id = name,
         container = MarathonContainer(
           docker = Some(MarathonDocker(
@@ -534,7 +534,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
               KeyValuePair("user","someUser")
             ))
           )),
-          containerType = "DOCKER"
+          `type` = "DOCKER",
+          volumes = Some(Seq())
         ),
         cpus = 2.0,
         mem = 256.0,
@@ -542,13 +543,12 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         cmd = Some("/usr/bin/someCmd"),
         args = None,
         ipAddress = None,
-        labels = None,
-        portDefinitions = Some(Seq()),
-        ports = None,
-        healthChecks = None,
-        env = Some(Map(
+        labels = Map(),
+        portDefinitions = Seq(),
+        healthChecks = Seq(),
+        env = Map(
           "env_var_1" -> "env_val_1"
-        )),
+        ),
         user = None
       )
 
@@ -637,7 +637,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
-        constraints = Some(Seq("rack_id:like:1", "hostname:unique")),
+        constraints = Seq("rack_id:like:1", "hostname:unique"),
         network = "BRIDGE",
         num_instances = 1
       ), marathonProviderWithoutNetworks)).toString

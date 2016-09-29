@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
 import play.api.mvc._
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
@@ -181,7 +181,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
           marConTry <- futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
           stats = marConTry.toOption flatMap MarathonClient.marathon2Container
           outputMetaContainer = containerService.updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
-          outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not cover meta container to marathon container"))
+          outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not convert meta container to marathon container"))
         } yield Ok(Json.obj("app" -> outputMarathonContainer))
     }
   }
@@ -228,27 +228,16 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
    */
   def postMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
 
-    val inputJson = request.body.as[JsObject]
-    val provider = containerService.marathonProvider(providerId)
-
     containerService.appComponents(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
-
-        // TODO: Parse result for error...
-        log.debug("Transforming JSON to Meta Container format...")
-        val metaContainerJson = marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID)
-        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+        val provider = containerService.marathonProvider(providerId)
+        // TODO: Needs a lot of error handling
         for {
-          f1 <- containerService.marathonClient(provider).launchContainer_marathon_v2(fqon, wrk.name, env.name, inputJson)
-          metaContainerWithExtId = JsonUtil.withJsonPropValue(
-            obj = metaContainerJson,
-            propName = "external_id",
-            propValue = JsString(appGroupPrefix.stripSuffix("/") + "/" + (f1 \ "id").as[String].stripPrefix("/"))
-          )
-          f2 <- createResourceD(fqid(fqon), metaContainerWithExtId, Some(ResourceIds.Container), Some(environment))
-        } yield Created(f1)
-
+          (name,props) <- Future.fromTry(marathonApp2MetaContainer(request.body, provider))
+          metaContainer <- containerService.launchContainer(fqon, wrk, env, name, props)
+          marv2Container <- Future.fromTry(meta2Marathon(metaContainer))
+        } yield Created(Json.toJson(marv2Container))
       }
     }
   }

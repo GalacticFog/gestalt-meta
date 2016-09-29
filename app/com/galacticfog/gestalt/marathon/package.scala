@@ -2,6 +2,7 @@ package com.galacticfog.gestalt
  
 import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import play.api.data.validation.ValidationError
 
 import scala.collection.generic
 import scala.util.{Try,Success,Failure}
@@ -19,7 +20,7 @@ package object marathon {
     maximumOverCapacity = 0.0
   )
 
-  case class PersistentVolumeInfo(size: Int)
+  case class PersistentVolumeInfo(size: Long)
 
   case class Volume(
       container_path: String,
@@ -42,7 +43,7 @@ package object marathon {
   case class InputProvider(
       id: UUID,
       name: Option[String] = None,
-      locations: Option[Iterable[String]] = None)
+      locations: Option[Seq[String]] = None)
 
   case class PortMapping(
       protocol: String,
@@ -54,20 +55,21 @@ package object marathon {
   case class InputContainerProperties(container_type: String,
                                       image: String,
                                       provider: InputProvider,
-                                      port_mappings: Iterable[PortMapping] = Seq(),
+                                      port_mappings: Seq[PortMapping] = Seq(),
                                       cpus: Double = 0.2,
                                       memory: Int = 128,
+                                      disk: Double = 0.0,
                                       num_instances: Int = 1,
                                       network: String = "BRIDGE",
                                       cmd: Option[String] = None,
-                                      constraints: Option[Seq[String]] = None,
+                                      constraints: Seq[String] = Seq(),
                                       accepted_resource_roles: Option[Seq[String]] = None,
-                                      args: Option[Iterable[String]] = None,
+                                      args: Option[Seq[String]] = None,
                                       force_pull: Boolean = false,
-                                      health_checks: Option[Iterable[HealthCheck]] = None,
-                                      volumes: Option[Iterable[Volume]] = None,
-                                      labels: Option[Map[String,String]] = None,
-                                      env: Option[Map[String,String]] = None,
+                                      health_checks: Seq[HealthCheck] = Seq(),
+                                      volumes: Seq[Volume] = Seq(),
+                                      labels: Map[String,String] = Map(),
+                                      env: Map[String,String] = Map(),
                                       user: Option[String] = None)
 
   case class InputContainer(
@@ -88,14 +90,12 @@ package object marathon {
       image: String,
       network: String = "BRIDGE",
       forcePullImage: Option[Boolean] = None,
-      portMappings: Option[Iterable[MarathonPortMapping]] = None,
-      parameters: Option[Iterable[KeyValuePair]] = None)
+      portMappings: Option[Seq[MarathonPortMapping]] = None,
+      parameters: Option[Seq[KeyValuePair]] = None)
 
-  case class MarathonContainer(
-      docker: Option[MarathonDocker],
-      containerType: String,
-      volumes: Option[Iterable[Volume]] = None
-  )
+  case class MarathonContainer(docker: Option[MarathonDocker],
+                               `type`: String,
+                               volumes: Option[Seq[Volume]] = None)
 
   case class MarathonHealthCheck(
                           protocol: Option[String] = Some("http"),
@@ -117,26 +117,21 @@ package object marathon {
 
   case class UpgradeStrategy(minimumHealthCapacity: Double, maximumOverCapacity: Double)
 
-  case class MarathonApp(
+  case class MarathonAppUpdate(
     id: String,
     container: MarathonContainer,
-    cpus: Double = 0.2,
+    cpus: Double = 1.0,
     mem: Double = 128.0,
+    disk: Double = 0,
     instances: Int = 1,
-    tasksStaged: Option[Int] = None,
-    tasksRunning: Option[Int] = None,
-    tasksHealthy: Option[Int] = None,
-    tasksUnhealthy: Option[Int] = None,
     cmd: Option[String] = None,
-    constraints: Option[Seq[Seq[String]]] = None,
+    constraints: Seq[Seq[String]] = Seq(),
     acceptedResourceRoles: Option[Seq[String]] = None,
-    args: Option[Iterable[String]] = None,
-    ports: Option[Iterable[Int]] = None,
-    portDefinitions: Option[Iterable[PortDefinition]] = None,
-    labels: Option[Map[String, String]] = None,
-    healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
-    env: Option[Map[String, String]] = None,
-    deployments: Option[Seq[JsObject]] = None,
+    args: Option[Seq[String]] = None,
+    portDefinitions: Seq[PortDefinition] = Seq(),
+    labels: Map[String, String] = Map(),
+    healthChecks: Seq[MarathonHealthCheck] = Seq(),
+    env: Map[String, String] = Map(),
     ipAddress: Option[IPPerTaskInfo] = None,
     upgradeStrategy: Option[UpgradeStrategy] = None,
     user: Option[String] = None)
@@ -147,24 +142,12 @@ package object marathon {
 
   implicit lazy val marathonUpgradeStrategyFmt = Json.format[UpgradeStrategy]
 
-  lazy val marathonVolumeReads = new Reads[Volume] {
-    lazy val simpleVolumeReads = (
-      (__ \ "containerPath").read[String] and
-        (__ \ "hostPath").readNullable[String] and
-        (__ \ "persistent").readNullable[PersistentVolumeInfo] and
-        (__ \ "mode").read[String]
-      )(Volume.apply _)
-
-    override def reads(json: JsValue): JsResult[Volume] = {
-      json.validate[Volume](simpleVolumeReads) match {
-        case s @ JsSuccess(Volume(cPath, Some(hPath), None,         mode), _) => s
-        case s @ JsSuccess(Volume(cPath, None,        Some(pvInfo), mode), _) => s
-        case s @ JsSuccess(Volume(_, None,    None,    _), _) => JsError("container volume must contain one of hostPath or persistent")
-        case s @ JsSuccess(Volume(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of hostPath or persistent")
-        case e: JsError => e
-      }
-    }
-  }
+  lazy val marathonVolumeReads =  (
+    (__ \ "containerPath").read[String] and
+      (__ \ "hostPath").readNullable[String] and
+      (__ \ "persistent").readNullable[PersistentVolumeInfo] and
+      (__ \ "mode").read[String]
+    )(Volume.apply _)
 
   lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
@@ -214,7 +197,32 @@ package object marathon {
     }
   }
 
-  implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
+  lazy val inputContainerPropertiesWrites = Json.writes[InputContainerProperties]
+  lazy val inputContainerPropertiesReads: Reads[InputContainerProperties] = (
+    (__ \ "container_type").read[String] and
+    (__ \ "image").read[String] and
+    (__ \ "provider").read[InputProvider] and
+    ((__ \ "port_mappings").read[Seq[PortMapping]] orElse Reads.pure(Seq())) and
+    ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
+    ((__ \ "memory").read[Int] orElse Reads.pure(128)) and
+    ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
+    ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
+    ((__ \ "network").read[String] orElse Reads.pure("BRIDGE")) and
+    (__ \ "cmd").readNullable[String] and
+    ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
+    (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
+    (__ \ "args").readNullable[Seq[String]] and
+    ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
+    ((__ \ "health_checks").read[Seq[HealthCheck]] orElse Reads.pure(Seq())) and
+    ((__ \ "volumes").read[Seq[Volume]] orElse Reads.pure(Seq())) and
+    ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
+    ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
+    (__ \ "user").readNullable[String]
+    )(InputContainerProperties.apply _)
+
+  implicit lazy val inputContainerPropertiesFormat = Format(inputContainerPropertiesReads, inputContainerPropertiesWrites)
+
+
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
 
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
@@ -227,84 +235,82 @@ package object marathon {
   implicit lazy val discoveryInfoFormat = Json.format[DiscoveryInfo]
   implicit lazy val ipPerTaskInfoFormat = Json.format[IPPerTaskInfo]
 
-  def getICBF()(implicit bf: generic.CanBuildFrom[Iterable[_], Volume, Iterable[Volume]]) = bf
+  def getICBF()(implicit bf: generic.CanBuildFrom[Seq[_], Volume, Seq[Volume]]) = bf
 
   implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
     (__ \ "docker").readNullable[MarathonDocker] and
-      (__ \ "type").read[String] and
-      (__ \ "volumes").readNullable[Iterable[Volume]](Reads.traversableReads[Iterable,Volume](getICBF(), marathonVolumeReads))
-    )(MarathonContainer.apply _)
+      ((__ \ "type").read[String] orElse Reads.pure("DOCKER")) and
+      (__ \ "volumes").readNullable[Seq[Volume]](Reads.traversableReads[Seq,Volume](getICBF(), marathonVolumeReads))
+    )(MarathonContainer(_, _, _))
+    .filterNot(ValidationError("container volume must contain one of hostPath or persistent")) { container =>
+      container.volumes.exists(_.exists { vol =>
+        !(vol.host_path.isDefined ^ vol.persistent.isDefined)
+      })
+    }
 
   implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
     (__ \ "docker").writeNullable[MarathonDocker] and
       (__ \ "type").write[String] and
-      (__ \ "volumes").writeNullable[Iterable[Volume]](Writes.traversableWrites[Volume](marathonVolumeWrites))
+      (__ \ "volumes").writeNullable[Seq[Volume]](Writes.traversableWrites[Volume](marathonVolumeWrites))
     )(unlift(MarathonContainer.unapply))
 
-  implicit lazy val marathonAppReads: Reads[MarathonApp] = (
+  implicit lazy val marathonAppReads: Reads[MarathonAppUpdate] = (
     (__ \ "id").read[String] and
       (__ \ "container").read[MarathonContainer] and
-      (__ \ "cpus").read[Double] and
-      (__ \ "mem").read[Double] and
-      (__ \ "instances").read[Int] and
-      (__ \ "tasksStaged").readNullable[Int] and
-      (__ \ "tasksRunning").readNullable[Int] and
-      (__ \ "tasksHealthy").readNullable[Int] and
-      (__ \ "tasksUnhealthy").readNullable[Int] and
+      ((__ \ "cpus").read[Double] orElse Reads.pure(1.0)) and
+      ((__ \ "mem").read[Double] orElse Reads.pure(128.0)) and
+      ((__ \ "disk").read[Double] orElse Reads.pure(0)) and
+      ((__ \ "instances").read[Int] orElse Reads.pure(1)) and
       (__ \ "cmd").readNullable[String] and
-      (__ \ "constraints").readNullable[Seq[Seq[String]]] and
+      ((__ \ "constraints").read[Seq[Seq[String]]] orElse Reads.pure(Seq())) and
       (__ \ "acceptedResourceRoles").readNullable[Seq[String]] and
-      (__ \ "args").readNullable[Iterable[String]] and
-      (__ \ "ports").readNullable[Iterable[Int]] and
-      (__ \ "portDefinitions").readNullable[Iterable[PortDefinition]] and
-      (__ \ "labels").readNullable[Map[String,String]] and
-      (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
-      (__ \ "env").readNullable[Map[String,String]] and
-      (__ \ "deployments").readNullable[Seq[JsObject]] and
+      (__ \ "args").readNullable[Seq[String]] and
+      ((__ \ "portDefinitions").read[Seq[PortDefinition]] orElse Reads.pure(Seq())) and
+      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
+      ((__ \ "healthChecks").read[Seq[MarathonHealthCheck]] orElse Reads.pure(Seq())) and
+      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "ipAddress").readNullable[IPPerTaskInfo] and
       (__ \ "upgradeStrategy").readNullable[UpgradeStrategy] and
       (__ \ "user").readNullable[String]
-    )(MarathonApp.apply _)
+    )(MarathonAppUpdate.apply _)
 
-  implicit lazy val marathonAppWrites = (
-    (__ \ "id").write[String] and
+  implicit lazy val marathonAppUpdateWrites = (
       (__ \ "acceptedResourceRoles").write[JsValue] and
       (__ \ "args").write[JsValue] and
-      (__ \ "container").write[MarathonContainer] and
       (__ \ "cmd").write[JsValue] and
+      (__ \ "constraints").write[Seq[Seq[String]]] and
+      (__ \ "container").write[MarathonContainer] and
       (__ \ "cpus").write[Double] and
+      (__ \ "disk").write[Double] and
       (__ \ "env").write[Map[String,String]] and
       (__ \ "healthChecks").write[Seq[MarathonHealthCheck]] and
+      (__ \ "id").write[String] and
       (__ \ "instances").write[Int] and
       (__ \ "ipAddress").write[JsValue] and
       (__ \ "labels").write[Map[String,String]] and
       (__ \ "mem").write[Double] and
       (__ \ "portDefinitions").write[Seq[PortDefinition]] and
-      (__ \ "ports").writeNullable[Iterable[Int]] and
       (__ \ "upgradeStrategy").writeNullable[UpgradeStrategy] and
-      (__ \ "user").write[JsValue] and
-      (__ \ "constraints").write[Seq[Seq[String]]] and
-      (__ \ "deployments").write[Seq[JsObject]] and
-      (__ \ "tasksStaged").writeNullable[Int] and
-      (__ \ "tasksRunning").writeNullable[Int] and
-      (__ \ "tasksHealthy").writeNullable[Int] and
-      (__ \ "tasksUnhealthy").writeNullable[Int]
+      (__ \ "user").write[JsValue]
     )(
-    (a: MarathonApp) => (
-      a.id, a.acceptedResourceRoles.fold[JsValue](JsNull)(Json.toJson(_)),
+    (a: MarathonAppUpdate) => (
+      a.acceptedResourceRoles.fold[JsValue](JsNull)(Json.toJson(_)),
       a.args.map(as => JsArray(as.toSeq.map(JsString(_)))).getOrElse(if (a.cmd.isDefined) JsNull else JsArray()),
+      a.cmd.fold[JsValue](JsNull)(JsString(_)),
+      a.constraints,
       a.container,
-      a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
-      a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
-      a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
+      a.cpus,
+      a.disk,
+      a.env,
+      a.healthChecks,
+      a.id,
+      a.instances,
+      a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)),
+      a.labels,
       a.mem,
-      a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty),
-      a.ports,
+      a.portDefinitions,
       a.upgradeStrategy,
-      a.user.fold[JsValue](JsNull)(JsString(_)),
-      a.constraints.getOrElse(Seq.empty),
-      a.deployments.getOrElse(Seq.empty),
-      a.tasksStaged, a.tasksRunning, a.tasksHealthy, a.tasksUnhealthy
+      a.user.fold[JsValue](JsNull)(JsString(_))
     )
   )
 
@@ -313,31 +319,22 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta Container JSON
    */
-  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID): JsObject = {
+  def marathonApp2MetaContainer(inputJson: JsValue, provider: GestaltResourceInstance): Try[(String,InputContainerProperties)] = Try {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
 
-    val app = inputJson.validate[MarathonApp].map {
-      case app: MarathonApp => app
-    }.recoverTotal { e =>
+    val app = inputJson.validate[MarathonAppUpdate].recoverTotal { e =>
       throw new BadRequestException("Could not parse Marathon App JSON: " + JsError.toFlatJson(e).toString)
     }
 
     log.debug("Marathon App:\n" + app)
-    log.debug("Looking up Provider : " + providerId)
-    val provider = {
-      val p = ResourceFactory.findById(ResourceIds.MarathonProvider, providerId) getOrElse {
-        throw new ResourceNotFoundException(s"MarathonProvider with ID '$providerId' not found.")
-      }
-      InputProvider(id = p.id, name = Some(p.name))
-    }
-    log.debug("Provider:\n" + provider)
 
+    val name = app.id
     val props = InputContainerProperties(
       container_type = "DOCKER",
       image = app.container.docker map {_.image} getOrElse "",
-      provider = provider,
+      provider = InputProvider(id = provider.id, name = Some(provider.name)),
       port_mappings = app.container.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
         label = Some(index.toString),
         protocol = pm.protocol getOrElse "tcp",
@@ -350,34 +347,23 @@ package object marathon {
       num_instances = app.instances,
       network = app.container.docker map {_.network} getOrElse "",
       cmd = app.cmd,
-      constraints = app.constraints.map(_.map(_.foldLeft("")(_ + ":" + _))),
+      constraints = app.constraints.map(_.foldLeft("")(_ + ":" + _)),
       accepted_resource_roles = app.acceptedResourceRoles,
-      args = app.args,
+      args = app.args.map(_.toSeq),
       force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
-      health_checks = app.healthChecks map { _.map{ check => HealthCheck(
+      health_checks = app.healthChecks map { check => HealthCheck(
         protocol = check.protocol getOrElse "http",
         path = check.path getOrElse "/",
         grace_period_seconds = check.gracePeriodSeconds getOrElse 15,
         interval_seconds = check.intervalSeconds getOrElse 10,
         timeout_seconds = check.timeoutSeconds getOrElse 20,
         max_consecutive_failures = check.maxConsecutiveFailures getOrElse 3
-      )}},
-      volumes = app.container.volumes,
+      )},
+      volumes = app.container.volumes getOrElse Seq(),
       labels = app.labels,
       env = app.env
     )
-    
-    // Meta container name is last component of Marathon ID 'path'
-    val containerName = {
-        val cmps = app.id.stripPrefix("/").stripSuffix("/").split("/")
-        cmps(cmps.size-1)
-    }
-    log.debug("Container-Name : " + containerName)
-    
-    val output = Json.toJson(InputContainer(name = containerName, properties = props))
-    
-    log.debug("Transform Complete:\n" + Json.prettyPrint(output))
-    output.as[JsObject]
+    (name,props)
   }
 
   /**
@@ -386,9 +372,9 @@ package object marathon {
     * @param metaApp
     * @return
     */
-  def meta2Marathon(metaApp: GestaltResourceInstance): Try[MarathonApp] = {
+  def meta2Marathon(metaApp: GestaltResourceInstance): Try[MarathonAppUpdate] = {
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
+    def portmap(ps: Seq[PortMapping]): Seq[MarathonPortMapping] = {
       ps map {pm => MarathonPortMapping(
         protocol = Some(pm.protocol),
         containerPort = pm.container_port,
@@ -413,12 +399,12 @@ package object marathon {
         case e => e.toSeq
       })}
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
-      args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
-      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
+      args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
+      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[HealthCheck]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[Volume]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
-      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Iterable[PortMapping]]}
+      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[PortMapping]]}
       tasks_running = props.get("tasks_running") map {_.toInt}
       tasks_healthy = props.get("tasks_healthy") map {_.toInt}
       tasks_unhealthy = props.get("tasks_unhealthy") map {_.toInt}
@@ -436,24 +422,23 @@ package object marathon {
       )
       container = MarathonContainer(
         docker = if (ctype.equalsIgnoreCase("DOCKER")) docker else None,
-        containerType = ctype,
+        `type` = ctype,
         volumes = volumes
       )
-    } yield MarathonApp(
+    } yield MarathonAppUpdate(
       id = "/" + metaApp.name,
       container = container,
       cpus = cpus,
       mem = memory,
       instances = num_instances,
       cmd = cmd,
-      constraints = constraints,
+      constraints = constraints getOrElse Seq(),
       acceptedResourceRoles = acceptedResourceRoles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = args,
-      ports = port_mappings map {_.map { _.host_port }},
       portDefinitions = port_mappings map {_.map {
         pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
-      } },
-      labels = labels,
+      } } getOrElse Seq(),
+      labels = labels getOrElse Map(),
       healthChecks = health_checks map {_.map { hc => MarathonHealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),
@@ -462,13 +447,14 @@ package object marathon {
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}},
-      env = env,
-      tasksStaged = tasks_staged,
-      tasksRunning = tasks_running,
-      tasksHealthy = tasks_healthy,
-      tasksUnhealthy = tasks_unhealthy,
-      deployments = Some(Seq.empty),
+      )}} getOrElse Seq(),
+      env = env getOrElse Map(),
+      // TODO
+//      tasksStaged = tasks_staged,
+//      tasksRunning = tasks_running,
+//      tasksHealthy = tasks_healthy,
+//      tasksUnhealthy = tasks_unhealthy,
+//      deployments = Some(Seq.empty),
       user = user
     )
     mc recoverWith {
@@ -481,7 +467,7 @@ package object marathon {
    * Convert Meta Container JSON to Marathon App object.
    * TODO: convert this to a Future[MarathonApp]
    */
-  def toMarathonApp(name: String, props: InputContainerProperties, provider: GestaltResourceInstance): MarathonApp = {
+  def toMarathonApp(name: String, props: InputContainerProperties, provider: GestaltResourceInstance): MarathonAppUpdate = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -500,7 +486,7 @@ package object marathon {
     log.debug("found provider networks" + providerNetworkNames)
 
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
+    def portmap(ps: Seq[PortMapping]): Seq[MarathonPortMapping] = {
       ps map {pm => MarathonPortMapping(
         protocol = Some(pm.protocol),
         containerPort = pm.container_port,
@@ -564,15 +550,15 @@ package object marathon {
 
     val container = MarathonContainer(
         docker = docker,
-        containerType = props.container_type,
-        volumes = props.volumes)
+        `type` = props.container_type,
+        volumes = Some(props.volumes))
 
-    val upgradeStrategy = if( container.volumes.exists(_.exists(_.isPersistent)) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
+    val upgradeStrategy = if( container.volumes.exists(_.exists(_.isPersistent) ) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
-    MarathonApp(
+    MarathonAppUpdate(
       id = "/" + name.stripPrefix("/"),
       container = container,
-      constraints = props.constraints.map(_.map(
+      constraints = props.constraints.map(
         _.split(":") match {
           case Array(f1,f2) =>
             Seq(f1,f2.toUpperCase)
@@ -580,19 +566,18 @@ package object marathon {
             Seq(f1,f2.toUpperCase,f3)
           case e => e.toSeq
         }
-      )),
+      ),
       cpus = props.cpus,
       mem = props.memory,
       instances = props.num_instances,
       cmd = props.cmd,
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
-      ports = None,
-      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {
+      portDefinitions = if (ipPerTask.isEmpty) props.port_mappings map {
         pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
-      }) else None,
+      } else Seq(),
       labels = props.labels,
-      healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
+      healthChecks = props.health_checks map { hc => MarathonHealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),
         portIndex = None, // TODO: don't know how to define this
@@ -600,7 +585,7 @@ package object marathon {
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}},
+      )},
       env = props.env,
       ipAddress = ipPerTask,
       upgradeStrategy = upgradeStrategy,
