@@ -3,6 +3,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
 import play.api.mvc._
@@ -252,8 +253,8 @@ object ContainerController extends Authorization {
                             inputJson: JsObject,
                             provider: GestaltResourceInstance): JsValue = {
     // Create app in Marathon
-    val props = (inputJson \ "properties").validate[InputContainerProperties].map {
-      case ps: InputContainerProperties => ps
+    val props = (inputJson \ "properties").validate[ContainerSpec].map {
+      case ps: ContainerSpec => ps
     }.recoverTotal { e =>
       throw new IllegalArgumentException(
         "Could not parse container properties: " + JsError.toFlatJson(e).toString)

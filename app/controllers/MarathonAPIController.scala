@@ -234,7 +234,12 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         val provider = containerService.marathonProvider(providerId)
         // TODO: Needs a lot of error handling
         for {
-          (name,props) <- Future.fromTry(marathonApp2MetaContainer(request.body, provider))
+          (name,props) <- Future.fromTry(marathonApp2MetaContainer(request.body, provider) flatMap {
+            case (maybeName,cspec) => maybeName match {
+              case None => Failure(BadRequestException("payload did not include app name"))
+              case Some(name) => Success((name,cspec))
+            }
+          })
           metaContainer <- containerService.launchContainer(fqon, wrk, env, name, props)
           marv2Container <- Future.fromTry(meta2Marathon(metaContainer))
         } yield Created(Json.toJson(marv2Container))

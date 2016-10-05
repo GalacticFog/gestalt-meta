@@ -21,7 +21,7 @@ import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{Resource,ResourcePath}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, Resource, ResourcePath}
 import com.galacticfog.gestalt.events._
 
 trait ContainerService extends MetaController {
@@ -60,7 +60,7 @@ trait ContainerService extends MetaController {
                       workspace: GestaltResourceInstance,
                       environment: GestaltResourceInstance,
                       name: String,
-                      inputProperties: InputContainerProperties): Future[GestaltResourceInstance] = {
+                      inputProperties: ContainerSpec): Future[GestaltResourceInstance] = {
     ???
   }
 
