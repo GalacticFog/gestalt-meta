@@ -30,7 +30,7 @@ case object Container {
   case class Volume(containerPath: String,
                     hostPath: Option[String],
                     persistent: Option[PersistentVolumeInfo],
-                    mode: Option[String]) {
+                    mode: String) {
     def isPersistent: Boolean = persistent.isDefined
   }
 

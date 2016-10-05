@@ -196,7 +196,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         instances = Some(1),
         cmd = None,
         args = None,
-        portDefinitions = Some(Seq()),
+        portDefinitions = None,
         labels = Some(Map("key" -> "value")),
         healthChecks = Some(Seq(AppUpdate.HealthCheck(
           protocol = Some("HTTP"),
@@ -224,7 +224,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         )
         val marContainer = Container(
           docker = None, `type` = "ctype", volumes = Seq(Container.Volume(
-            containerPath = "cpath", hostPath = Some("hpath"), mode = Some("RW"), persistent = None
+            containerPath = "cpath", hostPath = Some("hpath"), mode = "RW", persistent = None
           )
         ))
         Json.toJson(marContainer) must_== marValidJson
@@ -244,7 +244,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         )
         val marContainer = Container(
           docker = None, `type` = "ctype", volumes = Seq(Container.Volume(
-            containerPath = "cpath", hostPath = None, mode = Some("RW"), persistent = Some(Container.PersistentVolumeInfo(size = 42))
+            containerPath = "cpath", hostPath = None, mode = "RW", persistent = Some(Container.PersistentVolumeInfo(size = 42))
           )
         ))
         Json.toJson(marContainer) must_== marValidJson
@@ -557,9 +557,9 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         cmd = Some("/usr/bin/someCmd"),
         args = None,
         ipAddress = None,
-        labels = Some(Map()),
-        portDefinitions = Some(Seq()),
-        healthChecks = Some(Seq()),
+        labels = None,
+        portDefinitions = None,
+        healthChecks = None,
         env = Some(Map(
           "env_var_1" -> "env_val_1"
         )),
@@ -672,11 +672,11 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         network = Some("apps"),
         num_instances = 1
       ), marathonProviderWithNetworks)).toString
-      marJson must /("container") /("docker") /("network" -> beEqualTo("HOST"))
+      marJson must /("container") /("docker") /("network" -> beEqualTo("USER"))
       marJson must /("container") /("docker") /("parameters") /#(0) /#(0) / "net"
       marJson must /("container") /("docker") /("parameters") /#(0) /#(1) / "apps"
       marJson must not / "ports"
-      marJson must havePortDefinitions()
+      marJson must havePortDefinitions().not
       marJson must haveIPPerTaskPortDiscovery(
         aDiscoveryPortWith(port = 80, name = "http", protocol = "tcp"),
         aDiscoveryPortWith(port = 443, name = "https", protocol = "tcp")

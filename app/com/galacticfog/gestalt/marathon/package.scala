@@ -43,14 +43,14 @@ package object marathon {
     (__ \ "containerPath").read[String] and
       (__ \ "hostPath").readNullable[String] and
       (__ \ "persistent").readNullable[Container.PersistentVolumeInfo] and
-      (__ \ "mode").readNullable[String]
+      (__ \ "mode").read[String]
     )(Container.Volume.apply _)
 
   lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
       (__ \ "hostPath").writeNullable[String] and
       (__ \ "persistent").writeNullable[Container.PersistentVolumeInfo] and
-      (__ \ "mode").writeNullable[String]
+      (__ \ "mode").write[String]
     )(unlift(Container.Volume.unapply))
 
 
@@ -273,7 +273,7 @@ package object marathon {
           container_path = v.containerPath,
           host_path = v.hostPath,
           persistent = v.persistent.map(p => ContainerSpec.VolumeSpec.PersistentVolumeInfo(size = p.size)),
-          mode = v.mode getOrElse "RW"
+          mode = v.mode
         )
       )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
@@ -341,7 +341,7 @@ package object marathon {
           containerPath = v.container_path,
           hostPath = v.host_path,
           persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
-          mode = Some(v.mode)
+          mode = v.mode
         ))) getOrElse Seq()
       )
     } yield AppUpdate(
@@ -471,7 +471,7 @@ package object marathon {
         volumes = props.volumes.map(v => Container.Volume(
           containerPath = v.container_path,
           hostPath = v.host_path,
-          mode = Some(v.mode),
+          mode = v.mode,
           persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size))
         )))
 
