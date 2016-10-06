@@ -29,11 +29,11 @@ package object marathon {
 
   implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
 
-  implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.VolumeSpec.PersistentVolumeInfo]
+  implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
 
   implicit lazy val metaPortMappingSpecFmt = Json.format[ContainerSpec.PortMapping]
 
-  implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.VolumeSpec]
+  implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
@@ -69,7 +69,31 @@ package object marathon {
 //    }
 //  }
 
-  implicit lazy val metaContainerSpec = Json.format[ContainerSpec]
+  lazy val containerSpecReads = Json.writes[ContainerSpec]
+
+  lazy val containerSpecWrites: Reads[ContainerSpec] = (
+    (__ \ "container_type").read[String] and
+      (__ \ "image").read[String] and
+      (__ \ "provider").read[ContainerSpec.InputProvider] and
+      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
+      ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
+      ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
+      ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
+      ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
+      (__ \ "network").readNullable[String] and
+      (__ \ "cmd").readNullable[String] and
+      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
+      (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
+      (__ \ "args").readNullable[Seq[String]] and
+      ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
+      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq())) and
+      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq())) and
+      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
+      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
+      (__ \ "user").readNullable[String]
+    )(ContainerSpec.apply _)
+
+  implicit lazy val metaContainerSpec = Format(containerSpecWrites, containerSpecReads)
 
   implicit lazy val healthCheckFmt = Json.format[AppUpdate.HealthCheck]
 
@@ -106,28 +130,6 @@ package object marathon {
 //    }
 //  }
 
-//  lazy val inputContainerPropertiesWrites = Json.writes[ContainerSpec]
-//  lazy val inputContainerPropertiesReads: Reads[ContainerSpec] = (
-//    (__ \ "container_type").read[String] and
-//    (__ \ "image").read[String] and
-//    (__ \ "provider").read[InputProvider] and
-//    ((__ \ "port_mappings").read[Seq[PortMapping]] orElse Reads.pure(Seq())) and
-//    ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
-//    ((__ \ "memory").read[Int] orElse Reads.pure(128)) and
-//    ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
-//    ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
-//    (__ \ "network").readNullable[String] and
-//    (__ \ "cmd").readNullable[String] and
-//    ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
-//    (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
-//    (__ \ "args").readNullable[Seq[String]] and
-//    ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
-//    ((__ \ "health_checks").read[Seq[HealthCheck]] orElse Reads.pure(Seq())) and
-//    ((__ \ "volumes").read[Seq[VolumeSpec]] orElse Reads.pure(Seq())) and
-//    ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
-//    ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
-//    (__ \ "user").readNullable[String]
-//    )(ContainerSpec.apply _)
 
 //  implicit lazy val inputContainerPropertiesFmt = Format(inputContainerPropertiesReads, inputContainerPropertiesWrites)
 
@@ -269,10 +271,10 @@ package object marathon {
         max_consecutive_failures = check.maxConsecutiveFailures getOrElse AppUpdate.HealthCheck.DefaultMaxConsecutiveFailures
       )}) getOrElse Seq(),
       volumes = app.container.map(_.volumes.map(v =>
-        ContainerSpec.VolumeSpec(
+        ContainerSpec.Volume(
           container_path = v.containerPath,
           host_path = v.hostPath,
-          persistent = v.persistent.map(p => ContainerSpec.VolumeSpec.PersistentVolumeInfo(size = p.size)),
+          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
           mode = v.mode
         )
       )) getOrElse Seq(),
@@ -317,7 +319,7 @@ package object marathon {
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.VolumeSpec]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
       port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
@@ -480,7 +482,7 @@ package object marathon {
     AppUpdate(
       id = Some("/" + name.stripPrefix("/")),
       container = Some(container),
-      constraints = Some(props.constraints.map(
+      constraints = if (props.constraints.nonEmpty) Some(props.constraints.map(
         _.split(":") match {
           case Array(f1,f2) =>
             Seq(f1,f2.toUpperCase)
@@ -488,7 +490,7 @@ package object marathon {
             Seq(f1,f2.toUpperCase,f3)
           case e => e.toSeq
         }
-      )),
+      )) else None,
       cpus = Some(props.cpus),
       mem = Some(props.memory),
       disk = None,

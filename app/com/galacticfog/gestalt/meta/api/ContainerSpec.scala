@@ -17,7 +17,7 @@ case class ContainerSpec(container_type: String,
                          args: Option[Seq[String]] = None,
                          force_pull: Boolean = false,
                          health_checks: Seq[ContainerSpec.HealthCheck] = Seq(),
-                         volumes: Seq[ContainerSpec.VolumeSpec] = Seq(),
+                         volumes: Seq[ContainerSpec.Volume] = Seq(),
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
                          user: Option[String] = None)
@@ -31,15 +31,14 @@ case object ContainerSpec {
                          name: Option[String] = None,
                          labels: Map[String,String] = Map())
 
-  case class VolumeSpec(
-                         container_path: String,
-                         host_path: Option[String],
-                         persistent: Option[VolumeSpec.PersistentVolumeInfo],
-                         mode: String) {
+  case class Volume(container_path: String,
+                    host_path: Option[String],
+                    persistent: Option[Volume.PersistentVolumeInfo],
+                    mode: String) {
     def isPersistent: Boolean = persistent.isDefined
   }
 
-  case object VolumeSpec {
+  case object Volume {
 
     case class PersistentVolumeInfo(size: Long)
 

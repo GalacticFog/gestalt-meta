@@ -315,9 +315,9 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         network = Some("HOST"),
         num_instances = 1,
         volumes = Seq(
-          ContainerSpec.VolumeSpec("cpath1", Some("/hpath1"), None, "RW"),
-          ContainerSpec.VolumeSpec("cpath1", None, Some(ContainerSpec.VolumeSpec.PersistentVolumeInfo(10)), "RW"),
-          ContainerSpec.VolumeSpec("cpath3", Some("/hpath3"), None, "RO")
+          ContainerSpec.Volume("cpath1", Some("/hpath1"), None, "RW"),
+          ContainerSpec.Volume("cpath1", None, Some(ContainerSpec.Volume.PersistentVolumeInfo(10)), "RW"),
+          ContainerSpec.Volume("cpath3", Some("/hpath3"), None, "RO")
         )
       ), marathonProviderWithoutNetworks)
       marApp.upgradeStrategy must beSome(UpgradeStrategy(
@@ -340,8 +340,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         network = Some("HOST"),
         num_instances = 1,
         volumes = Seq(
-          ContainerSpec.VolumeSpec("cpath1", Some("/hpath1"), None, "RW"),
-          ContainerSpec.VolumeSpec("cpath3", Some("/hpath3"), None, "RO")
+          ContainerSpec.Volume("cpath1", Some("/hpath1"), None, "RW"),
+          ContainerSpec.Volume("cpath3", Some("/hpath3"), None, "RO")
         )
       ), marathonProviderWithoutNetworks)
       marApp.upgradeStrategy must beNone
@@ -396,18 +396,19 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         container = Some(Container(
           docker = Some(Container.Docker(
             image = "some/image:tag",
-            network = Some("HOST"),
+            network = Some("USER"),
             forcePullImage = Some(true),
             parameters = Some(Seq(
               Container.Docker.Parameter("net", "web-net"),
               Container.Docker.Parameter("user","someUser")
             )),
-            privileged = None,
+            privileged = Some(false),
             portMappings = None
           )),
           `type` = "DOCKER",
           volumes = Seq()
         )),
+        constraints = None,
         cpus = Some(2.0),
         mem = Some(256.0),
         instances = Some(3),
@@ -416,7 +417,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         ipAddress = Some(AppUpdate.IPPerTaskInfo(Some(AppUpdate.DiscoveryInfo(Some(Seq(
         )))))),
         labels = Some(Map()),
-        portDefinitions = Some(Seq()),
+        portDefinitions = None,
         healthChecks = Some(Seq()),
         env = Some(Map(
           "env_var_1" -> "env_val_1"
@@ -458,47 +459,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       ))
       provider.id returns providerId
 
-      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[ContainerSpec], provider))
+      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[ContainerSpec], provider)).as[JsObject]
       marPayload.toString must /("cmd" -> "/usr/bin/someCmd")
-      (marPayload \ "args") must_== JsNull
+      marPayload.keys.contains("args") must beFalse
     }
-
-    "generate valid payload with neither cmd nor args" in {
-      val providerId = UUID.randomUUID()
-      val name = "/some/app/id"
-      val resourceJson = Json.obj(
-        "container_type" -> "DOCKER",
-        "image" -> "some/image:tag",
-        "provider" -> Json.obj(
-          "id" -> providerId
-        ),
-        "port_mappings" -> Json.arr(),
-        "cpus" -> 2.0,
-        "memory" -> 256.0,
-        "num_instances" -> 3,
-        "network" -> "HOST",
-        "force_pull" -> true
-      )
-      val provider = mock[GestaltResourceInstance]
-      val config = Json.obj(
-        "networks" -> Json.arr(Json.obj(
-          "name" -> "HOST",
-          "id" -> "8332a2e4711a",
-          "description" -> "",
-          "sub_net" -> "192.168.0.0/16"
-        ))
-      ).toString
-      provider.properties returns Some(Map(
-        "config" -> config
-      ))
-      provider.id returns providerId
-
-
-      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[ContainerSpec], provider)).toString
-      marPayload must not /("cmd")
-      marPayload must haveArgs()
-    }
-
 
     "transform to Marathon API appropriately (host-style)" in {
       val providerId = UUID.randomUUID()
@@ -546,7 +510,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
               Container.Docker.Parameter("user","someUser")
             )),
             portMappings = None,
-            privileged = None
+            privileged = Some(false)
           )),
           `type` = "DOCKER",
           volumes = Seq()
@@ -557,9 +521,9 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         cmd = Some("/usr/bin/someCmd"),
         args = None,
         ipAddress = None,
-        labels = None,
-        portDefinitions = None,
-        healthChecks = None,
+        labels = Some(Map()),
+        portDefinitions = Some(Seq()),
+        healthChecks = Some(Seq()),
         env = Some(Map(
           "env_var_1" -> "env_val_1"
         )),
