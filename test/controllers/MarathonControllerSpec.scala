@@ -13,6 +13,7 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
+import org.joda.time.{DateTimeZone, DateTime}
 import org.specs2.execute.{Result, AsResult}
 import org.specs2.specification._
 import play.api.libs.json.{JsArray, Json}
@@ -126,130 +127,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |}
         """.stripMargin
       )
-//      val jsResponse = Json.parse(
-//        """
-//          |{
-//          |    "acceptedResourceRoles": null,
-//          |    "args": null,
-//          |    "cmd": null,
-//          |    "constraints": [],
-//          |    "container": {
-//          |        "docker": {
-//          |            "forcePullImage": false,
-//          |            "image": "nginx",
-//          |            "network": "BRIDGE",
-//          |            "parameters": [],
-//          |            "portMappings": [
-//          |                {
-//          |                    "containerPort": 80,
-//          |                    "hostPort": 0,
-//          |                    "labels": {},
-//          |                    "protocol": "tcp",
-//          |                    "servicePort": 0
-//          |                }
-//          |            ],
-//          |            "privileged": false
-//          |        },
-//          |        "type": "DOCKER",
-//          |        "volumes": []
-//          |    },
-//          |    "cpus": 1,
-//          |    "dependencies": [],
-//          |    "deployments": [
-//          |        {
-//          |            "id": "ef374fb5-5d86-4b94-8bbc-b4eeffaa4796"
-//          |        }
-//          |    ],
-//          |    "disk": 0,
-//          |    "env": {},
-//          |    "executor": "",
-//          |    "fetch": [],
-//          |    "gpus": 0,
-//          |    "healthChecks": [],
-//          |    "id": "/test-container",
-//          |    "instances": 1,
-//          |    "ipAddress": null,
-//          |    "labels": {},
-//          |    "maxLaunchDelaySeconds": 3600,
-//          |    "mem": 128,
-//          |    "portDefinitions": [
-//          |        {
-//          |            "labels": {},
-//          |            "port": 0,
-//          |            "protocol": "tcp"
-//          |        }
-//          |    ],
-//          |    "ports": [
-//          |        0
-//          |    ],
-//          |    "readinessChecks": [],
-//          |    "requirePorts": false,
-//          |    "residency": null,
-//          |    "secrets": {},
-//          |    "storeUrls": [],
-//          |    "taskKillGracePeriodSeconds": null,
-//          |    "tasks": [],
-//          |    "tasksHealthy": 0,
-//          |    "tasksRunning": 0,
-//          |    "tasksStaged": 0,
-//          |    "tasksUnhealthy": 0,
-//          |    "upgradeStrategy": {
-//          |        "maximumOverCapacity": 1,
-//          |        "minimumHealthCapacity": 1
-//          |    },
-//          |    "uris": [],
-//          |    "user": null,
-//          |    "version": "2016-09-30T13:32:57.281Z"
-//          |}
-//        """.stripMargin
-//      )
-      val jsResponse = Json.parse(
-        """
-          |{
-          |    "acceptedResourceRoles": null,
-          |    "args": null,
-          |    "cmd": null,
-          |    "constraints": [],
-          |    "container": {
-          |        "docker": {
-          |            "forcePullImage": false,
-          |            "image": "nginx",
-          |            "network": "BRIDGE",
-          |            "parameters": [],
-          |            "portMappings": [
-          |                {
-          |                    "containerPort": 80,
-          |                    "hostPort": 0,
-          |                    "labels": {},
-          |                    "protocol": "tcp",
-          |                    "servicePort": 0
-          |                }
-          |            ],
-          |            "privileged": false
-          |        },
-          |        "type": "DOCKER",
-          |        "volumes": []
-          |    },
-          |    "cpus": 1,
-          |    "disk": 0,
-          |    "env": {},
-          |    "healthChecks": [],
-          |    "id": "/test-container",
-          |    "instances": 1,
-          |    "ipAddress": null,
-          |    "labels": {},
-          |    "mem": 128,
-          |    "portDefinitions": [
-          |        {
-          |            "labels": {},
-          |            "port": 0,
-          |            "protocol": "tcp"
-          |        }
-          |    ],
-          |    "user": null
-          |}
-        """.stripMargin
-      )
       val testProps = ContainerSpec(
         container_type = "DOCKER",
         image = "nginx",
@@ -286,6 +163,85 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "network" -> testProps.network.get
         ))
       ).get
+      val jsResponse = Json.parse(
+        s"""
+          |{
+          |    "acceptedResourceRoles": null,
+          |    "args": null,
+          |    "backoffFactor": 1.15,
+          |    "backoffSeconds": 1,
+          |    "cmd": null,
+          |    "constraints": [],
+          |    "container": {
+          |        "docker": {
+          |            "forcePullImage": false,
+          |            "image": "nginx",
+          |            "network": "BRIDGE",
+          |            "parameters": [],
+          |            "portMappings": [
+          |                {
+          |                    "containerPort": 80,
+          |                    "hostPort": 0,
+          |                    "labels": {},
+          |                    "protocol": "tcp",
+          |                    "servicePort": 0
+          |                }
+          |            ],
+          |            "privileged": false
+          |        },
+          |        "type": "DOCKER",
+          |        "volumes": []
+          |    },
+          |    "cpus": 1,
+          |    "dependencies": [],
+          |    "deployments": [
+          |        {
+          |            "id": "ef374fb5-5d86-4b94-8bbc-b4eeffaa4796"
+          |        }
+          |    ],
+          |    "disk": 0,
+          |    "env": {},
+          |    "executor": "",
+          |    "fetch": [],
+          |    "gpus": 0,
+          |    "healthChecks": [],
+          |    "id": "/test-container",
+          |    "instances": 1,
+          |    "ipAddress": null,
+          |    "labels": {},
+          |    "maxLaunchDelaySeconds": 3600,
+          |    "mem": 128,
+          |    "portDefinitions": [
+          |        {
+          |            "labels": {},
+          |            "port": 0,
+          |            "protocol": "tcp"
+          |        }
+          |    ],
+          |    "ports": [
+          |        0
+          |    ],
+          |    "readinessChecks": [],
+          |    "requirePorts": false,
+          |    "residency": null,
+          |    "secrets": {},
+          |    "storeUrls": [],
+          |    "taskKillGracePeriodSeconds": null,
+          |    "tasks": [],
+          |    "tasksHealthy": 0,
+          |    "tasksRunning": 0,
+          |    "tasksStaged": 0,
+          |    "tasksUnhealthy": 0,
+          |    "upgradeStrategy": {
+          |        "maximumOverCapacity": 1,
+          |        "minimumHealthCapacity": 1
+          |    },
+          |    "uris": [],
+          |    "user": null,
+          |    "version": "${DateTime.parse(createdContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+          |}
+        """.stripMargin
+      )
       containerService.launchContainer(
         meq("root"),
         meq(testWork),

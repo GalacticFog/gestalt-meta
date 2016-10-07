@@ -137,7 +137,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
             containerService.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
           }
           outputMarathonContainers = outputMetaContainers flatMap { metaApp =>
-            (meta2Marathon(metaApp) map {Json.toJson(_).as[JsObject]}).toOption
+            (metaToMarathonAppInfo(metaApp) map {Json.toJson(_).as[JsObject]}).toOption
           }
         } yield Ok(Json.obj("apps" -> outputMarathonContainers))
     }
@@ -181,7 +181,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
           marConTry <- futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
           stats = marConTry.toOption flatMap MarathonClient.marathon2Container
           outputMetaContainer = containerService.updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
-          outputMarathonContainer = meta2Marathon(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not convert meta container to marathon container"))
+          outputMarathonContainer = metaToMarathonAppInfo(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not convert meta container to marathon container"))
         } yield Ok(Json.obj("app" -> outputMarathonContainer))
     }
   }
@@ -234,14 +234,18 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         val provider = containerService.marathonProvider(providerId)
         // TODO: Needs a lot of error handling
         for {
-          (name,props) <- Future.fromTry(marathonApp2MetaContainer(request.body, provider) flatMap {
+          (name,props) <- Future.fromTry(marAppPayloadToMetaContainerSpec(request.body, provider) flatMap {
             case (maybeName,cspec) => maybeName match {
               case None => Failure(BadRequestException("payload did not include app name"))
               case Some(name) => Success((name,cspec))
             }
           })
           metaContainer <- containerService.launchContainer(fqon, wrk, env, name, props)
-          marv2Container <- Future.fromTry(meta2Marathon(metaContainer))
+          marv2Container <- Future.fromTry(metaToMarathonAppInfo(
+            metaContainerSpec = metaContainer,
+            instances = Some(Seq()),
+            deploymentIDs = None
+          ))
         } yield Created(Json.toJson(marv2Container))
       }
     }

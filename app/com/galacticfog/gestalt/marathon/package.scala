@@ -2,7 +2,8 @@ package com.galacticfog.gestalt
  
 import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import org.joda.time.{DateTimeZone, DateTime}
 import play.api.data.validation.ValidationError
 
 import scala.Option
@@ -38,6 +39,10 @@ package object marathon {
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
   implicit lazy val marathonUpgradeStrategyFmt = Json.format[UpgradeStrategy]
+
+  implicit lazy val marathonFetchUriFmt = Json.format[FetchUri]
+
+  implicit lazy val marathonReadinessCheckFmt = Json.format[ReadinessCheck]
 
   lazy val marathonVolumeReads =  (
     (__ \ "containerPath").read[String] and
@@ -107,39 +112,20 @@ package object marathon {
 
   implicit lazy val marathonAppUpdateFmt = Json.format[AppUpdate]
 
-//  implicit lazy val portMappingWrites = Json.writes[PortMapping]
-
-//  implicit lazy val portMappingFmt = new Reads[PortMapping] {
-//    override def reads(json: JsValue): JsResult[PortMapping] = {
-//      (for {
-//        protocol <- (json \ "protocol").asOpt[String]
-//        container_port <- (json \ "container_port").asOpt[Int]
-//        host_port = (json \ "host_port").asOpt[Int] getOrElse 0
-//        service_port = (json \ "service_port").asOpt[Int] getOrElse 0
-//        label = (json \ "label").asOpt[String]
-//      } yield PortMapping(
-//        protocol = protocol,
-//        container_port = container_port,
-//        host_port = host_port,
-//        service_port = service_port,
-//        name = label
-//      )) match {
-//        case Some(pm) => JsSuccess(pm)
-//        case None => JsError("Could not parse PortMapping")
-//      }
-//    }
-//  }
-
-
-//  implicit lazy val inputContainerPropertiesFmt = Format(inputContainerPropertiesReads, inputContainerPropertiesWrites)
-
   implicit lazy val marathonContainerDockerParameterFmt = Json.format[Container.Docker.Parameter]
 
   implicit lazy val marathonContainerVolumeFmt = Json.format[Container.Volume]
 
-//  implicit lazy val marathonHealthCheckFmt = Json.format[MarathonHealthCheck]
+  implicit lazy val PortMappingReads: Reads[Container.Docker.PortMapping] = (
+    (__ \ "containerPort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
+      (__ \ "hostPort").formatNullable[Int] ~
+      (__ \ "servicePort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
+      (__ \ "protocol").formatNullable[String].map(_ getOrElse "tcp") ~
+      (__ \ "name").formatNullable[String] ~
+      (__ \ "labels").formatNullable[Map[String, String]].map(_ getOrElse Map.empty[String, String])
+    )(Container.Docker.PortMapping(_, _, _, _, _, _))
 
-  implicit lazy val marathonContainerDockerPortMappingFmt = Json.format[Container.Docker.PortMapping]
+  implicit lazy val PortMappingWrites = Json.writes[Container.Docker.PortMapping]
 
   implicit lazy val marathonContainerDockerFmt = Json.format[Container.Docker]
 
@@ -156,68 +142,123 @@ package object marathon {
     }
   }
 
+  private[this] lazy val ValidPortName: Reads[String] = {
+    implicitly[Reads[String]]
+      .filter(ValidationError(s"Port name must fully match regular expression ${PortAssignment.PortNamePattern}"))(
+        PortAssignment.PortNamePattern.pattern.matcher(_).matches()
+      )
+  }
+
+  private[this] lazy val ValidPorts: Reads[Seq[DiscoveryInfo.Port]] = {
+    def hasUniquePortNames(ports: Seq[DiscoveryInfo.Port]): Boolean = {
+      ports.map(_.name).toSet.size == ports.size
+    }
+
+    def hasUniquePortNumberProtocol(ports: Seq[DiscoveryInfo.Port]): Boolean = {
+      ports.map(port => (port.number, port.protocol)).toSet.size == ports.size
+    }
+
+    implicitly[Reads[Seq[DiscoveryInfo.Port]]]
+      .filter(ValidationError("Port names are not unique."))(hasUniquePortNames)
+      .filter(ValidationError("There may be only one port with a particular port number/protocol combination."))(
+        hasUniquePortNumberProtocol
+      )
+  }
+
+  lazy val ValidPortProtocol: Reads[String] = {
+    implicitly[Reads[String]]
+      .filter(ValidationError("Invalid protocol. Only 'udp' or 'tcp' are allowed."))(
+        DiscoveryInfo.Port.AllowedProtocols
+      )
+  }
+
+  implicit lazy val PortReads: Reads[DiscoveryInfo.Port] = (
+    (__ \ "number").read[Int] ~
+      (__ \ "name").read[String](ValidPortName) ~
+      (__ \ "protocol").read[String](ValidPortProtocol) ~
+      (__ \ "labels").readNullable[Map[String, String]].map(_ getOrElse Map.empty[String,String])
+    )(DiscoveryInfo.Port(_, _, _, _))
+
+  implicit lazy val PortWrites = Json.writes[DiscoveryInfo.Port]
+
+  implicit lazy val DiscoveryInfoFormat: Format[DiscoveryInfo] = Format(
+    (__ \ "ports").read[Seq[DiscoveryInfo.Port]](ValidPorts).map(DiscoveryInfo(_)),
+    Writes[DiscoveryInfo] { discoveryInfo =>
+      Json.obj("ports" -> discoveryInfo.ports.map(PortWrites.writes))
+    }
+  )
+
+  implicit lazy val IpAddressReads: Reads[IpAddress] = (
+    (__ \ "groups").readNullable[Seq[String]].map(_ getOrElse Nil) ~
+      (__ \ "labels").readNullable[Map[String, String]].map(_ getOrElse Map.empty[String, String]) ~
+      (__ \ "discovery").readNullable[DiscoveryInfo].map(_ getOrElse DiscoveryInfo.empty) ~
+      (__ \ "networkName").readNullable[String]
+    )(IpAddress(_, _, _, _))
+
+  implicit lazy val IpAddressWrites = Json.writes[IpAddress]
+
   implicit lazy val marathonContainerWrites: Writes[Container] = (
     (__ \ "docker").writeNullable[Container.Docker] and
       (__ \ "type").write[String] and
       (__ \ "volumes").write[Seq[Container.Volume]]
     )( (mc: Container) => (mc.docker, mc.`type`, mc.volumes))
 
-  implicit lazy val RunSpecWrites: Writes[AppDefinition] = {
+  implicit lazy val appDefinitionWrites: Writes[AppDefinition] = {
     implicit lazy val durationWrites = Writes[FiniteDuration] { d =>
       JsNumber(d.toSeconds)
     }
 
-    Writes[AppDefinition] { runSpec =>
+    Writes[AppDefinition] { app =>
       var appJson: JsObject = Json.obj(
-        "id" -> runSpec.id.toString,
-        "cmd" -> runSpec.cmd,
-        "args" -> runSpec.args,
-        "user" -> runSpec.user,
-        "env" -> runSpec.env,
-        "instances" -> runSpec.instances,
-        "cpus" -> runSpec.cpus,
-        "mem" -> runSpec.mem,
-        "disk" -> runSpec.disk,
-        "gpus" -> runSpec.gpus,
-        "executor" -> runSpec.executor,
-        "constraints" -> runSpec.constraints,
-//        "uris" -> runSpec.fetch.map(_.uri),
-//        "fetch" -> runSpec.fetch,
-//        "storeUrls" -> runSpec.storeUrls,
-        "backoffSeconds" -> runSpec.backoff,
-        "backoffFactor" -> runSpec.backoffFactor,
-        "maxLaunchDelaySeconds" -> runSpec.maxLaunchDelay,
-        "container" -> runSpec.container,
-        "healthChecks" -> runSpec.healthChecks,
-//        "readinessChecks" -> runSpec.readinessChecks,
-        "dependencies" -> runSpec.dependencies,
-        "upgradeStrategy" -> runSpec.upgradeStrategy,
-        "labels" -> runSpec.labels,
-        "acceptedResourceRoles" -> runSpec.acceptedResourceRoles,
-//        "ipAddress" -> runSpec.ipAddress,
-//        "version" -> runSpec.version,
-        "residency" -> runSpec.residency,
-//        "secrets" -> runSpec.secrets,
-        "taskKillGracePeriodSeconds" -> runSpec.taskKillGracePeriod
+        "id" -> app.id,
+        "cmd" -> app.cmd,
+        "args" -> app.args,
+        "user" -> app.user,
+        "env" -> app.env,
+        "instances" -> app.instances,
+        "cpus" -> app.cpus,
+        "mem" -> app.mem,
+        "disk" -> app.disk,
+        "gpus" -> app.gpus,
+        "executor" -> app.executor,
+        "constraints" -> app.constraints,
+        "uris" -> app.fetch.map(_.uri),
+        "fetch" -> app.fetch,
+        "storeUrls" -> app.storeUrls,
+        "backoffSeconds" -> app.backoff,
+        "backoffFactor" -> app.backoffFactor,
+        "maxLaunchDelaySeconds" -> app.maxLaunchDelay,
+        "container" -> app.container,
+        "healthChecks" -> app.healthChecks,
+        "readinessChecks" -> app.readinessChecks,
+        "dependencies" -> app.dependencies,
+        "upgradeStrategy" -> app.upgradeStrategy,
+        "labels" -> app.labels,
+        "acceptedResourceRoles" -> app.acceptedResourceRoles,
+        "ipAddress" -> app.ipAddress,
+        "version" -> app.version,
+        "residency" -> app.residency,
+        "secrets" -> app.secrets,
+        "taskKillGracePeriodSeconds" -> app.taskKillGracePeriod
       )
       // top-level ports fields are incompatible with IP/CT
-//      if (runSpec.ipAddress.isEmpty) {
-//        appJson = appJson ++ Json.obj(
-//          "ports" -> runSpec.servicePorts,
-//          "portDefinitions" -> {
-//            if (runSpec.servicePorts.nonEmpty) {
-//              runSpec.portDefinitions.zip(runSpec.servicePorts).map {
-//                case (portDefinition, servicePort) => portDefinition.copy(port = servicePort)
-//              }
-//            } else {
-//              runSpec.portDefinitions
-//            }
-//          },
-//          // requirePorts only makes sense when allocating hostPorts, which you can't do in IP/CT mode
-//          "requirePorts" -> runSpec.requirePorts
-//        )
-//      }
-//      Json.toJson(runSpec.versionInfo) match {
+      if (app.ipAddress.isEmpty) {
+        appJson = appJson ++ Json.obj(
+          "ports" -> app.servicePorts,
+          "portDefinitions" -> {
+            if (app.servicePorts.nonEmpty) {
+              app.portDefinitions.zip(app.servicePorts).map {
+                case (portDefinition, servicePort) => portDefinition.copy(port = servicePort)
+              }
+            } else {
+              app.portDefinitions
+            }
+          },
+          // requirePorts only makes sense when allocating hostPorts, which you can't do in IP/CT mode
+          "requirePorts" -> app.requirePorts
+        )
+      }
+//      Json.toJson(app.versionInfo) match {
 //        case JsNull => appJson
 //        case v: JsValue => appJson + ("versionInfo" -> v)
 //      }
@@ -225,11 +266,38 @@ package object marathon {
     }
   }
 
+  implicit lazy val taskCountsWrites: Writes[TaskCounts] =
+    Writes { counts =>
+      Json.obj(
+        "tasksStaged" -> counts.tasksStaged,
+        "tasksRunning" -> counts.tasksRunning,
+        "tasksHealthy" -> counts.tasksHealthy,
+        "tasksUnhealthy" -> counts.tasksUnhealthy
+      )
+    }
+
+  implicit lazy val ExtendedAppInfoWrites: Writes[AppInfo] =
+    Writes { info =>
+      val appJson = appDefinitionWrites.writes(info.app).as[JsObject]
+
+      val maybeJson = Seq[Option[JsObject]](
+        info.maybeCounts.map(taskCountsWrites.writes(_).as[JsObject]) /*,
+        info.maybeDeployments.map(deployments => Json.obj("deployments" -> deployments)),
+        info.maybeReadinessCheckResults.map(readiness => Json.obj("readinessCheckResults" -> readiness)),
+        info.maybeTasks.map(tasks => Json.obj("tasks" -> tasks)),
+        info.maybeLastTaskFailure.map(lastFailure => Json.obj("lastTaskFailure" -> lastFailure)),
+        info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */
+      ).flatten
+
+      maybeJson.foldLeft(appJson)((result, obj) => result ++ obj)
+    }
+
+
+
   /**
-   * Convert Marathon App JSON to Meta Container JSON
-   * TODO: needs to return Option[String] for the name, it will be part of the URL in the case of a PUT
+   * Convert Marathon App JSON to Meta ContainerSpec
    */
-  def marathonApp2MetaContainer(inputJson: JsValue, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
+  def marAppPayloadToMetaContainerSpec(inputJson: JsValue, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
@@ -247,11 +315,11 @@ package object marathon {
       provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
       port_mappings = app.container flatMap {_.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => ContainerSpec.PortMapping(
         name = None,
-        labels = pm.labels getOrElse Map(),
-        protocol = pm.protocol getOrElse "tcp",
+        labels = pm.labels,
+        protocol = pm.protocol,
         container_port = pm.containerPort,
         host_port = pm.hostPort getOrElse 0,
-        service_port = pm.servicePort getOrElse 0
+        service_port = pm.servicePort
       )}}}} getOrElse Seq(),
       cpus = app.cpus getOrElse AppDefinition.DefaultCpus,
       memory = app.mem getOrElse AppDefinition.DefaultMem,
@@ -286,23 +354,34 @@ package object marathon {
 
   /**
     * Convert Meta container resource to MarathonApp object
- *
-    * @param metaApp
+    *
+    * @param metaContainerSpec
     * @return
     */
-  def meta2Marathon(metaApp: GestaltResourceInstance): Try[AppUpdate] = {
+  def metaToMarathonAppInfo(metaContainerSpec: GestaltResourceInstance,
+                            instances: Option[Seq[ContainerInstance]] = None,
+                            deploymentIDs: Option[Seq[String]] = None): Try[AppInfo] = {
 
     def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
       ps map {pm => Container.Docker.PortMapping(
-        protocol = Some(pm.protocol),
+        protocol = pm.protocol,
         containerPort = pm.container_port,
         hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        servicePort = pm.service_port
       )}
     }
 
-    val mc = for {
-      props <- Try{metaApp.properties.get}
+    val maybeCounts = instances.map {
+      cis => TaskCounts(
+        tasksStaged = cis.count(_.isStaged),
+        tasksRunning = cis.count(_.isRunning),
+        tasksHealthy = cis.count(_.isHealthy),
+        tasksUnhealthy = cis.count(_.isUnhealthy)
+      )
+    }
+
+    val appInfo = for {
+      props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       cpus <- Try{props("cpus").toDouble}
@@ -336,6 +415,12 @@ package object marathon {
         parameters = Some(Seq()),
         privileged = Some(false)
       )
+      createdUTC = for {
+        created <-  metaContainerSpec.created
+        timestamp <- created.get("timestamp")
+        dt <- Try{DateTime.parse(timestamp)}.toOption
+        utc = dt.toDateTime(DateTimeZone.UTC)
+      } yield utc.toString
       container = Container(
         docker = if (ctype.equalsIgnoreCase("DOCKER")) docker else None,
         `type` = ctype,
@@ -346,34 +431,43 @@ package object marathon {
           mode = v.mode
         ))) getOrElse Seq()
       )
-    } yield AppUpdate(
-      id = Some("/" + metaApp.name),
-      container = Some(container),
-      cpus = Some(cpus),
-      mem = Some(memory),
-      disk = None,
-      instances = Some(num_instances),
-      ipAddress = None, // TODO
-      upgradeStrategy = None, // TODO
-      cmd = cmd,
-      constraints = constraints,
-      acceptedResourceRoles = acceptedResourceRoles,
-      args = args,
-      portDefinitions = None, // port_mappings map {_.map { pm => PortDefinition(port = pm.host_port, protocol = Some(pm.protocol), name = pm.name, labels = Some(pm.labels)) } } getOrElse Seq(), TODO
-      labels = labels,
-      healthChecks = health_checks map {_.map { hc => AppUpdate.HealthCheck(
-        protocol = Some(hc.protocol),
-        path = Some(hc.path),
-        portIndex = None, // TODO: figure out how to define this
-        gracePeriodSeconds = Some(hc.grace_period_seconds),
-        intervalSeconds = Some(hc.interval_seconds),
-        timeoutSeconds = Some(hc.timeout_seconds),
-        maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}},
-      env = env,
-      user = user
+    } yield AppInfo(
+      app = AppDefinition(
+        id = "/" + metaContainerSpec.name,
+        cmd = cmd,
+        args = args,
+        user = user,
+        env = env getOrElse Map(),
+        instances = num_instances,
+        container = Some(container),
+        cpus = cpus,
+        mem = memory,
+        constraints = constraints getOrElse Seq.empty[Seq[String]],
+        portDefinitions = port_mappings.getOrElse(Seq()) map { pm => AppUpdate.PortDefinition(
+          port = pm.host_port,
+          protocol = pm.protocol,
+          name = pm.name,
+          labels = pm.labels
+        )},
+        // TODO: ipAddress = None,
+        // TODO: upgradeStrategy = None,
+        acceptedResourceRoles = acceptedResourceRoles,
+        labels = labels getOrElse Map(),
+        healthChecks = health_checks map {_.map { hc => AppUpdate.HealthCheck(
+          protocol = Some(hc.protocol),
+          path = Some(hc.path),
+          portIndex = None, // TODO: figure out how to define this
+          gracePeriodSeconds = Some(hc.grace_period_seconds),
+          intervalSeconds = Some(hc.interval_seconds),
+          timeoutSeconds = Some(hc.timeout_seconds),
+          maxConsecutiveFailures = Some(hc.max_consecutive_failures)
+        )}} getOrElse Seq(),
+        version = createdUTC
+      ),
+      maybeCounts = maybeCounts,
+      maybeDeployments = deploymentIDs
     )
-    mc recoverWith {
+    appInfo recoverWith {
       case e: Throwable => throw new IllegalArgumentException("Could not parse container properties",e)
     }
   }
@@ -404,10 +498,10 @@ package object marathon {
 
     def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
       ps map {pm => Container.Docker.PortMapping(
-        protocol = Some(pm.protocol),
+        protocol = pm.protocol,
         containerPort = pm.container_port,
         hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        servicePort = pm.service_port
       )}
     }
 

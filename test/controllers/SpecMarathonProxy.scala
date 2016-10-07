@@ -184,7 +184,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           image = "nginx",
           network = Some("BRIDGE"),
           portMappings = Some(Seq(
-            Container.Docker.PortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
+            Container.Docker.PortMapping(containerPort = 80, protocol = "tcp", hostPort = None, servicePort = 0)
           )),
           privileged = None,
           forcePullImage = None,

@@ -1,8 +1,25 @@
 package com.galacticfog.gestalt.marathon
 
+// modified from marathon source
+
 case class Container(docker: Option[Container.Docker],
                      `type`: String,
-                     volumes: Seq[Container.Volume])
+                     volumes: Seq[Container.Volume]) {
+
+  val portMappings: Option[Seq[Container.Docker.PortMapping]] = docker flatMap (_.network) match {
+    case Some(networkMode) if networkMode == Container.Docker.Network.BRIDGE =>
+      docker.flatMap(_.portMappings).map(_.map {
+        // backwards compat: when in BRIDGE mode, missing host ports default to zero
+        case Container.Docker.PortMapping(x, None, y, z, w, a) => Container.Docker.PortMapping(x, Some(Container.Docker.PortMapping.HostPortDefault), y, z, w, a)
+        case m => m
+      })
+    case Some(networkMode) if networkMode == Container.Docker.Network.USER => docker.flatMap(_.portMappings)
+    case _ => None
+  }
+
+  def servicePorts: Option[Seq[Int]] =
+    for (pms <- portMappings) yield pms.map(_.servicePort)
+}
 
 case object Container {
 
@@ -17,11 +34,35 @@ case object Container {
 
     case class Parameter(key: String, value: String)
 
-    case class PortMapping(protocol: Option[String] = Some("tcp"),
-                           containerPort: Int,
-                           labels: Option[Map[String,String]] = None,
-                           hostPort: Option[Int] = Some(0),
-                           servicePort: Option[Int] = Some(0))
+    /**
+      * @param containerPort The container port to expose
+      * @param hostPort      The host port to bind
+      * @param servicePort   The well-known port for this service
+      * @param protocol      Layer 4 protocol to expose (i.e. "tcp", "udp" or "udp,tcp" for both).
+      * @param name          Name of the service hosted on this port.
+      * @param labels        This can be used to decorate the message with metadata to be
+      *                      interpreted by external applications such as firewalls.
+      */
+    case class PortMapping(
+                            containerPort: Int = AppDefinition.RandomPortValue,
+                            hostPort: Option[Int] = None, // defaults to HostPortDefault for BRIDGE mode, None for USER mode
+                            servicePort: Int = AppDefinition.RandomPortValue,
+                            protocol: String = "tcp",
+                            name: Option[String] = None,
+                            labels: Map[String, String] = Map.empty[String, String])
+
+    object PortMapping {
+      val TCP = "tcp"
+      val UDP = "udp"
+
+      val HostPortDefault = AppDefinition.RandomPortValue // HostPortDefault only applies when in BRIDGE mode
+    }
+
+    case object Network {
+      val BRIDGE = "BRIDGE"
+      val HOST = "HOST"
+      val USER = "USER"
+    }
 
   }
 

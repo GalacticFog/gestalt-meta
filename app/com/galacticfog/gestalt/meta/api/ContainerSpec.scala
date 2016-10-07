@@ -20,9 +20,9 @@ case class ContainerSpec(container_type: String,
                          volumes: Seq[ContainerSpec.Volume] = Seq(),
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
-                         user: Option[String] = None)
+                         user: Option[String] = None) extends Spec
 
-case object ContainerSpec {
+case object ContainerSpec extends Spec {
 
   case class PortMapping(protocol: String,
                          container_port: Int,
