@@ -1,42 +1,257 @@
 package controllers
 
-
 import java.util.UUID
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import controllers.util.db.ConnectionManager
-import org.specs2.mutable._
-import org.specs2.specification._
-import play.api.libs.json._
+
+import com.galacticfog.gestalt.data.Instance
+import com.galacticfog.gestalt.marathon
+import com.galacticfog.gestalt.marathon.MarathonClient
+import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import controllers.util.{ContainerService, GestaltSecurityMocking}
+import org.joda.time.{DateTimeZone, DateTime}
+import org.specs2.execute.{Result, AsResult}
+import org.specs2.specification._
+import play.api.libs.json.{JsArray, Json}
 import play.api.test._
+import play.api.{Application, GlobalSettings, Play}
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import org.mockito.Matchers.{eq => meq}
 
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.{Try, Success}
 
-class MarathonControllerSpec extends PlaySpecification with ResourceScope with BeforeAll {
-  val rootOrgId = UUID.randomUUID()
-  //val adminUserId = UUID.randomUUID()
-  
+import marathon._
+
+class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll {
+
   override def beforeAll(): Unit = pristineDatabase()
 
-  "findMigrationRule" should {
-    
-    "find any container.migrate.* rules that are within the given scope" in new WithApplication {
-      val org = newOrg(id = dummyRootOrgId)
-      org must beSuccessfulTry
-      
-      val data = newDummyEnvironment(dummyRootOrgId)
-      
-      MarathonController.findMigrationRule(data("environment")).isEmpty must beTrue
-      
-      val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
-      ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
-      
-      val event = MarathonController.findMigrationRule(data("environment"))
-      
-      event.isEmpty must beFalse
+  sequential
+
+  lazy val creds = dummyCreds()
+  lazy val authResponse = dummyAuthAccount()
+  lazy val mockSecurityClient = mock[GestaltSecurityClient]
+  lazy val fakeSecurity = FakeGestaltSecurityEnvironment[DummyAuthenticator](Seq(
+    creds -> authResponse
+  ), mockSecurityClient)
+
+  def testGlobal() = new GlobalSettings {
+    lazy val cs = mock[ContainerService]
+    override def getControllerInstance[A](controllerClass: Class[A]): A = {
+      if (classOf[ContainerService] == controllerClass) cs.asInstanceOf[A]
+      else if (classOf[MarathonAPIController] == controllerClass) {
+        new MarathonAPIController(cs) {
+          override val env = fakeSecurity
+          override val securityClient = mockSecurityClient
+        }
+      }.asInstanceOf[A]
+      else super.getControllerInstance(controllerClass)
     }
+  }
+
+
+  abstract class TestApplication extends WithApplication(FakeApplication(withGlobal = Some(testGlobal))) {
+
+    var testEnv: Instance = null
+    var testWork: Instance = null
+    var testProvider: Instance = null
+    var mockMarathonClient: MarathonClient = null
+
+    def testFQON: String = "root"
+    def testWID: UUID = testWork.id
+    def testEID: UUID = testEnv.id
+    def testPID: UUID = testProvider.id
+
+    override def around[T: AsResult](t: => T): Result = super.around {
+      var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      testWork = tW
+      testEnv = tE
+      testProvider = createMarathonProvider(testEID, "test-provider").get
+      mockMarathonClient = mock[MarathonClient]
+      val cs = containerService
+      cs.appComponents(testEID) returns Try((testWork,testEnv))
+      cs.marathonProvider(testPID) returns testProvider
+      cs.marathonClient(testProvider) returns mockMarathonClient
+      t
+    }
+
+  }
+
+  def fakeAuthRequest(method: String, path: String) = FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
+
+  def containerService(implicit app: Application) = Play.global(app).getControllerInstance(classOf[ContainerService])
+
+  "MarathonAPIController" should {
+
+    "support Marathon GET /v2/info" in new TestApplication {
+      val js = Json.obj()
+      mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
+
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info")
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      contentAsJson(result) must equalTo(js)
+    }
+
+    "support Marathon GET /v2/deployments" in new TestApplication {
+      val js = Json.arr()
+      mockMarathonClient.listDeploymentsAffectingEnvironment_marathon_v2(meq(testFQON), meq(testWork.name), meq(testEnv.name))(any[ExecutionContext]) returns Future.successful(js)
+      mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
+
+      val request = fakeAuthRequest(GET, s"/${testFQON}/environments/${testEID}/providers/${testPID}/v2/deployments")
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      contentAsJson(result) must equalTo(js)
+    }
+
+    "support Marathon POST /v2/apps (minimal container)" in new TestApplication {
+      val requestBody = Json.parse(
+        """{
+          |  "id": "test-container",
+          |  "container": {
+          |    "docker": {
+          |      "image": "nginx",
+          |      "network": "BRIDGE",
+          |      "portMappings": [
+          |        {
+          |          "containerPort": 80
+          |        }
+          |      ]
+          |    }
+          |  }
+          |}
+        """.stripMargin
+      )
+      val testProps = ContainerSpec(
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testContainerName = "test-container"
+      val createdContainer = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        ))
+      ).get
+      val jsResponse = Json.parse(
+        s"""
+          |{
+          |    "acceptedResourceRoles": null,
+          |    "args": null,
+          |    "backoffFactor": 1.15,
+          |    "backoffSeconds": 1,
+          |    "cmd": null,
+          |    "constraints": [],
+          |    "container": {
+          |        "docker": {
+          |            "forcePullImage": false,
+          |            "image": "nginx",
+          |            "network": "BRIDGE",
+          |            "parameters": [],
+          |            "portMappings": [
+          |                {
+          |                    "containerPort": 80,
+          |                    "hostPort": 0,
+          |                    "labels": {},
+          |                    "protocol": "tcp",
+          |                    "servicePort": 0
+          |                }
+          |            ],
+          |            "privileged": false
+          |        },
+          |        "type": "DOCKER",
+          |        "volumes": []
+          |    },
+          |    "cpus": 1,
+          |    "dependencies": [],
+          |    "deployments": [
+          |    ],
+          |    "disk": 0,
+          |    "env": {},
+          |    "executor": "",
+          |    "fetch": [],
+          |    "gpus": 0,
+          |    "healthChecks": [],
+          |    "id": "/test-container",
+          |    "instances": 1,
+          |    "ipAddress": null,
+          |    "labels": {},
+          |    "maxLaunchDelaySeconds": 3600,
+          |    "mem": 128,
+          |    "portDefinitions": [
+          |        {
+          |            "labels": {},
+          |            "port": 0,
+          |            "protocol": "tcp"
+          |        }
+          |    ],
+          |    "ports": [
+          |        0
+          |    ],
+          |    "readinessChecks": [],
+          |    "requirePorts": false,
+          |    "residency": null,
+          |    "secrets": {},
+          |    "storeUrls": [],
+          |    "taskKillGracePeriodSeconds": null,
+          |    "tasks": [],
+          |    "tasksHealthy": 0,
+          |    "tasksRunning": 0,
+          |    "tasksStaged": 0,
+          |    "tasksUnhealthy": 0,
+          |    "upgradeStrategy": {
+          |        "maximumOverCapacity": 1,
+          |        "minimumHealthCapacity": 1
+          |    },
+          |    "uris": [],
+          |    "user": null,
+          |    "version": "${DateTime.parse(createdContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+          |}
+        """.stripMargin
+      )
+      containerService.launchContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq(testContainerName),
+        meq(testProps)
+      ) returns Future(createdContainer)
+
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/providers/${testPID}/v2/apps").withBody(requestBody)
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      contentAsJson(result) must equalTo(jsResponse)
+    }
+
   }
 }

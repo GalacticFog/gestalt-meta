@@ -2,8 +2,13 @@ package com.galacticfog.gestalt
  
 import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import org.joda.time.{DateTimeZone, DateTime}
+import play.api.data.validation.ValidationError
 
+import scala.Option
 import scala.collection.generic
+import scala.concurrent.duration.FiniteDuration
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
@@ -14,395 +19,375 @@ import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
 
+  def getOrJsNull[A](maybeA: Option[A])(implicit tjs: play.api.libs.json.Writes[A]): JsValue = maybeA.fold[JsValue](JsNull)(Json.toJson(_))
+
   val DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES = UpgradeStrategy(
     minimumHealthCapacity = 0.5,
     maximumOverCapacity = 0.0
   )
 
-  case class PersistentVolumeInfo(size: Int)
+  implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
 
-  case class Volume(
-      container_path: String,
-      host_path: Option[String],
-      persistent: Option[PersistentVolumeInfo],
-      mode: String) {
-    def isPersistent: Boolean = persistent.isDefined
-  }
+  implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
 
-  // TODO: Marathon health checks require a port index, to specify which port the check is run against
-  // ours aren't well defined without something similar, like a label
-  case class HealthCheck(
-      protocol: String,
-      path: String,
-      grace_period_seconds: Int = 300,
-      interval_seconds: Int = 60,
-      timeout_seconds: Int = 10,
-      max_consecutive_failures: Int = 3)
-  
-  case class InputProvider(
-      id: UUID,
-      name: Option[String] = None,
-      locations: Option[Iterable[String]] = None)
+  implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
 
-  case class PortMapping(
-      protocol: String,
-      container_port: Int, 
-      host_port: Int = 0, 
-      service_port: Int = 0,
-      label: Option[String] = None)
+  implicit lazy val metaPortMappingSpecFmt = Json.format[ContainerSpec.PortMapping]
 
-  case class InputContainerProperties(container_type: String,
-                                      image: String,
-                                      provider: InputProvider,
-                                      port_mappings: Iterable[PortMapping] = Seq(),
-                                      cpus: Double = 0.2,
-                                      memory: Int = 128,
-                                      num_instances: Int = 1,
-                                      network: String = "BRIDGE",
-                                      cmd: Option[String] = None,
-                                      constraints: Option[Seq[String]] = None,
-                                      accepted_resource_roles: Option[Seq[String]] = None,
-                                      args: Option[Iterable[String]] = None,
-                                      force_pull: Boolean = false,
-                                      health_checks: Option[Iterable[HealthCheck]] = None,
-                                      volumes: Option[Iterable[Volume]] = None,
-                                      labels: Option[Map[String,String]] = None,
-                                      env: Option[Map[String,String]] = None,
-                                      user: Option[String] = None)
+  implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
 
-  case class InputContainer(
-      id: UUID = UUID.randomUUID,
-      name: String,
-      resource_type: UUID = ResourceIds.Container,
-      properties: InputContainerProperties)
-
-  case class KeyValuePair(key: String, value: String)
-
-  case class MarathonPortMapping(
-                          protocol: Option[String] = Some("tcp"),
-                          containerPort: Int,
-                          hostPort: Option[Int] = Some(0),
-                          servicePort: Option[Int] = Some(0))
-
-  case class MarathonDocker(
-      image: String,
-      network: String = "BRIDGE",
-      forcePullImage: Option[Boolean] = None,
-      portMappings: Option[Iterable[MarathonPortMapping]] = None,
-      parameters: Option[Iterable[KeyValuePair]] = None)
-
-  case class MarathonContainer(
-      docker: Option[MarathonDocker],
-      containerType: String,
-      volumes: Option[Iterable[Volume]] = None
-  )
-
-  case class MarathonHealthCheck(
-                          protocol: Option[String] = Some("http"),
-                          path: Option[String] = Some("/"),
-                          portIndex: Option[Int] = Some(0),
-                          gracePeriodSeconds: Option[Int] = None,
-                          intervalSeconds: Option[Int] = None,
-                          timeoutSeconds: Option[Int] = None,
-                          maxConsecutiveFailures: Option[Int] = None)
-
-  case class PortDefinition(port: Int,
-                            protocol: Option[String],
-                            name: Option[String],
-                            labels: Option[JsObject])
-
-  case class PortDiscovery(number: Int, name: String, protocol: String)
-  case class DiscoveryInfo(ports: Option[Seq[PortDiscovery]] = None)
-  case class IPPerTaskInfo(discovery: Option[DiscoveryInfo])
-
-  case class UpgradeStrategy(minimumHealthCapacity: Double, maximumOverCapacity: Double)
-
-  case class MarathonApp(
-    id: String,
-    container: MarathonContainer,
-    cpus: Double = 0.2,
-    mem: Double = 128.0,
-    instances: Int = 1,
-    tasksStaged: Option[Int] = None,
-    tasksRunning: Option[Int] = None,
-    tasksHealthy: Option[Int] = None,
-    tasksUnhealthy: Option[Int] = None,
-    cmd: Option[String] = None,
-    constraints: Option[Seq[Seq[String]]] = None,
-    acceptedResourceRoles: Option[Seq[String]] = None,
-    args: Option[Iterable[String]] = None,
-    ports: Option[Iterable[Int]] = None,
-    portDefinitions: Option[Iterable[PortDefinition]] = None,
-    labels: Option[Map[String, String]] = None,
-    healthChecks: Option[Iterable[MarathonHealthCheck]] = None,
-    env: Option[Map[String, String]] = None,
-    deployments: Option[Seq[JsObject]] = None,
-    ipAddress: Option[IPPerTaskInfo] = None,
-    upgradeStrategy: Option[UpgradeStrategy] = None,
-    user: Option[String] = None)
-
-  implicit lazy val inputProviderFormat = Json.format[InputProvider]
-
-  implicit lazy val marathonVolumePersistenceFmt = Json.format[PersistentVolumeInfo]
+  implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
   implicit lazy val marathonUpgradeStrategyFmt = Json.format[UpgradeStrategy]
 
-  lazy val marathonVolumeReads = new Reads[Volume] {
-    lazy val simpleVolumeReads = (
-      (__ \ "containerPath").read[String] and
-        (__ \ "hostPath").readNullable[String] and
-        (__ \ "persistent").readNullable[PersistentVolumeInfo] and
-        (__ \ "mode").read[String]
-      )(Volume.apply _)
+  implicit lazy val marathonFetchUriFmt = Json.format[FetchUri]
 
-    override def reads(json: JsValue): JsResult[Volume] = {
-      json.validate[Volume](simpleVolumeReads) match {
-        case s @ JsSuccess(Volume(cPath, Some(hPath), None,         mode), _) => s
-        case s @ JsSuccess(Volume(cPath, None,        Some(pvInfo), mode), _) => s
-        case s @ JsSuccess(Volume(_, None,    None,    _), _) => JsError("container volume must contain one of hostPath or persistent")
-        case s @ JsSuccess(Volume(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of hostPath or persistent")
-        case e: JsError => e
-      }
-    }
-  }
+  implicit lazy val marathonReadinessCheckFmt = Json.format[ReadinessCheck]
+
+  lazy val marathonVolumeReads =  (
+    (__ \ "containerPath").read[String] and
+      (__ \ "hostPath").readNullable[String] and
+      (__ \ "persistent").readNullable[Container.PersistentVolumeInfo] and
+      (__ \ "mode").read[String]
+    )(Container.Volume.apply _)
 
   lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
       (__ \ "hostPath").writeNullable[String] and
-      (__ \ "persistent").writeNullable[PersistentVolumeInfo] and
+      (__ \ "persistent").writeNullable[Container.PersistentVolumeInfo] and
       (__ \ "mode").write[String]
-    )(unlift(Volume.unapply))
+    )(unlift(Container.Volume.unapply))
 
 
-  implicit lazy val metaVolumeWrites = Json.writes[Volume]
+//  implicit lazy val metaVolumeWrites = Json.writes[ContainerSpec.VolumeSpec]
+//
+//  implicit lazy val metaVolumeReads = new Reads[ContainerSpec.VolumeSpec] {
+//    lazy val simpleVolumeReads = Json.reads[VolumeSpec]
+//    override def reads(json: JsValue): JsResult[VolumeSpec] = {
+//      json.validate[VolumeSpec](simpleVolumeReads) match {
+//        case s @ JsSuccess(VolumeSpec(cPath, Some(hPath), None,         mode), _) => s
+//        case s @ JsSuccess(VolumeSpec(cPath, None,        Some(pvInfo), mode), _) => s
+//        case s @ JsSuccess(VolumeSpec(_, None,    None,    _), _) => JsError("container volume must contain one of host_path or persistent")
+//        case s @ JsSuccess(VolumeSpec(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of host_path or persistent")
+//        case e: JsError => e
+//      }
+//    }
+//  }
 
-  implicit lazy val metaVolumeReads = new Reads[Volume] {
-    lazy val simpleVolumeReads = Json.reads[Volume]
-    override def reads(json: JsValue): JsResult[Volume] = {
-      json.validate[Volume](simpleVolumeReads) match {
-        case s @ JsSuccess(Volume(cPath, Some(hPath), None,         mode), _) => s
-        case s @ JsSuccess(Volume(cPath, None,        Some(pvInfo), mode), _) => s
-        case s @ JsSuccess(Volume(_, None,    None,    _), _) => JsError("container volume must contain one of host_path or persistent")
-        case s @ JsSuccess(Volume(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of host_path or persistent")
-        case e: JsError => e
-      }
-    }
-  }
+  lazy val containerSpecReads = Json.writes[ContainerSpec]
 
-  implicit lazy val healthCheckFormat = Json.format[HealthCheck]
-
-  implicit lazy val portMappingWrites = Json.writes[PortMapping]
-
-  implicit lazy val portMappingFormat = new Reads[PortMapping] {
-    override def reads(json: JsValue): JsResult[PortMapping] = {
-      (for {
-        protocol <- (json \ "protocol").asOpt[String]
-        container_port <- (json \ "container_port").asOpt[Int]
-        host_port = (json \ "host_port").asOpt[Int] getOrElse 0
-        service_port = (json \ "service_port").asOpt[Int] getOrElse 0
-        label = (json \ "label").asOpt[String]
-      } yield PortMapping(
-        protocol = protocol,
-        container_port = container_port,
-        host_port = host_port,
-        service_port = service_port,
-        label = label
-      )) match {
-        case Some(pm) => JsSuccess(pm)
-        case None => JsError("Could not parse PortMapping")
-      }
-    }
-  }
-
-  implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
-  implicit lazy val inputContainerFormat = Json.format[InputContainer]
-
-  implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
-  implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
-  implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
-  implicit lazy val marathonPortDefintionFormat = Json.format[PortDefinition]
-  implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
-
-  implicit lazy val portDiscoveryFormat = Json.format[PortDiscovery]
-  implicit lazy val discoveryInfoFormat = Json.format[DiscoveryInfo]
-  implicit lazy val ipPerTaskInfoFormat = Json.format[IPPerTaskInfo]
-
-  def getICBF()(implicit bf: generic.CanBuildFrom[Iterable[_], Volume, Iterable[Volume]]) = bf
-
-  implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
-    (__ \ "docker").readNullable[MarathonDocker] and
-      (__ \ "type").read[String] and
-      (__ \ "volumes").readNullable[Iterable[Volume]](Reads.traversableReads[Iterable,Volume](getICBF(), marathonVolumeReads))
-    )(MarathonContainer.apply _)
-
-  implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
-    (__ \ "docker").writeNullable[MarathonDocker] and
-      (__ \ "type").write[String] and
-      (__ \ "volumes").writeNullable[Iterable[Volume]](Writes.traversableWrites[Volume](marathonVolumeWrites))
-    )(unlift(MarathonContainer.unapply))
-
-  implicit lazy val marathonAppReads: Reads[MarathonApp] = (
-    (__ \ "id").read[String] and
-      (__ \ "container").read[MarathonContainer] and
-      (__ \ "cpus").read[Double] and
-      (__ \ "mem").read[Double] and
-      (__ \ "instances").read[Int] and
-      (__ \ "tasksStaged").readNullable[Int] and
-      (__ \ "tasksRunning").readNullable[Int] and
-      (__ \ "tasksHealthy").readNullable[Int] and
-      (__ \ "tasksUnhealthy").readNullable[Int] and
+  lazy val containerSpecWrites: Reads[ContainerSpec] = (
+    (__ \ "container_type").read[String] and
+      (__ \ "image").read[String] and
+      (__ \ "provider").read[ContainerSpec.InputProvider] and
+      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
+      ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
+      ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
+      ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
+      ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
+      (__ \ "network").readNullable[String] and
       (__ \ "cmd").readNullable[String] and
-      (__ \ "constraints").readNullable[Seq[Seq[String]]] and
-      (__ \ "acceptedResourceRoles").readNullable[Seq[String]] and
-      (__ \ "args").readNullable[Iterable[String]] and
-      (__ \ "ports").readNullable[Iterable[Int]] and
-      (__ \ "portDefinitions").readNullable[Iterable[PortDefinition]] and
-      (__ \ "labels").readNullable[Map[String,String]] and
-      (__ \ "healthChecks").readNullable[Iterable[MarathonHealthCheck]] and
-      (__ \ "env").readNullable[Map[String,String]] and
-      (__ \ "deployments").readNullable[Seq[JsObject]] and
-      (__ \ "ipAddress").readNullable[IPPerTaskInfo] and
-      (__ \ "upgradeStrategy").readNullable[UpgradeStrategy] and
+      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
+      (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
+      (__ \ "args").readNullable[Seq[String]] and
+      ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
+      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq())) and
+      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq())) and
+      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
+      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "user").readNullable[String]
-    )(MarathonApp.apply _)
+    )(ContainerSpec.apply _)
 
-  implicit lazy val marathonAppWrites = (
-    (__ \ "id").write[String] and
-      (__ \ "acceptedResourceRoles").write[JsValue] and
-      (__ \ "args").write[JsValue] and
-      (__ \ "container").write[MarathonContainer] and
-      (__ \ "cmd").write[JsValue] and
-      (__ \ "cpus").write[Double] and
-      (__ \ "env").write[Map[String,String]] and
-      (__ \ "healthChecks").write[Seq[MarathonHealthCheck]] and
-      (__ \ "instances").write[Int] and
-      (__ \ "ipAddress").write[JsValue] and
-      (__ \ "labels").write[Map[String,String]] and
-      (__ \ "mem").write[Double] and
-      (__ \ "portDefinitions").write[Seq[PortDefinition]] and
-      (__ \ "ports").writeNullable[Iterable[Int]] and
-      (__ \ "upgradeStrategy").writeNullable[UpgradeStrategy] and
-      (__ \ "user").write[JsValue] and
-      (__ \ "constraints").write[Seq[Seq[String]]] and
-      (__ \ "deployments").write[Seq[JsObject]] and
-      (__ \ "tasksStaged").writeNullable[Int] and
-      (__ \ "tasksRunning").writeNullable[Int] and
-      (__ \ "tasksHealthy").writeNullable[Int] and
-      (__ \ "tasksUnhealthy").writeNullable[Int]
-    )(
-    (a: MarathonApp) => (
-      a.id, a.acceptedResourceRoles.fold[JsValue](JsNull)(Json.toJson(_)),
-      a.args.map(as => JsArray(as.toSeq.map(JsString(_)))).getOrElse(if (a.cmd.isDefined) JsNull else JsArray()),
-      a.container,
-      a.cmd.fold[JsValue](JsNull)(JsString(_)), a.cpus,
-      a.env.getOrElse(Map.empty), a.healthChecks.map(_.toSeq).getOrElse(Seq.empty), a.instances,
-      a.ipAddress.fold[JsValue](JsNull)(Json.toJson(_)), a.labels.getOrElse(Map.empty),
-      a.mem,
-      a.portDefinitions.map(_.toSeq).getOrElse(Seq.empty),
-      a.ports,
-      a.upgradeStrategy,
-      a.user.fold[JsValue](JsNull)(JsString(_)),
-      a.constraints.getOrElse(Seq.empty),
-      a.deployments.getOrElse(Seq.empty),
-      a.tasksStaged, a.tasksRunning, a.tasksHealthy, a.tasksUnhealthy
-    )
+  implicit lazy val metaContainerSpec = Format(containerSpecWrites, containerSpecReads)
+
+  implicit lazy val healthCheckFmt = Json.format[AppUpdate.HealthCheck]
+
+  implicit lazy val marathonPortDefintionFmt = Json.format[AppUpdate.PortDefinition]
+
+  implicit lazy val portDiscoveryFmt = Json.format[AppUpdate.PortDiscovery]
+
+  implicit lazy val discoveryInfoFmt = Json.format[AppUpdate.DiscoveryInfo]
+
+  implicit lazy val ipPerTaskInfoFmt = Json.format[AppUpdate.IPPerTaskInfo]
+
+  implicit lazy val marathonAppUpdateFmt = Json.format[AppUpdate]
+
+  implicit lazy val marathonContainerDockerParameterFmt = Json.format[Container.Docker.Parameter]
+
+  implicit lazy val marathonContainerVolumeFmt = Json.format[Container.Volume]
+
+  implicit lazy val PortMappingReads: Reads[Container.Docker.PortMapping] = (
+    (__ \ "containerPort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
+      (__ \ "hostPort").formatNullable[Int] ~
+      (__ \ "servicePort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
+      (__ \ "protocol").formatNullable[String].map(_ getOrElse "tcp") ~
+      (__ \ "name").formatNullable[String] ~
+      (__ \ "labels").formatNullable[Map[String, String]].map(_ getOrElse Map.empty[String, String])
+    )(Container.Docker.PortMapping(_, _, _, _, _, _))
+
+  implicit lazy val PortMappingWrites = Json.writes[Container.Docker.PortMapping]
+
+  implicit lazy val marathonContainerDockerFmt = Json.format[Container.Docker]
+
+  implicit lazy val marathonContainerResidencyFmt = Json.format[Residency]
+
+  implicit lazy val marathonContainerReads: Reads[Container] = (
+    (__ \ "docker").readNullable[Container.Docker] and
+      ((__ \ "type").read[String] orElse Reads.pure("DOCKER")) and
+      (__ \ "volumes").readNullable[Seq[Container.Volume]].map(_.getOrElse(Seq.empty[Container.Volume]))
+    )( Container.apply _ ).filterNot(ValidationError("container volume must contain one of hostPath or persistent")) {
+      container =>
+    container.volumes.exists { vol =>
+      !(vol.hostPath.isDefined ^ vol.persistent.isDefined)
+    }
+  }
+
+  private[this] lazy val ValidPortName: Reads[String] = {
+    implicitly[Reads[String]]
+      .filter(ValidationError(s"Port name must fully match regular expression ${PortAssignment.PortNamePattern}"))(
+        PortAssignment.PortNamePattern.pattern.matcher(_).matches()
+      )
+  }
+
+  private[this] lazy val ValidPorts: Reads[Seq[DiscoveryInfo.Port]] = {
+    def hasUniquePortNames(ports: Seq[DiscoveryInfo.Port]): Boolean = {
+      ports.map(_.name).toSet.size == ports.size
+    }
+
+    def hasUniquePortNumberProtocol(ports: Seq[DiscoveryInfo.Port]): Boolean = {
+      ports.map(port => (port.number, port.protocol)).toSet.size == ports.size
+    }
+
+    implicitly[Reads[Seq[DiscoveryInfo.Port]]]
+      .filter(ValidationError("Port names are not unique."))(hasUniquePortNames)
+      .filter(ValidationError("There may be only one port with a particular port number/protocol combination."))(
+        hasUniquePortNumberProtocol
+      )
+  }
+
+  lazy val ValidPortProtocol: Reads[String] = {
+    implicitly[Reads[String]]
+      .filter(ValidationError("Invalid protocol. Only 'udp' or 'tcp' are allowed."))(
+        DiscoveryInfo.Port.AllowedProtocols
+      )
+  }
+
+  implicit lazy val PortReads: Reads[DiscoveryInfo.Port] = (
+    (__ \ "number").read[Int] ~
+      (__ \ "name").read[String](ValidPortName) ~
+      (__ \ "protocol").read[String](ValidPortProtocol) ~
+      (__ \ "labels").readNullable[Map[String, String]].map(_ getOrElse Map.empty[String,String])
+    )(DiscoveryInfo.Port(_, _, _, _))
+
+  implicit lazy val PortWrites = Json.writes[DiscoveryInfo.Port]
+
+  implicit lazy val DiscoveryInfoFormat: Format[DiscoveryInfo] = Format(
+    (__ \ "ports").read[Seq[DiscoveryInfo.Port]](ValidPorts).map(DiscoveryInfo(_)),
+    Writes[DiscoveryInfo] { discoveryInfo =>
+      Json.obj("ports" -> discoveryInfo.ports.map(PortWrites.writes))
+    }
   )
 
-  import com.galacticfog.gestalt.data.ResourceFactory
+  implicit lazy val IpAddressReads: Reads[IpAddress] = (
+    (__ \ "groups").readNullable[Seq[String]].map(_ getOrElse Nil) ~
+      (__ \ "labels").readNullable[Map[String, String]].map(_ getOrElse Map.empty[String, String]) ~
+      (__ \ "discovery").readNullable[DiscoveryInfo].map(_ getOrElse DiscoveryInfo.empty) ~
+      (__ \ "networkName").readNullable[String]
+    )(IpAddress(_, _, _, _))
+
+  implicit lazy val IpAddressWrites = Json.writes[IpAddress]
+
+  implicit lazy val marathonContainerWrites: Writes[Container] = (
+    (__ \ "docker").writeNullable[Container.Docker] and
+      (__ \ "type").write[String] and
+      (__ \ "volumes").write[Seq[Container.Volume]]
+    )( (mc: Container) => (mc.docker, mc.`type`, mc.volumes))
+
+  implicit lazy val appDefinitionWrites: Writes[AppDefinition] = {
+    implicit lazy val durationWrites = Writes[FiniteDuration] { d =>
+      JsNumber(d.toSeconds)
+    }
+
+    Writes[AppDefinition] { app =>
+      var appJson: JsObject = Json.obj(
+        "id" -> app.id,
+        "cmd" -> app.cmd,
+        "args" -> app.args,
+        "user" -> app.user,
+        "env" -> app.env,
+        "instances" -> app.instances,
+        "cpus" -> app.cpus,
+        "mem" -> app.mem,
+        "disk" -> app.disk,
+        "gpus" -> app.gpus,
+        "executor" -> app.executor,
+        "constraints" -> app.constraints,
+        "uris" -> app.fetch.map(_.uri),
+        "fetch" -> app.fetch,
+        "storeUrls" -> app.storeUrls,
+        "backoffSeconds" -> app.backoff,
+        "backoffFactor" -> app.backoffFactor,
+        "maxLaunchDelaySeconds" -> app.maxLaunchDelay,
+        "container" -> app.container,
+        "healthChecks" -> app.healthChecks,
+        "readinessChecks" -> app.readinessChecks,
+        "dependencies" -> app.dependencies,
+        "upgradeStrategy" -> app.upgradeStrategy,
+        "labels" -> app.labels,
+        "acceptedResourceRoles" -> app.acceptedResourceRoles,
+        "ipAddress" -> app.ipAddress,
+        "version" -> app.version,
+        "residency" -> app.residency,
+        "secrets" -> app.secrets,
+        "taskKillGracePeriodSeconds" -> app.taskKillGracePeriod
+      )
+      // top-level ports fields are incompatible with IP/CT
+      if (app.ipAddress.isEmpty) {
+        appJson = appJson ++ Json.obj(
+          "ports" -> app.servicePorts,
+          "portDefinitions" -> {
+            if (app.servicePorts.nonEmpty) {
+              app.portDefinitions.zip(app.servicePorts).map {
+                case (portDefinition, servicePort) => portDefinition.copy(port = servicePort)
+              }
+            } else {
+              app.portDefinitions
+            }
+          },
+          // requirePorts only makes sense when allocating hostPorts, which you can't do in IP/CT mode
+          "requirePorts" -> app.requirePorts
+        )
+      }
+//      Json.toJson(app.versionInfo) match {
+//        case JsNull => appJson
+//        case v: JsValue => appJson + ("versionInfo" -> v)
+//      }
+      appJson
+    }
+  }
+
+  implicit lazy val taskCountsWrites: Writes[TaskCounts] =
+    Writes { counts =>
+      Json.obj(
+        "tasksStaged" -> counts.tasksStaged,
+        "tasksRunning" -> counts.tasksRunning,
+        "tasksHealthy" -> counts.tasksHealthy,
+        "tasksUnhealthy" -> counts.tasksUnhealthy
+      )
+    }
+
+  implicit lazy val ExtendedAppInfoWrites: Writes[AppInfo] =
+    Writes { info =>
+      val appJson = appDefinitionWrites.writes(info.app).as[JsObject]
+
+      val maybeJson = Seq[Option[JsObject]](
+        info.maybeCounts.map(taskCountsWrites.writes(_).as[JsObject]) /*,
+        info.maybeDeployments.map(deployments => Json.obj("deployments" -> deployments)),
+        info.maybeReadinessCheckResults.map(readiness => Json.obj("readinessCheckResults" -> readiness)),
+        info.maybeTasks.map(tasks => Json.obj("tasks" -> tasks)),
+        info.maybeLastTaskFailure.map(lastFailure => Json.obj("lastTaskFailure" -> lastFailure)),
+        info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */,
+        Some(Json.obj("tasks" -> Json.arr())),
+        Some(Json.obj("deployments" -> Json.arr()))
+      ).flatten
+
+      maybeJson.foldLeft(appJson)((result, obj) => result ++ obj)
+    }
+
+
 
   /**
-   * Convert Marathon App JSON to Meta Container JSON
+   * Convert Marathon App JSON to Meta ContainerSpec
    */
-  def marathonApp2MetaContainer(inputJson: JsObject, providerId: UUID): JsObject = {
+  def marAppPayloadToMetaContainerSpec(inputJson: JsValue, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
     log.debug("Entered marathonApp2MetaContainer...")
     log.debug("Received:\n" + Json.prettyPrint(inputJson))
     log.debug("Deserializing Marathon App JSON...")
 
-    val app = inputJson.validate[MarathonApp].map {
-      case app: MarathonApp => app
-    }.recoverTotal { e =>
+    val app = inputJson.validate[AppUpdate].recoverTotal { e =>
       throw new BadRequestException("Could not parse Marathon App JSON: " + JsError.toFlatJson(e).toString)
     }
 
     log.debug("Marathon App:\n" + app)
-    log.debug("Looking up Provider : " + providerId)
-    val provider = {
-      val p = ResourceFactory.findById(ResourceIds.MarathonProvider, providerId) getOrElse {
-        throw new ResourceNotFoundException(s"MarathonProvider with ID '$providerId' not found.")
-      }
-      InputProvider(id = p.id, name = Some(p.name))
-    }
-    log.debug("Provider:\n" + provider)
 
-    val props = InputContainerProperties(
+    val name = app.id
+    val props = ContainerSpec(
       container_type = "DOCKER",
-      image = app.container.docker map {_.image} getOrElse "",
-      provider = provider,
-      port_mappings = app.container.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => PortMapping(
-        label = Some(index.toString),
-        protocol = pm.protocol getOrElse "tcp",
+      image = app.container flatMap {_.docker map {_.image}} getOrElse "",
+      provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
+      port_mappings = app.container flatMap {_.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => ContainerSpec.PortMapping(
+        name = None,
+        labels = pm.labels,
+        protocol = pm.protocol,
         container_port = pm.containerPort,
         host_port = pm.hostPort getOrElse 0,
-        service_port = pm.servicePort getOrElse 0
-      )}}} getOrElse Seq(),
-      cpus = app.cpus,
-      memory = app.mem.toInt,
-      num_instances = app.instances,
-      network = app.container.docker map {_.network} getOrElse "",
+        service_port = pm.servicePort
+      )}}}} getOrElse Seq(),
+      cpus = app.cpus getOrElse AppDefinition.DefaultCpus,
+      memory = app.mem getOrElse AppDefinition.DefaultMem,
+      num_instances = app.instances getOrElse AppDefinition.DefaultInstances,
+      network = app.container flatMap( _.docker flatMap (_.network)),
       cmd = app.cmd,
-      constraints = app.constraints.map(_.map(_.foldLeft("")(_ + ":" + _))),
+      constraints = app.constraints.map(_.map(_.foldLeft("")(_ + ":" + _))) getOrElse Seq(),
       accepted_resource_roles = app.acceptedResourceRoles,
-      args = app.args,
-      force_pull = app.container.docker flatMap {_.forcePullImage} getOrElse false,
-      health_checks = app.healthChecks map { _.map{ check => HealthCheck(
-        protocol = check.protocol getOrElse "http",
-        path = check.path getOrElse "/",
-        grace_period_seconds = check.gracePeriodSeconds getOrElse 15,
-        interval_seconds = check.intervalSeconds getOrElse 10,
-        timeout_seconds = check.timeoutSeconds getOrElse 20,
-        max_consecutive_failures = check.maxConsecutiveFailures getOrElse 3
-      )}},
-      volumes = app.container.volumes,
-      labels = app.labels,
-      env = app.env
+      args = app.args.map(_.toSeq),
+      force_pull = app.container flatMap (_.docker flatMap (_.forcePullImage)) getOrElse false,
+      health_checks = app.healthChecks.map(_.map { check => ContainerSpec.HealthCheck(
+        protocol = check.protocol getOrElse AppUpdate.HealthCheck.DefaultProtocol,
+        path = check.path getOrElse AppUpdate.HealthCheck.DefaultPath,
+        grace_period_seconds = check.gracePeriodSeconds getOrElse AppUpdate.HealthCheck.DefaultGracePeriod.toSeconds.toInt,
+        interval_seconds = check.intervalSeconds getOrElse AppUpdate.HealthCheck.DefaultInterval.toSeconds.toInt,
+        timeout_seconds = check.timeoutSeconds getOrElse AppUpdate.HealthCheck.DefaultTimeout.toSeconds.toInt,
+        max_consecutive_failures = check.maxConsecutiveFailures getOrElse AppUpdate.HealthCheck.DefaultMaxConsecutiveFailures
+      )}) getOrElse Seq(),
+      volumes = app.container.map(_.volumes.map(v =>
+        ContainerSpec.Volume(
+          container_path = v.containerPath,
+          host_path = v.hostPath,
+          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
+          mode = v.mode
+        )
+      )) getOrElse Seq(),
+      labels = app.labels getOrElse Map(),
+      env = app.env getOrElse Map()
     )
-    
-    // Meta container name is last component of Marathon ID 'path'
-    val containerName = {
-        val cmps = app.id.stripPrefix("/").stripSuffix("/").split("/")
-        cmps(cmps.size-1)
-    }
-    log.debug("Container-Name : " + containerName)
-    
-    val output = Json.toJson(InputContainer(name = containerName, properties = props))
-    
-    log.debug("Transform Complete:\n" + Json.prettyPrint(output))
-    output.as[JsObject]
+    (name,props)
   }
 
   /**
     * Convert Meta container resource to MarathonApp object
- *
-    * @param metaApp
+    *
+    * @param metaContainerSpec
     * @return
     */
-  def meta2Marathon(metaApp: GestaltResourceInstance): Try[MarathonApp] = {
+  def metaToMarathonAppInfo(metaContainerSpec: GestaltResourceInstance,
+                            instances: Option[Seq[ContainerInstance]] = None,
+                            deploymentIDs: Option[Seq[String]] = None): Try[AppInfo] = {
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
-      ps map {pm => MarathonPortMapping(
-        protocol = Some(pm.protocol),
+    def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
+      ps map {pm => Container.Docker.PortMapping(
+        protocol = pm.protocol,
         containerPort = pm.container_port,
         hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        servicePort = pm.service_port
       )}
     }
 
-    val mc = for {
-      props <- Try{metaApp.properties.get}
+    val maybeCounts = instances.map {
+      cis => TaskCounts(
+        tasksStaged = cis.count(_.isStaged),
+        tasksRunning = cis.count(_.isRunning),
+        tasksHealthy = cis.count(_.isHealthy),
+        tasksUnhealthy = cis.count(_.isUnhealthy)
+      )
+    }
+
+    val appInfo = for {
+      props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[InputProvider]}
+      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       cpus <- Try{props("cpus").toDouble}
-      memory <- Try{props("memory").toInt}
+      memory <- Try{props("memory").toDouble}
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
       constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]].map(_.split(":") match {
@@ -413,65 +398,78 @@ package object marathon {
         case e => e.toSeq
       })}
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
-      args = props.get("args") map {json => Json.parse(json).as[Iterable[String]]}
-      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Iterable[HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Iterable[Volume]]}
+      args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
+      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
-      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Iterable[PortMapping]]}
-      tasks_running = props.get("tasks_running") map {_.toInt}
-      tasks_healthy = props.get("tasks_healthy") map {_.toInt}
-      tasks_unhealthy = props.get("tasks_unhealthy") map {_.toInt}
-      tasks_staged = props.get("tasks_staged") map {_.toInt}
+      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
       user = props.get("user")
       docker = for {
         image <- props.get("image")
-        network = props.get("network") getOrElse "HOST"
+        network = props.get("network")
         force_pull = props.get("force_pull") map {_.toBoolean}
-      } yield MarathonDocker(
+      } yield Container.Docker(
         image = image,
         network = network,
-        forcePullImage = force_pull,
-        portMappings = port_mappings map portmap
+        forcePullImage = force_pull orElse Some(false),
+        portMappings = port_mappings map portmap,
+        parameters = Some(Seq()),
+        privileged = Some(false)
       )
-      container = MarathonContainer(
+      createdUTC = for {
+        created <-  metaContainerSpec.created
+        timestamp <- created.get("timestamp")
+        dt <- Try{DateTime.parse(timestamp)}.toOption
+        utc = dt.toDateTime(DateTimeZone.UTC)
+      } yield utc.toString
+      container = Container(
         docker = if (ctype.equalsIgnoreCase("DOCKER")) docker else None,
-        containerType = ctype,
-        volumes = volumes
+        `type` = ctype,
+        volumes = volumes.map(_.map(v => Container.Volume(
+          containerPath = v.container_path,
+          hostPath = v.host_path,
+          persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
+          mode = v.mode
+        ))) getOrElse Seq()
       )
-    } yield MarathonApp(
-      id = "/" + metaApp.name,
-      container = container,
-      cpus = cpus,
-      mem = memory,
-      instances = num_instances,
-      cmd = cmd,
-      constraints = constraints,
-      acceptedResourceRoles = acceptedResourceRoles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
-      args = args,
-      ports = port_mappings map {_.map { _.host_port }},
-      portDefinitions = port_mappings map {_.map {
-        pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
-      } },
-      labels = labels,
-      healthChecks = health_checks map {_.map { hc => MarathonHealthCheck(
-        protocol = Some(hc.protocol),
-        path = Some(hc.path),
-        portIndex = None, // TODO: figure out how to define this
-        gracePeriodSeconds = Some(hc.grace_period_seconds),
-        intervalSeconds = Some(hc.interval_seconds),
-        timeoutSeconds = Some(hc.timeout_seconds),
-        maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}},
-      env = env,
-      tasksStaged = tasks_staged,
-      tasksRunning = tasks_running,
-      tasksHealthy = tasks_healthy,
-      tasksUnhealthy = tasks_unhealthy,
-      deployments = Some(Seq.empty),
-      user = user
+    } yield AppInfo(
+      app = AppDefinition(
+        id = "/" + metaContainerSpec.name,
+        cmd = cmd,
+        args = args,
+        user = user,
+        env = env getOrElse Map(),
+        instances = num_instances,
+        container = Some(container),
+        cpus = cpus,
+        mem = memory,
+        constraints = constraints getOrElse Seq.empty[Seq[String]],
+        portDefinitions = port_mappings.getOrElse(Seq()) map { pm => AppUpdate.PortDefinition(
+          port = pm.host_port,
+          protocol = pm.protocol,
+          name = pm.name,
+          labels = pm.labels
+        )},
+        // TODO: ipAddress = None,
+        // TODO: upgradeStrategy = None,
+        acceptedResourceRoles = acceptedResourceRoles,
+        labels = labels getOrElse Map(),
+        healthChecks = health_checks map {_.map { hc => AppUpdate.HealthCheck(
+          protocol = Some(hc.protocol),
+          path = Some(hc.path),
+          portIndex = None, // TODO: figure out how to define this
+          gracePeriodSeconds = Some(hc.grace_period_seconds),
+          intervalSeconds = Some(hc.interval_seconds),
+          timeoutSeconds = Some(hc.timeout_seconds),
+          maxConsecutiveFailures = Some(hc.max_consecutive_failures)
+        )}} getOrElse Seq(),
+        version = createdUTC
+      ),
+      maybeCounts = maybeCounts,
+      maybeDeployments = deploymentIDs
     )
-    mc recoverWith {
+    appInfo recoverWith {
       case e: Throwable => throw new IllegalArgumentException("Could not parse container properties",e)
     }
   }
@@ -481,7 +479,7 @@ package object marathon {
    * Convert Meta Container JSON to Marathon App object.
    * TODO: convert this to a Future[MarathonApp]
    */
-  def toMarathonApp(name: String, props: InputContainerProperties, provider: GestaltResourceInstance): MarathonApp = {
+  def toMarathonApp(name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -500,25 +498,26 @@ package object marathon {
     log.debug("found provider networks" + providerNetworkNames)
 
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
-      ps map {pm => MarathonPortMapping(
-        protocol = Some(pm.protocol),
+    def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
+      ps map {pm => Container.Docker.PortMapping(
+        protocol = pm.protocol,
         containerPort = pm.container_port,
         hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        servicePort = pm.service_port
       )}
     }
 
-    def toDocker(props: InputContainerProperties): (Option[MarathonDocker], Option[IPPerTaskInfo]) = {
-      val requestedNetwork = props.network
-      val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(KeyValuePair("user",u)))
-      if (providerNetworkNames.isEmpty) {
-        (Some(MarathonDocker(
+    def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo]) = {
+      val requestedNetwork = props.network getOrElse ""
+      val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(Container.Docker.Parameter("user",u)))
+      if (providerNetworkNames.isEmpty || props.network.isEmpty ) {
+        (Some(Container.Docker(
           image = props.image,
-          network = requestedNetwork,
+          network = if (requestedNetwork.nonEmpty) Some(requestedNetwork) else None,
           forcePullImage = Some(props.force_pull),
           portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
-          parameters = dockerParams
+          parameters = dockerParams,
+          privileged = Some(false)
         )), None)
       } else {
         providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
@@ -527,28 +526,30 @@ package object marathon {
             payload = Some(Json.toJson(props))
           )
           case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
-            (Some(MarathonDocker(
+            (Some(Container.Docker(
               image = props.image,
-              network = stdNet,
+              network = Some(stdNet),
               forcePullImage = Some(props.force_pull),
               portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
-              parameters = dockerParams
+              parameters = dockerParams,
+              privileged = Some(false)
             )), None)
           case Some(calicoNet) =>
-            val docker = MarathonDocker(
+            val docker = Container.Docker(
               image = props.image,
-              network = "HOST",
+              network = Some("USER"),
               forcePullImage = Some(props.force_pull),
               portMappings = None,
               parameters = Some(Seq(
-                KeyValuePair("net", calicoNet)
-              ) ++ dockerParams.getOrElse(Seq()))
+                Container.Docker.Parameter("net", calicoNet)
+              ) ++ dockerParams.getOrElse(Seq())),
+              privileged = Some(false)
             )
-            val ippertask = IPPerTaskInfo(
-                discovery = Some(DiscoveryInfo(
-                  ports = Some(props.port_mappings.map(pm => PortDiscovery(
+            val ippertask = AppUpdate.IPPerTaskInfo(
+                discovery = Some(AppUpdate.DiscoveryInfo(
+                  ports = Some(props.port_mappings.map(pm => AppUpdate.PortDiscovery(
                     number = pm.container_port,
-                    name = pm.label getOrElse pm.container_port.toString,
+                    name = pm.name getOrElse pm.container_port.toString,
                     protocol = pm.protocol
                   )).toSeq)
                 ))
@@ -562,17 +563,22 @@ package object marathon {
       if (isDocker) toDocker(props)
       else (None,None) // no support for non-docker ipPerTask right now
 
-    val container = MarathonContainer(
+    val container = Container(
         docker = docker,
-        containerType = props.container_type,
-        volumes = props.volumes)
+        `type` = props.container_type,
+        volumes = props.volumes.map(v => Container.Volume(
+          containerPath = v.container_path,
+          hostPath = v.host_path,
+          mode = v.mode,
+          persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size))
+        )))
 
-    val upgradeStrategy = if( container.volumes.exists(_.exists(_.isPersistent)) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
+    val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
-    MarathonApp(
-      id = "/" + name.stripPrefix("/"),
-      container = container,
-      constraints = props.constraints.map(_.map(
+    AppUpdate(
+      id = Some("/" + name.stripPrefix("/")),
+      container = Some(container),
+      constraints = if (props.constraints.nonEmpty) Some(props.constraints.map(
         _.split(":") match {
           case Array(f1,f2) =>
             Seq(f1,f2.toUpperCase)
@@ -580,19 +586,19 @@ package object marathon {
             Seq(f1,f2.toUpperCase,f3)
           case e => e.toSeq
         }
-      )),
-      cpus = props.cpus,
-      mem = props.memory,
-      instances = props.num_instances,
+      )) else None,
+      cpus = Some(props.cpus),
+      mem = Some(props.memory),
+      disk = None,
+      instances = Some(props.num_instances),
       cmd = props.cmd,
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
-      ports = None,
       portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {
-        pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
+        pm => AppUpdate.PortDefinition(port = pm.container_port, protocol = pm.protocol, name = pm.name, pm.labels)
       }) else None,
-      labels = props.labels,
-      healthChecks = props.health_checks map {_.map { hc => MarathonHealthCheck(
+      labels = Some(props.labels),
+      healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),
         portIndex = None, // TODO: don't know how to define this
@@ -600,14 +606,14 @@ package object marathon {
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-      )}},
-      env = props.env,
+      )}),
+      env = Some(props.env),
       ipAddress = ipPerTask,
       upgradeStrategy = upgradeStrategy,
       user = None
     )
   }
-  
+
   def containerWithDefaults(json: JsValue) = {
     val ctype = (json \ "properties" \ "container_type").asOpt[String] match {
       case Some(t) if ! t.trim.isEmpty => t
@@ -619,13 +625,13 @@ package object marathon {
     }
     val prv   = (json \ "properties" \ "provider") match {
       case u: JsUndefined => throw new IllegalArgumentException(s"'provider' is missing.")
-      case v => v.validate[InputProvider].map {
-        case p: InputProvider => p
+      case v => v.validate[ContainerSpec.InputProvider].map {
+        case p: ContainerSpec.InputProvider => p
       }.recoverTotal { e =>
-        throw new IllegalArgumentException("Invalid provider JSON: " + JsError.toFlatJson(e).toString)  
+        throw new IllegalArgumentException("Invalid provider JSON: " + JsError.toFlatJson(e).toString)
       }
     }
-    InputContainerProperties(
+    ContainerSpec(
       container_type = ctype,
       image = image,
       provider = prv
