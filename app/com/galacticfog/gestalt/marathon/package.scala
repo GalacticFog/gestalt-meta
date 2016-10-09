@@ -286,7 +286,9 @@ package object marathon {
         info.maybeReadinessCheckResults.map(readiness => Json.obj("readinessCheckResults" -> readiness)),
         info.maybeTasks.map(tasks => Json.obj("tasks" -> tasks)),
         info.maybeLastTaskFailure.map(lastFailure => Json.obj("lastTaskFailure" -> lastFailure)),
-        info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */
+        info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */,
+        Some(Json.obj("tasks" -> Json.arr())),
+        Some(Json.obj("deployments" -> Json.arr()))
       ).flatten
 
       maybeJson.foldLeft(appJson)((result, obj) => result ++ obj)

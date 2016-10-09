@@ -195,9 +195,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |    "cpus": 1,
           |    "dependencies": [],
           |    "deployments": [
-          |        {
-          |            "id": "ef374fb5-5d86-4b94-8bbc-b4eeffaa4796"
-          |        }
           |    ],
           |    "disk": 0,
           |    "env": {},
