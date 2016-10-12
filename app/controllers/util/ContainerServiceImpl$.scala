@@ -13,7 +13,7 @@ import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future, Await}
 import scala.concurrent.duration._
 
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.{HardDeleteWorkspace, Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -54,6 +54,18 @@ trait ContainerService extends MetaController {
         "provider_id"    -> providerQueryParam(queryString).get.toString)))
 
     (operations,options)
+  }
+
+  def deleteContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[GestaltResourceInstance]] = {
+    ???
+  }
+
+  def listContainers(fqon: String, workspace: Instance, environment: Instance): Future[Seq[GestaltResourceInstance]] = {
+    ???
+  }
+
+  def findContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[GestaltResourceInstance]] = {
+    ???
   }
 
   def launchContainer(fqon: String,

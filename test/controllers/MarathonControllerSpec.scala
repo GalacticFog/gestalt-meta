@@ -15,6 +15,7 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
 import org.joda.time.{DateTimeZone, DateTime}
 import org.specs2.execute.{Result, AsResult}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.specification._
 import play.api.libs.json.{JsArray, Json}
 import play.api.test._
@@ -27,7 +28,7 @@ import scala.util.{Try, Success}
 
 import marathon._
 
-class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll {
+class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
   override def beforeAll(): Unit = pristineDatabase()
 
@@ -107,6 +108,347 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(js)
+    }
+
+    "support Marathon GET /v2/apps" in new TestApplication {
+      val testProps = ContainerSpec(
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testContainerName = "test-container"
+      val testContainer = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        ))
+      ).get
+      val jsResponse = Json.parse(
+        s"""
+           |{
+           |  "apps": [
+           |{
+           |    "acceptedResourceRoles": null,
+           |    "args": null,
+           |    "backoffFactor": 1.15,
+           |    "backoffSeconds": 1,
+           |    "cmd": null,
+           |    "constraints": [],
+           |    "container": {
+           |        "docker": {
+           |            "forcePullImage": false,
+           |            "image": "nginx",
+           |            "network": "BRIDGE",
+           |            "parameters": [],
+           |            "portMappings": [
+           |                {
+           |                    "containerPort": 80,
+           |                    "hostPort": 0,
+           |                    "labels": {},
+           |                    "protocol": "tcp",
+           |                    "servicePort": 0
+           |                }
+           |            ],
+           |            "privileged": false
+           |        },
+           |        "type": "DOCKER",
+           |        "volumes": []
+           |    },
+           |    "cpus": 1,
+           |    "dependencies": [],
+           |    "deployments": [
+           |    ],
+           |    "disk": 0,
+           |    "env": {},
+           |    "executor": "",
+           |    "fetch": [],
+           |    "gpus": 0,
+           |    "healthChecks": [],
+           |    "id": "/test-container",
+           |    "instances": 1,
+           |    "ipAddress": null,
+           |    "labels": {},
+           |    "maxLaunchDelaySeconds": 3600,
+           |    "mem": 128,
+           |    "portDefinitions": [
+           |        {
+           |            "labels": {},
+           |            "port": 0,
+           |            "protocol": "tcp"
+           |        }
+           |    ],
+           |    "ports": [
+           |        0
+           |    ],
+           |    "readinessChecks": [],
+           |    "requirePorts": false,
+           |    "residency": null,
+           |    "secrets": {},
+           |    "storeUrls": [],
+           |    "taskKillGracePeriodSeconds": null,
+           |    "tasks": [],
+           |    "tasksHealthy": 0,
+           |    "tasksRunning": 0,
+           |    "tasksStaged": 0,
+           |    "tasksUnhealthy": 0,
+           |    "upgradeStrategy": {
+           |        "maximumOverCapacity": 1,
+           |        "minimumHealthCapacity": 1
+           |    },
+           |    "uris": [],
+           |    "user": null,
+           |    "version": "${DateTime.parse(testContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+           |}
+           |  ]
+           |}
+        """.stripMargin
+      )
+      containerService.listContainers(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv)
+      ) returns Future(Seq(testContainer))
+
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps")
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      contentAsJson(result) must equalTo(jsResponse)
+    }
+
+    "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
+      containerService.findContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq("nonexistent")
+      ) returns Future(None)
+
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent")
+      val Some(result) = route(request)
+      status(result) must equalTo(NOT_FOUND)
+      contentAsJson(result) must equalTo(Json.obj(
+        "message" -> "App '/nonexistent' does not exist"
+      ))
+    }
+
+    "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
+      containerService.deleteContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq("nonexistent")
+      ) returns Future(None)
+
+      val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent")
+      val Some(result) = route(request)
+      status(result) must equalTo(NOT_FOUND)
+      contentAsJson(result) must equalTo(Json.obj(
+        "message" -> "App '/nonexistent' does not exist"
+      ))
+    }
+
+    "support Marathon GET /v2/apps/:appId" in new TestApplication {
+      val testProps = ContainerSpec(
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testContainerName = "test-container"
+      val testContainer = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        ))
+      ).get
+      val jsResponse = Json.parse(
+        s"""
+           |{
+           |  "app":
+           |{
+           |    "acceptedResourceRoles": null,
+           |    "args": null,
+           |    "backoffFactor": 1.15,
+           |    "backoffSeconds": 1,
+           |    "cmd": null,
+           |    "constraints": [],
+           |    "container": {
+           |        "docker": {
+           |            "forcePullImage": false,
+           |            "image": "nginx",
+           |            "network": "BRIDGE",
+           |            "parameters": [],
+           |            "portMappings": [
+           |                {
+           |                    "containerPort": 80,
+           |                    "hostPort": 0,
+           |                    "labels": {},
+           |                    "protocol": "tcp",
+           |                    "servicePort": 0
+           |                }
+           |            ],
+           |            "privileged": false
+           |        },
+           |        "type": "DOCKER",
+           |        "volumes": []
+           |    },
+           |    "cpus": 1,
+           |    "dependencies": [],
+           |    "deployments": [
+           |    ],
+           |    "disk": 0,
+           |    "env": {},
+           |    "executor": "",
+           |    "fetch": [],
+           |    "gpus": 0,
+           |    "healthChecks": [],
+           |    "id": "/test-container",
+           |    "instances": 1,
+           |    "ipAddress": null,
+           |    "labels": {},
+           |    "maxLaunchDelaySeconds": 3600,
+           |    "mem": 128,
+           |    "portDefinitions": [
+           |        {
+           |            "labels": {},
+           |            "port": 0,
+           |            "protocol": "tcp"
+           |        }
+           |    ],
+           |    "ports": [
+           |        0
+           |    ],
+           |    "readinessChecks": [],
+           |    "requirePorts": false,
+           |    "residency": null,
+           |    "secrets": {},
+           |    "storeUrls": [],
+           |    "taskKillGracePeriodSeconds": null,
+           |    "tasks": [],
+           |    "tasksHealthy": 0,
+           |    "tasksRunning": 0,
+           |    "tasksStaged": 0,
+           |    "tasksUnhealthy": 0,
+           |    "upgradeStrategy": {
+           |        "maximumOverCapacity": 1,
+           |        "minimumHealthCapacity": 1
+           |    },
+           |    "uris": [],
+           |    "user": null,
+           |    "version": "${DateTime.parse(testContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+           |}
+           |}
+        """.stripMargin
+      )
+      containerService.findContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq("test-container")
+      ) returns Future(Some(testContainer))
+
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      contentAsJson(result) must equalTo(jsResponse)
+    }
+
+    "support Marathon DELETE /v2/apps/:appId" in new TestApplication {
+      val testProps = ContainerSpec(
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testContainerName = "test-container"
+      val testContainer = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        ))
+      ).get
+      containerService.deleteContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq("test-container")
+      ) returns Future(Some(testContainer))
+
+      val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      (contentAsJson(result) \ "deployment").asOpt[UUID] must beSome
+      (contentAsJson(result) \ "version").asOpt[DateTime] must beSome
     }
 
     "support Marathon POST /v2/apps (minimal container)" in new TestApplication {

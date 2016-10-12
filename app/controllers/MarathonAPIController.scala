@@ -6,6 +6,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
+import org.joda.time.{DateTimeZone, DateTime}
 import play.api.mvc._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
@@ -74,7 +75,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
    */
-  def getDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
+  def listDeployments(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     val provider = containerService.marathonProvider(providerId)
     execAppFunction(fqon, parentType, environment, provider, "v2/deployments") {
       containerService.marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2
@@ -95,128 +96,68 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def getMarathonApps(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+  def listApps(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     containerService.appComponents(environment) match {
-      case Failure(e) => Future.successful(HandleExceptions(e))
-      case Success((wrk, env)) =>
-        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
+      case Failure(e) => throw e
+      case Success((wrk,env)) => {
+        // TODO: Needs a lot of error handling
         for {
-          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment)}
-          // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
-          metaCon2guid = (for {
-            metaCon <- metaCons
-            props <- metaCon.properties
-            providerProp <- props.get("provider")
-            pobj <- Try{Json.parse(providerProp)}.toOption
-            providerId <- (pobj \ "id").asOpt[UUID]
-            eid <- props.get("external_id")
-            // MarathonClient.listApplicationsInEnvironment strips env app group prefix
-            localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
-          } yield (metaCon.id -> (providerId,localEid))).toMap
-          // all the providers we care about
-          relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
-            pid => Try{containerService.marathonProvider(pid)}.toOption
-          }
-          // id is only unique inside a marathon provider, so we have to zip these with the provider ID
-          triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
-            val marCons = containerService.marathonClient(pid).listApplicationsInEnvironment(fqon, wrk.name, env.name)
-            val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
-            // wrap this in a try so that failures don't crash the whole list in Future.traverse
-            futureToFutureTry(pidsAndMarCons)
-          })
-          successfulContainerListings = triedContainerListings collect {case Success(x) => x}
-          marCons = successfulContainerListings.flatten
-          _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
-          mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
-          outputMetaContainers = metaCons map { originalMetaCon =>
-            val stats = for {
-              guid <- metaCon2guid.get(originalMetaCon.id)
-              marCon <- mapMarCons.get(guid)
-            } yield marCon
-            containerService.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
-          }
-          outputMarathonContainers = outputMetaContainers flatMap { metaApp =>
-            (metaToMarathonAppInfo(metaApp) map {Json.toJson(_).as[JsObject]}).toOption
-          }
-        } yield Ok(Json.obj("apps" -> outputMarathonContainers))
+          metaContainers <- containerService.listContainers(fqon, workspace = wrk, environment = env)
+          marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(metaContainerSpec = mcs, instances = Some(Seq()), deploymentIDs = None))
+          marv2Containers <- Future.fromTry(
+            Try{marv2ContainerTries map (_.get)}
+          )
+        } yield Ok(Json.toJson(Json.obj(
+          "apps" -> marv2Containers
+        )))
+      }
     }
   }
 
   /**
     * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
-  def getMarathonApp(fqon: String, parentType: String, envId: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
-    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
-    containerService.appComponents(envId) match {
-      case Failure(e) => Future.successful(HandleExceptions(e))
-      case Success((wrk, env)) =>
-        val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
-        for {
-          metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, envId)}
-          metaCon = {
-            val cons = metaCons.flatMap {testApp =>
-              for {
-                props <- testApp.properties
-                providerProp <- props.get("provider")
-                pobj <- Try{Json.parse(providerProp)}.toOption
-                pid <- (pobj \ "id").asOpt[UUID]
-                if pid == providerId
-                eid <- props.get("external_id")
-                // MarathonClient.listApplicationsInEnvironment strips env app group prefix
-                localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
-                if localEid == appId.stripPrefix("/")
-              } yield testApp
-            }
-            if (cons.size > 1) {
-              log.warn(s"found multiple container with the same external id a single provider (${providerId}); this represents a bug.")
-            }
-            cons.headOption
-          } getOrElse {
-            throw new ResourceNotFoundException(s"cannot find container with id ${appId} in environment ${envId}")
+  def getApp(fqon: String, parentType: String, environment: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
+    containerService.appComponents(environment) match {
+      case Failure(e) => throw e
+      case Success((wrk,env)) => {
+        // TODO: Needs a lot of error handling
+        containerService.findContainer(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
+          _ match {
+            case Some(metaContainer) => Future.fromTry(
+              metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
+                appInfo => Ok( Json.obj("app" -> appInfo) )
+              )
+            )
+            case None => Future.successful(NotFound(Json.obj(
+              "message" -> s"App '/${appId}' does not exist"
+            )))
           }
-
-          provider = containerService.marathonProvider(providerId)
-          client = containerService.marathonClient(provider)
-          marConTry <- futureToFutureTry(client.getApplication_marathon_v2(fqon, wrk.name, env.name, appId))
-          stats = marConTry.toOption flatMap MarathonClient.marathon2Container
-          outputMetaContainer = containerService.updateMetaContainerWithStats(metaCon, stats, request.identity.account.id)
-          outputMarathonContainer = metaToMarathonAppInfo(outputMetaContainer) map {Json.toJson(_).as[JsObject]} getOrElse(throw new RuntimeException("could not convert meta container to marathon container"))
-        } yield Ok(Json.obj("app" -> outputMarathonContainer))
+        }
+      }
     }
   }
 
   /**
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
-  def deleteMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID, marathonAppId: String) = MarAuth(fqon).async { implicit request =>
-    log.debug("Looking up workspace and environment for container...")
+  def deleteApp(fqon: String, parentType: String, environment: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
     containerService.appComponents(environment) match {
-      case Failure(e) => Future{HandleExceptions(e)}
-      case Success((wrk, env)) => {
-
-        log.debug(s"\nWorkspace: ${wrk.id}\nEnvironment: ${env.id}")
-        ResourceFactory.findChildByName(env.id, ResourceIds.Container, marathonAppId) match {
-          case None => Future{NotFound(Json.obj(
-            "message" -> s"App '${marathonAppId}' does not exist"
-          ))}
-          case Some(c) => {
-
-            log.debug(s"Deleting Marathon App...")
-            containerService.deleteMarathonApp(fqon, wrk.name, env.name, c) recover {
-              case e: Throwable =>
-                log.warn("received error deleting app in marathon",e)
-                Json.obj(
-                  "deploymentId" -> "error",
-                  "version" -> "error"
-                )
-            } map { js =>
-              log.debug(s"Deleting Meta Container...")
-              ResourceFactory.hardDeleteResource(c.id) match {
-                case Success(_) => Ok(js)
-                case Failure(e) => HandleRepositoryExceptions(e)
-              }
-            }
+      case Failure(e) => throw e
+      case Success((wrk,env)) => {
+        // TODO: Needs a lot of error handling
+        containerService.deleteContainer(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
+          _ match {
+            case Some(metaContainer) => Future.fromTry(
+              metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
+                appInfo => Ok( Json.obj(
+                  "deployment" -> UUID.randomUUID(),
+                  "version" -> DateTime.now(DateTimeZone.UTC).toString
+                ) ) )
+            )
+            case None => Future.successful(NotFound(Json.obj(
+              "message" -> s"App '/${appId}' does not exist"
+            )))
           }
         }
       }
@@ -226,8 +167,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  def postMarathonAppDCOS(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
-
+  def createApp(fqon: String, parentType: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async(parse.json) { implicit request =>
     containerService.appComponents(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
@@ -251,14 +191,12 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     }
   }
 
-
-
-  private def execAppFunction(
-      fqon: String,
-      parentType: String,
-      environment: UUID,
-      provider: GestaltResourceInstance, proxyUri: String)(fn: ProxyAppFunction) = {
-
+  private def execAppFunction(fqon: String,
+                              parentType: String,
+                              environment: UUID,
+                              provider: GestaltResourceInstance, proxyUri: String)
+                             (fn: ProxyAppFunction) =
+  {
     containerService.appComponents(environment) match {
       case Failure(e) => throw e
       case Success((parent, child)) => proxyUri match {
