@@ -448,7 +448,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       (contentAsJson(result) \ "deployment").asOpt[UUID] must beSome
-      (contentAsJson(result) \ "version").asOpt[DateTime] must beSome
+      (contentAsJson(result) \ "version").asOpt[String] must beSome
     }
 
     "support Marathon POST /v2/apps (minimal container)" in new TestApplication {
