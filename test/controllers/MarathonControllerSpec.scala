@@ -146,7 +146,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ).get
+      ) flatMap ContainerSpec.fromResourceInstance get
       val jsResponse = Json.parse(
         s"""
            |{
@@ -221,7 +221,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |    },
            |    "uris": [],
            |    "user": null,
-           |    "version": "${DateTime.parse(testContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+           |    "version": "${testContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
            |}
            |  ]
            |}
@@ -307,7 +307,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ).get
+      ) flatMap ContainerSpec.fromResourceInstance get
       val jsResponse = Json.parse(
         s"""
            |{
@@ -382,7 +382,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |    },
            |    "uris": [],
            |    "user": null,
-           |    "version": "${DateTime.parse(testContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+           |    "version": "${testContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
            |}
            |}
         """.stripMargin
@@ -436,7 +436,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ).get
+      ).flatMap(ContainerSpec.fromResourceInstance).get
       containerService.deleteContainer(
         meq("root"),
         meq(testWork),
@@ -469,7 +469,9 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |}
         """.stripMargin
       )
+      val testContainerName = "test-container"
       val testProps = ContainerSpec(
+        name = Some(testContainerName),
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -490,7 +492,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         env = Map(),
         user = None
       )
-      val testContainerName = "test-container"
       val createdContainer = createInstance(ResourceIds.Container, testContainerName,
         parent = Some(testEID),
         properties = Some(Map(
@@ -504,7 +505,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ).get
+      ) flatMap ContainerSpec.fromResourceInstance get
       val jsResponse = Json.parse(
         s"""
           |{
@@ -577,7 +578,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |    },
           |    "uris": [],
           |    "user": null,
-          |    "version": "${DateTime.parse(createdContainer.created.get("timestamp")).toDateTime(DateTimeZone.UTC).toString}"
+          |    "version": "${createdContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
           |}
         """.stripMargin
       )

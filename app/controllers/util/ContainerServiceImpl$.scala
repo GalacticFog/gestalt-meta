@@ -56,15 +56,15 @@ trait ContainerService extends MetaController {
     (operations,options)
   }
 
-  def deleteContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[GestaltResourceInstance]] = {
+  def deleteContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[ContainerSpec]] = {
     ???
   }
 
-  def listContainers(fqon: String, workspace: Instance, environment: Instance): Future[Seq[GestaltResourceInstance]] = {
+  def listContainers(fqon: String, workspace: Instance, environment: Instance): Future[Seq[ContainerSpec]] = {
     ???
   }
 
-  def findContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[GestaltResourceInstance]] = {
+  def findContainer(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[ContainerSpec]] = {
     ???
   }
 
@@ -72,7 +72,7 @@ trait ContainerService extends MetaController {
                       workspace: GestaltResourceInstance,
                       environment: GestaltResourceInstance,
                       name: String,
-                      inputProperties: ContainerSpec): Future[GestaltResourceInstance] = {
+                      inputProperties: ContainerSpec): Future[ContainerSpec] = {
     ???
   }
 

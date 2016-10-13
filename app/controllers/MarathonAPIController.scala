@@ -45,8 +45,6 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     def apply(genFQON: => String): MarAuth = new MarAuth(Some({ rh: RequestHeader => Some(genFQON)}))
   }
 
-  type ProxyAppFunction = (String,String,String) => Future[JsValue]
-
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
    */
@@ -78,7 +76,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         // TODO: Needs a lot of error handling
         for {
           metaContainers <- containerService.listContainers(fqon, workspace = wrk, environment = env)
-          marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(metaContainerSpec = mcs, instances = Some(Seq()), deploymentIDs = None))
+          marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(spec = mcs, instances = Some(Seq()), deploymentIDs = None))
           marv2Containers <- Future.fromTry(
             Try{marv2ContainerTries map (_.get)}
           )
@@ -150,9 +148,13 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         // TODO: Needs a lot of error handling
         for {
           body <- Future.fromTry {
-            request.body.asJson.fold[Try[JsValue]](Failure(new RuntimeException("requires json body")))(Success(_))
+            request.body.asJson.fold[Try[JsValue]](Failure(BadRequestException("requires json body")))(Success(_))
           }
-          (name,props) <- Future.fromTry(marAppPayloadToMetaContainerSpec(body, provider) flatMap {
+          app <- Future.fromTry {body.validate[AppUpdate] match {
+            case JsSuccess(app,_) => Success(app)
+            case JsError(_) => Failure(new BadRequestException("Invalid JSON"))
+          }}
+          (name,props) <- Future.fromTry(marathonToMetaContainerSpec(app, provider) flatMap {
             case (maybeName,cspec) => maybeName match {
               case None => Failure(BadRequestException("payload did not include app name"))
               case Some(name) => Success((name,cspec))
@@ -160,7 +162,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
           })
           metaContainer <- containerService.launchContainer(fqon, wrk, env, name, props)
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
-            metaContainerSpec = metaContainer,
+            spec = metaContainer,
             instances = Some(Seq()),
             deploymentIDs = None
           ))

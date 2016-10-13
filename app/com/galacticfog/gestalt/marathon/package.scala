@@ -1,15 +1,12 @@
 package com.galacticfog.gestalt
  
-import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import org.joda.time.{DateTimeZone, DateTime}
 import play.api.data.validation.ValidationError
 
-import scala.Option
-import scala.collection.generic
 import scala.concurrent.duration.FiniteDuration
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
@@ -25,16 +22,6 @@ package object marathon {
     minimumHealthCapacity = 0.5,
     maximumOverCapacity = 0.0
   )
-
-  implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
-
-  implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
-
-  implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
-
-  implicit lazy val metaPortMappingSpecFmt = Json.format[ContainerSpec.PortMapping]
-
-  implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
@@ -57,48 +44,6 @@ package object marathon {
       (__ \ "persistent").writeNullable[Container.PersistentVolumeInfo] and
       (__ \ "mode").write[String]
     )(unlift(Container.Volume.unapply))
-
-
-//  implicit lazy val metaVolumeWrites = Json.writes[ContainerSpec.VolumeSpec]
-//
-//  implicit lazy val metaVolumeReads = new Reads[ContainerSpec.VolumeSpec] {
-//    lazy val simpleVolumeReads = Json.reads[VolumeSpec]
-//    override def reads(json: JsValue): JsResult[VolumeSpec] = {
-//      json.validate[VolumeSpec](simpleVolumeReads) match {
-//        case s @ JsSuccess(VolumeSpec(cPath, Some(hPath), None,         mode), _) => s
-//        case s @ JsSuccess(VolumeSpec(cPath, None,        Some(pvInfo), mode), _) => s
-//        case s @ JsSuccess(VolumeSpec(_, None,    None,    _), _) => JsError("container volume must contain one of host_path or persistent")
-//        case s @ JsSuccess(VolumeSpec(_, Some(_), Some(_), _), _) => JsError("container volume must contain one of host_path or persistent")
-//        case e: JsError => e
-//      }
-//    }
-//  }
-
-  lazy val containerSpecReads = Json.writes[ContainerSpec]
-
-  lazy val containerSpecWrites: Reads[ContainerSpec] = (
-    (__ \ "container_type").read[String] and
-      (__ \ "image").read[String] and
-      (__ \ "provider").read[ContainerSpec.InputProvider] and
-      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
-      ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
-      ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
-      ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
-      ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
-      (__ \ "network").readNullable[String] and
-      (__ \ "cmd").readNullable[String] and
-      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
-      (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
-      (__ \ "args").readNullable[Seq[String]] and
-      ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
-      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq())) and
-      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq())) and
-      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
-      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
-      (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply _)
-
-  implicit lazy val metaContainerSpec = Format(containerSpecWrites, containerSpecReads)
 
   implicit lazy val healthCheckFmt = Json.format[AppUpdate.HealthCheck]
 
@@ -258,10 +203,6 @@ package object marathon {
           "requirePorts" -> app.requirePorts
         )
       }
-//      Json.toJson(app.versionInfo) match {
-//        case JsNull => appJson
-//        case v: JsValue => appJson + ("versionInfo" -> v)
-//      }
       appJson
     }
   }
@@ -282,9 +223,7 @@ package object marathon {
 
       val maybeJson = Seq[Option[JsObject]](
         info.maybeCounts.map(taskCountsWrites.writes(_).as[JsObject]) /*,
-        info.maybeDeployments.map(deployments => Json.obj("deployments" -> deployments)),
         info.maybeReadinessCheckResults.map(readiness => Json.obj("readinessCheckResults" -> readiness)),
-        info.maybeTasks.map(tasks => Json.obj("tasks" -> tasks)),
         info.maybeLastTaskFailure.map(lastFailure => Json.obj("lastTaskFailure" -> lastFailure)),
         info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */,
         Some(Json.obj("tasks" -> Json.arr())),
@@ -299,19 +238,13 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta ContainerSpec
    */
-  def marAppPayloadToMetaContainerSpec(inputJson: JsValue, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
-    log.debug("Entered marathonApp2MetaContainer...")
-    log.debug("Received:\n" + Json.prettyPrint(inputJson))
-    log.debug("Deserializing Marathon App JSON...")
-
-    val app = inputJson.validate[AppUpdate].recoverTotal { e =>
-      throw new BadRequestException("Could not parse Marathon App JSON: " + JsError.toFlatJson(e).toString)
-    }
-
-    log.debug("Marathon App:\n" + app)
+  def marathonToMetaContainerSpec(app: AppUpdate, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
+    log.debug("Entered marathonToMetaContainerSpec...")
+    log.debug("Received:\n" + app)
 
     val name = app.id
     val props = ContainerSpec(
+      name = name,
       container_type = "DOCKER",
       image = app.container flatMap {_.docker map {_.image}} getOrElse "",
       provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
@@ -349,7 +282,8 @@ package object marathon {
         )
       )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
-      env = app.env getOrElse Map()
+      env = app.env getOrElse Map(),
+      created = None
     )
     (name,props)
   }
@@ -357,20 +291,20 @@ package object marathon {
   /**
     * Convert Meta container resource to MarathonApp object
     *
-    * @param metaContainerSpec
+    * @param spec
     * @return
     */
-  def metaToMarathonAppInfo(metaContainerSpec: GestaltResourceInstance,
+  def metaToMarathonAppInfo(spec: ContainerSpec,
                             instances: Option[Seq[ContainerInstance]] = None,
                             deploymentIDs: Option[Seq[String]] = None): Try[AppInfo] = {
 
-    def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
-      ps map {pm => Container.Docker.PortMapping(
+    def portmap(pm: ContainerSpec.PortMapping): Container.Docker.PortMapping = {
+      Container.Docker.PortMapping(
         protocol = pm.protocol,
         containerPort = pm.container_port,
         hostPort = Some(pm.host_port),
         servicePort = pm.service_port
-      )}
+      )
     }
 
     val maybeCounts = instances.map {
@@ -382,70 +316,50 @@ package object marathon {
       )
     }
 
-    val appInfo = for {
-      props <- Try{metaContainerSpec.properties.get}
-      ctype <- Try{props("container_type")}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      cpus <- Try{props("cpus").toDouble}
-      memory <- Try{props("memory").toDouble}
-      num_instances <- Try{props("num_instances").toInt}
-      cmd = props.get("cmd")
-      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]].map(_.split(":") match {
-        case Array(f1,f2) =>
-          Seq(f1,f2.toUpperCase)
-        case Array(f1,f2,f3) =>
-          Seq(f1,f2.toUpperCase,f3)
-        case e => e.toSeq
-      })}
-      acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
-      args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
-      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
-      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
-      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
-      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
-      user = props.get("user")
-      docker = for {
-        image <- props.get("image")
-        network = props.get("network")
-        force_pull = props.get("force_pull") map {_.toBoolean}
-      } yield Container.Docker(
-        image = image,
-        network = network,
-        forcePullImage = force_pull orElse Some(false),
-        portMappings = port_mappings map portmap,
-        parameters = Some(Seq()),
-        privileged = Some(false)
-      )
-      createdUTC = for {
-        created <-  metaContainerSpec.created
-        timestamp <- created.get("timestamp")
-        dt <- Try{DateTime.parse(timestamp)}.toOption
-        utc = dt.toDateTime(DateTimeZone.UTC)
-      } yield utc.toString
-      container = Container(
-        docker = if (ctype.equalsIgnoreCase("DOCKER")) docker else None,
-        `type` = ctype,
-        volumes = volumes.map(_.map(v => Container.Volume(
-          containerPath = v.container_path,
-          hostPath = v.host_path,
-          persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
-          mode = v.mode
-        ))) getOrElse Seq()
-      )
-    } yield AppInfo(
+    val constraints = spec.constraints.map(_.split(":") match {
+      case Array(f1,f2) =>
+        Seq(f1,f2.toUpperCase)
+      case Array(f1,f2,f3) =>
+        Seq(f1,f2.toUpperCase,f3)
+      case e => e.toSeq
+    })
+
+    val docker = Container.Docker(
+      image = spec.image,
+      network = spec.network,
+      forcePullImage = Some(spec.force_pull),
+      portMappings = Some(spec.port_mappings map portmap),
+      parameters = Some(Seq()),
+      privileged = Some(false)
+    )
+
+    val container = Container(
+      docker = if (spec.container_type.equalsIgnoreCase("DOCKER")) Some(docker) else None,
+      `type` = spec.container_type,
+      volumes = spec.volumes.map(v => Container.Volume(
+        containerPath = v.container_path,
+        hostPath = v.host_path,
+        persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
+        mode = v.mode
+      ))
+    )
+
+    val createdUTC = spec.created.map(_.toDateTime(DateTimeZone.UTC).toString)
+
+    Try(AppInfo(
       app = AppDefinition(
-        id = "/" + metaContainerSpec.name,
-        cmd = cmd,
-        args = args,
-        user = user,
-        env = env getOrElse Map(),
-        instances = num_instances,
+        id = spec.name.map("/" + _) getOrElse "",
+        cmd = spec.cmd,
+        args = spec.args,
+        user = spec.user,
+        env = spec.env,
+        instances = spec.num_instances,
         container = Some(container),
-        cpus = cpus,
-        mem = memory,
-        constraints = constraints getOrElse Seq.empty[Seq[String]],
-        portDefinitions = port_mappings.getOrElse(Seq()) map { pm => AppUpdate.PortDefinition(
+        cpus = spec.cpus,
+        mem = spec.memory,
+        disk = spec.disk,
+        constraints = constraints,
+        portDefinitions = spec.port_mappings map { pm => AppUpdate.PortDefinition(
           port = pm.host_port,
           protocol = pm.protocol,
           name = pm.name,
@@ -453,9 +367,9 @@ package object marathon {
         )},
         // TODO: ipAddress = None,
         // TODO: upgradeStrategy = None,
-        acceptedResourceRoles = acceptedResourceRoles,
-        labels = labels getOrElse Map(),
-        healthChecks = health_checks map {_.map { hc => AppUpdate.HealthCheck(
+        acceptedResourceRoles = spec.accepted_resource_roles,
+        labels = spec.labels,
+        healthChecks = spec.health_checks map { hc => AppUpdate.HealthCheck(
           protocol = Some(hc.protocol),
           path = Some(hc.path),
           portIndex = None, // TODO: figure out how to define this
@@ -463,15 +377,12 @@ package object marathon {
           intervalSeconds = Some(hc.interval_seconds),
           timeoutSeconds = Some(hc.timeout_seconds),
           maxConsecutiveFailures = Some(hc.max_consecutive_failures)
-        )}} getOrElse Seq(),
+        )},
         version = createdUTC
       ),
       maybeCounts = maybeCounts,
       maybeDeployments = deploymentIDs
-    )
-    appInfo recoverWith {
-      case e: Throwable => throw new IllegalArgumentException("Could not parse container properties",e)
-    }
+    ))
   }
 
 
@@ -632,9 +543,11 @@ package object marathon {
       }
     }
     ContainerSpec(
+      name = None,
       container_type = ctype,
       image = image,
-      provider = prv
+      provider = prv,
+      created = None
     )
   }
   
