@@ -75,7 +75,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
       case Success((wrk,env)) => {
         // TODO: Needs a lot of error handling
         for {
-          metaContainers <- containerService.listContainers(fqon, workspace = wrk, environment = env)
+          metaContainers <- containerService.listEnvironmentContainers(fqon, workspace = wrk, environment = env)
           marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(spec = mcs, instances = Some(Seq()), deploymentIDs = None))
           marv2Containers <- Future.fromTry(
             Try{marv2ContainerTries map (_.get)}
@@ -95,7 +95,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
       case Failure(e) => throw e
       case Success((wrk,env)) => {
         // TODO: Needs a lot of error handling
-        containerService.findContainer(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
+        containerService.findEnvironmentContainerByName(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
           _ match {
             case Some(metaContainer) => Future.fromTry(
               metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
@@ -119,20 +119,20 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
       case Failure(e) => throw e
       case Success((wrk,env)) => {
         // TODO: Needs a lot of error handling
-        containerService.deleteContainer(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
-          _ match {
-            case Some(metaContainer) => Future.fromTry(
-              metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
-                appInfo => Ok( Json.obj(
-                  "deployment" -> UUID.randomUUID(),
-                  "version" -> DateTime.now(DateTimeZone.UTC).toString
-                ) ) )
-            )
+        for {
+          container <- containerService.findEnvironmentContainerByName(fqon, workspace = wrk, environment = env, containerName = appId)
+          response <- container match {
+            case Some(c) => containerService.deleteContainer(fqon, workspace = wrk, environment = env, containerId = c.id.get) map {
+              _ => Ok(Json.obj(
+                "deployment" -> UUID.randomUUID(),
+                "version" -> DateTime.now(DateTimeZone.UTC).toString
+              ))
+            }
             case None => Future.successful(NotFound(Json.obj(
               "message" -> s"App '/${appId}' does not exist"
             )))
           }
-        }
+        } yield response
       }
     }
   }

@@ -2,7 +2,7 @@ package com.galacticfog.gestalt
  
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
-import org.joda.time.{DateTimeZone, DateTime}
+import org.joda.time.DateTimeZone
 import play.api.data.validation.ValidationError
 
 import scala.concurrent.duration.FiniteDuration
@@ -15,8 +15,6 @@ import play.api.libs.json.Reads._        // Custom validation helpers
 import play.api.libs.functional.syntax._ // Combinator syntax
 
 package object marathon {
-
-  def getOrJsNull[A](maybeA: Option[A])(implicit tjs: play.api.libs.json.Writes[A]): JsValue = maybeA.fold[JsValue](JsNull)(Json.toJson(_))
 
   val DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES = UpgradeStrategy(
     minimumHealthCapacity = 0.5,
@@ -207,33 +205,29 @@ package object marathon {
     }
   }
 
-  implicit lazy val taskCountsWrites: Writes[TaskCounts] =
-    Writes { counts =>
-      Json.obj(
-        "tasksStaged" -> counts.tasksStaged,
-        "tasksRunning" -> counts.tasksRunning,
-        "tasksHealthy" -> counts.tasksHealthy,
-        "tasksUnhealthy" -> counts.tasksUnhealthy
-      )
-    }
+  implicit lazy val taskCountsWrites: Writes[TaskCounts] = Writes { counts =>
+    Json.obj(
+      "tasksStaged" -> counts.tasksStaged,
+      "tasksRunning" -> counts.tasksRunning,
+      "tasksHealthy" -> counts.tasksHealthy,
+      "tasksUnhealthy" -> counts.tasksUnhealthy
+    )
+  }
 
-  implicit lazy val ExtendedAppInfoWrites: Writes[AppInfo] =
-    Writes { info =>
-      val appJson = appDefinitionWrites.writes(info.app).as[JsObject]
+  implicit lazy val ExtendedAppInfoWrites: Writes[AppInfo] = Writes { info =>
+    val appJson = appDefinitionWrites.writes(info.app).as[JsObject]
 
-      val maybeJson = Seq[Option[JsObject]](
-        info.maybeCounts.map(taskCountsWrites.writes(_).as[JsObject]) /*,
+    val maybeJson = Seq[Option[JsObject]](
+      info.maybeCounts.map(taskCountsWrites.writes(_).as[JsObject]) /*,
         info.maybeReadinessCheckResults.map(readiness => Json.obj("readinessCheckResults" -> readiness)),
         info.maybeLastTaskFailure.map(lastFailure => Json.obj("lastTaskFailure" -> lastFailure)),
         info.maybeTaskStats.map(taskStats => Json.obj("taskStats" -> taskStats)) */,
-        Some(Json.obj("tasks" -> Json.arr())),
-        Some(Json.obj("deployments" -> Json.arr()))
-      ).flatten
+      Some(Json.obj("tasks" -> Json.arr())),
+      Some(Json.obj("deployments" -> Json.arr()))
+    ).flatten
 
-      maybeJson.foldLeft(appJson)((result, obj) => result ++ obj)
-    }
-
-
+    maybeJson.foldLeft(appJson)((result, obj) => result ++ obj)
+  }
 
   /**
    * Convert Marathon App JSON to Meta ContainerSpec

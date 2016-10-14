@@ -30,6 +30,7 @@ case class ContainerSpec(name: Option[String] = None,
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
+                         id: Option[UUID] = None,
                          created: Option[DateTime] = None) extends Spec
 
 case object ContainerSpec extends Spec {
@@ -114,7 +115,8 @@ case object ContainerSpec extends Spec {
       labels = labels getOrElse Map(),
       env = env getOrElse Map(),
       user = user,
-      created = created
+      created = created,
+      id = Some(metaContainerSpec.id)
     )
   }
 

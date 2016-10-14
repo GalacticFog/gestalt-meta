@@ -227,7 +227,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |}
         """.stripMargin
       )
-      containerService.listContainers(
+      containerService.listEnvironmentContainers(
         meq("root"),
         meq(testWork),
         meq(testEnv)
@@ -240,7 +240,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     }
 
     "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
-      containerService.findContainer(
+      containerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testWork),
         meq(testEnv),
@@ -256,7 +256,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     }
 
     "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
-      containerService.deleteContainer(
+      containerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testWork),
         meq(testEnv),
@@ -387,7 +387,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |}
         """.stripMargin
       )
-      containerService.findContainer(
+      containerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testWork),
         meq(testEnv),
@@ -437,12 +437,18 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "network" -> testProps.network.get
         ))
       ).flatMap(ContainerSpec.fromResourceInstance).get
-      containerService.deleteContainer(
+      containerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testWork),
         meq(testEnv),
         meq("test-container")
       ) returns Future(Some(testContainer))
+      containerService.deleteContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        meq(testContainer.id.get)
+      ) returns Future(testContainer)
 
       val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
       val Some(result) = route(request)
