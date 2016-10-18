@@ -3,6 +3,8 @@ package controllers.util
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.auth.Actions
 
 import play.api.libs.ws.WS
 import play.api.Play.current
@@ -27,6 +29,26 @@ import com.galacticfog.gestalt.events._
 trait ContainerService extends MetaController {
 
   //private val log = Logger(this.getClass)
+
+  def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+
+  def containerRequestOperations(action: String) = List(
+    controllers.util.Authorize(action),
+    controllers.util.EventsPre(action),
+    controllers.util.PolicyCheck(action),
+    controllers.util.EventsPost(action)
+  )
+
+  def containerRequestOptions(user: AuthAccountWithCreds,
+                              environment: UUID,
+                              container: GestaltResourceInstance,
+                              data: Option[Map[String, String]] = None) = RequestOptions(
+    user = user,
+    authTarget = Option(environment),
+    policyOwner = Option(environment),
+    policyTarget = Option(container),
+    data = data
+  )
 
   def setupMigrateRequest(
                            fqon: String,
@@ -61,7 +83,44 @@ trait ContainerService extends MetaController {
   }
 
   def listEnvironmentContainers(fqon: String, workspace: Instance, environment: Instance): Future[Seq[ContainerSpec]] = {
-    ???
+    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, workspace.name, environment.name)
+    for {
+      metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id).toSeq}
+      // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
+      metaCon2guid = (for {
+        metaCon <- metaCons
+        props <- metaCon.properties
+        providerProp <- props.get("provider")
+        pobj <- Try{Json.parse(providerProp)}.toOption
+        providerId <- (pobj \ "id").asOpt[UUID]
+        eid <- props.get("external_id")
+        // MarathonClient.listApplicationsInEnvironment strips env app group prefix
+        localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
+      } yield (metaCon.id -> (providerId,localEid))).toMap
+      // all the providers we care about
+      relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
+        pid => Try{marathonProvider(pid)}.toOption
+      }
+      // id is only unique inside a marathon provider, so we have to zip these with the provider ID
+      triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
+        val marCons = marathonClient(pid).listApplicationsInEnvironment(fqon, workspace.name, environment.name)
+        val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
+        // wrap this in a try so that failures don't crash the whole list in Future.traverse
+        futureToFutureTry(pidsAndMarCons)
+      })
+      successfulContainerListings = triedContainerListings collect {case Success(x) => x}
+      marCons = successfulContainerListings.flatten
+      _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
+      mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
+      outputMetaContainers = metaCons map { originalMetaCon =>
+        val stats = for {
+          guid <- metaCon2guid.get(originalMetaCon.id)
+          marCon <- mapMarCons.get(guid)
+        } yield marCon
+        updateMetaContainerWithStats(originalMetaCon, stats, /* request.identity.account.id */ ???)
+      }
+    } yield outputMetaContainers map ContainerSpec.fromResourceInstance map (_.get)
   }
 
   def findEnvironmentContainerByName(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[ContainerSpec]] = {
@@ -71,9 +130,37 @@ trait ContainerService extends MetaController {
   def launchContainer(fqon: String,
                       workspace: GestaltResourceInstance,
                       environment: GestaltResourceInstance,
+                      user: AuthAccountWithCreds,
                       name: String,
-                      inputProperties: ContainerSpec): Future[ContainerSpec] = {
-    ???
+                      containerSpec: ContainerSpec): Future[ContainerSpec] = {
+
+    val operations = containerRequestOperations(Actions.Container.Create)
+    val options = containerRequestOptions(user, environment.id, containerSpec.resource.get)
+
+    SafeRequest (operations, options) ProtectAsync { maybeState =>
+      val provider = marathonProvider(containerSpec.provider.id)
+      val marathonApp = toMarathonLaunchPayload(
+        name = name,
+        props = containerSpec,
+        provider = provider
+      )
+      val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
+      log.debug("Creating Container in Marathon:\n" + Json.prettyPrint(marathonAppCreatePayload))
+      // TODO: build Meta resource first, then update with properties from the marathon deployment
+      marathonClient(provider).launchContainer_marathon_v2(
+        fqon = fqon,
+        wrkName = workspace.name,
+        envName = environment.name,
+        marPayload = marathonAppCreatePayload
+      ) flatMap { resp =>
+        val marathonAppId = (resp \ "id").as[String]
+        Future.fromTry(ResourceFactory.create(ResourceIds.User, user.account.id)(
+          containerSpec.resource.get, Some(environment.id)
+        ) flatMap {
+          ContainerSpec.fromResourceInstance
+        })
+      }
+    }
   }
 
   /**
@@ -265,6 +352,38 @@ trait ContainerService extends MetaController {
     }
     (p -> c)
   }
+
+  // TODO: remove
+//  def toMetaContainerJson(inputJson: JsObject,
+//                          containerName: String,
+//                          marathonGroupId: String,
+//                          provider: GestaltResourceInstance) = {
+//    Seq(
+//      "external_id" -> externalIdJson(marathonGroupId, containerName),
+//      "provider"    -> providerJson(provider) ).foldLeft(inputJson) { (json, prop) =>
+//      JsonUtil.withJsonPropValue(json, prop)
+//    }
+//  }
+
+  // TODO: remove
+//  def providerJson(provider: GestaltResourceInstance) = {
+//    Json.obj(
+//      "id" -> provider.id.toString,
+//      "name" -> provider.name
+//    )
+//  }
+
+  // TODO: remove
+//  def externalIdJson(marathonGroupId: String, containerName: String): JsString = {
+//    JsString(marathonGroupId.stripSuffix("/") + "/" + containerName.stripPrefix("/"))
+//  }
+
+  // TODO: remove
+//  def groupId(fqon: String, workspaceName: String, environmentName: String) = {
+//    MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
+//  }
+
+
 
 }
 

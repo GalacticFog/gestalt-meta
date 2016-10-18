@@ -304,7 +304,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     "add default upgradeStrategy for persistent volumes" in {
       val provider = marathonProviderWithStdNetworks
       val name = "/some/app/id"
-      val marApp = toMarathonApp("test-container", ContainerSpec(
+      val marApp = toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -329,7 +329,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     "neglect default upgradeStrategy absent persistent volumes" in {
       val provider = marathonProviderWithStdNetworks
       val name = "/some/app/id"
-      val marApp = toMarathonApp("test-container", ContainerSpec(
+      val marApp = toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -425,7 +425,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonApp(name, resourceJson.as[ContainerSpec], provider)
+      marApp must_== toMarathonLaunchPayload(name, resourceJson.as[ContainerSpec], provider)
     }
 
     "generate valid payload with cmd and no args" in {
@@ -459,7 +459,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       ))
       provider.id returns providerId
 
-      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[ContainerSpec], provider)).as[JsObject]
+      val marPayload = Json.toJson(toMarathonLaunchPayload(name, resourceJson.as[ContainerSpec], provider)).as[JsObject]
       marPayload.toString must /("cmd" -> "/usr/bin/someCmd")
       marPayload.keys.contains("args") must beFalse
     }
@@ -530,23 +530,23 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonApp(name, resourceJson.as[ContainerSpec], provider)
+      marApp must_== toMarathonLaunchPayload(name, resourceJson.as[ContainerSpec], provider)
     }
 
     "throw exception for marathon payload with invalid provider network" in {
-      toMarathonApp("test-container", ContainerSpec(
+      toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
         network = Some("missing")
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", ContainerSpec(
+      toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
         network = Some("HOST")
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", ContainerSpec(
+      toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
@@ -555,7 +555,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -577,7 +577,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -598,7 +598,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with empty acceptedResourceRoles" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -611,7 +611,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate valid marathon payload from lower case constraints" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -625,7 +625,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload using provider networks" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
@@ -648,7 +648,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithStdNetworks.id),
@@ -671,7 +671,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", ContainerSpec(
+      val marJson = Json.toJson(toMarathonLaunchPayload("test-container", ContainerSpec(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithStdNetworks.id),

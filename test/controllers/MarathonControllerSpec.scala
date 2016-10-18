@@ -10,6 +10,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
@@ -592,6 +593,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("root"),
         meq(testWork),
         meq(testEnv),
+        any[AuthAccountWithCreds],
         meq(testContainerName),
         meq(testProps)
       ) returns Future(createdContainer)

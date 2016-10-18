@@ -276,8 +276,7 @@ package object marathon {
         )
       )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
-      env = app.env getOrElse Map(),
-      created = None
+      env = app.env getOrElse Map()
     )
     (name,props)
   }
@@ -382,9 +381,9 @@ package object marathon {
 
   /**
    * Convert Meta Container JSON to Marathon App object.
-   * TODO: convert this to a Future[MarathonApp]
+   * TODO: convert this to a Future[AppUpdate]... wait, what? why?
    */
-  def toMarathonApp(name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -540,8 +539,7 @@ package object marathon {
       name = None,
       container_type = ctype,
       image = image,
-      provider = prv,
-      created = None
+      provider = prv
     )
   }
   

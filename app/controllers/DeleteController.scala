@@ -42,6 +42,8 @@ import com.galacticfog.gestalt.meta.auth.Actions
 
 
 object DeleteController extends Authorization {
+
+  // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
  
   /*
    * Each of the types named by the keys in this map have representations both in

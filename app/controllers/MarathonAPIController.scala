@@ -160,7 +160,13 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
               case Some(name) => Success((name,cspec))
             }
           })
-          metaContainer <- containerService.launchContainer(fqon, wrk, env, name, props)
+          metaContainer <- containerService.launchContainer(
+            fqon = fqon,
+            workspace = wrk,
+            environment = env,
+            user = request.identity,
+            name = name,
+            containerSpec = props)
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
             spec = metaContainer,
             instances = Some(Seq()),
@@ -180,6 +186,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
       case ("GET", "info")            => getInfo(fqon, envId, providerId)(request)
       case ("GET", "deployments")     => listDeployments(fqon, envId, providerId)(request)
       case ("DELETE", AppPath(appId)) => deleteApp(fqon, envId, providerId, appId)(request)
+      case _                          => Future.successful(BadRequest(Json.obj("message" -> "endpoint not supported")))
     }
   }
 

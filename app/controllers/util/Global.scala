@@ -1,6 +1,6 @@
 package controllers.util
 
-import controllers.MarathonAPIController
+import controllers.{ContainerController, MarathonAPIController}
 import play.api.{Logger => log}
 import play.api._
 import play.api.mvc._
@@ -66,6 +66,7 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
   lazy val defaultContainerMethods = ContainerServiceImpl
   lazy val defaultMarathonAPIController = new MarathonAPIController(ContainerServiceImpl)
+  lazy val defaultContainerController = new ContainerController(ContainerServiceImpl)
 
   override def getControllerInstance[A](controllerClass: Class[A]): A = {
     if (classOf[ContainerService] == controllerClass) defaultContainerMethods.asInstanceOf[A]

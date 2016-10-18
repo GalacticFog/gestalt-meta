@@ -2,6 +2,7 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import org.joda.time.DateTime
 import play.api.libs.json._
@@ -30,8 +31,19 @@ case class ContainerSpec(name: Option[String] = None,
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
-                         id: Option[UUID] = None,
-                         created: Option[DateTime] = None) extends Spec
+                         resource: Option[GestaltResourceInstance] = None,
+                         external_id: Option[String] = None) extends Spec {
+
+  def id: Option[UUID] = resource map (_.id)
+
+  def created: Option[DateTime] = for {
+    ri <- resource
+    c <- ri.created
+    ts <- c.get("timestamp")
+    parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
+  } yield parsedTimestamp
+
+}
 
 case object ContainerSpec extends Spec {
 
@@ -75,6 +87,7 @@ case object ContainerSpec extends Spec {
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       cpus <- Try{props("cpus").toDouble}
       memory <- Try{props("memory").toDouble}
+      disk = props.get("disk").map(_.toDouble)
       num_instances <- Try{props("num_instances").toInt}
       cmd = props.get("cmd")
       constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]]}
@@ -89,11 +102,7 @@ case object ContainerSpec extends Spec {
       image <- if (ctype.equalsIgnoreCase("DOCKER")) Try{props("image")} else Try("")
       network = props.get("network")
       force_pull = props.get("force_pull") map {_.toBoolean}
-      created = for {
-        created <-  metaContainerSpec.created
-        timestamp <- created.get("timestamp")
-        dt <- Try{DateTime.parse(timestamp)}.toOption
-      } yield dt
+      external_id = props.get("external_id")
     } yield ContainerSpec(
       name = Some(metaContainerSpec.name),
       container_type = ctype,
@@ -102,7 +111,7 @@ case object ContainerSpec extends Spec {
       port_mappings = port_mappings getOrElse Seq(),
       cpus = cpus,
       memory = memory,
-      disk = 0.0,
+      disk = disk getOrElse 0.0,
       num_instances = num_instances,
       network = network,
       cmd = cmd,
@@ -115,8 +124,8 @@ case object ContainerSpec extends Spec {
       labels = labels getOrElse Map(),
       env = env getOrElse Map(),
       user = user,
-      created = created,
-      id = Some(metaContainerSpec.id)
+      resource = Some(metaContainerSpec),
+      external_id = external_id
     )
   }
 
@@ -130,9 +139,50 @@ case object ContainerSpec extends Spec {
 
   implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
 
-  lazy val containerSpecReads = Json.writes[ContainerSpec]
+  lazy val containerSpecWrites: Writes[ContainerSpec] = (
+    (__ \ "container_type").write[String] and
+      (__ \ "image").write[String] and
+      (__ \ "provider").write[ContainerSpec.InputProvider] and
+      (__ \ "port_mappings").write[Seq[ContainerSpec.PortMapping]] and
+      (__ \ "cpus").write[Double] and
+      (__ \ "memory").write[Double] and
+      (__ \ "disk").write[Double] and
+      (__ \ "num_instances").write[Int] and
+      (__ \ "network").writeNullable[String] and
+      (__ \ "cmd").writeNullable[String] and
+      (__ \ "constraints").write[Seq[String]] and
+      (__ \ "accepted_resource_roles").writeNullable[Seq[String]] and
+      (__ \ "args").writeNullable[Seq[String]] and
+      (__ \ "force_pull").write[Boolean] and
+      (__ \ "health_checks").write[Seq[ContainerSpec.HealthCheck]] and
+      (__ \ "volumes").write[Seq[ContainerSpec.Volume]] and
+      (__ \ "labels").write[Map[String,String]] and
+      (__ \ "env").write[Map[String,String]] and
+      (__ \ "user").writeNullable[String]
+    )( (c: ContainerSpec) => (
+    c.container_type,
+    c.image,
+    c.provider,
+    c.port_mappings,
+    c.cpus,
+    c.memory,
+    c.disk,
+    c.num_instances,
+    c.network,
+    c.cmd,
+    c.constraints,
+    c.accepted_resource_roles,
+    c.args,
+    c.force_pull,
+    c.health_checks,
+    c.volumes,
+    c.labels,
+    c.env,
+    c.user
+    )
+  )
 
-  lazy val containerSpecWrites: Reads[ContainerSpec] = (
+  lazy val containerSpecReads: Reads[ContainerSpec] = (
     (__ \ "container_type").read[String] and
       (__ \ "image").read[String] and
       (__ \ "provider").read[ContainerSpec.InputProvider] and
@@ -152,8 +202,8 @@ case object ContainerSpec extends Spec {
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(None,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None))
+    )(ContainerSpec.apply(None,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
 
-  implicit lazy val metaContainerSpec = Format(containerSpecWrites, containerSpecReads)
+  implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 
 }

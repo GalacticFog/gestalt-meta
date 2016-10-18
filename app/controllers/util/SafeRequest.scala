@@ -342,7 +342,41 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     
     result
   }
-  
+
+  def ProtectAsync[T](f: Option[UUID] => Future[T]): Future[T] = {
+
+    @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
+      os match {
+        case Nil => proceed
+        case op :: tail => op.proceed(options) match {
+          case Continue => evaluate(tail, Continue)
+          case Accepted => evaluate(tail, Accepted)
+          case e: Halt  => e
+        }
+      }
+    }
+
+    /*
+     * Separate operations list into pre and post ops.
+     */
+    val (beforeOps, afterOps) = sansPost(operations)
+
+    for {
+      pre <- Future{evaluate(beforeOps, Continue)}
+      result <- pre.toTry match {
+        case Success(state) => f( state )
+        case Failure(error) => Future.failed(error)
+      }
+      _ = afterOps match {
+        case Some(ops) =>
+          log.debug(s"Found *.post events: ${afterOps.get}")
+          ops.proceed(options)
+        case None =>
+          log.debug("No *.post events found.")
+      }
+    } yield result
+  }
+
   type OpList = List[Operation[Seq[String]]]
   
   def sansPost(ops: OpList): (OpList, Option[Operation[Seq[String]]]) = {

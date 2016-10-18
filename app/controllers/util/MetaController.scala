@@ -179,7 +179,7 @@ trait MetaController extends SecureController with SecurityResources {
       resourceJson: JsValue, 
       user: AuthAccountWithCreds, 
       typeId: Option[UUID] = None,
-      parentId: Option[UUID] = None) = {
+      parentId: Option[UUID] = None): Result = {
     
     log.trace(s"CreateResourceResult($org, [json], [account])")
     
@@ -394,7 +394,7 @@ trait MetaController extends SecureController with SecurityResources {
  /**
    * Inspect a GestaltResourceInput, supplying default values where appropriate.
    */
-  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds) = {
+  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds): Instance = {
     val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
     val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
