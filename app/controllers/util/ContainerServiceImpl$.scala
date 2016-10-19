@@ -77,14 +77,16 @@ trait ContainerService extends MetaController {
     (operations,options)
   }
 
-  def deleteContainer[A <: ResourceLike](container: A): Future[JsValue] = {
+  def deleteContainer[A <: ResourceLike](container: A): Future[Unit] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
     }
     val externalId = container.properties.get("external_id")
 
-    marathonClient(provider).deleteApplication(externalId)
+    marathonClient(provider).deleteApplication(externalId) map { js =>
+      logger.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
+    }
   }
 
   def listEnvironmentContainers(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Future[Seq[ContainerSpec]] = {

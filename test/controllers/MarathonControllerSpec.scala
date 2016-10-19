@@ -450,7 +450,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       ) returns Future(Some(testContainer))
       containerService.deleteContainer(
         any[ResourceLike]
-      ) returns Future(Json.obj())
+      ) returns Future(())
 
       val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
       val Some(result) = route(request)

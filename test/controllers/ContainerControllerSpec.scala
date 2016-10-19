@@ -55,6 +55,12 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           override val securityClient = mockSecurityClient
         }
       }.asInstanceOf[A]
+      else if (classOf[DeleteController] == controllerClass) {
+        new DeleteController(cs) {
+          override val env = fakeSecurity
+          override val securityClient = mockSecurityClient
+        }
+      }.asInstanceOf[A]
       else super.getControllerInstance(controllerClass)
     }
   }
@@ -171,6 +177,60 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "name").asOpt[String] must beSome(testContainerName)
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
+    }
+
+    "delete containers usnig the ContainerService interface" in new TestApplication {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val extId = s"/some/dummy/external/id"
+      val createdResource = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "disk" -> testProps.disk.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> s"${extId}"
+        ))
+      ).get
+      containerService.deleteContainer(
+        createdResource
+      ) returns Future(())
+
+      val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/containers/${createdResource.id}")
+      val Some(result) = route(request)
+      status(result) must equalTo(NO_CONTENT)
+
+      there was one(containerService).deleteContainer(
+        argThat((c: ResourceLike) => c.id == createdResource.id && c.properties.flatMap(_.get("external_id")).contains(extId))
+      )
     }
 
   }
