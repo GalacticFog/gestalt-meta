@@ -3,7 +3,7 @@
 ###
 
 POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
-POST	/sync					 controllers.SyncController.sync()
+POST	/sync					 @controllers.SyncController.sync()
 
 GET		/about					 controllers.InfoController.about()
 GET		/health 				 controllers.InfoController.health()
@@ -163,10 +163,10 @@ GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		control
 ### Get any system resource.
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.getResources(fqon: String, path: String)
 
-DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			@controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
 
 ### Delete any system resource
-DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.DeleteController.hardDeleteResource(fqon: String, path)
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	@controllers.DeleteController.hardDeleteResource(fqon: String, path)
 
 ############################
 # ORGS

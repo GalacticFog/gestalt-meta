@@ -122,7 +122,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         for {
           container <- containerService.findEnvironmentContainerByName(fqon, workspace = wrk, environment = env, containerName = appId)
           response <- container match {
-            case Some(c) => containerService.deleteContainer(fqon, workspace = wrk, environment = env, containerId = c.id.get) map {
+            case Some(c) => containerService.deleteContainer(c.resource.get) map {
               _ => Ok(Json.obj(
                 "deployment" -> UUID.randomUUID(),
                 "version" -> DateTime.now(DateTimeZone.UTC).toString
@@ -165,7 +165,6 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
             workspace = wrk,
             environment = env,
             user = request.identity,
-            name = name,
             containerSpec = props)
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
             spec = metaContainer,

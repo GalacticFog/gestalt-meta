@@ -1,6 +1,6 @@
 package controllers.util
 
-import controllers.{ContainerController, MarathonAPIController}
+import controllers.{SyncController, DeleteController, ContainerController, MarathonAPIController}
 import play.api.{Logger => log}
 import play.api._
 import play.api.mvc._
@@ -64,13 +64,17 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
     }
   }
 
-  lazy val defaultContainerMethods = ContainerServiceImpl
-  lazy val defaultMarathonAPIController = new MarathonAPIController(ContainerServiceImpl)
-  lazy val defaultContainerController = new ContainerController(ContainerServiceImpl)
+  lazy val defaultContainerMethods = new ContainerService {}
+  lazy val defaultMarathonAPIController = new MarathonAPIController(defaultContainerMethods)
+  lazy val defaultContainerController = new ContainerController(defaultContainerMethods)
+  lazy val defaultDeleteController = new DeleteController(defaultContainerMethods)
+  lazy val defaultSyncController = new SyncController(defaultDeleteController)
 
   override def getControllerInstance[A](controllerClass: Class[A]): A = {
     if (classOf[ContainerService] == controllerClass) defaultContainerMethods.asInstanceOf[A]
     else if (classOf[MarathonAPIController] == controllerClass) defaultMarathonAPIController.asInstanceOf[A]
+    else if (classOf[DeleteController] == controllerClass) defaultDeleteController.asInstanceOf[A]
+    else if (classOf[SyncController] == controllerClass) defaultSyncController.asInstanceOf[A]
     else super.getControllerInstance(controllerClass)
   }
 

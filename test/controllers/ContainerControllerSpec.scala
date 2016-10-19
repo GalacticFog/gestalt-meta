@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerServiceImpl, ContainerService, GestaltSecurityMocking}
+import controllers.util.{ContainerService, GestaltSecurityMocking}
 import controllers.util.db.ConnectionManager
 import org.joda.time.DateTimeZone
 import org.specs2.execute.{Result, AsResult}
@@ -98,7 +98,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      val containerController = new ContainerController(ContainerServiceImpl)
+      val containerController = new ContainerController(new ContainerService {})
 
       containerController.findMigrationRule(data("environment")).isEmpty must beTrue
 
@@ -116,7 +116,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     "create containers using the ContainerService interface" in new TestApplication {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
-        name = None,
+        name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -158,7 +158,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        meq(testContainerName),
         any[ContainerSpec] /* TODO: meq(testProps) */
       ) returns Future(createdContainer)
 
@@ -171,7 +170,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "id").asOpt[UUID] must beSome(createdContainer.id.get)
       (json \ "name").asOpt[String] must beSome(testContainerName)
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
-      (json \ "properties").asOpt[ContainerSpec] must beSome(testProps)
+      (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
     }
 
   }

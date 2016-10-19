@@ -11,7 +11,7 @@ import play.api.libs.functional.syntax._ // Combinator syntax
 
 import scala.util.Try
 
-case class ContainerSpec(name: Option[String] = None,
+case class ContainerSpec(name: String = "",
                          container_type: String,
                          image: String,
                          provider: ContainerSpec.InputProvider,
@@ -104,7 +104,7 @@ case object ContainerSpec extends Spec {
       force_pull = props.get("force_pull") map {_.toBoolean}
       external_id = props.get("external_id")
     } yield ContainerSpec(
-      name = Some(metaContainerSpec.name),
+      name = metaContainerSpec.name,
       container_type = ctype,
       image = image,
       provider = provider,
@@ -183,6 +183,7 @@ case object ContainerSpec extends Spec {
   )
 
   lazy val containerSpecReads: Reads[ContainerSpec] = (
+    ((__ \ "name").read[String] orElse Reads.pure[String]("")) and
     (__ \ "container_type").read[String] and
       (__ \ "image").read[String] and
       (__ \ "provider").read[ContainerSpec.InputProvider] and
@@ -202,7 +203,7 @@ case object ContainerSpec extends Spec {
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(None,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
+    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
 
   implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 

@@ -238,7 +238,7 @@ package object marathon {
 
     val name = app.id
     val props = ContainerSpec(
-      name = name,
+      name = name.map(_.stripPrefix("/")) getOrElse "",
       container_type = "DOCKER",
       image = app.container flatMap {_.docker map {_.image}} getOrElse "",
       provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
@@ -341,7 +341,7 @@ package object marathon {
 
     Try(AppInfo(
       app = AppDefinition(
-        id = spec.name.map("/" + _) getOrElse "",
+        id = "/" + spec.name,
         cmd = spec.cmd,
         args = spec.args,
         user = spec.user,
@@ -383,7 +383,7 @@ package object marathon {
    * Convert Meta Container JSON to Marathon App object.
    * TODO: convert this to a Future[AppUpdate]... wait, what? why?
    */
-  def toMarathonLaunchPayload(name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -480,7 +480,7 @@ package object marathon {
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
     AppUpdate(
-      id = Some("/" + name.stripPrefix("/")),
+      id = Some("/" + props.name.stripPrefix("/")),
       container = Some(container),
       constraints = if (props.constraints.nonEmpty) Some(props.constraints.map(
         _.split(":") match {
@@ -536,7 +536,7 @@ package object marathon {
       }
     }
     ContainerSpec(
-      name = None,
+      name = "",
       container_type = ctype,
       image = image,
       provider = prv

@@ -26,7 +26,7 @@ import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth.Authorization
 
 
-object SyncController extends Authorization {
+class SyncController(deleteController: DeleteController) extends Authorization {
   
   private var adminId: UUID = null
 
@@ -132,7 +132,7 @@ object SyncController extends Authorization {
          * NOTE: We skip the external deletes for Orgs, Groups, and Users because they're
          * already gone from security (that's why we're deleting them from Meta)
          */
-        DeleteController.manager.delete(res, account, 
+        deleteController.manager.delete(res, account,
           force = true, 
           skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))  
       }

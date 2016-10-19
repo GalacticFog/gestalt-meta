@@ -108,7 +108,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
       case Failure(e) => Future { HandleExceptions(e) }
       case Success((wrk,env)) => {
 
-        // This initializes all required properties if missing.
+        // This initializes all required properties if missing, implicit in the route
         val inputJson = normalizeInputContainer(request.body)
 
         val org = fqid(fqon)
@@ -128,7 +128,6 @@ class ContainerController(containerService: ContainerService) extends Authorizat
             fqon = fqon,
             workspace = wrk,
             environment = env,
-            name = target.name,
             containerSpec = containerSpec,
             user = request.identity
           )

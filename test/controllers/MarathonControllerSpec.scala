@@ -3,6 +3,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.Instance
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
@@ -113,6 +114,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
 
     "support Marathon GET /v2/apps" in new TestApplication {
       val testProps = ContainerSpec(
+        name = "",
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -274,6 +276,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
 
     "support Marathon GET /v2/apps/:appId" in new TestApplication {
       val testProps = ContainerSpec(
+        name = "",
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -403,6 +406,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
 
     "support Marathon DELETE /v2/apps/:appId" in new TestApplication {
       val testProps = ContainerSpec(
+        name = "",
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -445,11 +449,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("test-container")
       ) returns Future(Some(testContainer))
       containerService.deleteContainer(
-        meq("root"),
-        meq(testWork),
-        meq(testEnv),
-        meq(testContainer.id.get)
-      ) returns Future(testContainer)
+        any[ResourceLike]
+      ) returns Future(Json.obj())
 
       val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
       val Some(result) = route(request)
@@ -478,7 +479,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       )
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
-        name = Some(testContainerName),
+        name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
@@ -594,7 +595,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        meq(testContainerName),
         meq(testProps)
       ) returns Future(createdContainer)
 

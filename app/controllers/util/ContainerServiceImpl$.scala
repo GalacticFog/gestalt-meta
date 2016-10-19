@@ -3,7 +3,6 @@ package controllers.util
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
-import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.auth.Actions
 
 import play.api.libs.ws.WS
@@ -12,11 +11,11 @@ import play.api.libs.json._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{ExecutionContext, Future, Await}
+import scala.concurrent.{Future, Await}
 import scala.concurrent.duration._
 
-import com.galacticfog.gestalt.data.{HardDeleteWorkspace, Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.{ResourceLike, GestaltResourceInstance}
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
@@ -78,11 +77,17 @@ trait ContainerService extends MetaController {
     (operations,options)
   }
 
-  def deleteContainer(fqon: String, workspace: Instance, environment: Instance, containerId: UUID): Future[ContainerSpec] = {
-    ???
+  def deleteContainer[A <: ResourceLike](container: A): Future[JsValue] = {
+    val providerId = Json.parse(container.properties.get("provider")) \ "id"
+    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
+      throw new RuntimeException("Could not find Provider : " + providerId)
+    }
+    val externalId = container.properties.get("external_id")
+
+    marathonClient(provider).deleteApplication(externalId)
   }
 
-  def listEnvironmentContainers(fqon: String, workspace: Instance, environment: Instance): Future[Seq[ContainerSpec]] = {
+  def listEnvironmentContainers(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Future[Seq[ContainerSpec]] = {
     // make a best effort to get updated stats from the Marathon provider and to update the resource with them
     val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, workspace.name, environment.name)
     for {
@@ -123,7 +128,7 @@ trait ContainerService extends MetaController {
     } yield outputMetaContainers map ContainerSpec.fromResourceInstance map (_.get)
   }
 
-  def findEnvironmentContainerByName(fqon: String, workspace: Instance, environment: Instance, containerName: String): Future[Option[ContainerSpec]] = {
+  def findEnvironmentContainerByName(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance, containerName: String): Future[Option[ContainerSpec]] = {
     ???
   }
 
@@ -131,7 +136,6 @@ trait ContainerService extends MetaController {
                       workspace: GestaltResourceInstance,
                       environment: GestaltResourceInstance,
                       user: AuthAccountWithCreds,
-                      name: String,
                       containerSpec: ContainerSpec): Future[ContainerSpec] = {
 
     val operations = containerRequestOperations(Actions.Container.Create)
@@ -140,7 +144,6 @@ trait ContainerService extends MetaController {
     SafeRequest (operations, options) ProtectAsync { maybeState =>
       val provider = marathonProvider(containerSpec.provider.id)
       val marathonApp = toMarathonLaunchPayload(
-        name = name,
         props = containerSpec,
         provider = provider
       )
@@ -313,11 +316,6 @@ trait ContainerService extends MetaController {
     }
   }
 
-  def deleteMarathonApp(fqon: String, workspaceName: String, environmentName: String, container: GestaltResourceInstance): Future[JsValue] = {
-    val provider = marathonProvider(containerProviderId(container))
-    marathonClient(provider).deleteApplication( fqon, workspaceName, environmentName, container.name)
-  }
-
 
   def appComponents(environment: UUID) = Try {
     val we = findWorkspaceEnvironment(environment).get
@@ -352,38 +350,6 @@ trait ContainerService extends MetaController {
     }
     (p -> c)
   }
-
-  // TODO: remove
-//  def toMetaContainerJson(inputJson: JsObject,
-//                          containerName: String,
-//                          marathonGroupId: String,
-//                          provider: GestaltResourceInstance) = {
-//    Seq(
-//      "external_id" -> externalIdJson(marathonGroupId, containerName),
-//      "provider"    -> providerJson(provider) ).foldLeft(inputJson) { (json, prop) =>
-//      JsonUtil.withJsonPropValue(json, prop)
-//    }
-//  }
-
-  // TODO: remove
-//  def providerJson(provider: GestaltResourceInstance) = {
-//    Json.obj(
-//      "id" -> provider.id.toString,
-//      "name" -> provider.name
-//    )
-//  }
-
-  // TODO: remove
-//  def externalIdJson(marathonGroupId: String, containerName: String): JsString = {
-//    JsString(marathonGroupId.stripSuffix("/") + "/" + containerName.stripPrefix("/"))
-//  }
-
-  // TODO: remove
-//  def groupId(fqon: String, workspaceName: String, environmentName: String) = {
-//    MarathonClient.metaContextToMarathonGroup(fqon, workspaceName, environmentName)
-//  }
-
-
 
 }
 
