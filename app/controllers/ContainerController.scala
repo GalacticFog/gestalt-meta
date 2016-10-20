@@ -86,18 +86,6 @@ class ContainerController(containerService: ContainerService) extends Authorizat
     }
   }
 
-  /**
-   * Ensure Container input JSON is well-formed and valid. Ensures that required properties
-   * are given and fills in default values where appropriate.
-   */
-  private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
-    val defaults = containerWithDefaults(inputJson)
-    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
-    (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
-  }
-
-
-
   /*
    * TODO: Reverse the order of container creation.  Create FIRST in Meta - that way if it fails to create
    * in Marathon, we can just delete it from Meta.
@@ -186,20 +174,15 @@ class ContainerController(containerService: ContainerService) extends Authorizat
     props map { _ ++ scaleProps } orElse Option(Map(scaleProps:_*))
   }
 
-
   def findMigrationRule(start: UUID) = {
     object Finder extends EventMethods
     Finder.findEffectiveEventRules(start, Option("container.migrate"))
   }
   
   def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    
     if (findMigrationRule(envId).isEmpty) HandleExceptions {
-        
       throw new ConflictException("No migration policy found.")
-        
     } else {
-
       val user = request.identity
       val container = getMigrationContainer(envId, id)
       val (operations, options) = containerService.setupMigrateRequest(
@@ -213,7 +196,6 @@ class ContainerController(containerService: ContainerService) extends Authorizat
           case Success(c) => Accepted(Output.renderInstance(c, META_URL))
         }
       }
-    
     }
   }
 
@@ -225,7 +207,6 @@ class ContainerController(containerService: ContainerService) extends Authorizat
    * @return    the requested Container as Try[GestaltResourceInstance]
    */
   protected [controllers] def getMigrationContainer(env: UUID, id: UUID) = {
-
     ResourceFactory.findChildOfType(ResourceIds.Container, env, id).fold {
       throw new ResourceNotFoundException(
           notFoundMessage(ResourceIds.Container, id))
@@ -237,10 +218,18 @@ class ContainerController(containerService: ContainerService) extends Authorizat
     }
   }
 
+  /**
+    * Ensure Container input JSON is well-formed and valid. Ensures that required properties
+    * are given and fills in default values where appropriate.
+    */
+  private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
+    val defaults = containerWithDefaults(inputJson)
+    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
+    (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
+  }
 
   protected [controllers] def scaleMarathonAppSync(container: GestaltResourceInstance, numInstances: Int) /*: Future[JsValue]*/ = {
     val provider = containerService.marathonProvider(containerService.containerProviderId(container))
-    
     container.properties.flatMap(_.get("external_id")).fold {
       throw new RuntimeException("container.properties.external_id not found.")
     }{ id =>

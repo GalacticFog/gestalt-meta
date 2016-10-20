@@ -2,7 +2,6 @@ package controllers
 
 
 import java.util.UUID
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -11,17 +10,13 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
-import controllers.util.db.ConnectionManager
-import org.joda.time.DateTimeZone
 import org.specs2.execute.{Result, AsResult}
 import org.specs2.matcher.JsonMatchers
-import org.specs2.mutable._
 import org.specs2.specification._
 import play.api.{Play, Application, GlobalSettings}
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import play.api.test._
@@ -115,6 +110,57 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       
       event.isEmpty must beFalse
     }
+  }
+
+  "ContainerSpec" should {
+
+    "be convertible from GestaltResourceInstance container representations with appropriate defaults and link to GestaltResourceInstance" in new TestApplication {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx:alpine",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = None,
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val createdResource = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "image" -> testProps.image,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString
+        ))
+      ).get
+      ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps.copy(resource = Some(createdResource)))
+    }
+
+    "throw an exception if attempting to create from non-Container resource" in new TestApplication {
+      val testResourceName = "some-name"
+      val createdResource = createInstance(ResourceIds.Org, testResourceName,
+        parent = Some(testEID),
+        properties = None
+      ).get
+      ContainerSpec.fromResourceInstance(createdResource) must beFailedTry.withThrowable[RuntimeException]("cannot convert non-Container resource into ContainerSpec")
+    }
+
   }
 
   "ContainerController" should {

@@ -4,6 +4,8 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.security.api.errors.BadRequestException
 import org.joda.time.DateTime
 import play.api.libs.json._
 import play.api.libs.json.Reads._        // Custom validation helpers
@@ -81,6 +83,7 @@ case object ContainerSpec extends Spec {
                          max_consecutive_failures: Int = 3)
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
+    if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
     val attempt = for {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
