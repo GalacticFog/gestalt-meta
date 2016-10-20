@@ -88,10 +88,10 @@ case object ContainerSpec extends Spec {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      cpus <- Try{props("cpus").toDouble}
-      memory <- Try{props("memory").toDouble}
-      disk = props.get("disk").map(_.toDouble)
-      num_instances <- Try{props("num_instances").toInt}
+      cpus = props.get("cpus").flatMap( c => Try(c.toDouble).toOption )
+      memory = props.get("memory").flatMap( c => Try(c.toDouble).toOption )
+      disk = props.get("disk").flatMap( c => Try(c.toDouble).toOption )
+      num_instances = props.get("num_instances").flatMap( c => Try(c.toInt).toOption )
       cmd = props.get("cmd")
       constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]]}
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
@@ -112,10 +112,10 @@ case object ContainerSpec extends Spec {
       image = image,
       provider = provider,
       port_mappings = port_mappings getOrElse Seq(),
-      cpus = cpus,
-      memory = memory,
+      cpus = cpus getOrElse 1.0,
+      memory = memory getOrElse 128.0,
       disk = disk getOrElse 0.0,
-      num_instances = num_instances,
+      num_instances = num_instances getOrElse 1,
       network = network,
       cmd = cmd,
       constraints = constraints getOrElse Seq(),

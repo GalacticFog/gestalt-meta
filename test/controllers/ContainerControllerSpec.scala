@@ -143,10 +143,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "image" -> testProps.image,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString
+          "image" -> testProps.image
         ))
       ).get
       ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps.copy(resource = Some(createdResource)))
