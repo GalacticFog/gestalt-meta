@@ -79,7 +79,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
                 guid <- metaCon2guid.get(originalMetaCon.id)
                 marCon <- mapMarCons.get(guid)
               } yield marCon
-              containerService.updateMetaContainerWithStats(originalMetaCon, stats, request.identity.account.id)
+              containerService.updateMetaContainerWithStats(originalMetaCon, stats)
             }
           } yield Ok(Json.toJson(outputMetaContainers map {Output.renderInstance(_, META_URL).as[JsObject]}))
       }

@@ -125,13 +125,41 @@ trait ContainerService extends MetaController {
           guid <- metaCon2guid.get(originalMetaCon.id)
           marCon <- mapMarCons.get(guid)
         } yield marCon
-        updateMetaContainerWithStats(originalMetaCon, stats, /* request.identity.account.id */ ???)
+        updateMetaContainerWithStats(originalMetaCon, stats)
       }
     } yield outputMetaContainers map ContainerSpec.fromResourceInstance map (_.get)
   }
 
   def findEnvironmentContainerByName(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance, containerName: String): Future[Option[ContainerSpec]] = {
-    ???
+    val maybeContainerSpec = ResourceFactory.findChildByName(parent = environment.id, childType = ResourceIds.Container, name = containerName) flatMap {
+      ContainerSpec.fromResourceInstance(_).toOption
+    }
+    val maybeStatsFromMarathon = for {
+      metaContainerSpec <- maybeContainerSpec
+      provider <- Try {
+        marathonProvider(metaContainerSpec.provider.id)
+      }.toOption
+      extId <- metaContainerSpec.external_id
+      marathonApp = for {
+        client <- Future.fromTry(Try {
+          marathonClient(provider)
+        })
+        js <- client.getApplicationByAppId(extId)
+        stats <- Future.fromTry(Try {
+          MarathonClient.marathon2Container(js).get
+        })
+      } yield stats
+    } yield marathonApp
+    maybeStatsFromMarathon match {
+      case None => Future {
+        maybeContainerSpec.map(containerSpec =>
+          ContainerSpec.fromResourceInstance(updateMetaContainerWithStats(containerSpec.resource.get, None)).get
+        )
+      }
+      case Some(fStatsFromMarathon) => fStatsFromMarathon.map(stats =>
+        Some(ContainerSpec.fromResourceInstance(updateMetaContainerWithStats(maybeContainerSpec.get.resource.get, Some(stats))).get)
+      )
+    }
   }
 
   def launchContainer(fqon: String,
@@ -200,7 +228,7 @@ trait ContainerService extends MetaController {
     }
   }
 
-  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats], creatorId: UUID) = {
+  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
     val newStats = stats match {
       case Some(stats) => Seq(
@@ -226,16 +254,22 @@ trait ContainerService extends MetaController {
         _ ++ newStats
       } orElse {
         Some(newStats toMap)
-      })
-    Future{ ResourceFactory.update(updatedMetaCon, creatorId) } onComplete {
-      case Success(Success(updatedContainer)) =>
-        log.trace(s"updated container ${updatedContainer.id} with info from marathon")
-      case Success(Failure(e)) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-      case Failure(e) =>
-        log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+      }
+    )
+    // this update is passive... mark the "modifier" as the last person to have actively modified the container, or the creator...
+    (metaCon.modified.flatMap(_.get("id")) orElse metaCon.created.flatMap(_.get("id"))) flatMap {s => Try(UUID.fromString(s)).toOption} match {
+      case None => metaCon // TODO: not sure what else to do here
+      case Some(updater) =>
+        Future{ ResourceFactory.update(updatedMetaCon, updater) } onComplete {
+          case Success(Success(updatedContainer)) =>
+            log.trace(s"updated container ${updatedContainer.id} with info from marathon")
+          case Success(Failure(e)) =>
+            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+          case Failure(e) =>
+            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
+        }
+        updatedMetaCon
     }
-    updatedMetaCon
   }
 
   private def badRequest(message: String) = {
@@ -251,7 +285,8 @@ trait ContainerService extends MetaController {
     if (getExpandParam(qs)) rs map transformMetaContainer else rs
   }
 
-  private[util] def transformMetaContainer(c: GestaltResourceInstance) = {
+  private[util] def transformMetaContainer(c: GestaltResourceInstance): GestaltResourceInstance = {
+    val containerSpec = ContainerSpec.fromResourceInstance(c)
     val providerId  = getProviderId(c.properties.get("provider")) getOrElse {
       throw new RuntimeException(s"Could not parse provider ID from Meta Container.")
     }
@@ -260,7 +295,7 @@ trait ContainerService extends MetaController {
     val marathonId  = c.properties.get("external_id")
 
     val stats = Try {
-      val application = Await.result(client.getApplication_marathon_v3(marathonId)(global), 5 seconds)
+      val application = Await.result(client.getApplicationByAppId(marathonId)(global), 5 seconds)
       MarathonClient.marathon2Container(application)
     } match {
       case Failure(e) => if (e.isInstanceOf[ResourceNotFoundException]) None else throw e

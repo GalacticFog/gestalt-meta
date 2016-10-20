@@ -9,7 +9,7 @@ import play.api.libs.json._
 import play.api.libs.json.Reads._        // Custom validation helpers
 import play.api.libs.functional.syntax._ // Combinator syntax
 
-import scala.util.Try
+import scala.util.{Failure, Try}
 
 case class ContainerSpec(name: String = "",
                          container_type: String,
@@ -81,7 +81,7 @@ case object ContainerSpec extends Spec {
                          max_consecutive_failures: Int = 3)
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
-    for {
+    val attempt = for {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
@@ -127,6 +127,9 @@ case object ContainerSpec extends Spec {
       resource = Some(metaContainerSpec),
       external_id = external_id
     )
+    attempt.recoverWith {
+      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
+    }
   }
 
   implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]

@@ -52,6 +52,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
    **/
   def listApplicationsInEnvironment_marathon_v2(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[JsObject]] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    // TODO: revisit this now, targetting Marathon in DC/OS 1.8 and later
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
     // therefore, to get these, we have to loop over all apps :(
     // val appGroup = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps.counts").get()
@@ -64,10 +65,10 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       }
     }
   }
-  
-  def getApplication_marathon_v3(uri: String)(implicit ex: ExecutionContext): Future[JsObject] = {
-    val url = "%s/v2/apps/%s".format(marathonAddress, uri.stripPrefix("/").stripSuffix("/"))
-    val group = uri.take(uri.lastIndexOf("/"))
+
+  def getApplicationByAppId(appId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
+    val url = "%s/v2/apps/%s".format(marathonAddress, appId.stripPrefix("/").stripSuffix("/"))
+    val group = appId.take(appId.lastIndexOf("/"))
     
     log.debug("Looking up Marathon application: " + url)
     log.debug("Group ID: " + group)
@@ -87,21 +88,21 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
       }
     }
   }
-  
+
   /**
     * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
- *
+    *
     * @param fqon fully-qualified org name
     * @param wrkName workspace name
     * @param envName environment name
-    * @param localAppId local name of the app, stripped of the above
+    * @param name local name of the app, stripped of the above
     */
-  def getApplication_marathon_v2(fqon: String, wrkName: String, envName: String, localAppId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
+  def getApplicationByName(fqon: String, wrkName: String, envName: String, name: String)(implicit ex: ExecutionContext): Future[JsObject] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
     // therefore, to get these, we have to loop over all apps :(
     // val appGroup = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps.counts").get()
-    val url = s"${marathonAddress}/v2/apps/" + groupId.stripPrefix("/").stripSuffix("/") + "/" + localAppId.stripPrefix("/")
+    val url = s"${marathonAddress}/v2/apps/" + groupId.stripPrefix("/").stripSuffix("/") + "/" + name.stripPrefix("/")
     val app = client.url(url).get()
     app map { marResp =>
       marResp.status match {
@@ -200,7 +201,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
         marResp.json
     }    
   }  
-  
+
   def scaleApplication(appId: String, numInstances: Int)(implicit ex: ExecutionContext): Future[JsValue] = {
     client.url(s"${marathonAddress}/v2/apps/${appId}").put(Json.obj(
       "instances" -> numInstances
@@ -261,7 +262,7 @@ case object MarathonClient {
       case _ => None
     }
   }
-  
+
   def filterXformAppsByGroup(groupId: String)(app: JsObject): Option[JsObject] = {
     (app \ "id").asOpt[String] match {
       case Some(id) if id.startsWith(groupId) =>
@@ -275,7 +276,7 @@ case object MarathonClient {
       case _ => None
     }
   }
-  
+
   def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
           service <- (marApp \ "id").asOpt[String]
