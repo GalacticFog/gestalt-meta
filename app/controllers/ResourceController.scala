@@ -34,7 +34,7 @@ import play.api.libs.json.{JsObject,JsString,Json}
 import play.api.mvc.{Action,Result}
 
 
-object ResourceController extends Authorization {
+class ResourceController(containerService: ContainerService) extends Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
@@ -51,14 +51,14 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container   -> ContainerServiceImpl.lookupContainer,
+    ResourceIds.Container   -> containerService.lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
-    ResourceIds.Container   -> ContainerServiceImpl.lookupContainers,
+    ResourceIds.Container   -> containerService.lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements
   )
   
