@@ -40,14 +40,13 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     creds -> authResponse
   ), mockSecurityClient)
 
-  lazy val cs = mock[ContainerService]
-  lazy val spiedContainerController = spy(new TestContainerController(cs,fakeSecurity,mockSecurityClient))
-  lazy val spiedDeleteController = spy(new TestDeleteController(cs,fakeSecurity,mockSecurityClient))
-  lazy val spiedResourceController = spy(new TestResourceController(cs,fakeSecurity,mockSecurityClient))
-
-  def testGlobal() = new GlobalSettings {
+  class TestGlobal extends GlobalSettings {
+    lazy val mockContainerService = mock[ContainerService]
+    lazy val spiedContainerController = spy(new TestContainerController(mockContainerService,fakeSecurity,mockSecurityClient))
+    lazy val spiedDeleteController = spy(new TestDeleteController(mockContainerService,fakeSecurity,mockSecurityClient))
+    lazy val spiedResourceController = spy(new TestResourceController(mockContainerService,fakeSecurity,mockSecurityClient))
     override def getControllerInstance[A](controllerClass: Class[A]): A = {
-      if (classOf[ContainerService] == controllerClass) cs.asInstanceOf[A]
+      if (classOf[ContainerService] == controllerClass) mockContainerService.asInstanceOf[A]
       else if (classOf[ContainerController] == controllerClass) spiedContainerController.asInstanceOf[A]
       else if (classOf[DeleteController] == controllerClass) spiedDeleteController.asInstanceOf[A]
       else if (classOf[ResourceController] == controllerClass) spiedResourceController.asInstanceOf[A]
@@ -55,7 +54,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     }
   }
 
-  abstract class TestApplication extends WithApplication(FakeApplication(withGlobal = Some(testGlobal))) {
+  abstract class TestApplication extends WithApplication(FakeApplication(withGlobal = Some(new TestGlobal))) {
 
     var testEnv: Instance = null
     var testWork: Instance = null
@@ -67,16 +66,20 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     def testEID: UUID = testEnv.id
     def testPID: UUID = testProvider.id
 
+    lazy val containerService    = app.global.getControllerInstance(classOf[ContainerService])
+    lazy val resourceController  = app.global.getControllerInstance(classOf[ResourceController])
+    lazy val deleteController    = app.global.getControllerInstance(classOf[DeleteController])
+    lazy val containerController = app.global.getControllerInstance(classOf[ContainerController])
+
     override def around[T: AsResult](t: => T): Result = super.around {
       var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
       testWork = tW
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get
       mockMarathonClient = mock[MarathonClient]
-      val cs = containerService
-      cs.appComponents(testEID) returns Try((testWork,testEnv))
-      cs.marathonProvider(testPID) returns testProvider
-      cs.marathonClient(testProvider) returns mockMarathonClient
+      containerService.appComponents(testEID) returns Try((testWork,testEnv))
+      containerService.marathonProvider(testPID) returns testProvider
+      containerService.marathonClient(testProvider) returns mockMarathonClient
       t
     }
 
@@ -84,25 +87,24 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
   def fakeAuthRequest(method: String, path: String) = FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
 
-  def containerService(implicit app: Application) = Play.global(app).getControllerInstance(classOf[ContainerService])
 
   "findMigrationRule" should {
 
     "find any container.migrate.* rules that are within the given scope" in new TestApplication {
       val org = newOrg(id = dummyRootOrgId)
       org must beSuccessfulTry
-      
+
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      val containerController = new ContainerController(new ContainerService {})
+      val controller = new ContainerController(new ContainerService {})
 
-      containerController.findMigrationRule(data("environment")).isEmpty must beTrue
+      controller.findMigrationRule(data("environment")).isEmpty must beTrue
 
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
-      
-      val event = containerController.findMigrationRule(data("environment"))
-      
+
+      val event = controller.findMigrationRule(data("environment"))
+
       event.isEmpty must beFalse
     }
   }
@@ -198,20 +200,20 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       val jsResponse = Json.obj(
       )
       containerService.listEnvironmentContainers(
-        meq("root"),
-        meq(testWork),
-        meq(testEnv)
+        "root",
+        testWork,
+        testEnv
       ) returns Future(Seq(testContainer))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers")
 
       val Some(result) = route(request)
 
-      there was one(spiedResourceController).getResources("root", s"environments/${testEID}/containers")
-      there was one(containerService).listEnvironmentContainers("root", testWork, testEnv)
-
       contentAsJson(result) must equalTo(jsResponse)
       status(result) must equalTo(OK)
+
+      there was one(resourceController).getResources("root", s"environments/${testEID}/containers")
+      there was one(containerService).listEnvironmentContainers("root", testWork, testEnv)
     }
 
     "create containers using the ContainerService interface" in new TestApplication {
@@ -272,6 +274,9 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "name").asOpt[String] must beSome(testContainerName)
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
+
+      there was one(containerController).createContainer(anyString, any[UUID])
+      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
     }
 
     "delete containers using the ContainerService interface" in new TestApplication {
@@ -315,6 +320,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "external_id" -> s"${extId}"
         ))
       ).get
+
       containerService.deleteContainer(
         createdResource
       ) returns Future(())
@@ -323,12 +329,14 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       val Some(result) = route(request)
 
-      there was one(spiedDeleteController).hardDeleteResource("root", s"environments/${testEID}/containers/${createdResource.id}")
-      there was one(containerService).deleteContainer(
-        argThat((c: ResourceLike) => c.id == createdResource.id && c.properties.flatMap(_.get("external_id")).contains(extId))
-      )
-
       status(result) must equalTo(NO_CONTENT)
+
+      there was one(deleteController).hardDeleteResource("root", s"environments/${testEID}/containers/${createdResource.id}")
+      there was one(containerService).deleteContainer(
+        argThat(
+          (c: ResourceLike) => c.id == createdResource.id && c.properties.flatMap(_.get("external_id")).contains(extId)
+        )
+      )
     }
 
   }

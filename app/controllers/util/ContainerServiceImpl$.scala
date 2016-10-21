@@ -49,13 +49,12 @@ trait ContainerService extends MetaController {
     data = data
   )
 
-  def setupMigrateRequest(
-                           fqon: String,
-                           env: UUID,
-                           container: GestaltResourceInstance,
-                           user: AuthAccountWithCreds,
-                           metaUrl: String,
-                           queryString: QueryString) = {
+  def setupMigrateRequest(fqon: String,
+                          env: UUID,
+                          container: GestaltResourceInstance,
+                          user: AuthAccountWithCreds,
+                          metaUrl: String,
+                          queryString: QueryString) = {
 
     val action = "container.migrate"
     val operations = List(
@@ -389,5 +388,3 @@ trait ContainerService extends MetaController {
   }
 
 }
-
-object ContainerServiceImpl extends ContainerService {}
