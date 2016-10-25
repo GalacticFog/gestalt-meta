@@ -3,6 +3,8 @@ package controllers
 
 import java.util.UUID
 
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -30,8 +32,8 @@ import controllers.util._
 import controllers.util.JsonUtil._
 
 import play.api.libs.json.{JsObject,JsString,Json}
-
 import play.api.mvc.{Action,Result}
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 
 class ResourceController(containerService: ContainerService) extends Authorization {
@@ -51,17 +53,38 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container   -> containerService.lookupContainer,
+    ResourceIds.Container   -> lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement
   )
-  
+
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
-    ResourceIds.Container   -> containerService.lookupContainers,
+    ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements
   )
-  
+
+  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+    Resource.fromPath(path.path) flatMap { r =>
+      val fqon = Resource.getFqon(path.path)
+      val eid = ResourceFactory.parseId(r.properties.get("parent")) getOrElse throwBadRequest("could not determine environment parent for container")
+      Await.result(
+        containerService.findEnvironmentContainerByName(fqon, eid, r.name),
+        5 seconds
+      ) flatMap (_.resource)
+    }
+  }
+
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+    if (getExpandParam(qs)) {
+      // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
+      Await.result(
+        containerService.listEnvironmentContainers(???, ???, ???) map (_.flatMap(_.resource)),
+        5 seconds
+      ) toList
+    } else Resource.listFromPath(path.path)
+  }
+
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }

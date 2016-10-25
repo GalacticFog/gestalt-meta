@@ -88,49 +88,8 @@ trait ContainerService extends MetaController {
     }
   }
 
-  def listEnvironmentContainers(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Future[Seq[ContainerSpec]] = {
-    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
-    val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, workspace.name, environment.name)
-    for {
-      metaCons <- Future{ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id).toSeq}
-      // map from meta resource container UUID to a Marathon container guid: (providerId, external_id)
-      metaCon2guid = (for {
-        metaCon <- metaCons
-        props <- metaCon.properties
-        providerProp <- props.get("provider")
-        pobj <- Try{Json.parse(providerProp)}.toOption
-        providerId <- (pobj \ "id").asOpt[UUID]
-        eid <- props.get("external_id")
-        // MarathonClient.listApplicationsInEnvironment strips env app group prefix
-        localEid = eid.stripPrefix(appGroupPrefix).stripPrefix("/")
-      } yield (metaCon.id -> (providerId,localEid))).toMap
-      // all the providers we care about
-      relevantProviders = (metaCon2guid.values.map{_._1} toSeq).distinct.flatMap {
-        pid => Try{marathonProvider(pid)}.toOption
-      }
-      // id is only unique inside a marathon provider, so we have to zip these with the provider ID
-      triedContainerListings <- Future.traverse(relevantProviders)({ pid =>
-        val marCons = marathonClient(pid).listApplicationsInEnvironment(fqon, workspace.name, environment.name)
-        val pidsAndMarCons = marCons map {cs => cs.map {c => pid.id -> c}}
-        // wrap this in a try so that failures don't crash the whole list in Future.traverse
-        futureToFutureTry(pidsAndMarCons)
-      })
-      successfulContainerListings = triedContainerListings collect {case Success(x) => x}
-      marCons = successfulContainerListings.flatten
-      _ = log.trace(s"Found ${marCons.size} total containers over ${relevantProviders.size} Marathon providers")
-      mapMarCons = marCons.map(p => (p._1, p._2.id.stripPrefix("/")) -> p._2).toMap
-      outputMetaContainers = metaCons map { originalMetaCon =>
-        val stats = for {
-          guid <- metaCon2guid.get(originalMetaCon.id)
-          marCon <- mapMarCons.get(guid)
-        } yield marCon
-        updateMetaContainerWithStats(originalMetaCon, stats)
-      }
-    } yield outputMetaContainers map ContainerSpec.fromResourceInstance map (_.get)
-  }
-
-  def findEnvironmentContainerByName(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance, containerName: String): Future[Option[ContainerSpec]] = {
-    val maybeContainerSpec = ResourceFactory.findChildByName(parent = environment.id, childType = ResourceIds.Container, name = containerName) flatMap {
+  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[ContainerSpec]] = {
+    val maybeContainerSpec = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName) flatMap {
       ContainerSpec.fromResourceInstance(_).toOption
     }
     val maybeStatsFromMarathon = for {
@@ -140,9 +99,9 @@ trait ContainerService extends MetaController {
       }.toOption
       extId <- metaContainerSpec.external_id
       marathonApp = for {
-        client <- Future.fromTry(Try {
+        client <- Future.fromTry(Try(
           marathonClient(provider)
-        })
+        ))
         js <- client.getApplicationByAppId(extId)
         stats <- Future.fromTry(Try {
           MarathonClient.marathon2Container(js).get
@@ -158,6 +117,38 @@ trait ContainerService extends MetaController {
       case Some(fStatsFromMarathon) => fStatsFromMarathon.map(stats =>
         Some(ContainerSpec.fromResourceInstance(updateMetaContainerWithStats(maybeContainerSpec.get.resource.get, Some(stats))).get)
       )
+    }
+  }
+
+  def listEnvironmentContainers(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Future[Seq[ContainerSpec]] = {
+    // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, workspace.name, environment.name)
+
+    val containerSpecsByProvider = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id) flatMap {
+      ContainerSpec.fromResourceInstance(_).toOption
+    } groupBy ( _.provider.id )
+
+    val fStatsFromAllRelevantProviders = Future.traverse(containerSpecsByProvider.keys) { pid =>
+      val pidAndStats = for {
+        stats <- marathonClient(marathonProvider(pid)).listApplicationsInEnvironment(fqon, workspace.name, environment.name)
+        statsMap = stats map (stat => stat.id -> stat) toMap
+      } yield (pid -> statsMap)
+      futureToFutureTry(pidAndStats)
+    } map (_ collect {case Success(x) => x} toMap)
+
+    fStatsFromAllRelevantProviders map { pid2id2stats =>
+      val allSpecs = containerSpecsByProvider map {
+        case (pid, cspecs) =>
+          cspecs map { cspec =>
+            val maybeUpdate = for {
+              eid <- cspec.external_id map (eid => eid.stripPrefix(appGroupPrefix).stripPrefix("/"))
+              providerStatList <- pid2id2stats.get(cspec.provider.id)
+              update <- providerStatList.get(eid)
+            } yield update
+            ContainerSpec.fromResourceInstance(updateMetaContainerWithStats(cspec.resource.get, maybeUpdate)).get
+          }
+      }
+      allSpecs.flatten.toSeq
     }
   }
 
@@ -275,39 +266,6 @@ trait ContainerService extends MetaController {
     new BadRequestException(message)
   }
 
-  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
-    Resource.fromPath(path.path) map transformMetaContainer
-  }
-
-  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
-    val rs = Resource.listFromPath(path.path)
-    if (getExpandParam(qs)) rs map transformMetaContainer else rs
-  }
-
-  private[util] def transformMetaContainer(c: GestaltResourceInstance): GestaltResourceInstance = {
-    val containerSpec = ContainerSpec.fromResourceInstance(c)
-    val providerId  = getProviderId(c.properties.get("provider")) getOrElse {
-      throw new RuntimeException(s"Could not parse provider ID from Meta Container.")
-    }
-    val provider    = marathonProvider(providerId)
-    val client      = marathonClient(provider)
-    val marathonId  = c.properties.get("external_id")
-
-    val stats = Try {
-      val application = Await.result(client.getApplicationByAppId(marathonId)(global), 5 seconds)
-      MarathonClient.marathon2Container(application)
-    } match {
-      case Failure(e) => if (e.isInstanceOf[ResourceNotFoundException]) None else throw e
-      case Success(s) => s
-    }
-
-    updateWithStats(c, stats)
-  }
-
-  private[util] def getProviderId(jstring: String): Option[UUID] = {
-    JsonUtil.getJsonField(Json.parse(jstring), "id") map { _.as[UUID] }
-  }
-
   /**
     * Make a best effort to get updated stats from the Marathon provider and to update the resource with them
     */
@@ -352,12 +310,15 @@ trait ContainerService extends MetaController {
     }
   }
 
-
-  def appComponents(environment: UUID) = Try {
-    val we = findWorkspaceEnvironment(environment).get
-    (we._1, we._2)
+  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
+    val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
+      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")
+    }
+    val c = ResourceFactory.findById(ResourceIds.Environment, environmentId) getOrElse {
+      throw new ResourceNotFoundException(s"Environment with ID '$environmentId' not found.")
+    }
+    (p -> c)
   }
-
 
   def eventsClient() = {
     AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
@@ -375,16 +336,6 @@ trait ContainerService extends MetaController {
     val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
     log.debug("Provider-ID : " + pid)
     UUID.fromString(pid)
-  }
-
-  def findWorkspaceEnvironment(envId: UUID) = Try {
-    val p = ResourceFactory.findParent(ResourceIds.Workspace, envId) getOrElse {
-      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$envId'.")
-    }
-    val c = ResourceFactory.findById(ResourceIds.Environment, envId) getOrElse {
-      throw new ResourceNotFoundException(s"Environment with ID '$envId' not found.")
-    }
-    (p -> c)
   }
 
 }

@@ -18,11 +18,11 @@ object Resource {
 
   private[this] val log = Logger(this.getClass)
   
-  private[api] val Fqon       = "fqon"
-  private[api] val TargetType = "targetType"
-  private[api] val TargetId   = "targetId"
-  private[api] val ParentType = "parentType"
-  private[api] val ParentId   = "parentId"
+  val Fqon       = "fqon"
+  val TargetType = "targetType"
+  val TargetId   = "targetId"
+  val ParentType = "parentType"
+  val ParentId   = "parentId"
   
   private[api] val polymorphic = Seq("providers", "rules")
   

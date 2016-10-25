@@ -77,7 +77,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get
       mockMarathonClient = mock[MarathonClient]
-      containerService.appComponents(testEID) returns Try((testWork,testEnv))
+      containerService.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
       containerService.marathonProvider(testPID) returns testProvider
       containerService.marathonClient(testProvider) returns mockMarathonClient
       t
@@ -158,6 +158,63 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
   }
 
   "ContainerController" should {
+
+    "get a container via the ContainerService interface" in new TestApplication {
+      val testProps = ContainerSpec(
+        name = "",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testContainerName = "test-container"
+      val testContainer = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        ))
+      ) flatMap ContainerSpec.fromResourceInstance get
+      val jsResponse = Json.obj(
+      )
+      containerService.findEnvironmentContainerByName(
+        "root",
+        testEnv.id,
+        testContainerName
+      ) returns Future(Some(testContainer))
+
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${testContainer.id.get}")
+
+      val Some(result) = route(request)
+
+      contentAsJson(result) must equalTo(jsResponse)
+      status(result) must equalTo(OK)
+
+      there was one(resourceController).getResources("root", s"environments/${testEID}/containers/${testContainer.id.get}")
+      there was one(containerService).findEnvironmentContainerByName("root", testEnv.id, testContainerName)
+    }
 
     "list containers via the ContainerService interface" in new TestApplication {
       val testProps = ContainerSpec(
@@ -277,6 +334,10 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       there was one(containerController).createContainer(anyString, any[UUID])
       there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
+
+      val getRequest = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${createdContainer.id.get}")
+      val Some(getResult) = route(getRequest)
+      status(getResult) must equalTo(OK)
     }
 
     "delete containers using the ContainerService interface" in new TestApplication {

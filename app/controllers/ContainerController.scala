@@ -42,7 +42,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
    */
   def createContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
-    containerService.appComponents(environment) match {
+    containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => Future { HandleExceptions(e) }
       case Success((wrk,env)) => {
 
@@ -82,7 +82,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
 
     val org = fqid(fqon)
 
-    containerService.appComponents(environment) match {
+    containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => Future.successful(HandleExceptions(e))
       case Success((wrk, env)) => {
         

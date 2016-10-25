@@ -50,7 +50,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
    */
   def listDeployments(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     val provider = containerService.marathonProvider(providerId)
-    containerService.appComponents(environment) match {
+    containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) =>
         containerService.marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrk.name, env.name) map { Ok(_) }
@@ -70,7 +70,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
   def listApps(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.appComponents(environment) match {
+    containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
         // TODO: Needs a lot of error handling
@@ -91,22 +91,16 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
   def getApp(fqon: String, environment: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
-    containerService.appComponents(environment) match {
-      case Failure(e) => throw e
-      case Success((wrk,env)) => {
-        // TODO: Needs a lot of error handling
-        containerService.findEnvironmentContainerByName(fqon, workspace = wrk, environment = env, containerName = appId) flatMap {
-          _ match {
-            case Some(metaContainer) => Future.fromTry(
-              metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
-                appInfo => Ok( Json.obj("app" -> appInfo) )
-              )
+    containerService.findEnvironmentContainerByName(fqon, environment = environment, containerName = appId) flatMap {
+      _ match {
+        case Some(metaContainer) => Future.fromTry(
+          metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
+            appInfo => Ok( Json.obj("app" -> appInfo) )
             )
-            case None => Future.successful(NotFound(Json.obj(
-              "message" -> s"App '/${appId}' does not exist"
-            )))
-          }
-        }
+        )
+        case None => Future.successful(NotFound(Json.obj(
+          "message" -> s"App '/${appId}' does not exist"
+        )))
       }
     }
   }
@@ -115,33 +109,27 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     * DELETE /{fqon}/environments/{eid}/providers/{pid}/v2/apps/{appId}
     */
   def deleteApp(fqon: String, environment: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
-    containerService.appComponents(environment) match {
-      case Failure(e) => throw e
-      case Success((wrk,env)) => {
-        // TODO: Needs a lot of error handling
-        for {
-          container <- containerService.findEnvironmentContainerByName(fqon, workspace = wrk, environment = env, containerName = appId)
-          response <- container match {
-            case Some(c) => containerService.deleteContainer(c.resource.get) map {
-              _ => Ok(Json.obj(
-                "deployment" -> UUID.randomUUID(),
-                "version" -> DateTime.now(DateTimeZone.UTC).toString
-              ))
-            }
-            case None => Future.successful(NotFound(Json.obj(
-              "message" -> s"App '/${appId}' does not exist"
-            )))
-          }
-        } yield response
+    for {
+      container <- containerService.findEnvironmentContainerByName(fqon, environment = environment, containerName = appId)
+      response <- container match {
+        case Some(c) => containerService.deleteContainer(c.resource.get) map {
+          _ => Ok(Json.obj(
+            "deployment" -> UUID.randomUUID(),
+            "version" -> DateTime.now(DateTimeZone.UTC).toString
+          ))
+        }
+        case None => Future.successful(NotFound(Json.obj(
+          "message" -> s"App '/${appId}' does not exist"
+        )))
       }
-    }
+    } yield response
   }
 
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
   def createApp(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.appComponents(environment) match {
+    containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
         val provider = containerService.marathonProvider(providerId)

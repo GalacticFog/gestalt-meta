@@ -77,7 +77,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       testProvider = createMarathonProvider(testEID, "test-provider").get
       mockMarathonClient = mock[MarathonClient]
       val cs = containerService
-      cs.appComponents(testEID) returns Try((testWork,testEnv))
+      cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
       cs.marathonProvider(testPID) returns testProvider
       cs.marathonClient(testProvider) returns mockMarathonClient
       t
@@ -245,8 +245,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
       containerService.findEnvironmentContainerByName(
         meq("root"),
-        meq(testWork),
-        meq(testEnv),
+        meq(testEnv.id),
         meq("nonexistent")
       ) returns Future(None)
 
@@ -261,8 +260,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
       containerService.findEnvironmentContainerByName(
         meq("root"),
-        meq(testWork),
-        meq(testEnv),
+        meq(testEnv.id),
         meq("nonexistent")
       ) returns Future(None)
 
@@ -393,8 +391,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       )
       containerService.findEnvironmentContainerByName(
         meq("root"),
-        meq(testWork),
-        meq(testEnv),
+        meq(testEnv.id),
         meq("test-container")
       ) returns Future(Some(testContainer))
 
@@ -444,8 +441,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       ).flatMap(ContainerSpec.fromResourceInstance).get
       containerService.findEnvironmentContainerByName(
         meq("root"),
-        meq(testWork),
-        meq(testEnv),
+        meq(testEnv.id),
         meq("test-container")
       ) returns Future(Some(testContainer))
       containerService.deleteContainer(

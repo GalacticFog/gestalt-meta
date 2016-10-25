@@ -29,6 +29,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     } yield apps
   }
 
+  // TODO: update this per below to account for marathon API in DCOS 1.8+
   def listApplicationsInEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     // v0.16.0 and later will have the expansion on /v2/groups to get the counts for group.apps, but 0.15.x doesn't have it
