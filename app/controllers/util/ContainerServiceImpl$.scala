@@ -4,6 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
 import com.galacticfog.gestalt.meta.auth.Actions
+import play.api.Logger
 
 import play.api.libs.ws.WS
 import play.api.Play.current
@@ -26,8 +27,6 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, Resource, ResourcePath}
 import com.galacticfog.gestalt.events._
 
 trait ContainerService extends MetaController {
-
-  //private val log = Logger(this.getClass)
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
@@ -81,10 +80,19 @@ trait ContainerService extends MetaController {
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
     }
-    val externalId = container.properties.get("external_id")
+    // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
+    val maybeExternalId = for {
+      props <- container.properties
+      eid <- props.get("external_id")
+    } yield eid
 
-    marathonClient(provider).deleteApplication(externalId) map { js =>
-      logger.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
+    maybeExternalId match {
+      case Some(eid) => marathonClient(provider).deleteApplication(eid) map { js =>
+        log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
+      }
+      case None =>
+        log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
+        Future.successful(())
     }
   }
 
@@ -120,18 +128,25 @@ trait ContainerService extends MetaController {
     }
   }
 
-  def listEnvironmentContainers(fqon: String, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Future[Seq[ContainerSpec]] = {
+  def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[ContainerSpec]] = {
     // make a best effort to get updated stats from the Marathon provider and to update the resource with them
-    val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, workspace.name, environment.name)
+    val env = ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse throwBadRequest("UUID did not correspond to an environment")
+    val wrk = (for {
+      props <- env.properties
+      parentId <- props.get("workspace")
+      parentUUID <- Try{UUID.fromString(parentId)}.toOption
+      workspaceResource <- ResourceFactory.findById(ResourceIds.Workspace, parentUUID)
+    } yield workspaceResource) getOrElse throwBadRequest("could not find parent workspace for environment")
+    val appGroupPrefix = MarathonClient.metaContextToMarathonGroup(fqon, wrk.name, env.name)
 
-    val containerSpecsByProvider = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id) flatMap {
+    val containerSpecsByProvider = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id) flatMap {
       ContainerSpec.fromResourceInstance(_).toOption
     } groupBy ( _.provider.id )
 
     val fStatsFromAllRelevantProviders = Future.traverse(containerSpecsByProvider.keys) { pid =>
       val pidAndStats = for {
-        stats <- marathonClient(marathonProvider(pid)).listApplicationsInEnvironment(fqon, workspace.name, environment.name)
-        statsMap = stats map (stat => stat.id -> stat) toMap
+        stats <- marathonClient(marathonProvider(pid)).listApplicationsInEnvironment(fqon, wrk.name, env.name)
+        statsMap = stats map (stat => stat.id.stripPrefix("/") -> stat) toMap
       } yield (pid -> statsMap)
       futureToFutureTry(pidAndStats)
     } map (_ collect {case Success(x) => x} toMap)
@@ -170,15 +185,20 @@ trait ContainerService extends MetaController {
       val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
       log.debug("Creating Container in Marathon:\n" + Json.prettyPrint(marathonAppCreatePayload))
       // TODO: build Meta resource first, then update with properties from the marathon deployment
-      marathonClient(provider).launchContainer_marathon_v2(
+      // TODO: put external_id into properties
+      marathonClient(provider).launchApp(
         fqon = fqon,
         wrkName = workspace.name,
         envName = environment.name,
+        name = containerSpec.name,
         marPayload = marathonAppCreatePayload
       ) flatMap { resp =>
         val marathonAppId = (resp \ "id").as[String]
+        val updatedResource = upsertProperties(containerSpec.resource.get,
+          "external_id" -> marathonAppId
+        )
         Future.fromTry(ResourceFactory.create(ResourceIds.User, user.account.id)(
-          containerSpec.resource.get, Some(environment.id)
+          updatedResource, Some(environment.id)
         ) flatMap {
           ContainerSpec.fromResourceInstance
         })

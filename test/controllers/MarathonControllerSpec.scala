@@ -103,7 +103,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
 
     "support Marathon GET /v2/deployments" in new TestApplication {
       val js = Json.arr()
-      mockMarathonClient.listDeploymentsAffectingEnvironment_marathon_v2(meq(testFQON), meq(testWork.name), meq(testEnv.name))(any[ExecutionContext]) returns Future.successful(js)
+      mockMarathonClient.listDeploymentsAffectingEnvironment(meq(testFQON), meq(testWork.name), meq(testEnv.name))(any[ExecutionContext]) returns Future.successful(js)
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
 
       val request = fakeAuthRequest(GET, s"/${testFQON}/environments/${testEID}/providers/${testPID}/v2/deployments")
@@ -232,8 +232,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       )
       containerService.listEnvironmentContainers(
         meq("root"),
-        meq(testWork),
-        meq(testEnv)
+        meq(testEnv.id)
       ) returns Future(Seq(testContainer))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps")

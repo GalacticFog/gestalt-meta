@@ -225,7 +225,7 @@ object Resource {
     }
   }
   
-  protected[api] def mapListPathData(path: String): Map[String,String] = {
+  def mapListPathData(path: String): Map[String,String] = {
     
     val cmps = components(path)
 

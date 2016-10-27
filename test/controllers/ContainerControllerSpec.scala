@@ -258,8 +258,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       )
       containerService.listEnvironmentContainers(
         "root",
-        testWork,
-        testEnv
+        testEnv.id
       ) returns Future(Seq(testContainer))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers")
@@ -270,7 +269,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       status(result) must equalTo(OK)
 
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers")
-      there was one(containerService).listEnvironmentContainers("root", testWork, testEnv)
+      there was one(containerService).listEnvironmentContainers("root", testEnv.id)
     }
 
     "create containers using the ContainerService interface" in new TestApplication {

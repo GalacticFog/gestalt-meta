@@ -53,7 +53,9 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) =>
-        containerService.marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrk.name, env.name) map { Ok(_) }
+        // TODO: figure out what we want to do here: the entries returned below need filtering
+        // containerService.marathonClient(provider).listDeploymentsAffectingEnvironment_marathon_v2(fqon, wrk.name, env.name) map { Ok(_) }
+        Future.successful(Ok(Json.arr()))
     }
   }
 
@@ -70,21 +72,15 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
   def listApps(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.findWorkspaceEnvironment(environment) match {
-      case Failure(e) => throw e
-      case Success((wrk,env)) => {
-        // TODO: Needs a lot of error handling
-        for {
-          metaContainers <- containerService.listEnvironmentContainers(fqon, workspace = wrk, environment = env)
-          marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(spec = mcs, instances = Some(Seq()), deploymentIDs = None))
-          marv2Containers <- Future.fromTry(
-            Try{marv2ContainerTries map (_.get)}
-          )
-        } yield Ok(Json.toJson(Json.obj(
-          "apps" -> marv2Containers
-        )))
-      }
-    }
+    for {
+      metaContainers <- containerService.listEnvironmentContainers(fqon, environment)
+      marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(spec = mcs, instances = Some(Seq()), deploymentIDs = None))
+      marv2Containers <- Future.fromTry(
+        Try{marv2ContainerTries map (_.get)}
+      )
+    } yield Ok(Json.toJson(Json.obj(
+      "apps" -> marv2Containers
+    )))
   }
 
   /**

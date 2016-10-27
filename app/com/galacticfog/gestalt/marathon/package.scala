@@ -381,7 +381,6 @@ package object marathon {
 
   /**
    * Convert Meta Container JSON to Marathon App object.
-   * TODO: convert this to a Future[AppUpdate]... wait, what? why?
    */
   def toMarathonLaunchPayload(props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
@@ -480,7 +479,7 @@ package object marathon {
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
     AppUpdate(
-      id = Some("/" + props.name.stripPrefix("/")),
+      id = None,
       container = Some(container),
       constraints = if (props.constraints.nonEmpty) Some(props.constraints.map(
         _.split(":") match {

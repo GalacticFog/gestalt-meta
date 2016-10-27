@@ -361,8 +361,9 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
      */
     val (beforeOps, afterOps) = sansPost(operations)
 
+    val pre = evaluate(beforeOps, Continue)
+
     for {
-      pre <- Future{evaluate(beforeOps, Continue)}
       result <- pre.toTry match {
         case Success(state) => f( state )
         case Failure(error) => Future.failed(error)
