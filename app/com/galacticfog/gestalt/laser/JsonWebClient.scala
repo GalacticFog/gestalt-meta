@@ -29,12 +29,11 @@ object JsonWebClient {
   def base64(s: String): String = Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8))
 
   def apply(config: HostConfig) = {
-    val auth = config.creds.map ( creds => "Authorization" -> base64("%s:%s".format(creds.username, creds.password)) )
-    new JsonWebClient(config, auth)
+    new JsonWebClient(config)
   }
 }
 
-class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = None) {
+class JsonWebClient(config: HostConfig) {
   
   implicit lazy val apiResponseFormat = Json.format[ApiResponse]
   
@@ -84,12 +83,10 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
   def request(resource: String) = {
     val res = if (resource.trim.startsWith("/")) resource.trim else "/" + resource.trim
     val url = baseUrl + res
-
-    val ws = if (authHeader.isDefined) {
-        val auth = authHeader.get
-        client.url(url).withHeaders(auth._1 -> s"Basic ${auth._2}")
-    } else client.url(url)
-    
+    val ws = config.creds match {
+      case Some(c: APICredential) => c.addHeader(client.url(url))
+      case None => client.url(url)
+    }
     ws.withRequestTimeout(timeout * 1000)
   }
 

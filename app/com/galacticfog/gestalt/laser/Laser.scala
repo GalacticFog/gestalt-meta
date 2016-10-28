@@ -113,10 +113,13 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   private[laser] def configureClient(config: HostConfig) = {
-    val authHeader = if (key.isDefined && secret.isDefined) {
-      Option("Authorization" -> base64("%s:%s".format(key.get, secret.get)))
-    } else None
-    new JsonWebClient(config, authHeader)
+    
+	val authconfig = if (key.isDefined && secret.isDefined) {
+       HostConfig(config.protocol, config.host, config.port, config.timeout, Some(BasicCredential(key.get, secret.get)))
+    } else {
+       config 
+    }
+    new JsonWebClient(authconfig)
   }  
   
   private[laser] def get[T](client: JsonWebClient, resource: String, expected: Seq[Int])
