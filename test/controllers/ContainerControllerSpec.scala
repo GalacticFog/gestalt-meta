@@ -143,7 +143,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "image" -> testProps.image
         ))
       ).get
-      ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps.copy(resource = Some(createdResource)))
+      ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps)
     }
 
     "throw an exception if attempting to create from non-Container resource" in new TestApplication {
@@ -196,23 +196,24 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ) flatMap ContainerSpec.fromResourceInstance get
+      ).get
+      val testContainerSpec = ContainerSpec.fromResourceInstance(testContainer).get
       val jsResponse = Json.obj(
       )
       containerService.findEnvironmentContainerByName(
         "root",
         testEnv.id,
         testContainerName
-      ) returns Future(Some(testContainer))
+      ) returns Future(Some(testContainer -> Seq.empty))
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${testContainer.id.get}")
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${testContainer.id}")
 
       val Some(result) = route(request)
 
       contentAsJson(result) must equalTo(jsResponse)
       status(result) must equalTo(OK)
 
-      there was one(resourceController).getResources("root", s"environments/${testEID}/containers/${testContainer.id.get}")
+      there was one(resourceController).getResources("root", s"environments/${testEID}/containers/${testContainer.id}")
       there was one(containerService).findEnvironmentContainerByName("root", testEnv.id, testContainerName)
     }
 
@@ -253,13 +254,13 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ) flatMap ContainerSpec.fromResourceInstance get
+      ).get
       val jsResponse = Json.obj(
       )
       containerService.listEnvironmentContainers(
         "root",
         testEnv.id
-      ) returns Future(Seq(testContainer))
+      ) returns Future(Seq(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers")
 
@@ -318,7 +319,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         meq(testEnv),
         any[AuthAccountWithCreds],
         any[ContainerSpec] /* TODO: meq(testProps) */
-      ) returns Future(createdContainer)
+      ) returns Future(createdResource -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(
         Output.renderInstance(createdResource)
@@ -326,7 +327,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       val Some(result) = route(request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
-      (json \ "id").asOpt[UUID] must beSome(createdContainer.id.get)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
       (json \ "name").asOpt[String] must beSome(testContainerName)
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
@@ -334,7 +335,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       there was one(containerController).createContainer(anyString, any[UUID])
       there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
 
-      val getRequest = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${createdContainer.id.get}")
+      val getRequest = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${createdResource.id}")
       val Some(getResult) = route(getRequest)
       status(getResult) must equalTo(OK)
     }
@@ -394,7 +395,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       there was one(deleteController).hardDeleteResource("root", s"environments/${testEID}/containers/${createdResource.id}")
       there was one(containerService).deleteContainer(
         argThat(
-          (c: ResourceLike) => c.id == createdResource.id && c.properties.flatMap(_.get("external_id")).contains(extId)
+          (r: GestaltResourceInstance) => r.id == createdResource.id && r.properties.flatMap(_.get("external_id")).contains(extId)
         )
       )
     }

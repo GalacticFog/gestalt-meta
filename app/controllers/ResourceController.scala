@@ -71,11 +71,11 @@ class ResourceController(containerService: ContainerService) extends Authorizati
       Await.result(
         containerService.findEnvironmentContainerByName(fqon, eid, r.name),
         5 seconds
-      ) flatMap (_.resource)
+      ) map (_._1)
     }
   }
 
-  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
       val mapPathData = Resource.mapListPathData(path.path)
@@ -84,9 +84,9 @@ class ResourceController(containerService: ContainerService) extends Authorizati
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
       Await.result(
-        containerService.listEnvironmentContainers(fqon, eid) map (_.flatMap(_.resource)),
+        containerService.listEnvironmentContainers(fqon, eid),
         5 seconds
-      ) toList
+      ) map (_._1)
     } else Resource.listFromPath(path.path)
   }
 

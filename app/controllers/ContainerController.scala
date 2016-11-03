@@ -69,7 +69,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
             containerSpec = containerSpec,
             user = request.identity
           )
-        } yield Created(Output.renderInstance(container.resource.get))
+        } yield Created(Output.renderInstance(container._1))
 
         fCreated recover {case err: Throwable => HandleExceptions(err)}
       }

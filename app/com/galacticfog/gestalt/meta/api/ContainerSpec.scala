@@ -2,9 +2,10 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data
+import com.galacticfog.gestalt.data.{ResourceState, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.api.errors.BadRequestException
 import org.joda.time.DateTime
 import play.api.libs.json._
@@ -33,17 +34,9 @@ case class ContainerSpec(name: String = "",
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
-                         resource: Option[GestaltResourceInstance] = None,
-                         external_id: Option[String] = None) extends Spec {
-
-  def id: Option[UUID] = resource map (_.id)
-
-  def created: Option[DateTime] = for {
-    ri <- resource
-    c <- ri.created
-    ts <- c.get("timestamp")
-    parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
-  } yield parsedTimestamp
+                         external_id: Option[String] = None,
+                         created: Option[DateTime] = None
+                        ) extends Spec {
 
 }
 
@@ -82,8 +75,37 @@ case object ContainerSpec extends Spec {
                          timeout_seconds: Int = 10,
                          max_consecutive_failures: Int = 3)
 
+  def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
+    name = spec.name,
+    resource_type = Some(ResourceIds.Container),
+    description = None,
+    resource_state = None,
+    properties = Some(
+      Map[String,JsValue](
+      "container_type" -> JsString(spec.container_type),
+      "image" -> JsString(spec.image),
+      "provider" -> Json.toJson(spec.provider),
+      "cpus" -> JsNumber(spec.cpus),
+      "memory" -> JsNumber(spec.memory),
+      "disk" -> JsNumber(spec.disk),
+      "num_instances" -> JsNumber(spec.num_instances)
+    ) ++ Seq[Option[(String,JsValue)]](
+      spec.cmd map ("cmd" -> JsString(_)),
+      spec.accepted_resource_roles map ("accepted_resource_roles" -> Json.toJson(_)),
+      status map ("status" -> JsString(_))
+    ).flatten.toMap
+    )
+  ) // TODO: cgbaker: missing a bunch of properties here; finish them
+
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
+
+    val created: Option[DateTime] = for {
+      c <- metaContainerSpec.created
+      ts <- c.get("timestamp")
+      parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
+    } yield parsedTimestamp
+
     val attempt = for {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
@@ -127,8 +149,8 @@ case object ContainerSpec extends Spec {
       labels = labels getOrElse Map(),
       env = env getOrElse Map(),
       user = user,
-      resource = Some(metaContainerSpec),
-      external_id = external_id
+      external_id = external_id,
+      created = created
     )
     attempt.recoverWith {
       case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))

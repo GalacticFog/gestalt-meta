@@ -29,7 +29,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
     * Returns the raw json from Marathon
    **/
   def listApplicationsInEnvironmentJSON(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[JsObject]] = {
-    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
+    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
     val allApps = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks").get()
     allApps map { marResp =>
       marResp.status match {
@@ -55,7 +55,6 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   def listDeploymentsAffectingEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName)
     val allDeployments = client.url(s"${marathonAddress}/v2/deployments?embed=group.apps&embed=group.apps.deployments").get()
     allDeployments map { marResp =>
       marResp.status match {
@@ -70,7 +69,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
 
   def launchApp(fqon: String, wrkName: String, envName: String, name: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     Logger.info(s"new payload:\n${Json.prettyPrint(marPayload)}")
-    val appId = (MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName) + "/" + name).stripPrefix("/")
+    val appId = "/" + MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName).stripPrefix("/").stripSuffix("/") + "/" + name.stripPrefix("/")
     Logger.debug("posting to " + appId)
     val payloadWithId = marPayload ++ Json.obj("id" -> appId)
     client.url(s"${marathonAddress}/v2/apps").post(payloadWithId) map { marResp =>
@@ -118,7 +117,7 @@ case object MarathonClient {
 
   def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
-          service <- (marApp \ "id").asOpt[String]
+          appId <- (marApp \ "id").asOpt[String]
           ctype = (marApp \ "container" \ "type").asOpt[String] getOrElse "UNKNOWN"
           image = (marApp \ "container" \ "docker" \ "image").asOpt[String] getOrElse ""
           instances <- (marApp \ "instances").asOpt[Int]
@@ -140,7 +139,7 @@ case object MarathonClient {
     } yield ContainerStats(
       status = status,
       containerType = ctype,
-      id = service,
+      id = appId,
       cpus = cpus,
       memory = memory,
       image = image,
@@ -154,7 +153,7 @@ case object MarathonClient {
   }
 
   def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {
-    (fqon.toLowerCase.split('.').foldLeft("")(_ + "/" + _) + "/" + wrkName.replace(".","").replace("/","-").toLowerCase + "/" + envName.replace(".","").replace("/","-") + "/").replace(" ","-").toLowerCase
+    (fqon.toLowerCase.split('.').foldLeft("")(_ + "/" + _) + "/" + wrkName.replace(".","").replace("/","-").toLowerCase + "/" + envName.replace(".","").replace("/","-")).replace(" ","-").toLowerCase
   }
 
 }

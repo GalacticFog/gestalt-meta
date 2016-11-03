@@ -124,7 +124,7 @@ class DeleteController(containerService: ContainerService) extends Authorization
     Security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteExternalContainer[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
+  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     val _ = Await.result(
       containerService.deleteContainer(res),
       5 seconds

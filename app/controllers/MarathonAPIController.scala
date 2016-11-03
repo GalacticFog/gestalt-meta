@@ -2,6 +2,7 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
 import org.joda.time.{DateTimeZone, DateTime}
 import play.api.mvc._
@@ -49,7 +50,6 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
    */
   def listDeployments(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    val provider = containerService.marathonProvider(providerId)
     containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) =>
@@ -74,12 +74,17 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
   def listApps(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     for {
       metaContainers <- containerService.listEnvironmentContainers(fqon, environment)
-      marv2ContainerTries = metaContainers map (mcs => metaToMarathonAppInfo(spec = mcs, instances = Some(Seq()), deploymentIDs = None))
-      marv2Containers <- Future.fromTry(
-        Try{marv2ContainerTries map (_.get)}
-      )
+      marv2ContainerTries = metaContainers map { case (cRes,cInsts) => metaToMarathonAppInfo(
+        spec = ContainerSpec.fromResourceInstance(cRes).get,
+        instances = Some(cInsts),
+        deploymentIDs = None
+      ) }
+      successes = marv2ContainerTries collect {case Success(appInfo) => appInfo}
+      _ = marv2ContainerTries collect {case Failure(ex) => ex} foreach {
+        ex => log.error("Error converting Container resource to Marathon AppInfo",ex)
+      }
     } yield Ok(Json.toJson(Json.obj(
-      "apps" -> marv2Containers
+      "apps" -> successes
     )))
   }
 
@@ -89,10 +94,12 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
   def getApp(fqon: String, environment: UUID, providerId: UUID, appId: String) = MarAuth(fqon).async { implicit request =>
     containerService.findEnvironmentContainerByName(fqon, environment = environment, containerName = appId) flatMap {
       _ match {
-        case Some(metaContainer) => Future.fromTry(
-          metaToMarathonAppInfo(metaContainer, instances = Some(Seq()), deploymentIDs = None) map (
-            appInfo => Ok( Json.obj("app" -> appInfo) )
-            )
+        case Some((metaContainerResource,containerInstances)) => Future.fromTry(
+          metaToMarathonAppInfo(
+            spec = ContainerSpec.fromResourceInstance(metaContainerResource).get,
+            instances = Some(containerInstances),
+            deploymentIDs = None
+          ) map ( appInfo => Ok( Json.obj("app" -> appInfo) ) )
         )
         case None => Future.successful(NotFound(Json.obj(
           "message" -> s"App '/${appId}' does not exist"
@@ -108,7 +115,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
     for {
       container <- containerService.findEnvironmentContainerByName(fqon, environment = environment, containerName = appId)
       response <- container match {
-        case Some(c) => containerService.deleteContainer(c.resource.get) map {
+        case Some((r,_)) => containerService.deleteContainer(r) map {
           _ => Ok(Json.obj(
             "deployment" -> UUID.randomUUID(),
             "version" -> DateTime.now(DateTimeZone.UTC).toString
@@ -129,7 +136,6 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
       case Failure(e) => throw e
       case Success((wrk,env)) => {
         val provider = containerService.marathonProvider(providerId)
-        // TODO: Needs a lot of error handling
         for {
           body <- Future.fromTry {
             request.body.asJson.fold[Try[JsValue]](Failure(BadRequestException("requires json body")))(Success(_))
@@ -144,15 +150,15 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
               case Some(name) => Success((name,cspec))
             }
           })
-          metaContainer <- containerService.launchContainer(
+          (metaContainer,instances) <- containerService.launchContainer(
             fqon = fqon,
             workspace = wrk,
             environment = env,
             user = request.identity,
             containerSpec = props)
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
-            spec = metaContainer,
-            instances = Some(Seq()),
+            spec = ContainerSpec.fromResourceInstance(metaContainer).get,
+            instances = Some(instances),
             deploymentIDs = None
           ))
         } yield Created(Json.toJson(marv2Container))

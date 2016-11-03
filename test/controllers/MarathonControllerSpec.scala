@@ -3,7 +3,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.Instance
-import com.galacticfog.gestalt.data.models.ResourceLike
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
@@ -149,7 +149,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ) flatMap ContainerSpec.fromResourceInstance get
+      ).get
+      val testContainerSpec = ContainerSpec.fromResourceInstance(testContainer).get
       val jsResponse = Json.parse(
         s"""
            |{
@@ -224,7 +225,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |    },
            |    "uris": [],
            |    "user": null,
-           |    "version": "${testContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
+           |    "version": "${testContainerSpec.created.get.toDateTime(DateTimeZone.UTC).toString}"
            |}
            |  ]
            |}
@@ -233,7 +234,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       containerService.listEnvironmentContainers(
         meq("root"),
         meq(testEnv.id)
-      ) returns Future(Seq(testContainer))
+      ) returns Future(Seq(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps")
       val Some(result) = route(request)
@@ -308,7 +309,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ) flatMap ContainerSpec.fromResourceInstance get
+      ).get
+      val testContainerSpec = ContainerSpec.fromResourceInstance(testContainer).get
       val jsResponse = Json.parse(
         s"""
            |{
@@ -383,7 +385,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |    },
            |    "uris": [],
            |    "user": null,
-           |    "version": "${testContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
+           |    "version": "${testContainerSpec.created.get.toDateTime(DateTimeZone.UTC).toString}"
            |}
            |}
         """.stripMargin
@@ -392,7 +394,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("root"),
         meq(testEnv.id),
         meq("test-container")
-      ) returns Future(Some(testContainer))
+      ) returns Future(Some(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
       val Some(result) = route(request)
@@ -437,14 +439,14 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ).flatMap(ContainerSpec.fromResourceInstance).get
+      ).get
       containerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testEnv.id),
         meq("test-container")
-      ) returns Future(Some(testContainer))
+      ) returns Future(Some(testContainer -> Seq.empty))
       containerService.deleteContainer(
-        any[ResourceLike]
+        any[GestaltResourceInstance]
       ) returns Future(())
 
       val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
@@ -508,7 +510,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
         ))
-      ) flatMap ContainerSpec.fromResourceInstance get
+      ).get
+      val createdContainerSpec = ContainerSpec.fromResourceInstance(createdContainer).get
       val jsResponse = Json.parse(
         s"""
           |{
@@ -581,7 +584,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |    },
           |    "uris": [],
           |    "user": null,
-          |    "version": "${createdContainer.created.get.toDateTime(DateTimeZone.UTC).toString}"
+          |    "version": "${createdContainerSpec.created.get.toDateTime(DateTimeZone.UTC).toString}"
           |}
         """.stripMargin
       )
@@ -591,7 +594,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq(testEnv),
         any[AuthAccountWithCreds],
         meq(testProps)
-      ) returns Future(createdContainer)
+      ) returns Future(createdContainer -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/providers/${testPID}/v2/apps").withBody(requestBody)
       val Some(result) = route(request)
