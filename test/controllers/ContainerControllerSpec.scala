@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
-import org.joda.time.DateTimeZone
+import org.joda.time.{DateTime, DateTimeZone}
 import org.specs2.execute.{Result, AsResult}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.specification._
@@ -73,6 +73,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
     override def around[T: AsResult](t: => T): Result = super.around {
       var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      Meta.setNewEnvironmentEntitlements(dummyRootOrgId, tE.id, AuthAccountWithCreds(authResponse.account, Seq.empty, Seq.empty, creds, dummyRootOrgId), tW.id)
       testWork = tW
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get
@@ -143,7 +144,10 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "image" -> testProps.image
         ))
       ).get
-      ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps)
+      val created = DateTime.parse(createdResource.created.get("timestamp"))
+      ContainerSpec.fromResourceInstance(createdResource) must beSuccessfulTry(testProps.copy(
+        created = Some(created)
+      ))
     }
 
     "throw an exception if attempting to create from non-Container resource" in new TestApplication {
@@ -255,7 +259,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "network" -> testProps.network.get
         ))
       ).get
-      val jsResponse = Json.obj(
+      val jsResponse = Json.arr(
       )
       containerService.listEnvironmentContainers(
         "root",

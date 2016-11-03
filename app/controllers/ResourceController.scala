@@ -67,7 +67,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
-      val eid = ResourceFactory.parseId(r.properties.get("parent")) getOrElse throwBadRequest("could not determine environment parent for container")
+      val eid = r.properties.flatMap(_.get("parent")).flatMap(ResourceFactory.parseId) getOrElse throwBadRequest("could not determine environment parent for container")
       Await.result(
         containerService.findEnvironmentContainerByName(fqon, eid, r.name),
         5 seconds
