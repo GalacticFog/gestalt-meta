@@ -39,6 +39,10 @@ import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import play.api.Logger
 
 
+/**
+ * @tparam A type of securityClient
+ * @tparam B type of Account
+ */
 class GroupMethods[A,B](secProvider: SecurityProvider[A,B]) {
   
   private val log = Logger(this.getClass)

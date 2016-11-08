@@ -19,11 +19,13 @@ import play.api.Logger
 import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.ResourcePatch
-
+import com.galacticfog.gestalt.laser.JsonWebClient
+import com.galacticfog.gestalt.laser._
 
 object LambdaMethods {
   
   private val log = Logger(this.getClass)
+//  private[util] val client = new LambdaProviderImpl(webClient)
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
@@ -93,7 +95,7 @@ object LambdaMethods {
   /**
    * Update a Lambda both in Meta and gestalt-lambda.
    */
-  private[controllers] def patchGestaltLambda(r: GestaltResourceInstance, patch: JsValue) = Try {
+  def patchGestaltLambda(r: GestaltResourceInstance, patch: JsValue) = Try {
 
     @scala.annotation.tailrec
     def doUpdate(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {

@@ -39,10 +39,9 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 
 trait PatchController extends Authorization {
   
-  
   protected[controllers] val secProvider = new SecurityProviderImpl(securityClient)
   
-  /*
+  /* 
    * Function to transform a PatchDocument
    */
   type PatchTransform = (PatchDocument => PatchDocument)
@@ -52,9 +51,15 @@ trait PatchController extends Authorization {
    */
   type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   
-
-  val transforms: Map[UUID, PatchTransform] = Map(
+  
+  private[controllers] val transforms: Map[UUID, PatchTransform] = Map(
     ResourceIds.Environment -> transformEnvironmentPatch)
+  
+  
+  private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
+    ResourceIds.Group -> new GroupMethods(secProvider).groupPatch,
+    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler)    
+  
   
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     log.debug(s"patchResource($fqon, $path)")
@@ -71,7 +76,6 @@ trait PatchController extends Authorization {
         case Failure(e) => HandleExceptions(e)
         case Success(r) => Ok(RenderSingle(r))
       }
-      
     }
   }
 
@@ -107,10 +111,8 @@ trait PatchController extends Authorization {
       }
     }
   }
-
-  private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
-    ResourceIds.Group -> new GroupMethods(secProvider).groupPatch)
-
+  
+  
   private[controllers] def defaultResourcePatch(
     resource: GestaltResourceInstance,
     patch: PatchDocument,
@@ -120,44 +122,11 @@ trait PatchController extends Authorization {
   }
   
   
-  /**
-   * 
-   * Add one or more users to a group.
-   * 
-   */
-//  def patchGroupUsers(fqon: String, group: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    Future {
-//      
-////      /*ResourceFactory.findById*/
-////      // Parse/validate Patch ops and create list of user ids
-////      val ops   = JsonUtil.safeParse[Seq[PatchOp]](request.body)
-////      val opmap = opsToMap(ops, allowed = Seq(PatchOps.Add, PatchOps.Remove))
-////      val ids   = ops map { i => UUID.fromString(i.value.get.as[String]) }
-////      
-////      // Make sure all the users given in the patch exist in Meta
-////      val users = getValidatedUsers(ids) match {
-////        case Right(users) => users
-////        case Left(errs)   => 
-////          throw new BadRequestException("The following user(s) not found: " + errs.mkString(","))
-////      }
-////      
-////      // Apply the Patch ops
-////      applyGroupUserOps(group, opmap map { o => 
-////        (o._1 -> (o._2 map ( p => UUID.fromString(p.value.get.as[String]) ) ) )
-////      }) match {
-////        case Failure(error) => HandleExceptions(error)
-////        case Success(users) => Ok(Json.toJson(users))
-////      }
-//      
-//    }
-//  }
-  
   /*
+   * 
    * Patch Transformers
+   * 
    */
-  
-  
-  
   private def transformEnvironmentPatch(patch: PatchDocument) = {
     
     def go(ops: Seq[PatchOp], acc: Seq[PatchOp]): Seq[PatchOp] = {
@@ -173,7 +142,7 @@ trait PatchController extends Authorization {
       }
     }
     PatchDocument(go(patch.ops, Seq.empty):_*)
-  }  
-  
+  }
+
 }
 

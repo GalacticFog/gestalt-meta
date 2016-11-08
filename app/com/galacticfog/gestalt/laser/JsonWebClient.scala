@@ -19,13 +19,13 @@ import play.api.libs.ws.ning.NingWSClient
 import java.net.URL
 
 import com.galacticfog.gestalt.meta.api.sdk._
-
+import com.fasterxml.jackson.core.JsonParseException
 
 case class ApiResponse(status: Int, output: Option[JsValue], error: Option[String] = None)
 
 object JsonWebClient {
   val ALL_GOOD = Seq((200 to 299):_*)
-
+  
   def base64(s: String): String = Base64.getEncoder().encodeToString(s.getBytes(StandardCharsets.UTF_8))
 
   def apply(config: HostConfig) = {
@@ -93,8 +93,6 @@ class JsonWebClient(config: HostConfig, authHeader: Option[(String,String)] = No
     ws.withRequestTimeout(timeout * 1000)
   }
 
-  import com.fasterxml.jackson.core.JsonParseException
-  
   def unwrapResponse(response: WSResponse, expected: Seq[Int]) = {
     if (expected.contains(response.status)) {
       try {

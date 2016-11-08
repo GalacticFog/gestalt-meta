@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.laser
 
+
 import play.api.libs.json._
 import scala.util.{Try,Success,Failure}
 
@@ -11,7 +12,9 @@ import java.nio.charset.StandardCharsets;
 import java.nio.charset.Charset
 import java.util.Base64;
 
+
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
+  
   private val log = Logger(this.getClass)
   private val gatewayClient = configureClient(gatewayConfig)
   private val lambdaClient = configureClient(lambdaConfig)
@@ -170,15 +173,14 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
     client.get(resource, expected) match {
       case Failure(err) => throw err
       case Success(res) => res.output match {
+        case None => Seq()
         case Some(out) => out.validate[Seq[T]] match {
           case s: JsSuccess[Seq[T]] => s.get
           case e: JsError =>
             throw new RuntimeException(JsError.toFlatJson(e).toString)
         }
-        case None => Seq()
       }
     }
-    
   }
   
 }
