@@ -49,7 +49,7 @@ import play.api.mvc.Result
 import play.api.mvc.Action
 import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.laser.ApiResponse
+import com.galacticfog.gestalt.meta.api.sdk.ApiResponse
 import com.galacticfog.gestalt.meta.auth.Actions 
 import com.galacticfog.gestalt.meta.auth.Authorization
 

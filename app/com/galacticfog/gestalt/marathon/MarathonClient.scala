@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.marathon
 
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
@@ -13,6 +14,8 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import scala.math.BigDecimal.int2bigDecimal
 
 import play.api.Logger
+
+import scala.util.Try
 
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 
@@ -87,6 +90,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   
   /**
     * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
+ *
     * @param fqon fully-qualified org name
     * @param wrkName workspace name
     * @param envName environment name

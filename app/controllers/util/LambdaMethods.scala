@@ -19,7 +19,7 @@ import play.api.Logger
 import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.ResourcePatch
-import com.galacticfog.gestalt.laser.JsonWebClient
+import com.galacticfog.gestalt.meta.api.sdk.JsonWebClient
 import com.galacticfog.gestalt.laser._
 
 object LambdaMethods {

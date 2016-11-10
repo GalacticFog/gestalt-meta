@@ -2,7 +2,7 @@ package controllers.util
 
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.laser.{JsonWebClient => WebClient}
+import com.galacticfog.gestalt.meta.api.sdk.{JsonWebClient => WebClient}
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
@@ -53,6 +53,9 @@ object MetaHealth {
   
   
   def selfCheck(verbose: Boolean): Either[JsValue,JsValue] = {
+    
+    DataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
+    
     val serviceMap = Map(
         lambdaConfig  -> "/health",
         gatewayConfig -> "/health",
@@ -124,10 +127,7 @@ object MetaHealth {
         case NonFatal(e) => {
           log.error(s"Error checking service status: ${resource} : " + e.getMessage)
           throw e
-        }
-      
-    } finally {
-      client.close()
+        } 
     }
   }
   
