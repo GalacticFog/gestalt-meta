@@ -67,9 +67,9 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
-      val eid = r.properties.flatMap(_.get("parent")).flatMap(ResourceFactory.parseId) getOrElse throwBadRequest("could not determine environment parent for container")
+      val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
       Await.result(
-        containerService.findEnvironmentContainerByName(fqon, eid, r.name),
+        containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
         5 seconds
       ) map (_._1)
     }
@@ -352,7 +352,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
         
         val all = rs map { case (k,v) =>
           if (v.properties.isEmpty) None
-          else v.properties.get.get("env") match {
+          else v.properties.flatMap(_.get("env")) match {
               case None => None
               case Some(vars) => {
                 Option(k -> Json.parse(vars).validate[Map[String,String]].get)

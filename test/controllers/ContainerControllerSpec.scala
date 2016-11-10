@@ -214,7 +214,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       val Some(result) = route(request)
 
-      contentAsJson(result) must equalTo(jsResponse)
+      contentAsString(result) must /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
 
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers/${testContainer.id}")
@@ -259,18 +259,16 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "network" -> testProps.network.get
         ))
       ).get
-      val jsResponse = Json.arr(
-      )
       containerService.listEnvironmentContainers(
         "root",
         testEnv.id
       ) returns Future(Seq(testContainer -> Seq.empty))
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers")
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers?expand=true")
 
       val Some(result) = route(request)
 
-      contentAsJson(result) must equalTo(jsResponse)
+      contentAsString(result) must /#(0) /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
 
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers")
@@ -338,10 +336,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       there was one(containerController).createContainer(anyString, any[UUID])
       there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
-
-      val getRequest = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${createdResource.id}")
-      val Some(getResult) = route(getRequest)
-      status(getResult) must equalTo(OK)
     }
 
     "delete containers using the ContainerService interface" in new TestApplication {
