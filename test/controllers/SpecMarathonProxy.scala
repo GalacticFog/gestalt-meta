@@ -307,9 +307,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
 
     "transform to Marathon API appropriately (calico-style)" in {
       val provider = marathonProviderWithStdNetworks
-      val name = "/some/app/id"
       val resourceJson = Json.obj(
-        "name" -> name,
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -329,7 +327,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       )
 
       val marApp = AppUpdate(
-        id = Some(name),
+        id = None,
         container = Some(Container(
           docker = Some(Container.Docker(
             image = "some/image:tag",
@@ -362,7 +360,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonLaunchPayload(resourceJson.as[ContainerSpec], provider)
+      toMarathonLaunchPayload(resourceJson.as[ContainerSpec], provider) must_== marApp
     }
 
     "generate valid payload with cmd and no args" in {
@@ -403,9 +401,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
 
     "transform to Marathon API appropriately (host-style)" in {
       val providerId = UUID.randomUUID()
-      val name = "/some/app/id"
       val resourceJson = Json.obj(
-        "name" -> name,
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -438,7 +434,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       provider.id returns providerId
 
       val marApp = AppUpdate(
-        id = Some(name),
+        id = None,
         container = Some(Container(
           docker = Some(Container.Docker(
             image = "some/image:tag",
@@ -468,7 +464,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonLaunchPayload(resourceJson.as[ContainerSpec], provider)
+      toMarathonLaunchPayload(resourceJson.as[ContainerSpec], provider) must_== marApp
     }
 
     "throw exception for marathon payload with invalid provider network" in {
