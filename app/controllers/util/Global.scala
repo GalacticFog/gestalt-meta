@@ -64,21 +64,28 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
     }
   }
 
-  lazy val defaultContainerMethods = new ContainerService {}
-  lazy val defaultMarathonAPIController = new MarathonAPIController(defaultContainerMethods)
-  lazy val defaultContainerController = new ContainerController(defaultContainerMethods)
-  lazy val defaultDeleteController = new DeleteController(defaultContainerMethods)
-  lazy val defaultSyncController = new SyncController(defaultDeleteController)
-  lazy val defaultResourceController = new ResourceController(defaultContainerMethods)
 
-  override def getControllerInstance[A](controllerClass: Class[A]): A = {
-    if (classOf[ContainerService] == controllerClass) defaultContainerMethods.asInstanceOf[A]
-    else if (classOf[MarathonAPIController] == controllerClass) defaultMarathonAPIController.asInstanceOf[A]
-    else if (classOf[ContainerController] == controllerClass) defaultContainerController.asInstanceOf[A]
-    else if (classOf[DeleteController] == controllerClass) defaultDeleteController.asInstanceOf[A]
-    else if (classOf[SyncController] == controllerClass) defaultSyncController.asInstanceOf[A]
-    else if (classOf[ResourceController] == controllerClass) defaultResourceController.asInstanceOf[A]
-    else super.getControllerInstance(controllerClass)
+  import controllers._
+  
+  lazy val instances: Map[Class[_], _ <: Controller] = {
+    val defaultContainerMethods = new ContainerService {}
+    val deleteController = new DeleteController(defaultContainerMethods)
+    Map(
+      classOf[PatchController] -> new PatchController {},
+      classOf[SyncController]  -> new SyncController(defaultDeleteController),
+      classOf[MarathonAPIController] -> new MarathonAPIController(defaultContainerMethods),
+      classOf[ContainerController] -> new ContainerController(defaultContainerMethods),
+      classOf[ResourceController] -> new ResourceController(defaultContainerMethods)
+    )
   }
-
+  
+  def getInstance[A](cls: Class[A]) = instances.get(cls) getOrElse {
+    throw new RuntimeException(s"No handler configured for ${cls.getSimpleName}.")
+  }
+  
+  override def getControllerInstance[A](controllerClass: Class[A]): A = {
+    log.debug(s"Resolving Controller : ${controllerClass.getSimpleName}")
+    getInstance(controllerClass).asInstanceOf[A]
+  }
+  
 }

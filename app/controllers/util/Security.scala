@@ -1,5 +1,6 @@
 package controllers.util
 
+
 import java.util.UUID
 
 import scala.concurrent.Await
@@ -20,13 +21,17 @@ import com.galacticfog.gestalt.security.api.GestaltOrgSync
 import com.galacticfog.gestalt.security.api.GestaltPasswordCredential
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import play.api.Logger
 
 
 object Security {
-
+  
   private[this] val log = Logger(this.getClass)
+  
+  def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(client.withCreds(auth.creds)), 5 seconds))
+  } 
   
   def getRootOrg(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
     def unwrap(os: Seq[GestaltOrg]) = Try {
@@ -40,6 +45,10 @@ object Security {
       case Success(os) => unwrap( os filter { o => o.parent.isEmpty } )
       case Failure(ex) => throw ex
     }
+  }
+  
+  def getRootUser(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
+    ???
   }
   
   def getGroups(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltGroup]] = {
@@ -72,14 +81,6 @@ object Security {
   
   def deleteGroup(id: UUID, auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Boolean] = {
     Try{Await.result(GestaltGroup.deleteGroup(id)(client.withCreds(auth.creds)), 5 seconds)}
-  }
-  
-  def getRootUser(auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrg] = {
-    ???
-  }
-  
-  def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
-    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(client.withCreds(auth.creds)), 5 seconds))
   }
   
   def getAllOrgs(org: Option[UUID], auth: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[Seq[GestaltOrg]] = {
@@ -132,11 +133,11 @@ object Security {
     Try(Await.result(GestaltAccount.deleteAccount(id)(client.withCreds(auth.creds)), 5 seconds))
   }
 
-  def addAccountsToGroup(group: UUID, accounts: Seq[UUID])(implicit client: GestaltSecurityClient): Try[Seq[com.galacticfog.gestalt.security.api.ResourceLink]] = {
+  def addAccountsToGroup(group: UUID, accounts: Seq[UUID])(implicit client: GestaltSecurityClient): Try[Seq[SecurityLink]] = {
     Try(Await.result(GestaltGroup.updateMembership(group, accounts, Seq()), 5 seconds))
   }
   
-  def removeAccountsFromGroup(group: UUID, accounts: Seq[UUID])(implicit client: GestaltSecurityClient): Try[Seq[com.galacticfog.gestalt.security.api.ResourceLink]] = {
+  def removeAccountsFromGroup(group: UUID, accounts: Seq[UUID])(implicit client: GestaltSecurityClient): Try[Seq[SecurityLink]] = {
     Try(Await.result(GestaltGroup.updateMembership(group, Seq(), remove = accounts), 5 seconds))
   }
   

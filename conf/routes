@@ -2,6 +2,8 @@
 ###
 ###
 
+PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  @controllers.PatchController.patchResource(fqon, path)
+
 POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
 POST	/sync					 @controllers.SyncController.sync()
 

@@ -51,5 +51,5 @@ trait GestaltSecurityMocking extends Mockito {
     GestaltAPICredentials.getCredentials(header).get
   }
 
-
 }
+
