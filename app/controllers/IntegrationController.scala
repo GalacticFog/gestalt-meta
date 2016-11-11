@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -22,6 +23,10 @@ import play.api.{ Logger => log }
 import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import controllers.util.getExpandParam
+import controllers.util.RequestOptions
+import com.galacticfog.gestalt.meta.auth.{Actions,Authorization}
+import controllers.util.{SafeRequest,standardMethods}
+
 
 object IntegrationController extends Authorization {
   
@@ -77,6 +82,7 @@ object IntegrationController extends Authorization {
            }
         }
         */
+        
         createIntegration(orgid, envid) match {
           case Failure(e) => HandleExceptions(e)
           case Success(integration) => {
@@ -92,7 +98,48 @@ object IntegrationController extends Authorization {
     }
   }
   
-
+  def postIntegration2(fqon: String, envid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    Future {
+      
+      // Ensure Environment exists and create Integration.
+      findById(envid).fold( NotFoundResult(request.uri) ) { env =>
+        createIntegrationResult(fqid(fqon), envid, request.body, request.identity, META_URL)
+      }
+    }
+  }
+  
+  private[controllers] def createIntegrationResult(
+      org: UUID,
+      parent: UUID,
+      inputJson: JsValue, 
+      user: AuthAccountWithCreds, 
+      baseUri: Option[String])(implicit request: SecuredRequest[JsValue]) = {
+    
+    val typeId     = ResourceIds.Integration
+    val operations = standardMethods(typeId, "integration.create")
+    val options    = requestCreateOptions(org, parent, user, inputJson)
+    
+    /*
+     * This performs the 'standard operations' before and after creating the resource.
+     * 1.) Authorize against entitlements (integration.create)
+     * 2.) Check and evaluate policy
+     * 3.) Check for and fire pre-create event
+     * 4.) Check for and fire post-create event
+     */
+    SafeRequest (operations, options) Protect { maybeState =>
+      
+      createResourceInstance(org, inputJson, Some(typeId), Some(parent)) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(integration) => {
+          setNewIntegrationEntitlements(org, integration.id, user, parent)
+          Created(Output.renderInstance(integration, META_URL))
+        }
+      }
+    }
+    
+  }
+  
+  
   /**
    * GET /{fqon}/environments/{envid}/integrations
    */
@@ -106,7 +153,6 @@ object IntegrationController extends Authorization {
       case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
     }
   }
-
 
   /**
    * GET /{fqon}/environments/{envid}/integration/{id}
@@ -188,4 +234,33 @@ object IntegrationController extends Authorization {
       strfld
   }
 
+  /*
+   * This is all the data needed to perform policy and auth checks on the new resource.  
+   */
+  private[this] def requestCreateOptions(
+      org: UUID,
+      policyOwner: UUID,
+      user: AuthAccountWithCreds,
+      inputJson: JsValue): RequestOptions = {
+    
+      RequestOptions(user, 
+          authTarget = Option(policyOwner), 
+          policyOwner = Option(policyOwner), 
+          policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Integration)))/*,
+          data = Option(Map("host" -> baseUri.get))*/)
+  }
+
+  /*
+   * TODO: This method will be factored out into controllers.util package.
+   * Convert input JSON into a GestaltResourceInstance with default values. This is needed
+   * for policy checks.
+   */
+  private[this] def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
+    inputWithDefaults(
+          org = org, 
+          typeId = typeId,
+          input = safeGetInputJson(json).get, 
+          creator = creator)
+  }    
+  
 }
