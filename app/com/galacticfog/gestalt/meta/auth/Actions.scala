@@ -48,7 +48,8 @@ object Actions {
         ResourceIds.Api -> Api,
         ResourceIds.ApiEndpoint  -> ApiEndpoint,
         ResourceIds.ResourceType -> ResourceType,
-        ResourceIds.TypeProperty -> TypeProperty)  
+        ResourceIds.TypeProperty -> TypeProperty,
+        ResourceIds.Integration -> Integration)  
 
   def typePrefix(typeId: UUID) = typeId match {
     case ResourceIds.Org => "org"
@@ -68,6 +69,7 @@ object Actions {
     case ResourceIds.MarathonProvider => "provider"     
     case ResourceIds.RuleEvent => "rule"
     case ResourceIds.RuleLimit => "rule"
+    case ResourceIds.Integration => "integration"
     case e => throw new IllegalArgumentException(s"Unknown action-prefix '$typeId'")
   }
 
@@ -95,6 +97,7 @@ object Actions {
   object ResourceType extends ResourceActions("resourcetype")
   object TypeProperty extends ResourceActions("typeproperty")
   object Api extends ResourceActions("api")
+  object Integration extends ResourceActions("integration")
   
   object Container extends ResourceActions("container",
       additionalActions = Map("migrate" -> "migrate", "scale" -> "scale")) {
