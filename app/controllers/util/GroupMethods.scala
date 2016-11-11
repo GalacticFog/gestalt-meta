@@ -1,41 +1,21 @@
 package controllers.util
 
 
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.ResourcePath
-import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-
-import controllers.ResourceController.findResource
-import controllers.util._
-
 import com.galacticfog.gestalt.meta.api.patch._
-
-
 import com.galacticfog.gestalt.patch._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 
-import scala.util.{Try,Success,Failure}
-
-import play.api.libs.json._
+import scala.util.Try
+import scala.util.{Either,Right,Left}
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.EnvironmentType
-
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
-import com.galacticfog.gestalt.data.ResourceFactory.update
-
-import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import scala.util.{Either,Right,Left}
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import play.api.Logger
 
 

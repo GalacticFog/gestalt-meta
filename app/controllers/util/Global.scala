@@ -68,14 +68,16 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   import controllers._
   
   lazy val instances: Map[Class[_], _ <: Controller] = {
-    val defaultContainerMethods = new ContainerService {}
-    val deleteController = new DeleteController(defaultContainerMethods)
+    val containerSvc = new ContainerService {}
+    val deleteController = new DeleteController(containerSvc)
+    val resourceController = new ResourceController(containerSvc)
     Map(
-      classOf[PatchController] -> new PatchController {},
-      classOf[SyncController]  -> new SyncController(defaultDeleteController),
-      classOf[MarathonAPIController] -> new MarathonAPIController(defaultContainerMethods),
-      classOf[ContainerController] -> new ContainerController(defaultContainerMethods),
-      classOf[ResourceController] -> new ResourceController(defaultContainerMethods)
+      classOf[PatchController] -> new PatchController(resourceController),
+      classOf[SyncController]  -> new SyncController(deleteController),
+      classOf[MarathonAPIController] -> new MarathonAPIController(containerSvc),
+      classOf[ContainerController] -> new ContainerController(containerSvc),
+      classOf[ResourceController] -> resourceController,
+      classOf[DeleteController] -> deleteController
     )
   }
   
