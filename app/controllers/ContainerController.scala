@@ -36,10 +36,6 @@ class ContainerController(containerService: ContainerService) extends Authorizat
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
-  /*
-   * TODO: Reverse the order of container creation.  Create FIRST in Meta - that way if it fails to create
-   * in Marathon, we can just delete it from Meta.
-   */
   def createContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     containerService.findWorkspaceEnvironment(environment) match {

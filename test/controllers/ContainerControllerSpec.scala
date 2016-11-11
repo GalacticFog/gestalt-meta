@@ -112,7 +112,79 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
   "ContainerSpec" should {
 
-    "be convertible from GestaltResourceInstance container representations with appropriate defaults and link to GestaltResourceInstance" in new TestApplication {
+    "be convertible to GestaltResourceInput with all fields" in {
+      val testProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:alpine",
+        provider = ContainerSpec.InputProvider(id = uuid, name = Some("test-provider")),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("some-network"),
+        cmd = Some("echo I am Groot! && sleep 3600"),
+        constraints = Seq("hostname:UNIQUE"),
+        accepted_resource_roles = Some(Seq("*")),
+        args = Some(Seq("args","are","not","normally","valid","with","cmd")),
+        force_pull = true,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map("blah" -> "blergh"),
+        env = Map("foo" -> "bar"),
+        user = Some("root")
+      )
+      val resourceInput = ContainerSpec.toResourcePrototype(testProps)
+      val protoProps = resourceInput.properties.get
+      protoProps.get("image") must beSome(Json.toJson(testProps.image))
+      protoProps.get("container_type") must beSome(Json.toJson(testProps.container_type))
+      protoProps.get("cpus") must beSome(Json.toJson(testProps.cpus))
+      protoProps.get("memory") must beSome(Json.toJson(testProps.memory))
+      protoProps.get("disk") must beSome(Json.toJson(testProps.disk))
+      protoProps.get("num_instances") must beSome(Json.toJson(testProps.num_instances))
+      protoProps.get("network") must beSome(Json.toJson(testProps.network.get))
+      protoProps.get("cmd") must beSome(Json.toJson(testProps.cmd.get))
+      protoProps.get("constraints") must beSome(Json.toJson(testProps.constraints))
+      protoProps.get("accepted_resource_roles") must beSome(Json.toJson(testProps.accepted_resource_roles.get))
+      protoProps.get("args") must beSome(Json.toJson(testProps.args.get))
+      protoProps.get("force_pull") must beSome(Json.toJson(testProps.force_pull))
+      protoProps.get("health_checks") must beSome(Json.toJson(testProps.health_checks))
+      protoProps.get("volumes") must beSome(Json.toJson(testProps.volumes))
+      protoProps.get("labels") must beSome(Json.toJson(testProps.labels))
+      protoProps.get("env") must beSome(Json.toJson(testProps.env))
+      protoProps.get("user") must beSome(Json.toJson(testProps.user.get))
+    }
+
+    "be convertible to GestaltResourceInput with default fields" in {
+      val testProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:alpine",
+        provider = ContainerSpec.InputProvider(id = uuid, name = Some("test-provider"))
+      )
+      val resourceInput = ContainerSpec.toResourcePrototype(testProps)
+      val protoProps = resourceInput.properties.get
+      protoProps.get("image") must beSome(Json.toJson(testProps.image))
+      protoProps.get("container_type") must beSome(Json.toJson(testProps.container_type))
+      protoProps.get("cpus") must beSome(Json.toJson(testProps.cpus))
+      protoProps.get("memory") must beSome(Json.toJson(testProps.memory))
+      protoProps.get("disk") must beSome(Json.toJson(testProps.disk))
+      protoProps.get("num_instances") must beSome(Json.toJson(testProps.num_instances))
+      protoProps.get("network") must_== testProps.network
+      protoProps.get("cmd") must_== testProps.cmd
+      protoProps.get("constraints") must beSome(Json.toJson(testProps.constraints))
+      protoProps.get("accepted_resource_roles") must_== testProps.accepted_resource_roles
+      protoProps.get("args") must_== testProps.args
+      protoProps.get("force_pull") must beSome(Json.toJson(testProps.force_pull))
+      protoProps.get("health_checks") must beSome(Json.toJson(testProps.health_checks))
+      protoProps.get("volumes") must beSome(Json.toJson(testProps.volumes))
+      protoProps.get("labels") must beSome(Json.toJson(testProps.labels))
+      protoProps.get("env") must beSome(Json.toJson(testProps.env))
+      protoProps.get("user") must_== testProps.user
+    }
+
+    "be convertible from GestaltResourceInstance container representation" in new TestApplication {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -314,13 +386,12 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "network" -> testProps.network.get
         ))
       ).get
-      val createdContainer = ContainerSpec.fromResourceInstance(createdResource).get
       containerService.launchContainer(
         meq("root"),
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        any[ContainerSpec] /* TODO: meq(testProps) */
+        meq(testProps)
       ) returns Future(createdResource -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(

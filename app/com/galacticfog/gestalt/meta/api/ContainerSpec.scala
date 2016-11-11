@@ -88,14 +88,22 @@ case object ContainerSpec extends Spec {
       "cpus" -> JsNumber(spec.cpus),
       "memory" -> JsNumber(spec.memory),
       "disk" -> JsNumber(spec.disk),
-      "num_instances" -> JsNumber(spec.num_instances)
+      "num_instances" -> JsNumber(spec.num_instances),
+      "constraints" -> Json.toJson(spec.constraints),
+      "force_pull" -> Json.toJson(spec.force_pull),
+      "health_checks" -> Json.toJson(spec.health_checks),
+      "volumes" -> Json.toJson(spec.volumes),
+      "labels" -> Json.toJson(spec.labels),
+      "env" -> Json.toJson(spec.env)
     ) ++ Seq[Option[(String,JsValue)]](
-      spec.cmd map ("cmd" -> JsString(_)),
-      spec.accepted_resource_roles map ("accepted_resource_roles" -> Json.toJson(_)),
-      status map ("status" -> JsString(_))
-    ).flatten.toMap
-    )
-  ) // TODO: cgbaker: missing a bunch of properties here; finish them
+        spec.cmd map ("cmd" -> JsString(_)),
+        spec.network map ("network" -> JsString(_)),
+        spec.accepted_resource_roles map ("accepted_resource_roles" -> Json.toJson(_)),
+        status map ("status" -> JsString(_)),
+        spec.args map ("args" -> Json.toJson(_)),
+        spec.user map ("user" -> Json.toJson(_))
+    ).flatten.toMap)
+  )
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
