@@ -26,7 +26,7 @@ import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth.Authorization
 
 
-object SyncController extends Authorization {
+trait SyncController extends Authorization {
   
   private var adminId: UUID = null
 

@@ -20,7 +20,7 @@ package object output {
   implicit lazy val patchOpFormat = Json.format[PatchOp]
   implicit lazy val patchDocFormat = Json.format[PatchDocument]  
   
-  def toLink(res: GestaltResourceInstance, baseUri: Option[String]) = {
+  def toLink(res: GestaltResourceInstance, baseUri: Option[String]): ResourceLink = {
     ResourceLink(res.typeId, res.id.toString, Some(res.name), Some(toHref(res.typeId, res.id, res.orgId, baseUri )))
   }
   

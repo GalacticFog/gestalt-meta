@@ -64,13 +64,20 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
     }
   }
 
-  lazy val defaultContainerMethods = ContainerServiceImpl
-  lazy val defaultMarathonAPIController = new MarathonAPIController(ContainerServiceImpl)
-
-  override def getControllerInstance[A](controllerClass: Class[A]): A = {
-    if (classOf[ContainerService] == controllerClass) defaultContainerMethods.asInstanceOf[A]
-    else if (classOf[MarathonAPIController] == controllerClass) defaultMarathonAPIController.asInstanceOf[A]
-    else super.getControllerInstance(controllerClass)
+  import controllers._
+  
+  lazy val instances: Map[Class[_], _ <: Controller] = Map(
+    classOf[PatchController] -> new PatchController {},
+    classOf[SyncController]  -> new SyncController {}
+  )  
+  
+  def getInstance[A](cls: Class[A]) = instances.get(cls) getOrElse {
+    throw new RuntimeException(s"No handler configured for ${cls.getSimpleName}.")
   }
-
+  
+  override def getControllerInstance[A](controllerClass: Class[A]): A = {
+    log.debug(s"Resolving Controller : ${controllerClass.getSimpleName}")
+    getInstance(controllerClass).asInstanceOf[A]
+  }
+  
 }

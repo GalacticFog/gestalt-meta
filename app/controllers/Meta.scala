@@ -1,57 +1,66 @@
 package controllers
 
-
-import java.util.UUID
 import java.net.URL
-import play.api.http.HttpVerbs
-import play.api.libs.ws.WS
-import play.api.Play.current
+import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.data.Hstore
-import com.galacticfog.gestalt.data.PropertyValidator
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.ResourceType
-import com.galacticfog.gestalt.data.illegal
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.{ PatchOp, PatchDocument, PatchHandler }
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.{ GestaltResource => SecurityResource }
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util._
-import controllers.util.JsonUtil._
-import controllers.util.db._
-import controllers.util.MetaController
-import controllers.util.Security
-import play.api.{ Logger => log }
-import play.api.libs.json._
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import controllers.util.stringmap
-import controllers.util.trace
-import com.galacticfog.gestalt.meta.api._
-import play.api.mvc.Result
-import play.api.mvc.Action
-import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.laser.ApiResponse
-import com.galacticfog.gestalt.meta.auth.Actions 
+import com.galacticfog.gestalt.data.CoVariant
+import com.galacticfog.gestalt.data.EnvironmentType
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.keymgr.GestaltFeature
+import com.galacticfog.gestalt.laser.Laser
+import com.galacticfog.gestalt.laser.LaserGateway
+import com.galacticfog.gestalt.laser.LaserLocation
+import com.galacticfog.gestalt.laser.LaserProvider
+import com.galacticfog.gestalt.meta.api.PatchHandler
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.output.toLink
+import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
+import com.galacticfog.gestalt.meta.api.sdk.HostConfig
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
+import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
+import ApiGateway.GatewayInput
+import ApiGateway.buildGatewayInfo
+import ApiGateway.gatewayInput
+import ApiGateway.getGatewayLocation
+import ApiGateway.parseLaserResponseId
+import ApiGateway.setMetaGatewayProps
+import controllers.util.BadRequestResult
+import controllers.util.HandleExceptions
+import controllers.util.HandleRepositoryExceptions
+import controllers.util.JsonUtil
+import controllers.util.JsonUtil.replaceJsonPropValue
+import controllers.util.JsonUtil.replaceJsonProps
+import controllers.util.JsonUtil.str2js
+import controllers.util.JsonUtil.upsertProperty
+import controllers.util.LambdaMethods
+import controllers.util.NotFoundResult
+import controllers.util.RequestOptions
+import controllers.util.SafeRequest
+import controllers.util.Security
+import controllers.util.db.EnvConfig
+import controllers.util.standardMethods
+import controllers.util.stringmap
+import play.api.libs.json.JsObject
+import play.api.libs.json.JsString
+import play.api.libs.json.JsUndefined
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
  
 /**
  * Code for POST and PATCH of all resource types.
@@ -320,7 +329,7 @@ object Meta extends Authorization {
     resourcePatch(ResourceIds.Org, fqid(fqon))
   }
   
-
+  
   
   def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
