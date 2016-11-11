@@ -3,7 +3,9 @@ package controllers
 
 import java.util.UUID
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import controllers.util.ContainerService
 import controllers.util.db.ConnectionManager
+import org.specs2.mock.Mockito
 import org.specs2.mutable._
 import org.specs2.specification._
 import play.api.libs.json._
@@ -20,7 +22,7 @@ import org.specs2.matcher.JsonMatchers
 import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 
-class PatchControllerSpec extends PlaySpecification with JsonMatchers with ResourceScope with BeforeAll {
+class PatchControllerSpec extends PlaySpecification with JsonMatchers with ResourceScope with BeforeAll with Mockito {
 
   sequential
   
@@ -61,7 +63,8 @@ class PatchControllerSpec extends PlaySpecification with JsonMatchers with Resou
         val account = dummyAuthAccountWithCreds(userInfo = Map("id" -> adminUserId))
 
         val path = new ResourcePath(s"/${orgName}/environments/${envRes.id}")
-        val updated = new PatchController{}.Patch(path, patchJs, account)        
+        val rc = new ResourceController(mock[ContainerService])
+        val updated = new PatchController(rc).Patch(path, patchJs, account)
         updated must beSuccessfulTry
         
         val envJs = Output.renderInstance(updated.get)

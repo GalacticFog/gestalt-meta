@@ -41,7 +41,9 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.auth.Actions
 
 
-object DeleteController extends Authorization {
+class DeleteController(containerService: ContainerService) extends Authorization {
+
+  // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
  
   /*
    * Each of the types named by the keys in this map have representations both in
@@ -122,8 +124,11 @@ object DeleteController extends Authorization {
     Security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteExternalContainer[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
-    val result = Await.result(deleteMarathonApp(res), 5 seconds)
+  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
+    val _ = Await.result(
+      containerService.deleteContainer(res),
+      5 seconds
+    )
   }
   
   def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
@@ -179,27 +184,8 @@ object DeleteController extends Authorization {
       Seq(ResourceIds.Container)
     } else Seq()
   }
-  
 
-  
-  protected [controllers] def deleteMarathonApp[A <: ResourceLike](container: A): Future[JsValue] = {
-    val providerId = Json.parse(container.properties.get("provider")) \ "id"
-    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
-      throw new RuntimeException("Could not find Provider : " + providerId)
-    }
-    val externalId = container.properties.get("external_id")
-    
-    marathonClient(provider).deleteApplication(externalId)
-  }
-  
-  
-  protected [controllers] def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
-    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
-    log.debug("Marathon URL: " + providerUrl)
-    MarathonClient(WS.client, providerUrl)
-  }
-
-  /* 
+  /*
    * TODO: Move this function... 
    * Make part of common controller so all controllers can use.
    * Possibly refactor into a QueryString object that makes dealing with the

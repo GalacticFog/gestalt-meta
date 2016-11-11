@@ -13,13 +13,7 @@ object InfoController extends Authorization {
   
   case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])
   case class ServiceInfo(url: String, status: String)
-  
-  private object HealthStatus {
-    val OK       = "OK"
-    val DEGRADED = "DEGRADED"
-    val BROKEN   = "BROKEN"
-  }
-  
+
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
   implicit lazy val aboutMetaFormat = Json.format[AboutMeta]
   

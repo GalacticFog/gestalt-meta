@@ -24,24 +24,25 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
   sequential
   
   override def beforeAll() = pristineDatabase()
-  
+
+  lazy val containerService = new ContainerService {}
+
   "providerQueryParam" should {
-    
-    
+
     def setupenv(org: UUID) = {
       val (wrk,env) = createWorkspaceEnvironment(org)
       val provider = createMarathonProvider(env)
     
       (wrk,env,provider.get.id)
     }
-    
+
     "SUCCEED if there is a single 'provider' param that is a valid UUID to a valid Marathon Provider" in new WithApplication {
 
       val org = newOrg(id = dummyRootOrgId).get
       val (wrk,env,prv) = setupenv(org.id)
       val good = Map("provider" -> Seq(prv.toString))
       
-      val param = ContainerServiceImpl.providerQueryParam(good)
+      val param = containerService.providerQueryParam(good)
       param must beSuccessfulTry
       param.get === prv
     }
@@ -51,7 +52,7 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       val (wrk,env,prv) = setupenv(org.id)
       val bad: Map[String,Seq[String]] = Map.empty
       
-      ContainerServiceImpl.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
+      containerService.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
     }
     
     "FAIL if provider is given more than once" in {
@@ -59,17 +60,17 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       val (wrk,env,prv) = setupenv(org.id)
       val bad = Map("provider" -> Seq(prv.toString, uuid.toString, uuid.toString))
       
-      ContainerServiceImpl.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
+      containerService.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
     }
     
     "FAIL if provider is not a valid UUID" in {
       val bad = Map("provider" -> Seq("foo"))
-      ContainerServiceImpl.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
+      containerService.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
     }
     
     "FAIL if provider doesn't exist" in {
       val bad = Map("provider" -> Seq(uuid.toString))
-      ContainerServiceImpl.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
+      containerService.providerQueryParam(bad) must beFailedTry.withThrowable[BadRequestException]
     }
     
   }
@@ -89,7 +90,7 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       val c = newDummyContainer(env, props)
       c must beSuccessfulTry
       
-      val test = ContainerServiceImpl.updateWithStats(c.get, None)
+      val test = containerService.updateWithStats(c.get, None)
       val status = test.properties.get.get("status")
       
       status must beSome
@@ -118,7 +119,7 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       val c = newDummyContainer(env)
       c must beSuccessfulTry
 
-      val test = ContainerServiceImpl.updateWithStats(c.get, Option(stats))
+      val test = containerService.updateWithStats(c.get, Option(stats))
       val result = test.properties.get.get("status")
       
       result must beSome
@@ -131,7 +132,7 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       val c = newDummyContainer(env)
       c must beSuccessfulTry
       
-      val test = ContainerServiceImpl.updateWithStats(c.get, None)
+      val test = containerService.updateWithStats(c.get, None)
       val status = test.properties.get.get("status")
       
       status must beSome

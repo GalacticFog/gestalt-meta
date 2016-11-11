@@ -3,6 +3,8 @@ package controllers
 
 import java.util.UUID
 
+import scala.concurrent.Await
+import scala.concurrent.duration._
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -30,11 +32,11 @@ import controllers.util._
 import controllers.util.JsonUtil._
 
 import play.api.libs.json.{JsObject,JsString,Json}
-
 import play.api.mvc.{Action,Result}
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 
-object ResourceController extends Authorization {
+class ResourceController(containerService: ContainerService) extends Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
@@ -51,17 +53,43 @@ object ResourceController extends Authorization {
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
-    ResourceIds.Container   -> ContainerServiceImpl.lookupContainer,
+    ResourceIds.Container   -> lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement
   )
-  
+
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
-    ResourceIds.Container   -> ContainerServiceImpl.lookupContainers,
+    ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements
   )
-  
+
+  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+    Resource.fromPath(path.path) flatMap { r =>
+      val fqon = Resource.getFqon(path.path)
+      val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
+      Await.result(
+        containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
+        5 seconds
+      ) map (_._1)
+    }
+  }
+
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
+    if (getExpandParam(qs)) {
+      // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
+      val mapPathData = Resource.mapListPathData(path.path)
+      val (fqon,eid) = List(Resource.Fqon, Resource.ParentType, Resource.ParentId) flatMap ( mapPathData.get _ ) match {
+        case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
+        case _ => throwBadRequest("container lookup can happen only in the context of an environment")
+      }
+      Await.result(
+        containerService.listEnvironmentContainers(fqon, eid),
+        5 seconds
+      ) map (_._1)
+    } else Resource.listFromPath(path.path)
+  }
+
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
@@ -345,7 +373,7 @@ object ResourceController extends Authorization {
         
         val all = rs map { case (k,v) =>
           if (v.properties.isEmpty) None
-          else v.properties.get.get("env") match {
+          else v.properties.flatMap(_.get("env")) match {
               case None => None
               case Some(vars) => {
                 Option(k -> Json.parse(vars).validate[Map[String,String]].get)

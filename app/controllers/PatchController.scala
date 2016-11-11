@@ -9,7 +9,6 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 import com.galacticfog.gestalt.meta.auth.Authorization
 
-import controllers.ResourceController.findResource
 import controllers.util._
 
 import com.galacticfog.gestalt.meta.api.patch._
@@ -37,7 +36,7 @@ import scala.util.{Either,Right,Left}
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 
-trait PatchController extends Authorization {
+class PatchController(resourceController: ResourceController) extends Authorization {
   
   protected[controllers] val secProvider = new SecurityProviderImpl(securityClient)
   
@@ -87,7 +86,7 @@ trait PatchController extends Authorization {
     if (path.isList) {
       throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
     } else {
-      findResource(path, account).fold {
+      resourceController.findResource(path, account).fold {
         throw new ResourceNotFoundException(path.path)
       }{ r =>
         
