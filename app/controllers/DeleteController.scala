@@ -39,7 +39,7 @@ import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.auth.Actions
-
+import scala.language.postfixOps
 
 class DeleteController(containerService: ContainerService) extends Authorization {
 

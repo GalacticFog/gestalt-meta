@@ -16,6 +16,7 @@ import play.api.mvc.Result
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
+import scala.language.postfixOps
 
 trait EntitlementMethods {
 

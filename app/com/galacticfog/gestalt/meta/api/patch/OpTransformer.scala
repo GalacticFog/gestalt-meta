@@ -4,6 +4,7 @@ package com.galacticfog.gestalt.meta.api.patch
 import play.api.Logger
 import com.galacticfog.gestalt.patch.PatchOp
 import play.api.libs.json.JsString
+import scala.language.implicitConversions
 
 
 trait OpTransformer {  
