@@ -437,7 +437,7 @@ trait MetaController extends SecureController with SecurityResources {
       variables = in.variables,
       tags = in.tags,
       auth = in.auth)
-  }    
+  }
   
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)

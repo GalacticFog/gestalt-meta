@@ -154,6 +154,7 @@ object TypeController extends Authorization {
   private def typeFromInput(org: UUID, owner: UUID, r: GestaltResourceTypeInput) = Try {
 
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
+
     GestaltResourceType(
         id = r.id.getOrElse(UUID.randomUUID),
         typeId = ResourceIds.ResourceType,
@@ -164,12 +165,12 @@ object TypeController extends Authorization {
         name = r.name,
         description = r.description,
         created = None, modified = None,
-        properties = r.properties, 
+        properties = stringmap(r.properties), 
         variables = r.variables, 
         tags = r.tags, 
         auth = r.auth)
   }
-
+  
   def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
     orgFqon(fqon).fold(OrgNotFound(fqon))( _ => getSchemaResult(typeId) )
   }

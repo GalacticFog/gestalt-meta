@@ -79,7 +79,6 @@ trait ResourceScope extends Scope {
       "lambda" -> lambda.get.id)
   }
   
-  
   def newDummyGateway(env: UUID, name: String = uuid()) = {
     createInstance(ResourceIds.ApiGatewayProvider, 
         name,
@@ -269,6 +268,7 @@ trait ResourceScope extends Scope {
         orgId = org,
         owner = ResourceOwnerLink(ResourceIds.Org, org.toString),
         name = name,
+        state = ResourceState.id(ResourceStates.Active),
         properties = Some(Map( 
           "email" -> s"$name@example.com", "phoneNumber" -> "555", "firstName" -> "foo", "lastName" -> "bar"
       )))).get
@@ -292,10 +292,9 @@ trait ResourceScope extends Scope {
       orgId = org,
       owner = owner,
       name = name,
+      state = ResourceState.id(ResourceStates.Active),
       properties = properties)
   }
-  
-
   
   def uuid() = UUID.randomUUID
   
