@@ -8,7 +8,7 @@ import scala.Right
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds,ResourceStates}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
 import play.api.libs.json.JsArray
@@ -24,7 +24,6 @@ case class Entitlement(
     variables: Option[Hstore] = None,
     tags: Option[List[String]] = None)
 
-    
 object Entitlement {
   
   /**
@@ -54,6 +53,7 @@ object Entitlement {
       owner = ResourceOwnerLink(ResourceIds.User, creator),
       name = ent.name,
       description = ent.description,
+      state = ResourceState.id(ResourceStates.Active),
       properties = Option(EntitlementProps.toMap(ent.properties)) 
     ) 
   }  

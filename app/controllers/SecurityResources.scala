@@ -7,6 +7,7 @@ import scala.util.Try
 import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
@@ -86,6 +87,7 @@ trait SecurityResources {
       owner = ResourceOwnerLink(ResourceIds.User, creator /*request.identity.account.id*/),
       name = sr.name,
       description = description,
+      state = ResourceState.id(ResourceStates.Active),
       properties = properties)
   }  
   
