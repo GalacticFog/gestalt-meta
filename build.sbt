@@ -4,7 +4,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.4.0"
+version := "0.4.1"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -55,7 +55,7 @@ scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq(
   "-deprecation", 		// Emit warning and location for usages of deprecated APIs.
-  //"-feature", 			// Emit warning and location for usages of features that should be imported explicitly.
+  "-feature", 			// Emit warning and location for usages of features that should be imported explicitly.
   "-unchecked") 		// Enable additional warnings where generated code depends on assumptions.
   // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
   //"-Xlint", 				// Enable recommended additional warnings.

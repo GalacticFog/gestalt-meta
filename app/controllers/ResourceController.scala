@@ -38,10 +38,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 class ResourceController(containerService: ContainerService) extends Authorization {
   
-  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds) => Try[GestaltResourceInstance]
+  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
   
-  type Lookup    = (ResourcePath, AuthAccountWithCreds) => Option[GestaltResourceInstance]
+  type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[QueryString]) => Option[GestaltResourceInstance]
   type LookupSeq = (ResourcePath, AuthAccountWithCreds, QueryString) => Seq[GestaltResourceInstance]
   
   
@@ -56,15 +56,15 @@ class ResourceController(containerService: ContainerService) extends Authorizati
     ResourceIds.Container   -> lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement
   )
-
+  
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements
   )
-
-  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+  
+  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
       val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
@@ -133,13 +133,13 @@ class ResourceController(containerService: ContainerService) extends Authorizati
       Resource.fromPath(path.path)
     }{ f =>
       log.debug(s"Found custom lookup function for Resource.")
-      f(path, account) 
+      f(path, account, None) 
     }
 
     resource map { res =>
       transforms.get(res.typeId).fold(res){ f =>
         log.debug(s"Found custom transformation function for Resource: ${res.id}")
-        f(res, account).get
+        f(res, account, None).get
       }
     }
   }  
@@ -153,7 +153,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
         Resource.fromPath(path.path)
       }{
         log.debug(s"Found custom lookup function for Resource.")
-        _(path, request.identity) 
+        _(path, request.identity, Option(request.queryString)) 
       }
       
       resource.fold(NotFoundResult(request.uri)) { res =>
@@ -161,7 +161,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
           Ok( RenderSingle(res) )
         }{ 
           log.debug(s"Found custom transformation function for Resource: ${res.id}")
-          _ (res, request.identity) match {
+          _ (res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
           }
@@ -179,14 +179,10 @@ class ResourceController(containerService: ContainerService) extends Authorizati
     
     AuthorizeList(action) {
       transforms.get(path.targetTypeId).fold(rss) { f =>
-        rss map { f(_, request.identity).get }
+        rss map { f(_, request.identity, Option(request.queryString)).get }
       }
     }
   }
-  
-  
-
-  
   
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
@@ -199,7 +195,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
     }
   }
   
-  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds): Option[GestaltResourceInstance] = {
+  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) map { transformEntitlement(_, account).get }
   }
   
@@ -264,7 +260,8 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   
   import com.galacticfog.gestalt.meta.auth._
   
-  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+  
+  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val props  = EntitlementProps.make(res)
     val output = props.identities map { ids =>
       
@@ -281,7 +278,10 @@ class ResourceController(containerService: ContainerService) extends Authorizati
     if (output.isDefined) output.get else res
   }
   
-  private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+  /**
+   * Lookup and inject associated rules into policy.
+   */
+  private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
       resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
     }
@@ -291,7 +291,10 @@ class ResourceController(containerService: ContainerService) extends Authorizati
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(rs)))
   }
   
-  private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+  /**
+   * Builds lambda.properties.funtion_mappings object.
+   */
+  private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
     val resJson = Json.toJson(res).as[JsObject]
     
@@ -306,7 +309,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   /**
    * Build the dynamic 'groups' property on a User instance.
    */
-  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds) = Try {
+  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     
     Security.getAccountGroups(res.id, user) match {
       case Failure(er) => {
@@ -327,7 +330,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
    */
-  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = {
     
     Security.getGroupAccounts(r.id, user) map { acs =>
       // String list of all users in current group.
