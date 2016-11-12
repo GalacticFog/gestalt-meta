@@ -31,6 +31,8 @@ import ru._
 
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
+import scala.language.implicitConversions
+
 
 object Output {
 

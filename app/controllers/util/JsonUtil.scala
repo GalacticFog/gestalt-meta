@@ -8,7 +8,7 @@ import play.api.{ Logger => log }
 import scala.annotation.tailrec
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-
+import scala.language.implicitConversions
 
 object JsonUtil {
 

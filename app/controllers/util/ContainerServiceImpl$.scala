@@ -25,6 +25,8 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, Resource, ResourcePath}
 import com.galacticfog.gestalt.events._
+import scala.language.postfixOps
+
 
 trait ContainerService extends MetaController {
 

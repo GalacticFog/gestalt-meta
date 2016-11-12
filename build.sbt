@@ -51,19 +51,18 @@ EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 scalaVersion := "2.11.8"
 
 
-
-
 scalacOptions ++= Seq(
-  "-deprecation", 		// Emit warning and location for usages of deprecated APIs.
+  "-deprecation", 	// Emit warning and location for usages of deprecated APIs.
   "-feature", 			// Emit warning and location for usages of features that should be imported explicitly.
   "-unchecked") 		// Enable additional warnings where generated code depends on assumptions.
-  // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
-  //"-Xlint", 				// Enable recommended additional warnings.
+  
+  //"-Xlint" 				// Enable recommended additional warnings.
   // "-Ywarn-adapted-args", 	// Warn if an argument list is modified to match the receiver.
   // "-Ywarn-dead-code", 	// Warn when dead code is identified.
   //"-Ywarn-inaccessible", 	// Warn about inaccessible types in method signatures.
   //"-Ywarn-nullary-override" // Warn when non-nullary overrides nullary, e.g. def foo() over def foo.
   // "-Ywarn-numeric-widen" // Warn when numerics are widened.
+  // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
 //)
 
 
@@ -81,12 +80,12 @@ libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.4.0" withSources(),
-	"com.galacticfog" %% "gestalt-meta-sdk-scala" % "0.4.0" withSources(),
-	"com.galacticfog" %% "gestalt-play-json" 	% "0.1.1" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 	% "2.2.5-SNAPSHOT" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		% "0.4.0" withSources(),
+	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		% "0.4.0" withSources(),
+	"com.galacticfog" %% "gestalt-play-json" 					% "0.1.1" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 			% "2.2.5-SNAPSHOT" withSources(),
 	"com.galacticfog" %% "gestalt-security-sdk-scala" % "2.2.6-SNAPSHOT" withSources(),
-	"com.galacticfog" % "gestalt-license-keymgr" % "1.1.0-SNAPSHOT"
+	"com.galacticfog" % "gestalt-license-keymgr" 			% "1.1.0-SNAPSHOT"
 )
 
 

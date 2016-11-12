@@ -23,7 +23,7 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import play.api.Logger
-
+import scala.language.postfixOps
 
 class SecurityProviderImpl(client: GestaltSecurityClient)
   extends SecurityProvider[GestaltSecurityClient,AuthAccountWithCreds](client) {

@@ -34,7 +34,7 @@ import controllers.util.JsonUtil._
 import play.api.libs.json.{JsObject,JsString,Json}
 import play.api.mvc.{Action,Result}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
+import scala.language.postfixOps
 
 class ResourceController(containerService: ContainerService) extends Authorization {
   
@@ -89,7 +89,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
       ) map (_._1)
     } else Resource.listFromPath(path.path)
   }
-
+  
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }

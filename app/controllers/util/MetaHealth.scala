@@ -17,6 +17,8 @@ import controllers.util.db.EnvConfig
 
 import scala.util.{Either,Left,Right}
 import play.api.Logger
+import scala.language.postfixOps
+
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 

@@ -61,7 +61,9 @@ import play.api.libs.json.JsUndefined
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
- 
+import scala.language.implicitConversions
+
+
 /**
  * Code for POST and PATCH of all resource types.
  *

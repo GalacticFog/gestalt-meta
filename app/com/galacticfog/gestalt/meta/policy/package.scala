@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
 import controllers.util.JsonUtil
 import controllers.util.RequestOptions
+import scala.language.postfixOps
 
 package object policy {
 
