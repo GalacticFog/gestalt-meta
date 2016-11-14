@@ -148,8 +148,8 @@ class FakeLambdaProviderSpec extends Specification {
       artifactDescription = LaserArtifactDescription(
           artifactUri  = avm.stringOpt("artifactUri"),
           runtime      = avm.string("runtime", "scala"),
-          functionName = avm.string("functionName", "foo.main"),
-          handler      = avm.string("handler", "foo"),
+          handler      = avm.string("handler", "foo.js;foo"),
+          compressed   = avm.boolean("compressed", true),
           memorySize   = avm.int("memorySize", 512),
           cpus         = avm.double("cpus", 0.2),
           description  = avm.stringOpt("description"),
@@ -157,7 +157,7 @@ class FakeLambdaProviderSpec extends Specification {
           role         = avm.string("role", "none"),
           timeoutSecs  = avm.int("timeoutSecs", 30),
           code         = avm.stringOpt("code"),
-          synchronous  = avm.booleanOpt("synchronous")) )
+          synchronous  = avm.boolean("synchronous", false)) )
       
   }
     

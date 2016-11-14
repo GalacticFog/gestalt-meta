@@ -53,16 +53,17 @@ package object laser {
   case class LaserArtifactDescription(
       artifactUri: Option[String],
       runtime: String,
-      functionName: String,
       handler: String,
       memorySize: Int,
       cpus: Double,
       description: Option[String] = None,
+      compressed: Boolean = false,
       publish: Boolean = false,
       role: String = "none",
       timeoutSecs: Int = 180,
       code: Option[String] = None,
-      synchronous: Option[Boolean] = Option(false))
+      synchronous: Boolean = false,
+      headers : Map[String,String] = Map.empty)
   
   case class LaserLambda(
       id: Option[String], 
@@ -113,17 +114,6 @@ package object laser {
   }
   
   
-  def toLaserEndpoint(input: GestaltResourceInput) = {
-    val id = Some(input.id.getOrElse(UUID.randomUUID).toString)
-    LaserEndpoint(
-        id = id,
-        apiId = ???,
-        upstreamUrl = ???,
-        path = ???,
-        domain = ???,
-        provider = ???)
-  }
-  
   /*
    * TODO: This may translate into multiple LaserLambdas
    */
@@ -132,69 +122,77 @@ package object laser {
     log.debug("toLaserLambda(...)")
     
     val props = lambda.properties.get
-    val (handler,function) = parseHandlerFunction(lambda)
-    val artifactUri = {
-      if (props.contains("package_url")) Some(props("package_url").as[String])
-      else None
-    }
     
+    val handler = props("handler").as[String]
     val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
+    val compressed = if (props.contains("compressed")) props("compressed").as[Boolean] else false
+    val artifactUri = if (props.contains("package_url")) Some(props("package_url").as[String]) else None
     
     LaserLambda(
-      id = Some(lambda.id.get.toString), 
+      id          = Some(lambda.id.get.toString), 
       eventFilter = Some(UUID.randomUUID.toString),
-      public = isPublic,
-      provider = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")), //props("provider"),
+      public      = isPublic,
+      provider    = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")),
+      
       LaserArtifactDescription(
           artifactUri = artifactUri,
           description = if (props.contains("description")) props("description").asOpt[String] else None,
-          functionName = function,
-          handler = handler,
-          memorySize = props("memory").as[Int],
-          cpus = props("cpus").as[Double],
-          publish = false,             // <- currently not used
-          role = "placeholder.role",   // <- currently not used
-          runtime = props("runtime").as[String],
+          handler     = handler,
+          memorySize  = props("memory").as[Int],
+          cpus        = props("cpus").as[Double],
+          publish     = false,     // <- currently not used
+          role        = "none",    // <- currently not used
+          runtime     = props("runtime").as[String],
           timeoutSecs = props("timeout").as[Int],
-          code = if (props.contains("code")) props("code").asOpt[String] else None
-          ))
+          compressed  = compressed,
+          code        = if (props.contains("code")) props("code").asOpt[String] else None
+    ))
   }
-  
-  
-  def syncLaserProviders(toResource: UUID) = ???
-  
-  
   
   def requiredProperty(props: Map[String,JsValue], key: String) = {
     if (props.contains(key)) props(key) else
       throw new BadRequestException(s"Missing property '$key'.")
   }
   
-  def parseHandlerFunction(lambda: GestaltResourceInput) = {
-    val props = lambda.properties.get
-    val runtime = requiredProperty(props, "runtime") //props("runtime")
-    val mapJson = requiredProperty(props, "function_mappings")
-    val fmap = mapJson.validate[Map[String, JsValue]].map {
-      case m: Map[String,JsValue] => m
-    }.recoverTotal { e =>
-      throw new BadRequestException(
-        "Could not parse property 'function_mappings': " + 
-          JsError.toFlatJson(e).toString)
-    }
-    
-    //
-    // TODO: Validation parsing.
-    // TODO: I think i have the naming of this backward,
-    // What I'm calling the function is actually the handler. It still works
-    // just confusing. Fix it.
-    //
-    val function = fmap.keys.toSeq(0)
+//  def parseHandler(lambda: GestaltResourceInput) = {
+//    val props = lambda.properties.get
+//    val runtime = requiredProperty(props, "runtime")
+//    val mapJson = requiredProperty(props, "function_mappings")
+//    val fmap = mapJson.validate[Map[String, JsValue]].map {
+//      case m: Map[String,JsValue] => m
+//    }.recoverTotal { e =>
+//      throw new BadRequestException(
+//        "Could not parse property 'function_mappings': " + 
+//          JsError.toFlatJson(e).toString)
+//    }
+//    "%s;%s".format(fmap.keys.toSeq(0),fmap.keys.toSeq(0))    
+//  }  
 
-    runtime.as[String] match {
-      case "csharp" | "python" | "ruby" | "golang" => (function, "")
-      case _        => splitEntrypoint(function)
-    }
-  }
+//  def parseHandlerFunction(lambda: GestaltResourceInput) = {
+//    val props = lambda.properties.get
+//    val runtime = requiredProperty(props, "runtime")
+//    val mapJson = requiredProperty(props, "function_mappings")
+//    val fmap = mapJson.validate[Map[String, JsValue]].map {
+//      case m: Map[String,JsValue] => m
+//    }.recoverTotal { e =>
+//      throw new BadRequestException(
+//        "Could not parse property 'function_mappings': " + 
+//          JsError.toFlatJson(e).toString)
+//    }
+//    
+//    //
+//    // TODO: Validation parsing.
+//    // TODO: I think i have the naming of this backward,
+//    // What I'm calling the function is actually the handler. It still works
+//    // just confusing. Fix it.
+//    //
+//    val function = fmap.keys.toSeq(0)
+//    
+//    runtime.as[String] match {
+//      case "csharp" | "python" | "ruby" | "golang" => (function, "")
+//      case _        => splitEntrypoint(function)
+//    }
+//  }
   
   def splitEntrypoint(ep: String): (String,String) = { 
     val ps = (for {

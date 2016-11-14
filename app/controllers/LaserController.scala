@@ -31,6 +31,9 @@ import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
 import scala.util.Either
+import com.galacticfog.gestalt.keymgr.GestaltFeature
+import com.galacticfog.gestalt.meta.auth.Actions  
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 /*
  * 
@@ -55,31 +58,7 @@ object LaserController extends Authorization {
       gatewayConfig, lambdaConfig, 
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))
-  
-  import com.galacticfog.gestalt.keymgr.GestaltFeature
-  import com.galacticfog.gestalt.meta.auth.Actions  
-  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-  
-  def standardRequestOptions(
-    user: AuthAccountWithCreds,
-    environment: UUID,
-    resource: GestaltResourceInstance,
-    data: Option[Map[String, String]] = None) = {
 
-    RequestOptions(user,
-      authTarget = Option(environment),
-      policyOwner = Option(environment),
-      policyTarget = Option(resource),
-      data)
-  }
-
-  def standardRequestOperations(action: String) = {
-    List(
-      controllers.util.Authorize(action),
-      controllers.util.EventsPre(action),
-      controllers.util.PolicyCheck(action),
-      controllers.util.EventsPost(action))
-  }  
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     orgFqon(fqon).fold(Future( OrgNotFound(fqon) )) { org =>
@@ -545,6 +524,27 @@ object LaserController extends Authorization {
 //    Ok(result)
 //  }
 
+  
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    environment: UUID,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(environment),
+      policyOwner = Option(environment),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }    
   object LaserError {
     val LAMBDA_IMPLEMENTATION_NOT_SUPPORTED = "Only supporting implementations of type 'Lambda' at this time."
     val LAMBDA_IMPLEMENTATION_NOT_FOUND = "lambda.properties.implementation not found."

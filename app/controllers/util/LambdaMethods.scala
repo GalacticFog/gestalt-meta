@@ -25,8 +25,7 @@ import com.galacticfog.gestalt.laser._
 object LambdaMethods {
   
   private val log = Logger(this.getClass)
-//  private[util] val client = new LambdaProviderImpl(webClient)
-  
+
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
   lazy val laser = new Laser(
@@ -46,14 +45,12 @@ object LambdaMethods {
       case "memory"   => lambda.copy(artifactDescription = artifact.copy(memorySize = value.as[Int]))
       case "timeout"  => lambda.copy(artifactDescription = artifact.copy(timeoutSecs = value.as[Int]))
       case "package_url"  => lambda.copy(artifactDescription = artifact.copy(artifactUri = Option(value.as[String])))
-      case "synchronous"  => lambda.copy(artifactDescription = artifact.copy(synchronous = Option(value.as[Boolean])))
+      case "synchronous"  => lambda.copy(artifactDescription = artifact.copy(synchronous = value.as[Boolean]))
       case "code" => lambda.copy(artifactDescription = artifact.copy(code = Option(value.as[String])))
       case _ => lambda
     }
   }
-  
-  //type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds) => Try[GestaltResourceInstance]  
-  
+
   private[controllers] def patchLambdaHandler(
       r: GestaltResourceInstance, 
       patch: PatchDocument, 

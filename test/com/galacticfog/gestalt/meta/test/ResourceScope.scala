@@ -138,7 +138,9 @@ trait ResourceScope extends Scope {
           "code_type" -> "none",
           "memory"  -> "1024",
           "cpus"    -> "1.0",
-          "timeout" -> "0" )))
+          "timeout" -> "0",
+          "handler" -> "foo.js;foo",
+          "compressed" -> "true")))
   }
   
   val defaultContainerProps = Map(
