@@ -127,7 +127,12 @@ trait ContainerService extends MetaController {
       }
       case Some(fStatsFromMarathon) => fStatsFromMarathon.map(stats =>
         Some(updateMetaContainerWithStats(maybeContainerSpec.get._1, Some(stats)) -> Seq.empty)
-      )
+      ) recover {
+        case e: Throwable =>
+          maybeContainerSpec.map(containerSpec =>
+            updateMetaContainerWithStats(containerSpec._1, None) -> Seq.empty
+          )
+      }
     }
   }
 
