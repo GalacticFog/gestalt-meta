@@ -480,7 +480,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,Some(0),None,Some(Map.empty))),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,

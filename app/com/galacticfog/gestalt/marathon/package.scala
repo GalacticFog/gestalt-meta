@@ -295,7 +295,7 @@ package object marathon {
       Container.Docker.PortMapping(
         protocol = pm.protocol,
         containerPort = pm.container_port getOrElse 0,
-        hostPort = pm.host_port,
+        hostPort = pm.host_port orElse Some(0),
         servicePort = pm.service_port getOrElse 0
       )
     }
@@ -405,7 +405,7 @@ package object marathon {
       ps map {pm => Container.Docker.PortMapping(
         protocol = pm.protocol,
         containerPort = pm.container_port getOrElse 0,
-        hostPort = pm.host_port,
+        hostPort = pm.host_port orElse Some(0),
         servicePort = pm.service_port getOrElse 0
       )}
     }
