@@ -244,11 +244,11 @@ package object marathon {
       provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
       port_mappings = app.container flatMap {_.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => ContainerSpec.PortMapping(
         name = None,
-        labels = pm.labels,
+        labels = Some(pm.labels),
         protocol = pm.protocol,
-        container_port = pm.containerPort,
-        host_port = pm.hostPort getOrElse 0,
-        service_port = pm.servicePort
+        container_port = Some(pm.containerPort),
+        host_port = pm.hostPort,
+        service_port = Some(pm.servicePort)
       )}}}} getOrElse Seq(),
       cpus = app.cpus getOrElse AppDefinition.DefaultCpus,
       memory = app.mem getOrElse AppDefinition.DefaultMem,
@@ -294,9 +294,9 @@ package object marathon {
     def portmap(pm: ContainerSpec.PortMapping): Container.Docker.PortMapping = {
       Container.Docker.PortMapping(
         protocol = pm.protocol,
-        containerPort = pm.container_port,
-        hostPort = Some(pm.host_port),
-        servicePort = pm.service_port
+        containerPort = pm.container_port getOrElse 0,
+        hostPort = pm.host_port orElse Some(0),
+        servicePort = pm.service_port getOrElse 0
       )
     }
 
@@ -353,10 +353,10 @@ package object marathon {
         disk = spec.disk,
         constraints = constraints,
         portDefinitions = spec.port_mappings map { pm => AppUpdate.PortDefinition(
-          port = pm.host_port,
+          port = pm.host_port getOrElse 0,
           protocol = pm.protocol,
           name = pm.name,
-          labels = pm.labels
+          labels = pm.labels getOrElse Map.empty
         )},
         // TODO: ipAddress = None,
         // TODO: upgradeStrategy = None,
@@ -404,9 +404,9 @@ package object marathon {
     def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
       ps map {pm => Container.Docker.PortMapping(
         protocol = pm.protocol,
-        containerPort = pm.container_port,
-        hostPort = Some(pm.host_port),
-        servicePort = pm.service_port
+        containerPort = pm.container_port getOrElse 0,
+        hostPort = pm.host_port orElse Some(0),
+        servicePort = pm.service_port getOrElse 0
       )}
     }
 
@@ -450,11 +450,11 @@ package object marathon {
             )
             val ippertask = AppUpdate.IPPerTaskInfo(
                 discovery = Some(AppUpdate.DiscoveryInfo(
-                  ports = Some(props.port_mappings.map(pm => AppUpdate.PortDiscovery(
-                    number = pm.container_port,
+                  ports = Some(props.port_mappings.filter(_.container_port.isDefined).map(pm => AppUpdate.PortDiscovery(
+                    number = pm.container_port.get,
                     name = pm.name getOrElse pm.container_port.toString,
                     protocol = pm.protocol
-                  )).toSeq)
+                  )))
                 ))
               )
             (Some(docker), Some(ippertask))
@@ -497,8 +497,8 @@ package object marathon {
       cmd = props.cmd,
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
-      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {
-        pm => AppUpdate.PortDefinition(port = pm.container_port, protocol = pm.protocol, name = pm.name, pm.labels)
+      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings.filter(_.container_port.isDefined) map {
+        pm => AppUpdate.PortDefinition(port = pm.container_port.get, protocol = pm.protocol, name = pm.name, labels = pm.labels getOrElse Map.empty)
       }) else None,
       labels = Some(props.labels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(

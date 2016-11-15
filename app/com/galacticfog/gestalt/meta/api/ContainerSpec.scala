@@ -43,11 +43,11 @@ case class ContainerSpec(name: String = "",
 case object ContainerSpec extends Spec {
 
   case class PortMapping(protocol: String,
-                         container_port: Int,
-                         host_port: Int = 0,
-                         service_port: Int = 0,
+                         container_port: Option[Int] = None,
+                         host_port: Option[Int] = None,
+                         service_port: Option[Int] = None,
                          name: Option[String] = None,
-                         labels: Map[String,String] = Map())
+                         labels: Option[Map[String,String]] = None)
 
   case class Volume(container_path: String,
                     host_path: Option[String],

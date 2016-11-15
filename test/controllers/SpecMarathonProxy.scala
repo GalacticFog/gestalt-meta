@@ -244,8 +244,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80) , name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("HOST"),
         num_instances = 1,
@@ -270,8 +270,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("HOST"),
         num_instances = 1,
@@ -498,8 +498,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("HOST"),
         num_instances = 1
@@ -521,8 +521,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("BRIDGE"),
         num_instances = 1
@@ -572,8 +572,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("apps"),
         num_instances = 1
@@ -596,8 +596,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithStdNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("HOST"),
         num_instances = 1
@@ -620,8 +620,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithStdNetworks.id),
         port_mappings = Seq(
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 80 , name = Some("http")),
-          ContainerSpec.PortMapping(protocol = "tcp", container_port = 443 , name = Some("https"))
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
         ),
         network = Some("BRIDGE"),
         num_instances = 1
