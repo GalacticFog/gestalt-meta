@@ -204,7 +204,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         force_pull = false,
         health_checks = Seq(),
         volumes = Seq(),
-        labels = Map(),
+        labels = Map("SOME" -> "LABEL"),
         env = Map(),
         user = None
       )
@@ -213,7 +213,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "image" -> testProps.image
+          "image" -> testProps.image,
+          "labels" -> Json.obj("SOME" -> "LABEL").toString
         ))
       ).get
       val created = DateTime.parse(createdResource.created.get("timestamp"))
@@ -241,7 +242,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -299,7 +300,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -354,7 +355,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -416,7 +417,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",80,0,0,None,Map())),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
