@@ -18,6 +18,8 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
 import scala.language.postfixOps
+import com.galacticfog.gestalt.data.models.GestaltResourceType
+import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
 
 trait Authorization extends MetaController {
 
@@ -45,7 +47,7 @@ trait Authorization extends MetaController {
         ResourceIds.User, user.account.id, org, Json.toJson(e), user,
         Option(ResourceIds.Entitlement), Option(resourceId))
     }
-  }  
+  }
   
   val ACTIONS_CRUD        = Seq("create", "view", "update", "delete")
   val UserActions         = (ResourceIds.User         -> ACTIONS_CRUD)
@@ -67,50 +69,18 @@ trait Authorization extends MetaController {
   case class ActionSet(prefix: String, verbs: Seq[String])
   implicit lazy val actionSetFormat = Json.format[ActionSet]
   
-  def getSelfActions(typeId: UUID): Option[Seq[String]] = {
-    TypeFactory.findById(typeId).fold {
-      throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
-    }{ tpe =>
-      
-      for {
-        p <- tpe.properties
-        a <- p.get("entitlement_actions")
-        s <- Option(JsonUtil.safeParse[ActionSet](a))
-        r <- Option(s.verbs map { "%s.%s".format(s.prefix, _)})
-      } yield r
-      
-    }
-  }
-  
-  import com.galacticfog.gestalt.data.models.GestaltResourceType  
-  import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-  
-  def getEntitlementActions(typeId: UUID) = {
+  /**
+   * Get a list of fully-qualified action names for the given type. The returned
+   * Seq will include actions defined on any super-types of the given type.
+   * 
+   * @param typeId ID of the ResourceType to get actions for
+   * @return Seq[String] of fully-qualified action names
+   */
+  def getEntitlementActions(typeId: UUID): Seq[String] = {
     
     TypeFactory.findById(typeId).fold {
       throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
     }{ tpe =>
-      
-      def verbs(tpe: GestaltResourceType): Seq[String] = {
-        (for {
-          p <- tpe.properties
-          a <- p.get("entitlement_actions")
-          s <- Option(JsonUtil.safeParse[ActionSet](a))
-          r <- Option(s.verbs)
-        } yield r) getOrElse Seq.empty
-      }
-      
-      def prefix(tpe: GestaltResourceType): String = {
-        JsonUtil.safeParse[ActionSet](
-          tpe.properties.get("entitlement_actions")
-        ).prefix
-      }
-      
-      def getType(typeId: UUID): GestaltResourceType = {
-        TypeFactory.findById(typeId) getOrElse {
-          throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
-        }
-      }
       
       def go(prefix: String, rss: Seq[UUID], acc: Set[String]): Set[String] = {
         rss match {
@@ -123,42 +93,69 @@ trait Authorization extends MetaController {
         }
       }
       
+      // List of all resource-type IDs in the inheritance hierarchy
+      // including that of the target resource.
       val resourceSet = typeId +: TypeFactory.getAncestorIds(typeId)
-      
-      println("**********************")
-      println(resourceSet)
-      println("**********************")
-      
       go(prefix(tpe), resourceSet, Set.empty).toSeq
     }   
   }
   
-  def verbs(tpe: GestaltResourceType) = {
-    mapactions(tpe)(s => s.verbs map { "%s.%s".format(s.prefix, _) } )
+  private[auth] def getActionInfo(tpe: GestaltResourceType): ActionInfo = {
+    tpe.properties.get.get("actions").fold(
+      throw new RuntimeException(s"Could not find ResourceType.properties.actions for type ${tpe.typeId}")
+    )(JsonUtil.safeParse[ActionInfo]( _ ))
+  }
+  
+  private[auth] def getLineageInfo(tpe: GestaltResourceType): LineageInfo = {
+    tpe.properties.get.get("lineage").fold(
+      throw new RuntimeException(s"Could not find ResourceType.properties.lineage for type ${tpe.typeId}")
+    )(JsonUtil.safeParse[LineageInfo]( _ ))    
+  }
+  
+  /** 
+   * Get the action-prefix specified on the given ResourceType 
+   */
+  private[auth] def prefix(tpe: GestaltResourceType): String = {
+    JsonUtil.safeParse[ActionSet](
+      tpe.properties.get("actions")
+    ).prefix
+  }
+  
+  /**
+   * Get list of action-verbs specified on the given ResourceType 
+   */
+  private[auth] def verbs(tpe: GestaltResourceType): Seq[String] = {
+    (for {
+      p <- tpe.properties
+      a <- p.get("actions")
+      s <- Option(JsonUtil.safeParse[ActionSet](a))
+      r <- Option(s.verbs)
+    } yield r) getOrElse Seq.empty
   }  
   
-  def actionlist(tpe: GestaltResourceType) = {
-    mapactions(tpe)(s => s.verbs map { "%s.%s".format(s.prefix, _) } )
-  }
-  
-  def mapactions[A](tpe: GestaltResourceType)(f: ActionSet => Seq[A]): Option[Seq[A]] = {
-    for {
-      p <- tpe.properties
-      a <- p.get("entitlement_actions")
-      s <- Option(JsonUtil.safeParse[ActionSet](a))
-      r <- Option(f(s))
-    } yield r
-  }
-  
+  /** 
+   * Get the ResourceType indicated by typeId - exception if not found 
+   */
+  private[auth] def getType(typeId: UUID): GestaltResourceType = {
+    TypeFactory.findById(typeId) getOrElse {
+      throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
+    }
+  }  
+  /**
+   * Get a list of fully-qualified action-names from a single ResourceType.
+   * 
+   * @param tpe ResourceType object to build action list for
+   * @return Seq of fully-qualified action-names - in the form of:
+   *  i.e. Seq("prefix.create", "prefix.delete")
+   */
   def buildActionList(tpe: GestaltResourceType): Option[Seq[String]] = {
     for {
       p <- tpe.properties
-      a <- p.get("entitlement_actions")
+      a <- p.get("actions")
       s <- Option(JsonUtil.safeParse[ActionSet](a))
       r <- Option(s.verbs map { "%s.%s".format(s.prefix, _)})
     } yield r    
   }
-  
   
   def setNewEntitlements(
       org: UUID, 
@@ -170,39 +167,50 @@ trait Authorization extends MetaController {
     
     /*
      * Use resourceType to find ResourceType
-     * 1.) Set entitlements for entitlement_actions
-     * 2.) Lookup resource types named in 'set_entitlements'
+     * - Set entitlements for actions
+     * 
      */
     TypeFactory.findById(resourceType).fold {
       throw new IllegalArgumentException(s"ResourceType with ID '$resourceType' not found.")
     }{ tpe =>
-      // get entitlement_actions.prefix
-      // get entitlement_actions.verbs
       
-      val props = tpe.properties.get
-      val prefix: String = ???
-      val verbs: Seq[String] = ???
-      val actions = verbs map { "%s.%s".format(prefix, _) }
+      // Get actions for the target resource.
+      val selfActions = getEntitlementActions(tpe.typeId)
       
-      // get list or resource-ids from set_entitlements
-      val otherEnts: Seq[UUID] = {
-        props.get("set_entitlements") match {
-          case None    => Seq.empty
-          case Some(r) => JsonUtil.safeParse[Seq[UUID]](r)
-        }
+      // Get actions for all child-types
+      val childActions = getChildActions(tpe)
+      
+      val actions = selfActions ++ childActions
+      
+      
+      // Why is grants type Map[UUID,String] ?
+      
+      Entitle(org, resourceType, resource, user, parent) {
+        generateEntitlements(
+          creator  = user.account.id,
+          org      = org,
+          resource = resource,
+          grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
+      }      
+    }
+  }
+  
+  
+  
+  def getChildActions(tpe: GestaltResourceType): Seq[String] = {
+    def loop(types: Seq[UUID], acc: Seq[String]): Seq[String] = {
+      types match {
+        case Nil => acc
+        case rtype :: tail => 
+          loop(tail, acc ++ getEntitlementActions(rtype))
       }
     }
     
-//    
-//    Entitle(org, resourceType, resource, user, parent) {
-//      generateEntitlements(
-//        creator  = user.account.id,
-//        org      = org,
-//        resource = resource,
-//        grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
-//    }
-    
-  }  
+    getLineageInfo(tpe).child_types match {
+      case None => Seq.empty
+      case Some(types) => loop(types, Seq.empty)
+    }
+  }
   
   def set(typeId: UUID, prefix: String, verbs: String) = {
     
@@ -560,11 +568,10 @@ trait Authorization extends MetaController {
       grants: Map[UUID,Seq[String]]): Seq[Entitlement] = {
     
     for {
-      (typeId,actions) <- grants.toSeq
+      (typeId, actions) <- grants.toSeq
       entitlement      <- resourceEntitlements(creator, org, resource, typeId, actions)
     } yield entitlement
   }
-  
   
   /**
    * Generate a list of Entitlements for a given Resource of a given type.

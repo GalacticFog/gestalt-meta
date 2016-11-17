@@ -29,7 +29,7 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 class SyncController(deleteController: DeleteController) extends Authorization {
   
   private var adminId: UUID = null
-
+  
   implicit lazy val syncStatContainerFormat = Json.format[Stat]
   implicit lazy val syncStatsFormat = Json.format[SyncStats]
   
@@ -157,10 +157,10 @@ class SyncController(deleteController: DeleteController) extends Authorization {
         } 
       }
     }
-  }  
+  }
   
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
-   
+     
     for (org <- rs) {
       
       log.debug(s"Updating Org : ${org.name}")

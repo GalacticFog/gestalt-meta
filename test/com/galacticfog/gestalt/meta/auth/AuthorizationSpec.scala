@@ -19,7 +19,9 @@ import com.galacticfog.gestalt.meta.test._
 import play.api.test._
 import play.api.test.Helpers._
 import com.galacticfog.gestalt.data.bootstrap.SystemType
-import com.galacticfog.gestalt.data.bootstrap.EntitlementInfo
+import com.galacticfog.gestalt.data.bootstrap.ActionInfo
+import com.galacticfog.gestalt.data.bootstrap.LineageInfo
+
 
 class AuthorizationSpec extends PlaySpecification with ResourceScope {
 
@@ -129,11 +131,10 @@ class AuthorizationSpec extends PlaySpecification with ResourceScope {
         typeId      = tid1, 
         typeName    = typename,
         extend      = Some(ResourceIds.Resource)
-      ).withEntitlementInfo(
-        EntitlementInfo(
+      ).withActionInfo(
+        ActionInfo(
             prefix = typename, 
-            verbs = Seq("start", "stop"),
-            set   = Seq.empty)    
+            verbs = Seq("start", "stop"))    
       ).save()
       
       val type1 = TypeFactory.findById(tid1)
@@ -166,22 +167,22 @@ class AuthorizationSpec extends PlaySpecification with ResourceScope {
         typeId      = tid2, 
         typeName    = tname2,
         extend      = Some(ResourceIds.Resource)
-      ).withEntitlementInfo(
-          EntitlementInfo(
+        
+      ).withActionInfo(
+          ActionInfo(
               prefix = tname2, 
-              verbs  = Seq("start", "stop", "restart"),
-              set    = Seq.empty)
+              verbs  = Seq("start", "stop", "restart"))
       ).save()
       
       SystemType(dummyRootOrgId, dummyOwner,
         typeId      = tid3, 
         typeName    = tname3,
         extend      = Some(tid2)
-      ).withEntitlementInfo (
-          EntitlementInfo(
+        
+      ).withActionInfo (
+          ActionInfo(
               prefix = tname3, 
-              verbs  = Seq("foo", "bar", "baz", "qux"),
-              set    = Seq.empty)          
+              verbs  = Seq("foo", "bar", "baz", "qux"))          
       ).save()
       
       
@@ -194,10 +195,6 @@ class AuthorizationSpec extends PlaySpecification with ResourceScope {
       val acts2 = Auth.getEntitlementActions(tid3)
       acts2.nonEmpty must beTrue
       acts2.size === 11
-      
-      println("================ ===============")
-      acts2 foreach println
-      println("================ ===============")
       
       acts2.contains(s"$tname3.create") must beTrue
       acts2.contains(s"$tname3.view")   must beTrue
