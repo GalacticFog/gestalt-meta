@@ -300,4 +300,30 @@ trait ResourceScope extends Scope {
   
   def uuid() = UUID.randomUUID
   
+  def createResourceType(
+      name:        String, 
+      org:         UUID = dummyRootOrgId,
+      owner:       ResourceOwnerLink = dummyOwner,
+      typeId:      UUID = UUID.randomUUID(), 
+      description: Option[String] = None, 
+      extend:      Option[UUID] = None,
+      selfProps:   Map[String,String] = Map.empty,
+      isAbstract:  Boolean = false) = {
+
+    TypeFactory.create(org)(
+      GestaltResourceType(
+        extend = extend,
+        typeId = ResourceIds.ResourceType,
+        orgId = org,
+        owner = owner,
+        id = typeId,
+        name = name,
+        state = ResourceState.id(ResourceStates.Active),
+        description = description,
+        properties = Option(selfProps)),
+        validate = false
+    ).get
+  }  
+  
+  
 }

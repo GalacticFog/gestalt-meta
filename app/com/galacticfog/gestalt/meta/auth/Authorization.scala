@@ -64,6 +64,160 @@ trait Authorization extends MetaController {
   val ContainerActions    = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
   val LambdaActions       = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
   
+  case class ActionSet(prefix: String, verbs: Seq[String])
+  implicit lazy val actionSetFormat = Json.format[ActionSet]
+  
+  def getSelfActions(typeId: UUID): Option[Seq[String]] = {
+    TypeFactory.findById(typeId).fold {
+      throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
+    }{ tpe =>
+      
+      for {
+        p <- tpe.properties
+        a <- p.get("entitlement_actions")
+        s <- Option(JsonUtil.safeParse[ActionSet](a))
+        r <- Option(s.verbs map { "%s.%s".format(s.prefix, _)})
+      } yield r
+      
+    }
+  }
+  
+  import com.galacticfog.gestalt.data.models.GestaltResourceType  
+  import com.galacticfog.gestalt.data.models.GestaltTypeProperty
+  
+  def getEntitlementActions(typeId: UUID) = {
+    
+    TypeFactory.findById(typeId).fold {
+      throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
+    }{ tpe =>
+      
+      def verbs(tpe: GestaltResourceType): Seq[String] = {
+        (for {
+          p <- tpe.properties
+          a <- p.get("entitlement_actions")
+          s <- Option(JsonUtil.safeParse[ActionSet](a))
+          r <- Option(s.verbs)
+        } yield r) getOrElse Seq.empty
+      }
+      
+      def prefix(tpe: GestaltResourceType): String = {
+        JsonUtil.safeParse[ActionSet](
+          tpe.properties.get("entitlement_actions")
+        ).prefix
+      }
+      
+      def getType(typeId: UUID): GestaltResourceType = {
+        TypeFactory.findById(typeId) getOrElse {
+          throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
+        }
+      }
+      
+      def go(prefix: String, rss: Seq[UUID], acc: Set[String]): Set[String] = {
+        rss match {
+          case Nil => acc
+          case rtype :: tail => {
+            // Prepend prefix to all verbs found for current ResourceType.
+            val actions = verbs(getType(rtype)) map { "%s.%s".format(prefix, _) }
+            go(prefix, tail, actions.toSet ++ acc)
+          }
+        }
+      }
+      
+      val resourceSet = typeId +: TypeFactory.getAncestorIds(typeId)
+      
+      println("**********************")
+      println(resourceSet)
+      println("**********************")
+      
+      go(prefix(tpe), resourceSet, Set.empty).toSeq
+    }   
+  }
+  
+  def verbs(tpe: GestaltResourceType) = {
+    mapactions(tpe)(s => s.verbs map { "%s.%s".format(s.prefix, _) } )
+  }  
+  
+  def actionlist(tpe: GestaltResourceType) = {
+    mapactions(tpe)(s => s.verbs map { "%s.%s".format(s.prefix, _) } )
+  }
+  
+  def mapactions[A](tpe: GestaltResourceType)(f: ActionSet => Seq[A]): Option[Seq[A]] = {
+    for {
+      p <- tpe.properties
+      a <- p.get("entitlement_actions")
+      s <- Option(JsonUtil.safeParse[ActionSet](a))
+      r <- Option(f(s))
+    } yield r
+  }
+  
+  def buildActionList(tpe: GestaltResourceType): Option[Seq[String]] = {
+    for {
+      p <- tpe.properties
+      a <- p.get("entitlement_actions")
+      s <- Option(JsonUtil.safeParse[ActionSet](a))
+      r <- Option(s.verbs map { "%s.%s".format(s.prefix, _)})
+    } yield r    
+  }
+  
+  
+  def setNewEntitlements(
+      org: UUID, 
+      resourceType: UUID, 
+      resource: UUID, 
+      user: AuthAccountWithCreds,
+      grants: Map[UUID, Seq[String]],
+      parent: Option[UUID]) = {
+    
+    /*
+     * Use resourceType to find ResourceType
+     * 1.) Set entitlements for entitlement_actions
+     * 2.) Lookup resource types named in 'set_entitlements'
+     */
+    TypeFactory.findById(resourceType).fold {
+      throw new IllegalArgumentException(s"ResourceType with ID '$resourceType' not found.")
+    }{ tpe =>
+      // get entitlement_actions.prefix
+      // get entitlement_actions.verbs
+      
+      val props = tpe.properties.get
+      val prefix: String = ???
+      val verbs: Seq[String] = ???
+      val actions = verbs map { "%s.%s".format(prefix, _) }
+      
+      // get list or resource-ids from set_entitlements
+      val otherEnts: Seq[UUID] = {
+        props.get("set_entitlements") match {
+          case None    => Seq.empty
+          case Some(r) => JsonUtil.safeParse[Seq[UUID]](r)
+        }
+      }
+    }
+    
+//    
+//    Entitle(org, resourceType, resource, user, parent) {
+//      generateEntitlements(
+//        creator  = user.account.id,
+//        org      = org,
+//        resource = resource,
+//        grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
+//    }
+    
+  }  
+  
+  def set(typeId: UUID, prefix: String, verbs: String) = {
+    
+    def go(types: Seq[UUID], acc: Seq[Entitlement]): Seq[Entitlement] = {
+      types match {
+        case Nil => acc
+        case h :: t => {
+          // generate entitlements for type
+          ???
+        }
+      }
+    }
+    
+  }
+  
   def setNewResourceEntitlements(
       org: UUID, 
       resourceType: UUID, 

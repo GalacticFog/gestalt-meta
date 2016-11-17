@@ -18,11 +18,12 @@ import com.galacticfog.gestalt.meta.test._
 //import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.test._
 import play.api.test.Helpers._
+import com.galacticfog.gestalt.data.bootstrap.SystemType
+import com.galacticfog.gestalt.data.bootstrap.EntitlementInfo
 
 class AuthorizationSpec extends PlaySpecification with ResourceScope {
 
   sequential
-  
   
   case object Auth extends Authorization
   
@@ -83,4 +84,134 @@ class AuthorizationSpec extends PlaySpecification with ResourceScope {
     }
   }
   
+  "buildActionList" should {
+    
+    "return the list of given entitlement actions from the given ResourceType" in new WithApplication {
+      val wt = TypeFactory.findById(ResourceIds.Workspace)
+      
+      wt must beSome
+      
+      val acts = Auth.buildActionList(wt.get)
+      
+      acts must beSome
+      acts.get.contains("workspace.create") must beTrue
+      acts.get.contains("workspace.view")   must beTrue
+      acts.get.contains("workspace.update") must beTrue
+      acts.get.contains("workspace.delete") must beTrue
+    }
+    
+    "return None if no actions are present" in new WithApplication {
+      val dummytpe = createResourceType(name = uuid())
+      
+      Auth.buildActionList(dummytpe) must beNone
+    }
+  }
+  
+  "getEntitlementActions" should {
+    
+    "return a list of fully qualified action names for the given resource" in {
+      
+      val acts = Auth.getEntitlementActions(ResourceIds.Resource)
+      
+      acts.size === 4
+      acts.contains("resource.create")
+      acts.contains("resource.view")
+      acts.contains("resource.update")
+      acts.contains("resource.delete")
+    }
+    
+    
+    "return an aggregate list of action names for the given type and any super types" in {
+      val tid1 = uuid()
+      val typename = uuid().toString
+      
+      SystemType(dummyRootOrgId, dummyOwner,
+        typeId      = tid1, 
+        typeName    = typename,
+        extend      = Some(ResourceIds.Resource)
+      ).withEntitlementInfo(
+        EntitlementInfo(
+            prefix = typename, 
+            verbs = Seq("start", "stop"),
+            set   = Seq.empty)    
+      ).save()
+      
+      val type1 = TypeFactory.findById(tid1)
+      type1 must beSome
+      
+      val acts = Auth.getEntitlementActions(tid1)
+      acts.nonEmpty must beTrue
+      acts.size === 6
+      
+      /* Fully-Qualified Action-Name */
+      def fqan(verb: String) = s"$typename.$verb"
+      
+      acts.contains(fqan("create")) must beTrue
+      acts.contains(fqan("view")) must beTrue
+      acts.contains(fqan("update")) must beTrue
+      acts.contains(fqan("delete")) must beTrue
+      acts.contains(fqan("start")) must beTrue
+      acts.contains(fqan("stop")) must beTrue
+      
+      /*
+       * Try a deeper inheritance hierarchy
+       */
+      val tid2 = uuid()
+      val tid3 = uuid()
+      
+      val tname2 = uuid.toString()
+      val tname3 = uuid.toString()
+      
+      SystemType(dummyRootOrgId, dummyOwner,
+        typeId      = tid2, 
+        typeName    = tname2,
+        extend      = Some(ResourceIds.Resource)
+      ).withEntitlementInfo(
+          EntitlementInfo(
+              prefix = tname2, 
+              verbs  = Seq("start", "stop", "restart"),
+              set    = Seq.empty)
+      ).save()
+      
+      SystemType(dummyRootOrgId, dummyOwner,
+        typeId      = tid3, 
+        typeName    = tname3,
+        extend      = Some(tid2)
+      ).withEntitlementInfo (
+          EntitlementInfo(
+              prefix = tname3, 
+              verbs  = Seq("foo", "bar", "baz", "qux"),
+              set    = Seq.empty)          
+      ).save()
+      
+      
+      val type2 = TypeFactory.findById(tid2)
+      type2 must beSome
+      
+      val type3 = TypeFactory.findById(tid2)
+      type3 must beSome
+      
+      val acts2 = Auth.getEntitlementActions(tid3)
+      acts2.nonEmpty must beTrue
+      acts2.size === 11
+      
+      println("================ ===============")
+      acts2 foreach println
+      println("================ ===============")
+      
+      acts2.contains(s"$tname3.create") must beTrue
+      acts2.contains(s"$tname3.view")   must beTrue
+      acts2.contains(s"$tname3.update") must beTrue
+      acts2.contains(s"$tname3.delete") must beTrue
+      acts2.contains(s"$tname3.start")  must beTrue
+      acts2.contains(s"$tname3.stop")   must beTrue
+      acts2.contains(s"$tname3.restart") must beTrue
+      acts2.contains(s"$tname3.foo") must beTrue
+      acts2.contains(s"$tname3.bar") must beTrue
+      acts2.contains(s"$tname3.baz") must beTrue
+      acts2.contains(s"$tname3.qux") must beTrue
+      
+    }
+  }  
+
 }
