@@ -35,7 +35,8 @@ trait Authorization extends MetaController {
     Entitle(org, resourceType, resourceId, request.identity, parent)(entitlements)
   }
   
-  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, user: AuthAccountWithCreds, parent: Option[UUID])(entitlements: => Seq[Entitlement])= {    
+  def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, user: AuthAccountWithCreds, parent: Option[UUID])
+      (entitlements: => Seq[Entitlement])= {    
     val newEntitlements = {
       if (parent.isEmpty) entitlements else
       mergeParentEntitlements(entitlements, resourceType, parent.get)
@@ -61,6 +62,8 @@ trait Authorization extends MetaController {
   val ApiEndpointActions  = (ResourceIds.ApiEndpoint  -> ACTIONS_CRUD)
   val ResourceTypeActions = (ResourceIds.ResourceType -> ACTIONS_CRUD)
   val TypePropertyActions = (ResourceIds.TypeProperty -> ACTIONS_CRUD)  
+  val IntegrationActions  = (ResourceIds.Integration  -> ACTIONS_CRUD)
+  
   val ContainerActions    = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
   val LambdaActions       = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
   
@@ -102,7 +105,7 @@ trait Authorization extends MetaController {
   }
   
   def setNewEnvironmentEntitlements(org: UUID, env: UUID, user: AuthAccountWithCreds, parent: UUID) = {
-    val grants = Map(EnvironmentActions, LambdaActions, ContainerActions, PolicyActions, ApiActions)
+    val grants = Map(EnvironmentActions, LambdaActions, ContainerActions, PolicyActions, ApiActions, IntegrationActions)
     setNewResourceEntitlements(org, ResourceIds.Environment, env, user, grants, Option(parent))
   }
   
@@ -125,6 +128,12 @@ trait Authorization extends MetaController {
     val grants = Map(LambdaActions, ApiEndpointActions)
     setNewResourceEntitlements(org, ResourceIds.Lambda, newLambdaId, user, grants, Option(parent))
   }
+  
+  def setNewIntegrationEntitlements(org: UUID, newIntegrationId: UUID, user: AuthAccountWithCreds, parent: UUID) = {
+    val grants = Map(IntegrationActions)
+    setNewResourceEntitlements(org, ResourceIds.Integration, newIntegrationId, user, grants, Option(parent))
+  }
+  
   
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
