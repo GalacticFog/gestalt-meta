@@ -19,13 +19,16 @@ import com.galacticfog.gestalt.keymgr._
 import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFoundException}
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
-import play.api.{ Logger => log }
+import play.api.{Logger => log}
 import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import controllers.util.getExpandParam
 import controllers.util.RequestOptions
-import com.galacticfog.gestalt.meta.auth.{Actions,Authorization}
-import controllers.util.{SafeRequest,standardMethods}
+import com.galacticfog.gestalt.meta.auth.{Actions, Authorization}
+import com.galacticfog.gestalt.security.api._
+import controllers.util.{SafeRequest, standardMethods}
+
+import scala.reflect.io.Directory
 
 
 object IntegrationController extends Authorization {
@@ -40,8 +43,8 @@ object IntegrationController extends Authorization {
            "iconUrl": "",
            "url": "",
            "method": "",
-           "headers": "",
-           "payload": ""
+           "headers": [""],
+           "payload": {}
         }
       }
    */
@@ -54,9 +57,9 @@ object IntegrationController extends Authorization {
       // Create service account before creating the integration
       try {
         val orgid = fqid(fqon)
-//        val org = ResourceFactory.findOrgById(ResourceIds.Org, orgid).get
-        
-      /*
+        val user =  request.identity  //GestaltAccount.
+//        val org = GestaltOrg.findOr(ResourceIds.Org, orgid).get
+        /*
         log.info(s"INFO - (TODO) Creating the service user account.")
         val username = "integration" //TODO - unique username generator
         val firstname = "gestalt"
@@ -66,15 +69,15 @@ object IntegrationController extends Authorization {
         val credential = "password" //TODO - generated password
         val groups = Seq.empty[GestaltGroup]
         val description = "A gestalt integration account"
-        GestaltDirectory.createAccount(GestaltAccountCreate(username, firstname, lastname, email, phone, credential, groups, description)) match {
-           case Failure(e) => HandleException(e)
+        GestaltDirectory.createAccount(dirid, GestaltAccountCreate(username, firstname, lastname, None, None, credential, None, Some(description))) match {
+           case Failure(e) => HandleExceptions(e)
            case Success(account) => {
              log.info(s"INFO - Creating the integration resource.")        
 	          createIntegration(env) match {
 	            case Failure(e) => HandleExceptions(e)
 	            case Success(integration) => {
 	              // Set CRUD entitlements for creating User
-	              setCreatorEntitlements(integration.id, org, request.identity)
+//	              setCreatorEntitlements(integration.id, org, request.identity)
 	              // Render resource to JSON and return 201
 	              Created(Output.renderInstance(integration, META_URL))
 	            }
@@ -82,7 +85,7 @@ object IntegrationController extends Authorization {
            }
         }
         */
-        
+//        val integrationCreds = request.identity.account.generateAPICredentials()
         createIntegration(orgid, envid) match {
           case Failure(e) => HandleExceptions(e)
           case Success(integration) => {
@@ -187,13 +190,13 @@ object IntegrationController extends Authorization {
     findById(ResourceIds.Integration, id).fold {
       IntegrationNotFound(id)
     } { integration =>
-/*
+
       // delete service account
-      Directory.deleteAccount(integration.accountUuid) match {
-        case Failure(e) => HandleException(e)
-        case Success(_) =>
-      }
-*/
+//      GestaltAccount.deleteAccount(integration.accountUuid) match {
+//        case Failure(e) => HandleExceptions(e)
+//        case Success(_) =>
+//      }
+
       hardDeleteResource(id) match {
         case Failure(e) => HandleExceptions(e)
         case Success(_) => NoContent
@@ -229,7 +232,7 @@ object IntegrationController extends Authorization {
 
   def substitute(strfld: String, env: GestaltResourceInstance) = {
     val pattern = "\\Q{{\\E[a-zA-Z]\\Q}}\\E".r
-//      strfld.replace("{{fqon}}", env.fqon).replace("{{name}}", env.name).replace("{{id}}", env.id.toString)
+      strfld.replace("{{fqon}}", "testorg.testws").replace("{{name}}", env.name).replace("{{id}}", env.id.toString)
       //TODO - add remaining env properties
       strfld
   }
