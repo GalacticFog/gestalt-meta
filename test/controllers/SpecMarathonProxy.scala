@@ -3,6 +3,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.marathon.IPPerTaskInfo.DiscoveryInfo
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -179,9 +180,14 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       val app = inputJson.as[MarathonApp]
       app must_== MarathonApp(
         id = "cli-example-server",
-        container = MarathonContainer(containerType = "DOCKER", docker = Some(MarathonDocker(image = "nginx", network = "BRIDGE", portMappings = Some(Seq(
-          MarathonPortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
-        )))), volumes = None),
+        container = MarathonContainer(containerType = "DOCKER", docker = Some(MarathonContainer.Docker(
+          image = "nginx",
+          network = "BRIDGE",
+          portMappings = Some(Seq(
+            MarathonContainer.Docker.PortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
+          )))),
+          volumes = None
+        ),
         cpus = 0.1,
         mem = 128,
         instances = 1,
@@ -385,14 +391,12 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       val marApp = MarathonApp(
         id = name,
         container = MarathonContainer(
-          docker = Some(MarathonDocker(
+          docker = Some(MarathonContainer.Docker(
             image = "some/image:tag",
-            network = "HOST",
+            network = "USER",
             forcePullImage = Some(true),
-            parameters = Some(Seq(
-              KeyValuePair("net", "web-net"),
-              KeyValuePair("user","someUser")
-            ))
+            portMappings = Some(Seq.empty),
+            parameters = Some(Seq(KeyValuePair("user", "someUser")))
           )),
           containerType = "DOCKER"
         ),
@@ -401,8 +405,10 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         instances = 3,
         cmd = Some("/usr/bin/someCmd"),
         args = None,
-        ipAddress = Some(IPPerTaskInfo(Some(DiscoveryInfo(Some(Seq(
-        )))))),
+        ipAddress = Some(IPPerTaskInfo(
+          discovery = None,
+          networkName = Some("web-net")
+        )),
         labels = None,
         portDefinitions = None,
         healthChecks = None,
@@ -412,7 +418,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonApp(name, resourceJson.as[InputContainerProperties], provider)
+      toMarathonApp(name, resourceJson.as[InputContainerProperties], provider) must_== marApp
     }
 
     "generate valid payload with cmd and no args" in {
@@ -526,7 +532,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       val marApp = MarathonApp(
         id = name,
         container = MarathonContainer(
-          docker = Some(MarathonDocker(
+          docker = Some(MarathonContainer.Docker(
             image = "some/image:tag",
             network = "HOST",
             forcePullImage = Some(true),
@@ -658,15 +664,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         network = "apps",
         num_instances = 1
       ), marathonProviderWithNetworks)).toString
-      marJson must /("container") /("docker") /("network" -> beEqualTo("HOST"))
-      marJson must /("container") /("docker") /("parameters") /#(0) /#(0) / "net"
-      marJson must /("container") /("docker") /("parameters") /#(0) /#(1) / "apps"
+      marJson must /("container") /("docker") /("network" -> beEqualTo("USER"))
+      marJson must /("ipAddress") /("networkName" -> beEqualTo("apps"))
+      marJson must /("container") /("docker") /("portMappings") /#(0) /("name" -> "http")
+      marJson must /("container") /("docker") /("portMappings") /#(1) /("name" -> "https")
       marJson must not / "ports"
       marJson must havePortDefinitions()
-      marJson must haveIPPerTaskPortDiscovery(
-        aDiscoveryPortWith(port = 80, name = "http", protocol = "tcp"),
-        aDiscoveryPortWith(port = 443, name = "https", protocol = "tcp")
-      )
+      marJson must not /("ipAddress") /("discovery")
     }
 
     "generate marathon payload with support for standard host networking on calico provider" in {
