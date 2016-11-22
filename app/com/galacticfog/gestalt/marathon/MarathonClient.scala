@@ -305,7 +305,8 @@ case object MarathonClient {
       tasksRunning = tasksRunning,
       tasksStaged = tasksStaged,
       tasksHealthy = tasksHealthy,
-      tasksUnhealthy = tasksUnhealthy
+      tasksUnhealthy = tasksUnhealthy,
+      taskStats = None
     )
   }
 

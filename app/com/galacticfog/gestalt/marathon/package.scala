@@ -44,12 +44,12 @@ package object marathon {
       name: Option[String] = None,
       locations: Option[Iterable[String]] = None)
 
-  case class PortMapping(
-      protocol: String,
-      container_port: Int, 
-      host_port: Int = 0, 
-      service_port: Int = 0,
-      label: Option[String] = None)
+  case class PortMapping(protocol: String,
+                         container_port: Int,
+                         host_port: Option[Int] = None,
+                         service_port: Option[Int] = None,
+                         label: Option[String] = None,
+                         loadBalanced: Option[Boolean] = None)
 
   case class InputContainerProperties(container_type: String,
                                       image: String,
@@ -78,24 +78,30 @@ package object marathon {
 
   case class KeyValuePair(key: String, value: String)
 
-  case class MarathonPortMapping(
-                          protocol: Option[String] = Some("tcp"),
-                          containerPort: Int,
-                          hostPort: Option[Int] = Some(0),
-                          servicePort: Option[Int] = Some(0))
+  case class MarathonContainer( docker: Option[MarathonContainer.Docker],
+                                containerType: String,
+                                volumes: Option[Iterable[Volume]] = None )
 
-  case class MarathonDocker(
-      image: String,
-      network: String = "BRIDGE",
-      forcePullImage: Option[Boolean] = None,
-      portMappings: Option[Iterable[MarathonPortMapping]] = None,
-      parameters: Option[Iterable[KeyValuePair]] = None)
+  case object MarathonContainer {
 
-  case class MarathonContainer(
-      docker: Option[MarathonDocker],
-      containerType: String,
-      volumes: Option[Iterable[Volume]] = None
-  )
+    case class Docker(image: String,
+                      network: String = "BRIDGE",
+                      forcePullImage: Option[Boolean] = None,
+                      portMappings: Option[Iterable[Docker.PortMapping]] = None,
+                      parameters: Option[Iterable[KeyValuePair]] = None)
+
+    case object Docker {
+
+      case class PortMapping(protocol: Option[String] = Some("tcp"),
+                             containerPort: Int,
+                             hostPort: Option[Int] = Some(0),
+                             servicePort: Option[Int] = Some(0),
+                             name: Option[String] = None,
+                             labels: Option[Map[String,String]] = None)
+
+    }
+
+  }
 
   case class MarathonHealthCheck(
                           protocol: Option[String] = Some("http"),
@@ -111,9 +117,15 @@ package object marathon {
                             name: Option[String],
                             labels: Option[JsObject])
 
-  case class PortDiscovery(number: Int, name: String, protocol: String)
-  case class DiscoveryInfo(ports: Option[Seq[PortDiscovery]] = None)
-  case class IPPerTaskInfo(discovery: Option[DiscoveryInfo])
+  case class IPPerTaskInfo(discovery: Option[IPPerTaskInfo.DiscoveryInfo], networkName: Option[String] = None)
+
+  case object IPPerTaskInfo {
+    case class DiscoveryInfo(ports: Option[Seq[DiscoveryInfo.PortDiscovery]] = None)
+
+    case object DiscoveryInfo {
+      case class PortDiscovery(number: Int, name: String, protocol: String)
+    }
+  }
 
   case class UpgradeStrategy(minimumHealthCapacity: Double, maximumOverCapacity: Double)
 
@@ -193,50 +205,33 @@ package object marathon {
 
   implicit lazy val portMappingWrites = Json.writes[PortMapping]
 
-  implicit lazy val portMappingFormat = new Reads[PortMapping] {
-    override def reads(json: JsValue): JsResult[PortMapping] = {
-      (for {
-        protocol <- (json \ "protocol").asOpt[String]
-        container_port <- (json \ "container_port").asOpt[Int]
-        host_port = (json \ "host_port").asOpt[Int] getOrElse 0
-        service_port = (json \ "service_port").asOpt[Int] getOrElse 0
-        label = (json \ "label").asOpt[String]
-      } yield PortMapping(
-        protocol = protocol,
-        container_port = container_port,
-        host_port = host_port,
-        service_port = service_port,
-        label = label
-      )) match {
-        case Some(pm) => JsSuccess(pm)
-        case None => JsError("Could not parse PortMapping")
-      }
-    }
-  }
+  implicit lazy val portMappingFormat = Json.reads[PortMapping]
 
   implicit lazy val inputContainerPropertiesFormat = Json.format[InputContainerProperties]
   implicit lazy val inputContainerFormat = Json.format[InputContainer]
 
   implicit lazy val keyValuePairFormat = Json.format[KeyValuePair]
   implicit lazy val marathonHealthCheckFormat = Json.format[MarathonHealthCheck]
-  implicit lazy val marathonPortMappingFormat = Json.format[MarathonPortMapping]
-  implicit lazy val marathonPortDefintionFormat = Json.format[PortDefinition]
-  implicit lazy val marathonDockerFormat = Json.format[MarathonDocker]
 
-  implicit lazy val portDiscoveryFormat = Json.format[PortDiscovery]
-  implicit lazy val discoveryInfoFormat = Json.format[DiscoveryInfo]
+  implicit lazy val marathonPortMappingFormat = Json.format[MarathonContainer.Docker.PortMapping]
+
+  implicit lazy val marathonPortDefintionFormat = Json.format[PortDefinition]
+  implicit lazy val marathonDockerFormat = Json.format[MarathonContainer.Docker]
+
+  implicit lazy val portDiscoveryFormat = Json.format[IPPerTaskInfo.DiscoveryInfo.PortDiscovery]
+  implicit lazy val discoveryInfoFormat = Json.format[IPPerTaskInfo.DiscoveryInfo]
   implicit lazy val ipPerTaskInfoFormat = Json.format[IPPerTaskInfo]
 
   def getICBF()(implicit bf: generic.CanBuildFrom[Iterable[_], Volume, Iterable[Volume]]) = bf
 
   implicit lazy val marathonContainerReads: Reads[MarathonContainer] = (
-    (__ \ "docker").readNullable[MarathonDocker] and
+    (__ \ "docker").readNullable[MarathonContainer.Docker] and
       (__ \ "type").read[String] and
       (__ \ "volumes").readNullable[Iterable[Volume]](Reads.traversableReads[Iterable,Volume](getICBF(), marathonVolumeReads))
     )(MarathonContainer.apply _)
 
   implicit lazy val marathonContainerWrites: Writes[MarathonContainer] = (
-    (__ \ "docker").writeNullable[MarathonDocker] and
+    (__ \ "docker").writeNullable[MarathonContainer.Docker] and
       (__ \ "type").write[String] and
       (__ \ "volumes").writeNullable[Iterable[Volume]](Writes.traversableWrites[Volume](marathonVolumeWrites))
     )(unlift(MarathonContainer.unapply))
@@ -342,8 +337,8 @@ package object marathon {
         label = Some(index.toString),
         protocol = pm.protocol getOrElse "tcp",
         container_port = pm.containerPort,
-        host_port = pm.hostPort getOrElse 0,
-        service_port = pm.servicePort getOrElse 0
+        host_port = pm.hostPort,
+        service_port = pm.servicePort
       )}}} getOrElse Seq(),
       cpus = app.cpus,
       memory = app.mem.toInt,
@@ -366,16 +361,16 @@ package object marathon {
       labels = app.labels,
       env = app.env
     )
-    
+
     // Meta container name is last component of Marathon ID 'path'
     val containerName = {
         val cmps = app.id.stripPrefix("/").stripSuffix("/").split("/")
         cmps(cmps.size-1)
     }
     log.debug("Container-Name : " + containerName)
-    
+
     val output = Json.toJson(InputContainer(name = containerName, properties = props))
-    
+
     log.debug("Transform Complete:\n" + Json.prettyPrint(output))
     output.as[JsObject]
   }
@@ -388,12 +383,13 @@ package object marathon {
     */
   def meta2Marathon(metaApp: GestaltResourceInstance): Try[MarathonApp] = {
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
-      ps map {pm => MarathonPortMapping(
+    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonContainer.Docker.PortMapping] = {
+      ps map {pm => MarathonContainer.Docker.PortMapping(
         protocol = Some(pm.protocol),
         containerPort = pm.container_port,
-        hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        hostPort = pm.host_port,
+        servicePort = pm.service_port,
+        name = pm.label
       )}
     }
 
@@ -428,7 +424,7 @@ package object marathon {
         image <- props.get("image")
         network = props.get("network") getOrElse "HOST"
         force_pull = props.get("force_pull") map {_.toBoolean}
-      } yield MarathonDocker(
+      } yield MarathonContainer.Docker(
         image = image,
         network = network,
         forcePullImage = force_pull,
@@ -449,7 +445,7 @@ package object marathon {
       constraints = constraints,
       acceptedResourceRoles = acceptedResourceRoles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = args,
-      ports = port_mappings map {_.map { _.host_port }},
+      ports = port_mappings map {_.flatMap { _.service_port }},
       portDefinitions = port_mappings map {_.map {
         pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
       } },
@@ -500,20 +496,21 @@ package object marathon {
     log.debug("found provider networks" + providerNetworkNames)
 
 
-    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonPortMapping] = {
-      ps map {pm => MarathonPortMapping(
+    def portmap(ps: Iterable[PortMapping]): Iterable[MarathonContainer.Docker.PortMapping] = {
+      ps map {pm => MarathonContainer.Docker.PortMapping(
         protocol = Some(pm.protocol),
         containerPort = pm.container_port,
-        hostPort = Some(pm.host_port),
-        servicePort = Some(pm.service_port)
+        hostPort = pm.host_port,
+        servicePort = pm.service_port,
+        name = pm.label
       )}
     }
 
-    def toDocker(props: InputContainerProperties): (Option[MarathonDocker], Option[IPPerTaskInfo]) = {
+    def toDocker(props: InputContainerProperties): (Option[MarathonContainer.Docker], Option[IPPerTaskInfo]) = {
       val requestedNetwork = props.network
       val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(KeyValuePair("user",u)))
       if (providerNetworkNames.isEmpty) {
-        (Some(MarathonDocker(
+        (Some(MarathonContainer.Docker(
           image = props.image,
           network = requestedNetwork,
           forcePullImage = Some(props.force_pull),
@@ -527,7 +524,7 @@ package object marathon {
             payload = Some(Json.toJson(props))
           )
           case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
-            (Some(MarathonDocker(
+            (Some(MarathonContainer.Docker(
               image = props.image,
               network = stdNet,
               forcePullImage = Some(props.force_pull),
@@ -535,24 +532,22 @@ package object marathon {
               parameters = dockerParams
             )), None)
           case Some(calicoNet) =>
-            val docker = MarathonDocker(
+            val docker = MarathonContainer.Docker(
               image = props.image,
-              network = "HOST",
+              network = "USER",
               forcePullImage = Some(props.force_pull),
-              portMappings = None,
-              parameters = Some(Seq(
-                KeyValuePair("net", calicoNet)
-              ) ++ dockerParams.getOrElse(Seq()))
-            )
-            val ippertask = IPPerTaskInfo(
-                discovery = Some(DiscoveryInfo(
-                  ports = Some(props.port_mappings.map(pm => PortDiscovery(
-                    number = pm.container_port,
-                    name = pm.label getOrElse pm.container_port.toString,
-                    protocol = pm.protocol
-                  )).toSeq)
+              portMappings = Some(
+                props.port_mappings.map(pm => MarathonContainer.Docker.PortMapping(
+                  protocol = Some(pm.protocol),
+                  containerPort = pm.container_port,
+                  hostPort = None,
+                  servicePort = None,
+                  name = pm.label
                 ))
-              )
+              ),
+              parameters = dockerParams
+            )
+            val ippertask = IPPerTaskInfo( discovery = None, networkName = Some(calicoNet) )
             (Some(docker), Some(ippertask))
         }
       }
