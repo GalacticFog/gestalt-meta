@@ -658,7 +658,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http"), loadBalanced = Some(true)),
           PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
         ),
         network = "apps",
@@ -667,7 +667,9 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       marJson must /("container") /("docker") /("network" -> beEqualTo("USER"))
       marJson must /("ipAddress") /("networkName" -> beEqualTo("apps"))
       marJson must /("container") /("docker") /("portMappings") /#(0) /("name" -> "http")
+      marJson must /("container") /("docker") /("portMappings") /#(0) /("labels") /("VIP_0" -> "")
       marJson must /("container") /("docker") /("portMappings") /#(1) /("name" -> "https")
+      marJson must not /("container") /("docker") /("portMappings") /#(1) /("labels")
       marJson must not / "ports"
       marJson must havePortDefinitions()
       marJson must not /("ipAddress") /("discovery")

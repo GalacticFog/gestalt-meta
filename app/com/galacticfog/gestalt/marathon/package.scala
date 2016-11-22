@@ -502,7 +502,8 @@ package object marathon {
         containerPort = pm.container_port,
         hostPort = pm.host_port,
         servicePort = pm.service_port,
-        name = pm.label
+        name = pm.label,
+        labels = if (pm.loadBalanced.contains(true)) Some(Map("VIP_0" -> "")) else None
       )}
     }
 
@@ -542,7 +543,8 @@ package object marathon {
                   containerPort = pm.container_port,
                   hostPort = None,
                   servicePort = None,
-                  name = pm.label
+                  name = pm.label,
+                  labels = if (pm.loadBalanced.contains(true)) Some(Map("VIP_0" -> "")) else None
                 ))
               ),
               parameters = dockerParams
