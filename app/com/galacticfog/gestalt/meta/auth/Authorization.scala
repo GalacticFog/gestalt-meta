@@ -49,6 +49,7 @@ trait Authorization extends MetaController {
     }
   }
   
+
   val ACTIONS_CRUD        = Seq("create", "view", "update", "delete")
   val UserActions         = (ResourceIds.User         -> ACTIONS_CRUD)
   val GroupActions        = (ResourceIds.Group        -> ACTIONS_CRUD) 
@@ -76,7 +77,7 @@ trait Authorization extends MetaController {
    * @param typeId ID of the ResourceType to get actions for
    * @return Seq[String] of fully-qualified action names
    */
-  def getEntitlementActions(typeId: UUID): Seq[String] = {
+  def getSelfActions(typeId: UUID): Seq[String] = {
     
     TypeFactory.findById(typeId).fold {
       throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
@@ -106,10 +107,8 @@ trait Authorization extends MetaController {
     )(JsonUtil.safeParse[ActionInfo]( _ ))
   }
   
-  private[auth] def getLineageInfo(tpe: GestaltResourceType): LineageInfo = {
-    tpe.properties.get.get("lineage").fold(
-      throw new RuntimeException(s"Could not find ResourceType.properties.lineage for type ${tpe.typeId}")
-    )(JsonUtil.safeParse[LineageInfo]( _ ))    
+  private[auth] def getLineageInfo(tpe: GestaltResourceType): Option[LineageInfo] = {
+    tpe.properties.get.get("lineage") map { JsonUtil.safeParse[LineageInfo]( _ ) }
   }
   
   /** 
@@ -141,6 +140,7 @@ trait Authorization extends MetaController {
       throw new IllegalArgumentException(s"ResourceType with ID '$typeId' not found.")
     }
   }  
+  
   /**
    * Get a list of fully-qualified action-names from a single ResourceType.
    * 
@@ -157,59 +157,69 @@ trait Authorization extends MetaController {
     } yield r    
   }
   
-  def setNewEntitlements(
-      org: UUID, 
-      resourceType: UUID, 
-      resource: UUID, 
-      user: AuthAccountWithCreds,
-      grants: Map[UUID, Seq[String]],
-      parent: Option[UUID]) = {
+  /**
+   * Get a list of all Entitlement actions that must be set on a new Resource.
+   * This contains all self actions, and the actions of all child-types.
+   */
+  def getNewResourceActionSet(typeId: UUID): Set[String] = {
     
-    /*
-     * Use resourceType to find ResourceType
-     * - Set entitlements for actions
-     * 
-     */
-    TypeFactory.findById(resourceType).fold {
-      throw new IllegalArgumentException(s"ResourceType with ID '$resourceType' not found.")
+    val tpe = getType(typeId)
+   
+    // Get actions for the target resource.
+    val selfActions = getSelfActions(typeId)
+    
+    // Get actions for all child-types
+    val childActions = getChildActions(tpe)
+    
+    (selfActions ++ childActions).toSet
+  }
+  
+  def setNewEntitlements(
+      org: UUID,
+      resource: UUID, 
+      creator: AuthAccountWithCreds,
+      parent: Option[UUID]) = {
+
+    val res = ResourceFactory.findById(resource) getOrElse {
+      throw new IllegalArgumentException(s"Resource with ID '$resource' not found.")
+    }
+    
+    TypeFactory.findById(res.typeId).fold {
+      throw new IllegalArgumentException(s"ResourceType with ID '${res.typeId}' not found.")
     }{ tpe =>
+
+      // build list of actions for target and all child-type resources
+      val actions = getNewResourceActionSet(res.typeId).toSeq
       
-      // Get actions for the target resource.
-      val selfActions = getEntitlementActions(tpe.typeId)
-      
-      // Get actions for all child-types
-      val childActions = getChildActions(tpe)
-      
-      val actions = selfActions ++ childActions
-      
-      
-      // Why is grants type Map[UUID,String] ?
-      
-      Entitle(org, resourceType, resource, user, parent) {
-        generateEntitlements(
-          creator  = user.account.id,
-          org      = org,
-          resource = resource,
-          grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
+      Entitle(org, res.typeId, resource, creator, parent) {
+        entitlements(creator.account.id, org, resource, actions)
       }      
     }
   }
   
   
-  
+  /**
+   * Get a list of all actions specified on all child-types of the given type.
+   * Includes actions inherited by super-types of the children.
+   */
   def getChildActions(tpe: GestaltResourceType): Seq[String] = {
     def loop(types: Seq[UUID], acc: Seq[String]): Seq[String] = {
       types match {
         case Nil => acc
         case rtype :: tail => 
-          loop(tail, acc ++ getEntitlementActions(rtype))
+          loop(tail, acc ++ getSelfActions(rtype))
       }
     }
     
-    getLineageInfo(tpe).child_types match {
-      case None => Seq.empty
-      case Some(types) => loop(types, Seq.empty)
-    }
+    (for {
+      info     <- getLineageInfo(tpe)
+      children <- info.child_types
+      actions  <- Option(loop(children, Seq.empty))
+    } yield actions) getOrElse Seq.empty
+  }
+  
+  def getChildActions(typeId: UUID): Seq[String] = {
+    getChildActions(getType(typeId))
   }
   
   def set(typeId: UUID, prefix: String, verbs: String) = {
@@ -244,7 +254,7 @@ trait Authorization extends MetaController {
   }
   
   def setNewOrgEntitlements(owningOrg: UUID, org: UUID, user: AuthAccountWithCreds, parent: Option[UUID] = None) = {
-    val grants = Map(
+    val grants = Map(  
         OrgActions, 
         WorkspaceActions, 
         UserActions, 
@@ -287,6 +297,8 @@ trait Authorization extends MetaController {
     val grants = Map(LambdaActions, ApiEndpointActions)
     setNewResourceEntitlements(org, ResourceIds.Lambda, newLambdaId, user, grants, Option(parent))
   }
+  
+  
   
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
@@ -332,20 +344,14 @@ trait Authorization extends MetaController {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
   }
   
-  /*
-   * TODO: This method should match entitlements with the same action-name, pulling identities from 'theirs' into ours.
-   *  
-   * If (ours contains theirs)
-   *   keep ours
-   *   get theirs.identities
-   *   add identities they have that we don't
-   * If (ours !contains theirs)
-   *   Add theirs to ours (create the same entitlement on the current resource)
-   * 
-   */
+
   def mergeParentEntitlements(ours: Seq[Entitlement], ourType: UUID, parent: UUID) = {
+    
     log.debug("mergeParentEntitlements(...)")
     
+    /*
+     * Get a list of Entitlements set on the parent.
+     */
     val theirs = getResourceEntitlements(parent) map { Entitlement.make( _ ) }
     
     def go(pents: Seq[Entitlement], acc: Seq[Entitlement]): Seq[Entitlement] = {
@@ -365,7 +371,7 @@ trait Authorization extends MetaController {
             
           } else {
             
-            log.debug(s"Found duplicate Entitlement in parent - merging identities.")
+            log.debug(s"Found duplicate Entitlement in parent (${dup(0).name}- merging identities.")
             
             // We already have the property, merge identities
             // -----------------------------------------------
@@ -391,7 +397,30 @@ trait Authorization extends MetaController {
         }
       }
     }
-    go(theirs filter { e => e.properties.action.startsWith(Actions.typePrefix(ourType)) }, ours)
+    
+    
+    /*
+     * TODO: It might be useful to add helper methods on GestaltResourceInstance to get 
+     * the ActionInfo and LineageInfo objects from the type (???)
+     */
+    val tpe = getType(ourType)
+    val prefix = JsonUtil.tryParse[ActionInfo](Json.parse(tpe.properties.get("actions"))).get.prefix
+    
+    /*
+     * 
+     * Here we filter parent entitlements for those that exist on the current ResourceType.
+     * For example: If we're creating an environment, the parent is a workspace. Workspace will
+     * have crud entitlements for environment. We take the entitlements we have in common and merge
+     * the identities specified on the parent into the current resource.
+     * 
+     * This means that any identity that has permissions on the current resource type in the parent
+     * will have them on this resource.
+     * 
+     * TODO: If this is the model we want to follow, we should do it not only for the current resource
+     * type but for any resource types current has in common with the parent.
+     * 
+     */    
+    go(theirs filter { e => e.properties.action.startsWith(prefix) }, ours)
   }
 
 
@@ -591,6 +620,27 @@ trait Authorization extends MetaController {
     }
   }
   
+  
+  /**
+   * Generate a list of Entitlements corresponding to the given actions.
+   */
+  def entitlements(
+      creator: UUID,
+      org: UUID,
+      resource: UUID,
+      actions: Seq[String]): Seq[Entitlement] = {
+    
+    actions map { action =>
+      newEntitlement(
+          creator, org, 
+          resource, 
+          action, 
+          Option(Seq(creator)), 
+          name        = None, 
+          value       = None, 
+          description = None)
+    }
+  }  
   
   def newEntitlement(
       creator: UUID,
