@@ -50,14 +50,14 @@ class PatchController(resourceController: ResourceController) extends Authorizat
    */
   type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   
-  
   private[controllers] val transforms: Map[UUID, PatchTransform] = Map(
     ResourceIds.Environment -> transformEnvironmentPatch)
   
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> new GroupMethods(secProvider).groupPatch,
-    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler)    
+    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,
+    ResourceIds.Entitlement -> entitlementPatch)    
   
   
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -81,7 +81,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
   /**
    * This function finds and patches the requested resource - it does NOT persist the updated resource.
    */
-  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = Try {
+  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = {
 
     if (path.isList) {
       throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
@@ -106,7 +106,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
         }
         handler(r, patch, account)
         
-        ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance] 
+        //ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance] 
       }
     }
   }
@@ -125,6 +125,48 @@ class PatchController(resourceController: ResourceController) extends Authorizat
    * 
    * Patch Transformers
    * 
+   */
+  
+  /*
+   * This function overrides the normal patch behavior for Entitlement - the need arises from a more
+   * general issue where resources that contain reference UUIDs that are rendered as Links need 
+   * intermediate transformation.
+   * 
+   * TODO: Generalize transformations for properties of type `resource::uuid::link`
+   */
+  def entitlementPatch(r: GestaltResourceInstance, patch: PatchDocument, auth: AuthAccountWithCreds): Try[GestaltResourceInstance] = {
+    log.debug("entitlementPatch(...)")
+    /*
+     * convert r.properties.identities from ResourceLink to UUID - then proceed with Patch.
+     */
+    
+    def hasIdentities = 
+      patch.ops.exists(_.path.trim.startsWith("/properties/identities")) 
+    
+    val resource = {
+      if (hasIdentities) {
+        // transform identity values from ResourceLink to UUID
+        val props = r.properties.get
+        val identities = {
+          props.get("identities") match {
+            case None => Seq.empty
+            case Some(stringids) => {
+              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
+              jsids map { _ \ "id" }
+            }
+          }
+        }
+        val newprops = props ++ Map("identities" -> Json.stringify(Json.toJson(identities)))
+        r.copy(properties = Option(newprops))
+      } else r
+    }
+    // apply patch to newres
+    defaultResourcePatch(resource, patch, auth)
+  }  
+  
+  /*
+   * environment_type is input as a string (name) but stored as a UUID.
+   * This function handles that conversion.
    */
   private def transformEnvironmentPatch(patch: PatchDocument) = {
     
