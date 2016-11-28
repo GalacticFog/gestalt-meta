@@ -32,7 +32,7 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
 import scala.util.Either
 import com.galacticfog.gestalt.keymgr.GestaltFeature
-import com.galacticfog.gestalt.meta.auth.Actions  
+
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 /*
@@ -312,7 +312,7 @@ object LaserController extends Authorization {
         val user       = request.identity
         val target     = inputToResource(org, user, json)
         val options    = standardRequestOptions(user, parent, target)
-        val operations = standardRequestOperations(Actions.Lambda.Create)
+        val operations = standardRequestOperations("lambda.create")
         
         SafeRequest (operations, options) Protect { maybeState => 
           createLambdaCommon(org, env)

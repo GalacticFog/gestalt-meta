@@ -30,7 +30,6 @@ import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
 
-import com.galacticfog.gestalt.meta.auth.Actions
 import scala.language.postfixOps
 
 class ContainerController(containerService: ContainerService) extends Authorization {
@@ -87,7 +86,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
           Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
         }{ c =>
           
-            val operations = containerService.containerRequestOperations(Actions.Container.Scale)
+            val operations = containerService.containerRequestOperations("container.scale")
             val options    = containerService.containerRequestOptions(request.identity, environment, c,
                               data = Option(Map("scaleTo" -> numInstances.toString)))
             

@@ -37,7 +37,7 @@ import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
 import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.meta.auth.Actions
+
   
 //
 // TODO: Rename to 'EntitlementController'
@@ -227,7 +227,7 @@ object AuthorizationController extends Authorization {
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
   private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
-    AuthorizeList(Actions.Entitlement.View) {
+    AuthorizeList("entitlement.view") {
       ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId)
     }
   }

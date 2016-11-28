@@ -11,7 +11,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import scala.util.Try
 import play.api.Logger
 import com.galacticfog.gestalt.data.ResourceFactory.findByPropertyValue
-import com.galacticfog.gestalt.meta.auth.Actions
+
 import scala.language.postfixOps
 
 object Resource {

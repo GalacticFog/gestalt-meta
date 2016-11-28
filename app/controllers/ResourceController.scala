@@ -24,7 +24,6 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
 
-import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
@@ -96,7 +95,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
     orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
-      Authorize(org.id, Actions.Org.View, request.identity) {   
+      Authorize(org.id, "org.view", request.identity) {   
         Ok(RenderSingle(Resource.fromPath(fqon).get))
       }
     }
@@ -108,8 +107,8 @@ class ResourceController(containerService: ContainerService) extends Authorizati
    */
   def getGlobalResourceList(targetTypeId: String) = Authenticate() { implicit request =>
     val typeId = uuid(targetTypeId)
-    val action = s"${Actions.typePrefix(typeId)}.view"
-    
+    //val action = s"${Actions.typePrefix(typeId)}.view"
+    val action = actionInfo(typeId).prefix + ".view"
     AuthorizeList(action) {
       ResourceFactory.findAll(typeId)
     }
@@ -120,7 +119,9 @@ class ResourceController(containerService: ContainerService) extends Authorizati
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
-    val action = Actions.actionName(rp.targetTypeId, "view")
+    //val action = Actions.actionName(rp.targetTypeId, "view")
+    
+    val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)

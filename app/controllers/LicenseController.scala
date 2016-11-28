@@ -79,8 +79,8 @@ object LicenseController extends Authorization {
           case Success(license) => {
 
             // Set CRUD entitlements for creating User
-            setCreatorEntitlements(license.id, org, request.identity)
-
+            setNewEntitlements(org, license.id, request.identity, parent = Option(org))
+            
             // Render resource to JSON and return 201
             Created(Output.renderInstance(license, META_URL))
 
@@ -178,19 +178,6 @@ object LicenseController extends Authorization {
    */
   private[controllers] def createLicense(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
     createResourceInstance(org, request.body, Some(ResourceIds.License), Some(org))
-  }
-  
-  /**
-   * Set CRUD Entitlements on the License Resource for the creating User.
-   * 
-   * @param licenseId UUID of the License the Entitlements apply to
-   * @param org UUID of the Org that owns the Entitlements
-   * @param user User account to create the Entitlements for
-   */
-  private[controllers] def setCreatorEntitlements(licenseId: UUID, org: UUID, user: AuthAccountWithCreds) = {
-    generateEntitlements(
-      user.account.id, org, licenseId,
-      Seq(ResourceIds.License), ACTIONS_CRUD )    
   }
  
   private[controllers] def LicenseNotFound(licenseId: UUID) = {

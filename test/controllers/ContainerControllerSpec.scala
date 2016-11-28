@@ -73,7 +73,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
     override def around[T: AsResult](t: => T): Result = super.around {
       var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      Meta.setNewEnvironmentEntitlements(dummyRootOrgId, tE.id, AuthAccountWithCreds(authResponse.account, Seq.empty, Seq.empty, creds, dummyRootOrgId), tW.id)
+      Meta.setNewEntitlements(dummyRootOrgId, tE.id, AuthAccountWithCreds(authResponse.account, Seq.empty, Seq.empty, creds, dummyRootOrgId), parent = Option(tW.id))
       testWork = tW
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get

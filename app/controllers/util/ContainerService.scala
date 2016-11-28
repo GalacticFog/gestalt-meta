@@ -3,7 +3,7 @@ package controllers.util
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
-import com.galacticfog.gestalt.meta.auth.Actions
+
 import play.api.Logger
 
 import play.api.libs.ws.WS
@@ -206,7 +206,7 @@ trait ContainerService extends MetaController {
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
     val containerResourcePre: GestaltResourceInstance = inputWithDefaults(orgId, containerResourceInput, user)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
-    val operations = containerRequestOperations(Actions.Container.Create)
+    val operations = containerRequestOperations("container.create")
     val options = containerRequestOptions(user, environment.id, containerResourcePre)
 
     SafeRequest (operations, options) ProtectAsync { maybeState =>

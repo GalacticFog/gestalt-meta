@@ -59,7 +59,8 @@ class SyncController(deleteController: DeleteController) extends Authorization {
       }
       
       val rootId = getRootOrgId(request.identity)
-      setNewOrgEntitlements(rootId, rootId, request.identity, None)
+
+      setNewEntitlements(rootId, rootId, request.identity, parent = None)
       
       val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
       val metausers = ResourceFactory.findAll(ResourceIds.User)
@@ -150,10 +151,7 @@ class SyncController(deleteController: DeleteController) extends Authorization {
       createNewMetaOrg(adminId, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
-          /*
-           * TODO: Raise error if any of the Entitlements fail Create.
-           */
-          setNewOrgEntitlements(org.id, org.id, account, Option(parent))
+          setNewEntitlements(org.id, org.id, account, parent = Option(parent))
         } 
       }
     }
@@ -190,9 +188,8 @@ class SyncController(deleteController: DeleteController) extends Authorization {
           properties = None, group.description) match {
         case Failure(err) => throw err
         case Success(group) => {
-          
-          setNewGroupEntitlements(org, group.id, account)
 
+          setNewEntitlements(org, group.id, account, parent = Option(org))
         }
       }
          
@@ -224,9 +221,7 @@ class SyncController(deleteController: DeleteController) extends Authorization {
           description = acc.description ) match {
         case Failure(err) => throw err
         case Success(usr) => {
-          
-          setNewUserEntitlements(org, usr.id, account)
-
+          setNewEntitlements(org, usr.id, account, parent = Option(org))
         }
       }
     

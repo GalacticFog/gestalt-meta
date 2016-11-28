@@ -22,7 +22,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
 
 trait Authorization extends MetaController {
-
+  
   /**
    * 
    * @param org Org the Entitlements belong to
@@ -45,28 +45,14 @@ trait Authorization extends MetaController {
     newEntitlements map { e =>
       CreateResource(
         ResourceIds.User, user.account.id, org, Json.toJson(e), user,
-        Option(ResourceIds.Entitlement), Option(resourceId))
+        Option(ResourceIds.Entitlement), parentId = Option(resourceId))
     }
   }
   
 
-  val ACTIONS_CRUD        = Seq("create", "view", "update", "delete")
-  val UserActions         = (ResourceIds.User         -> ACTIONS_CRUD)
-  val GroupActions        = (ResourceIds.Group        -> ACTIONS_CRUD) 
-  val OrgActions          = (ResourceIds.Org          -> ACTIONS_CRUD)
-  val WorkspaceActions    = (ResourceIds.Workspace    -> ACTIONS_CRUD)  
-  val EnvironmentActions  = (ResourceIds.Environment  -> ACTIONS_CRUD)
-  val PolicyActions       = (ResourceIds.Policy       -> ACTIONS_CRUD)  
-  val ProviderActions     = (ResourceIds.Provider     -> ACTIONS_CRUD)
-  val EntitlementActions  = (ResourceIds.Entitlement  -> ACTIONS_CRUD)  
-  val DomainActions       = (ResourceIds.Domain       -> ACTIONS_CRUD)
-  val ApiActions          = (ResourceIds.Api          -> Seq("view"))
-  val ApiEndpointActions  = (ResourceIds.ApiEndpoint  -> ACTIONS_CRUD)
-  val ResourceTypeActions = (ResourceIds.ResourceType -> ACTIONS_CRUD)
-  val TypePropertyActions = (ResourceIds.TypeProperty -> ACTIONS_CRUD)  
-  val ContainerActions    = (ResourceIds.Container    -> (ACTIONS_CRUD ++ Seq("migrate", "scale")))
-  val LambdaActions       = (ResourceIds.Lambda       -> (ACTIONS_CRUD ++ Seq("invoke")))  
-  
+  //
+  // TODO: This type is unnecessary - use ActionInfo from gestalt-meta-repo
+  //
   case class ActionSet(prefix: String, verbs: Seq[String])
   implicit lazy val actionSetFormat = Json.format[ActionSet]
   
@@ -101,7 +87,11 @@ trait Authorization extends MetaController {
     }   
   }
   
-  private[auth] def getActionInfo(tpe: GestaltResourceType): ActionInfo = {
+  def actionInfo(typeId: UUID): ActionInfo = {
+    actionInfo(getType(typeId))
+  }
+  
+  def actionInfo(tpe: GestaltResourceType): ActionInfo = {
     tpe.properties.get.get("actions").fold(
       throw new RuntimeException(s"Could not find ResourceType.properties.actions for type ${tpe.typeId}")
     )(JsonUtil.safeParse[ActionInfo]( _ ))
@@ -141,22 +131,7 @@ trait Authorization extends MetaController {
     }
   }  
   
-  /**
-   * Get a list of fully-qualified action-names from a single ResourceType.
-   * 
-   * @param tpe ResourceType object to build action list for
-   * @return Seq of fully-qualified action-names - in the form of:
-   *  i.e. Seq("prefix.create", "prefix.delete")
-   */
-  def buildActionList(tpe: GestaltResourceType): Option[Seq[String]] = {
-    for {
-      p <- tpe.properties
-      a <- p.get("actions")
-      s <- Option(JsonUtil.safeParse[ActionSet](a))
-      r <- Option(s.verbs map { "%s.%s".format(s.prefix, _)})
-    } yield r    
-  }
-  
+
   /**
    * Get a list of all Entitlement actions that must be set on a new Resource.
    * This contains all self actions, and the actions of all child-types.
@@ -193,7 +168,7 @@ trait Authorization extends MetaController {
       
       Entitle(org, res.typeId, resource, creator, parent) {
         entitlements(creator.account.id, org, resource, actions)
-      }      
+      }
     }
   }
   
@@ -235,71 +210,7 @@ trait Authorization extends MetaController {
     }
     
   }
-  
-  def setNewResourceEntitlements(
-      org: UUID, 
-      resourceType: UUID, 
-      resource: UUID, 
-      user: AuthAccountWithCreds,
-      grants: Map[UUID, Seq[String]],
-      parent: Option[UUID]) = {
-    
-    Entitle(org, resourceType, resource, user, parent) {
-      generateEntitlements(
-        creator  = user.account.id,
-        org      = org,
-        resource = resource,
-        grants   = (Map(ResourceIds.Entitlement -> ACTIONS_CRUD) ++ grants))      
-    }
-  }
-  
-  def setNewOrgEntitlements(owningOrg: UUID, org: UUID, user: AuthAccountWithCreds, parent: Option[UUID] = None) = {
-    val grants = Map(  
-        OrgActions, 
-        WorkspaceActions, 
-        UserActions, 
-        GroupActions, 
-        ProviderActions, 
-        PolicyActions, 
-        ResourceTypeActions, 
-        TypePropertyActions,
-        ApiActions)
-    setNewResourceEntitlements(owningOrg, ResourceIds.Org, org, user, grants, parent)
-  }
-  
-  def setNewWorkspaceEntitlements(org: UUID, workspace: UUID, user: AuthAccountWithCreds) = {
-    val grants = Map(
-        WorkspaceActions, EnvironmentActions, PolicyActions, ProviderActions, DomainActions, ApiActions)
-    setNewResourceEntitlements(org, ResourceIds.Workspace, workspace, user, grants, Option(org))
-  }
-  
-  def setNewEnvironmentEntitlements(org: UUID, env: UUID, user: AuthAccountWithCreds, parent: UUID) = {
-    val grants = Map(EnvironmentActions, LambdaActions, ContainerActions, PolicyActions, ApiActions)
-    setNewResourceEntitlements(org, ResourceIds.Environment, env, user, grants, Option(parent))
-  }
-  
-  def setNewUserEntitlements(org: UUID, newUserId: UUID, user: AuthAccountWithCreds) = {
-    val grants = Map(UserActions)
-    setNewResourceEntitlements(org, ResourceIds.User, newUserId, user, grants, Option(org))
-  }
-  
-  def setNewGroupEntitlements(org: UUID, newGroupId: UUID, user: AuthAccountWithCreds) = {
-    val grants = Map(GroupActions)
-    setNewResourceEntitlements(org, ResourceIds.Group, newGroupId, user, grants, Option(org))
-  }
-  
-  def setNewDomainEntitlements(org: UUID, newDomainId: UUID, user: AuthAccountWithCreds, parent: UUID) = {
-    val grants = Map(DomainActions)
-    setNewResourceEntitlements(org, ResourceIds.Domain, newDomainId, user, grants, Option(parent))
-  }
-  
-  def setNewLambdaEntitlements(org: UUID, newLambdaId: UUID, user: AuthAccountWithCreds, parent: UUID) = {
-    val grants = Map(LambdaActions, ApiEndpointActions)
-    setNewResourceEntitlements(org, ResourceIds.Lambda, newLambdaId, user, grants, Option(parent))
-  }
-  
-  
-  
+
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
   }
@@ -569,58 +480,7 @@ trait Authorization extends MetaController {
       }
     }
   }  
-  
-  
-  /**
-   * Generate a list of Entitlements on a list of Resource types.
-   */
-  def generateEntitlements(
-    creator: UUID,
-    org: UUID,
-    resource: UUID,
-    resourceTypes: Seq[UUID],
-    actions: Seq[String]): Seq[Entitlement] = {
-    
-    for {
-      t <- resourceTypes
-      o <- resourceEntitlements(creator, org, resource, t, actions)
-    } yield o
-  }
-  
-  /**
-   * Generate a list of entitlements for each action/resource-type.
-   */
-  def generateEntitlements(
-      creator: UUID,
-      org: UUID,
-      resource: UUID,
-      grants: Map[UUID,Seq[String]]): Seq[Entitlement] = {
-    
-    for {
-      (typeId, actions) <- grants.toSeq
-      entitlement      <- resourceEntitlements(creator, org, resource, typeId, actions)
-    } yield entitlement
-  }
-  
-  /**
-   * Generate a list of Entitlements for a given Resource of a given type.
-   */
-  def resourceEntitlements(
-      creator: UUID, 
-      org: UUID, 
-      resource: UUID, 
-      resourceType: UUID, 
-      actions: Seq[String]): Seq[Entitlement] = {
-    
-    val ids = Option(Seq(creator))
-    actions map { action =>
-      newEntitlement(
-          creator, org, resource, 
-          Actions.actionName(resourceType, action), ids, None, None, None)
-    }
-  }
-  
-  
+
   /**
    * Generate a list of Entitlements corresponding to the given actions.
    */
