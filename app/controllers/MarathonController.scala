@@ -549,7 +549,7 @@ def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int)
         "Could not parse container properties: " + JsError.toFlatJson(e).toString)
     }
 
-    val app = toMarathonApp(appName, props, provider)
+    val app = toMarathonApp(fqon = fqon, workspaceName = workspaceName, environmentName = environmentName, name = appName, props = props, provider = provider)
     val marathonPayload = Json.toJson(app).as[JsObject]
 
     // TODO: Parse result JsValue for error response.

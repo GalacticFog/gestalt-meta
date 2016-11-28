@@ -658,7 +658,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http"), loadBalanced = Some(true)),
+          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http"), load_balanced = Some(true)),
           PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
         ),
         network = "apps",
