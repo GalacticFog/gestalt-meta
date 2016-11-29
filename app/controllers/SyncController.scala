@@ -47,7 +47,6 @@ class SyncController(deleteController: DeleteController) extends Authorization {
   def sync() = Authenticate() { implicit request =>
   
     Try {
-      
       val sd = Security.getOrgSyncTree(None, request.identity) match {
         case Success(data) => data
         case Failure(err)  => throw err
@@ -260,8 +259,12 @@ class SyncController(deleteController: DeleteController) extends Authorization {
   }
   
   def getRootOrgId(account: AuthAccountWithCreds): UUID = {
-    val root = Security.getRootOrg(account)
-    root.get.id
+    Security.getRootOrg(account) match {
+      case Success(root) => root.id
+      case Failure(err)  =>
+        throw new RuntimeException(
+            "Root Org not found in gestalt-security. Contact an administrator")
+    }
   }
   
   def getRootOrgFqon(account: AuthAccountWithCreds): String = {
