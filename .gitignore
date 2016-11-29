@@ -18,4 +18,5 @@ newrelic
 /.settings
 /bin/
 /.worksheet/
-*.cache
+*.cache*
+
