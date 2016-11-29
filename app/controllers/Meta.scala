@@ -1,26 +1,20 @@
 package controllers
 
+
 import java.net.URL
 import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
+import scala.util.{Try,Success,Failure}
 
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.data.EnvironmentType
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data._
+
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.keymgr.GestaltFeature
-import com.galacticfog.gestalt.laser.Laser
-import com.galacticfog.gestalt.laser.LaserGateway
-import com.galacticfog.gestalt.laser.LaserLocation
-import com.galacticfog.gestalt.laser.LaserProvider
-import com.galacticfog.gestalt.meta.api.PatchHandler
+import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
+
+import com.galacticfog.gestalt.laser._
+
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
@@ -33,48 +27,25 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
-import ApiGateway.GatewayInput
-import ApiGateway.buildGatewayInfo
-import ApiGateway.gatewayInput
-import ApiGateway.getGatewayLocation
-import ApiGateway.parseLaserResponseId
-import ApiGateway.setMetaGatewayProps
-import controllers.util.BadRequestResult
-import controllers.util.HandleExceptions
-import controllers.util.HandleRepositoryExceptions
-import controllers.util.JsonUtil
-import controllers.util.JsonUtil.replaceJsonPropValue
-import controllers.util.JsonUtil.replaceJsonProps
-import controllers.util.JsonUtil.str2js
-import controllers.util.JsonUtil.upsertProperty
-import controllers.util.LambdaMethods
-import controllers.util.NotFoundResult
-import controllers.util.RequestOptions
-import controllers.util.SafeRequest
-import controllers.util.Security
+import controllers.util._
+import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
-import controllers.util.standardMethods
-import controllers.util.stringmap
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsUndefined
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
+
+import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import scala.language.implicitConversions
+
+import ApiGateway._
 
 
 /**
  * Code for POST and PATCH of all resource types.
- *
  */
 object Meta extends Authorization {
   
-
   // --------------------------------------------------------------------------
   // ORGS
-  // --------------------------------------------------------------------------  
-  
+  // --------------------------------------------------------------------------
   def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
     Security.getRootOrg(request.identity) match {
       case Failure(err)  => { 
@@ -108,29 +79,6 @@ object Meta extends Authorization {
 
     }    
   }
-
-  // --------------------------------------------------------------------------
-  // ACTIONS
-  // --------------------------------------------------------------------------    
-  def postTypeActionFqon(fqon: String, typeId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    Future {
-//      
-//      val actionName = request.body \ "name" match {
-//        case u: JsUndefined => ???
-//        case r => r.as[String]
-//      }
-//      
-//      val existingActions = ResourceFactory.findChildrenOfType(ResourceIds.Action, typeId)
-//      if (existingActions exists { _.name == actionName }) 
-//        ConflictResult(s"Action '$actionName' already exists for this resource type")
-//      else {
-//        // Create the Action Resource.
-//        ???
-//      }
-//    }
-    ???
-  }
-  
   
   // --------------------------------------------------------------------------
   // GROUPS
@@ -140,7 +88,6 @@ object Meta extends Authorization {
       createGroupCommon(fqid(fqon), request.body)  
     }
   }
-  
   
   def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     
@@ -312,67 +259,50 @@ object Meta extends Authorization {
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
   // --------------------------------------------------------------------------
+  
+  import com.galacticfog.gestalt.patch.PatchDocument
+  
+//  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    resourcePatch(ResourceIds.Org, fqid(fqon))
+//  }
 
-  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    resourcePatch(ResourceIds.Org, fqid(fqon))
-  }
+//  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
+//      if (r.typeId == ResourceIds.Lambda) {
+//        LambdaMethods.patchGestaltLambda(r, request.body).get
+//      }
+//      resourcePatch(r.typeId, id)
+//    }
+//  }
+
+//  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
+//    Future {
+//      //safeGetPatchDocument(request.body) match {
+//      Try(PatchDocument.fromJsValue(request.body)) match {
+//        case Failure(e) => BadRequestResult(e.getMessage)
+//        case Success(patch) => {
+//          
+//          val identity = request.identity.account.id
+//          
+//          patch.applyPatch(json)
+//          
+//          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
+//            case Success(r) => Ok(Output.renderInstance(r))
+//            case Failure(e) => HandleExceptions(e) 
+//          }
+//        }
+//      }      
+//    }
+//  }
   
-  
-  
-  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
-      if (r.typeId == ResourceIds.Lambda) {
-        LambdaMethods.patchGestaltLambda(r, request.body).get
-      }
-      resourcePatch(r.typeId, id)
-    }
-  }
-  
-  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    Future {
-      safeGetPatchDocument(request.body) match {
-        case Failure(e) => BadRequestResult(e.getMessage)
-        case Success(patch) => {
-          
-          val identity = request.identity.account.id
-          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
-            case Success(r) => Ok(Output.renderInstance(r))
-            case Failure(e) => HandleExceptions(e) 
-          }
-        }
-      }      
-    }
-  }
   
   // --------------------------------------------------------------------------
   // WORKSPACES
   // --------------------------------------------------------------------------
   
-
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createWorkspaceResult(fqid(fqon), request.body, request.identity, META_URL)
   }
-
-//  private[controllers] def createWorkspaceResult2(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-//
-//    Future {
-//      
-//      Authorize(org, Actions.Workspace.Create, user) {
-//        CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
-//          case Failure(e) => HandleExceptions(e)
-//          case Success(w) => {
-//            setNewWorkspaceEntitlements(org, w.id, user)
-//            Created(Output.renderInstance(w, baseUri))
-//          }
-//        }
-//      }
-//      
-//    }
-//  }
-
-  
-  import com.galacticfog.gestalt.keymgr.GestaltLicense
-  import com.galacticfog.gestalt.keymgr.GestaltFeature
 
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel
   
@@ -407,7 +337,8 @@ object Meta extends Authorization {
    * Convert input JSON to an in-memory GestaltResourceInstance
    */
   def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    inputWithDefaults(
+    
+    withInputDefaults(
           org = org, 
           typeId = typeId,
           input = safeGetInputJson(json).get, 
@@ -618,7 +549,7 @@ object Meta extends Authorization {
     log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
     for {
-      input    <- safeGetInputJson(typeId, json)
+      input    <- safeGetInputJson(json, Option(typeId))
       resource <- syncWithSecurity(org, typeId, input)(sc, mc)
     } yield resource
   }

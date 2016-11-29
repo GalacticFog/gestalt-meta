@@ -52,7 +52,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
          * Take the input JSON payload and convert it to a GestaltResourceInstance. This is
          * needed to check any attribute/property values against policy rules (if any).
          */
-        val target = inputToResource(org, user, inputJson)
+        val target = jsonToInput(org, user, inputJson)
 
         val fCreated = for {
           containerSpec <- Future.fromTry {

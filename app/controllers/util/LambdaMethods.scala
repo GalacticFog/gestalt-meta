@@ -5,7 +5,7 @@ import java.net.URL
 
 import scala.util.{Try,Success,Failure}
 
-import com.galacticfog.gestalt.meta.api.{PatchDocument => OldPatchDoc}
+//import com.galacticfog.gestalt.meta.api.{PatchDocument => OldPatchDoc}
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.uuid2string
@@ -92,38 +92,38 @@ object LambdaMethods {
   /**
    * Update a Lambda both in Meta and gestalt-lambda.
    */
-  def patchGestaltLambda(r: GestaltResourceInstance, patch: JsValue) = Try {
-
-    @scala.annotation.tailrec
-    def doUpdate(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
-      data match {
-        case Nil => lm
-        case h :: t => doUpdate(t, updateLambdaData(lm, h._1, h._2))
-      }  
-    }    
-    
-    // Get lambda from gestalt-lambda
-    val lambda = laser.lambdas(r.id) getOrElse {
-      throw new RuntimeException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
-    }
-    
-    // Strip path to last component to get field name.
-    val pat = OldPatchDoc.fromJsValue(patch)
-    val ops = pat.op map { o => 
-      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
-      (fieldName -> o.value)
-    }
-    
-    // Update the Lambda DAO (in-memory), then in gestalt-lambda   
-    val updatedLambda = doUpdate(ops, lambda)
-    laser.updateLambda(updatedLambda) match {
-      case Failure(e) => {
-        log.error(s"Error updating Lambda in gestalt-lambda: " + e.getMessage)
-        throw e
-      }
-      case Success(l) => {
-        log.info(s"Successfully updated Lambda in gestalt-lambda.")
-      }
-    }
-  }  
+//  def patchGestaltLambda(r: GestaltResourceInstance, patch: JsValue) = Try {
+//
+//    @scala.annotation.tailrec
+//    def doUpdate(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
+//      data match {
+//        case Nil => lm
+//        case h :: t => doUpdate(t, updateLambdaData(lm, h._1, h._2))
+//      }  
+//    }    
+//    
+//    // Get lambda from gestalt-lambda
+//    val lambda = laser.lambdas(r.id) getOrElse {
+//      throw new RuntimeException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
+//    }
+//    
+//    // Strip path to last component to get field name.
+//    val pat = OldPatchDoc.fromJsValue(patch)
+//    val ops = pat.op map { o => 
+//      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
+//      (fieldName -> o.value)
+//    }
+//    
+//    // Update the Lambda DAO (in-memory), then in gestalt-lambda   
+//    val updatedLambda = doUpdate(ops, lambda)
+//    laser.updateLambda(updatedLambda) match {
+//      case Failure(e) => {
+//        log.error(s"Error updating Lambda in gestalt-lambda: " + e.getMessage)
+//        throw e
+//      }
+//      case Success(l) => {
+//        log.info(s"Successfully updated Lambda in gestalt-lambda.")
+//      }
+//    }
+//  }  
 }

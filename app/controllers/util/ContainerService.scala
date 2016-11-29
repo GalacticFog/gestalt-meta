@@ -204,7 +204,7 @@ trait ContainerService extends MetaController {
 
     val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec)
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val containerResourcePre: GestaltResourceInstance = inputWithDefaults(orgId, containerResourceInput, user)
+    val containerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
     val operations = containerRequestOperations("container.create")
     val options = containerRequestOptions(user, environment.id, containerResourcePre)
