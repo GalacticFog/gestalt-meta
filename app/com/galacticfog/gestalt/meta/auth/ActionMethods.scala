@@ -132,8 +132,7 @@ trait ActionMethods {
     def loop(types: Seq[UUID], acc: Seq[String]): Seq[String] = {
       types match {
         case Nil => acc
-        case rtype :: tail => 
-          loop(tail, acc ++ getSelfActions(rtype))
+        case rtype :: tail => loop(tail, acc ++ getSelfActions(rtype))
       }
     }
     
