@@ -1,6 +1,7 @@
 package com.galacticfog.gestalt.marathon
 
 import org.joda.time.DateTime
+import play.api.libs.json.Json
 
 case class ContainerStats(id: String,
                           containerType: String,
@@ -14,17 +15,23 @@ case class ContainerStats(id: String,
                           tasksRunning: Int,
                           tasksHealthy: Int,
                           tasksUnhealthy: Int,
-                          taskStats: Option[Seq[ContainerStats.TaskStat]]
-                         )
+                          taskStats: Option[Seq[ContainerStats.TaskStat]],
+                          serviceAddresses: Option[Seq[ContainerStats.ServiceAddress]] )
 
 case object ContainerStats {
   case class TaskStat(host: String,
                       ipAddresses: Option[Seq[TaskStat.IPAddress]],
                       ports: Seq[Int],
-                      startedAt: Option[DateTime])
+                      startedAt: Option[String])
 
   case object TaskStat {
     case class IPAddress(ipAddress: String, protocol: String)
   }
+
+  case class ServiceAddress(address: String, ports: Seq[Int])
+
+  implicit val formatServiceAddress = Json.format[ServiceAddress]
+  implicit val formatIPAddress = Json.format[TaskStat.IPAddress]
+  implicit val formatTaskStat = Json.format[TaskStat]
 }
 

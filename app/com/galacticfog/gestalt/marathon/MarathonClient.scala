@@ -14,6 +14,8 @@ import scala.math.BigDecimal.int2bigDecimal
 
 import play.api.Logger
 
+import scala.util.Try
+
 case class MarathonClient(client: WSClient, marathonAddress: String) {
 
   private[this] val log = Logger(this.getClass)
@@ -87,6 +89,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   
   /**
     * Returns the raw json for the queried Marathon app, but transformed to remove the org structure
+ *
     * @param fqon fully-qualified org name
     * @param wrkName workspace name
     * @param envName environment name
@@ -274,25 +277,46 @@ case object MarathonClient {
   
   def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
-          service <- (marApp \ "id").asOpt[String]
-          ctype = (marApp \ "container" \ "type").asOpt[String] getOrElse "UNKNOWN"
-          image = (marApp \ "container" \ "docker" \ "image").asOpt[String] getOrElse ""
-          instances <- (marApp \ "instances").asOpt[Int]
-          tasksStaged = (marApp \ "tasksStaged").asOpt[Int] getOrElse 0
-          tasksRunning = (marApp \ "tasksRunning").asOpt[Int] getOrElse 0
-          tasksHealthy = (marApp \ "tasksHealthy").asOpt[Int] getOrElse 0
-          tasksUnhealthy = (marApp \ "tasksUnhealthy").asOpt[Int] getOrElse 0
-          status = (instances, tasksRunning, tasksHealthy, tasksUnhealthy) match {
-            case (i,r,h,u) if r != i => "SCALING"
-            case (i,r,h,u) if i == 0 => "SUSPENDED"
-            case (i,r,h,u) if h == i => "HEALTHY"
-            case (i,r,h,u) if u > 0  => "UNHEALTHY"
-            case _ => "RUNNING" // r == i > 0 && u == 0 but no health checks
-          }
-          // if (tasksStaged > 0 && tasksRunning > 0) "SCALING" else if (tasksRunning > 0) "RUNNING" else if (tasksStaged > 0) "SCALING" else "SUSPENDED"
-          cpus <- (marApp \ "cpus").asOpt[Double]
-          memory  <- (marApp \ "mem").asOpt[Double]
-          age <- (marApp \ "version").asOpt[String] map DateTime.parse
+      service <- (marApp \ "id").asOpt[String]
+      ctype = (marApp \ "container" \ "type").asOpt[String] getOrElse "UNKNOWN"
+      image = (marApp \ "container" \ "docker" \ "image").asOpt[String] getOrElse ""
+      instances <- (marApp \ "instances").asOpt[Int]
+      tasksStaged = (marApp \ "tasksStaged").asOpt[Int] getOrElse 0
+      tasksRunning = (marApp \ "tasksRunning").asOpt[Int] getOrElse 0
+      tasksHealthy = (marApp \ "tasksHealthy").asOpt[Int] getOrElse 0
+      tasksUnhealthy = (marApp \ "tasksUnhealthy").asOpt[Int] getOrElse 0
+      status = (instances, tasksRunning, tasksHealthy, tasksUnhealthy) match {
+        case (i,r,h,u) if r != i => "SCALING"
+        case (i,r,h,u) if i == 0 => "SUSPENDED"
+        case (i,r,h,u) if h == i => "HEALTHY"
+        case (i,r,h,u) if u > 0  => "UNHEALTHY"
+        case _ => "RUNNING" // r == i > 0 && u == 0 but no health checks
+      }
+      // if (tasksStaged > 0 && tasksRunning > 0) "SCALING" else if (tasksRunning > 0) "RUNNING" else if (tasksStaged > 0) "SCALING" else "SUSPENDED"
+      cpus <- (marApp \ "cpus").asOpt[Double]
+      memory  <- (marApp \ "mem").asOpt[Double]
+      age <- (marApp \ "version").asOpt[String] map DateTime.parse
+      tasks = (marApp \ "tasks").asOpt[Seq[ContainerStats.TaskStat]]
+      portLabels = (marApp \ "container" \ "docker" \ "network").asOpt[String] map {
+        _ match {
+          case "USER" | "BRIDGE" =>
+            (marApp \ "container" \ "docker" \ "portMappings" \\ "labels").map(_.as[Map[String,String]])
+          case "HOST" =>
+            (marApp \ "portDefinitions" \\ "labels").map(_.as[Map[String,String]])
+        }
+      } getOrElse Seq.empty
+      vipLabels = portLabels.flatMap(_.collect{
+        case (k,v) if k.matches("VIP_[0-9]+") => v
+      }) groupBy (_.split(":").head.stripPrefix("/") + ".marathon.l4lb.thisdcos.directory") filter {case (k,v) => k.trim.nonEmpty}
+      addresses = vipLabels map {
+        case (address,vips) => ContainerStats.ServiceAddress(
+          address = address,
+          ports = vips flatMap (_.split(":") match {
+            case Array(address,port) => Try(port.toInt).toOption
+            case _ => None
+          })
+        )
+      }
     } yield ContainerStats(
       status = status,
       containerType = ctype,
@@ -306,7 +330,8 @@ case object MarathonClient {
       tasksStaged = tasksStaged,
       tasksHealthy = tasksHealthy,
       tasksUnhealthy = tasksUnhealthy,
-      taskStats = None
+      taskStats = tasks,
+      serviceAddresses = Some(addresses.toSeq)
     )
   }
 

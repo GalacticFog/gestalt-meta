@@ -184,7 +184,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
           image = "nginx",
           network = "BRIDGE",
           portMappings = Some(Seq(
-            MarathonContainer.Docker.PortMapping(containerPort = 80, protocol = None, hostPort = None, servicePort = None)
+            MarathonContainer.Docker.PortMapping(containerPort = Some(80), protocol = None, hostPort = None, servicePort = None)
           )))),
           volumes = None
         ),
@@ -301,13 +301,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     "add default upgradeStrategy for persistent volumes" in {
       val provider = marathonProviderWithStdNetworks
       val name = "/some/app/id"
-      val marApp = toMarathonApp("test-container", InputContainerProperties(
+      val marApp = toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1,
@@ -326,13 +326,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     "neglect default upgradeStrategy absent persistent volumes" in {
       val provider = marathonProviderWithStdNetworks
       val name = "/some/app/id"
-      val marApp = toMarathonApp("test-container", InputContainerProperties(
+      val marApp = toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1,
@@ -418,7 +418,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      toMarathonApp(name, resourceJson.as[InputContainerProperties], provider) must_== marApp
+      toMarathonApp("org","wkr","env",name, resourceJson.as[InputContainerProperties], provider) must_== marApp
     }
 
     "generate valid payload with cmd and no args" in {
@@ -452,7 +452,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       ))
       provider.id returns providerId
 
-      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[InputContainerProperties], provider))
+      val marPayload = Json.toJson(toMarathonApp("org","wkr","env",name, resourceJson.as[InputContainerProperties], provider))
       marPayload.toString must /("cmd" -> "/usr/bin/someCmd")
       (marPayload \ "args") must_== JsNull
     }
@@ -488,7 +488,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       provider.id returns providerId
 
 
-      val marPayload = Json.toJson(toMarathonApp(name, resourceJson.as[InputContainerProperties], provider)).toString
+      val marPayload = Json.toJson(toMarathonApp("org","wkr","env",name, resourceJson.as[InputContainerProperties], provider)).toString
       marPayload must not /("cmd")
       marPayload must haveArgs()
     }
@@ -558,23 +558,23 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      marApp must_== toMarathonApp(name, resourceJson.as[InputContainerProperties], provider)
+      marApp must_== toMarathonApp("org","wkr","env",name, resourceJson.as[InputContainerProperties], provider)
     }
 
     "throw exception for marathon payload with invalid provider network" in {
-      toMarathonApp("test-container", InputContainerProperties(
+      toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
         network = "missing"
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", InputContainerProperties(
+      toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
         network = "HOST"
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonApp("test-container", InputContainerProperties(
+      toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
@@ -583,13 +583,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1
@@ -605,13 +605,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "BRIDGE",
         num_instances = 1
@@ -626,7 +626,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with empty acceptedResourceRoles" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -639,7 +639,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate valid marathon payload from lower case constraints" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
@@ -653,13 +653,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload using provider networks" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http"), load_balanced = Some(true)),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http"), load_balanced = Some(true)),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "apps",
         num_instances = 1
@@ -676,13 +676,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithStdNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1
@@ -699,13 +699,13 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonApp("test-container", InputContainerProperties(
+      val marJson = Json.toJson(toMarathonApp("org","wkr","env","test-container", InputContainerProperties(
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithStdNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = 80 , label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = 443 , label = Some("https"))
+          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
         ),
         network = "BRIDGE",
         num_instances = 1

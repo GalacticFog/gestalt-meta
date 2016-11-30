@@ -45,7 +45,7 @@ package object marathon {
       locations: Option[Iterable[String]] = None)
 
   case class PortMapping(protocol: String,
-                         container_port: Int,
+                         container_port: Option[Int] = None,
                          host_port: Option[Int] = None,
                          service_port: Option[Int] = None,
                          label: Option[String] = None,
@@ -93,9 +93,9 @@ package object marathon {
     case object Docker {
 
       case class PortMapping(protocol: Option[String] = Some("tcp"),
-                             containerPort: Int,
-                             hostPort: Option[Int] = Some(0),
-                             servicePort: Option[Int] = Some(0),
+                             containerPort: Option[Int] = None,
+                             hostPort: Option[Int] = None,
+                             servicePort: Option[Int] = None,
                              name: Option[String] = None,
                              labels: Option[Map[String,String]] = None)
 
@@ -447,7 +447,7 @@ package object marathon {
       args = args,
       ports = port_mappings map {_.flatMap { _.service_port }},
       portDefinitions = port_mappings map {_.map {
-        pm => PortDefinition(port = pm.container_port, protocol = Some(pm.protocol), name = pm.label, labels = None)
+        pm => PortDefinition(port = pm.service_port getOrElse 0, protocol = Some(pm.protocol), name = pm.label, labels = None)
       } },
       labels = labels,
       healthChecks = health_checks map {_.map { hc => MarathonHealthCheck(
@@ -580,10 +580,14 @@ package object marathon {
       ports = None,
       portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings map {
         pm => PortDefinition(
-          port = pm.container_port,
+          port = pm.service_port getOrElse 0,
           protocol = Some(pm.protocol),
           name = pm.label,
-          labels = if (pm.load_balanced.contains(true)) Some(Json.obj("VIP_0" -> "")) else None
+          labels = pm.service_port match {
+            case Some(sp) if pm.load_balanced.contains(true) =>
+              Some(Json.obj("VIP_0" -> s"${namedVIP}:${sp}"))
+            case _ => None
+          }
         )
       }) else None,
       labels = props.labels,

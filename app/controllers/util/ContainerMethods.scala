@@ -86,7 +86,7 @@ object ContainerMethods {
     JsonUtil.getJsonField(Json.parse(jstring), "id") map { _.as[UUID] }
   }
   
-  private[util] def updateWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
+  private[util] def updateWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): GestaltResourceInstance = {
     val newStats = stats match {
       
       case Some(stats) => Seq(
@@ -96,7 +96,9 @@ object ContainerMethods {
         "tasks_running"   -> stats.tasksRunning.toString,
         "tasks_healthy"   -> stats.tasksHealthy.toString,
         "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged"    -> stats.tasksStaged.toString)
+        "tasks_staged"    -> stats.tasksStaged.toString,
+        "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]"),
+        "service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]"))
         
       case None => Seq(
         "status"          -> "LOST",
@@ -104,12 +106,15 @@ object ContainerMethods {
         "tasks_running"   -> "0",
         "tasks_healthy"   -> "0",
         "tasks_unhealthy" -> "0",
-        "tasks_staged"    -> "0")
+        "tasks_staged"    -> "0",
+        "instances"       -> "[]",
+        "service_addresses" -> "[]")
     }
     
-    metaCon.copy( properties = metaCon.properties map { _ ++ newStats } orElse {
+    val v = metaCon.copy( properties = metaCon.properties map { _ ++ newStats } orElse {
       Some(newStats toMap)
     })
+    v
   }    
   
 }
