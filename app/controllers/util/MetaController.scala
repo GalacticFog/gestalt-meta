@@ -258,25 +258,6 @@ trait MetaController extends SecureController
     }
   }
   
-//  /*
-//   * this is only used by Meta.createWorkspaceCommon and Meta.postEnvironmentResult
-//   */
-//  protected[controllers] def CreateResource(
-//    org: UUID,
-//    resourceJson: JsValue,
-//    caller: AuthAccountWithCreds,
-//    typeId: UUID,
-//    parentId: UUID): Try[GestaltResourceInstance] = {
-//    
-//    safeGetInputJson(resourceJson) flatMap { input =>
-//      val tid = assertValidTypeId(input, Option(typeId))
-//      ResourceFactory.create(ResourceIds.User, caller.account.id)(
-//        inputWithDefaults(org, input.copy(resource_type = Some(tid)), caller), parentId = Option(parentId))
-//    }
-//
-//  }   
-
-  
   def createResourceInstance(
       org: UUID, 
       json: JsValue, 

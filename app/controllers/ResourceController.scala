@@ -148,21 +148,28 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
+    log.debug(s"AuthorizedResourceSingle($path, $action)")
+    
     Authorize(path.targetId.get, action) {
       
       val resource = lookups.get(path.targetTypeId).fold {
+        log.debug("Applying standard lookup function")
         Resource.fromPath(path.path)
-      }{
+      }{ f=>
         log.debug(s"Found custom lookup function for Resource.")
-        _(path, request.identity, Option(request.queryString)) 
+        log.debug("FUNCTION : " + f.getClass.getName)
+        f(path, request.identity, Option(request.queryString)) 
       }
       
       resource.fold(NotFoundResult(request.uri)) { res =>
         transforms.get(res.typeId).fold {
+          log.debug("No custom transformer found.")
           Ok( RenderSingle(res) )
-        }{ 
+        }{ f =>
           log.debug(s"Found custom transformation function for Resource: ${res.id}")
-          _ (res, request.identity, Option(request.queryString)) match {
+          log.debug(s"type-id: ${res.typeId}, label: ${ResourceLabel(res.typeId)}")
+          log.debug("FUNCTION : " + f.getClass.getName)
+          f(res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
           }

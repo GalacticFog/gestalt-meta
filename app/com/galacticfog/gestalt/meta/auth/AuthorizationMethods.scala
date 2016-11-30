@@ -26,6 +26,10 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   //private val log = Logger(this.getClass)
   
+  /**
+   * 
+   * @param parent the parent of the new Resource
+   */
   def setNewEntitlements(
       org: UUID,
       resource: UUID, 
@@ -42,6 +46,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
 
       // build list of actions for target and all child-type resources
       val actions = getNewResourceActionSet(res.typeId).toSeq
+      
+      if (log.isDebugEnabled) debugLogActions(res, actions)
+      
       val ents = entitlements(creator.account.id, org, resource, actions)
       
       {
@@ -51,12 +58,16 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       } map { ent => CreateNewResource(org, creator, 
         json   = Json.toJson(ent), 
         typeId = Option(ResourceIds.Entitlement), 
-        parent = parent)
+        parent = /*parent*/ Option(resource))
       }
 
     }
   }
   
+  private[this] def debugLogActions(res: GestaltResourceInstance, actions: Seq[String]) = {
+    log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
+    actions.sorted foreach { e => log.debug(e) }
+  }
   
   def getResourceEntitlements(resource: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
