@@ -1,31 +1,42 @@
 package controllers
 
-
 import java.util.UUID
+
+import scala.concurrent.Future
+import scala.reflect.runtime.universe
+import scala.util.Success
+import scala.util.Try
+
+import org.joda.time.DateTime
+import org.mockito.Matchers.{ eq => meq }
+import org.specs2.execute.AsResult
+import org.specs2.execute.Result
+import org.specs2.matcher.JsonMatchers
+import org.specs2.matcher.ValueCheck.typedValueCheck
+import org.specs2.specification.BeforeAll
+
+import com.galacticfog.gestalt.data.Instance
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerService, GestaltSecurityMocking}
-import org.joda.time.{DateTime, DateTimeZone}
-import org.specs2.execute.{Result, AsResult}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.specification._
-import play.api.{Play, Application, GlobalSettings}
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import play.api.test._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import org.mockito.Matchers.{eq => meq}
 
-import scala.concurrent.Future
-import scala.util.{Try, Success}
+import controllers.util.ContainerService
+import controllers.util.GestaltSecurityMocking
+import play.api.GlobalSettings
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+
+import play.api.test.{PlaySpecification,WithApplication,FakeApplication,FakeRequest}
+import play.api.test.WithApplication
 
 class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
@@ -356,12 +367,9 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       /*
        * TODO: This fails because the calling user doesn't have view.permissions on any containers.
        */
-      
-      
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers?expand=true")
-
       val Some(result) = route(request)
-
+      
       contentAsString(result) must /#(0) /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
 
