@@ -48,6 +48,8 @@ test:
 
 docker-publish:
   stage: publish
+  services:
+    - docker:dind
   script: 
     - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
@@ -57,7 +59,7 @@ docker-publish:
     - docker push     $DOCKER_IMG:$DOCKER_TAG
     - docker rmi      $DOCKER_IMG:$DOCKER_TAG
 
-.github-publish:
+github-publish:
   stage: publish
   script: 
     - git remote remove github || true
@@ -66,12 +68,13 @@ docker-publish:
       if [ -z ${CI_BUILD_TAG} ]; then 
          git push github HEAD:$CI_BUILD_REF_NAME
       else 
-         git push github $CI_BUILD_TAG
+         git push -f github $CI_BUILD_TAG
       fi
   only:
     - master
     - /^release-.*$/
     - tags
+  artifacts:
 
 .deploy_template: &deploy_to_test
   image: galacticfog/gitlab-updater
@@ -82,7 +85,7 @@ docker-publish:
   script: 
     - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
-    - /usr/local/bin/update-deployed-app.sh  marathon.mesos:8080 test-gestalt-tasks/meta  $DOCKER_IMG:$DOCKER_TAG
+    - /usr/local/bin/update-deployed-app.sh  marathon.mesos:8080 gestalt-test-tasks/meta  $DOCKER_IMG:$DOCKER_TAG
   allow_failure: true
   artifacts:
 
