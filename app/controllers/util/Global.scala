@@ -77,7 +77,8 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
       classOf[MarathonAPIController] -> new MarathonAPIController(containerSvc),
       classOf[ContainerController] -> new ContainerController(containerSvc),
       classOf[ResourceController] -> resourceController,
-      classOf[DeleteController] -> deleteController
+      classOf[DeleteController] -> deleteController,
+      classOf[LicenseController] -> new LicenseController
     )
   }
   

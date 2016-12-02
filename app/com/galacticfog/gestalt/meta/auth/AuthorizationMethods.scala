@@ -65,7 +65,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   private[this] def debugLogActions(res: GestaltResourceInstance, actions: Seq[String]) = {
-    log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
+    //log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
     actions.sorted foreach { e => log.debug(e) }
   }
   

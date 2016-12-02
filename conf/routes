@@ -48,10 +48,10 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/s
 ############################
 # LICENSE
 ############################
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 	 	controllers.LicenseController.postLicense(fqon: String)
-GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.getLicense(fqon: String, id: java.util.UUID)
-GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 		controllers.LicenseController.getLicenses(fqon: String)
-DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.deleteLicense(fqon: String, id: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 	 	@controllers.LicenseController.postLicense(fqon: String)
+GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  @controllers.LicenseController.getLicense(fqon: String, id: java.util.UUID)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 		@controllers.LicenseController.getLicenses(fqon: String)
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  @controllers.LicenseController.deleteLicense(fqon: String, id: java.util.UUID)
 
 ############################
 # LAMBDAS
