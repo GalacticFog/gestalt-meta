@@ -9,6 +9,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.meta.api.errors.ForbiddenException
 
 import controllers.util._
 import play.api.{Logger => log}
@@ -20,6 +21,7 @@ import scala.annotation.tailrec
 import scala.language.postfixOps
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
+
 
 trait Authorization extends MetaController with ActionMethods with AuthorizationMethods {
   
@@ -49,7 +51,6 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     }
   }
   
-  
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
   }
@@ -57,15 +58,24 @@ trait Authorization extends MetaController with ActionMethods with Authorization
   def Authorize(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Result): Result = {
     isAuthorized(target, caller.account.id, actionName, caller) match {
       case Failure(err) => HandleExceptions(err)
-      case Success(auth) => {
-        if (auth) {
-          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
-          block 
-        } else ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
+      case Success(auth) => if (auth) {
+        log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
+        block 
+      } else {
+        log.warn(s"{UNAUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
+        ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
       }
     }
   }
+
+  def AuthorizeAsync(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): Future[Result] = {
+    AuthorizeAsync(target, actionName, request.identity)(block)
+  }
   
+  def AuthorizeAsync(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Result): Future[Result] = {
+    Future( Authorize(target, actionName, caller)(block) )
+  } 
+   
   def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     val caller = request.identity
     
@@ -76,19 +86,11 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     }
     handleExpansion(output, request.queryString, META_URL)
   }
+
   
-  def AuthorizeFuture(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Future[Result]): Future[Result] = {
-    isAuthorized(
-        target, caller.account.id, actionName, caller) match {
-      case Failure(err) => Future(HandleExceptions(err))
-      case Success(auth) => {
-        if (auth) {
-          log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}")
-          block 
-        } else Future(ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'"))
-      }
-    }
-  }  
-    
+  def forbidden(action: String) = new ForbiddenException(
+    s"You do not have permission to perform this action. Failed: '$action'"
+  )
+  
 }
 

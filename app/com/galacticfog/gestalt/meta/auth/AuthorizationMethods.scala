@@ -151,7 +151,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     go(theirs filter { e => e.properties.action.startsWith(prefix) }, ours)
   }
 
-
+  
   def getEntitlementsMerged(resourceId: UUID): Seq[GestaltResourceInstance] = {
     entitlementsMerged(ResourceFactory.findEffectiveEntitlements(resourceId))
   }
@@ -180,7 +180,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       
       // Bottom-Up evaluation
       val ents = (es - max).toSeq.sortWith((a,b) => a._1 < b._1)
-  
+      
       // Add all top-level entitlements to map
       val output = topLevel map { e => (entitlementAction(e), e) } toMap    
       
@@ -209,7 +209,25 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         (allowed intersect membership).isDefinedAt(0)
       }
     }
-  }    
+  }
+  
+  def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
+    
+    log.debug(s"Finding entitlements matching: $action($resource)")
+    
+    findMatchingEntitlement(resource, action) match {
+      case None => false
+      case Some(entitlement) => {
+        
+        log.debug("Found matching entitlement.")
+        
+        val allowed = getAllowedIdentities(entitlement)
+        val membership = getUserMembership(account.account.id, account)
+
+        (allowed intersect membership).isDefinedAt(0)
+      }
+    }
+  }
   
   def entitlementAction(e: GestaltResourceInstance) = {
     e.properties.get("action")
@@ -339,24 +357,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   
   
-  def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    
-    log.debug(s"Finding entitlements matching: $action($resource)")
-    
-    findMatchingEntitlement(resource, action) match {
-      case None => false
-      case Some(entitlement) => {
-        
-        log.debug("Found matching entitlement.")
-        
-        val allowed = getAllowedIdentities(entitlement)
-        val membership = getUserMembership(account.account.id, account)
 
-        (allowed intersect membership).isDefinedAt(0)
-        
-      }
-    }
-  }
   
   
   
