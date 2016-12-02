@@ -588,8 +588,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithoutNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
+          PortMapping(protocol = "tcp", service_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", service_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1
@@ -619,10 +619,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       marJson must /("container") /("docker") /("network" -> beEqualTo("BRIDGE"))
       marJson must not /("ports")
       marJson must not /("ipAddress")
-      marJson must havePortDefinitions(
-        aPortWith(port = 80, name = "http", protocol = "tcp"),
-        aPortWith(port = 443, name = "https", protocol = "tcp")
-      )
+      marJson must not /("portDefinitions")
     }
 
     "generate marathon payload with empty acceptedResourceRoles" in {
@@ -667,7 +664,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       marJson must /("container") /("docker") /("network" -> beEqualTo("USER"))
       marJson must /("ipAddress") /("networkName" -> beEqualTo("apps"))
       marJson must /("container") /("docker") /("portMappings") /#(0) /("name" -> "http")
-      marJson must /("container") /("docker") /("portMappings") /#(0) /("labels") /("VIP_0" -> "")
+      marJson must /("container") /("docker") /("portMappings") /#(0) /("labels") /("VIP_0" -> "/test-container.env.wkr.org:80")
       marJson must /("container") /("docker") /("portMappings") /#(1) /("name" -> "https")
       marJson must not /("container") /("docker") /("portMappings") /#(1) /("labels")
       marJson must not / "ports"
@@ -681,8 +678,8 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
         image = "nginx:latest",
         provider = InputProvider(id = marathonProviderWithStdNetworks.id),
         port_mappings = Seq(
-          PortMapping(protocol = "tcp", container_port = Some(80), label = Some("http")),
-          PortMapping(protocol = "tcp", container_port = Some(443), label = Some("https"))
+          PortMapping(protocol = "tcp", service_port = Some(80), label = Some("http")),
+          PortMapping(protocol = "tcp", service_port = Some(443), label = Some("https"))
         ),
         network = "HOST",
         num_instances = 1
@@ -692,10 +689,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       marJson must not /("container") /("docker") / "parameters"
       marJson must not / "ports"
       marJson must not / "ipAddress"
-      marJson must havePortDefinitions(
-        aPortWith(port = 80, name = "http", protocol = "tcp"),
-        aPortWith(port = 443, name = "https", protocol = "tcp")
-      )
+      marJson must not / "portDefinitions"
     }
 
     "generate marathon payload with support for standard bridge networking on calico provider" in {
@@ -714,10 +708,7 @@ class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
       marJson must not /("container") /("docker") / "parameters"
       marJson must not / "ports"
       marJson must not / "ipAddress"
-      marJson must havePortDefinitions(
-        aPortWith(port = 80, name = "http", protocol = "tcp"),
-        aPortWith(port = 443, name = "https", protocol = "tcp")
-      )
+      marJson must not / "portDefinitions"
     }
 
   }
