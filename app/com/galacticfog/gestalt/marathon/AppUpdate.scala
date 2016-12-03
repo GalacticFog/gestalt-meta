@@ -44,10 +44,14 @@ case object AppUpdate {
                             name: Option[String] = None,
                             labels: Map[String,String] = Map.empty)
 
-  case class PortDiscovery(number: Int, name: String, protocol: String)
-  case class DiscoveryInfo(ports: Option[Seq[PortDiscovery]] = None)
-  case class IPPerTaskInfo(discovery: Option[DiscoveryInfo])
+  case class IPPerTaskInfo(discovery: Option[IPPerTaskInfo.DiscoveryInfo], networkName: Option[String] = None)
 
+  case object IPPerTaskInfo {
+    case class DiscoveryInfo(ports: Option[Seq[DiscoveryInfo.PortDiscovery]] = None)
 
+    case object DiscoveryInfo {
+      case class PortDiscovery(number: Int, name: String, protocol: String)
+    }
+  }
 
 }

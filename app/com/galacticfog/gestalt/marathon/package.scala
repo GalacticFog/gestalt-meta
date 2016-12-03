@@ -47,9 +47,9 @@ package object marathon {
 
   implicit lazy val marathonPortDefintionFmt = Json.format[AppUpdate.PortDefinition]
 
-  implicit lazy val portDiscoveryFmt = Json.format[AppUpdate.PortDiscovery]
+  implicit lazy val portDiscoveryFmt = Json.format[AppUpdate.IPPerTaskInfo.DiscoveryInfo.PortDiscovery]
 
-  implicit lazy val discoveryInfoFmt = Json.format[AppUpdate.DiscoveryInfo]
+  implicit lazy val discoveryInfoFmt = Json.format[AppUpdate.IPPerTaskInfo.DiscoveryInfo]
 
   implicit lazy val ipPerTaskInfoFmt = Json.format[AppUpdate.IPPerTaskInfo]
 
@@ -59,14 +59,7 @@ package object marathon {
 
   implicit lazy val marathonContainerVolumeFmt = Json.format[Container.Volume]
 
-  implicit lazy val PortMappingReads: Reads[Container.Docker.PortMapping] = (
-    (__ \ "containerPort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
-      (__ \ "hostPort").formatNullable[Int] ~
-      (__ \ "servicePort").formatNullable[Int].map(_ getOrElse AppDefinition.RandomPortValue) ~
-      (__ \ "protocol").formatNullable[String].map(_ getOrElse "tcp") ~
-      (__ \ "name").formatNullable[String] ~
-      (__ \ "labels").formatNullable[Map[String, String]].map(_ getOrElse Map.empty[String, String])
-    )(Container.Docker.PortMapping(_, _, _, _, _, _))
+  implicit lazy val portMappingFormat = Json.format[Container.Docker.PortMapping]
 
   implicit lazy val PortMappingWrites = Json.writes[Container.Docker.PortMapping]
 
@@ -236,20 +229,22 @@ package object marathon {
     log.debug("Entered marathonToMetaContainerSpec...")
     log.debug("Received:\n" + app)
 
+    def portMapping(pm: Container.Docker.PortMapping) = ContainerSpec.PortMapping(
+      name = None,
+      labels = pm.labels,
+      protocol = pm.protocol getOrElse "tcp",
+      container_port = pm.containerPort,
+      host_port = pm.hostPort,
+      service_port = pm.servicePort
+    )
+
     val name = app.id
     val props = ContainerSpec(
       name = name.map(_.stripPrefix("/")) getOrElse "",
       container_type = "DOCKER",
       image = app.container flatMap {_.docker map {_.image}} getOrElse "",
       provider = ContainerSpec.InputProvider(id = provider.id, name = Some(provider.name)),
-      port_mappings = app.container flatMap {_.docker flatMap {_.portMappings.map {_.zipWithIndex.map { case (pm,index) => ContainerSpec.PortMapping(
-        name = None,
-        labels = Some(pm.labels),
-        protocol = pm.protocol,
-        container_port = Some(pm.containerPort),
-        host_port = pm.hostPort,
-        service_port = Some(pm.servicePort)
-      )}}}} getOrElse Seq(),
+      port_mappings = app.container.flatMap(_.docker).flatMap(_.portMappings).map(_.map(portMapping)) getOrElse Seq.empty,
       cpus = app.cpus getOrElse AppDefinition.DefaultCpus,
       memory = app.mem getOrElse AppDefinition.DefaultMem,
       num_instances = app.instances getOrElse AppDefinition.DefaultInstances,
@@ -291,12 +286,12 @@ package object marathon {
                             instances: Option[Seq[ContainerInstance]] = None,
                             deploymentIDs: Option[Seq[String]] = None): Try[AppInfo] = {
 
-    def portmap(pm: ContainerSpec.PortMapping): Container.Docker.PortMapping = {
+    def portMapping(pm: ContainerSpec.PortMapping): Container.Docker.PortMapping = {
       Container.Docker.PortMapping(
-        protocol = pm.protocol,
-        containerPort = pm.container_port getOrElse 0,
-        hostPort = pm.host_port orElse Some(0),
-        servicePort = pm.service_port getOrElse 0
+        protocol = Some(pm.protocol),
+        containerPort = pm.container_port,
+        hostPort = pm.host_port,
+        servicePort = pm.service_port
       )
     }
 
@@ -321,7 +316,7 @@ package object marathon {
       image = spec.image,
       network = spec.network,
       forcePullImage = Some(spec.force_pull),
-      portMappings = Some(spec.port_mappings map portmap),
+      portMappings = Some(spec.port_mappings map portMapping),
       parameters = Some(Seq()),
       privileged = Some(false)
     )
@@ -382,7 +377,7 @@ package object marathon {
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonLaunchPayload(props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(fqon: String, workspaceName: String, environmentName: String, name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -400,15 +395,29 @@ package object marathon {
     } yield names) getOrElse Seq.empty
     log.debug("found provider networks" + providerNetworkNames)
 
+    def portMapping(vip: String, exposeHost: Boolean, pm: ContainerSpec.PortMapping) = Container.Docker.PortMapping(
+      protocol = Some(pm.protocol),
+      containerPort = pm.container_port,
+      hostPort = pm.host_port,
+      servicePort = pm.service_port.filter(_ => exposeHost),
+      name = pm.name,
+      labels = for {
+        cp <- pm.container_port
+        ep <- pm.expose_endpoint if ep == true
+      } yield Map("VIP_0" -> s"${vip}:${cp}")
+    )
 
-    def portmap(ps: Seq[ContainerSpec.PortMapping]): Seq[Container.Docker.PortMapping] = {
-      ps map {pm => Container.Docker.PortMapping(
-        protocol = pm.protocol,
-        containerPort = pm.container_port getOrElse 0,
-        hostPort = pm.host_port orElse Some(0),
-        servicePort = pm.service_port getOrElse 0
-      )}
-    }
+    def portDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
+      port = pm.service_port getOrElse 0,
+      protocol = pm.protocol,
+      name = pm.name,
+      labels = (for {
+        sp <- pm.service_port
+        ep <- pm.expose_endpoint if ep == true
+      } yield Map("VIP_0" -> s"${vip}:${sp}")) getOrElse Map.empty
+    )
+
+    val namedVIP = "/" + (Array(name.stripPrefix("/").stripSuffix("/"),environmentName,workspaceName) ++ fqon.split('.').reverse).mkString(".")
 
     def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo]) = {
       val requestedNetwork = props.network getOrElse ""
@@ -418,7 +427,7 @@ package object marathon {
           image = props.image,
           network = if (requestedNetwork.nonEmpty) Some(requestedNetwork) else None,
           forcePullImage = Some(props.force_pull),
-          portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
+          portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
           parameters = dockerParams,
           privileged = Some(false)
         )), None)
@@ -433,7 +442,7 @@ package object marathon {
               image = props.image,
               network = Some(stdNet),
               forcePullImage = Some(props.force_pull),
-              portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(portmap(props.port_mappings)) else None,
+              portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
               parameters = dockerParams,
               privileged = Some(false)
             )), None)
@@ -442,21 +451,11 @@ package object marathon {
               image = props.image,
               network = Some("USER"),
               forcePullImage = Some(props.force_pull),
-              portMappings = None,
-              parameters = Some(Seq(
-                Container.Docker.Parameter("net", calicoNet)
-              ) ++ dockerParams.getOrElse(Seq())),
+              portMappings = Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = false, _))),
+              parameters = dockerParams,
               privileged = Some(false)
             )
-            val ippertask = AppUpdate.IPPerTaskInfo(
-                discovery = Some(AppUpdate.DiscoveryInfo(
-                  ports = Some(props.port_mappings.filter(_.container_port.isDefined).map(pm => AppUpdate.PortDiscovery(
-                    number = pm.container_port.get,
-                    name = pm.name getOrElse pm.container_port.toString,
-                    protocol = pm.protocol
-                  )))
-                ))
-              )
+            val ippertask = AppUpdate.IPPerTaskInfo( discovery = None, networkName = Some(calicoNet) )
             (Some(docker), Some(ippertask))
         }
       }
@@ -497,9 +496,7 @@ package object marathon {
       cmd = props.cmd,
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
-      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings.filter(_.container_port.isDefined) map {
-        pm => AppUpdate.PortDefinition(port = pm.container_port.get, protocol = pm.protocol, name = pm.name, labels = pm.labels getOrElse Map.empty)
-      }) else None,
+      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None,
       labels = Some(props.labels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),

@@ -136,6 +136,27 @@ case object MarathonClient {
           cpus <- (marApp \ "cpus").asOpt[Double]
           memory  <- (marApp \ "mem").asOpt[Double]
           age <- (marApp \ "version").asOpt[String] map DateTime.parse
+          tasks = (marApp \ "tasks").asOpt[Seq[ContainerStats.TaskStat]]
+          portLabels = (marApp \ "container" \ "docker" \ "network").asOpt[String] map {
+            _ match {
+              case "USER" | "BRIDGE" =>
+                (marApp \ "container" \ "docker" \ "portMappings" \\ "labels").map(_.as[Map[String,String]])
+              case "HOST" =>
+                (marApp \ "portDefinitions" \\ "labels").map(_.as[Map[String,String]])
+            }
+          } getOrElse Seq.empty
+          vipLabels = portLabels.flatMap(_.collect{
+            case (k,v) if k.matches("VIP_[0-9]+") => v
+          }) groupBy (_.split(":").head.stripPrefix("/") + ".marathon.l4lb.thisdcos.directory") filter {case (k,v) => k.trim.nonEmpty}
+          addresses = vipLabels map {
+            case (address,vips) => ContainerStats.ServiceAddress(
+              address = address,
+              ports = vips flatMap (_.split(":") match {
+                case Array(address,port) => Try(port.toInt).toOption
+                case _ => None
+              })
+            )
+          }
     } yield ContainerStats(
       status = status,
       containerType = ctype,
@@ -148,7 +169,9 @@ case object MarathonClient {
       tasksRunning = tasksRunning,
       tasksStaged = tasksStaged,
       tasksHealthy = tasksHealthy,
-      tasksUnhealthy = tasksUnhealthy
+      tasksUnhealthy = tasksUnhealthy,
+      taskStats = tasks,
+      serviceAddresses = Some(addresses.toSeq)
     )
   }
 

@@ -47,7 +47,8 @@ case object ContainerSpec extends Spec {
                          host_port: Option[Int] = None,
                          service_port: Option[Int] = None,
                          name: Option[String] = None,
-                         labels: Option[Map[String,String]] = None)
+                         labels: Option[Map[String,String]] = None,
+                         expose_endpoint: Option[Boolean] = None)
 
   case class Volume(container_path: String,
                     host_path: Option[String],

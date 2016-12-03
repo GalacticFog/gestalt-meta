@@ -215,6 +215,10 @@ trait ContainerService extends MetaController {
         case Failure(t) => Future.failed(t)
         case Success(resource) =>
           val marathonApp = toMarathonLaunchPayload(
+            fqon = fqon,
+            workspaceName = workspace.name,
+            environmentName = environment.name,
+            name = containerResourcePre.name,
             props = containerSpec,
             provider = provider
           )

@@ -101,18 +101,21 @@ class ContainerMethodsSpec extends PlaySpecification with ResourceScope with Bef
       
       val given = "LEAPING"
       val stats = com.galacticfog.gestalt.marathon.ContainerStats(
-            id = uuid.toString,
-            containerType = "foo",
-            status = given,
-            cpus = 0.5,
-            memory = 0.5,
-            image = "image",
-            age = DateTime.now,
-            numInstances = 1,
-            tasksStaged = 0,
-            tasksRunning = 1,
-            tasksHealthy = 1,
-            tasksUnhealthy = 0)
+        id = uuid.toString,
+        containerType = "foo",
+        status = given,
+        cpus = 0.5,
+        memory = 0.5,
+        image = "image",
+        age = DateTime.now,
+        numInstances = 1,
+        tasksStaged = 0,
+        tasksRunning = 1,
+        tasksHealthy = 1,
+        tasksUnhealthy = 0,
+        taskStats = None,
+        serviceAddresses = None
+      )
                     
       val org = newOrg(id = dummyRootOrgId).get
       val (_,env) = createWorkspaceEnvironment(org.id)
