@@ -230,7 +230,7 @@ package object marathon {
     log.debug("Received:\n" + app)
 
     def portMapping(pm: Container.Docker.PortMapping) = ContainerSpec.PortMapping(
-      name = None,
+      name = pm.name,
       labels = pm.labels,
       protocol = pm.protocol getOrElse "tcp",
       container_port = pm.containerPort,
@@ -291,7 +291,9 @@ package object marathon {
         protocol = Some(pm.protocol),
         containerPort = pm.container_port,
         hostPort = pm.host_port,
-        servicePort = pm.service_port
+        servicePort = pm.service_port,
+        name = pm.name,
+        labels = pm.labels
       )
     }
 

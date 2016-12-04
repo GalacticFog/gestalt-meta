@@ -118,7 +118,14 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        port_mappings = Seq(ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          host_port = Some(65000),
+          service_port = Some(10100),
+          name = Some("web"),
+          labels = Some(Map("k" -> "v"))
+        )),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -171,10 +178,11 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |            "portMappings": [
            |                {
            |                    "containerPort": 80,
-           |                    "hostPort": 0,
-           |                    "labels": {},
+           |                    "hostPort": 65000,
+           |                    "labels": {"k": "v"},
+           |                    "name": "web",
            |                    "protocol": "tcp",
-           |                    "servicePort": 0
+           |                    "servicePort": 10100
            |                }
            |            ],
            |            "privileged": false
@@ -200,13 +208,14 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |    "mem": 128,
            |    "portDefinitions": [
            |        {
-           |            "labels": {},
-           |            "port": 0,
-           |            "protocol": "tcp"
+           |            "labels": {"k": "v"},
+           |            "port": 10100,
+           |            "protocol": "tcp",
+           |            "name": "web"
            |        }
            |    ],
            |    "ports": [
-           |        0
+           |        10100
            |    ],
            |    "readinessChecks": [],
            |    "requirePorts": false,
@@ -278,7 +287,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),Some(0),Some(0),Some("web"),Some(Map.empty))),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -333,6 +342,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |                    "containerPort": 80,
            |                    "hostPort": 0,
            |                    "labels": {},
+           |                    "name": "web",
            |                    "protocol": "tcp",
            |                    "servicePort": 0
            |                }
@@ -362,7 +372,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |        {
            |            "labels": {},
            |            "port": 0,
-           |            "protocol": "tcp"
+           |            "protocol": "tcp",
+           |            "name": "web"
            |        }
            |    ],
            |    "ports": [
@@ -466,7 +477,11 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |      "network": "BRIDGE",
           |      "portMappings": [
           |        {
-          |          "containerPort": 80
+          |          "containerPort": 80,
+          |          "hostPort": 0,
+          |          "servicePort": 0,
+          |          "name": "web",
+          |          "labels": {}
           |        }
           |      ]
           |    }
@@ -480,7 +495,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         container_type = "DOCKER",
         image = "nginx",
         provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,Some(0),None,Some(Map.empty))),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),Some(0),Some(0),Some("web"),Some(Map.empty))),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -532,6 +547,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |                    "containerPort": 80,
           |                    "hostPort": 0,
           |                    "labels": {},
+          |                    "name": "web",
           |                    "protocol": "tcp",
           |                    "servicePort": 0
           |                }
@@ -559,9 +575,10 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |    "mem": 128,
           |    "portDefinitions": [
           |        {
-          |            "labels": {},
           |            "port": 0,
-          |            "protocol": "tcp"
+          |            "protocol": "tcp",
+          |            "name": "web",
+          |            "labels": {}
           |        }
           |    ],
           |    "ports": [
@@ -599,7 +616,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/providers/${testPID}/v2/apps").withBody(requestBody)
       val Some(result) = route(request)
       status(result) must equalTo(CREATED)
-      contentAsJson(result) must equalTo(jsResponse)
+      jsResponse must equalTo(contentAsJson(result))
     }
 
   }
