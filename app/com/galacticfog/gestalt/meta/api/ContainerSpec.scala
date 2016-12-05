@@ -90,6 +90,7 @@ case object ContainerSpec extends Spec {
       "memory" -> JsNumber(spec.memory),
       "disk" -> JsNumber(spec.disk),
       "num_instances" -> JsNumber(spec.num_instances),
+      "port_mappings" -> Json.toJson(spec.port_mappings),
       "constraints" -> Json.toJson(spec.constraints),
       "force_pull" -> Json.toJson(spec.force_pull),
       "health_checks" -> Json.toJson(spec.health_checks),
