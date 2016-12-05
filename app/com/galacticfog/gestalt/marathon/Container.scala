@@ -18,7 +18,7 @@ case class Container(docker: Option[Container.Docker],
   }
 
   def servicePorts: Option[Seq[Int]] =
-    for (pms <- portMappings) yield pms.map(_.servicePort)
+    for (pms <- portMappings) yield pms.flatMap(_.servicePort)
 }
 
 case object Container {
@@ -43,13 +43,12 @@ case object Container {
       * @param labels        This can be used to decorate the message with metadata to be
       *                      interpreted by external applications such as firewalls.
       */
-    case class PortMapping(
-                            containerPort: Int = AppDefinition.RandomPortValue,
-                            hostPort: Option[Int] = None, // defaults to HostPortDefault for BRIDGE mode, None for USER mode
-                            servicePort: Int = AppDefinition.RandomPortValue,
-                            protocol: String = "tcp",
+    case class PortMapping( containerPort: Option[Int] = None,
+                            hostPort: Option[Int] = None,
+                            servicePort: Option[Int] = None,
+                            protocol: Option[String] = None,
                             name: Option[String] = None,
-                            labels: Map[String, String] = Map.empty[String, String])
+                            labels: Option[Map[String, String]] = None)
 
     object PortMapping {
       val TCP = "tcp"
