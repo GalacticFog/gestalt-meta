@@ -308,13 +308,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         testContainerName
       ) returns Future(Some(testContainer -> Seq.empty))
 
-//      /*
-//       * TODO: This test is failing because no entitlements are set after the container is created.
-//       */
-//      import com.galacticfog.gestalt.meta.auth._
-//      val Auth = new AuthorizationMethods {}
-//      Auth.setNewEntitlements(dummyRootOrgId, testContainer.id, dummyAuthAccountWithCreds(), None)
-      
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${testContainer.id}")
       val Some(result) = route(request)
       
@@ -323,7 +316,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers/${testContainer.id}")
       there was one(containerService).findEnvironmentContainerByName("root", testEnv.id, testContainerName)
-    }.pendingUntilFixed("Must set container.view Entitlements")
+    }
 
     "list containers via the ContainerService interface" in new TestApplication {
       val testProps = ContainerSpec(
@@ -380,7 +373,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers")
       there was one(containerService).listEnvironmentContainers("root", testEnv.id)
       
-    }.pendingUntilFixed("Must set container.view Entitlements")
+    }
 
     "create containers using the ContainerService interface" in new TestApplication {
       val testContainerName = "test-container"
