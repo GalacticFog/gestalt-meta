@@ -42,7 +42,7 @@ class GroupMethods[A,B](secProvider: SecurityProvider[A,B]) {
         resource.id, PatchDocument(userops:_*)).get
     
     // Handle patching other attributes
-    ResourcePatch.applyPatch(resource, PatchDocument(ops:_*)).get.asInstanceOf[GestaltResourceInstance]
+    PatchInstance.applyPatch(resource, PatchDocument(ops:_*)).get.asInstanceOf[GestaltResourceInstance]
   }
   
   private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {

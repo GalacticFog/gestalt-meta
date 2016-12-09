@@ -15,7 +15,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.patch._
 
 
-object ResourcePatch {
+object PatchInstance {
   
   /*
    * 1.) Partition ops into properties and attributes

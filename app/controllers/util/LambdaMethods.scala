@@ -18,7 +18,7 @@ import controllers.util.db.EnvConfig
 import play.api.Logger
 import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.patch.ResourcePatch
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.JsonWebClient
 import com.galacticfog.gestalt.laser._
 
@@ -86,7 +86,7 @@ object LambdaMethods {
         log.info(s"Successfully updated Lambda in gestalt-lambda.")
       }
     }
-    ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
+    PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
   }    
   
   /**

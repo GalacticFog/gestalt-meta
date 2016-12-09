@@ -78,6 +78,64 @@ class PatchController(resourceController: ResourceController) extends Authorizat
     }
   }
 
+  /* 
+   * /{fqon}/resourcetypes/{id}
+   *  
+   */
+  def patchResourceType(fqon: String, tpe: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    
+    TypeFactory.findById(tpe).fold { 
+      ResourceNotFound(ResourceIds.ResourceType, tpe)
+    }{ t => ???
+      /*
+       *[cannot change]:
+       *  
+       * 	- id, type-id, org, created, modified, owner
+       *  - cannot PATCH state to 'deleted'
+       *  
+       *[can change]:
+       *  
+       *  - state
+       *  - name
+       *  - description
+       *  - tags
+       *  - variables
+       *  - properties {
+       *  
+       *    }
+       * 
+       */
+   
+    }
+    ???
+  }
+  
+  /* 
+   * /{fqon}/typeproperties/{id}
+   *  
+   */
+  def patchTypeProperty(fqon: String, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    PropertyFactory.findById(property).fold {
+      ResourceNotFound(ResourceIds.TypeProperty, property)
+    }{ p => ???
+      
+    }
+    ???
+  }
+  
+  /*
+   * /{fqon}/resourcetypes/{id}/typeproperties/{id}
+   *  
+   */
+  def patchTypePropertyChild(fqon: String, tpe: UUID, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    PropertyFactory.findById(tpe, property).fold {
+      ResourceNotFound(ResourceIds.TypeProperty, property)
+    }{ p => ???
+      
+    }
+    ???
+  }
+  
   /**
    * This function finds and patches the requested resource - it does NOT persist the updated resource.
    */
@@ -94,7 +152,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
         val patch = transforms.get(r.typeId).fold(PatchDocument(ops: _*)) {
           transform => transform(PatchDocument(ops: _*))
         }
-        val t = this.securityClient
+
         val handler = {
           if (handlers.get(r.typeId).isDefined) {
             log.debug(s"Found custom PATCH handler for type: ${r.typeId}")
@@ -117,7 +175,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
     patch: PatchDocument,
     user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
 
-    ResourcePatch.applyPatch(resource, patch).get.asInstanceOf[GestaltResourceInstance]
+    PatchInstance.applyPatch(resource, patch).get.asInstanceOf[GestaltResourceInstance]
   }
   
   

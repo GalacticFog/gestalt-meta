@@ -18,8 +18,6 @@ dockerCommands := dockerCommands.value.flatMap {
   case other => List(other)
 }
 
-//lazy val root = (project in file(".")).enablePlugins(PlayScala)
-
 lazy val root = (project in file(".")).
   enablePlugins(PlayScala,SbtNativePackager).
   enablePlugins(BuildInfoPlugin).
