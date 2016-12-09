@@ -215,6 +215,10 @@ trait ContainerService extends MetaController {
         case Failure(t) => Future.failed(t)
         case Success(resource) =>
           val marathonApp = toMarathonLaunchPayload(
+            fqon = fqon,
+            workspaceName = workspace.name,
+            environmentName = environment.name,
+            name = containerResourcePre.name,
             props = containerSpec,
             provider = provider
           )
@@ -262,7 +266,7 @@ trait ContainerService extends MetaController {
     }
   }
 
-  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
+  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
     val newStats = stats match {
       case Some(stats) => Seq(
@@ -272,7 +276,9 @@ trait ContainerService extends MetaController {
         "tasks_running" -> stats.tasksRunning.toString,
         "tasks_healthy" -> stats.tasksHealthy.toString,
         "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged" -> stats.tasksStaged.toString
+        "tasks_staged" -> stats.tasksStaged.toString,
+        "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]"),
+        "service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]")
       )
       case None => Seq(
         "status" -> "LOST",
@@ -280,7 +286,9 @@ trait ContainerService extends MetaController {
         "tasks_running" -> "0",
         "tasks_healthy" -> "0",
         "tasks_unhealthy" -> "0",
-        "tasks_staged" -> "0"
+        "tasks_staged" -> "0",
+        "instances"       -> "[]",
+        "service_addresses" -> "[]"
       )
     }
     val updatedMetaCon = metaCon.copy(

@@ -130,7 +130,10 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         container_type = "DOCKER",
         image = "nginx:alpine",
         provider = ContainerSpec.InputProvider(id = uuid, name = Some("test-provider")),
-        port_mappings = Seq(),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("secure-web"))
+        ),
         cpus = 1.0,
         memory = 128,
         disk = 0.0,
@@ -158,6 +161,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       protoProps.get("network") must beSome(Json.toJson(testProps.network.get))
       protoProps.get("cmd") must beSome(Json.toJson(testProps.cmd.get))
       protoProps.get("constraints") must beSome(Json.toJson(testProps.constraints))
+      protoProps.get("port_mappings") must beSome(Json.toJson(testProps.port_mappings))
       protoProps.get("accepted_resource_roles") must beSome(Json.toJson(testProps.accepted_resource_roles.get))
       protoProps.get("args") must beSome(Json.toJson(testProps.args.get))
       protoProps.get("force_pull") must beSome(Json.toJson(testProps.force_pull))
