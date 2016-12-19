@@ -392,7 +392,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        meq(testProps)
+        meq(testProps),
+        any[Option[UUID]]
       ) returns Future(createdResource -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(
@@ -407,7 +408,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
 
       there was one(containerController).createContainer(anyString, any[UUID])
-      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
+      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec], any[Option[UUID]])
     }
 
     "create containers using the ContainerService interface with specific ID" in new TestApplication {
@@ -457,7 +458,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         meq(testEnv),
         any[AuthAccountWithCreds],
         meq(testProps),
-        Some(testUUID)
+        meq(Some(testUUID))
       ) returns Future(createdResource -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(

@@ -593,7 +593,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        meq(testProps)
+        meq(testProps),
+        any[Option[UUID]]
       ) returns Future(createdContainer -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/providers/${testPID}/v2/apps").withBody(requestBody)

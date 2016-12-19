@@ -8,6 +8,7 @@ tmp
 .history
 newrelic
 localrc
+sec-init.sh
 /.idea
 /*.iml
 *.sc
