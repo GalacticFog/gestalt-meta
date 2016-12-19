@@ -396,7 +396,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         meq(testWork),
         meq(testEnv),
         any[AuthAccountWithCreds],
-        meq(testProps)
+        meq(testProps),
+        any[Option[UUID]]
       ) returns Future(createdResource -> Seq.empty)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(
@@ -411,7 +412,72 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
 
       there was one(containerController).createContainer(anyString, any[UUID])
-      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec])
+      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec], any[Option[UUID]])
+    }
+
+    "create containers using the ContainerService interface with specific ID" in new TestApplication {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testPID, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val testUUID = uuid()
+      val createdResource = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEID),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "disk" -> testProps.disk.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get
+        )),
+        id = testUUID
+      ).get
+      containerService.launchContainer(
+        meq("root"),
+        meq(testWork),
+        meq(testEnv),
+        any[AuthAccountWithCreds],
+        meq(testProps),
+        meq(Some(testUUID))
+      ) returns Future(createdResource -> Seq.empty)
+
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/containers").withBody(
+        Output.renderInstance(createdResource)
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(testUUID)
+      (json \ "name").asOpt[String] must beSome(testContainerName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
+      (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
+
+      there was one(containerController).createContainer(anyString, any[UUID])
+      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec], meq(Some(testUUID)))
     }
 
     "delete containers using the ContainerService interface" in new TestApplication {
