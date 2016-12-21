@@ -178,7 +178,8 @@ trait ContainerService extends MetaController {
                       workspace: GestaltResourceInstance,
                       environment: GestaltResourceInstance,
                       user: AuthAccountWithCreds,
-                      containerSpec: ContainerSpec): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
+                      containerSpec: ContainerSpec,
+                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
 
     def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): (GestaltResourceInstance, Seq[ContainerInstance]) = {
       val marathonAppId = (marathonResponse \ "id").as[String]
@@ -202,7 +203,7 @@ trait ContainerService extends MetaController {
       .map(_.id)
       .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
 
-    val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec)
+    val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
     val containerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))

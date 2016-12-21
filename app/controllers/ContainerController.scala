@@ -63,7 +63,8 @@ class ContainerController(containerService: ContainerService) extends Authorizat
             workspace = wrk,
             environment = env,
             containerSpec = containerSpec,
-            user = request.identity
+            user = request.identity,
+            inId = Some(target.id)
           )
         } yield Created(Output.renderInstance(container._1))
 
