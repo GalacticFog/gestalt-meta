@@ -2,9 +2,7 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.marathon._
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -13,23 +11,13 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
 
-import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors._
-//import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
 import controllers.util._
-import play.api.Play.current
 import play.api.libs.json._
-import play.api.libs.ws.WS
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.laser._
-import play.api.{ Logger => log }
-import scala.concurrent.{ ExecutionContext, ExecutionContext$, Future, Promise, Await }
-import scala.concurrent.duration._
-import com.galacticfog.gestalt.meta.api.output._
+import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api.output._
 
 import com.galacticfog.gestalt.keymgr.GestaltLicense
