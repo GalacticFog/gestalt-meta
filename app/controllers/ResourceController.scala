@@ -5,8 +5,7 @@ import java.util.UUID
 
 import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.util.{Try,Success,Failure}
-
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
@@ -17,26 +16,29 @@ import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
-
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
-
 import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import controllers.util.JsonUtil._
-
-import play.api.libs.json.{JsObject,JsString,Json}
-import play.api.mvc.{Action,Result}
+import play.api.i18n.MessagesApi
+import play.api.libs.json.{JsObject, JsString, Json}
+import play.api.mvc.{Action, Result}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.language.postfixOps
 
-class ResourceController(containerService: ContainerService) extends Authorization {
+class ResourceController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     containerService: ContainerService )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])

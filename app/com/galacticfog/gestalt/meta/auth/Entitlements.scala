@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.meta.auth
 
 import java.util.UUID
 
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
@@ -10,17 +10,13 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import controllers.util._
-import play.api.{Logger => log}
 import play.api.libs.json._
-import play.api.mvc.Result
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
 import scala.language.postfixOps
 
-trait Entitlements extends MetaController {
-  
-  val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
+trait Entitlements extends MetaController { self: SecureController =>
+
+  import Entitlements.ACTIONS_CRUD
   
   /**
    * 
@@ -327,4 +323,9 @@ trait Entitlements extends MetaController {
       properties = EntitlementProps(action, value, identities) )
   }  
   
+}
+
+object Entitlements {
+  val ACTIONS_CRUD = Seq("create", "view", "update", "delete")
+
 }

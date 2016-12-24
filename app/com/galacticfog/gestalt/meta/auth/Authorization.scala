@@ -19,7 +19,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
 import scala.language.postfixOps
 
-trait Authorization extends MetaController {
+trait Authorization extends MetaController { self: SecureController =>
 
   /**
    * 

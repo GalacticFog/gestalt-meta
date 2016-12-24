@@ -8,7 +8,6 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data.EnvironmentType
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -31,36 +30,29 @@ import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import ApiGateway.GatewayInput
 import ApiGateway.buildGatewayInfo
 import ApiGateway.gatewayInput
 import ApiGateway.getGatewayLocation
 import ApiGateway.parseLaserResponseId
 import ApiGateway.setMetaGatewayProps
-import controllers.util.BadRequestResult
-import controllers.util.HandleExceptions
-import controllers.util.HandleRepositoryExceptions
-import controllers.util.JsonUtil
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import controllers.util._
 import controllers.util.JsonUtil.replaceJsonPropValue
 import controllers.util.JsonUtil.replaceJsonProps
 import controllers.util.JsonUtil.str2js
 import controllers.util.JsonUtil.upsertProperty
-import controllers.util.LambdaMethods
-import controllers.util.NotFoundResult
-import controllers.util.RequestOptions
-import controllers.util.SafeRequest
-import controllers.util.Security
 import controllers.util.db.EnvConfig
-import controllers.util.standardMethods
-import controllers.util.stringmap
+import play.api.i18n.MessagesApi
 import play.api.libs.json.JsObject
 import play.api.libs.json.JsString
 import play.api.libs.json.JsUndefined
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
+
 import scala.language.implicitConversions
 
 
@@ -68,7 +60,9 @@ import scala.language.implicitConversions
  * Code for POST and PATCH of all resource types.
  *
  */
-object Meta extends Authorization {
+class Meta @Inject()(messagesApi: MessagesApi,
+                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
 
   // --------------------------------------------------------------------------

@@ -8,7 +8,6 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.DataType
 import com.galacticfog.gestalt.data.PropertyFactory
 import com.galacticfog.gestalt.data.RequirementType
@@ -25,17 +24,19 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
 import com.galacticfog.gestalt.meta.api.sdk.gestaltTypePropertyInputFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
-
-import controllers.util.BadRequestResult
-import controllers.util.Errors
-import controllers.util.GenericErrorResult
-import controllers.util.NotFoundResult
-import controllers.util.HandleExceptions
-import controllers.util.JsonUtil
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import controllers.util._
+import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
 
-object PropertyController extends Authorization {
+class PropertyController @Inject()(messagesApi: MessagesApi,
+                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+
+  import PropertyController._
   
   def getAllPropertiesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     Ok(Output.renderPropertyLinks(PropertyFactory.findAllByOrg(fqid(fqon)))) 
@@ -115,38 +116,6 @@ object PropertyController extends Authorization {
     }
   }
 
-  /** 
-   * Convert GestaltTypePropertyInput to GestaltTypeProperty 
-   */
-  protected[controllers] def propertyFromInput(
-      org: UUID, 
-      owner: UUID, 
-      input: GestaltTypePropertyInput): Try[GestaltTypeProperty] = Try {
-    
-    val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)      
-    
-    GestaltTypeProperty(
-      id = input.id.getOrElse(UUID.randomUUID), 
-      typeId = ResourceIds.TypeProperty, 
-      state = ResourceState.id(input.resource_state.getOrElse(ResourceStates.Active)), 
-      orgId = org, 
-      owner = ownerLink, 
-      name = input.name, 
-      description = input.description, 
-      created = None, 
-      modified = None,
-      appliesTo = input.applies_to.get, 
-      datatype = DataType.id(input.data_type), 
-      defaultValue = input.default_value, 
-      isSealed = input.is_sealed.getOrElse(false), 
-      isSystem = input.is_system.getOrElse(false), 
-      requirementType = RequirementType.id(input.requirement_type),
-      visibilityType = VisibilityType.id(input.visibility_type.getOrElse("plain")), 
-      refersTo = input.refers_to, 
-      properties = input.properties, variables = input.variables, tags = input.tags, auth = input.auth)
-  
-  }  
-  
   private def safeGetPropertyJson(json: JsValue): Try[GestaltTypePropertyInput] = Try {
     json.validate[GestaltTypePropertyInput].map{
       case resource: GestaltTypePropertyInput => resource
@@ -155,4 +124,39 @@ object PropertyController extends Authorization {
     }      
   }
   
+}
+
+object PropertyController {
+
+  /**
+    * Convert GestaltTypePropertyInput to GestaltTypeProperty
+    */
+  protected[controllers] def propertyFromInput(
+                                                org: UUID,
+                                                owner: UUID,
+                                                input: GestaltTypePropertyInput): Try[GestaltTypeProperty] = Try {
+
+    val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
+
+    GestaltTypeProperty(
+      id = input.id.getOrElse(UUID.randomUUID),
+      typeId = ResourceIds.TypeProperty,
+      state = ResourceState.id(input.resource_state.getOrElse(ResourceStates.Active)),
+      orgId = org,
+      owner = ownerLink,
+      name = input.name,
+      description = input.description,
+      created = None,
+      modified = None,
+      appliesTo = input.applies_to.get,
+      datatype = DataType.id(input.data_type),
+      defaultValue = input.default_value,
+      isSealed = input.is_sealed.getOrElse(false),
+      isSystem = input.is_system.getOrElse(false),
+      requirementType = RequirementType.id(input.requirement_type),
+      visibilityType = VisibilityType.id(input.visibility_type.getOrElse("plain")),
+      refersTo = input.refers_to,
+      properties = input.properties, variables = input.variables, tags = input.tags, auth = input.auth)
+
+  }
 }

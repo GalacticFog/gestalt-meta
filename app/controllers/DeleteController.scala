@@ -4,10 +4,9 @@ package controllers
 import java.net.URL
 import java.util.UUID
 
-import scala.{Either,Left,Right}
+import scala.{Either, Left, Right}
 import scala.math.BigDecimal.int2bigDecimal
-import scala.util.{Try,Success,Failure}
-
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.laser.Laser
@@ -17,31 +16,35 @@ import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import controllers.util._
 import controllers.util.db.EnvConfig
-
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-
 import play.api.{Logger => log}
-
 import play.api.mvc.Result
 import play.api.mvc.RequestHeader
 import play.api.mvc.{Security => PlaySecurity}
 import play.api.libs.ws.WS
 import play.api.Play.current
 import com.galacticfog.gestalt.marathon.MarathonClient
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.auth.Actions
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+
 import scala.language.postfixOps
 
-class DeleteController(containerService: ContainerService) extends Authorization {
+class DeleteController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     containerService: ContainerService )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
  

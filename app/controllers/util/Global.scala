@@ -66,28 +66,10 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
 
   import controllers._
-  
-  lazy val instances: Map[Class[_], _ <: Controller] = {
-    val containerSvc = new ContainerService {}
-    val deleteController = new DeleteController(containerSvc)
-    val resourceController = new ResourceController(containerSvc)
-    Map(
-      classOf[PatchController] -> new PatchController(resourceController),
-      classOf[SyncController]  -> new SyncController(deleteController),
-      classOf[MarathonAPIController] -> new MarathonAPIController(containerSvc),
-      classOf[ContainerController] -> new ContainerController(containerSvc),
-      classOf[ResourceController] -> resourceController,
-      classOf[DeleteController] -> deleteController
-    )
-  }
-  
-  def getInstance[A](cls: Class[A]) = instances.get(cls) getOrElse {
-    throw new RuntimeException(s"No handler configured for ${cls.getSimpleName}.")
-  }
-  
-  override def getControllerInstance[A](controllerClass: Class[A]): A = {
-    log.debug(s"Resolving Controller : ${controllerClass.getSimpleName}")
-    getInstance(controllerClass).asInstanceOf[A]
-  }
+
+  /*
+  TODO: need modules for:
+    ContainerService -> ContainerServiceImpl
+   */
   
 }

@@ -6,20 +6,22 @@ import java.util.UUID
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-
-import controllers.util.BadRequestResult
-import controllers.util.GenericErrorResult
-import controllers.util.HandleExceptions
+import controllers.util.{BadRequestResult, GenericErrorResult, HandleExceptions, SecureController}
 import play.api.mvc.RequestHeader
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
 
-object SearchController extends Authorization {
+class SearchController @Inject()(messagesApi: MessagesApi,
+                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   private case class Criterion(name: String, value: String)
   

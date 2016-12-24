@@ -2,21 +2,19 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
+import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
 import com.galacticfog.gestalt.meta.auth.Actions
-import play.api.Logger
-
+import play.api.{Logger => log}
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{Future, Await}
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
-
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.{ResourceLike, GestaltResourceInstance}
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
@@ -25,12 +23,103 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, Resource, ResourcePath}
 import com.galacticfog.gestalt.events._
+import com.google.inject.Inject
+
 import scala.language.postfixOps
 
+trait ContainerService {
 
-trait ContainerService extends MetaController {
+  def containerRequestOperations(action: String): List[Operation[Seq[String]]]
+
+  def containerRequestOptions(user: AuthAccountWithCreds,
+                              environment: UUID,
+                              container: GestaltResourceInstance,
+                              data: Option[Map[String, String]] = None): RequestOptions
+
+  def setupMigrateRequest(fqon: String,
+                          env: UUID,
+                          container: GestaltResourceInstance,
+                          user: AuthAccountWithCreds,
+                          metaUrl: String,
+                          queryString: QueryString): (List[Operation[Seq[String]]], RequestOptions)
+
+  def deleteContainer(container: GestaltResourceInstance): Future[Unit]
+
+  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
+
+  def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance,Seq[ContainerInstance])]]
+
+  def launchContainer(fqon: String,
+                      workspace: GestaltResourceInstance,
+                      environment: GestaltResourceInstance,
+                      user: AuthAccountWithCreds,
+                      containerSpec: ContainerSpec,
+                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])]
+
+  /**
+    * Extract and validate the 'provider' querystring parameter.
+    * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
+    *
+    * @param qs the complete, unmodified queryString from the original request.
+    */
+  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = Try {
+    val PROVIDER_KEY = "provider"
+
+    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
+      throw badRequest(
+        "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
+    else Try{
+      if (qs(PROVIDER_KEY).size > 1) {
+        throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
+      } else {
+
+        val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
+        ResourceFactory.findById(ResourceIds.MarathonProvider, pid).fold {
+          throw badRequest(s"Provider with ID '$pid' not found.")
+        }{ _ => pid }
+      }
+    } match {
+      case Success(id) => id
+      case Failure(e)  => e match {
+        case i: IllegalArgumentException =>
+          throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
+        case e: Throwable => throw e
+      }
+    }
+  }
+
+  private def badRequest(message: String) = {
+    new BadRequestException(message)
+  }
+
+  def marathonClient(provider: GestaltResourceInstance): MarathonClient
+
+  def marathonProvider(provider: UUID): GestaltResourceInstance
+
+  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)]
+
+  def containerProviderId(c: GestaltResourceInstance): UUID = {
+    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
+    log.debug("Provider-ID : " + pid)
+    UUID.fromString(pid)
+  }
+
+}
+
+object ContainerService {
+
+  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+  }
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+
+}
+
+class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
+  extends ContainerService {
+
+  import ContainerService._
 
   def containerRequestOperations(action: String) = List(
     controllers.util.Authorize(action),
@@ -235,38 +324,6 @@ trait ContainerService extends MetaController {
     }
   }
 
-  /**
-    * Extract and validate the 'provider' querystring parameter.
-    * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
-    *
-    * @param qs the complete, unmodified queryString from the original request.
-    */
-  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = Try {
-    val PROVIDER_KEY = "provider"
-
-    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
-      throw badRequest(
-        "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
-    else Try{
-      if (qs(PROVIDER_KEY).size > 1) {
-        throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
-      } else {
-
-        val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
-        ResourceFactory.findById(ResourceIds.MarathonProvider, pid).fold {
-          throw badRequest(s"Provider with ID '$pid' not found.")
-        }{ _ => pid }
-      }
-    } match {
-      case Success(id) => id
-      case Failure(e)  => e match {
-        case i: IllegalArgumentException =>
-          throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
-        case e: Throwable => throw e
-      }
-    }
-  }
-
   protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
     val newStats = stats match {
@@ -319,38 +376,6 @@ trait ContainerService extends MetaController {
     new BadRequestException(message)
   }
 
-  /**
-    * Make a best effort to get updated stats from the Marathon provider and to update the resource with them
-    */
-  private[util] def updateWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]) = {
-
-    if (metaCon.properties.get.get("status").isDefined) metaCon
-    else {
-      val newStats = stats match {
-        case Some(stats) => Seq(
-          "age"             -> stats.age.toString,
-          "status"          -> stats.status,
-          "num_instances"   -> stats.numInstances.toString,
-          "tasks_running"   -> stats.tasksRunning.toString,
-          "tasks_healthy"   -> stats.tasksHealthy.toString,
-          "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-          "tasks_staged"    -> stats.tasksStaged.toString)
-
-        case None => Seq(
-          "status"          -> "LOST",
-          "num_instances"   -> "0",
-          "tasks_running"   -> "0",
-          "tasks_healthy"   -> "0",
-          "tasks_unhealthy" -> "0",
-          "tasks_staged"    -> "0")
-      }
-
-      metaCon.copy( properties = metaCon.properties map { _ ++ newStats } orElse {
-        Some(newStats toMap)
-      })
-    }
-  }
-
   def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
@@ -373,22 +398,8 @@ trait ContainerService extends MetaController {
     (p -> c)
   }
 
-  def eventsClient() = {
-    AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
-  }
-
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-  }
-
   def publishEvent(event: PolicyEvent) = {
     eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
-  }
-
-  def containerProviderId(c: GestaltResourceInstance): UUID = {
-    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
-    log.debug("Provider-ID : " + pid)
-    UUID.fromString(pid)
   }
 
 }

@@ -1,15 +1,20 @@
 package controllers
 
 import com.galacticfog.gestalt.meta.api.BuildInfo
-
-import controllers.util.MetaHealth
+import controllers.util.{MetaHealth, SecureController}
 import controllers.util.db.EnvConfig
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.mvc.Action
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
-object InfoController extends Authorization {
+class InfoController @Inject()(messagesApi: MessagesApi,
+                               env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])
   case class ServiceInfo(url: String, status: String)

@@ -4,23 +4,29 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
-import org.joda.time.{DateTimeZone, DateTime}
+import org.joda.time.{DateTime, DateTimeZone}
 import play.api.mvc._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.security.play.silhouette.OrgContextRequest
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment, OrgContextRequest}
 import controllers.util._
 import play.api.libs.json._
+
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
-class MarathonAPIController(containerService: ContainerService) extends Authorization {
+class MarathonAPIController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     containerService: ContainerService )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   import com.galacticfog.gestalt.security.api.json.JsonImports._
 
@@ -33,7 +39,7 @@ class MarathonAPIController(containerService: ContainerService) extends Authoriz
         case HandlerResult(r, Some(sr)) => block(sr)
         case HandlerResult(r, None) => Future{
           lazy val org = ocr.orgFQON getOrElse "root"
-          lazy val defRealm = s"${securityConfig.protocol}://${securityConfig.hostname}:${securityConfig.port}/${org}/oauth/issue"
+          lazy val defRealm = s"${securityClient.protocol}://${securityClient.hostname}:${securityClient.port}/${org}/oauth/issue"
           val realm: String = securityRealmOverride(org) getOrElse defRealm
           val challenge: String = "acsjwt realm=\"" + realm
           Unauthorized(Json.toJson(UnauthorizedAPIException("","Authentication required",""))).withHeaders(WWW_AUTHENTICATE -> challenge)

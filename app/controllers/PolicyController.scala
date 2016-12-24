@@ -6,27 +6,30 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
-
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-
 import controllers.util._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
+
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api.output._
-
 import com.galacticfog.gestalt.keymgr.GestaltLicense
 import com.galacticfog.gestalt.keymgr.GestaltFeature
 import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
 
-object PolicyController extends Authorization {
+class PolicyController @Inject()(messagesApi: MessagesApi,
+                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type FilterFunction = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
   type LookupFunction = ((UUID,UUID) => Try[ResourceLike])

@@ -2,25 +2,28 @@ package controllers
 
 import scala.util.Failure
 import scala.util.Success
-
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
-import controllers.util.Security
+import controllers.util.{SecureController, Security, trace}
 import controllers.util.db.ConnectionManager
-import controllers.util.trace
 import play.api.{Logger => log}
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
-object BootstrapController extends Authorization {
+class BootstrapController @Inject()(messagesApi: MessagesApi,
+                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def bootstrap() = Authenticate() { implicit request =>
     trace("bootstrap()")
     
     log.debug("Looking up root Org in gestalt-security...")
-    val rootOrgId = Security.getRootOrg(request.identity) match {
+    val rootOrgId = Security.getRootOrg(request.identity)(this.securityClient) match {
       case Success(org) => org.id
       case Failure(err) => {
         log.error("Failed Looking up root user in gestalt-security: " + err.getMessage)

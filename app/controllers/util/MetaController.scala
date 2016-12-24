@@ -6,33 +6,27 @@ import play.api.http.HeaderNames
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api._
-
 import controllers.util.db._
-
 import play.api.Logger
-import scala.util.{Success,Failure}
 
+import scala.util.{Failure, Success}
 import scalikejdbc._
 import com.galacticfog.gestalt.data._
+
 import scala.util.Try
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models._
-
-import play.api.mvc.RequestHeader
-
+import play.api.mvc.{Request, RequestHeader, Result}
 import com.galacticfog.gestalt.meta.api.errors._
-
 import play.api.libs.json._
-import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
+import play.api.mvc.Results.{Ok,Created}
 
-
-trait MetaController extends SecureController with SecurityResources {
+trait MetaController extends SecurityResources { this: SecureController =>
   
   val log = Logger(this.getClass)
   
@@ -55,7 +49,7 @@ trait MetaController extends SecureController with SecurityResources {
    * Render a single GestaltResourceInstance to JSON
    */
   private[controllers] def RenderSingle(res: GestaltResourceInstance)
-      (implicit request: SecuredRequest[_]): JsValue = {
+                                       (implicit rh: RequestHeader): JsValue = {
     Output.renderInstance(res, META_URL)
   }
   
@@ -63,7 +57,7 @@ trait MetaController extends SecureController with SecurityResources {
    * Render a Seq of GestaltResourceInstances to Result[Ok(JsValue)]
    */
   private[controllers] def RenderList(rss: Seq[GestaltResourceInstance])
-      (implicit request: SecuredRequest[_]): Result = {
+                                     (implicit request: Request[_]): Result = {
     handleExpansion(rss, request.queryString, META_URL)  
   }
   
@@ -77,10 +71,6 @@ trait MetaController extends SecureController with SecurityResources {
     NotFoundResult(Errors.ORG_NOT_FOUND(orgIdentifier))
   }
   
-
-  
-
-
   /**
    * Handles the 'expand' querystring parameter.
    */
@@ -352,11 +342,11 @@ trait MetaController extends SecureController with SecurityResources {
   
   protected[controllers] def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
     resolveTypeId(r, typeId).fold(throw new BadRequestException(Errors.RESOURCE_TYPE_NOT_GIVEN)) {
-      id => if (typeExists(id)) id 
+      id => if (typeExists(id)) id
       else throwBadRequest(Errors.TYPE_NOT_FOUND(id))
     }
   }
-  
+
   def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
     if (r.resource_type.isDefined) r.resource_type
     else if (typeId.isDefined) typeId
@@ -377,29 +367,29 @@ trait MetaController extends SecureController with SecurityResources {
     val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
     val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))    
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))
   }
 
   def inputWithDefaults(
-      org: UUID, 
-      input: GestaltResourceInput, 
-      typeId: Option[UUID], 
+      org: UUID,
+      input: GestaltResourceInput,
+      typeId: Option[UUID],
       creator: AuthAccountWithCreds) = {
-    
+
     val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
     val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     val tpeid = Option(assertValidTypeId(input, typeId))
-    
+
     val newInput = input.copy(
-        id = resid, 
+        id = resid,
         owner = owner,
         resource_type = tpeid,
         resource_state = state)
-    
-    fromResourceInput(org, newInput)    
-  }  
-  
+
+    fromResourceInput(org, newInput)
+  }
+
   /**
    * Convert GestaltResourceInput to GestaltResourceInstance
    */
@@ -417,7 +407,7 @@ trait MetaController extends SecureController with SecurityResources {
       tags = in.tags,
       auth = in.auth)
   }
-  
+
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)
 }

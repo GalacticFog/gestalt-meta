@@ -13,18 +13,20 @@ import com.galacticfog.gestalt.data.ResourceFactory.hardDeleteResource
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.keymgr._
 import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFoundException}
-import controllers.util.HandleExceptions
-import controllers.util.NotFoundResult
-import play.api.{ Logger => log }
+import controllers.util.{HandleExceptions, NotFoundResult, SecureController, getExpandParam}
+import play.api.{Logger => log}
 import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
-import controllers.util.getExpandParam
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
-object LicenseController extends Authorization {
-  
+class LicenseController @Inject()(messagesApi: MessagesApi,
+                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   /**
    * POST /{fqon}/licenses

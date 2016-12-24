@@ -2,25 +2,31 @@ package controllers
 
 
 import play.api.Logger
-
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.{ Try, Success, Failure }
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-
 import controllers.util._
 import java.util.UUID
+
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.output._
-
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+
 import scala.language.postfixOps
 
-object TypeController extends Authorization {
+class TypeController @Inject()(messagesApi: MessagesApi,
+                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   private[this] val log = Logger(this.getClass)
 
