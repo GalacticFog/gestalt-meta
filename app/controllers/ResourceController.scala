@@ -36,8 +36,8 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.language.postfixOps
 
 class ResourceController @Inject()( messagesApi: MessagesApi,
-                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     containerService: ContainerService )
+                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                    containerService: ContainerService )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]

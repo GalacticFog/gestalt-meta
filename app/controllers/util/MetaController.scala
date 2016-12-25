@@ -24,9 +24,57 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
-import play.api.mvc.Results.{Ok,Created}
 
-trait MetaController extends SecurityResources { this: SecureController =>
+trait MetaControllerUtils {
+
+  /**
+    * Get an Org by FQON
+    */
+  protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
+    ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
+  }
+
+  /**
+    * Convert a string to a resource-state UUID. If state is empty, state = Active.
+    */
+  protected[controllers] def resolveResourceState(state: Option[String]) = {
+    ResourceState.id( state getOrElse ResourceStates.Active )
+  }
+
+  protected[controllers] def throwBadRequest(message: String) =
+    throw new BadRequestException(message)
+
+  /**
+    * Inspect a GestaltResourceInput, supplying default values where appropriate.
+    */
+  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds): Instance = {
+    val owner = if (input.owner.isDefined) input.owner else Some(SecurityResources.ownerFromAccount(creator))
+    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
+    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
+    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))
+  }
+
+  /**
+    * Convert GestaltResourceInput to GestaltResourceInstance
+    */
+  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
+    GestaltResourceInstance(
+      id = in.id getOrElse UUID.randomUUID,
+      typeId = in.resource_type.get,
+      state = resolveResourceState(in.resource_state),
+      orgId = org,
+      owner = in.owner.get,
+      name = in.name,
+      description = in.description,
+      properties = stringmap(in.properties),
+      variables = in.variables,
+      tags = in.tags,
+      auth = in.auth)
+  }
+
+}
+
+trait MetaController extends SecurityResources with MetaControllerUtils { this: SecureController =>
   
   val log = Logger(this.getClass)
   
@@ -82,14 +130,7 @@ trait MetaController extends SecurityResources { this: SecureController =>
   }
 
 
-  /** 
-   * Get an Org by FQON 
-   */
-  protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
-    ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
-  }
 
-  
   private[controllers] def createResourceCommon(
       org: UUID, 
       parentId: UUID, 
@@ -327,13 +368,6 @@ trait MetaController extends SecurityResources { this: SecureController =>
     throw new ResourceNotFoundException(s"Org FQON '$fqon' not found.")
   }
   
-  /**
-   * Convert a string to a resource-state UUID. If state is empty, state = Active.
-   */
-  protected[controllers] def resolveResourceState(state: Option[String]) = {
-    ResourceState.id( state getOrElse ResourceStates.Active )
-  }
-  
   protected[controllers] def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
     PatchDocument.fromJsValue(json)
   }  
@@ -360,16 +394,6 @@ trait MetaController extends SecurityResources { this: SecureController =>
       creator = creator)
   }  
   
- /**
-   * Inspect a GestaltResourceInput, supplying default values where appropriate.
-   */
-  def inputWithDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds): Instance = {
-    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
-    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-    fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))
-  }
-
   def inputWithDefaults(
       org: UUID,
       input: GestaltResourceInput,
@@ -377,7 +401,7 @@ trait MetaController extends SecurityResources { this: SecureController =>
       creator: AuthAccountWithCreds) = {
 
     val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-    val owner = if (input.owner.isDefined) input.owner else Some(ownerFromAccount(creator))
+    val owner = if (input.owner.isDefined) input.owner else Some(SecurityResources.ownerFromAccount(creator))
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     val tpeid = Option(assertValidTypeId(input, typeId))
 
@@ -390,26 +414,7 @@ trait MetaController extends SecurityResources { this: SecureController =>
     fromResourceInput(org, newInput)
   }
 
-  /**
-   * Convert GestaltResourceInput to GestaltResourceInstance
-   */
-  def fromResourceInput(org: UUID, in: GestaltResourceInput) = {
-    GestaltResourceInstance(
-      id = in.id getOrElse UUID.randomUUID,
-      typeId = in.resource_type.get,
-      state = resolveResourceState(in.resource_state),
-      orgId = org,
-      owner = in.owner.get,
-      name = in.name,
-      description = in.description,
-      properties = stringmap(in.properties),
-      variables = in.variables,
-      tags = in.tags,
-      auth = in.auth)
-  }
 
-  protected[controllers] def throwBadRequest(message: String) =
-    throw new BadRequestException(message)
 }
 
 /**

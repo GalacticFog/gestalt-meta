@@ -20,7 +20,7 @@ import play.api.i18n.MessagesApi
 
 
 class SearchController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   private case class Criterion(name: String, value: String)

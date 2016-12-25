@@ -117,7 +117,7 @@ object ContainerService {
 }
 
 class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
-  extends ContainerService {
+  extends ContainerService with MetaControllerUtils {
 
   import ContainerService._
 

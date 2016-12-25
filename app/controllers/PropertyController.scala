@@ -33,7 +33,7 @@ import play.api.libs.json._
 
 
 class PropertyController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   import PropertyController._

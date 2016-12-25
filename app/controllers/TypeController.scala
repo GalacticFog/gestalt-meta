@@ -25,7 +25,7 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 
 class TypeController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+                               env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   private[this] val log = Logger(this.getClass)

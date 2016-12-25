@@ -42,8 +42,8 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 
 class DeleteController @Inject()( messagesApi: MessagesApi,
-                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     containerService: ContainerService )
+                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                  containerService: ContainerService )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService

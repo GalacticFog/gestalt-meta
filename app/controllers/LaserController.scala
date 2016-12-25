@@ -46,7 +46,7 @@ import play.api.i18n.MessagesApi
  */
 
 class LaserController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   //private val log = Logger(this.getClass)
   

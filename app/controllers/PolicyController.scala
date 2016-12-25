@@ -28,7 +28,7 @@ import play.api.i18n.MessagesApi
 
 
 class PolicyController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type FilterFunction = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])

@@ -24,8 +24,8 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
 class MarathonAPIController @Inject()( messagesApi: MessagesApi,
-                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     containerService: ContainerService )
+                                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                       containerService: ContainerService )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   import com.galacticfog.gestalt.security.api.json.JsonImports._
