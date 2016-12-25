@@ -17,7 +17,7 @@ import play.api.{ Logger => log }
 import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-  
+import com.galacticfog.gestalt.json.Js  
 
 /*
  * TODO: Refactor.
@@ -141,8 +141,8 @@ case class PatchHandler(typeId: UUID, instanceId: UUID, doc: PatchDocument) {
     js.validate[ResourceOwnerLink].map {
       case link: ResourceOwnerLink => link
     }.recoverTotal { e =>
-      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
-      throw new BadRequestException("Invalid Resource Owner JSON. " + JsError.toFlatJson(e).toString)
+      log.error("Error parsing request JSON: " + Js.errorString(e))
+      throw new BadRequestException("Invalid Resource Owner JSON. " + Js.errorString(e))
     }
   }
   
@@ -277,7 +277,7 @@ object PatchDocument {
     json.validate[Seq[PatchOp]] match {
       case s: JsSuccess[Seq[PatchOp]] => PatchDocument(s.get : _*)
       case e: JsError => {
-        throw new RuntimeException(JsError.toFlatJson(e).toString)
+        throw new RuntimeException(Js.errorString(e))
       }
     }
   }

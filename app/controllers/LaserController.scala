@@ -34,6 +34,7 @@ import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, G
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
+import com.galacticfog.gestalt.json.Js
 
 /*
  * 
@@ -106,14 +107,14 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     val implFunctionPath = "/properties/implementation/function"
     
     Try {
-      JsonUtil.find(json, implFunctionPath).fold {
+      Js.find(json, implFunctionPath).fold {
         throw new BadRequestException(Errors.LAMBDA_NO_IMPLEMENTATION)
       }{ _ =>
-        JsonUtil.find(json, implPath).get.as[JsObject] ++ Json.obj(
+        Js.find(json, implPath).get.as[JsObject] ++ Json.obj(
           "type" -> "Lambda", "id" -> lambdaId.toString)
       }
     }.map { impl =>
-      val newprops = JsonUtil.find(json, "/properties").get.as[JsObject] ++ Json.obj("implementation" -> impl)
+      val newprops = Js.find(json, "/properties").get.as[JsObject] ++ Json.obj("implementation" -> impl)
       json ++ Json.obj("properties" -> newprops)
     }
   }   
@@ -391,8 +392,8 @@ class LaserController @Inject()(messagesApi: MessagesApi,
       (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
         case lpi: LambdaProviderInfo => lpi
       }.recoverTotal { e =>
-        log.error(JsError.toFlatJson(e).toString)
-        throw new RuntimeException(JsError.toFlatJson(e).toString)
+        log.error(Js.errorString(e))
+        throw new RuntimeException(Js.errorString(e))
       }
     }
   }

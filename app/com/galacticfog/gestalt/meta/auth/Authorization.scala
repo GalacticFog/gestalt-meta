@@ -18,6 +18,7 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
 import scala.language.postfixOps
+import com.galacticfog.gestalt.json.Js
 
 trait Authorization extends MetaController { self: SecureController =>
 
@@ -382,7 +383,7 @@ trait Authorization extends MetaController { self: SecureController =>
         }.recoverTotal { e =>
           log.error("Failed parsing 'identities' to Seq[UUID].")
           throw new RuntimeException(
-              s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
+              s"Failed parsing Entitlement identities: " + Js.errorString(e))
         }
       }
     }

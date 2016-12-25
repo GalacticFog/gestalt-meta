@@ -24,6 +24,7 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
+import com.galacticfog.gestalt.json.Js
 
 trait MetaControllerUtils {
 
@@ -344,8 +345,8 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     json.validate[GestaltResourceInput].map {
       case resource: GestaltResourceInput => resource
     }.recoverTotal { e => 
-      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
-      throwBadRequest(JsError.toFlatJson(e).toString)
+      log.error("Error parsing request JSON: " + Js.errorString(e))
+      throwBadRequest(Js.errorString(e))
     }
   }
 

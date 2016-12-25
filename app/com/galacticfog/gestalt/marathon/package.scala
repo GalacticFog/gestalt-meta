@@ -13,6 +13,7 @@ import play.api.libs.json._
 import play.api.{ Logger => log }
 import play.api.libs.json.Reads._        // Custom validation helpers
 import play.api.libs.functional.syntax._ // Combinator syntax
+import com.galacticfog.gestalt.json.Js
 
 package object marathon {
 
@@ -530,7 +531,7 @@ package object marathon {
       case v => v.validate[ContainerSpec.InputProvider].map {
         case p: ContainerSpec.InputProvider => p
       }.recoverTotal { e =>
-        throw new IllegalArgumentException("Invalid provider JSON: " + JsError.toFlatJson(e).toString)
+        throw new IllegalArgumentException("Invalid provider JSON: " + Js.errorString(e))
       }
     }
     ContainerSpec(
@@ -541,10 +542,10 @@ package object marathon {
     )
   }
   
-  def requiredJsString(name: String, value: JsValue) = value match {
-    case u: JsUndefined => throw new IllegalArgumentException(s"'$name' is missing.")
-    case v => v.as[String]
-  }
+//  def requiredJsString(name: String, value: JsValue) = value match {
+//    case u: JsUndefined => throw new IllegalArgumentException(s"'$name' is missing.")
+//    case v => v.as[String]
+//  }
 
 
 }

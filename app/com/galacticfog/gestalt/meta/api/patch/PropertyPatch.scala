@@ -13,11 +13,13 @@ object PropertyPatch {
 
   private val log = Logger(this.getClass)
   
+  import com.galacticfog.gestalt.json.Js
+     
   def applyOps(r: GestaltResourceInstance, ops: Seq[PatchOp]): Try[GestaltResourceInstance] = {
 
     (for {
       o <- PatchDocument(ops:_*).applyPatch(toJson(r))
-      p <- fromJson[Map[String,JsValue]](o \ "properties")
+      p <- Js.parse[Map[String,JsValue]](Js.find(o, "/properties").get)
       s <- Try( toStringMap(p) )
       r <- fromJson[GestaltResourceInstance](o ++ Json.obj("properties" -> s))
       
@@ -34,13 +36,10 @@ object PropertyPatch {
   
   /**
    * Convert a JSON object to an instance of T
+   * TODO: No longer need this method - use Js.parse directly.
    */
   private[patch] def fromJson[T](json: JsValue)(implicit rt: Reads[T]): Try[T] = {
-    json.validate[T].map { 
-      case r if r.isInstanceOf[T] => Try(r) 
-    }.recoverTotal { e =>
-        throw new RuntimeException(JsError.toFlatJson(e).toString)  
-    }
+    Js.parse[T](json)
   }
   
   /**

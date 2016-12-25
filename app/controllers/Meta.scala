@@ -54,6 +54,7 @@ import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 
 import scala.language.implicitConversions
+import com.galacticfog.gestalt.json.Js
 
 
 /**
@@ -147,7 +148,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
           Security.createGroup, createNewMetaGroup[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-          val addusers: Seq[UUID] = JsonUtil.find(request.body.as[JsObject], "/properties/users").fold {
+          val addusers: Seq[UUID] = Js.find(request.body.as[JsObject], "/properties/users").fold {
             Seq().asInstanceOf[Seq[UUID]]
             }{
             users => JsonUtil.safeParse[Seq[UUID]](users)
@@ -278,7 +279,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
     Authorize(org, Actions.User.Create, request.identity) {
       
       val root = Security.getRootOrg(request.identity).get.fqon
-      val home = JsonUtil.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
+      val home = Js.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
       
       log.debug(s"Setting 'gestalt_home' to $home")
       
@@ -463,11 +464,13 @@ class Meta @Inject()(messagesApi: MessagesApi,
     }
   }
   
+  
+  
   /**
    * Parse properties.workspace from Environment input JSON.
    */
   private[controllers] def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
-    JsonUtil.find(json.as[JsObject], "/properties/workspace").fold {
+    Js.find(json.as[JsObject], "/properties/workspace").fold {
       throw new BadRequestException(s"You must provide a valid 'workspace' property.")
     } { workspace =>
       UUID.fromString(workspace.as[String])

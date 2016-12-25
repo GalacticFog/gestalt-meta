@@ -23,6 +23,7 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
 import scala.language.postfixOps
+import com.galacticfog.gestalt.json.Js
 
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -157,7 +158,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     json.validate[GestaltResourceTypeInput].map{
       case resource: GestaltResourceTypeInput => resource
     }.recoverTotal{
-      e => throw new BadRequestException(JsError.toFlatJson(e).toString)
+      e => throw new BadRequestException(Js.errorString(e))
     }
   }
   

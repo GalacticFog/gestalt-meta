@@ -30,7 +30,7 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
-
+import com.galacticfog.gestalt.json.Js
 
 class PropertyController @Inject()(messagesApi: MessagesApi,
                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -92,7 +92,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
    * Ensure we have a valid 'applies_to' value in the property input JSON.
    */
   private def normalizeInputProperty(parentTypeId: UUID, propertyJson: JsObject): JsObject = {
-    JsonUtil.find(propertyJson, "/applies_to").fold {
+    Js.find(propertyJson, "/applies_to").fold {
       propertyJson ++ Json.obj("applies_to" -> Json.toJson(parentTypeId))
     } { tid =>
       if (UUID.fromString(tid.as[String]) == parentTypeId)
@@ -120,7 +120,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     json.validate[GestaltTypePropertyInput].map{
       case resource: GestaltTypePropertyInput => resource
     }.recoverTotal{
-      e => throw new BadRequestException(JsError.toFlatJson(e).toString)
+      e => throw new BadRequestException(Js.errorString(e))
     }      
   }
   

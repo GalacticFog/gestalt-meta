@@ -42,11 +42,11 @@ object AttributePatch {
     val q = seq getOrElse Seq()
 
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         NonEmptyArray(q)
         Option(seqAddAtIndex(q, n, op.value.get.as[String]).toList)
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         NonEmptyArray(q)
         Option(seqAppend(q, op.value.get.as[String]).toList)
       }
@@ -62,10 +62,10 @@ object AttributePatch {
     val m = map getOrElse Map()
     
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
       case v => {
@@ -90,11 +90,11 @@ object AttributePatch {
     val q = seq getOrElse Seq()
 
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         NonEmptyArray(q)
         Option(seqRemoveAtIndex(q, n).toList)
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path} : 'append' token to valid for op 'remove'")
       }
       case v => None
@@ -108,10 +108,10 @@ object AttributePatch {
     }
 
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
       case v => {
@@ -161,11 +161,11 @@ object AttributePatch {
     val q = seq getOrElse Seq()
     
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         NonEmptyArray(q)
         Option(seqReplaceAtIndex(q, n, op.value.get.as[String]).toList)
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path} : 'append' token to valid for op 'replace'")
       }
       case v => None
@@ -178,10 +178,10 @@ object AttributePatch {
     val m = map getOrElse Map()
     
     JsPointer.newPointer(op.path) match {
-      case a @ JsArrayPointer(_, IndexInt(n)) => {
+      case a @ JsArrayPointer(_, Indexed(n)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
-      case a @ JsArrayPointer(_, IndexAppend(_)) => {
+      case a @ JsArrayPointer(_, Appender(_)) => {
         throw new IllegalArgumentException(s"Invalid path: ${op.path}. Target is not an array.")
       }
       case v => {
