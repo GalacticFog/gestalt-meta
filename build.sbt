@@ -81,11 +81,12 @@ libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	"com.galacticfog" %% "gestalt-meta-repository" 		% "0.4.3" withSources(),
-	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		% "0.4.0" withSources(),
-	"com.galacticfog" %% "gestalt-play-json" 			% "0.3.0" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 		% "3.0.0" withSources(),
-	"com.galacticfog" %  "gestalt-license-keymgr" 		% "1.1.0-SNAPSHOT",
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.4.3" withSources(),
+	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.5.0" withSources(),
+	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
+	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
+	"com.galacticfog" %  "gestalt-license-keymgr" 		 % "1.1.0-SNAPSHOT",
     //  
     specs2                       % Test,
     Library.Specs2.matcherExtra  % Test

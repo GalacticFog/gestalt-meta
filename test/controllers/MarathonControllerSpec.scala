@@ -12,7 +12,9 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
+
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
+
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.{ContainerService, GestaltSecurityMocking}
 import org.joda.time.{DateTimeZone, DateTime}
@@ -39,9 +41,9 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
   lazy val creds = dummyCreds()
   lazy val authResponse = dummyAuthAccount()
   lazy val mockSecurityClient = mock[GestaltSecurityClient]
-  lazy val fakeSecurity = FakeGestaltSecurityEnvironment[DummyAuthenticator](Seq(
-    creds -> authResponse
-  ), mockSecurityClient)
+  lazy val fakeSecurity = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
+    Seq(creds -> authResponse), 
+    mockSecurityClient)
 
   def testGlobal() = new GlobalSettings {
     lazy val cs = mock[ContainerService]

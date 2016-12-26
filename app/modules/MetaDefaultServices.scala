@@ -9,8 +9,8 @@ class MetaDefaultServices extends AbstractModule {
   override def configure(): Unit = {
     bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl])
     bind(classOf[AmqpClient]).toInstance({
-      // AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
-      throw new RuntimeException("Not sure what to do here, it used to be the code above")
+      AmqpClient(
+          AmqpConnection(sys.env("RABBIT_HOST"), sys.env("RABBIT_PORT").toInt, heartbeat = 300))
     })
   }
 
