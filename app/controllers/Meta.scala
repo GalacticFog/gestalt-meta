@@ -1,26 +1,20 @@
 package controllers
 
+
 import java.net.URL
 import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
+import scala.util.{Try,Success,Failure}
 
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.data.EnvironmentType
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data._
+
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.keymgr.GestaltFeature
-import com.galacticfog.gestalt.laser.Laser
-import com.galacticfog.gestalt.laser.LaserGateway
-import com.galacticfog.gestalt.laser.LaserLocation
-import com.galacticfog.gestalt.laser.LaserProvider
-import com.galacticfog.gestalt.meta.api.PatchHandler
+import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
+
+import com.galacticfog.gestalt.laser._
+
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
@@ -28,53 +22,30 @@ import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.HostConfig
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
-import com.galacticfog.gestalt.meta.auth.Actions
+
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
-import ApiGateway.GatewayInput
-import ApiGateway.buildGatewayInfo
-import ApiGateway.gatewayInput
-import ApiGateway.getGatewayLocation
-import ApiGateway.parseLaserResponseId
-import ApiGateway.setMetaGatewayProps
-import controllers.util.BadRequestResult
-import controllers.util.HandleExceptions
-import controllers.util.HandleRepositoryExceptions
-import controllers.util.JsonUtil
-import controllers.util.JsonUtil.replaceJsonPropValue
-import controllers.util.JsonUtil.replaceJsonProps
-import controllers.util.JsonUtil.str2js
-import controllers.util.JsonUtil.upsertProperty
-import controllers.util.LambdaMethods
-import controllers.util.NotFoundResult
-import controllers.util.RequestOptions
-import controllers.util.SafeRequest
-import controllers.util.Security
+import controllers.util._
+import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
-import controllers.util.standardMethods
-import controllers.util.stringmap
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsUndefined
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
+
+import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import scala.language.implicitConversions
+
+import ApiGateway._
 
 
 /**
  * Code for POST and PATCH of all resource types.
- *
  */
 object Meta extends Authorization {
   
-
   // --------------------------------------------------------------------------
   // ORGS
-  // --------------------------------------------------------------------------  
-  
+  // --------------------------------------------------------------------------
   def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
     Security.getRootOrg(request.identity) match {
       case Failure(err)  => { 
@@ -94,46 +65,20 @@ object Meta extends Authorization {
     val json = request.body
     val user = request.identity
     
-    Authorize(parentOrg, Actions.Org.Create, request.identity) {
+    Authorize(parentOrg, "org.create", request.identity) {
       
       CreateSynchronized(parentOrg, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-          
-          //
-          // TODO: Raise error if any Entitlement create fails.
-          //
-          setNewOrgEntitlements(res.id, res.id, user, Option(parentOrg))
 
+          setNewEntitlements(res.id, res.id, user, parent = Option(parentOrg))
+          
           Created(Output.renderInstance(res, META_URL))
         }
       }
 
     }    
   }
-
-  // --------------------------------------------------------------------------
-  // ACTIONS
-  // --------------------------------------------------------------------------    
-  def postTypeActionFqon(fqon: String, typeId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    Future {
-//      
-//      val actionName = request.body \ "name" match {
-//        case u: JsUndefined => ???
-//        case r => r.as[String]
-//      }
-//      
-//      val existingActions = ResourceFactory.findChildrenOfType(ResourceIds.Action, typeId)
-//      if (existingActions exists { _.name == actionName }) 
-//        ConflictResult(s"Action '$actionName' already exists for this resource type")
-//      else {
-//        // Create the Action Resource.
-//        ???
-//      }
-//    }
-    ???
-  }
-  
   
   // --------------------------------------------------------------------------
   // GROUPS
@@ -144,13 +89,13 @@ object Meta extends Authorization {
     }
   }
   
-  
   def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
     
-    Authorize(org, Actions.Group.Create, request.identity) {
+    Authorize(org, "group.create", request.identity) {
       
       CreateSynchronized(org, ResourceIds.Group, request.body)(
           Security.createGroup, createNewMetaGroup[JsValue]) match {
+        
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
           val addusers: Seq[UUID] = JsonUtil.find(request.body.as[JsObject], "/properties/users").fold {
@@ -166,7 +111,7 @@ object Meta extends Authorization {
               Security.addAccountsToGroup(res.id, addusers) match {
                 case Success(users) => {
                   val jsonusers = Json.toJson(users)
-                  JsonUtil.upsertProperty(Output.renderInstance(res, META_URL).as[JsObject], "users", jsonusers).get
+                  JsonUtil.upsertProperty(RenderSingle(res).as[JsObject], "users", jsonusers).get
                 }
                 case Failure(error) => {
                   log.error("Failed adding users to new group: " + error.getMessage)
@@ -175,13 +120,7 @@ object Meta extends Authorization {
               }
             }
           }
-
-          val user = request.identity
-          Entitle(org, ResourceIds.Group, res.id, user, Option(org)) {
-            generateEntitlements(
-              user.account.id, org, res.id,
-              Seq(ResourceIds.Group), ACTIONS_CRUD)
-          }
+          setNewEntitlements(org, res.id, request.identity, parent = Option(org))
           Created( newjson )
         }
       }
@@ -281,7 +220,7 @@ object Meta extends Authorization {
   def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
     log.debug(s"createUserCommon($org, ...) => JSON: ${json.toString}")
     
-    Authorize(org, Actions.User.Create, request.identity) {
+    Authorize(org, "user.create", request.identity) {
       
       val root = Security.getRootOrg(request.identity).get.fqon
       val home = JsonUtil.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
@@ -291,22 +230,16 @@ object Meta extends Authorization {
       val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", /*JsString(root)*/ home)
       
       CreateSynchronized(org, ResourceIds.User, userJson.get)(
-          Security.createAccount, createNewMetaUser[JsValue]) match {
-            case Failure(err) => {
-              log.error("Response from Security.createAccount() : " + err.getMessage)
-              HandleExceptions(err)
-            }
-            case Success(res) => {
-          
-            val user = request.identity
-            
-            Entitle(org, ResourceIds.User, res.id, user, Option(org)) {
-              generateEntitlements(user.account.id, org, res.id, Seq(ResourceIds.User), ACTIONS_CRUD)
-            }
+        Security.createAccount, createNewMetaUser[JsValue]) match {
+          case Failure(err) => {
+            log.error("Response from Security.createAccount() : " + err.getMessage)
+            HandleExceptions(err)
+          }
+          case Success(res) => {
+            setNewEntitlements(org, res.id, request.identity, parent = Option(org))        
             Created(Output.renderInstance(res, META_URL))
+          }
         }
-      }
-
     }
   }        
 
@@ -326,67 +259,50 @@ object Meta extends Authorization {
   // --------------------------------------------------------------------------
   // RESOURCE PATCH
   // --------------------------------------------------------------------------
+  
+  import com.galacticfog.gestalt.patch.PatchDocument
+  
+//  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    resourcePatch(ResourceIds.Org, fqid(fqon))
+//  }
 
-  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    resourcePatch(ResourceIds.Org, fqid(fqon))
-  }
+//  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
+//      if (r.typeId == ResourceIds.Lambda) {
+//        LambdaMethods.patchGestaltLambda(r, request.body).get
+//      }
+//      resourcePatch(r.typeId, id)
+//    }
+//  }
+
+//  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
+//    Future {
+//      //safeGetPatchDocument(request.body) match {
+//      Try(PatchDocument.fromJsValue(request.body)) match {
+//        case Failure(e) => BadRequestResult(e.getMessage)
+//        case Success(patch) => {
+//          
+//          val identity = request.identity.account.id
+//          
+//          patch.applyPatch(json)
+//          
+//          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
+//            case Success(r) => Ok(Output.renderInstance(r))
+//            case Failure(e) => HandleExceptions(e) 
+//          }
+//        }
+//      }      
+//    }
+//  }
   
-  
-  
-  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
-      if (r.typeId == ResourceIds.Lambda) {
-        LambdaMethods.patchGestaltLambda(r, request.body).get
-      }
-      resourcePatch(r.typeId, id)
-    }
-  }
-  
-  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    Future {
-      safeGetPatchDocument(request.body) match {
-        case Failure(e) => BadRequestResult(e.getMessage)
-        case Success(patch) => {
-          
-          val identity = request.identity.account.id
-          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
-            case Success(r) => Ok(Output.renderInstance(r))
-            case Failure(e) => HandleExceptions(e) 
-          }
-        }
-      }      
-    }
-  }
   
   // --------------------------------------------------------------------------
   // WORKSPACES
   // --------------------------------------------------------------------------
   
-
   def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     createWorkspaceResult(fqid(fqon), request.body, request.identity, META_URL)
   }
-
-  private[controllers] def createWorkspaceResult2(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-
-    Future {
-      
-      Authorize(org, Actions.Workspace.Create, user) {
-        CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(w) => {
-            setNewWorkspaceEntitlements(org, w.id, user)
-            Created(Output.renderInstance(w, baseUri))
-          }
-        }
-      }
-      
-    }
-  }
-
-  
-  import com.galacticfog.gestalt.keymgr.GestaltLicense
-  import com.galacticfog.gestalt.keymgr.GestaltFeature
 
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel
   
@@ -407,7 +323,7 @@ object Meta extends Authorization {
         CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
           case Failure(e) => HandleExceptions(e)
           case Success(w) => {
-            setNewWorkspaceEntitlements(org, w.id, user)
+            setNewEntitlements(org, w.id, user, parent = Option(org))
             Created(Output.renderInstance(w, baseUri))
           }
         }
@@ -421,7 +337,8 @@ object Meta extends Authorization {
    * Convert input JSON to an in-memory GestaltResourceInstance
    */
   def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    inputWithDefaults(
+    
+    withInputDefaults(
           org = org, 
           typeId = typeId,
           input = safeGetInputJson(json).get, 
@@ -454,14 +371,14 @@ object Meta extends Authorization {
     
     Future {
       val user = request.identity
-      Authorize(workspace, Actions.Environment.Create, user) {
+      Authorize(workspace, "environment.create", user) {
         (for {
           json <- normalizeEnvironment(request.body, Option(workspace))
           env  <- CreateNewResource(org, user, json, Option(ResourceIds.Environment), Option(workspace))
         } yield env) match {
           case Failure(e) => HandleExceptions(e)
           case Success(env) => {
-            setNewEnvironmentEntitlements(org, env.id, user, workspace)
+            setNewEntitlements(org, env.id, user, parent = Option(workspace))
             Created(Output.renderInstance(env, META_URL))
           }
         }             
@@ -494,11 +411,11 @@ object Meta extends Authorization {
       val org = fqid(fqon)
       val user = request.identity
       
-      Authorize(parent, Actions.Domain.Create) {
+      Authorize(parent, "domain.create") {
         CreateNewResource(org, user, request.body, Option(ResourceIds.Domain), Option(parent)) match {
           case Failure(e) => HandleExceptions(e)
-          case Success(d) => {
-            setNewDomainEntitlements(org, d.id, user, parent)        
+          case Success(d) => {   
+            setNewEntitlements(org, d.id, user, parent = Option(parent))
             Created(Output.renderInstance(d, META_URL))
           }
         }
@@ -632,7 +549,7 @@ object Meta extends Authorization {
     log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
     for {
-      input    <- safeGetInputJson(typeId, json)
+      input    <- safeGetInputJson(json, Option(typeId))
       resource <- syncWithSecurity(org, typeId, input)(sc, mc)
     } yield resource
   }

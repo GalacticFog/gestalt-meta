@@ -59,11 +59,11 @@ class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecu
     "convert a Seq[PatchOp] to a Map[String,Seq[PatchOp]] with ops keyed by op-name" in {
       
       val ops = Seq(
-          PatchOp.Add("/foo", JsNull),
-          PatchOp.Add("/foo2", JsNull),
-          PatchOp.Add("/foo3", JsNull),
-          PatchOp.Replace("/bar", JsNull),
-          PatchOp.Replace("/bar2", JsNull),
+          PatchOp.Add("/foo", JsString("")),
+          PatchOp.Add("/foo2", JsString("")),
+          PatchOp.Add("/foo3", JsString("")),
+          PatchOp.Replace("/bar", JsString("")),
+          PatchOp.Replace("/bar2", JsString("")),
           PatchOp.Remove("/baz") )
       
       val map = gm.opsToMap(ops)
@@ -75,7 +75,7 @@ class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecu
     
     "succeed if an allowed-list is given and the input seq contains only those ops" in {
       val ops = Seq(
-          PatchOp.Add("/foo", JsNull),
+          PatchOp.Add("/foo", JsString("")),
           PatchOp.Remove("/bar") )
       
       val map = gm.opsToMap(ops, allowed = Seq(PatchOps.Add,PatchOps.Remove))
@@ -86,8 +86,8 @@ class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecu
     
     "fail if an allowed-list is given and the input seq contains an outlier" in {
       val ops = Seq(
-          PatchOp.Add("/foo", JsNull),
-          PatchOp.Replace("/qux", JsNull),
+          PatchOp.Add("/foo", JsString("")),
+          PatchOp.Replace("/qux", JsString("")),
           PatchOp.Remove("/bar") )
           
       val allowed = Seq(PatchOps.Add,PatchOps.Remove)

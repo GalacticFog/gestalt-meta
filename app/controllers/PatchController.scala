@@ -50,14 +50,14 @@ class PatchController(resourceController: ResourceController) extends Authorizat
    */
   type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds) => Try[GestaltResourceInstance]
   
-  
   private[controllers] val transforms: Map[UUID, PatchTransform] = Map(
     ResourceIds.Environment -> transformEnvironmentPatch)
   
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> new GroupMethods(secProvider).groupPatch,
-    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler)    
+    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,
+    ResourceIds.Entitlement -> entitlementPatch)    
   
   
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
@@ -78,10 +78,68 @@ class PatchController(resourceController: ResourceController) extends Authorizat
     }
   }
 
+  /* 
+   * /{fqon}/resourcetypes/{id}
+   *  
+   */
+  def patchResourceType(fqon: String, tpe: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    
+    TypeFactory.findById(tpe).fold { 
+      ResourceNotFound(ResourceIds.ResourceType, tpe)
+    }{ t => ???
+      /*
+       *[cannot change]:
+       *  
+       * 	- id, type-id, org, created, modified, owner
+       *  - cannot PATCH state to 'deleted'
+       *  
+       *[can change]:
+       *  
+       *  - state
+       *  - name
+       *  - description
+       *  - tags
+       *  - variables
+       *  - properties {
+       *  
+       *    }
+       * 
+       */
+   
+    }
+    ???
+  }
+  
+  /* 
+   * /{fqon}/typeproperties/{id}
+   *  
+   */
+  def patchTypeProperty(fqon: String, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    PropertyFactory.findById(property).fold {
+      ResourceNotFound(ResourceIds.TypeProperty, property)
+    }{ p => ???
+      
+    }
+    ???
+  }
+  
+  /*
+   * /{fqon}/resourcetypes/{id}/typeproperties/{id}
+   *  
+   */
+  def patchTypePropertyChild(fqon: String, tpe: UUID, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    PropertyFactory.findById(tpe, property).fold {
+      ResourceNotFound(ResourceIds.TypeProperty, property)
+    }{ p => ???
+      
+    }
+    ???
+  }
+  
   /**
    * This function finds and patches the requested resource - it does NOT persist the updated resource.
    */
-  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = Try {
+  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = {
 
     if (path.isList) {
       throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
@@ -94,7 +152,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
         val patch = transforms.get(r.typeId).fold(PatchDocument(ops: _*)) {
           transform => transform(PatchDocument(ops: _*))
         }
-        val t = this.securityClient
+
         val handler = {
           if (handlers.get(r.typeId).isDefined) {
             log.debug(s"Found custom PATCH handler for type: ${r.typeId}")
@@ -106,7 +164,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
         }
         handler(r, patch, account)
         
-        ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance] 
+        //ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance] 
       }
     }
   }
@@ -117,7 +175,7 @@ class PatchController(resourceController: ResourceController) extends Authorizat
     patch: PatchDocument,
     user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
 
-    ResourcePatch.applyPatch(resource, patch).get.asInstanceOf[GestaltResourceInstance]
+    PatchInstance.applyPatch(resource, patch).get.asInstanceOf[GestaltResourceInstance]
   }
   
   
@@ -125,6 +183,48 @@ class PatchController(resourceController: ResourceController) extends Authorizat
    * 
    * Patch Transformers
    * 
+   */
+  
+  /*
+   * This function overrides the normal patch behavior for Entitlement - the need arises from a more
+   * general issue where resources that contain reference UUIDs that are rendered as Links need 
+   * intermediate transformation.
+   * 
+   * TODO: Generalize transformations for properties of type `resource::uuid::link`
+   */
+  def entitlementPatch(r: GestaltResourceInstance, patch: PatchDocument, auth: AuthAccountWithCreds): Try[GestaltResourceInstance] = {
+    log.debug("entitlementPatch(...)")
+    /*
+     * convert r.properties.identities from ResourceLink to UUID - then proceed with Patch.
+     */
+    
+    def hasIdentities = 
+      patch.ops.exists(_.path.trim.startsWith("/properties/identities")) 
+    
+    val resource = {
+      if (hasIdentities) {
+        // transform identity values from ResourceLink to UUID
+        val props = r.properties.get
+        val identities = {
+          props.get("identities") match {
+            case None => Seq.empty
+            case Some(stringids) => {
+              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
+              jsids map { _ \ "id" }
+            }
+          }
+        }
+        val newprops = props ++ Map("identities" -> Json.stringify(Json.toJson(identities)))
+        r.copy(properties = Option(newprops))
+      } else r
+    }
+    // apply patch to newres
+    defaultResourcePatch(resource, patch, auth)
+  }  
+  
+  /*
+   * environment_type is input as a string (name) but stored as a UUID.
+   * This function handles that conversion.
    */
   private def transformEnvironmentPatch(patch: PatchDocument) = {
     

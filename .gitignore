@@ -20,4 +20,5 @@ sec-init.sh
 /.settings
 /bin/
 /.worksheet/
-*.cache
+*.cache*
+

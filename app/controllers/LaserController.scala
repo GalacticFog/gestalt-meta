@@ -32,7 +32,7 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
 import scala.util.Either
 import com.galacticfog.gestalt.keymgr.GestaltFeature
-import com.galacticfog.gestalt.meta.auth.Actions  
+
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 /*
@@ -237,7 +237,7 @@ object LaserController extends Authorization {
             case i => UUID.fromString(i.as[String])
           }
   
-          val input = safeGetInputJson(ResourceIds.ApiEndpoint, request.body).map( in =>
+          val input = safeGetInputJson(request.body, Some(ResourceIds.ApiEndpoint)).map( in =>
             in.copy(id = Some(endpointId))
           ).get
 
@@ -310,9 +310,9 @@ object LaserController extends Authorization {
         val json       = request.body.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Lambda.toString)
         val org        = fqid(fqon)
         val user       = request.identity
-        val target     = inputToResource(org, user, json)
+        val target     = jsonToInput(org, user, json)
         val options    = standardRequestOptions(user, parent, target)
-        val operations = standardRequestOperations(Actions.Lambda.Create)
+        val operations = standardRequestOperations("lambda.create")
         
         SafeRequest (operations, options) Protect { maybeState => 
           createLambdaCommon(org, env)
@@ -334,7 +334,7 @@ object LaserController extends Authorization {
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[JsValue]) = {
 
-    safeGetInputJson(ResourceIds.Lambda, request.body) match {
+    safeGetInputJson(request.body, Some(ResourceIds.Lambda)) match {
       case Failure(e)     => BadRequestResult(e.getMessage)
       case Success(input) => {
         

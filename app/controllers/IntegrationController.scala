@@ -24,7 +24,7 @@ import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import controllers.util.getExpandParam
 import controllers.util.RequestOptions
-import com.galacticfog.gestalt.meta.auth.{Actions, Authorization}
+import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api._
 import controllers.util.{SafeRequest, standardMethods}
 
@@ -48,60 +48,9 @@ object IntegrationController extends Authorization {
         }
       }
    */
-  def postIntegration(fqon: String, envid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    log.info(s"INFO - posting a new integration in meta.")
-    Future {
-      
-      // Get the Env UUID from its FQON
-     
-      // Create service account before creating the integration
-      try {
-        val orgid = fqid(fqon)
-        val user =  request.identity  //GestaltAccount.
-//        val org = GestaltOrg.findOr(ResourceIds.Org, orgid).get
-        /*
-        log.info(s"INFO - (TODO) Creating the service user account.")
-        val username = "integration" //TODO - unique username generator
-        val firstname = "gestalt"
-        val lastname = "integration"
-        val email = username + "@gestaltintegration"
-        val phone = ""
-        val credential = "password" //TODO - generated password
-        val groups = Seq.empty[GestaltGroup]
-        val description = "A gestalt integration account"
-        GestaltDirectory.createAccount(dirid, GestaltAccountCreate(username, firstname, lastname, None, None, credential, None, Some(description))) match {
-           case Failure(e) => HandleExceptions(e)
-           case Success(account) => {
-             log.info(s"INFO - Creating the integration resource.")        
-	          createIntegration(env) match {
-	            case Failure(e) => HandleExceptions(e)
-	            case Success(integration) => {
-	              // Set CRUD entitlements for creating User
-//	              setCreatorEntitlements(integration.id, org, request.identity)
-	              // Render resource to JSON and return 201
-	              Created(Output.renderInstance(integration, META_URL))
-	            }
-	          }
-           }
-        }
-        */
-//        val integrationCreds = request.identity.account.generateAPICredentials()
-        createIntegration(orgid, envid) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(integration) => {
-            // Set CRUD entitlements for creating User
-//            setCreatorEntitlements(integration.id, envid, request.identity)
-            // Render resource to JSON and return 201
-            Created(Output.renderInstance(integration, META_URL))
-          }
-        }
-      } catch {
-        case e: Throwable => HandleExceptions(ConflictException(e.getMessage))
-      }
-    }
-  }
+
   
-  def postIntegration2(fqon: String, envid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postIntegration(fqon: String, envid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     Future {
       
       // Ensure Environment exists and create Integration.
@@ -134,7 +83,7 @@ object IntegrationController extends Authorization {
       createResourceInstance(org, inputJson, Some(typeId), Some(parent)) match {
         case Failure(e) => HandleExceptions(e)
         case Success(integration) => {
-          setNewIntegrationEntitlements(org, integration.id, user, parent)
+          setNewEntitlements(org, integration.id, user, Option(parent))
           Created(Output.renderInstance(integration, META_URL))
         }
       }
@@ -166,17 +115,16 @@ object IntegrationController extends Authorization {
      val transform = false // TODO - request.queryString.getOrElse("transform", "true") != "false"
      findById(ResourceIds.Integration, integrationId).fold {
        IntegrationNotFound(integrationId)
-     } {
-       integration =>
+     } { integration =>
 /*
-           if (transform == true) {
-				  // get service account secret/token
-				  val secret = GestaltAccount.generateAPICredentials()
-				  val url = substitute(integration.properties \ "url", env)
-				  val headers = substitute(integration.properties \ "headers", env)
-				  val payload = substitute(integration.properties \ "payload", env)
-				  // substitute env fields into url, headers, payload
-           } 
+          if (transform == true) {
+  				  // get service account secret/token
+  				  val secret = GestaltAccount.generateAPICredentials()
+  				  val url = substitute(integration.properties \ "url", env)
+  				  val headers = substitute(integration.properties \ "headers", env)
+  				  val payload = substitute(integration.properties \ "payload", env)
+  				  // substitute env fields into url, headers, payload
+          } 
 */
            Ok(Output.renderInstance(integration, META_URL))
      }
@@ -215,17 +163,6 @@ object IntegrationController extends Authorization {
     createResourceInstance(orgid, request.body, Some(ResourceIds.Integration), Some(envid))
   }
   
-  /**
-   * Set CRUD Entitlements on the Integration Resource for the creating User.
-   * 
-   * @param integrationId UUID of the Integration the Entitlements apply to
-   * @param org UUID of the Org that owns the Entitlements
-   * @param user User account to create the Entitlements for
-   */
-  private[controllers] def setCreatorEntitlements(integrationId: UUID, env: UUID, user: AuthAccountWithCreds) = {
-    generateEntitlements(user.account.id, env, integrationId, Seq(ResourceIds.Integration), ACTIONS_CRUD )    
-  }
- 
   private[controllers] def IntegrationNotFound(integrationId: UUID) = {
     NotFoundResult(s"Integration with ID '$integrationId' not found.")
   }
@@ -259,11 +196,11 @@ object IntegrationController extends Authorization {
    * for policy checks.
    */
   private[this] def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    inputWithDefaults(
+    withInputDefaults(
           org = org, 
-          typeId = typeId,
-          input = safeGetInputJson(json).get, 
-          creator = creator)
+          input = safeGetInputJson(json).get,
+          creator = creator,
+          typeId = typeId)
   }    
   
 }

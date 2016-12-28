@@ -9,6 +9,7 @@ import scala.util.{Try,Success,Failure}
 import play.api.Logger
 
 
+
 object PropertyPatch {
 
   private val log = Logger(this.getClass)
@@ -41,6 +42,7 @@ object PropertyPatch {
     }.recoverTotal { e =>
         throw new RuntimeException(JsError.toFlatJson(e).toString)  
     }
+    
   }
   
   /**
@@ -76,6 +78,5 @@ object PropertyPatch {
     case Success(js) => js
     case Failure(e) => Json.toJson(s)
   }
-  
   
 }

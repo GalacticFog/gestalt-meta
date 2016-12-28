@@ -70,7 +70,8 @@ package object util {
     case e: BadRequestException           => BadRequest(e.asJson)
     case e: UnrecognizedResourceException => BadRequest(e.asJson)
     case e: NotAcceptableException        => NotAcceptable(e.asJson)
-    case e: ConflictException             => Conflict(e.asJson)    
+    case e: ConflictException             => Conflict(e.asJson)
+    case e: ForbiddenException            => Forbidden(e.asJson)
   }
   
   val securityApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {

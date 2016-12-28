@@ -37,7 +37,7 @@ import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 
 import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.meta.auth.Actions
+
   
 //
 // TODO: Rename to 'EntitlementController'
@@ -227,7 +227,7 @@ object AuthorizationController extends Authorization {
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
   private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
-    AuthorizeList(Actions.Entitlement.View) {
+    AuthorizeList("entitlement.view") {
       ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId)
     }
   }
@@ -290,15 +290,14 @@ object AuthorizationController extends Authorization {
    */
   def toResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = Try {
     
-    safeGetInputJson(ResourceIds.Entitlement, json) match {
+    safeGetInputJson(json) match {
       case Failure(error) => throw error
       case Success(input) => {
-        inputWithDefaults(org, input.copy(resource_type = Option(ResourceIds.Entitlement)), creator)
+        withInputDefaults(org, input, creator, Option(ResourceIds.Entitlement))
       }
     }
   }
   
-
   /*
    * HACK: This is temporary. the 'transformEntitlement' methods are used to transform 'entitlement.properties.identities' 
    * from a Seq[UUID] to a Seq[ResourceLink]. This is necessary because 'identity' is a polymorphic reference

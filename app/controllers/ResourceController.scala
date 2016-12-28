@@ -24,7 +24,6 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
 
-import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
@@ -96,7 +95,7 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
     orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
-      Authorize(org.id, Actions.Org.View, request.identity) {   
+      Authorize(org.id, "org.view", request.identity) {   
         Ok(RenderSingle(Resource.fromPath(fqon).get))
       }
     }
@@ -108,8 +107,8 @@ class ResourceController(containerService: ContainerService) extends Authorizati
    */
   def getGlobalResourceList(targetTypeId: String) = Authenticate() { implicit request =>
     val typeId = uuid(targetTypeId)
-    val action = s"${Actions.typePrefix(typeId)}.view"
-    
+    //val action = s"${Actions.typePrefix(typeId)}.view"
+    val action = actionInfo(typeId).prefix + ".view"
     AuthorizeList(action) {
       ResourceFactory.findAll(typeId)
     }
@@ -120,7 +119,9 @@ class ResourceController(containerService: ContainerService) extends Authorizati
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
-    val action = Actions.actionName(rp.targetTypeId, "view")
+    //val action = Actions.actionName(rp.targetTypeId, "view")
+    
+    val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)
@@ -147,21 +148,28 @@ class ResourceController(containerService: ContainerService) extends Authorizati
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
+    log.debug(s"AuthorizedResourceSingle($path, $action)")
+    
     Authorize(path.targetId.get, action) {
       
       val resource = lookups.get(path.targetTypeId).fold {
+        log.debug("Applying standard lookup function")
         Resource.fromPath(path.path)
-      }{
+      }{ f=>
         log.debug(s"Found custom lookup function for Resource.")
-        _(path, request.identity, Option(request.queryString)) 
+        log.debug("FUNCTION : " + f.getClass.getName)
+        f(path, request.identity, Option(request.queryString)) 
       }
       
       resource.fold(NotFoundResult(request.uri)) { res =>
         transforms.get(res.typeId).fold {
+          log.debug("No custom transformer found.")
           Ok( RenderSingle(res) )
-        }{ 
+        }{ f =>
           log.debug(s"Found custom transformation function for Resource: ${res.id}")
-          _ (res, request.identity, Option(request.queryString)) match {
+          log.debug(s"type-id: ${res.typeId}, label: ${ResourceLabel(res.typeId)}")
+          log.debug("FUNCTION : " + f.getClass.getName)
+          f(res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
           }

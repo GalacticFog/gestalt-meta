@@ -38,7 +38,7 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.meta.auth.Actions
+
 import scala.language.postfixOps
 
 class DeleteController(containerService: ContainerService) extends Authorization {
@@ -64,7 +64,8 @@ class DeleteController(containerService: ContainerService) extends Authorization
 
   
   private def deleteOps(typeId: UUID) = {
-    val action = Actions.actionName(typeId, "delete")
+    //val action = Actions.actionName(typeId, "delete")
+    val action = actionInfo(typeId).prefix + ".delete"
     List(
       controllers.util.Authorize(action),
       controllers.util.PolicyCheck(action),

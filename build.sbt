@@ -4,7 +4,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.4.2"
+version := "0.4.6"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -17,8 +17,6 @@ dockerCommands := dockerCommands.value.flatMap {
   )
   case other => List(other)
 }
-
-//lazy val root = (project in file(".")).enablePlugins(PlayScala)
 
 lazy val root = (project in file(".")).
   enablePlugins(PlayScala,SbtNativePackager).
@@ -80,12 +78,12 @@ libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	"com.galacticfog" %% "gestalt-meta-repository" 		% "0.4.3" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		% "0.4.7" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		% "0.4.0" withSources(),
-	"com.galacticfog" %% "gestalt-play-json" 					% "0.1.1" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 			% "2.2.5-SNAPSHOT" withSources(),
-	"com.galacticfog" %% "gestalt-security-sdk-scala" % "2.2.6-SNAPSHOT" withSources(),
-	"com.galacticfog" % "gestalt-license-keymgr" 			% "1.1.0-SNAPSHOT"
+	"com.galacticfog" %% "gestalt-play-json" 			% "0.1.2" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		% "2.2.5-SNAPSHOT" withSources(),
+	"com.galacticfog" %% "gestalt-security-sdk-scala" 	% "2.2.6-SNAPSHOT" withSources(),
+	"com.galacticfog" % "gestalt-license-keymgr" 		% "1.1.0-SNAPSHOT"
 )
 
 

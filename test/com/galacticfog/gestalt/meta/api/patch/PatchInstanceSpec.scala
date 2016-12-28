@@ -18,7 +18,7 @@ import controllers.util.JsonUtil
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import play.api.libs.json._
 
-class ResourcePatchSpec extends Specification with ResourceScope with PatchUtils with BeforeAll {
+class PatchInstanceSpec extends Specification with ResourceScope with PatchUtils with BeforeAll {
 
   sequential
   
@@ -37,7 +37,7 @@ class ResourcePatchSpec extends Specification with ResourceScope with PatchUtils
           PatchOp.Remove("/properties/baz"),
           PatchOp.Remove("/properties/qux"))
       
-      val (p1,a1) = ResourcePatch.partitionOps(aops ++ pops).get
+      val (p1,a1) = PatchInstance.partitionOps(aops ++ pops).get
       
       a1 == aops must beTrue
       p1 == pops must beTrue
@@ -62,7 +62,7 @@ class ResourcePatchSpec extends Specification with ResourceScope with PatchUtils
           PatchOp.Replace("/name", JsString(updatedName)),
           PatchOp.Add("/description", JsString(updatedDescription)))
       
-      val w2 = ResourcePatch.applyPatch(w1.get, patch1)
+      val w2 = PatchInstance.applyPatch(w1.get, patch1)
       
       w2 must beSuccessfulTry
       w2.get.name === updatedName
@@ -93,7 +93,7 @@ class ResourcePatchSpec extends Specification with ResourceScope with PatchUtils
       val l1 = ResourceFactory.findById(ResourceIds.Lambda, data("lambda"))
       l1 must beSome
       
-      val l2 = ResourcePatch.applyPatch(l1.get, patch1)
+      val l2 = PatchInstance.applyPatch(l1.get, patch1)
       l2 must beSuccessfulTry
       
       // ----------------------------------------------------------------------
@@ -186,7 +186,7 @@ class ResourcePatchSpec extends Specification with ResourceScope with PatchUtils
         runtimeProperty.get !=== runtime
         
         // Apply the patch
-        val l2 = ResourcePatch.applyPatch(l1.get, patch1)
+        val l2 = PatchInstance.applyPatch(l1.get, patch1)
         l2 must beSuccessfulTry
         
         val user = createNewUser(org.get.id)

@@ -1,31 +1,42 @@
 package controllers
 
-
 import java.util.UUID
+
+import scala.concurrent.Future
+import scala.reflect.runtime.universe
+import scala.util.Success
+import scala.util.Try
+
+import org.joda.time.DateTime
+import org.mockito.Matchers.{ eq => meq }
+import org.specs2.execute.AsResult
+import org.specs2.execute.Result
+import org.specs2.matcher.JsonMatchers
+import org.specs2.matcher.ValueCheck.typedValueCheck
+import org.specs2.specification.BeforeAll
+
+import com.galacticfog.gestalt.data.Instance
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerService, GestaltSecurityMocking}
-import org.joda.time.{DateTime, DateTimeZone}
-import org.specs2.execute.{Result, AsResult}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.specification._
-import play.api.{Play, Application, GlobalSettings}
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import play.api.test._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import org.mockito.Matchers.{eq => meq}
 
-import scala.concurrent.Future
-import scala.util.{Try, Success}
+import controllers.util.ContainerService
+import controllers.util.GestaltSecurityMocking
+import play.api.GlobalSettings
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+
+import play.api.test.{PlaySpecification,WithApplication,FakeApplication,FakeRequest}
+import play.api.test.WithApplication
 
 class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
@@ -73,7 +84,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
     override def around[T: AsResult](t: => T): Result = super.around {
       var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      Meta.setNewEnvironmentEntitlements(dummyRootOrgId, tE.id, AuthAccountWithCreds(authResponse.account, Seq.empty, Seq.empty, creds, dummyRootOrgId), tW.id)
+      Meta.setNewEntitlements(dummyRootOrgId, tE.id, AuthAccountWithCreds(authResponse.account, Seq.empty, Seq.empty, creds, dummyRootOrgId), parent = Option(tW.id))
       testWork = tW
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get
@@ -86,7 +97,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
   }
 
-  def fakeAuthRequest(method: String, path: String) = FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
+  def fakeAuthRequest(method: String, path: String) = 
+    FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
 
 
   "findMigrationRule" should {
@@ -263,21 +275,30 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         env = Map(),
         user = None
       )
+      
+      println("***************************")
+      println(creds.headerValue)
+      println("***************************")
+      
       val testContainerName = "test-container"
-      val testContainer = createInstance(ResourceIds.Container, testContainerName,
-        parent = Some(testEID),
-        properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get
-        ))
-      ).get
+      val testContainer = {
+        createInstance(ResourceIds.Container, 
+          name       = testContainerName,
+          parent     = Some(testEID),
+          properties = Some(Map(
+            "container_type" -> testProps.container_type,
+            "image"          -> testProps.image,
+            "provider"       -> Output.renderInstance(testProvider).toString,
+            "cpus"           -> testProps.cpus.toString,
+            "memory"         -> testProps.memory.toString,
+            "num_instances"  -> testProps.num_instances.toString,
+            "force_pull"     -> testProps.force_pull.toString,
+            "port_mappings"  -> Json.toJson(testProps.port_mappings).toString,
+            "network"        -> testProps.network.get
+          ))
+        ).get
+      }
+      
       val testContainerSpec = ContainerSpec.fromResourceInstance(testContainer).get
       val jsResponse = Json.obj(
       )
@@ -288,9 +309,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       ) returns Future(Some(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers/${testContainer.id}")
-
       val Some(result) = route(request)
-
+      
       contentAsString(result) must /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
 
@@ -341,15 +361,18 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         testEnv.id
       ) returns Future(Seq(testContainer -> Seq.empty))
 
+      /*
+       * TODO: This fails because the calling user doesn't have view.permissions on any containers.
+       */
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/containers?expand=true")
-
       val Some(result) = route(request)
-
+      
       contentAsString(result) must /#(0) /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
 
       there was one(resourceController).getResources("root", s"environments/${testEID}/containers")
       there was one(containerService).listEnvironmentContainers("root", testEnv.id)
+      
     }
 
     "create containers using the ContainerService interface" in new TestApplication {
