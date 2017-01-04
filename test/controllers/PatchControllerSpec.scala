@@ -4,6 +4,7 @@ package controllers
 import java.util.UUID
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import controllers.util.ContainerService
+import controllers.util.GestaltSecurityMocking
 import controllers.util.db.ConnectionManager
 import org.specs2.mock.Mockito
 import org.specs2.mutable._
@@ -22,11 +23,15 @@ import org.specs2.matcher.JsonMatchers
 import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 
-class PatchControllerSpec extends PlaySpecification with JsonMatchers with ResourceScope with BeforeAll with Mockito {
+class PatchControllerSpec extends PlaySpecification with GestaltSecurityMocking with JsonMatchers with ResourceScope with BeforeAll with Mockito {
 
   sequential
   
   override def beforeAll(): Unit = pristineDatabase
+  
+  
+  abstract class TestApplication extends WithApplication(containerApp()) {
+  }
   
   "Patch" should {
 
@@ -63,8 +68,11 @@ class PatchControllerSpec extends PlaySpecification with JsonMatchers with Resou
         val account = dummyAuthAccountWithCreds(userInfo = Map("id" -> adminUserId))
 
         val path = new ResourcePath(s"/${orgName}/environments/${envRes.id}")
-        val rc = new ResourceController(mock[ContainerService])
-        val updated = new PatchController(rc).Patch(path, patchJs, account)
+
+        val rc = app.injector.instanceOf[ResourceController]
+        val pc = app.injector.instanceOf[PatchController]
+        
+        val updated = pc.Patch(path, patchJs, account)
         updated must beSuccessfulTry
         
         val envJs = Output.renderInstance(updated.get)

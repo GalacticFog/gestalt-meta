@@ -38,23 +38,6 @@ object ApiGateway {
   import java.net.URL
   import java.net.MalformedURLException
 
-//  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-//  lazy val laser = new Laser(
-//      gatewayConfig, lambdaConfig, 
-//      Option(EnvConfig.securityKey), 
-//      Option(EnvConfig.securitySecret))
-  
-  
-  /*
-   * 
-   * TODO: This function needs transaction enforcement. The workflow entails creating three resources on the
-   * gateway service: 1) Provider, 2) Location, 3) Gateway.  If any of them fail, nothing is to be created
-   * in Meta, and any gateway resources that *were* successfully created should deleted (or otherwise scrubbed).
-   * 
-   */
-
-  
   
   private[controllers] def setMetaGatewayProps(obj: JsValue, id: UUID, externalId: UUID, parent: JsValue): Try[JsObject] = {
     val json = (obj.as[JsObject] ++ Json.obj("id" -> JsString(id.toString))) ++ Json.obj("resource_type" -> ResourceIds.ApiGatewayProvider)

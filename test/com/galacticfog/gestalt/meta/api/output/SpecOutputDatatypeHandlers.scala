@@ -30,21 +30,24 @@ class SpecOutputDatatypeHandlers extends Specification {
       val test = """[ "alpha", "beta", "charlie", "delta", "echo" ]"""
       val arr = output.renderStringList(dummyprop, test)
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsString] === true
+      arr(0).isInstanceOf[JsDefined] === true
+      arr(0).get must haveClass[JsString]
     }
     
     "ignore square braces and convert a comma-delimited string to a JsonArray[JsString]" in {
       val test = """[ "alpha", "beta", "charlie", "delta", "echo" ]"""
       val arr = output.renderStringList(dummyprop, test)
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsString] === true      
+      arr(0).isInstanceOf[JsDefined] === true
+      arr(0).get must haveClass[JsString]
     }
     
     "convert a comma-delimited list of UUID strings to a JsArray[JsString]" in {
       val test = s"""[ "${uuid()}","${uuid()}", "${uuid()}" ]"""
       val arr = output.renderStringList(dummyprop, test)
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsString] === true      
+      arr(0).isInstanceOf[JsDefined] === true      
+      arr(0).get must haveClass[JsString]
     }
   }
   
@@ -55,7 +58,8 @@ class SpecOutputDatatypeHandlers extends Specification {
       val arr = output.renderIntList(dummyprop, test)
       println("INT-LIST : " + pretty(arr))
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsNumber] === true
+      arr(0).isInstanceOf[JsDefined] === true
+      arr(0).get must haveClass[JsNumber]
     }
     
   }
@@ -67,7 +71,8 @@ class SpecOutputDatatypeHandlers extends Specification {
       val arr = output.renderBooleanList(dummyprop, test)
       println("BOOL-LIST : " + pretty(arr))
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsBoolean] === true
+      arr(0).isInstanceOf[JsDefined] === true
+      arr(0).get must haveClass[JsBoolean]
     }    
   }
 
@@ -100,8 +105,8 @@ class SpecOutputDatatypeHandlers extends Specification {
       
       val arr = output.renderFloatList(dummyprop, test1)
       arr.isInstanceOf[JsArray] === true
-      arr(0).isInstanceOf[JsNumber] === true
-      arr(0).toString.toFloat === 1.1f
+      arr(0).isInstanceOf[JsDefined] === true
+      arr(0).get.toString.toFloat === 1.1f
       
     }
     

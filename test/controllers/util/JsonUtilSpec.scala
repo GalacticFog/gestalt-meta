@@ -65,7 +65,7 @@ class JsonUtilSpec extends Specification {
     }
     
     "insert a JSON key into properties collection if is does not exist" in new JsonTestScope {
-      getJsonPropValue(jsonUrl, "creds") must throwA[IllegalArgumentException]
+      getJsonPropValue(jsonUrl, "creds") must throwA[NoSuchElementException]
       
       val url2 = JsonUtil.upsertProperty(jsonUrl, "creds", JsString("username:password"))
       url2 must beSuccessfulTry

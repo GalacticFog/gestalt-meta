@@ -135,6 +135,10 @@ trait Authorization extends MetaController { self: SecureController =>
     setNewResourceEntitlements(org, ResourceIds.Integration, newIntegrationId, user, grants, Option(parent))
   }
   
+  def setNewContainerEntitlements(org: UUID, newContainerId: UUID, user: AuthAccountWithCreds, parent: UUID) = {  
+    val grants = Map(ContainerActions)
+    setNewResourceEntitlements(org, ResourceIds.Container, newContainerId, user, grants, Some(parent))
+  }
   
   def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)

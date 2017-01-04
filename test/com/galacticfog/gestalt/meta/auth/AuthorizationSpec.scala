@@ -19,32 +19,52 @@ import com.galacticfog.gestalt.meta.test._
 import play.api.test._
 import play.api.test.Helpers._
 
-class AuthorizationSpec extends PlaySpecification with ResourceScope {
+import controllers._
+import controllers.util._
+
+import play.api.inject._
+import com.galacticfog.gestalt.security.api._
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
+import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltDelegatedSecurityConfigModule
+import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
+import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityEnvironmentModule
+import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityModule
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+
+class AuthorizationSpec extends PlaySpecification with ResourceScope with GestaltSecurityMocking {
 
   sequential
   
   
-  case object Auth extends Authorization
+  abstract class TestApplication extends WithApplication(containerApp()) {
+    val Auth = app.injector.instanceOf[AuthorizationController]
+  }
   
   "resourceEntitlements" should {
-
-    "return a sequence of Entitlements - one for each action in the input" in new WithApplication {
+  
+    "return a sequence of Entitlements - one for each action in the input" in new TestApplication {
       
       val ents = Auth.resourceEntitlements(uuid(), uuid(), uuid(), 
           ResourceIds.Workspace, Auth.ACTIONS_CRUD)
       
       ents.size === 4
       ents.exists { _.properties.action == "workspace.create"} === true
-      ents.exists { _.properties.action == "workspace.view"} === true
+      ents.exists { _.properties.action == "workspace.view"}   === true
       ents.exists { _.properties.action == "workspace.update"} === true
       ents.exists { _.properties.action == "workspace.delete"} === true
     }
     
   }
   
+  
   "generateEntitlements" should {
     
-    "generate a list of entitlements - one for each action given for each resource-type" in new WithApplication {
+    "generate a list of entitlements - one for each action given for each resource-type" in new TestApplication {
       
       val oactions = Seq("create")
       val wactions = Seq("create", "view")

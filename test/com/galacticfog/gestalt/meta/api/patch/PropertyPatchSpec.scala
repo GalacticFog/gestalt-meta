@@ -113,8 +113,8 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
       
       val j = PropertyPatch.toJson(i)
       
-      (j \ "name") === JsString("dummy-resource")
-      (j \ "properties" \ "a") === JsString("foo")
+      (j \ "name").get === JsString("dummy-resource")
+      (j \ "properties" \ "a").get === JsString("foo")
     }
   }
   

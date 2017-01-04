@@ -22,9 +22,10 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.api.{GestaltSecurityClient,GestaltSecurityConfig}
 
-import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
+//import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityEnvironment
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
 
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
@@ -38,21 +39,26 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.{ExecutionContext, Future}
 
 
+  import com.galacticfog.gestalt.security.play.silhouette._
+  import com.galacticfog.gestalt.security.api._
+import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}  
+
 class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecurityMocking with BeforeAll {
 
   override def beforeAll(): Unit = pristineDatabase
 
   lazy val creds = dummyCreds()   
-  lazy val authResponse = dummyAuthAccount()   
+  lazy val authResponse = dummyAuthResponse()   
   lazy val mockSecurityClient = mock[GestaltSecurityClient]   
-  lazy val fakeSecurity = FakeGestaltSecurityEnvironment[DummyAuthenticator](Seq(     
-    creds -> authResponse   
-  ), mockSecurityClient)  
+  
+
+  lazy val fakeSecurity = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
+      identities = Seq(testCreds -> testAuthResponse),
+      config = mock[GestaltSecurityConfig],
+      client = mock[GestaltSecurityClient])  
   
   val fakeSecProvider = new FakeSecurityProvider {}
   val gm = new GroupMethods(fakeSecProvider)
-  
-  
   
   "opsToMap" should {
     
