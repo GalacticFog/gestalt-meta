@@ -40,7 +40,9 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
 import scala.language.postfixOps
+import javax.inject.Singleton
 
+@Singleton
 class DeleteController @Inject()( messagesApi: MessagesApi,
                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                   containerService: ContainerService )

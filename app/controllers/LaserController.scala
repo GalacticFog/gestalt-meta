@@ -45,7 +45,9 @@ import com.galacticfog.gestalt.json.Js
  * -| call to laser that needs a provider ID.
  * 
  */
+import javax.inject.Singleton
 
+@Singleton
 class LaserController @Inject()(messagesApi: MessagesApi,
                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {

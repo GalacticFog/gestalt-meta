@@ -61,6 +61,9 @@ import com.galacticfog.gestalt.json.Js
  * Code for POST and PATCH of all resource types.
  *
  */
+import javax.inject.Singleton
+
+@Singleton
 class Meta @Inject()(messagesApi: MessagesApi,
                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {

@@ -22,7 +22,9 @@ import com.galacticfog.gestalt.marathon._
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
+import javax.inject.Singleton
 
+@Singleton
 class MarathonAPIController @Inject()( messagesApi: MessagesApi,
                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                        containerService: ContainerService )

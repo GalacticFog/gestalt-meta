@@ -36,7 +36,9 @@ import play.api.i18n.MessagesApi
 //
 // TODO: Rename to 'EntitlementController'
 //
+import javax.inject.Singleton
 
+@Singleton
 class AuthorizationController @Inject()(messagesApi: MessagesApi,
                                         env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {

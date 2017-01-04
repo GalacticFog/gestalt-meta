@@ -31,7 +31,9 @@ import controllers.util._
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import com.galacticfog.gestalt.json.Js
+import javax.inject.Singleton
 
+@Singleton
 class PropertyController @Inject()(messagesApi: MessagesApi,
                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {

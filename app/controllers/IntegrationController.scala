@@ -29,7 +29,9 @@ import play.api.i18n.MessagesApi
 
 import scala.reflect.io.Directory
 
+import javax.inject.Singleton
 
+@Singleton
 class IntegrationController @Inject()(messagesApi: MessagesApi,
                                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {

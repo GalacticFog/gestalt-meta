@@ -24,7 +24,9 @@ import play.api.i18n.MessagesApi
 
 import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
+import javax.inject.Singleton
 
+@Singleton
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
