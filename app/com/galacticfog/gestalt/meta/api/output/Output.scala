@@ -66,7 +66,10 @@ object Output {
   
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
     val res = mkTypeOutput(r)
-    Json.toJson(res)
+    
+    // this renders the properties
+    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    Json.toJson(res.copy(properties = renderedProps))
   }
   
   
@@ -87,7 +90,7 @@ object Output {
       variables = jsonHstore(r.variables),
       tags = jsonArray(r.tags),
       auth = jsonHstore(r.auth),
-      property_defs = jsonTypePropertyLinks(r.id))    
+      property_defs = jsonTypePropertyLinks(r.id))      
   }
   
   def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
@@ -294,8 +297,9 @@ object Output {
    * Convert a Map[String,String] to a JsObject.
    */
   protected[output] implicit def jsonHstore(hs: Option[Hstore]): Option[JsValue] = {
-    if (hs.isEmpty) None else Some(Json.toJson(hs))
+    if (hs.isEmpty) None else Option(Json.toJson(hs))
   }
 
+  
 }
 

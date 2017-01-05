@@ -63,13 +63,5 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
       else NotFoundResult("ROUTE_NOT_FOUND: " + request.path)
     }
   }
-
-
-  import controllers._
-
-  /*
-  TODO: need modules for:
-    ContainerService -> ContainerServiceImpl
-   */
   
 }

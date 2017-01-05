@@ -1,29 +1,30 @@
 package controllers.util
 
-
 import java.util.UUID
 
+import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
+
+import scala.util.{Try,Success,Failure}
+
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.events._
+import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
+
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+import com.galacticfog.gestalt.meta.policy._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import play.api.Logger
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-
+import play.api.libs.json.JsObject
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.mvc.Result
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-import com.galacticfog.gestalt.keymgr.GestaltLicense
-import com.galacticfog.gestalt.keymgr.GestaltFeature
-
-import com.galacticfog.gestalt.events._
-import com.galacticfog.gestalt.meta.policy._
 
 
 abstract class Operation[T](val args: T) {
@@ -46,7 +47,7 @@ case class Feature(override val args: String*) extends Operation(args) {
 
 
 case class Authorize(override val args: String*) extends Operation(args) with AuthorizationMethods {
-  private[this] val log = Logger(this.getClass)
+  //private[this] val log = Logger(this.getClass)
   
   def proceed(opts: RequestOptions) = {
     
@@ -264,8 +265,6 @@ case class RequestOptions(
     policyOwner: Option[UUID], 
     policyTarget: Option[GestaltResourceInstance],
     data: Option[Map[String,String]] = None)
-
-import scala.annotation.tailrec
 
 
 class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) {

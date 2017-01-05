@@ -1,12 +1,15 @@
 package com.galacticfog.gestalt.meta.policy
 
 import java.util.UUID
+
 import scala.util.Failure
 import scala.util.Try
 
 import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
+
+import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
+
 
 sealed trait OperationResponse[T] {
   def isContinue(): Boolean

@@ -34,10 +34,12 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
+
 import com.galacticfog.gestalt.meta.auth.Actions
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
+
 
 import scala.language.postfixOps
 import javax.inject.Singleton
@@ -69,7 +71,8 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
 
   
   private def deleteOps(typeId: UUID) = {
-    val action = Actions.actionName(typeId, "delete")
+    //val action = Actions.actionName(typeId, "delete")
+    val action = actionInfo(typeId).prefix + ".delete"
     List(
       controllers.util.Authorize(action),
       controllers.util.PolicyCheck(action),

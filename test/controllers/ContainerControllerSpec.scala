@@ -20,21 +20,9 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltDelegatedSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityEnvironmentModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityModule
 
-import controllers.util.ContainerService
 import controllers.util.GestaltSecurityMocking
 import javax.inject.Singleton
-import modules.MetaDefaultServices
-import play.api.Application
-import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.inject.guice.GuiceableModule.fromGuiceModule
-import play.api.inject.guice.GuiceableModule.fromPlayBinding
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
@@ -48,8 +36,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
   override def beforeAll(): Unit = pristineDatabase()
 
   sequential
-
-
 
   abstract class FakeSecurity extends WithApplication(containerApp()) {
   }
@@ -295,7 +281,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       val request = fakeAuthRequest(GET, path, testCreds)
 
       val Some(result) = route(request)
-
+      
       contentAsString(result) must /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
     }

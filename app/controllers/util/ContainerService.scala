@@ -2,9 +2,15 @@ package controllers.util
 
 import java.util.UUID
 
+
 import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
-import com.galacticfog.gestalt.meta.auth.Actions
+
 import play.api.{Logger => log}
+
+import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
+
+import play.api.Logger
+
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
@@ -294,9 +300,9 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
 
     val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val containerResourcePre: GestaltResourceInstance = inputWithDefaults(orgId, containerResourceInput, user)
+    val containerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
-    val operations = containerRequestOperations(Actions.Container.Create)
+    val operations = containerRequestOperations("container.create")
     val options = containerRequestOptions(user, environment.id, containerResourcePre)
 
     SafeRequest (operations, options) ProtectAsync { maybeState =>

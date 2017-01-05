@@ -72,12 +72,11 @@ trait MetaControllerUtils {
       tags = in.tags,
       auth = in.auth)
   }
-
 }
 
 trait MetaController extends SecurityResources with MetaControllerUtils { this: SecureController =>
   
-  val log = Logger(this.getClass)
+  //private[this] val log = Logger(this.getClass)
   
   protected val connection = Session.connection
 
@@ -139,7 +138,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
       json: JsValue)(implicit request: SecuredRequest[JsValue]): Future[Result] = {
     
     Future {
-      safeGetInputJson(typeId, json) match {
+      safeGetInputJson(json) match {
         case Failure(e) => HandleExceptions(e)
         case Success(input) => 
           CreateNewResourceResult(org, request.identity, input, Option(typeId), Option(parentId))  
@@ -211,38 +210,26 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     safeGetInputJson(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, typeId)
       ResourceFactory.create(creatorType, creator)(
-        inputWithDefaults(org, input.copy(resource_type = Some(tid)), user), parentId = parentId)
+        withInputDefaults(org, input, user, Some(tid)), 
+        parentId = parentId)
     }
   }  
   
-  /*
-   * owningOrgId
-   * creatorId
-   * resourceJson
-   * typeId: Option[UUID],
-   * parentId: Option[UUID]
-   * 
-   */
-  
-  
-  /* 
-   * 
-   * TODO: Replace other Create* : Try[Instance] methods with this!
-   * 
-   */
-  protected[controllers] def CreateNewResource(
-      owningOrgId: UUID,
-      creator: AuthAccountWithCreds,
-      resourceJson: JsValue,
-      typeId: Option[UUID],
-      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+  protected[controllers] def CreateResource(
+    org: UUID,
+    resourceJson: JsValue,
+    caller: AuthAccountWithCreds,
+    typeId: UUID,
+    parentId: UUID): Try[GestaltResourceInstance] = {
     
     safeGetInputJson(resourceJson) flatMap { input =>
-      val tid = Option(assertValidTypeId(input, typeId))
-      val newResource = inputWithDefaults(owningOrgId, input, tid, creator)
-      ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId)
+      val tid = assertValidTypeId(input, Option(typeId))
+      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+        withInputDefaults(org, input, caller, Option(tid)), 
+        parentId = Option(parentId))
     }
-  }
+
+  }   
   
   protected[controllers] def CreateNewResource(
       owningOrgId: UUID,
@@ -252,7 +239,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
       parentId: Option[UUID]): Try[GestaltResourceInstance] = {
     
     val tid = Option(assertValidTypeId(resourceInput, typeId))
-    val newResource = inputWithDefaults(owningOrgId, resourceInput, tid, creator) 
+    val newResource = withInputDefaults(owningOrgId, resourceInput, creator) 
     ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId)
   }  
   
@@ -280,26 +267,6 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     }
   }
   
-  /*
-   * this is only used by Meta.createWorkspaceCommon and Meta.postEnvironmentResult
-   */
-  protected[controllers] def CreateResource(
-    org: UUID,
-    resourceJson: JsValue,
-    caller: AuthAccountWithCreds,
-    typeId: UUID,
-    parentId: UUID): Try[GestaltResourceInstance] = {
-    
-    safeGetInputJson(resourceJson) flatMap { input =>
-      val tid = assertValidTypeId(input, Option(typeId))
-      ResourceFactory.create(ResourceIds.User, caller.account.id)(
-        inputWithDefaults(org, input.copy(resource_type = Some(tid)), caller), parentId = Option(parentId))
-    }
-
-  }     
-  
-
-  
   def createResourceInstance(
       org: UUID, 
       json: JsValue, 
@@ -318,9 +285,8 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
   }
 
 
-
   def HandleCreate(typeId: UUID, json: JsValue)(resource : => Try[GestaltResourceInstance]): Result = {
-    safeGetInputJson(typeId, json) match {
+    safeGetInputJson(json) match {
       case Failure(error) => BadRequestResult(error.getMessage)
       case Success(input) => HandleCreate(resource)
     }
@@ -369,6 +335,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     throw new ResourceNotFoundException(s"Org FQON '$fqon' not found.")
   }
   
+
   protected[controllers] def safeGetPatchDocument(json: JsValue): Try[PatchDocument] = Try {
     PatchDocument.fromJsValue(json)
   }  
@@ -415,7 +382,8 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     fromResourceInput(org, newInput)
   }
 
-
+  protected[controllers] def throwBadRequest(message: String) =
+    throw new BadRequestException(message)
 }
 
 /**

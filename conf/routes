@@ -28,7 +28,7 @@ GET 	/users/self		controllers.ResourceController.getUserSelf
 ############################
 # INTEGRATIONS
 ############################
-POST 	  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envid/integrations 	controllers.IntegrationController.postIntegration2(fqon: String, envid: java.util.UUID)
+POST 	  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envid/integrations 	controllers.IntegrationController.postIntegration(fqon: String, envid: java.util.UUID)
 GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrations/:id  controllers.IntegrationController.getIntegration(fqon: String, envid: java.util.UUID, id: java.util.UUID)
 #GET 	  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envid/integrations   	 controllers.IntegrationController.getIntegrations(fqon: String, envid: java.util.UUID)
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrations/:id  controllers.IntegrationController.deleteIntegration(fqon: String, envid: java.util.UUID, id: java.util.UUID)
@@ -48,10 +48,10 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/s
 ############################
 # LICENSE
 ############################
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 	 	controllers.LicenseController.postLicense(fqon: String)
-GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.getLicense(fqon: String, id: java.util.UUID)
-GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 		controllers.LicenseController.getLicenses(fqon: String)
-DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  controllers.LicenseController.deleteLicense(fqon: String, id: java.util.UUID)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 	 	@controllers.LicenseController.postLicense(fqon: String)
+GET	 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  @controllers.LicenseController.getLicense(fqon: String, id: java.util.UUID)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses 		@controllers.LicenseController.getLicenses(fqon: String)
+DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  @controllers.LicenseController.deleteLicense(fqon: String, id: java.util.UUID)
 
 ############################
 # LAMBDAS
@@ -198,18 +198,20 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 				controllers.Meta.postU
 ############################
 # SPECIAL PATCH - FOR ENV VARS
 ############################
-PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>						controllers.Meta.patchResourceOrgFqon(fqon: String)
-PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
-PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
-PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id			controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>						controllers.Meta.patchResourceOrgFqon(fqon: String)
+#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id		controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
+#PATCH 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id			controllers.Meta.patchResourceFqon(fqon: String, id: java.util.UUID)
 
 ############################
 # RESOURCES
 ############################
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   				 controllers.Meta.postResourceFqon(fqon: String)
-PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    				 controllers.ResourceController.getAllResourcesFqon(fqon: String)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+
+#PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    				 @controllers.ResourceController.getAllResourcesFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 @controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+
 
 ############################
 # WORKSPACES

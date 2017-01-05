@@ -1,7 +1,7 @@
 package controllers
 
-
 import java.util.UUID
+
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -12,6 +12,7 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ApiResponse
+
 
 object ApiGateway {
 
@@ -36,7 +37,6 @@ object ApiGateway {
   implicit lazy val gatewayInput = Json.format[GatewayInput]
 
   import java.net.URL
-  import java.net.MalformedURLException
 
   
   private[controllers] def setMetaGatewayProps(obj: JsValue, id: UUID, externalId: UUID, parent: JsValue): Try[JsObject] = {

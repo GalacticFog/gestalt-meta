@@ -34,7 +34,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   private var adminId: UUID = null
-
+  
   implicit lazy val syncStatContainerFormat = Json.format[Stat]
   implicit lazy val syncStatsFormat = Json.format[SyncStats]
   
@@ -52,7 +52,6 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   def sync() = Authenticate() { implicit request =>
   
     Try {
-      
       val sd = Security.getOrgSyncTree(None, request.identity) match {
         case Success(data) => data
         case Failure(err)  => throw err
@@ -64,7 +63,8 @@ class SyncController @Inject()( messagesApi: MessagesApi,
       }
       
       val rootId = getRootOrgId(request.identity)
-      setNewOrgEntitlements(rootId, rootId, request.identity, None)
+
+      setNewEntitlements(rootId, rootId, request.identity, parent = None)
       
       val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
       val metausers = ResourceFactory.findAll(ResourceIds.User)
@@ -155,17 +155,14 @@ class SyncController @Inject()( messagesApi: MessagesApi,
       createNewMetaOrg(adminId, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
-          /*
-           * TODO: Raise error if any of the Entitlements fail Create.
-           */
-          setNewOrgEntitlements(org.id, org.id, account, Option(parent))
+          setNewEntitlements(org.id, org.id, account, parent = Option(parent))
         } 
       }
     }
-  }  
+  }
   
   def updateOrgs(creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
-   
+     
     for (org <- rs) {
       
       log.debug(s"Updating Org : ${org.name}")
@@ -195,9 +192,8 @@ class SyncController @Inject()( messagesApi: MessagesApi,
           properties = None, group.description) match {
         case Failure(err) => throw err
         case Success(group) => {
-          
-          setNewGroupEntitlements(org, group.id, account)
 
+          setNewEntitlements(org, group.id, account, parent = Option(org))
         }
       }
          
@@ -229,9 +225,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
           description = acc.description ) match {
         case Failure(err) => throw err
         case Success(usr) => {
-          
-          setNewUserEntitlements(org, usr.id, account)
-
+          setNewEntitlements(org, usr.id, account, parent = Option(org))
         }
       }
     
@@ -270,8 +264,12 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   }
   
   def getRootOrgId(account: AuthAccountWithCreds): UUID = {
-    val root = Security.getRootOrg(account)
-    root.get.id
+    Security.getRootOrg(account) match {
+      case Success(root) => root.id
+      case Failure(err)  =>
+        throw new RuntimeException(
+            "Root Org not found in gestalt-security. Contact an administrator")
+    }
   }
   
   def getRootOrgFqon(account: AuthAccountWithCreds): String = {
