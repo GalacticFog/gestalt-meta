@@ -153,47 +153,7 @@ package object laser {
     if (props.contains(key)) props(key) else
       throw new BadRequestException(s"Missing property '$key'.")
   }
-  
-//  def parseHandler(lambda: GestaltResourceInput) = {
-//    val props = lambda.properties.get
-//    val runtime = requiredProperty(props, "runtime")
-//    val mapJson = requiredProperty(props, "function_mappings")
-//    val fmap = mapJson.validate[Map[String, JsValue]].map {
-//      case m: Map[String,JsValue] => m
-//    }.recoverTotal { e =>
-//      throw new BadRequestException(
-//        "Could not parse property 'function_mappings': " + 
-//          JsError.toFlatJson(e).toString)
-//    }
-//    "%s;%s".format(fmap.keys.toSeq(0),fmap.keys.toSeq(0))    
-//  }  
 
-//  def parseHandlerFunction(lambda: GestaltResourceInput) = {
-//    val props = lambda.properties.get
-//    val runtime = requiredProperty(props, "runtime")
-//    val mapJson = requiredProperty(props, "function_mappings")
-//    val fmap = mapJson.validate[Map[String, JsValue]].map {
-//      case m: Map[String,JsValue] => m
-//    }.recoverTotal { e =>
-//      throw new BadRequestException(
-//        "Could not parse property 'function_mappings': " + 
-//          JsError.toFlatJson(e).toString)
-//    }
-//    
-//    //
-//    // TODO: Validation parsing.
-//    // TODO: I think i have the naming of this backward,
-//    // What I'm calling the function is actually the handler. It still works
-//    // just confusing. Fix it.
-//    //
-//    val function = fmap.keys.toSeq(0)
-//    
-//    runtime.as[String] match {
-//      case "csharp" | "python" | "ruby" | "golang" => (function, "")
-//      case _        => splitEntrypoint(function)
-//    }
-//  }
-  
   def splitEntrypoint(ep: String): (String,String) = { 
     val ps = (for {
       m <- "^(.*)\\.(.*)$".r.findAllIn(ep.trim).matchData

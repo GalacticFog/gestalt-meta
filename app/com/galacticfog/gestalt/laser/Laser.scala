@@ -11,7 +11,7 @@ import play.api.Logger
 import java.nio.charset.StandardCharsets;
 import java.nio.charset.Charset
 import java.util.Base64;
-
+import com.galacticfog.gestalt.json.Js
 
 class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[String] = None, secret: Option[String] = None) {
   
@@ -136,7 +136,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
         case Some(out) => out.validate[T] match {
           case s: JsSuccess[T] => Some(s.get)
           case e: JsError => 
-            throw new RuntimeException(JsError.toFlatJson(e).toString)
+            throw new RuntimeException(Js.errorString(e))
         }
         case None => None
       }
@@ -182,7 +182,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
         case Some(out) => out.validate[Seq[T]] match {
           case s: JsSuccess[Seq[T]] => s.get
           case e: JsError =>
-            throw new RuntimeException(JsError.toFlatJson(e).toString)
+            throw new RuntimeException(Js.errorString(e))
         }
       }
     }

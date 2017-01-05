@@ -19,12 +19,14 @@ import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.annotation.tailrec
 import scala.language.postfixOps
+
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
+import com.galacticfog.gestalt.json.Js
 
 
-trait Authorization extends MetaController with ActionMethods with AuthorizationMethods {
-  
+trait Authorization extends MetaController with ActionMethods with AuthorizationMethods { self: SecureController =>
+
   /**
    * 
    * @param org Org the Entitlements belong to
@@ -86,7 +88,6 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     }
     handleExpansion(output, request.queryString, META_URL)
   }
-
   
   def forbidden(action: String) = new ForbiddenException(
     s"You do not have permission to perform this action. Failed: '$action'"

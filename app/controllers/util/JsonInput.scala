@@ -51,7 +51,7 @@ import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
-
+import com.galacticfog.gestalt.json.Js
 
 trait JsonInput {
   
@@ -93,8 +93,8 @@ trait JsonInput {
         }
       }
     }.recoverTotal { e => 
-      log.error("Error parsing request JSON: " + JsError.toFlatJson(e).toString)
-      throwBadRequest(JsError.toFlatJson(e).toString)
+      log.error("Error parsing request JSON: " + Js.errorString(e))
+      throwBadRequest(Js.errorString(e))
     }
   }
   

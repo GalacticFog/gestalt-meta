@@ -69,12 +69,7 @@ trait SecurityResources {
   }
 
   
-  /**
-   * Create a ResourceOwnerLink from AuthAccountWithCreds
-   */
-  def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
-    account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId )  
-  
+
   /**
    * Convert Security::GestaltOrg or Security::GestaltAccount to GestaltResourceInstance
    * (could be used for other object types as well)
@@ -91,4 +86,12 @@ trait SecurityResources {
       properties = properties)
   }  
   
+}
+
+object SecurityResources {
+  /**
+    * Create a ResourceOwnerLink from AuthAccountWithCreds
+    */
+  def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = toOwnerLink(ResourceIds.User,
+    account.account.id, name = Some(account.account.name), orgId = account.account.directory.orgId )
 }

@@ -17,14 +17,27 @@ import com.galacticfog.gestalt.data.ResourceFactory.{findAll, findById, hardDele
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.keymgr._
-import com.galacticfog.gestalt.meta.api.errors._
+
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, ResourceNotFoundException}
+
+import play.api.libs.json.{JsArray, JsValue, Json}
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+import javax.inject.Singleton
+
 import controllers.util._
+import com.galacticfog.gestalt.json.Js
+import play.api.{Logger => log}
 
-
-class LicenseController extends Authorization {
-
+@Singleton
+class LicenseController @Inject()(messagesApi: MessagesApi,
+                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
   /**
    * POST /{fqon}/licenses
    */
@@ -142,7 +155,7 @@ class LicenseController extends Authorization {
   
   private[controllers] def installNewLicense(js: JsObject): Try[Unit] = Try {
     val licenseText = {
-      val t = JsonUtil.find(js, "/request/properties/data") getOrElse {
+      val t = Js.find(js, "/request/properties/data") getOrElse {
         log.error(s"Failed parsing license data. found:\n${Json.prettyPrint(js)}")
         throw new BadRequestException(s"could not parse properties.data from license JSON.")
       }

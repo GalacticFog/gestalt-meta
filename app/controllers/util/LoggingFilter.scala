@@ -8,6 +8,7 @@ import scala.concurrent.Future
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import play.api.libs.json._
+import play.api.routing.Router.Tags
 
 protected[util] case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long])
 
@@ -23,10 +24,10 @@ protected[util] object LoggingFilter extends Filter {
     
     nextFilter(requestHeader).map { result =>
     
-      val fqAction = if (requestHeader.tags.contains(Routes.ROUTE_CONTROLLER)) {
+      val fqAction = if (requestHeader.tags.contains(Tags.RouteController)) {
         "%s.%s".format(
-          requestHeader.tags(Routes.ROUTE_CONTROLLER),
-          requestHeader.tags(Routes.ROUTE_ACTION_METHOD))
+          requestHeader.tags(Tags.RouteController),
+          requestHeader.tags(Tags.RouteActionMethod))
       } else "ERROR_ROUTE_NOT_FOUND"
       
       val requestUrl = "%s://%s%s".format(

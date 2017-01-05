@@ -1,37 +1,39 @@
 package controllers
 
-
 import java.util.UUID
-
-import com.galacticfog.gestalt.data.ResourceFactory
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
+
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.ResourceFactory.hardDeleteResource
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.keymgr._
-import com.galacticfog.gestalt.meta.api.errors.{ConflictException, ResourceNotFoundException}
+import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
-import play.api.{Logger => log}
-import play.api.libs.json.{JsArray, JsValue, Json}
-import com.galacticfog.gestalt.meta.auth.Authorization
-import controllers.util.getExpandParam
 import controllers.util.RequestOptions
-import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.api._
-import controllers.util.{SafeRequest, standardMethods}
+import controllers.util.SafeRequest
+import controllers.util.SecureController
+import controllers.util.standardMethods
+import javax.inject.Singleton
+import play.api.i18n.MessagesApi
+import play.api.libs.json.JsValue
 
-import scala.reflect.io.Directory
-
-
-object IntegrationController extends Authorization {
+@Singleton
+class IntegrationController @Inject()(messagesApi: MessagesApi,
+                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   /**
    * POST /{fqon}/environments/{envid}/integrations

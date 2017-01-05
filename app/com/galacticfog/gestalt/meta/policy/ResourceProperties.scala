@@ -11,6 +11,7 @@ import scala.util.{Try,Success,Failure}
 
 import java.util.UUID
 import play.api.libs.json._
+import com.galacticfog.gestalt.json.Js
 
 trait PolicyResource[A] {
     private val log = Logger(this.getClass)
@@ -76,7 +77,7 @@ trait ResourceProperties {
       Json.parse(s).validate[Seq[String]].map {
         case v: Seq[String] => v
       }.recoverTotal { e =>
-        val msg = "Failed parsing Predicate value to Seq[String]: " + JsError.toFlatJson(e).toString
+        val msg = "Failed parsing Predicate value to Seq[String]: " + Js.errorString(e)
         log.error(msg)
         throw new BadRequestException(msg)
       }

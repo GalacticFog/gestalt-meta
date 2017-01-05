@@ -1,12 +1,24 @@
+import Dependencies._
+
 import com.typesafe.sbt.packager.docker._
 
 name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.4.6"
+version := "0.5.0"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
+
+resolvers ++= Seq(
+    "snapshots" at "http://scala-tools.org/repo-snapshots",
+    "releases"  at "http://scala-tools.org/repo-releases",
+    "Atlassian Releases" at "https://maven.atlassian.com/public/",
+    "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases",
+    "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
+    "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local"
+)
+
 
 dockerBaseImage := "java:8-jre-alpine"
 
@@ -63,38 +75,28 @@ scalacOptions ++= Seq(
   // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
 //)
 
-
-resolvers ++= Seq(
-  "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
-  "gestalt-releases" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
-  "snapshots" at "http://scala-tools.org/repo-snapshots",
-  "releases"  at "http://scala-tools.org/repo-releases",
-  "Atlassian Releases" at "https://maven.atlassian.com/public/"
-)
-
 scalikejdbcSettings
 
 libraryDependencies ++= Seq(
 	jdbc,
 	cache,
 	ws,
-	"com.galacticfog" %% "gestalt-meta-repository" 		% "0.4.7" withSources(),
-	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		% "0.4.0" withSources(),
-	"com.galacticfog" %% "gestalt-play-json" 			% "0.1.2" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 		% "2.2.5-SNAPSHOT" withSources(),
-	"com.galacticfog" %% "gestalt-security-sdk-scala" 	% "2.2.6-SNAPSHOT" withSources(),
-	"com.galacticfog" % "gestalt-license-keymgr" 		% "1.1.0-SNAPSHOT"
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.4.7" withSources(),
+	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.5.0" withSources(),
+	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
+	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
+	"com.galacticfog" %  "gestalt-license-keymgr" 		 % "1.1.0-SNAPSHOT",
+    //  
+    specs2                       % Test,
+    Library.Specs2.matcherExtra  % Test
 )
 
 
 libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.2.2"
 
-
-
 // MockWS for testing
 libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
-
-
 
 libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"
 
@@ -112,12 +114,8 @@ libraryDependencies += "com.typesafe.play" % "play-json_2.11" % "2.4.0-M2"
 
 libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
 
-
-libraryDependencies ++= Seq("org.specs2" %% "specs2-core" % "3.8.4" % "test")
-
-libraryDependencies ++= Seq("org.specs2" %% "specs2-matcher-extra" % "3.8.4" % "test")
-
-libraryDependencies ++= Seq("org.specs2" %% "specs2-mock" % "3.8.4" % "test")
-
 scalacOptions in Test ++= Seq("-Yrangepos")
 
+// Play provides two styles of routers, one expects its actions to be injected, the
+// other, legacy style, accesses its actions statically.
+routesGenerator := InjectedRoutesGenerator

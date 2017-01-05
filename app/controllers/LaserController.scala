@@ -5,10 +5,8 @@ import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.{Either,Left,Right}
-
-import scala.util.{Try,Success,Failure}
-
+import scala.util.{Either, Left, Right}
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.parseUUID
@@ -21,19 +19,23 @@ import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk._
-
 import controllers.util._
 import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
-
 import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
+
 import scala.util.Either
 import com.galacticfog.gestalt.keymgr.GestaltFeature
 
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+import com.galacticfog.gestalt.json.Js
+
 
 /*
  * 
@@ -44,8 +46,12 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
  * -| call to laser that needs a provider ID.
  * 
  */
+import javax.inject.Singleton
 
-object LaserController extends Authorization {
+@Singleton
+class LaserController @Inject()(messagesApi: MessagesApi,
+                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   //private val log = Logger(this.getClass)
   
   implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
@@ -104,14 +110,14 @@ object LaserController extends Authorization {
     val implFunctionPath = "/properties/implementation/function"
     
     Try {
-      JsonUtil.find(json, implFunctionPath).fold {
+      Js.find(json, implFunctionPath).fold {
         throw new BadRequestException(Errors.LAMBDA_NO_IMPLEMENTATION)
       }{ _ =>
-        JsonUtil.find(json, implPath).get.as[JsObject] ++ Json.obj(
+        Js.find(json, implPath).get.as[JsObject] ++ Json.obj(
           "type" -> "Lambda", "id" -> lambdaId.toString)
       }
     }.map { impl =>
-      val newprops = JsonUtil.find(json, "/properties").get.as[JsObject] ++ Json.obj("implementation" -> impl)
+      val newprops = Js.find(json, "/properties").get.as[JsObject] ++ Json.obj("implementation" -> impl)
       json ++ Json.obj("properties" -> newprops)
     }
   }   
@@ -389,8 +395,8 @@ object LaserController extends Authorization {
       (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
         case lpi: LambdaProviderInfo => lpi
       }.recoverTotal { e =>
-        log.error(JsError.toFlatJson(e).toString)
-        throw new RuntimeException(JsError.toFlatJson(e).toString)
+        log.error(Js.errorString(e))
+        throw new RuntimeException(Js.errorString(e))
       }
     }
   }

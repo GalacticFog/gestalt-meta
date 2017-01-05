@@ -6,9 +6,13 @@ import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import scala.util.{Try,Success,Failure}
 
-import com.galacticfog.gestalt.data._
+import scala.util.Failure
+import scala.util.Success
+import scala.util.Try
+import com.galacticfog.gestalt.data.CoVariant
+import com.galacticfog.gestalt.data.EnvironmentType
+import com.galacticfog.gestalt.data.ResourceFactory
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
@@ -25,15 +29,33 @@ import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import ApiGateway.GatewayInput
+import ApiGateway.buildGatewayInfo
+import ApiGateway.gatewayInput
+import ApiGateway.getGatewayLocation
+import ApiGateway.parseLaserResponseId
+import ApiGateway.setMetaGatewayProps
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
-import controllers.util.JsonUtil._
+import controllers.util.JsonUtil.replaceJsonPropValue
+import controllers.util.JsonUtil.replaceJsonProps
+import controllers.util.JsonUtil.str2js
+import controllers.util.JsonUtil.upsertProperty
 import controllers.util.db.EnvConfig
+import play.api.i18n.MessagesApi
+import play.api.libs.json.JsObject
+import play.api.libs.json.JsString
+import play.api.libs.json.JsUndefined
+import play.api.libs.json.JsValue
+import play.api.libs.json.Json
 
-import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
+
 import scala.language.implicitConversions
+import com.galacticfog.gestalt.json.Js
 
 import ApiGateway._
 
@@ -41,7 +63,12 @@ import ApiGateway._
 /**
  * Code for POST and PATCH of all resource types.
  */
-object Meta extends Authorization {
+import javax.inject.Singleton
+
+@Singleton
+class Meta @Inject()(messagesApi: MessagesApi,
+                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
   // ORGS
@@ -98,7 +125,7 @@ object Meta extends Authorization {
         
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
-          val addusers: Seq[UUID] = JsonUtil.find(request.body.as[JsObject], "/properties/users").fold {
+          val addusers: Seq[UUID] = Js.find(request.body.as[JsObject], "/properties/users").fold {
             Seq().asInstanceOf[Seq[UUID]]
             }{
             users => JsonUtil.safeParse[Seq[UUID]](users)
@@ -223,7 +250,7 @@ object Meta extends Authorization {
     Authorize(org, "user.create", request.identity) {
       
       val root = Security.getRootOrg(request.identity).get.fqon
-      val home = JsonUtil.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
+      val home = Js.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
       
       log.debug(s"Setting 'gestalt_home' to $home")
       
@@ -386,11 +413,13 @@ object Meta extends Authorization {
     }
   }
   
+  
+  
   /**
    * Parse properties.workspace from Environment input JSON.
    */
   private[controllers] def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
-    JsonUtil.find(json.as[JsObject], "/properties/workspace").fold {
+    Js.find(json.as[JsObject], "/properties/workspace").fold {
       throw new BadRequestException(s"You must provide a valid 'workspace' property.")
     } { workspace =>
       UUID.fromString(workspace.as[String])
@@ -473,7 +502,7 @@ object Meta extends Authorization {
       else {
 
         ResourceFactory.findById(UUID.fromString(parentType), parent).fold {
-          Future(ResourceNotFound(parentType, parent))
+          Future(ResourceNotFound(UUID.fromString(parentType), parent))
         }{ p =>
           // We found the parent, inject resource_type and parent into the incoming JSON.
           JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
@@ -518,12 +547,12 @@ object Meta extends Authorization {
     
     log.debug("Creating Location resource in gestalt-apigateway...")
     val location = getGatewayLocation(input)
-    val laserLocation = LaserLocation(None, name = location.name, providerId)
+    val laserLocation = LaserLocation(None, name = location.name, providerId.toString)
     val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
     
     log.debug("Creating Gateway resource in gestalt-apigateway...")
     val gatewayInfo = buildGatewayInfo(input)
-    val laserGateway = LaserGateway(None, input.name, locationId, gatewayInfo)
+    val laserGateway = LaserGateway(None, input.name, locationId.toString, gatewayInfo)
     val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
 
     log.debug("Creating ApiGatewayProvider in Meta...")

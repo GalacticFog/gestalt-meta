@@ -6,6 +6,7 @@ import org.specs2.specification._
 import org.specs2.specification.Scope
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.json.Js
 
 trait JsonTestScope extends Scope {
 
@@ -29,10 +30,7 @@ val json1 = """
   val jsonUrl = Json.parse(json1).as[JsObject]
   
   def getJsonPropValue(obj: JsObject, keyName: String): JsValue = {
-    obj \ "properties" \ keyName match {
-      case u: JsUndefined => throw new IllegalArgumentException(s"Key '$keyName' not found")
-      case v => v
-    }
+    Js.find(obj, s"/properties/$keyName").get
   }
   
 }
@@ -40,25 +38,6 @@ val json1 = """
 
 class JsonUtilSpec extends Specification {
 
-  "find" should {
-    
-    "find a top-level JSON key that exists" in new JsonTestScope {
-      val name = JsonUtil.find(jsonUrl, "name") 
-      name must beSome
-      name.get.as[String] must_== "url"
-    }
-    
-    "find a nested JSON key that exists" in new JsonTestScope {
-      val timeout = JsonUtil.find(jsonUrl, "/properties/resource/timeout")
-      timeout must beSome
-      timeout.get.as[Int] must_== 5000
-    }
-
-    "return None when given a JSON path that does not exist" in new JsonTestScope {
-      JsonUtil.find(jsonUrl, "/path/does/not/exist")
-    }
-    
-  }
   
   "replaceKey" should {
     
@@ -86,7 +65,7 @@ class JsonUtilSpec extends Specification {
     }
     
     "insert a JSON key into properties collection if is does not exist" in new JsonTestScope {
-      getJsonPropValue(jsonUrl, "creds") must throwA[IllegalArgumentException]
+      getJsonPropValue(jsonUrl, "creds") must throwA[NoSuchElementException]
       
       val url2 = JsonUtil.upsertProperty(jsonUrl, "creds", JsString("username:password"))
       url2 must beSuccessfulTry

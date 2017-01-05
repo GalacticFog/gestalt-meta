@@ -15,7 +15,7 @@ import org.joda.time.DateTime
 import com.galacticfog.gestalt.patch._
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
-
+import com.galacticfog.gestalt.json.Js
 
 class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll {
   
@@ -59,9 +59,9 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
       
       m2 must haveClass[JsObject]
       
-      (m2 \ "a") must haveClass[JsArray]
-      (m2 \ "b" ) === JsNumber(42)
-      (m2 \ "c" \ "typeId") === JsNumber(7)
+      Js.find(m2, "/a").get must haveClass[JsArray]
+      Js.find(m2, "/b").get === JsNumber(42)
+      Js.find(m2, "/c/typeId").get === JsNumber(7)
     }
   }
   
@@ -113,8 +113,8 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
       
       val j = PropertyPatch.toJson(i)
       
-      (j \ "name") === JsString("dummy-resource")
-      (j \ "properties" \ "a") === JsString("foo")
+      (j \ "name").get === JsString("dummy-resource")
+      (j \ "properties" \ "a").get === JsString("foo")
     }
   }
   

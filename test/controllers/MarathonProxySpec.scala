@@ -21,7 +21,7 @@ import play.api.libs.json._
 import scala.util.parsing.json.JSONArray
 
 
-class SpecMarathonProxy extends Specification with Mockito with JsonMatchers {
+class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
 
   val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"

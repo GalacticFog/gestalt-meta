@@ -35,7 +35,7 @@ trait GestaltPlaySpecification extends BeforeAfterAll {
   lazy val app: FakeApplication = FakeApplication()
   
   def beforeAll() { Play.start(app) }
-  def afterAll() { Play.stop() }  
+  def afterAll() { Play.stop(app) }  
   
   def basicAuthHeader(user: String, pass: String): (String,String) = {
     ("Authorization", "Basic " + Base64.encode(s"$user:$pass"))

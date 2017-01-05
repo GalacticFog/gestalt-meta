@@ -2,63 +2,42 @@ package controllers
 
 import java.util.UUID
 
+import scala.concurrent.ExecutionContext
+import scala.concurrent.Future
+import scala.util.Success
+import scala.util.Try
+
+import org.joda.time.DateTimeZone
+import org.mockito.Matchers.{ eq => meq }
+import org.specs2.execute.AsResult
+import org.specs2.execute.Result
+import org.specs2.matcher.JsonMatchers
+import org.specs2.specification.BeforeAll
+
 import com.galacticfog.gestalt.data.Instance
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.marathon
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.test.FakeGestaltSecurityEnvironment
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerService, GestaltSecurityMocking}
-import org.joda.time.{DateTimeZone, DateTime}
-import org.specs2.execute.{Result, AsResult}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.specification._
-import play.api.libs.json.{JsArray, Json}
-import play.api.test._
-import play.api.{Application, GlobalSettings, Play}
+
+import controllers.util.GestaltSecurityMocking
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import org.mockito.Matchers.{eq => meq}
-
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Try, Success}
-
-import marathon._
+import play.api.libs.json.JsValue.jsValueToJsLookup
+import play.api.libs.json.Json
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.test.PlaySpecification
+import play.api.test.WithApplication
 
 class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
   override def beforeAll(): Unit = pristineDatabase()
-
+  
   sequential
 
-  lazy val creds = dummyCreds()
-  lazy val authResponse = dummyAuthAccount()
-  lazy val mockSecurityClient = mock[GestaltSecurityClient]
-  lazy val fakeSecurity = FakeGestaltSecurityEnvironment[DummyAuthenticator](Seq(
-    creds -> authResponse
-  ), mockSecurityClient)
-
-  def testGlobal() = new GlobalSettings {
-    lazy val cs = mock[ContainerService]
-    override def getControllerInstance[A](controllerClass: Class[A]): A = {
-      if (classOf[ContainerService] == controllerClass) cs.asInstanceOf[A]
-      else if (classOf[MarathonAPIController] == controllerClass) {
-        new MarathonAPIController(cs) {
-          override val env = fakeSecurity
-          override val securityClient = mockSecurityClient
-        }
-      }.asInstanceOf[A]
-      else super.getControllerInstance(controllerClass)
-    }
-  }
-
-
-  abstract class TestApplication extends WithApplication(FakeApplication(withGlobal = Some(testGlobal))) {
+  abstract class TestApplication extends WithApplication(containerApp()) {
 
     var testEnv: Instance = null
     var testWork: Instance = null
@@ -85,9 +64,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
 
   }
 
-  def fakeAuthRequest(method: String, path: String) = FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
-
-  def containerService(implicit app: Application) = Play.global(app).getControllerInstance(classOf[ContainerService])
 
   "MarathonAPIController" should {
 
@@ -95,18 +71,20 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       val js = Json.obj()
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info")
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(js)
     }
+    
 
     "support Marathon GET /v2/deployments" in new TestApplication {
       val js = Json.arr()
       mockMarathonClient.listDeploymentsAffectingEnvironment(meq(testFQON), meq(testWork.name), meq(testEnv.name))(any[ExecutionContext]) returns Future.successful(js)
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
 
-      val request = fakeAuthRequest(GET, s"/${testFQON}/environments/${testEID}/providers/${testPID}/v2/deployments")
+      val request = fakeAuthRequest(GET, 
+          s"/${testFQON}/environments/${testEID}/providers/${testPID}/v2/deployments", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(js)
@@ -245,7 +223,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq(testEnv.id)
       ) returns Future(Seq(testContainer -> Seq.empty))
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps")
+      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(jsResponse)
@@ -258,7 +236,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("nonexistent")
       ) returns Future(None)
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent")
+      val request = fakeAuthRequest(GET, 
+          s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(NOT_FOUND)
       contentAsJson(result) must equalTo(Json.obj(
@@ -273,7 +252,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("nonexistent")
       ) returns Future(None)
 
-      val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent")
+      val request = fakeAuthRequest(DELETE, 
+          s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(NOT_FOUND)
       contentAsJson(result) must equalTo(Json.obj(
@@ -407,7 +387,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         meq("test-container")
       ) returns Future(Some(testContainer -> Seq.empty))
 
-      val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
+      val request = fakeAuthRequest(GET, 
+          s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(jsResponse)
@@ -460,7 +441,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         any[GestaltResourceInstance]
       ) returns Future(())
 
-      val request = fakeAuthRequest(DELETE, s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container")
+      val request = fakeAuthRequest(DELETE, 
+        s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       (contentAsJson(result) \ "deployment").asOpt[UUID] must beSome
@@ -614,7 +596,8 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
         any[Option[UUID]]
       ) returns Future(createdContainer -> Seq.empty)
 
-      val request = fakeAuthRequest(POST, s"/root/environments/${testEID}/providers/${testPID}/v2/apps").withBody(requestBody)
+      val request = fakeAuthRequest(POST, 
+        s"/root/environments/${testEID}/providers/${testPID}/v2/apps", testCreds).withBody(requestBody)
       val Some(result) = route(request)
       status(result) must equalTo(CREATED)
       jsResponse must equalTo(contentAsJson(result))

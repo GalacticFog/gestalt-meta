@@ -5,6 +5,7 @@ import java.util.UUID
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
+
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data.ResourceFactory

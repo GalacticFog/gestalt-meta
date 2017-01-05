@@ -1,47 +1,38 @@
 package com.galacticfog.gestalt.meta.auth
 
+import org.specs2.specification.BeforeAll
+import org.specs2.specification.Scope
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-
-import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Step
-import play.api.libs.json._
-
-import java.util.UUID
-
-import com.galacticfog.gestalt.meta.test._
-
-//import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
-import play.api.test._
-import play.api.test.Helpers._
-import com.galacticfog.gestalt.data.bootstrap.SystemType
+import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.bootstrap.ActionInfo
 import com.galacticfog.gestalt.data.bootstrap.LineageInfo
+import com.galacticfog.gestalt.data.bootstrap.SystemType
+import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.test.ResourceScope
+
+import controllers.util.GestaltSecurityMocking
 
 
 trait ResourceTypeScope extends Scope {
   
 }
 
-class AuthorizationMethodsSpec extends PlaySpecification with ResourceScope with BeforeAll  {
+class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope with BeforeAll  {
 
   sequential
   
   override def beforeAll(): Unit = pristineDatabase
   
   case object Auth extends AuthorizationMethods
-  
+
   def cat[A](a: A, b: String) = "%s.%s".format(a,b)
   
 
-  
   "newEntitlement" should {
     
-    "return a new Entitlement resource" in {
+    "return a new Entitlement resource" >> {
 
        val ent = Auth.newEntitlement(dummyOwner.id, dummyRootOrgId, 
            resource = uuid(),

@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import controllers.util.JsonUtil
 import controllers.util.RequestOptions
 import scala.language.postfixOps
+import com.galacticfog.gestalt.json.Js
 
 package object policy {
 
@@ -56,7 +57,7 @@ package object policy {
 
     opts.data.flatMap(_.get("scaleTo")).fold {
       val path = dot2slash("container.properties.num_instances")
-      JsonUtil.find(resourceJson.as[JsObject], path).fold {
+      Js.find(resourceJson.as[JsObject], path).fold {
         JsNumber(1)
       }{ ni => JsNumber(ni.as[Int]) }
     }{ scaleTo => JsNumber(scaleTo.toInt) }
@@ -99,7 +100,7 @@ package object policy {
      */
     
     val testValue = propertyFunctions.get(predicate.property).fold {
-      JsonUtil.find(json.as[JsObject], path)
+      Js.find(json.as[JsObject], path)
     }{ f =>
       log.debug(s"Found lookup function for property : '${predicate.property}'")
       Option(f(predicate, opts, json)) 

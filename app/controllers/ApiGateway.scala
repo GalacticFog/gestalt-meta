@@ -5,21 +5,14 @@ import java.util.UUID
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.sdk.ApiResponse
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-
-import controllers.util.JsonUtil.upsertProperties
+import controllers.util.JsonUtil._
 import play.api.{ Logger => log }
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsUndefined
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.libs.json._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.sdk.ApiResponse
+
 
 object ApiGateway {
 
@@ -45,23 +38,6 @@ object ApiGateway {
 
   import java.net.URL
 
-//  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-//  lazy val laser = new Laser(
-//      gatewayConfig, lambdaConfig, 
-//      Option(EnvConfig.securityKey), 
-//      Option(EnvConfig.securitySecret))
-  
-  
-  /*
-   * 
-   * TODO: This function needs transaction enforcement. The workflow entails creating three resources on the
-   * gateway service: 1) Provider, 2) Location, 3) Gateway.  If any of them fail, nothing is to be created
-   * in Meta, and any gateway resources that *were* successfully created should deleted (or otherwise scrubbed).
-   * 
-   */
-
-  
   
   private[controllers] def setMetaGatewayProps(obj: JsValue, id: UUID, externalId: UUID, parent: JsValue): Try[JsObject] = {
     val json = (obj.as[JsObject] ++ Json.obj("id" -> JsString(id.toString))) ++ Json.obj("resource_type" -> ResourceIds.ApiGatewayProvider)

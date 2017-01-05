@@ -9,7 +9,9 @@ import scala.annotation.tailrec
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import scala.language.implicitConversions
-
+import com.galacticfog.gestalt.json.Js
+  
+  
 object JsonUtil {
 
   implicit def str2js(s: String) = JsString(s)
@@ -19,15 +21,20 @@ object JsonUtil {
    * otherwise the new key will have the old value.
    */
   def replaceKey(obj: JsObject, oldName: String, newName: String, newValue: Option[JsValue] = None) = {
-    obj \ oldName match {
-      case u: JsUndefined => obj
-      case v => {
-        val value = {
-          if (newValue.isDefined) newValue.get else v
-        }
-        (obj - oldName) ++ Json.obj(newName -> value)
-      }
+    Js.find(obj, oldName).fold(obj) { v =>
+      val value = if (newValue.isDefined) newValue.get else v
+      (obj - oldName) ++ Json.obj(newName -> value)
     }
+    
+//    obj \ oldName match {
+//      case u: JsUndefined => obj
+//      case v => {
+//        val value = {
+//          if (newValue.isDefined) newValue.get else v
+//        }
+//        (obj - oldName) ++ Json.obj(newName -> value)
+//      }
+//    }
   }
   
   /**
@@ -58,10 +65,12 @@ object JsonUtil {
   }
   
   def getJsonPropertyField(json: JsValue, field: String) = {
-    json \ "properties" \ field match {
-      case u: JsUndefined => None
-      case v => Some(v)
-    }
+    Js.find(json.as[JsObject], s"/properties/$field")
+//    json \ "properties" \ field match {
+//      case u: JsUndefined => None
+//      case v => Some(v)
+//    }
+    
   }
   
   def getJsonField(json: JsValue, field: String) = {
@@ -97,20 +106,20 @@ object JsonUtil {
     go(props.toList, obj)
   }
   
-  
-  def find(obj: JsObject, path: String): Option[JsValue] = {  
-    @tailrec 
-    def go(cmps: List[String], path: String => JsValue): JsValue = {
-      cmps match {
-        case Nil    => JsNull
-        case h :: t => if (t.size == 0) path(h) else go(t, (path(h) \_) )
-      }
-    }
-    go(toPath(path), obj \ _) match {
-      case u: JsUndefined => None
-      case v => Option(v)
-    }
-  }
+
+//  def find(obj: JsObject, path: String): Option[JsValue] = {  
+//    @tailrec 
+//    def go(cmps: List[String], path: String => JsValue): JsValue = {
+//      cmps match {
+//        case Nil    => JsNull
+//        case h :: t => if (t.size == 0) path(h) else go(t, (path(h) \_) )
+//      }
+//    }
+//    go(toPath(path), obj \ _) match {
+//      case u: JsUndefined => None
+//      case v => Option(v)
+//    }
+//  }
   
   private def toPath(path: String) = path.trim.stripPrefix("/").stripSuffix("/").split("/").toList
   
@@ -123,7 +132,7 @@ object JsonUtil {
       case a => a
     }.recoverTotal { e => 
       throw new BadRequestException(
-          s"Failed parsing JSON string: " + JsError.toFlatJson(e).toString) 
+          s"Failed parsing JSON string: " + Js.errorString(e)) 
     }
   }
   
@@ -132,7 +141,7 @@ object JsonUtil {
       case a => a
     }.recoverTotal { e => 
       throw new BadRequestException(
-          s"Failed parsing JSON string: " + JsError.toFlatJson(e).toString) 
+          s"Failed parsing JSON string: " + Js.errorString(e)) 
     }
   }  
 }

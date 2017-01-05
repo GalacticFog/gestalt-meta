@@ -3,40 +3,41 @@ package controllers
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 import com.galacticfog.gestalt.meta.auth.Authorization
-
 import controllers.util._
-
 import com.galacticfog.gestalt.meta.api.patch._
 import controllers.util.JsonUtil
-
 import com.galacticfog.gestalt.patch._
 
-import scala.util.{Try,Success,Failure}
-
+import scala.util.{Failure, Success, Try}
 import play.api.libs.json._
-
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.EnvironmentType
-
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.data.ResourceFactory.update
-
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import scala.util.{Either,Right,Left}
+
+import scala.util.{Either, Left, Right}
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
+import javax.inject.Singleton
+import com.galacticfog.gestalt.json.Js
 
-class PatchController(resourceController: ResourceController) extends Authorization {
+
+@Singleton
+class PatchController @Inject()( messagesApi: MessagesApi,
+                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                 resourceController: ResourceController )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   protected[controllers] val secProvider = new SecurityProviderImpl(securityClient)
   
@@ -209,11 +210,16 @@ class PatchController(resourceController: ResourceController) extends Authorizat
           props.get("identities") match {
             case None => Seq.empty
             case Some(stringids) => {
-              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
-              jsids map { _ \ "id" }
+//              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
+//              jsids map { _ \ "id" }
+              
+              val jsids = Js.parse[Seq[JsObject]](Json.parse(stringids)).get
+              jsids map { x => (x \ "id").get }
+
             }
           }
         }
+        
         val newprops = props ++ Map("identities" -> Json.stringify(Json.toJson(identities)))
         r.copy(properties = Option(newprops))
       } else r

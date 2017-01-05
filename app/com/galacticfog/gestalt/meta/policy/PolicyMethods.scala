@@ -2,17 +2,12 @@ package com.galacticfog.gestalt.meta.policy
 
 import java.util.UUID
 
-import org.joda.time.DateTime
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-
-import play.api.libs.json.JsObject
-import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import com.galacticfog.gestalt.meta.api.output._
+import play.api.libs.json._
+import com.galacticfog.gestalt.meta.api.sdk._
+import org.joda.time.DateTime
 
 
 case class EventArgs(

@@ -7,32 +7,42 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
 import play.api.mvc._
+
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import controllers.util._
 import play.api.Play.current
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-import scala.concurrent.{ Future, Await }
+
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
 
-import scala.language.postfixOps
+//import com.galacticfog.gestalt.meta.auth.Actions
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
-class ContainerController(containerService: ContainerService) extends Authorization {
+import scala.language.postfixOps
+import javax.inject.Singleton
+
+@Singleton
+class ContainerController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     containerService: ContainerService )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
@@ -137,7 +147,7 @@ class ContainerController(containerService: ContainerService) extends Authorizat
       
       SafeRequest (operations, options) Protect { maybeState =>    
         ResourceFactory.update(
-            containerService.upsertProperties(container, "status" -> "MIGRATING"),
+            ContainerService.upsertProperties(container, "status" -> "MIGRATING"),
             user.account.id) match {
           case Failure(e) => HandleExceptions(e)
           case Success(c) => Accepted(Output.renderInstance(c, META_URL))

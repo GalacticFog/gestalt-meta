@@ -8,8 +8,6 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.session
@@ -22,28 +20,29 @@ import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
-import controllers.util.HandleExceptions
-import controllers.util.JsonUtil
-import controllers.util.NotFoundResult
-import controllers.util.getExpandParam
-import controllers.util.booleanParam
-
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import controllers.util._
 import play.api.{Logger => log}
 import play.api.libs.json.JsError
 import play.api.libs.json.JsObject
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
-
 import com.galacticfog.gestalt.meta.auth._
+
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import play.api.i18n.MessagesApi
 
   
 //
 // TODO: Rename to 'EntitlementController'
 //
+import javax.inject.Singleton
 
-object AuthorizationController extends Authorization {
+@Singleton
+class AuthorizationController @Inject()(messagesApi: MessagesApi,
+                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
   // POST
