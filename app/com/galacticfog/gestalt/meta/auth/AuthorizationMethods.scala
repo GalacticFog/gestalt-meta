@@ -21,6 +21,8 @@ import scala.annotation.tailrec
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
 
 import scala.language.postfixOps
+import com.galacticfog.gestalt.json.Js
+
 
 trait AuthorizationMethods extends ActionMethods with JsonInput {
   
@@ -310,7 +312,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         }.recoverTotal { e =>
           log.error("Failed parsing 'identities' to Seq[UUID].")
           throw new RuntimeException(
-              s"Failed parsing Entitlement identities: " + JsError.toFlatJson(e).toString)
+              s"Failed parsing Entitlement identities: " + Js.errorString(e))
         }
       }
     }

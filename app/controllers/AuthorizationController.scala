@@ -29,7 +29,6 @@ import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth._
 
-import com.galacticfog.gestalt.meta.auth.Actions
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi

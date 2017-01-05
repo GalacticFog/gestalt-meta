@@ -25,9 +25,12 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.patch._
 
 trait MetaControllerUtils {
-
+  
+  private[this] val log = Logger(this.getClass)
+  
   /**
     * Get an Org by FQON
     */
@@ -74,9 +77,9 @@ trait MetaControllerUtils {
   }
 }
 
-trait MetaController extends SecurityResources with MetaControllerUtils { this: SecureController =>
+trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
-  //private[this] val log = Logger(this.getClass)
+  private[this] val log = Logger(this.getClass)
   
   protected val connection = Session.connection
 
@@ -342,18 +345,18 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
   
   protected[controllers] def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty  
   
-  protected[controllers] def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
-    resolveTypeId(r, typeId).fold(throw new BadRequestException(Errors.RESOURCE_TYPE_NOT_GIVEN)) {
-      id => if (typeExists(id)) id
-      else throwBadRequest(Errors.TYPE_NOT_FOUND(id))
-    }
-  }
-
-  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
-    if (r.resource_type.isDefined) r.resource_type
-    else if (typeId.isDefined) typeId
-    else None
-  }      
+//  protected[controllers] def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
+//    resolveTypeId(r, typeId).fold(throw new BadRequestException(Errors.RESOURCE_TYPE_NOT_GIVEN)) {
+//      id => if (typeExists(id)) id
+//      else throwBadRequest(Errors.TYPE_NOT_FOUND(id))
+//    }
+//  }
+//
+//  def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]) = {
+//    if (r.resource_type.isDefined) r.resource_type
+//    else if (typeId.isDefined) typeId
+//    else None
+//  }      
   
   def inputToResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
     inputWithDefaults(
@@ -382,8 +385,8 @@ trait MetaController extends SecurityResources with MetaControllerUtils { this: 
     fromResourceInput(org, newInput)
   }
 
-  protected[controllers] def throwBadRequest(message: String) =
-    throw new BadRequestException(message)
+//  protected[controllers] def throwBadRequest(message: String) =
+//    throw new BadRequestException(message)
 }
 
 /**

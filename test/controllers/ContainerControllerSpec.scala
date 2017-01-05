@@ -39,7 +39,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
   abstract class FakeSecurity extends WithApplication(containerApp()) {
   }
-
+  import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+  object Ents extends AuthorizationMethods
   trait TestApplication extends FakeSecurity {
 
     val containerController = spy(app.injector.instanceOf[ContainerController])
@@ -48,8 +49,9 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
-    containerController.setNewEnvironmentEntitlements(dummyRootOrgId, testEnv.id, user, testWork.id)
-
+    //containerController.setNewEnvironmentEntitlements(dummyRootOrgId, testEnv.id, user, testWork.id)
+    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    
     var testProvider = createMarathonProvider(testEnv.id, "test-provider").get
     var mockMarathonClient = mock[MarathonClient]
     
@@ -269,7 +271,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         containerService.findEnvironmentContainerByName("root", testEnv.id, testContainer.name) returns Future(Some(testContainer -> Seq.empty))
       
       // Set entitlements on new container
-      val ces = containerController.setNewContainerEntitlements(dummyRootOrgId, testContainer.id, user, testEnv.id)
+      val ces = Ents.setNewEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
       ces exists { _.isFailure } must beFalse
 
       containerService.findEnvironmentContainerByName(
@@ -326,8 +328,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get))).get
 
-      val ces = containerController.setNewContainerEntitlements(
-        dummyRootOrgId, testContainer.id, user, testEnv.id)
+      val ces = Ents.setNewEntitlements(
+        dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
       ces exists { _.isFailure } must beFalse
 
       containerService.listEnvironmentContainers(

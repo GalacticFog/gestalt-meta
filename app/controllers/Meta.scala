@@ -502,7 +502,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
       else {
 
         ResourceFactory.findById(UUID.fromString(parentType), parent).fold {
-          Future(ResourceNotFound(parentType, parent))
+          Future(ResourceNotFound(UUID.fromString(parentType), parent))
         }{ p =>
           // We found the parent, inject resource_type and parent into the incoming JSON.
           JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
@@ -547,12 +547,12 @@ class Meta @Inject()(messagesApi: MessagesApi,
     
     log.debug("Creating Location resource in gestalt-apigateway...")
     val location = getGatewayLocation(input)
-    val laserLocation = LaserLocation(None, name = location.name, providerId)
+    val laserLocation = LaserLocation(None, name = location.name, providerId.toString)
     val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
     
     log.debug("Creating Gateway resource in gestalt-apigateway...")
     val gatewayInfo = buildGatewayInfo(input)
-    val laserGateway = LaserGateway(None, input.name, locationId, gatewayInfo)
+    val laserGateway = LaserGateway(None, input.name, locationId.toString, gatewayInfo)
     val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
 
     log.debug("Creating ApiGatewayProvider in Meta...")

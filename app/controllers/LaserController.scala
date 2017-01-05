@@ -30,7 +30,6 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import scala.util.Either
 import com.galacticfog.gestalt.keymgr.GestaltFeature
 
-import com.galacticfog.gestalt.meta.auth.Actions
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator

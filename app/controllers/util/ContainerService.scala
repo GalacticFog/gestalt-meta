@@ -33,7 +33,7 @@ import com.google.inject.Inject
 
 import scala.language.postfixOps
 
-trait ContainerService {
+trait ContainerService extends JsonInput {
 
   def containerRequestOperations(action: String): List[Operation[Seq[String]]]
 

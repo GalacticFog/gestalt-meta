@@ -30,6 +30,8 @@ import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
+import com.galacticfog.gestalt.json.Js
+
 
 @Singleton
 class PatchController @Inject()( messagesApi: MessagesApi,
@@ -208,11 +210,16 @@ class PatchController @Inject()( messagesApi: MessagesApi,
           props.get("identities") match {
             case None => Seq.empty
             case Some(stringids) => {
-              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
-              jsids map { _ \ "id" }
+//              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
+//              jsids map { _ \ "id" }
+              
+              val jsids = Js.parse[Seq[JsObject]](Json.parse(stringids)).get
+              jsids map { x => (x \ "id").get }
+
             }
           }
         }
+        
         val newprops = props ++ Map("identities" -> Json.stringify(Json.toJson(identities)))
         r.copy(properties = Option(newprops))
       } else r

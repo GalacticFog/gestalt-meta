@@ -28,8 +28,12 @@ trait ResourceScope extends Scope {
   val adminUserId = UUID.randomUUID()
   
   def pristineDatabase() = {
-    controllers.util.db.EnvConfig.getConnection()
+    val cnn = controllers.util.db.EnvConfig.getConnection()
 
+    println("***************************************************")
+    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(cnn.host, cnn.database))
+    println("***************************************************")
+    
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org, 
         dummyRootOrgId, dummyRootOrgId, owner, 
