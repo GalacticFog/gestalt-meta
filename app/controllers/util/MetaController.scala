@@ -5,7 +5,6 @@ import play.api.http.HeaderNames
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-import com.galacticfog.gestalt.meta.api._
 import controllers.util.db._
 import play.api.Logger
 
