@@ -44,8 +44,13 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
   lazy val containerService = mock[ContainerService]//.verbose
   lazy val secureController = mock[SecureController]
+  
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)  
 
+  val account2auth = dummyAuthResponseWithCreds()
+  val account2creds = account2auth.creds
+  val account2 = AuthAccountWithCreds(account2auth.account, Seq.empty, Seq.empty, account2creds, dummyRootOrgId)
+  
   
   def dummyAuthResponse(userInfo: Map[String,String] = Map(), groups: Seq[SecurityLink] = Seq(), orgId: UUID = uuid()): GestaltAuthResponse = {
     val defaultStr = "foo"

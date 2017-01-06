@@ -63,6 +63,26 @@ object Entitlement {
 }
 
 object EntitlementProps {
+
+  /**
+   * Convert GestaltResourceInstance.properties to EntitlementProps object.
+   */
+  def make(r: GestaltResourceInstance): EntitlementProps = {
+    val props = r.properties.get
+    val action = props("action")
+    val value = if (props.contains("value")) Some(props("value")) else None
+    val identities = if (props.contains("identities")) Some(props("identities")) else None
+    
+    def parseIdentities(str: Option[String]): Option[Seq[UUID]] = { 
+      str map { 
+        Json.parse(_).as[JsArray].value map { s =>  
+          UUID.fromString(s.as[String]) 
+        }
+      }
+    }
+    EntitlementProps(action, value, parseIdentities(identities))
+  }
+  
  /**
   * Convert EntitlementProps object to Map[String,String]
   */
@@ -75,27 +95,6 @@ object EntitlementProps {
     } getOrElse Map()
     
     Map("action" -> props.action) ++ v ++ i
-  }
-  
-  /**
-   * Convert GestaltResourceInstance.properties to EntitlementProps object.
-   */
-  def make(r: GestaltResourceInstance): EntitlementProps = {
-    val props = r.properties.get
-    val action = props("action")
-    val value = if (props.contains("value")) Some(props("value")) else None
-    val identities = if (props.contains("identities")) Some(props("identities")) else None
-    
-    // TODO: Combine ops to regex for replaceAll
-    def uuidsFromString(str: String) = str.
-      stripPrefix("[").
-      stripSuffix("]").
-      replaceAll("\"", "").
-      split(",").
-      toSeq.
-      map { UUID.fromString(_)
-    }
-    EntitlementProps(action, value, identities map { uuidsFromString(_) })
   }
 }
 

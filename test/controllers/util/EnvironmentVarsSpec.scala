@@ -22,23 +22,8 @@ import scala.util.Success
 
 
 class EnvironmentVarsSpec extends Specification with ResourceScope with BeforeAll {
-
-  override def beforeAll(): Unit = {
-    controllers.util.db.EnvConfig.getConnection()
-
-    val rootOrgId = UUID.randomUUID()
-    val adminUserId = UUID.randomUUID()
-    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
-
-    for {
-      a <- db.clean
-      b <- db.migrate
-      c <- db.loadReferenceData
-      d <- db.loadSystemTypes
-      e <- db.initialize("root")
-    } yield e
-  }
+  
+  override def beforeAll(): Unit = pristineDatabase()
 
   "safeAdd" should {
     
