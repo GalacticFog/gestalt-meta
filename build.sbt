@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.5.0"
+version := "0.5.1"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -63,59 +63,68 @@ scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq(
   "-deprecation", 	// Emit warning and location for usages of deprecated APIs.
-  "-feature", 			// Emit warning and location for usages of features that should be imported explicitly.
-  "-unchecked") 		// Enable additional warnings where generated code depends on assumptions.
+  "-feature", 		// Emit warning and location for usages of features that should be imported explicitly.
+  "-unchecked") 	// Enable additional warnings where generated code depends on assumptions.
   
-  //"-Xlint" 				// Enable recommended additional warnings.
-  // "-Ywarn-adapted-args", 	// Warn if an argument list is modified to match the receiver.
-  // "-Ywarn-dead-code", 	// Warn when dead code is identified.
-  //"-Ywarn-inaccessible", 	// Warn about inaccessible types in method signatures.
-  //"-Ywarn-nullary-override" // Warn when non-nullary overrides nullary, e.g. def foo() over def foo.
-  // "-Ywarn-numeric-widen" // Warn when numerics are widened.
-  // "-Xfatal-warnings", 	// Fail the compilation if there are any warnings.
+  //"-Xlint" 		// Enable recommended additional warnings.
 //)
 
-scalikejdbcSettings
+//scalikejdbcSettings
 
 libraryDependencies ++= Seq(
-	jdbc,
-	cache,
-	ws,
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.4.7" withSources(),
+
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.4.9" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.5.0" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
-	"com.galacticfog" %  "gestalt-license-keymgr" 		 % "1.1.0-SNAPSHOT",
-    //  
-    specs2                       % Test,
-    Library.Specs2.matcherExtra  % Test
+	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.1.0-SNAPSHOT",
+	
+	"org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
+	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
+	"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
+	"com.rabbitmq"     % "amqp-client" 		% "3.6.1",	
+	
+	Library.Play.specs2          % Test,
+	Library.Specs2.matcherExtra  % Test,
+	Library.mockito              % Test,
+	Library.akkaTestkit          % Test,
+	
+  	jdbc,
+	cache,
+	ws
 )
 
 
-libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.2.2"
+//libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.21"
 
-// MockWS for testing
-libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.3.0" % "test" withSources()
+//libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.2"
 
-libraryDependencies += "org.slf4j" % "slf4j-api" % "1.7.10"
+//libraryDependencies += "org.postgresql" % "postgresql" % "9.3-1102-jdbc4"
 
-libraryDependencies += "ch.qos.logback" % "logback-classic" % "1.1.2"
+//libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
 
-libraryDependencies += "org.postgresql" % "postgresql" % "9.3-1102-jdbc4"
 
-libraryDependencies += "org.scalikejdbc" % "scalikejdbc_2.11" % "2.2.6"
 
-libraryDependencies += "org.scalikejdbc" % "scalikejdbc-test_2.11"   % "2.2.6"   % "test"
 
-libraryDependencies += "org.scalikejdbc" % "scalikejdbc-config_2.11" % "2.2.6" % "test"
 
-libraryDependencies += "com.typesafe.play" % "play-json_2.11" % "2.4.0-M2"
 
-libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
+
+//libraryDependencies += "com.typesafe.play" % "play-test_2.11" % "2.4.8" % "test"
+
+//libraryDependencies += "org.specs2" % "specs2-junit_2.11" % "2.4.17" % "test"
+
+//libraryDependencies += "org.specs2" % "specs2-core_2.11" % "2.4.17" % "test"
+
+//libraryDependencies += "org.specs2" % "specs2-matcher-extra_2.11" % "2.4.17" % "test"
+
+//libraryDependencies += "de.leanovate.play-mockws" %% "play-mockws" % "2.4.2" % "test" withSources()
+
+//libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.2.2"
+
+
 
 scalacOptions in Test ++= Seq("-Yrangepos")
 
-// Play provides two styles of routers, one expects its actions to be injected, the
-// other, legacy style, accesses its actions statically.
+
 routesGenerator := InjectedRoutesGenerator
