@@ -63,76 +63,20 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
   
-  
-  // --------------------------------------------------------------------------
-  // GET
-  // --------------------------------------------------------------------------
-  
-//  def getEntitlementsOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
-//    val org = fqid(fqon)
-//    getEntitlementsCommon(org, ResourceIds.Org, org)
-//  }
-//  
-//  def getEntitlementsFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon) { implicit request =>
-//    getEntitlementsCommon(fqid(fqon), typeId, resourceId)
-//  }
-//  
-//  def getEntitlementByIdOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-//    val org = fqid(fqon)
-//    getEntitlementByIdCommon(org, ResourceIds.Org, org, id)
-//  }
-//  
-//  def getEntitlementByIdFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>  
-//    getEntitlementByIdCommon(fqid(fqon), UUID.fromString(typeId), resourceId, id)
-//  }
-//  
-
-//  /**
-//   * DELETE /{fqon}/entitlements/{id}
-//   */
-//  def deleteEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
-//    val org = fqid(fqon)
-//    deleteEntitlementCommon(org, org, id)
-//  }
-//  
-//  /**
-//   * DELETE /{fqon}/{resource-type}/entitlements/{id}
-//   */
-//  def deleteEntitlementFqon(fqon: String, typeId: String, resourceId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-//    deleteEntitlementCommon(fqid(fqon), resourceId, id)
-//  }
-//  
-//  private [controllers] def deleteEntitlementCommon(org: UUID, parent: UUID, id: UUID) = {
-//    ResourceFactory.findChildOfType(ResourceIds.Entitlement, parent, id) match {
-//      case None => NotFoundResult(s"Entitlement with ID '$id' not found.")
-//      case Some(res) => {
-//        ResourceFactory.hardDeleteResource(ResourceIds.Entitlement, id) match {
-//          case Success(_) => NoContent
-//          case Failure(e) => HandleExceptions(e)
-//        }
-//      }
-//    }
-//  }
-  
   def patchEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ???
   }
-  
-  
+
   def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
     val merge = booleanParam("effective", qs)
     val filter = qs.get("action")
   }
-  
-  
-//  def handleEntitlementExpansion(org: UUID)(entitlements: Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
-//    if (getExpandParam(request.queryString)) {
-//      Ok(Json.toJson(transformEntitlements(org)(entitlements)))
-//    } else Ok(Output.renderLinks(entitlements, META_URL))
-//  }
-  
-  
-  def validateEntitlementUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = {
+
+  /**
+   * Ensure that neither the Entitlement ID or Action have been modified.
+   */
+  private[controllers] def validateEntitlementUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = {
+    log.debug("validateEntitlementUpdate(...)")
     val oldaction = old.properties.get("action")
     val newaction = newent.properties.get("action")
     
@@ -142,9 +86,11 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     } yield r2
   }
   
-  def copyEntitlementForUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = Try {
+  
+  private[controllers] def copyEntitlementForUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = Try {
+    log.debug("copyEntitlementForUpdate()")
      newent.copy(created = old.created)
-  }  
+  }
   
   def putEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
@@ -181,7 +127,7 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
       
     } getOrElse {
       
-     throw new ResourceNotFoundException(s"Entitlement with ID '$id' not found.")
+      throw new ResourceNotFoundException(s"Entitlement with ID '$id' not found.")
      
     } match {
       case Failure(e) => HandleExceptions(e)
@@ -256,13 +202,13 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
      * 3.) Entitlement for given action DOES NOT already exist
      * 4.) Given identities ALL exist
      */
-
+     
     toResource(org, creator, payload) map { resource =>
       
       EntitlementProps.make(resource).validate match {
         case Left(err)    => throw new BadRequestException(err)
         case Right(props) => {
-
+        
           accessType match {
             case "update" => resource
             case "create" => {
@@ -288,7 +234,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
    * 
    */
   def toResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = Try {
-    
     safeGetInputJson(json) match {
       case Failure(error) => throw error
       case Success(input) => {

@@ -27,6 +27,11 @@ trait ResourceScope extends Scope {
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
   
+  
+  import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+  
+  object Entitlements extends AuthorizationMethods  
+  
   def pristineDatabase() = {
     val cnn = controllers.util.db.EnvConfig.getConnection()
 
@@ -265,6 +270,13 @@ trait ResourceScope extends Scope {
         "phoneNumber" -> "555-555-5555",
         "password" -> "secret")))
   }  
+  
+  def createMetaUser(auth: AuthAccountWithCreds): GestaltResourceInstance = {
+    val org = auth.authenticatingOrgId
+    val u = createNewUser(org, auth.account.id)
+    Entitlements.setNewEntitlements(org, u.id, auth, Some(org))
+    u
+  }
   
   def createNewUser(org: UUID, id: UUID = uuid(), name: String = uuid.toString) = {
     ResourceFactory.create(ResourceIds.Org, org)(
