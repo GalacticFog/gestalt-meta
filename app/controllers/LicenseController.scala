@@ -154,8 +154,9 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
 
   
   private[controllers] def installNewLicense(js: JsObject): Try[Unit] = Try {
+
     val licenseText = {
-      val t = Js.find(js, "/request/properties/data") getOrElse {
+      val t = Js.find(js, "/properties/data") getOrElse {
         log.error(s"Failed parsing license data. found:\n${Json.prettyPrint(js)}")
         throw new BadRequestException(s"could not parse properties.data from license JSON.")
       }
@@ -163,7 +164,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
     }
     if (licenseText.trim.nonEmpty) 
       GestaltLicense.instance.install(licenseText)
-    else GestaltLicense.instance.install()
+    else throw new BadRequestException("Invalid license.")
   }
   
   /**
