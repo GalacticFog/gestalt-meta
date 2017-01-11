@@ -32,7 +32,7 @@ import com.galacticfog.gestalt.security.api.errors.{ ConflictException => Securi
 import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
 import java.util.UUID
-
+import scala.concurrent.ExecutionContext
 
 package object util {
   
@@ -64,6 +64,9 @@ package object util {
     log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
+  
+  def HandleExceptionsAsync(e: Throwable)(implicit ec: ExecutionContext) = 
+    scala.concurrent.Future(HandleExceptions(e))
   
   val metaApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
     case e: ResourceNotFoundException     => NotFound(e.asJson)

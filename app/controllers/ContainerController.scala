@@ -38,6 +38,10 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 import javax.inject.Singleton
 
+import services._
+
+
+
 @Singleton
 class ContainerController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
@@ -45,7 +49,60 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+  
+  def postContainer2(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
+    (for {
+      
+      (wrk,env) <- containerService.findWorkspaceEnvironment(environment)
+      target    <- Try( jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(request.body)) )
+      spec      <- ContainerSpec.fromResourceInstance(target)
+      provider  <- Try( ResourceFactory.findById(spec.provider.id) getOrElse { throw new ResourceNotFoundException("") } )
+    
+    } yield (wrk, env, target, spec, provider)) match {
+      case Failure(e) => HandleExceptionsAsync(e)
+      case Success((wrk, env, target, spec, provider)) => {
+        
+        val fCreated = {
+          
+          if (provider.typeId == ResourceIds.CaasProvider) { 
+
+            val kubeService = new KubeService(provider.id)
+            kubeService.launch(spec)
+            
+            for { 
+              container <- kubeService.launchContainer(
+                              fqon = fqon,
+                              workspace = wrk,
+                              environment = env,
+                              containerSpec = spec,
+                              user = request.identity,
+                              inId = Some(target.id))
+            } yield Created(RenderSingle(container._1))
+  
+          } else for {
+            
+            container <- containerService.launchContainer(            
+                            fqon = fqon,
+                            workspace = wrk,
+                            environment = env,
+                            containerSpec = spec,
+                            user = request.identity,
+                            inId = Some(target.id))
+                
+            } yield Created(RenderSingle(container._1))
+            
+          }
+          fCreated recover {case err: Throwable => HandleExceptions(err)}
+        }        
+    }
+    
+  }
+  
   def createContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     containerService.findWorkspaceEnvironment(environment) match {

@@ -13,6 +13,11 @@ GET		/health 				 controllers.InfoController.health()
 GET 	/rules  				 controllers.PolicyController.getRulesGlobal()
 GET  	/path/:fqon/*components  controllers.ResourceController.mapPath(fqon, components)
 
+#->   /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/kube controllers.KubeRouter
+
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.get(fqon: String, pid: java.util.UUID, path: String)
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.post(fqon: String, pid: java.util.UUID, path: String)
+
 ############################
 # ORGS
 ############################
@@ -227,7 +232,7 @@ POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments				  controllers.M
 ############################
 # CONTAINERS
 ############################
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.ContainerController.createContainer(fqon: String, envId: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.ContainerController.postContainer(fqon: String, envId: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/scale     controllers.ContainerController.scaleContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID, numInstances: Int)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid/migrate   controllers.ContainerController.migrateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
 
