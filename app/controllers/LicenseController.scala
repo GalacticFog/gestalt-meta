@@ -59,15 +59,32 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
    */
   def getLicenses(fqon: String) = Authenticate(fqon) { implicit request =>
     log.info(s"verifying license from meta.")
-    
+
+    // Verify license.  If not valid, then check for license resources in META.  If exists, install head and re-verify.
+    // If META has scaled or migrated to a new container, this will propagate the license
+
     Try {
       GestaltLicense.instance.verify() // check if license is good, exception if not.
-      GestaltLicense.instance.view()   // builds the license as a JSON string.
-      
     } match {
-      case Failure(e) => throw e
-      case Success(txt) => Ok {
-        
+      case Failure(e) =>
+        ResourceFactory.findAll(ResourceIds.License, fqid(fqon)).headOption match {
+          case None          => throw e
+          case Some(license) => {
+              log.info("Installing license from resource.")
+              Try {
+                val propjs = Json.parse(license.properties.toString)
+                installNewLicense(propjs.as[JsObject])
+                GestaltLicense.instance.verify() // check if license is good, exception if not.
+              } match {
+                case Failure(e2) => throw e2
+                case Success(_) => Ok {
+                  findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL.get)
+                }
+              }
+          }
+        }
+
+      case Success(_) => Ok {
         findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL.get)
       }
     }
@@ -100,7 +117,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
     val action = "license.delete"
 
     Authorize(license, action) {
-      GestaltLicense.instance.uninstall()
+      Try { GestaltLicense.instance.uninstall() } match { case _ => }
       findById(ResourceIds.License, license).fold {
         LicenseNotFound(license)
       } { _ =>
@@ -196,7 +213,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
    */
   private[controllers] def removeExistingLicense(org: UUID): Try[Unit] = Try {
     val license = ResourceFactory.findAll(ResourceIds.License, org).headOption
-    if (license.isDefined) destroyLicense(license.get.id).get 
+    if (license.isDefined) destroyLicense(license.get.id).get
   }
   
   /**
@@ -210,7 +227,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
     }{ _ =>
       
       Try(GestaltLicense.instance.uninstall()) match {
-        case Failure(e) => ErrorLicenseUninstall(license, e)
+        case Failure(e) =>
         case Success(_) => 
           hardDeleteResource(license) match {
             case Failure(e) => ErrorLicenseDelete(license, e)
