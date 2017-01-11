@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.5.2"
+version := "0.5.3"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -57,6 +57,11 @@ buildInfoOptions += BuildInfoOption.ToJson
 
 
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
+
+javaOptions in Universal ++= Seq(
+        "-Djava.util.prefs.systemRoot=/tmp/.java",
+        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
+)
 
 scalaVersion := "2.11.8"
 
