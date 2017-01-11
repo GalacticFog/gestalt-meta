@@ -60,23 +60,24 @@ class KubeService(provider: UUID) extends JsonInput with MetaControllerUtils{
     
     val usertype = ResourceIds.User
     val userid = user.account.id
+    val containerId = inId getOrElse UUID.randomUUID()
     
     val metaCreate = for {
-      input    <- specToInstance2(fqon, user, containerSpec, inId)
+      input    <- specToInstance(fqon, user, containerSpec, Some(containerId))
       resource <- ResourceFactory.create(usertype, userid)(input, Some(environment.id))
     } yield resource
     
     metaCreate match {
       case Failure(e) => Future.failed(e)
-      case Success(r) => {
-        val deployment = k8s create[Deployment] mkDeployment(containerSpec)
-        deployment map { d => (toInstance(d), Seq.empty) }
+      case Success(resource) => {
+        k8s.create[Deployment](mkDeployment(containerId, containerSpec)) map { 
+         _ => (resource, Seq.empty) }
       }
     }
   }
-
   
-  private[services] def specToInstance2(
+  
+  private[services] def specToInstance(
       fqon: String, 
       user: AuthAccountWithCreds, 
       containerSpec: ContainerSpec, 
@@ -91,34 +92,14 @@ class KubeService(provider: UUID) extends JsonInput with MetaControllerUtils{
       
     withInputDefaults(org, containerResourceInput, user, None)
   }
-  
-//  private[services] def specToInstance(
-//      fqon: String, 
-//      user: AuthAccountWithCreds, 
-//      containerSpec: ContainerSpec, 
-//      containerId: Option[UUID]): GestaltResourceInstance = {
-//    
-//    val org = orgFqon(fqon)
-//      .map(_.id)
-//      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-//      
-//    val containerResourceInput: GestaltResourceInput = 
-//      ContainerSpec.toResourcePrototype(containerSpec).copy( id = containerId )
-//      
-//    withInputDefaults(org, containerResourceInput, user, None)
-//  }
-  
-  def launch(spec: ContainerSpec) = {
-    val d = mkDeployment(spec)
-    println(Json.prettyPrint(Json.toJson(d)))
-  }
-  
-  private[services] def toInstance(deployment: Deployment): GestaltResourceInstance = {
-    ???
-  }
-  
-  
-  private[services] def mkDeployment(containerSpec: ContainerSpec) = {
+
+  /**
+   * Create a Kubernetes Deployment object in memory.
+   * 
+   * @param id UUID for the Meta Container. This will be used as a label on all of the.
+   * @param containerSpec ContainerSpec with Container data
+   */
+  private[services] def mkDeployment(id: UUID, containerSpec: ContainerSpec) = {
     // Container resource requirements.
     val requirements = skuber.Resource.Requirements(requests = Map(
         "cpu" -> containerSpec.cpus, 
@@ -131,7 +112,9 @@ class KubeService(provider: UUID) extends JsonInput with MetaControllerUtils{
         resources = Some(requirements))
 
     // Pod Spec and Template        
-    val podtemplatemeta = ObjectMeta(labels = containerSpec.labels)
+    val podname = "pod-" + id.toString
+    val labels = containerSpec.labels ++ Map("meta/container" -> id.toString)
+    val podtemplatemeta = ObjectMeta(name = podname, labels = labels)
     val podtemplate = Pod.Template.Spec(
         metadata = podtemplatemeta, 
         spec = Some(Pod.Spec(containers = List(container))))
@@ -142,7 +125,8 @@ class KubeService(provider: UUID) extends JsonInput with MetaControllerUtils{
         template = Some(podtemplate))
         
     // Deployment metadata
-    val objmeta = ObjectMeta(name = "deployment-" + containerSpec.name)
+    val deploymentname = "deployment-" + containerSpec.name
+    val objmeta = ObjectMeta(name = deploymentname)
             
     Deployment(metadata = objmeta, spec = Some(deployspec))    
   }

@@ -73,7 +73,7 @@ scalacOptions ++= Seq(
 
 libraryDependencies ++= Seq(
 
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.4.11" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.0" withSources(),
 	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.5.1" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),

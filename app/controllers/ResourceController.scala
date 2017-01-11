@@ -72,16 +72,10 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
       val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
-      println("***Container Service : " + containerService)
-      println("**** : " + containerService.findEnvironmentContainerByName(fqon, env.id, r.name))
-      println("***LOOKING UP CONTAINER...")
-      val t = Await.result(
+      Await.result(
         containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
         5 seconds
       ) map (_._1)
-      
-      println("***T : " + t)
-      t
     }
   }
 

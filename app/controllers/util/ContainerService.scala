@@ -194,26 +194,27 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
   }
 
   def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
+    
     val maybeContainerSpec = for {
       r <- ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
       s <- ContainerSpec.fromResourceInstance(r).toOption
     } yield (r -> s)
+    
     val maybeStatsFromMarathon = for {
       metaContainerSpec <- maybeContainerSpec
-      provider <- Try {
-        marathonProvider(metaContainerSpec._2.provider.id)
-      }.toOption
-      extId <- metaContainerSpec._2.external_id
+      provider <- Try { marathonProvider(metaContainerSpec._2.provider.id) }.toOption
+      extId    <- metaContainerSpec._2.external_id
+      
       marathonApp = for {
         client <- Future.fromTry(Try(
           marathonClient(provider)
         ))
         js <- client.getApplicationByAppId(extId)
-        stats <- Future.fromTry(Try {
-          MarathonClient.marathon2Container(js).get
-        })
+        stats <- Future.fromTry(Try {MarathonClient.marathon2Container(js).get})
       } yield stats
+      
     } yield marathonApp
+    
     maybeStatsFromMarathon match {
       case None => Future {
         maybeContainerSpec.map(containerSpec =>

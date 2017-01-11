@@ -57,7 +57,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     (for {
-      
+    
       (wrk,env) <- containerService.findWorkspaceEnvironment(environment)
       target    <- Try( jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(request.body)) )
       spec      <- ContainerSpec.fromResourceInstance(target)
@@ -72,8 +72,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
           if (provider.typeId == ResourceIds.CaasProvider) { 
 
             val kubeService = new KubeService(provider.id)
-            kubeService.launch(spec)
-            
             for { 
               container <- kubeService.launchContainer(
                               fqon = fqon,
@@ -97,7 +95,10 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
             } yield Created(RenderSingle(container._1))
             
           }
-          fCreated recover {case err: Throwable => HandleExceptions(err)}
+          fCreated recover { case err: Throwable =>
+            log.error("Error creating Container", err)
+            HandleExceptions(err)
+          }
         }        
     }
     
