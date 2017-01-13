@@ -87,6 +87,12 @@ export GESTALT_SECURITY_PROTOCOL=http
 export GESTALT_APIGATEWAY=http://apigateway.dev.galacticfog.com
 export GESTALT_LAMBDA=http://lambda.dev.galacticfog.com
 
+export RABBIT_HOST=localhost
+export RABBIT_PORT=1234
+export RABBIT_HTTP_PORT=1234
+export RABBIT_EXCHANGE=whatever
+export RABBIT_ROUTE=whatever
+
 echo "
 Running gestalt-meta on http://localhost:14374
 
