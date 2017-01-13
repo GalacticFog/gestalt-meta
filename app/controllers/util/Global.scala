@@ -41,7 +41,7 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
   override def onRouteRequest(request: RequestHeader): Option[Handler] = {
 //    if (request.uri == "/statusupdate") setServiceStatus()
-//    if (status == MetaHealth.Status.Unavailable) 
+//    if (status == MetaHealth.Status.Unavailable)
 //      Option(Action(ServiceUnavailable(health)))
 //    else super.onRouteRequest(request)
     super.onRouteRequest(request)
@@ -49,7 +49,7 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
   override def onError(request: RequestHeader, ex: Throwable) = {
     log.warn("Caught exception at top-level.")
-    Future.successful( HandleExceptions(ex.getCause) )
+    Future.successful( HandleExceptions(ex) )
   }
 
   override def onBadRequest(request: RequestHeader, error: String) = {
