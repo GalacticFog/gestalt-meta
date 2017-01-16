@@ -131,12 +131,54 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
     Security.deleteGroup(res.id, account) map ( _ => () )
   }
   
+  /* *************************************************
+   * TEMPORARY
+   * 
+   */
+  
+  import com.galacticfog.gestalt.json.Js
+  import services.KubeService
+  
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
-    val _ = Await.result(
-      containerService.deleteContainer(res),
-      5 seconds
-    )
+    
+    /*
+     * 1 - lookup provider
+     * 2 - if type == caas-provider, init kubeservice and delete
+     * 2 - else containerservice.delete
+     */
+    
+    val provider = containerProvider(res)
+    
+    if (provider.typeId == ResourceIds.CaasProvider) {
+      
+      log.debug("Found kube container for DELETE.")
+      val env = ResourceFactory.findParent(ResourceIds.Environment, res.id).get.id
+      val ks = new KubeService(provider.id, env.toString)
+      val _ = Await.result(ks.deleteContainer(res),5 seconds)      
+    } else {
+      val _ = Await.result(containerService.deleteContainer(res),5 seconds)
+    }
   }
+  
+  
+  private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
+    Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
+      UUID.fromString(id.as[String])
+    }
+  }  
+  
+  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+    val providerId = providerIdProperty(container.properties.get) getOrElse {
+      throw new ResourceNotFoundException(
+        s"Could not parse provider ID from container '${container.id}'")
+    }
+    
+    ResourceFactory.findById(providerId) getOrElse {
+      throw new ResourceNotFoundException(
+        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
+    }    
+  }  
+  /* ************** END TEMPORARY **************** */
   
   def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     laser.deleteLambda(res.id) map ( _ => () )

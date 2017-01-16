@@ -40,6 +40,9 @@ object Resource {
     f(info)
   }
   
+  /**
+   * Find  a single resource by path
+   */
   def fromPath(p: String): Option[GestaltResourceInstance] = {
     log.debug(s"fromPath($p)")
     
@@ -61,7 +64,7 @@ object Resource {
   }
   
   /**
-   * Indicates whether or not the path points to a list of resources.
+   * Indicates whether or not the path is a list selector.
    */
   def isList(path: String): Boolean = {
     val cs = components(path)

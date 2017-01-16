@@ -6,8 +6,6 @@ import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint,
 
 import play.api.{Logger => log}
 
-import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
-
 import play.api.Logger
 
 import play.api.libs.ws.WS
@@ -44,45 +42,74 @@ import com.galacticfog.gestalt.caas.kube._
 
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
+import scala.concurrent.ExecutionContext
 
-class KubeService(provider: UUID, namespace: String) extends JsonInput with MetaControllerUtils{
+/*
+ * TODO: provider constructor argument appears to be unnecessary
+ */
+class KubernetesService(provider: UUID) extends CaasService with JsonInput with MetaControllerUtils {
   
-  private[services] lazy val k8s = initializeKube(provider, namespace).get
+  //private[services] lazy val k8s = initializeKube(provider, namespace).get
   
-  def launchContainer(
-      fqon: String,
-      workspace: GestaltResourceInstance,
-      environment: GestaltResourceInstance,
-      user: AuthAccountWithCreds,
-      containerSpec: ContainerSpec,
-      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
+  def setPostCreateStatus(container: GestaltResourceInstance): Future[GestaltResourceInstance] = {
+    /*
+     * Set container.properties.status == RUNNING | LAUNCHED | PENDING
+     */
+    ???
+  }
+  
+  def create(context: ProviderContext, container: GestaltResourceInstance)(
+      implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     
-    val usertype = ResourceIds.User
-    val userid = user.account.id
-    val containerId = inId getOrElse UUID.randomUUID()
-    
-    // Create container in Meta
-    val metaCreate = for {
-      input    <- specToInstance(fqon, user, containerSpec, Some(containerId))
-      resource <- ResourceFactory.create(usertype, userid)(input, Some(environment.id))
-    } yield resource
-    
-    // Create container in Kubernetes
-    metaCreate match {
+    ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
-      case Success(resource) => {
+      case Success(spec) =>
         for {
-          namespace  <- getNamespace(environment.id, create = true)
-          deployment <-  k8s.create[Deployment](
-              mkDeployment(containerId, containerSpec, namespace.name)) map { _ => (resource, Seq.empty) }
-        } yield (resource, Seq.empty)
-      }
+          k8s        <- initializeKube(context.provider.id, "default")
+          namespace  <- getNamespace(k8s, context.environment.id, create = true)
+          kube       <- initializeKube(context.provider.id, namespace.name)
+          deployment <- kube.create[Deployment](
+            mkDeployment(container.id, spec, namespace.name)) map { _ => container }
+          //SET STATUS
+        } yield container
     }
   }
+  
+  
+//  def launchContainer(
+//      fqon: String,
+//      workspace: GestaltResourceInstance,
+//      environment: GestaltResourceInstance,
+//      user: AuthAccountWithCreds,
+//      containerSpec: ContainerSpec,
+//      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
+//    
+//    val usertype = ResourceIds.User
+//    val userid = user.account.id
+//    val containerId = inId getOrElse UUID.randomUUID()
+//    
+//    // Create container in Meta
+//    val metaCreate = for {
+//      input    <- specToInstance(fqon, user, containerSpec, Some(containerId))
+//      resource <- ResourceFactory.create(usertype, userid)(input, Some(environment.id))
+//    } yield resource
+//    
+//    // Create container in Kubernetes
+//    metaCreate match {
+//      case Failure(e) => Future.failed(e)
+//      case Success(resource) => {
+//        for {
+//          namespace  <- getNamespace(environment.id, create = true)
+//          deployment <-  k8s.create[Deployment](
+//              mkDeployment(containerId, containerSpec, namespace.name)) map { _ => (resource, Seq.empty) }
+//        } yield (resource, Seq.empty)
+//      }
+//    }
+//  }
 
-  def getNamespace(environment: UUID, create: Boolean = false): Future[Namespace] = {
-    k8s.get[Namespace](environment.toString) recoverWith { case _ =>
-      k8s create[Namespace] Namespace(metadata = ObjectMeta(name = environment.toString))
+  def getNamespace(rc: RequestContext, environment: UUID, create: Boolean = false): Future[Namespace] = {
+    rc.get[Namespace](environment.toString) recoverWith { case _ =>
+      rc create[Namespace] Namespace(metadata = ObjectMeta(name = environment.toString))
     }
   }
   
@@ -105,25 +132,25 @@ class KubeService(provider: UUID, namespace: String) extends JsonInput with Meta
     }    
   }
   
-  def deleteContainer(container: GestaltResourceInstance): Future[Unit] = {
-    
-    val provider = containerProvider(container)
-    val depname  = deploymentName(container.name)
-    
-    for {
-      deployment  <- k8s.get[Deployment](depname)
-      replicasets <- k8s.list[ReplicaSetList]
-      pods        <- k8s.list[PodList]
-      
-      replicaToDelete = getByName[ReplicaSet, ReplicaSetList](replicasets, depname).get
-      podsToDelete = listByName[Pod, PodList](pods, depname)
-      
-      _  <- k8s.delete[Deployment](depname)
-      _  <- k8s.delete[ReplicaSet](replicaToDelete.name)
-      dp <- Future(podsToDelete.map(pod => k8s.delete[Pod](pod.name)).headOption.get)
-    } yield dp
-    
-  }
+//  def deleteContainer(container: GestaltResourceInstance): Future[Unit] = {
+//    
+//    val provider = containerProvider(container)
+//    val depname  = deploymentName(container.name)
+//    
+//    for {
+//      deployment  <- k8s.get[Deployment](depname)
+//      replicasets <- k8s.list[ReplicaSetList]
+//      pods        <- k8s.list[PodList]
+//      
+//      replicaToDelete = getByName[ReplicaSet, ReplicaSetList](replicasets, depname).get
+//      podsToDelete = listByName[Pod, PodList](pods, depname)
+//      
+//      _  <- k8s.delete[Deployment](depname)
+//      _  <- k8s.delete[ReplicaSet](replicaToDelete.name)
+//      dp <- Future(podsToDelete.map(pod => k8s.delete[Pod](pod.name)).headOption.get)
+//    } yield dp
+//    
+//  }
   
   
   def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
@@ -147,11 +174,11 @@ class KubeService(provider: UUID, namespace: String) extends JsonInput with Meta
       .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
       
     val containerResourceInput: GestaltResourceInput = 
-      ContainerSpec.toResourcePrototype(containerSpec).copy( id = containerId )
+      ContainerSpec.toResourcePrototype(containerSpec).copy(id = containerId)
       
     withInputDefaults(org, containerResourceInput, user, None)
   }
-
+  
   /**
    * Create a Kubernetes Deployment object in memory.
    * 
@@ -196,16 +223,18 @@ class KubeService(provider: UUID, namespace: String) extends JsonInput with Meta
   /**
    * 
    */
-  private[services] def initializeKube(provider: UUID, namespace: String): Try[RequestContext] = for {
+  private[services] def initializeKube(provider: UUID, namespace: String)(
+      implicit ec: ExecutionContext): Future[RequestContext] = for {
     config  <- loadProviderConfiguration(provider)
-    context <- KubeConfig.initializeString(config, namespace = Some(namespace))
+    context <- Future(KubeConfig.initializeString(config, namespace = Some(namespace)).get)
   } yield context
   
   
   /**
    * Get kube configuration from Provider. Performs lookup and validation of provider type.
    */
-  private[services] def loadProviderConfiguration(provider: UUID): Try[String] = Try {
+  private[services] def loadProviderConfiguration(provider: UUID)(
+      implicit ec: ExecutionContext): Future[String] = Future {
     val prv = ResourceFactory.findById(provider) getOrElse { 
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
@@ -229,90 +258,3 @@ class KubeService(provider: UUID, namespace: String) extends JsonInput with Meta
   }  
   
 }
-
-
-import scala.concurrent.ExecutionContext
-//import com.mohiva.play.silhouette.api.Silhouette.SecuredRequest
-
-//abstract class ProviderContext[A](val uri: String, val caller: A) {
-//  
-//  val prefix: String = ""
-//  
-//  val fqon: String
-//  
-//  val orgId: UUID
-//  
-//  val environmentId: UUID
-//  
-//  val providerId: UUID
-//  
-//  def environment()(implicit ec: ExecutionContext): Future[GestaltResourceInstance]
-//  
-//  def provider()(implicit ec: ExecutionContext): Future[GestaltResourceInstance]
-//}
-
-
-
-trait TransformService[A,B] extends GestaltProviderService {
-  
-  def toTarget(from: A, org: UUID, user: AuthAccountWithCreds): Try[B]
-  
-  def fromTarget(from: A, org: UUID, user: AuthAccountWithCreds): Try[B]
-  
-}
-
-
-
-
-
-
-/*
-=== 
-=== POD
-===
-	containers: List[Container], 
-	volumes: List[Volume], 
-	restartPolicy: RestartPolicy.RestartPolicy, 
-	terminationGracePeriodSeconds: Option[Int], 
-	activeDeadlineSeconds: Option[Int], 
-	dnsPolicy: DNSPolicy.DNSPolicy, 
-	nodeSelector: Map[String, String], 
-	serviceAccountName: String, 
-	nodeName: String, 
-	hostNetwork: Boolean, 
-	imagePullSecrets: List[LocalObjectReference]
-	
-===
-=== CONTAINER
-===	 
-  name: String, 
-  image: String, 
-  command: List[String], 
-  args: List[String], 
-  workingDir: Option[String], 
-  ports: List[Container.Port], 
-  env: List[EnvVar], 
-  resources: Option[Resource.Requirements], 
-  volumeMounts: List[Volume.Mount], 
-  livenessProbe: Option[Probe], 
-  readinessProbe: Option[Probe], 
-  lifeCycle: Option[Lifecycle], 
-  terminationMessagePath: String, 
-  imagePullPolicy: ContainerPullPolicy.Value, 
-  securityContext: Option[Security.Context]
-
-OBJECT META
- name: String
- generateName: String
- namespace: String
- uid: String
- selfLink: String
- resourceVersion: String
- creationTimestamp: Option[Timestamp]
- deletionTimestamp: Option[Timestamp]
- labels: Map[String, String]
- annotations: Map[String, String]
-
-
-
- */
