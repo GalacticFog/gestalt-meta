@@ -88,16 +88,38 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
     }
   }
   
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
+  
+  def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
+    val providerId = Json.parse(container.properties.get("provider")) \ "id"
+    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
+      throw new RuntimeException("Could not find Provider : " + providerId)
+    }
+    // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
+    val maybeExternalId = for {
+      props <- container.properties
+      eid <- props.get("external_id")
+    } yield eid
+    
+    maybeExternalId match {
+      case Some(eid) => marathonClient(provider).deleteApplication(eid) map { js =>
+        log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
+      }
+      case None =>
+        log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
+        Future.successful(())
+    }
+  }  
+  
+  private[services] def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
     MarathonClient(WS.client, providerUrl)
   }      
       
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+  private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+  private[services] def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
   
 }

@@ -139,27 +139,22 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
   import com.galacticfog.gestalt.json.Js
   import services.KubeService
   
-  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
-    
-    /*
-     * 1 - lookup provider
-     * 2 - if type == caas-provider, init kubeservice and delete
-     * 2 - else containerservice.delete
-     */
-    
+  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
     
-    if (provider.typeId == ResourceIds.CaasProvider) {
-      
-      log.debug("Found kube container for DELETE.")
-      val env = ResourceFactory.findParent(ResourceIds.Environment, res.id).get.id
-      val ks = new KubeService(provider.id, env.toString)
-      val _ = Await.result(ks.deleteContainer(res),5 seconds)      
-    } else {
-      val _ = Await.result(containerService.deleteContainer(res),5 seconds)
+    getProviderImpl(provider.typeId) map { service =>
+      val _ = Await.result(service.destroyContainer(res), 5 seconds)  
     }
   }
   
+  import services._
+  def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
+    typeId match {
+      case ResourceIds.CaasProvider     => new KubernetesService(typeId)
+      case ResourceIds.MarathonProvider => new MarathonService()
+      case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
+    }
+  }  
   
   private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
     Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
