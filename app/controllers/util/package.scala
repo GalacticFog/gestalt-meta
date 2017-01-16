@@ -58,6 +58,7 @@ package object util {
   def ConflictResult(message: String) = Conflict(new ConflictException(message).asJson)
   def ForbiddenResult(message: String) = Forbidden(new ForbiddenException(message).asJson)
   def UnauthorizedResult(message: String) = Unauthorized(new UnauthorizedException(message).asJson)
+  def UnprocessableEntityResult(message: String) = UnprocessableEntity(new UnprocessableEntityException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
   def HandleExceptions(e: Throwable) = {
@@ -75,6 +76,7 @@ package object util {
     case e: NotAcceptableException        => NotAcceptable(e.asJson)
     case e: ConflictException             => Conflict(e.asJson)
     case e: ForbiddenException            => Forbidden(e.asJson)
+    case e: UnprocessableEntityException  => UnprocessableEntity(e.asJson)
   }
   
   val securityApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
