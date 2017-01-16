@@ -54,8 +54,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     ???
   }
   
-
-  
   trait ResourceTransform extends GestaltProviderService
   case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
     lazy val resource = jsonToInput(org, caller, normalizeInputContainer(json))
@@ -81,7 +79,8 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   def ProviderImplNotFound(providerId: UUID) = throw ResourceNotFoundException(
     s"Implementation for Provider '$providerId' not found."
   )
-      /**
+  
+  /**
    * Parse the provider ID from container.properties
    */
   def parseProvider(c: GestaltResourceInstance): UUID = {
@@ -123,10 +122,14 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
    */
   
   def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-  
+    
+    log.debug(s"postContainer($fqon, $environment)")
+    
     val transform = CaasTransform(fqid(fqon), request.identity, request.body)
     val context   = ProviderContext(request, parseProvider(transform.resource), None)
-
+    
+    log.info("Creating container in Meta...")
+    
     val metaCreate = for {
       environment <- Try(context.environment)
       provider    <- Try(context.provider)
@@ -136,8 +139,15 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     } yield (serviceImpl, resource)
     
     val created = metaCreate match {
-      case Failure(e) => HandleExceptionsAsync(e)
+      case Failure(e) => {
+        log.error("Failed creating container in Meta.")
+        HandleExceptionsAsync(e)
+      }
       case Success((service, metaResource)) => {
+        
+        log.info("Meta container created: " + metaResource.id)
+        log.info("Creating container in backend CaaS...")
+        
         for {
             updated   <- service.create(context, metaResource)
             container <- updateContainer(updated, request.identity.account.id)
@@ -147,7 +157,12 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     created recoverWith { case e => HandleExceptionsAsync(e) }
   }
   
-  def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] = {
+  
+  /*
+   * TODO: This is a temporary wrapper to adapt ResourceFactory.update() to return a Future
+   * as it will in a forthcoming revision.
+   */
+  private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] = {
     ResourceFactory.update(container, identity) match {
       case Failure(e) => Future.failed(e)
       case Success(r) => Future(r)

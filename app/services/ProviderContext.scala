@@ -1,5 +1,6 @@
 package services
 
+
 import java.util.UUID
 
 import scala.language.postfixOps
@@ -19,7 +20,7 @@ case class ProviderContext(
     target: Option[GestaltResourceInstance]) extends GestaltProviderService{
   
   val m = mapUri(request.uri)
-
+  
   val fqon          = m(Resource.Fqon)
   val environmentId = UUID.fromString(m(Resource.ParentId))
   
@@ -35,7 +36,7 @@ case class ProviderContext(
   }
   
   private def resource(typeId: UUID, id: UUID) = ResourceFactory.findById(id) getOrElse {
-    throw new UnprocessableEntityException(s"Resource with ID '$id' not found.")
+    throw new UnprocessableEntityException(s"${ResourceLabel(typeId)} with ID '$id' not found.")
   }
   
   private def notFound(typeId: UUID, id: UUID): String = {

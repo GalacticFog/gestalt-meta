@@ -37,7 +37,7 @@ object DataStore extends {
    */
   def metaOnline(config: JdbcConnectionInfo): Boolean = {
     
-    log.info("Pinging Meta Repository...")
+    log.info(s"Pinging Meta Repository: [${config.host}, ${config.database}]...")
     
     PostgresHealth.verifyDataStore( config.database ) match {
       case Success( _ )  => {

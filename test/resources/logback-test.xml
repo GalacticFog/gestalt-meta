@@ -4,6 +4,7 @@
 	<logger name="scalikejdbc" level="WARN"/>
 	<logger name="org.flywaydb" level="WARN"/>
 	<logger name="com.zaxxer" level="WARN"/>
+	<logger name="com.google.inject" level="WARN"/>
 	
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
   
@@ -16,6 +17,7 @@
       <pattern>%-4r %highlight(%-5level) - %logger{35} - %msg%n</pattern>
     </encoder>
   </appender>
+  
   
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
