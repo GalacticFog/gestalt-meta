@@ -72,8 +72,8 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
           case Some(license) => {
               log.info("Installing license from resource.")
               Try {
-                val propjs = Json.parse(license.properties.toString)
-                installNewLicense(propjs.as[JsObject])
+                val licstr = license.properties.get("data")
+                GestaltLicense.instance.install(licstr)
                 GestaltLicense.instance.verify() // check if license is good, exception if not.
               } match {
                 case Failure(e2) => throw e2
@@ -179,6 +179,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
       }
       t.as[String]
     }
+    log.info(s"--------\n${licenseText}")
     if (licenseText.trim.nonEmpty) 
       GestaltLicense.instance.install(licenseText)
     else throw new BadRequestException("Invalid license.")
@@ -228,6 +229,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
       
       Try(GestaltLicense.instance.uninstall()) match {
         case Failure(e) =>
+          log.warn(s"Failed uninstalling License '$license': ${e.getMessage}")
         case Success(_) => 
           hardDeleteResource(license) match {
             case Failure(e) => ErrorLicenseDelete(license, e)
