@@ -58,6 +58,11 @@ buildInfoOptions += BuildInfoOption.ToJson
 
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
+javaOptions in Universal ++= Seq(
+        "-Djava.util.prefs.systemRoot=/tmp/.java",
+        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
+)
+
 scalaVersion := "2.11.8"
 
 
@@ -72,7 +77,6 @@ scalacOptions ++= Seq(
 //scalikejdbcSettings
 
 libraryDependencies ++= Seq(
-
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.2" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
