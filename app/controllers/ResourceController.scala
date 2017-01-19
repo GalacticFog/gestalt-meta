@@ -78,7 +78,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       ) map (_._1)
     }
   }
-
+  
   def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
@@ -124,8 +124,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
-    //val action = Actions.actionName(rp.targetTypeId, "view")
-    
+
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
     if (rp.isList) AuthorizedResourceList(rp, action) 

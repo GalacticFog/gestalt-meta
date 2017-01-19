@@ -49,7 +49,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       // build list of actions for target and all child-type resources
       val actions = getNewResourceActionSet(res.typeId).toSeq
       
-      if (log.isDebugEnabled) debugLogActions(res, actions)
+      //if (log.isDebugEnabled) debugLogActions(res, actions)
       
       val ents = entitlements(creator.account.id, org, resource, actions)
       

@@ -67,7 +67,8 @@ trait CaasService extends GestaltProviderService {
   def create(context: ProviderContext, container: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] 
     
-//  def destroy(id: UUID, force: Boolean): Future[JsValue]
+  def destroyContainer(id: GestaltResourceInstance): Future[Unit]
+  
 //  
 //  def start(id: UUID): Future[JsValue]
 //  
