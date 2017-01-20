@@ -187,7 +187,11 @@ class LaserController @Inject()(messagesApi: MessagesApi,
   def findLaserProviderId(metaProviderId: String) = {
     ResourceFactory.findById(metaProviderId).fold {
       throw new RuntimeException(LaserError.GATEWAY_NOT_FOUND(metaProviderId))
-    }{ provider => provider.properties.get("external_id")}
+    }{ provider => 
+      val exid = provider.properties.get("external_id")
+      log.debug(s"findLaserProviderId($metaProviderId): external_id == $exid")
+      exid
+    }
   }
   
   def postEndpoint(org: UUID, parent: UUID, json: JsValue)
@@ -208,6 +212,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     
     // Get list of providers from the Lambda.
     val props = lambda.get.properties.get
+    
     val providers = JsonUtil.safeParse[Seq[JsValue]](props("providers")) map { p =>
       val metaProviderId = (p \ "id").as[String]
       val laserProviderId = findLaserProviderId(metaProviderId)
@@ -215,6 +220,15 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         (p.as[JsObject] ++ Json.obj("external_id" -> laserProviderId))
       }
     }
+    
+    val t = providers(0)
+    val msg = s"""
+      |id          : ${t.id}
+      |external_id : ${t.external_id}
+      |locations   : ${t.locations}
+      t.locations
+    """.stripMargin
+    println("**********PROVIDER-INFO:\n" + msg)
     
     /*
      * ps  - list of providers from lambda.properties
@@ -227,7 +241,8 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         case h :: t => h.locations map { loc =>
           
           val locationName  = parseLocationName(loc)
-          val providerObj   = Json.obj("id" -> h.id, "location" -> loc)
+          //val providerObj   = Json.obj("id" -> h.id, "location" -> loc)
+          val providerObj   = Json.obj("id" -> h.external_id, "location" -> loc)
           val lambdaBaseUrl = lambdaConfig.port.fold {
             s"${lambdaConfig.protocol}://${lambdaConfig.host}"
           }{ port => 
@@ -266,7 +281,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
               request.identity,
               typeId = Some(ResourceIds.ApiEndpoint),
               parentId = Some(parent))
-
+          
           // Write meta_x_laser map
           val out = metaEndpoint match {
             case Failure(err) => throw err
@@ -274,6 +289,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
               if (lambda.isDefined) {
                 ResourceFactory.addEndpointToLambda(enp.id, lambda.get.id, lambdaFunction)
               }
+              setNewEntitlements(org, enp.id, request.identity, Some(parent))
               enp
             }
           }
@@ -367,7 +383,10 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         
         resource match {
           case Failure(err) => HandleExceptions(err)
-          case Success(res) => Created(Output.renderInstance(res, META_URL))
+          case Success(res) => {
+            setNewEntitlements(org, res.id, request.identity, Some(parent.id))
+            Created(Output.renderInstance(res, META_URL))
+          }
         }
       }
     }

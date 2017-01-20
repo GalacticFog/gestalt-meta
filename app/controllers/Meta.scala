@@ -494,7 +494,22 @@ class Meta @Inject()(messagesApi: MessagesApi,
     ResourceFactory.findById(parentTypeId, parent).fold {
       Future(ResourceNotFound(parentTypeId, parent))
     } { parentResource =>
-        
+      
+      val user = request.identity
+      val operations = standardMethods(ResourceIds.Provider, "provider.create")
+      
+      val inputJson = json.as[JsObject] ++ Json.obj("resource_type" -> providerType.toString)
+      val options = RequestOptions(user, 
+          authTarget = Option(org), 
+          policyOwner = Option(org), 
+          policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Provider))),
+          data = Option(Map("host" -> META_URL.get)))
+      
+          //Future {
+      SafeRequest (operations, options) ProtectAsync { maybeState =>           
+      
+      //NOW SET ENTITLEMENTS ON THE NEW PROVIDER!!!
+
       if (providerType == ResourceIds.ApiGatewayProvider) {
         log.debug("Creating ApiGatewayProvider...")
         postGatewayProvider(org, parentResource)
@@ -515,6 +530,8 @@ class Meta @Inject()(messagesApi: MessagesApi,
         }
       }
 
+      } // SafeRequest
+      
     }    
   }
   
