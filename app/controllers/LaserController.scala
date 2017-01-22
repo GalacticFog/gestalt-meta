@@ -14,11 +14,11 @@ import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk._
+
 import controllers.util._
 import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
@@ -64,7 +64,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
       gatewayConfig, lambdaConfig, 
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))
-
+  
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     orgFqon(fqon).fold(Future( OrgNotFound(fqon) )) { org =>
@@ -398,6 +398,10 @@ class LaserController @Inject()(messagesApi: MessagesApi,
       replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }
   
+  
+
+  def unprocessable(message: String) = throw BadRequestException(message)
+  
   def getProviderInfo(lambdaJson: JsValue): Seq[LambdaProviderInfo] = {
     val providers = lambdaJson \ "properties" \ "providers" match {
       case u: JsUndefined => None
@@ -406,17 +410,29 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     
     providers.get map { p => 
       val id = (p \ "id").as[String]
-      val exId = ResourceFactory.findById(id) match {
-        case Some(mp) => mp.properties.get("external_id")
-        case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
-      }
+//      parseUUID(id)
       
-      (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
-        case lpi: LambdaProviderInfo => lpi
-      }.recoverTotal { e =>
-        log.error(Js.errorString(e))
-        throw new RuntimeException(Js.errorString(e))
-      }
+      val externalId = for {
+        uid      <- Try { parseUUID(id) getOrElse unprocessable(s"Invalid provider ID. found: $id") }
+        provider <- Try { ResourceFactory.findById(uid) getOrElse unprocessable(s"Provider with ID '$id' not found") }
+        external <- Try { provider.properties.get.get("external_id") getOrElse unprocessable(s"Could not parse 'external_id' from JSON.") }
+      } yield external
+      
+//      val exId = ResourceFactory.findById(id) match {
+//        case Some(mp) => mp.properties.get("external_id")
+//        case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
+//      }
+
+      val finalJson = p.as[JsObject] ++ Json.obj("external_id" -> externalId.get)
+      Js.parse[LambdaProviderInfo](finalJson).get
+      
+//      (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
+//        case lpi: LambdaProviderInfo => lpi
+//      }.recoverTotal { e =>
+//        log.error(Js.errorString(e))
+//        throw new RuntimeException(Js.errorString(e))
+//      }
+      
     }
   }
   
