@@ -44,12 +44,47 @@ import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import scala.concurrent.ExecutionContext
 
+
+case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
+object ContainerSecret {
+  
+  def fromResource(secret: GestaltResourceInstance) = {
+    val parsed = for {
+      ps <- Try(secret.properties getOrElse unprocessable("Unspecified properties: data, secret_type"))
+      sd <- Try(ps.get("data") getOrElse unprocessable("Unspecified property: 'data'"))
+      jd = Try(Json.parse(sd)) getOrElse unprocessable(s"Failed parsing 'data' property. found: $sd")
+      data <- Js.parse[Map[String,String]](jd)
+      tpe <- Try(ps.get("secret_type") getOrElse unprocessable("Unspecified property: 'secret_type'"))
+    } yield (data, tpe)
+    
+    parsed map { case (data, stype) => ContainerSecret(secret.name, stype, data) }
+  }
+  
+  def unprocessable(message: String) = throw UnprocessableEntityException(message)
+}
+
 /*
  * TODO: provider constructor argument appears to be unnecessary
  */
 class KubernetesService(provider: UUID) extends CaasService with JsonInput with MetaControllerUtils {
   
   private[this] val log = LoggerFactory.getLogger(this.getClass)
+  private[services] val DefaultNamespace = "default"
+  
+  def createSecret(context: ProviderContext, secret: GestaltResourceInstance)(
+      implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    
+    ContainerSecret.fromResource(secret) match {
+      case Failure(e) => Future.failed(e)
+      case Success(sec) =>
+        for {
+          k8s        <- initializeKube(context.provider.id, DefaultNamespace)
+          namespace  <- getNamespace(k8s, context.environment.id, create = true)
+          kube       <- initializeKube(context.provider.id, namespace.name)
+          output     <- createKubeSecret(kube, secret.id, sec, namespace.name) map { _ => secret }
+        } yield output
+    }
+  }
   
   def create(context: ProviderContext, container: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -60,7 +95,7 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
         for {
-          k8s        <- initializeKube(context.provider.id, "default")
+          k8s        <- initializeKube(context.provider.id, DefaultNamespace)
           namespace  <- getNamespace(k8s, context.environment.id, create = true)
           kube       <- initializeKube(context.provider.id, namespace.name)
           deployment <- createKubeDeployment(kube, container.id, spec, namespace.name) map { 
@@ -102,6 +137,10 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     k8s.create[Deployment](mkdeployment(containerId, spec, namespace))
   }
 
+  private[services] def createKubeSecret(k8s: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
+    k8s.create[Secret](mksecret(secretId, spec, namespace))
+  }
+  
   /**
    * Lookup and return the Provider configured for the given Container.
    */
@@ -203,13 +242,20 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     withInputDefaults(org, containerResourceInput, user, None)
   }
   
+  private[services] def mksecret(id: UUID, secret: ContainerSecret, namespace: String = DefaultNamespace) = {
+    val metadata = ObjectMeta(name = secret.name, namespace = namespace)
+    val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
+    Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
+  }
+  
+  
   /**
    * Create a Kubernetes Deployment object in memory.
    * 
    * @param id UUID for the Meta Container. This will be used as a label on all of the.
    * @param containerSpec ContainerSpec with Container data
    */
-  private[services] def mkdeployment(id: UUID, containerSpec: ContainerSpec, namespace: String = "default") = {
+  private[services] def mkdeployment(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace) = {
     // Container resource requirements.
     val requirements = skuber.Resource.Requirements(requests = Map(
         "cpu" -> containerSpec.cpus, 

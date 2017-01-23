@@ -112,6 +112,7 @@ class KubeController @Inject()(
     | GET /{fqon}/kube/deployments/{name}
     | GET /{fqon}/kube/replicasets
     | GET /{fqon}/kube/replicasets/{name}
+    | GET /{fqon}/kube/secrets/{name}
     | 
     | /*
     |  * All POST requests accept JSON or YAML.
@@ -121,6 +122,7 @@ class KubeController @Inject()(
     | POST /{fqon}/kube/services
     | POST /{fqon}/kube/deployments
     | POST /{fqon}/kube/replicasets
+    | POST /{fqon}/kube/secrets
     """.stripMargin.trim
     
   /**
@@ -141,7 +143,8 @@ class KubeController @Inject()(
       case "pods"        => context.list[PodList].map(RenderObject(_, headers))
       case "services"    => context.list[ServiceList].map(RenderObject(_, headers))
       case "deployments" => context.list[DeploymentList].map(RenderObject(_, headers))
-      case "replicasets" => context.list[ReplicaSetList].map(RenderObject(_, headers))      
+      case "replicasets" => context.list[ReplicaSetList].map(RenderObject(_, headers))
+      case "secrets"     => context.list[SecretList].map(RenderObject(_, headers))
     }
 
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
@@ -149,7 +152,8 @@ class KubeController @Inject()(
       case one("pods", nm)        => context.get[Pod](nm).map(RenderObject(_, headers))
       case one("services", nm)    => context.get[Service](nm).map(RenderObject(_, headers))
       case one("deployments", nm) => context.get[Deployment](nm).map(RenderObject(_, headers))
-      case one("replicasets", nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers))      
+      case one("replicasets", nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers)) 
+      case one("secrets", nm)     => context.get[Secret](nm).map(RenderObject(_, headers))
     }
     
     val notfound: PartialFunction[String, Future[Result]] = {
@@ -214,6 +218,7 @@ class KubeController @Inject()(
               case "service"    => CreateResult(createKubeObject[Service](body, context), headers)
               case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
               case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
+              case "secrets"    => CreateResult(createKubeObject[Secret](body, context), headers)
               case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
             }
           }
