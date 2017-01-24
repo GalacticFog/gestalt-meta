@@ -96,7 +96,8 @@ libraryDependencies ++= Seq(
 	
   	jdbc,
 	cache,
-	ws
+	ws,
+    filters
 )
 
 

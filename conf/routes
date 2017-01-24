@@ -255,3 +255,6 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  	
 
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.PatchController.patchResource(fqon, path)
 
+OPTIONS  /                           controllers.InfoController.options(path="")
+OPTIONS  /*path                      controllers.InfoController.options(path)
+
