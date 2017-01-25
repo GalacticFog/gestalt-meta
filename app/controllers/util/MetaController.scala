@@ -245,7 +245,12 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     val tid = Option(assertValidTypeId(resourceInput, typeId))
     val newResource = withInputDefaults(owningOrgId, resourceInput, creator) 
     ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId) map { r =>
-      setNewEntitlements(owningOrgId, r.id, creator, parentId)
+      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+      
+      println("CREATED ENTITLEMENTS:")
+      es foreach { e =>
+        println("%s, %s".format(e.get.name, e.get.properties.get("identities")))
+      }
       r
     }
   }  

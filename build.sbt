@@ -77,7 +77,7 @@ scalacOptions ++= Seq(
 //scalikejdbcSettings
 
 libraryDependencies ++= Seq(
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.5" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.7" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
