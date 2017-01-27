@@ -14,11 +14,11 @@ import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk._
+
 import controllers.util._
 import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
@@ -64,7 +64,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
       gatewayConfig, lambdaConfig, 
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))
-
+  
   
   def postApiFqon(fqon: String, parent: UUID) = Authenticate().async(parse.json) { implicit request =>
     orgFqon(fqon).fold(Future( OrgNotFound(fqon) )) { org =>
@@ -187,7 +187,11 @@ class LaserController @Inject()(messagesApi: MessagesApi,
   def findLaserProviderId(metaProviderId: String) = {
     ResourceFactory.findById(metaProviderId).fold {
       throw new RuntimeException(LaserError.GATEWAY_NOT_FOUND(metaProviderId))
-    }{ provider => provider.properties.get("external_id")}
+    }{ provider => 
+      val exid = provider.properties.get("external_id")
+      log.debug(s"findLaserProviderId($metaProviderId): external_id == $exid")
+      exid
+    }
   }
   
   def postEndpoint(org: UUID, parent: UUID, json: JsValue)
@@ -208,6 +212,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     
     // Get list of providers from the Lambda.
     val props = lambda.get.properties.get
+    
     val providers = JsonUtil.safeParse[Seq[JsValue]](props("providers")) map { p =>
       val metaProviderId = (p \ "id").as[String]
       val laserProviderId = findLaserProviderId(metaProviderId)
@@ -215,6 +220,15 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         (p.as[JsObject] ++ Json.obj("external_id" -> laserProviderId))
       }
     }
+    
+    val t = providers(0)
+    val msg = s"""
+      |id          : ${t.id}
+      |external_id : ${t.external_id}
+      |locations   : ${t.locations}
+      t.locations
+    """.stripMargin
+    println("**********PROVIDER-INFO:\n" + msg)
     
     /*
      * ps  - list of providers from lambda.properties
@@ -227,7 +241,8 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         case h :: t => h.locations map { loc =>
           
           val locationName  = parseLocationName(loc)
-          val providerObj   = Json.obj("id" -> h.id, "location" -> loc)
+          //val providerObj   = Json.obj("id" -> h.id, "location" -> loc)
+          val providerObj   = Json.obj("id" -> h.external_id, "location" -> loc)
           val lambdaBaseUrl = lambdaConfig.port.fold {
             s"${lambdaConfig.protocol}://${lambdaConfig.host}"
           }{ port => 
@@ -266,7 +281,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
               request.identity,
               typeId = Some(ResourceIds.ApiEndpoint),
               parentId = Some(parent))
-
+          
           // Write meta_x_laser map
           val out = metaEndpoint match {
             case Failure(err) => throw err
@@ -274,6 +289,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
               if (lambda.isDefined) {
                 ResourceFactory.addEndpointToLambda(enp.id, lambda.get.id, lambdaFunction)
               }
+              setNewEntitlements(org, enp.id, request.identity, Some(parent))
               enp
             }
           }
@@ -367,7 +383,10 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         
         resource match {
           case Failure(err) => HandleExceptions(err)
-          case Success(res) => Created(Output.renderInstance(res, META_URL))
+          case Success(res) => {
+            setNewEntitlements(org, res.id, request.identity, Some(parent.id))
+            Created(Output.renderInstance(res, META_URL))
+          }
         }
       }
     }
@@ -379,6 +398,10 @@ class LaserController @Inject()(messagesApi: MessagesApi,
       replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }
   
+  
+
+  def unprocessable(message: String) = throw BadRequestException(message)
+  
   def getProviderInfo(lambdaJson: JsValue): Seq[LambdaProviderInfo] = {
     val providers = lambdaJson \ "properties" \ "providers" match {
       case u: JsUndefined => None
@@ -387,17 +410,29 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     
     providers.get map { p => 
       val id = (p \ "id").as[String]
-      val exId = ResourceFactory.findById(id) match {
-        case Some(mp) => mp.properties.get("external_id")
-        case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
-      }
+//      parseUUID(id)
       
-      (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
-        case lpi: LambdaProviderInfo => lpi
-      }.recoverTotal { e =>
-        log.error(Js.errorString(e))
-        throw new RuntimeException(Js.errorString(e))
-      }
+      val externalId = for {
+        uid      <- Try { parseUUID(id) getOrElse unprocessable(s"Invalid provider ID. found: $id") }
+        provider <- Try { ResourceFactory.findById(uid) getOrElse unprocessable(s"Provider with ID '$id' not found") }
+        external <- Try { provider.properties.get.get("external_id") getOrElse unprocessable(s"Could not parse 'external_id' from JSON.") }
+      } yield external
+      
+//      val exId = ResourceFactory.findById(id) match {
+//        case Some(mp) => mp.properties.get("external_id")
+//        case None => throw new RuntimeException(s"Could not find ApiGatewayProvider with ID '$id'")
+//      }
+
+      val finalJson = p.as[JsObject] ++ Json.obj("external_id" -> externalId.get)
+      Js.parse[LambdaProviderInfo](finalJson).get
+      
+//      (p.as[JsObject] ++ Json.obj("external_id" -> exId)).validate[LambdaProviderInfo].map {
+//        case lpi: LambdaProviderInfo => lpi
+//      }.recoverTotal { e =>
+//        log.error(Js.errorString(e))
+//        throw new RuntimeException(Js.errorString(e))
+//      }
+      
     }
   }
   

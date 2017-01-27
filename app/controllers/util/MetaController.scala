@@ -76,7 +76,9 @@ trait MetaControllerUtils {
   }
 }
 
-trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+
+trait MetaController extends AuthorizationMethods with SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
   private[this] val log = Logger(this.getClass)
   
@@ -242,7 +244,15 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     
     val tid = Option(assertValidTypeId(resourceInput, typeId))
     val newResource = withInputDefaults(owningOrgId, resourceInput, creator) 
-    ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId)
+    ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parentId) map { r =>
+      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+      
+      println("CREATED ENTITLEMENTS:")
+      es foreach { e =>
+        println("%s, %s".format(e.get.name, e.get.properties.get("identities")))
+      }
+      r
+    }
   }  
   
   protected[controllers] def CreateNewResourceResult(
