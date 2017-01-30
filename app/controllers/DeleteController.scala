@@ -101,15 +101,17 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
 
       val owner      = findResourceParent(resource.id)
       val operations = deleteOps(resource.typeId)
-      val options    = requestOps(request.identity, owner.id, resource)
+      val options    = requestOps(request.identity, resource.id, resource)
 
       log.debug(s"Policy Owner : " + owner.id)
       
       SafeRequest (operations, options) Protect { maybeState => 
+        
         DeleteHandler.handle(resource, request.identity) match {
           case Failure(e) => HandleExceptions(e)
           case Success(_) => NoContent
-        }      
+        }
+        
       }
     }
   }
