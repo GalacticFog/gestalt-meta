@@ -6,6 +6,7 @@ import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -57,10 +58,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         if (parent.isEmpty) ents 
         else mergeParentEntitlements(ents, res.typeId, parent.get)
         
-      } map { ent => CreateNewResource(org, creator, 
-        json   = Json.toJson(ent), 
-        typeId = Option(ResourceIds.Entitlement), 
-        parent = /*parent*/ Option(resource))
+      } map { ent =>
+        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        CreateNewResource(org, creator, 
+          json   = Json.toJson(ent), 
+          typeId = Option(ResourceIds.Entitlement), 
+          parent = /*parent*/ Option(resource))
       }
 
     }
@@ -213,20 +216,33 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }
   
+  
+  private def forbiddenAction(identity: UUID, resource: UUID, action: String) = {
+    log.warn(s"{UNAUTHORIZED: user=${identity}, resource=${resource}, action=${action}}")
+    throw new ForbiddenException(
+        s"You do not have permission to perform this action. Failed: '$action'")    
+  }
+  
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
     
     log.debug(s"Finding entitlements matching: $action($resource)")
     
     findMatchingEntitlement(resource, action) match {
-      case None => false
+      case None => forbiddenAction(account.account.id, resource, action)
       case Some(entitlement) => {
         
-        log.debug("Found matching entitlement.")
+        log.debug("Found matching entitlement...testing identity...")
         
-        val allowed = getAllowedIdentities(entitlement)
+        val allowed = getAllowedIdentities(entitlement)        
         val membership = getUserMembership(account.account.id, account)
-
-        (allowed intersect membership).isDefinedAt(0)
+        val intersection = (allowed intersect membership)
+        
+//        log.debug("identities : " + allowed)
+//        log.debug("membership : " + membership)
+//        log.debug("intersection : " + (allowed intersect membership))
+        
+        if (intersection.isDefinedAt(0)) true
+        else forbiddenAction(account.account.id, resource, action)
       }
     }
   }
@@ -280,7 +296,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * @param action   exact name of the action to search for
    */
   private[auth] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+    log.debug(s"findMatchingEntitlement($resource, $action)")
     val ents = getEntitlementsMerged(resource) filter { ent =>
+      log.debug(">>>ent : " + ent.name)
       ent.properties.get("action") == action
     }
     

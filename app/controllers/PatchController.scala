@@ -64,21 +64,56 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     log.debug(s"patchResource($fqon, $path)")
     Future {      
+
       val respath = new ResourcePath(fqon, path)
       val user = request.identity
 
-      (for {
-        
-        r1 <- Patch(respath, request.body, user)
-        r2 <- update(r1, user.account.id)
-        
-      } yield r2) match {
+      lookupResource(respath, user) match {
         case Failure(e) => HandleExceptions(e)
-        case Success(r) => Ok(RenderSingle(r))
+        case Success(resource) => {
+          
+          val action = actionInfo(respath.targetTypeId).prefix + ".update"
+          val options = standardRequestOptions(user, resource)
+          val operations = standardRequestOperations(action)
+          
+          SafeRequest (operations, options) Protect { maybeState =>
+            (for {
+              
+              r1 <- Patch(respath, request.body, user)
+              r2 <- update(r1, user.account.id)
+              
+            } yield r2) match {
+              case Failure(e) => HandleExceptions(e)
+              case Success(r) => Ok(RenderSingle(r))
+            }
+          } //Protect
+          
+        }
       }
     }
   }
+  
+  
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
 
+    RequestOptions(user,
+      authTarget = Option(resource.id),
+      policyOwner = Option(resource.id),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }    
+  
   /* 
    * /{fqon}/resourcetypes/{id}
    *  
@@ -170,6 +205,15 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     }
   }
   
+  def lookupResource(path: ResourcePath, account: AuthAccountWithCreds) = Try {
+    if (path.isList) {
+      throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
+    } else {
+      resourceController.findResource(path, account) getOrElse {
+        throw new ResourceNotFoundException(path.path)
+      }
+    }
+  }
   
   private[controllers] def defaultResourcePatch(
     resource: GestaltResourceInstance,

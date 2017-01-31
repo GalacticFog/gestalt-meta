@@ -65,14 +65,25 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
-    ResourceIds.Entitlement -> lookupSeqEntitlements
+    ResourceIds.Entitlement -> lookupSeqEntitlements,
+    ResourceIds.ApiEndpoint -> lookupApiEndpoints
   )
   
+  def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+    log.debug("lookupApiEndpoints(_,_,_)...")
+    val mapPathData = Resource.mapListPathData(path.path)
+    val lambda = mapPathData(Resource.ParentId)
+
+    ResourceFactory.findEndpointsByLambda(lambda)
+  }
+  
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+    log.debug("Lookup function : lookupContainer(_,_,_)...")
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
       val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
-       
+      log.debug("fqon: %s, env: %s[%s]".format(fqon, env.name, env.id.toString))
+      log.debug("Calling external CaaS provider...")
       Await.result(
         containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
         5 seconds
@@ -126,7 +137,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
     //val action = Actions.actionName(rp.targetTypeId, "view")
-    
+    log.debug("PATH : " + rp.path)
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
     if (rp.isList) AuthorizedResourceList(rp, action) 
@@ -142,7 +153,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       log.debug(s"Found custom lookup function for Resource.")
       f(path, account, None) 
     }
-
+    
     resource map { res =>
       transforms.get(res.typeId).fold(res){ f =>
         log.debug(s"Found custom transformation function for Resource: ${res.id}")
@@ -162,9 +173,11 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         log.debug("Applying standard lookup function")
         Resource.fromPath(path.path)
       }{ f=>
-        log.debug(s"Found custom lookup function for Resource.")
-        log.debug("FUNCTION : " + f.getClass.getName)
-        f(path, request.identity, Option(request.queryString)) 
+        log.debug(s"Found custom lookup function for Resource. Executing...")
+
+        val output = f(path, request.identity, Option(request.queryString))
+        log.debug("OUTPUT : " + output)
+        output
       }
       
       resource.fold(NotFoundResult(request.uri)) { res =>
@@ -493,8 +506,14 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    */
    
   def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Authenticate(fqon) { implicit request =>
-    val org = fqid(fqon)
-    handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
+    
+    val path = new ResourcePath(fqon, s"lambdas/$lambda/apiendpoints")
+    
+    this.AuthorizedResourceList(path, "apiendpoint.view") 
+    
+//      val org = fqid(fqon)
+//      handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
+    
   }  
   
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
@@ -530,4 +549,21 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
   
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    parent: UUID,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(parent),
+      policyOwner = Option(parent),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action))
+  }  
 }

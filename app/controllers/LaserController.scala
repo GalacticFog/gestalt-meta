@@ -87,7 +87,7 @@ class LaserController @Inject()(messagesApi: MessagesApi,
 
   def postLambdaEndpointFqon(fqon: String, lambda: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     Future {
-
+      
       orgFqon(fqon).fold(OrgNotFound(fqon)) { org =>
         (for {
           e  <- createLambdaEndpoint(lambda, request.body.as[JsObject])
@@ -97,6 +97,8 @@ class LaserController @Inject()(messagesApi: MessagesApi,
           case Success(endpoints) => Created(Json.toJson(endpoints map (RenderSingle(_))))
         }
       }
+      
+      
     }
   }
   
@@ -230,6 +232,8 @@ class LaserController @Inject()(messagesApi: MessagesApi,
     """.stripMargin
     println("**********PROVIDER-INFO:\n" + msg)
     
+  
+    
     /*
      * ps  - list of providers from lambda.properties
      * acc - accumulates 
@@ -241,7 +245,6 @@ class LaserController @Inject()(messagesApi: MessagesApi,
         case h :: t => h.locations map { loc =>
           
           val locationName  = parseLocationName(loc)
-          //val providerObj   = Json.obj("id" -> h.id, "location" -> loc)
           val providerObj   = Json.obj("id" -> h.external_id, "location" -> loc)
           val lambdaBaseUrl = lambdaConfig.port.fold {
             s"${lambdaConfig.protocol}://${lambdaConfig.host}"
@@ -272,12 +275,15 @@ class LaserController @Inject()(messagesApi: MessagesApi,
               properties = Some(input.properties.get ++ Map(
                   "gateway_url" -> JsString(laserEndpoint.url.get),
                   "api" -> JsString(api.get.toString))))
+                  
+          
           
           // Create the ApiEndpoint in Meta
           val metaEndpoint = 
             CreateResource(ResourceIds.User, 
               request.identity.account.id,
-              org, Json.toJson(metaJson), 
+              org, 
+              Json.toJson(metaJson), 
               request.identity,
               typeId = Some(ResourceIds.ApiEndpoint),
               parentId = Some(parent))
