@@ -17,7 +17,9 @@ object PropertyPatch {
   import com.galacticfog.gestalt.json.Js
      
   def applyOps(r: GestaltResourceInstance, ops: Seq[PatchOp]): Try[GestaltResourceInstance] = {
-
+    
+    // If resource doesn't have a 'properties' object, inject it
+    
     (for {
       o <- PatchDocument(ops:_*).applyPatch(toJson(r))
       p <- Js.parse[Map[String,JsValue]](Js.find(o, "/properties").get)
@@ -30,7 +32,7 @@ object PropertyPatch {
   }
   
   private[patch] def toJson(r: GestaltResourceInstance): JsObject = {
-    val raw = r.properties.get
+    val raw = r.properties getOrElse Map.empty
     Json.toJson(r).as[JsObject] ++ Json.obj("properties" -> jsonProps(raw))    
   }
   
