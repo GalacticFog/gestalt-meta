@@ -136,7 +136,6 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
-    //val action = Actions.actionName(rp.targetTypeId, "view")
     log.debug("PATH : " + rp.path)
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     

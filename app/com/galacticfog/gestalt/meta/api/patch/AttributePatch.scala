@@ -28,7 +28,7 @@ object AttributePatch {
   
   
   private[api] def addAttribute(r: GestaltResourceInstance, op: PatchOp): GestaltResourceInstance = {
-
+    log.debug(s"Entered addAttribute(_,op=$op)")
     toMatchPath(validateOp(PatchOps.Add, op, true).get) match {
       case Attributes.Description   => r.copy(description = Some(op.value.get.as[String]))
       case Attributes.Tags          => r.copy(tags = OpAddSeq(r.tags, op))

@@ -253,7 +253,8 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers 	cont
 ############################
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
 
-PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  controllers.PatchController.patchResource(fqon, path)
+PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.PatchController.patchResourceFqon(fqon: String)
+PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.PatchController.patchResource(fqon, path)
 
 OPTIONS  /                           controllers.InfoController.options(path="")
 OPTIONS  /*path                      controllers.InfoController.options(path)
