@@ -1,7 +1,7 @@
 package controllers.util
 
 import controllers._
-import play.api.{Logger => log}
+import play.api.Logger
 import play.api._
 import play.api.mvc._
 import play.api.mvc.Results._
@@ -13,6 +13,8 @@ import play.api.libs.json._
 
 object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
 
+  private[this] val log = Logger(this.getClass)
+  
   private[this] var status: String = null
   private[this] var health: JsValue = null
 
@@ -35,7 +37,7 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   def unavailable() = Option(Action(ServiceUnavailable(health)))
 
   override def onStart(app: Application) {
-    Logger.info("Starting Meta...")
+    log.info("Starting Meta...")
     setServiceStatus()
   }
 

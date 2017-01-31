@@ -210,7 +210,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     user: AuthAccountWithCreds,
     typeId: Option[UUID] = None,
     parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
-
+    
     safeGetInputJson(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, typeId)
       ResourceFactory.create(creatorType, creator)(

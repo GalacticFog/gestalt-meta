@@ -296,7 +296,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * @param action   exact name of the action to search for
    */
   private[auth] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+    log.debug(s"findMatchingEntitlement($resource, $action)")
     val ents = getEntitlementsMerged(resource) filter { ent =>
+      log.debug(">>>ent : " + ent.name)
       ent.properties.get("action") == action
     }
     
