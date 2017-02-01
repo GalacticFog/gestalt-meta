@@ -66,8 +66,20 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
-    ResourceIds.ApiEndpoint -> lookupApiEndpoints
+    ResourceIds.ApiEndpoint -> lookupApiEndpoints,
+    ResourceIds.Rule        -> lookupPolicyRules
   )
+  
+  def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+    log.debug("Entered => lookupPolicyRules(_,_,_)...")
+    val mapPathData = Resource.mapListPathData(path.path)
+    val policy = mapPathData(Resource.ParentId)
+    
+    log.debug("Finding rules for policy : " + policy)
+    
+    ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
+    
+  }
   
   def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     log.debug("lookupApiEndpoints(_,_,_)...")
@@ -135,6 +147,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * Get a Resource or list of Resources by path.
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+    log.debug(s"Entered getResources($fqon, $path)")
+    
     val rp = new ResourcePath(fqon, path)
     log.debug("PATH : " + rp.path)
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
@@ -307,14 +321,18 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   /**
    * Lookup and inject associated rules into policy.
    */
-  private[controllers] def transformPolicy(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
+  private[controllers] def transformPolicy(
+      res: GestaltResourceInstance, 
+      user: AuthAccountWithCreds, 
+      qs: Option[QueryString] = None) = Try {
+    
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
       resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
     }
-    val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map { r => 
-      toLink(res, None) 
+    val ruleLinks = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map {  
+      rule => toLink(rule, None) 
     }
-    upsertProperties(res, "rules" -> Json.stringify(Json.toJson(rs)))
+    upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
   }
   
   /**

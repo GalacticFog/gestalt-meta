@@ -39,7 +39,7 @@ package object api {
    
       case "entitlements"     => Some(ResourceIds.Entitlement)
       case "policies"         => Some(ResourceIds.Policy)
-      
+      case "rules"            => Some(ResourceIds.Rule)
       case "providers"        => Some(ResourceIds.Provider)
       
       case "clustertemplates" => Some(ResourceIds.ClusterTemplate)

@@ -208,10 +208,21 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
+        
         val allowed = getAllowedIdentities(entitlement)
         val membership = getUserMembership(identity, account)
-
-        (allowed intersect membership).isDefinedAt(0)
+        val intersection = (allowed intersect membership)
+        
+        log.debug("identities : " + allowed)
+        log.debug("membership : " + membership)
+        log.debug("intersection : " + (allowed intersect membership))        
+        
+        //(allowed intersect membership).isDefinedAt(0)
+        if (intersection.isDefinedAt(0)) {
+          //log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
+          true
+        }
+        else forbiddenAction(account.account.id, resource, action)        
       }
     }
   }
@@ -224,7 +235,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    
+    log.debug(s"Entered => isAuthorized($resource, $action, _)...")
     log.debug(s"Finding entitlements matching: $action($resource)")
     
     findMatchingEntitlement(resource, action) match {
@@ -241,7 +252,10 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
 //        log.debug("membership : " + membership)
 //        log.debug("intersection : " + (allowed intersect membership))
         
-        if (intersection.isDefinedAt(0)) true
+        if (intersection.isDefinedAt(0)) {
+          log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
+          true
+        }
         else forbiddenAction(account.account.id, resource, action)
       }
     }
@@ -296,9 +310,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * @param action   exact name of the action to search for
    */
   private[auth] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+    
     log.debug(s"findMatchingEntitlement($resource, $action)")
+    
     val ents = getEntitlementsMerged(resource) filter { ent =>
-      log.debug(">>>ent : " + ent.name)
+//      log.debug(">>>ent : " + ent.name)
+//      log.debug(">>>  ent.ids : " + ent.properties.get.get("identities"))
       ent.properties.get("action") == action
     }
     

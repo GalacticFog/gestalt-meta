@@ -43,7 +43,7 @@ class LicenseControllerSpec extends GestaltSecurityMocking with ResourceScope wi
     "support GET /licenses" in new TestApplication {
       
       val js = Json.arr()
-      val request = fakeAuthRequest(GET, s"/root/licenses", testCreds)
+      val request = fakeAuthRequest(GET, s"root/licenses", testCreds)
       val Some(result) = route(request)
       
       status(result) must equalTo(OK)
