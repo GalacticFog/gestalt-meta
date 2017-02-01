@@ -334,6 +334,7 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
             name = containerSpec.name,
             marPayload = marathonAppCreatePayload
           ).transform( updateSuccessfulLaunch(resource), updateFailedLaunch(resource) )
+        
       }
     }
   }
