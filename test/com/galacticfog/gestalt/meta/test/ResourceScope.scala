@@ -293,23 +293,32 @@ trait ResourceScope extends Scope {
   }
   
 
-  def createInstance(typeId: UUID, name: String, id: UUID = uuid(), owner: ResourceOwnerLink = dummyOwner, org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
+  def createInstance(typeId: UUID,
+                     name: String,
+                     id: UUID = uuid(),
+                     owner: ResourceOwnerLink = dummyOwner,
+                     org: UUID = dummyRootOrgId,
+                     properties: Option[Hstore] = None,
+                     parent: Option[UUID] = None,
+                     description: Option[String] = None): Try[GestaltResourceInstance] = {
     ResourceFactory.create(ResourceIds.Org, org)(
-      newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties), parent
+      newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties, description = description), parent
     )
   }  
   
   def newInstance(typeId: UUID, name: String, id: UUID = uuid(), 
       owner: ResourceOwnerLink = dummyOwner, 
       org: UUID = dummyRootOrgId, 
-      properties: Option[Hstore] = None) = {
-    
+      properties: Option[Hstore] = None,
+      description: Option[String] = None ) = {
+
     GestaltResourceInstance(
       id = id,
       typeId = typeId,
       orgId = org,
       owner = owner,
       name = name,
+      description = description,
       state = ResourceState.id(ResourceStates.Active),
       properties = properties)
   }

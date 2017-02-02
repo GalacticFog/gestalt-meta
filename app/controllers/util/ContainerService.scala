@@ -114,7 +114,7 @@ trait ContainerService extends JsonInput {
 
 object ContainerService {
 
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*): Instance = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
@@ -308,13 +308,18 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
 
     val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val containerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
+    val origContainerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
     val operations = containerRequestOperations("container.create")
-    val options = containerRequestOptions(user, environment.id, containerResourcePre)
+    val options = containerRequestOptions(user, environment.id, origContainerResourcePre)
 
     SafeRequest (operations, options) ProtectAsync { maybeState =>
+      // TODO: do we need an entitlement check before allowing the user to use this provider?
       val provider = marathonProvider(containerSpec.provider.id)
+      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
+        "name" -> provider.name,
+        "id" -> provider.id
+      ).toString)
       ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(environment.id)) match {
         case Failure(t) => Future.failed(t)
         case Success(resource) =>

@@ -15,6 +15,7 @@ import play.api.libs.functional.syntax._ // Combinator syntax
 import scala.util.{Failure, Try}
 
 case class ContainerSpec(name: String = "",
+                         description: Option[String] = None,
                          container_type: String,
                          image: String,
                          provider: ContainerSpec.InputProvider,
@@ -79,7 +80,7 @@ case object ContainerSpec extends Spec {
   def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
     resource_type = Some(ResourceIds.Container),
-    description = None,
+    description = spec.description,
     resource_state = None,
     properties = Some(
       Map[String,JsValue](
@@ -140,6 +141,7 @@ case object ContainerSpec extends Spec {
       external_id = props.get("external_id")
     } yield ContainerSpec(
       name = metaContainerSpec.name,
+      description = metaContainerSpec.description,
       container_type = ctype,
       image = image,
       provider = provider,
@@ -222,7 +224,8 @@ case object ContainerSpec extends Spec {
 
   lazy val containerSpecReads: Reads[ContainerSpec] = (
     ((__ \ "name").read[String] orElse Reads.pure[String]("")) and
-    (__ \ "container_type").read[String] and
+      (__ \ "description").readNullable[String] and
+      (__ \ "container_type").read[String] and
       (__ \ "image").read[String] and
       (__ \ "provider").read[ContainerSpec.InputProvider] and
       ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
@@ -241,7 +244,7 @@ case object ContainerSpec extends Spec {
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
+    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
 
   implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 
