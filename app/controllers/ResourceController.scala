@@ -81,12 +81,43 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     
   }
   
+  import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
   def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
-    log.debug("lookupApiEndpoints(_,_,_)...")
+    log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
+    
     val mapPathData = Resource.mapListPathData(path.path)
     val lambda = mapPathData(Resource.ParentId)
 
-    ResourceFactory.findEndpointsByLambda(lambda)
+    /*
+     * TODO: This is dumb - investigate why Resource.mapListPathData doesn't
+     * put the actual type ID into the map instead of the REST name for the type.
+     */
+    val parentTypeId = mapPathData(Resource.ParentType) match {
+      case a if a == "lambdas" => ResourceIds.Lambda
+      case b if b == "environments" => ResourceIds.Environment
+      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
+    }
+    
+    val debugParentLabel = ResourceLabel(parentTypeId)
+    log.debug(s"Looking up ApiEndpoints by parent type '$debugParentLabel'")
+    
+    /*
+     * The idea here is that if the request comes in through the /lambdas path we need to
+     * execute a special function (findEndpointsByLambda()) since apiendpoints are not
+     * children of lambdas currently. This all goes away when we revamp the api-gateway
+     * code.
+     */
+    val lookup: UUID => Seq[GestaltResourceInstance] = parentTypeId match {
+      case a if a == ResourceIds.Lambda => findEndpointsByLambda _
+      case b if b == ResourceIds.Environment => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
+      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
+    }
+    
+    val targetId = UUID.fromString(mapPathData(Resource.ParentId))
+    
+    log.debug(s"Searching for ApiEndpoints in $debugParentLabel '$targetId'")
+    
+    lookup(targetId)
   }
   
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
