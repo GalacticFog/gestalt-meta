@@ -76,7 +76,11 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
             user = request.identity,
             inId = Some(target.id)
           )
-        } yield Created(Output.renderInstance(container._1))
+        } yield {
+          val outputContainer = container._1
+          setNewEntitlements(fqid(fqon), outputContainer.id, request.identity, parent = Some(env.id))
+          Created(Output.renderInstance(outputContainer))
+        }
 
         fCreated recover {case err: Throwable => HandleExceptions(err)}
       }
