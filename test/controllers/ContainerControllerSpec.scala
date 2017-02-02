@@ -102,9 +102,10 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       "be convertible to GestaltResourceInput with all fields" in {
         val testProps = ContainerSpec(
           name = "test-container",
+          description = Some("container description"),
           container_type = "DOCKER",
           image = "nginx:alpine",
-          provider = ContainerSpec.InputProvider(id = uuid, name = Some("test-provider")),
+          provider = ContainerSpec.InputProvider(id = uuid),
           port_mappings = Seq(
             ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web")),
             ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("secure-web"))
@@ -126,6 +127,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           user = Some("root")
         )
         val resourceInput = ContainerSpec.toResourcePrototype(testProps)
+        resourceInput.description must beSome("container description")
         val protoProps = resourceInput.properties.get
         protoProps.get("image") must beSome(Json.toJson(testProps.image))
         protoProps.get("container_type") must beSome(Json.toJson(testProps.container_type))
@@ -152,7 +154,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           name = "test-container",
           container_type = "DOCKER",
           image = "nginx:alpine",
-          provider = ContainerSpec.InputProvider(id = uuid, name = Some("test-provider"))
+          provider = ContainerSpec.InputProvider(id = uuid)
         )
         val resourceInput = ContainerSpec.toResourcePrototype(testProps)
         val protoProps = resourceInput.properties.get
@@ -163,6 +165,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         protoProps.get("disk") must beSome(Json.toJson(testProps.disk))
         protoProps.get("num_instances") must beSome(Json.toJson(testProps.num_instances))
         protoProps.get("network") must_== testProps.network
+        protoProps.get("description") must_== testProps.description
         protoProps.get("cmd") must_== testProps.cmd
         protoProps.get("constraints") must beSome(Json.toJson(testProps.constraints))
         protoProps.get("accepted_resource_roles") must_== testProps.accepted_resource_roles
@@ -179,6 +182,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         val testContainerName = "test-container"
         val testProps = ContainerSpec(
           name = testContainerName,
+          description = Some("container description"),
           container_type = "DOCKER",
           image = "nginx:alpine",
           provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
@@ -201,6 +205,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         )
         val createdResource = createInstance(ResourceIds.Container, testContainerName,
           parent = Some(testEnv.id),
+          description = Some("container description"),
           properties = Some(Map(
             "container_type" -> "DOCKER",
             "provider" -> Output.renderInstance(testProvider).toString,
