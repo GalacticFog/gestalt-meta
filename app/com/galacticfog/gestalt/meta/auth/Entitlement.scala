@@ -22,7 +22,13 @@ case class Entitlement(
     description: Option[String] = None,  
     properties: EntitlementProps,
     variables: Option[Hstore] = None,
-    tags: Option[List[String]] = None)
+    tags: Option[List[String]] = None) {
+  
+  def withIdentities(ids: Seq[UUID]) = {
+    val props = this.properties.copy(identities = Some(ids))
+    this.copy(properties = props)
+  }
+}
 
 object Entitlement {
   
@@ -116,6 +122,15 @@ case class EntitlementProps(
       if (notFound.isEmpty) Right((this))
       else Left(s"Invalid identities : [ ${notFound.mkString(",")} ]")
     }
-  }  
+  }
+  
+  def addIdentities(ids: UUID*): EntitlementProps = {
+    this.copy(identities = identities map { ids ++ _ })
+  }
+  
+  def removeIdentities(ids: UUID*): EntitlementProps = {
+    val newids = (identities getOrElse Seq.empty) filter { !ids.contains(_) }
+    this.copy(identities = if (newids.nonEmpty) Some(newids) else None)
+  }
 }
 

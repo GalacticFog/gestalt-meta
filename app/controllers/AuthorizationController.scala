@@ -86,7 +86,9 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     } yield r2
   }
   
-  
+  /**
+   * Simply copies the created object from old to new resource.
+   */
   private[controllers] def copyEntitlementForUpdate(old: GestaltResourceInstance, newent: GestaltResourceInstance) = Try {
     log.debug("copyEntitlementForUpdate()")
      newent.copy(created = old.created)
@@ -107,6 +109,47 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     }
   }
   
+//  private[controllers] def putEntitlementCommon(org: UUID, parent: UUID, id: UUID)(
+//      implicit request: SecuredRequest[JsValue]) = Future {
+//    
+//    
+//    /*
+//     * 1.) Find the given entitlement
+//     * 2.) Get its 'properties.action' value
+//     * 3.) Select child resources with corresponding actions
+//     * 4.) Update all entitlements found in last step
+//     */
+//    
+//    ???
+//    
+//  }
+//  
+
+  private[controllers] def reconcile[A](base: Seq[A], adds: Seq[A], deletes: Seq[A]): Seq[A] = {
+    (base filter { !deletes.contains(_) }) ++ adds
+  }  
+  
+  private[controllers] def cascadeEntitlementIdentities(
+      parent: UUID, 
+      oldent: GestaltResourceInstance,
+      newent: GestaltResourceInstance): Seq[GestaltResourceInstance] = {
+
+    val delta = IdentityChange(oldent, newent)
+    val action = EntitlementProps.make(oldent).action
+    val targets = ResourceFactory.findDescendantEntitlements(parent, action)
+    
+//    log.debug("Descendant Entitlements for cascade":")
+//    targets foreach { t => log.debug("%s, %s".
+    
+    targets map { ent =>
+      val existing = IdentityChange.getIdentities(ent)
+      val newids = reconcile(existing, delta.added, delta.deleted)
+      Entitlement.toGestalt(ent.owner.id,
+        Entitlement.make(ent).withIdentities(newids))
+    }
+  }
+
+  
   private[controllers] def putEntitlementCommon(org: UUID, parent: UUID, id: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
@@ -117,55 +160,211 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
      * TODO: Authorize 'entitlement.update'
      */
     
+    def getParent = Try {
+      ResourceFactory.findById(parent) getOrElse {
+        throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
+      }
+    }
+    
     ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
       for {
-        r1 <- validateEntitlementPayload(org, parent, user, json, "update")
-        r2 <- validateEntitlementUpdate(ent, r1)
-        r3 <- copyEntitlementForUpdate(ent, r2)
-        r4 <- ResourceFactory.update(r3, user.account.id)
-      } yield r4
+        p    <- getParent
+        r1   <- validateEntitlementPayload(org, parent, user, json, "update")
+        r2   <- validateEntitlementUpdate(ent, r1)
+        r3   <- copyEntitlementForUpdate(ent, r2)
+        updates = cascadeEntitlementIdentities(parent, ent, r3)
+      } yield updates
       
     } getOrElse {
-      
       throw new ResourceNotFoundException(s"Entitlement with ID '$id' not found.")
-     
+    
     } match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(r) => Ok(transformEntitlement(r, org, META_URL))
+      case Failure(error) => HandleExceptions(error)
+      case Success(updates)  => {
+        
+        val persisted = updates map { entitlement => 
+          ResourceFactory.update(entitlement, user.account.id).get
+        }
+        log.debug(s"${persisted.size} entitlements modified in cascade.")
+        val root = getUpdatedRoot(id, persisted).get
+        Ok(transformEntitlement(root, org, META_URL))
+      }
+    }
+  }
+  
+  
+  /**
+   * Filter the root entitlement from a list of descendant entitlements
+   */
+  private[controllers] def getUpdatedRoot(id: UUID, updates: Seq[GestaltResourceInstance]
+      ): Try[GestaltResourceInstance] = Try {
+    val updated = updates filter { _.id == id }
+    updated.size match {
+      case 1 => updated(0)
+      case 0 => throw new RuntimeException("Could not find updated entitlement in cascade list. This is a bug.")
+      case _ => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
     }    
   }
   
+  def updateEntitlement(parent: UUID, entId: UUID) = {
+    ???
+  }
+  
+  //private[controllers] def findChildTargets(targetType: UUID
+  
+  private[controllers] def findOrFail(typeId: UUID, id: UUID): Try[GestaltResourceInstance] = Try {
+    ResourceFactory.findById(typeId, id) getOrElse {
+      throw new ResourceNotFoundException(s"${ResourceLabel(typeId)} with ID '$id' not found.")
+    }
+  }
+  
+  
 
   
-  private[controllers] def postEntitlementCommon(org: UUID, typeId: UUID, resourceId: UUID)(
+//  def applyOp(targets: Seq[GestaltResourceInstance], op: String) = {
+//    CreateResource(
+//        ResourceIds.User, user.account.id, org, json, user, 
+//        Some(ResourceIds.Entitlement), Some(resourceId))    
+//  }
+//  
+//  def createEntitlement(org: UUID, creator: UUID, json: JsValue) = {
+//    
+//  }
+  
+  /*
+   * There are three possibilities for altering entitlements:
+   * 1 - add a new entitlement that needs to cascade to any existing children
+   * 2 - add an identity to an existing parent entitlement, that cascades to corresponding child entitlements
+   * 3 - remove an identity from an existing parent entitlement, cascading the remove to child entitlements
+   */
+  
+  /*
+   * Need a custom hook on PATCH that can perform the cascade. 
+   */
+  
+  def addNewEntitlement(targets: Seq[Any], entitlement: JsValue) = ???
+  def addNewIdentities(targets: Seq[Any], ids: Seq[UUID]) = ???
+  
+  
+  def validateRequest(org: UUID, typeId: UUID, resourceId: UUID, user: AuthAccountWithCreds, json: JsValue) = {
+    for {
+      target <- findOrFail(typeId, resourceId)
+      input  <- validateEntitlementPayload(org, target.id, user, json, "create")
+    } yield input
+  }  
+  
+  def gatherTargets(typeId: UUID, parent: UUID) = {
+    ResourceFactory.findChildrenOfType(typeId, parent)
+  }
+  
+  
+  private[controllers] def postEntitlementCommon2(
+      org: UUID, 
+      typeId: UUID, 
+      resourceId: UUID,
+      user: AuthAccountWithCreds,
+      json: JsValue,
+      metaUrl: Option[String]): Future[GestaltResourceInstance] = Future {
+
+    /*
+     * TODO: Authorize 'entitlement.create'
+     */
+
+    /*
+     * 1 - lookup target resource (entitlement parent)
+     * 2 - validate entitlement payload
+     * 3 - lookup children of target.typeId
+     * 4 - if children found, get identities from payload, add them to each child.identities
+     * 5 - create entitlement on the target resource.
+     */
+    
+    
+    /*
+     * Cascading needs to happen on update as well.
+     */
+    val target = findOrFail(typeId, resourceId)
+    val children = ResourceFactory.findChildrenOfType(typeId, resourceId)
+    
+
+    
+   (for {
+      parent <- findOrFail(typeId, resourceId)
+      input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
+      output <- {
+        CreateResource(
+            ResourceIds.User, user.account.id, org, json, user, 
+            Some(ResourceIds.Entitlement), Some(resourceId))
+      }
+    } yield output).get
+    
+//    entitlement map { resource =>
+//      transformEntitlement(resource, org, metaUrl)
+//    } match {
+//      case Failure(e) => throw e
+//      case Success(ent) => ent
+//    }
+  }  
+  
+
+/*
+  protected[controllers] def CreateResource(
+    creatorType: UUID,
+    creator: UUID,
+    org: UUID,
+    resourceJson: JsValue,
+    user: AuthAccountWithCreds,
+    typeId: Option[UUID] = None,
+    parentId: Option[UUID] = None)
+*/
+  
+  private[controllers] def postEntitlementCommon(
+      org: UUID, 
+      typeId: UUID, 
+      resourceId: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
     // This is the resource we're creating the Entitlement for.
-    val parentResource = ResourceFactory.findById(typeId, resourceId)
+//    val parentResource = ResourceFactory.findById(typeId, resourceId)
     
     /*
      * TODO: Authorize 'entitlement.create'
      */
+    val user = request.identity
+    val json = request.body
     
-    parentResource match {
-      case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
-      case Some(parent) => {
-
-        validateEntitlementPayload(org, parent.id, request.identity, request.body, "create") match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(r) => {
-            createResourceInstance(
-              org, request.body, 
-              Some(ResourceIds.Entitlement), 
-              Some(resourceId)) match {
-                case Failure(err) => HandleExceptions(err)
-                case Success(res) => Created(transformEntitlement(res, org, META_URL)) 
-              }
-
-          }
-        }   
+    val entitlement = for {
+      parent <- findOrFail(typeId, resourceId)
+      input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
+      output <- createResourceInstance(org, json, Some(ResourceIds.Entitlement), Some(resourceId))
+    } yield output
+    
+    entitlement match {
+      case Failure(e) => HandleExceptions(e)
+      case Success(resource) => {
+        val transformed = transformEntitlement(resource, org, META_URL)
+        Created(transformed)
       }
     }
+    
+//    parentResource match {
+//      case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
+//      case Some(parent) => {
+//
+//        validateEntitlementPayload(org, parent.id, request.identity, request.body, "create") match {
+//          case Failure(e) => HandleExceptions(e)
+//          case Success(r) => {
+//            createResourceInstance(
+//              org, request.body, 
+//              Some(ResourceIds.Entitlement), 
+//              Some(resourceId)) match {
+//                case Failure(err) => HandleExceptions(err)
+//                case Success(res) => Created(transformEntitlement(res, org, META_URL)) 
+//              }
+//
+//          }
+//        }   
+//      }
+//    }
   }
   
   /**
