@@ -108,22 +108,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
       }
     }
   }
-  
-//  private[controllers] def putEntitlementCommon(org: UUID, parent: UUID, id: UUID)(
-//      implicit request: SecuredRequest[JsValue]) = Future {
-//    
-//    
-//    /*
-//     * 1.) Find the given entitlement
-//     * 2.) Get its 'properties.action' value
-//     * 3.) Select child resources with corresponding actions
-//     * 4.) Update all entitlements found in last step
-//     */
-//    
-//    ???
-//    
-//  }
-//  
 
   private[controllers] def reconcile[A](base: Seq[A], adds: Seq[A], deletes: Seq[A]): Seq[A] = {
     (base filter { !deletes.contains(_) }) ++ adds
@@ -137,10 +121,7 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     val delta = IdentityChange(oldent, newent)
     val action = EntitlementProps.make(oldent).action
     val targets = ResourceFactory.findDescendantEntitlements(parent, action)
-    
-//    log.debug("Descendant Entitlements for cascade":")
-//    targets foreach { t => log.debug("%s, %s".
-    
+
     targets map { ent =>
       val existing = IdentityChange.getIdentities(ent)
       val newids = reconcile(existing, delta.added, delta.deleted)
@@ -155,40 +136,39 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     
     val user = request.identity
     val json = request.body
-    
-    /*
-     * TODO: Authorize 'entitlement.update'
-     */
-    
-    def getParent = Try {
-      ResourceFactory.findById(parent) getOrElse {
-        throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
-      }
+
+    val targetEntitlement = ResourceFactory.findById(ResourceIds.Entitlement, id) getOrElse {
+        throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
+    }
+
+    val target = ResourceFactory.findById(parent) getOrElse {
+      throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
     }
     
-    ResourceFactory.findById(ResourceIds.Entitlement, id) map { ent =>
-      for {
-        p    <- getParent
-        r1   <- validateEntitlementPayload(org, parent, user, json, "update")
-        r2   <- validateEntitlementUpdate(ent, r1)
-        r3   <- copyEntitlementForUpdate(ent, r2)
-        updates = cascadeEntitlementIdentities(parent, ent, r3)
-      } yield updates
-      
-    } getOrElse {
-      throw new ResourceNotFoundException(s"Entitlement with ID '$id' not found.")
+    val options = this.standardRequestOptions(user, id, targetEntitlement)
+    val operations = this.standardRequestOperations("entitlement.update")
     
-    } match {
-      case Failure(error) => HandleExceptions(error)
-      case Success(updates)  => {
-        
-        val persisted = updates map { entitlement => 
-          ResourceFactory.update(entitlement, user.account.id).get
+    SafeRequest(operations, options) Protect { maybeState =>
+      
+      val modified = for {
+        r1   <- validateEntitlementPayload(org, parent, user, json, "update")
+        r2   <- validateEntitlementUpdate(targetEntitlement, r1)
+        r3   <- copyEntitlementForUpdate(targetEntitlement, r2)
+        updates = cascadeEntitlementIdentities(parent, targetEntitlement, r3)
+      } yield updates    
+    
+      modified match {
+        case Failure(error) => HandleExceptions(error)
+        case Success(updates)  => {
+          
+          val persisted = updates map { entitlement => 
+            ResourceFactory.update(entitlement, user.account.id).get
+          }
+          log.debug(s"${persisted.size} entitlements modified in cascade.")
+          val root = getUpdatedRoot(id, persisted).get
+          Ok(transformEntitlement(root, org, META_URL))
         }
-        log.debug(s"${persisted.size} entitlements modified in cascade.")
-        val root = getUpdatedRoot(id, persisted).get
-        Ok(transformEntitlement(root, org, META_URL))
-      }
+      }  
     }
   }
   
@@ -218,26 +198,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     }
   }
   
-  
-
-  
-//  def applyOp(targets: Seq[GestaltResourceInstance], op: String) = {
-//    CreateResource(
-//        ResourceIds.User, user.account.id, org, json, user, 
-//        Some(ResourceIds.Entitlement), Some(resourceId))    
-//  }
-//  
-//  def createEntitlement(org: UUID, creator: UUID, json: JsValue) = {
-//    
-//  }
-  
-  /*
-   * There are three possibilities for altering entitlements:
-   * 1 - add a new entitlement that needs to cascade to any existing children
-   * 2 - add an identity to an existing parent entitlement, that cascades to corresponding child entitlements
-   * 3 - remove an identity from an existing parent entitlement, cascading the remove to child entitlements
-   */
-  
   /*
    * Need a custom hook on PATCH that can perform the cascade. 
    */
@@ -256,7 +216,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
   def gatherTargets(typeId: UUID, parent: UUID) = {
     ResourceFactory.findChildrenOfType(typeId, parent)
   }
-  
   
   private[controllers] def postEntitlementCommon2(
       org: UUID, 
@@ -488,5 +447,26 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     if (output.isDefined) output.get else Json.toJson(ent) 
   }
 
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    target: UUID,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(target),
+      policyOwner = Option(target),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }    
+  
 }
 

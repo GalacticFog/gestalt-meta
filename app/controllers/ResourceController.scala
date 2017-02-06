@@ -218,10 +218,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         Resource.fromPath(path.path)
       }{ f=>
         log.debug(s"Found custom lookup function for Resource. Executing...")
-
-        val output = f(path, request.identity, Option(request.queryString))
-        log.debug("OUTPUT : " + output)
-        output
+        f(path, request.identity, Option(request.queryString))
       }
       
       resource.fold(NotFoundResult(request.uri)) { res =>
