@@ -6,17 +6,19 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.5.4"
+
+version := "0.5.10"
+
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
 resolvers ++= Seq(
+    "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
+    "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
     "snapshots" at "http://scala-tools.org/repo-snapshots",
     "releases"  at "http://scala-tools.org/repo-releases",
     "Atlassian Releases" at "https://maven.atlassian.com/public/",
-    "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases",
-    "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
-    "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local"
+    "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
 )
 
 
@@ -78,6 +80,7 @@ scalacOptions ++= Seq(
 
 libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.2" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.5.11" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
@@ -96,7 +99,8 @@ libraryDependencies ++= Seq(
 	
   	jdbc,
 	cache,
-	ws
+	ws,
+    filters
 )
 
 

@@ -72,7 +72,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltSecurityMocking 
         val rc = app.injector.instanceOf[ResourceController]
         val pc = app.injector.instanceOf[PatchController]
         
-        val updated = pc.Patch(path, patchJs, account)
+        val updated = pc.Patch(envRes, patchJs, account)
         updated must beSuccessfulTry
         
         val envJs = Output.renderInstance(updated.get)

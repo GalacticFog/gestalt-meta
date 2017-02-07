@@ -1,6 +1,7 @@
 package com.galacticfog.gestalt.meta.test
 
 
+import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
@@ -278,7 +279,20 @@ trait ResourceScope extends Scope {
     u
   }
   
-  def createNewUser(org: UUID, id: UUID = uuid(), name: String = uuid.toString) = {
+  def createNewUser(
+      org: UUID, 
+      id: UUID = uuid(), 
+      name: String = uuid.toString, 
+      properties: Option[Map[String,String]] = None) = {
+    
+    val props = properties getOrElse {
+      Map( 
+          "email" -> s"$name@${uuid.toString}.com", 
+          "phoneNumber" -> "555", 
+          "firstName" -> "foo", 
+          "lastName" -> "bar")
+    }
+          
     ResourceFactory.create(ResourceIds.Org, org)(
       GestaltResourceInstance(
         id = id,
@@ -287,29 +301,100 @@ trait ResourceScope extends Scope {
         owner = ResourceOwnerLink(ResourceIds.Org, org.toString),
         name = name,
         state = ResourceState.id(ResourceStates.Active),
-        properties = Some(Map( 
-          "email" -> s"$name@example.com", "phoneNumber" -> "555", "firstName" -> "foo", "lastName" -> "bar"
-      )))).get
+        properties = Some(props))).get
   }
   
-
-  def createInstance(typeId: UUID, name: String, id: UUID = uuid(), owner: ResourceOwnerLink = dummyOwner, org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
+  def createEntitlement(
+      action: String,
+      parent: UUID,
+      identities: Option[Seq[UUID]] = None,
+      name: String  = uuid.toString,
+      org: UUID     = dummyRootOrgId,
+      creator: UUID = dummyOwner.id) = {
+    
+    val e = Entitlements.newEntitlement(
+        creator, 
+        org, 
+        parent, 
+        action, 
+        identities, 
+        Some(name), 
+        value = None, 
+        description = None)
+        
+    Entitlement.toGestalt(creator, e)
+  }
+  
+  
+  
+  /**
+   * Create new entitlement in memory
+   */
+  def newEntitlement(
+      action: String,
+      parent: UUID,
+      identities: Option[Seq[UUID]] = None,
+      name: String  = uuid.toString,
+      org: UUID     = dummyRootOrgId,
+      creator: UUID = dummyOwner.id) = {
+    
+    Entitlements.newEntitlement(
+        creator, 
+        org, 
+        parent, 
+        action, 
+        identities, 
+        Some(name), 
+        value = None, 
+        description = None)
+  }  
+  
+//  def createEnt(
+//      action: String,
+//      parent: UUID,
+//      identities: Seq[UUID]       = Seq.empty,
+//      name: String                = uuid.toString,
+//      id: UUID                    = uuid(),
+//      owner: ResourceOwnerLink    = dummyOwner,
+//      org: UUID                   = dummyRootOrgId,
+//      /*properties: Option[Hstore]  = None,*/
+//      description: Option[String] = None): Try[GestaltResourceInstance] = {
+//    
+//    
+//    ResourceFactory.create(ResourceIds.Org, org)(
+//      newInstance(
+//        id = id, owner = owner, org = org, 
+//        typeId = ResourceIds.Entitlement, 
+//        name = name, properties = properties, 
+//        description = description), Some(parent))
+//  }
+  
+  def createInstance(typeId: UUID,
+                     name: String,
+                     id: UUID = uuid(),
+                     owner: ResourceOwnerLink = dummyOwner,
+                     org: UUID = dummyRootOrgId,
+                     properties: Option[Hstore] = None,
+                     parent: Option[UUID] = None,
+                     description: Option[String] = None): Try[GestaltResourceInstance] = {
     ResourceFactory.create(ResourceIds.Org, org)(
-      newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties), parent
+      newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties, description = description), parent
     )
   }  
   
   def newInstance(typeId: UUID, name: String, id: UUID = uuid(), 
       owner: ResourceOwnerLink = dummyOwner, 
       org: UUID = dummyRootOrgId, 
-      properties: Option[Hstore] = None) = {
-    
+      properties: Option[Hstore] = None,
+      description: Option[String] = None ) = {
+
     GestaltResourceInstance(
       id = id,
       typeId = typeId,
       orgId = org,
       owner = owner,
       name = name,
+      description = description,
       state = ResourceState.id(ResourceStates.Active),
       properties = properties)
   }
@@ -341,5 +426,61 @@ trait ResourceScope extends Scope {
     ).get
   }  
   
+  /**
+   * Create a new Org in Meta
+   */
+  def createOrg(name: String, id: UUID = uuid(), org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
+    createInstance(ResourceIds.Org, 
+        name, id = id, org = org, properties = properties, parent = parent)
+  }
+  
+  def actionValue(res: GestaltResourceInstance): String = {
+    res.properties.get("action")
+  }
+  
+  def setEntitlements(parent: UUID, actions: (String,String)*): Try[Seq[UUID]] = Try {
+//    actions foreach { a => createInstance(ResourceIds.Entitlement, uuid(),
+//      parent = Option(parent),
+//      properties = Option(Map(a._1 -> a._2)))
+//    }
+    
+    def go(acts: Seq[(String,String)], acc: Seq[UUID]): Seq[UUID] = {
+      acts match {
+        case Nil => acc
+        case h :: t => {
+          val e = createInstance(ResourceIds.Entitlement, uuid(),
+                parent = Option(parent),
+                properties = Option(Map(h._1 -> h._2)))
+          go(t, e.get.id +: acc)
+        }
+      }
+    }
+    println("*****ACTIONS.TOLIST:" + actions.toList)
+    go(actions.toList, Seq.empty)
+  }  
+  
+  import play.api.libs.json.JsString
+  
+  def setEntitlements2(parent: UUID, properties: (String, Seq[UUID])*): Try[Seq[UUID]] = Try {
+
+    def go(props: Seq[(String, Seq[UUID])], acc: Seq[UUID]): Seq[UUID] = {
+      
+      props match {
+        case Nil => acc
+        case h :: t => {
+          val actionprops: Map[String, String] = Map(
+              "action" -> h._1, 
+              "identities" -> Json.stringify(Json.toJson(h._2))
+          )
+          val e = createInstance(ResourceIds.Entitlement, 
+                name = uuid.toString,
+                parent = Option(parent),
+                properties = Option(actionprops))
+          go(t, e.get.id +: acc)
+        }
+      }
+    }
+    go(properties.toList, Seq.empty)
+  }   
   
 }

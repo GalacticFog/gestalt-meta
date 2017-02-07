@@ -69,5 +69,7 @@ class InfoController @Inject()(messagesApi: MessagesApi,
       case Right(success) => Ok(success)
     }    
   }
-  
+
+
+  def options(path: String) = Action {Ok("")}
 }

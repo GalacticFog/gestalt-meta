@@ -19,6 +19,7 @@ import scala.util.{Either,Left,Right}
 import play.api.Logger
 import scala.language.postfixOps
 
+import scala.util.control.NonFatal
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 
@@ -26,6 +27,8 @@ object MetaHealth {
   
   val log = Logger(this.getClass)
   
+  private val jsclient = JsonClient.newClient()
+    
   /*
    * Check connectivity with the following services:
    * - security
@@ -40,9 +43,9 @@ object MetaHealth {
     val Degraded = "degraded"
     val Unavailable = "unavailable"
   }
-
+  
   val DEFAULT_SERVICE_TIMEOUT_SECONDS = 5
-
+  
   val rabbitWebUrl = "%s://%s:%s".format(
       EnvConfig.rabbitHttpProtocol, EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
@@ -65,7 +68,7 @@ object MetaHealth {
     
     val stats  = checkAll(serviceMap, DEFAULT_SERVICE_TIMEOUT_SECONDS)
     val errors = stats collect { case (k,v) if v.isFailure => (k,v) }
-
+    
     if (errors.isEmpty) Right(goodHealthMessage()) 
     else Left(badHealthMessage(Status.Unavailable, errors, verbose))
     
@@ -109,18 +112,17 @@ object MetaHealth {
       (mkurl(config), checkService(config, url, timeout, expected)) 
     }
   }
-  
-  import scala.util.control.NonFatal
-  
+
   def checkService(
       config: HostConfig, 
       resource: String, 
       timeout: Int,  
       expected: Seq[Int] = WebClient.ALL_GOOD) = Try {
     
-    val client = WebClient(config)
+    val client = new JsonClient(config, Some(jsclient))
+    
     try {
-      val response = Await.result(client.request(resource).get, timeout seconds)
+      val response = Await.result(client.get(resource), timeout seconds)
       response.status match {
         case s if expected.contains(s) => true 
         case e => unexpectedStatus(mkurl(config), expected, e)

@@ -145,7 +145,8 @@ package object laser {
           runtime     = props("runtime").as[String],
           timeoutSecs = props("timeout").as[Int],
           compressed  = compressed,
-          code        = if (props.contains("code")) props("code").asOpt[String] else None
+          code        = if (props.contains("code")) props("code").asOpt[String] else None,
+          headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
     ))
   }
   

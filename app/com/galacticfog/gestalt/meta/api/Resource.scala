@@ -124,7 +124,7 @@ object Resource {
     }  
   }
 
-  protected[api] def findResource(info: Map[String,String]) = {
+  protected[api] def findResource(info: Map[String,String]): Option[GestaltResourceInstance] = {
     info.size match {
       case 1 => findFqon(info)
       case 3 => find(info)
@@ -206,7 +206,7 @@ object Resource {
         .stripSuffix("/")
         .split("/").toList filter { _.trim != "" }
     }
-
+    
     if (cmps.isEmpty) { 
       throw illegal("Path does not identify a Resource. found: Empty String")
     } else if (cmps.size % 2 == 0) {

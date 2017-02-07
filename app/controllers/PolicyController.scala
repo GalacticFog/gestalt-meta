@@ -74,12 +74,12 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
 
   }
 
-  def getResourceByIdOrgFqon(fqon: String, resourceType: String, resourceId: UUID, subTypes: Boolean = false) = Authenticate(fqon) { implicit request =>
-    val rtid = UUID.fromString(resourceType)
-    getResourceByIdFqonCommon(fqon, ResourceIds.Org, fqid(fqon), rtid, resourceId){
-      if (subTypes) Some(findCovariantResource _) else None
-    }
-  }
+//  def getResourceByIdOrgFqon(fqon: String, resourceType: String, resourceId: UUID, subTypes: Boolean = false) = Authenticate(fqon) { implicit request =>
+//    val rtid = UUID.fromString(resourceType)
+//    getResourceByIdFqonCommon(fqon, ResourceIds.Org, fqid(fqon), rtid, resourceId){
+//      if (subTypes) Some(findCovariantResource _) else None
+//    }
+//  }
   
   def getResourceByIdFqon(
       fqon: String, 
@@ -171,16 +171,45 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   //
   // TODO: Add entitlements and authorization.
   //
+    /**
+   * Convert input JSON to an in-memory GestaltResourceInstance
+   */
+  def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
+    
+    withInputDefaults(
+          org = org, 
+          typeId = typeId,
+          input = safeGetInputJson(json).get, 
+          creator = creator)
+  }
   
   def createPolicyCommon(org: UUID, parentType: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
     
-    WithFeature(GestaltFeature.Policy, "Policy creation is disabled under your current license.") {
+    //WithFeature(GestaltFeature.Policy, "Policy creation is disabled under your current license.") {
       
+    Future {
       ResourceFactory.findById(parentType, parentId) match {
-        case None => Future(ResourceNotFound(parentType, parentId))
+        case None => ResourceNotFound(parentType, parentId)
         case Some(parent) => {
-          val json = updatePolicyJson(request.body, parentId)
-          createResourceD(org, json, Some(ResourceIds.Policy), Some(parentId))
+          
+          val user = request.identity
+          val resource = j2r(org, user, request.body, Option(ResourceIds.Policy))
+          val options = standardRequestOptions(user, parentId, resource)
+          val operations = standardRequestOperations("policy.create")
+          
+          SafeRequest(operations, options) Protect { maybeState =>
+            
+            val json = updatePolicyJson(request.body, parentId)
+            CreateNewResource(org, user, json, 
+                Some(ResourceIds.Policy), parent = Some(parentId)) match {
+              case Failure(e) => HandleExceptions(e)
+              case Success(res) => {
+                setNewEntitlements(org, res.id, user, parent = Some(parentId))
+                Created(RenderSingle(res))
+              }
+            }
+            
+          }
         }
       }
       
@@ -244,39 +273,112 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
   }  
   
+    import com.galacticfog.gestalt.json.Js
+    
+    def resolveRuleTypeFromString(json: JsValue) = Try {
+      Js.find(json.as[JsObject], "/resource_type").fold {
+        throw new BadRequestException("You must provide a resource_type")
+      }{ tpe =>
+        ruleTypeId(expandRuleTypeName(tpe.as[String])).get
+      }
+    }  
+      
+  def createRule(
+      org: UUID, 
+      user: AuthAccountWithCreds, 
+      policyId: UUID, 
+      ruleJson: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+    
+    val resource = j2r(org, user, ruleJson, Option(ResourceIds.Rule))
+    val options = standardRequestOptions(user, policyId, resource)
+    val operations = standardRequestOperations("rule.create")  
+    
+    SafeRequest(operations, options) ProtectAsync { maybeState =>   
+      log.debug("Creating Rule:\n" + Json.prettyPrint(ruleJson))
+      createResourceD(org, ruleJson, parentId = Some(policyId))
+    }
+  }
+  
   def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
     log.debug(s"Received request to create new Rule for Policy($policy)")
     
-    val resourceType = Try {
-      (request.body \ "resource_type") match {
-        case u: JsUndefined => 
-          throw new BadRequestException("You must provide a 'resource_type'")
-        case v => {
-          val expanded = expandRuleTypeName(v.as[String])
-          ruleTypeId(expanded)
-        }
-      }
-    }
-
-    resourceType match {
+    resolveRuleTypeFromString(request.body) match {
       case Failure(e) => Future(HandleExceptions(e))
-      case Success(tpe) => {
+      case Success(resourceType) => {
+        
         ResourceFactory.findById(ResourceIds.Policy, policy).fold {
           Future(NotFoundResult(s"Policy with ID '$policy' not found."))
         }{ pol =>  
-          val json = updateRuleJson(request.body, tpe.get, pol)
-          log.debug("Creating Rule:\n" + Json.prettyPrint(json))
-          createResourceD(fqid(fqon), json, tpe, Some(policy))
+          val json = updateRuleJson(request.body, resourceType, pol)
+          createRule(fqid(fqon), request.identity, policy, json)     
         }
+        
       }
     }
   }
+
+//      resourceType match {
+//        case Failure(e) => Future(HandleExceptions(e))
+//        case Success(tpe) => {
+//
+//          ResourceFactory.findById(ResourceIds.Policy, policy).fold {
+//            Future(NotFoundResult(s"Policy with ID '$policy' not found."))
+//          }{ pol =>  
+//            val json = updateRuleJson(request.body, r, pol)
+//            log.debug("Creating Rule:\n" + Json.prettyPrint(json))
+//            createResourceD(fqid(fqon), json, tpe, Some(policy))
+//          }
+//        }
+//      }
+//  def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    
+//    log.debug(s"Received request to create new Rule for Policy($policy)")
+//    
+//    val org = fqid(fqon)
+//    val user = request.identity
+//    
+//    
+//    
+//    val resource = j2r(org, user, request.body, Option(ResourceIds.Rule))
+//    val options = standardRequestOptions(user, policy, resource)
+//    val operations = standardRequestOperations("rule.create")  
+//    SafeRequest(operations, options) ProtectAsync { maybeState =>    
+//      
+//      val resourceType = Try {
+//        (request.body \ "resource_type") match {
+//          case u: JsUndefined => 
+//            throw new BadRequestException("You must provide a 'resource_type'")
+//          case v => {
+//            val expanded = expandRuleTypeName(v.as[String])
+//            ruleTypeId(expanded)
+//          }
+//        }
+//      }
+//  
+//      resourceType match {
+//        case Failure(e) => Future(HandleExceptions(e))
+//        case Success(tpe) => {
+//
+//          ResourceFactory.findById(ResourceIds.Policy, policy).fold {
+//            Future(NotFoundResult(s"Policy with ID '$policy' not found."))
+//          }{ pol =>  
+//            val json = updateRuleJson(request.body, tpe.get, pol)
+//            log.debug("Creating Rule:\n" + Json.prettyPrint(json))
+//            createResourceD(fqid(fqon), json, tpe, Some(policy))
+//          }
+//        }
+//      }
+//    }
+//  }
   
   protected [controllers] def parentLink(pid: UUID, baseUri: Option[String]): Option[ResourceLink] = {
     ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
   }
   
+  /**
+   * Add parent link to Policy JSON from input payload.
+   */
   protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
     val link = Json.toJson(parentLink(parent, META_URL).get)
     JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
@@ -355,5 +457,26 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   protected [controllers] def setupFilter(typeId: UUID)(implicit request: SecuredRequest[_]) = {
     if (typeId == ResourceIds.Rule) (true, Some(typeFilter _)) else (false, None)
   }
+  
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    parent: UUID,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
+
+    RequestOptions(user,
+      authTarget = Option(parent),
+      policyOwner = Option(parent),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }    
   
 }

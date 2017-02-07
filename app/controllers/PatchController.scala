@@ -61,15 +61,49 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Entitlement -> entitlementPatch)    
   
   
+  /**
+   * Patch an Org by FQON
+   * Implements route `PATCH /{fqon}`
+   */
+  def patchResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    log.debug(s"patchResourceFqon($fqon)")
+    Future( orgFqon(fqon).fold(OrgNotFound(fqon))(org =>applyPatch(org)) )
+  }
+  
+  /**
+   * Patch a Resource by its URI (path)
+   */
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     log.debug(s"patchResource($fqon, $path)")
     Future {      
-      val respath = new ResourcePath(fqon, path)
-      val user = request.identity
 
+      val respath = new ResourcePath(fqon, path)
+
+      lookupResource(respath, request.identity) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(resource) => applyPatch(resource)
+      }
+    }
+  }  
+
+  /**
+   * Apply policy and authorization checks to PATCH operation. Orchestrates
+   * application of the patch and persisting the updated resource to Meta DB.
+   * 
+   * @param target the Resource to be modified
+   */
+  private[controllers] def applyPatch(target: GestaltResourceInstance)(
+      implicit request: SecuredRequest[JsValue]) = {
+    
+    val user = request.identity
+    val action = actionInfo(target.typeId).prefix + ".update"
+    val options = standardRequestOptions(user, target)
+    val operations = standardRequestOperations(action)
+    
+    SafeRequest(operations, options) Protect { maybeState =>
       (for {
         
-        r1 <- Patch(respath, request.body, user)
+        r1 <- Patch(target)
         r2 <- update(r1, user.account.id)
         
       } yield r2) match {
@@ -78,7 +112,28 @@ class PatchController @Inject()( messagesApi: MessagesApi,
       }
     }
   }
+  
+  
+  private[this] def standardRequestOptions(
+    user: AuthAccountWithCreds,
+    resource: GestaltResourceInstance,
+    data: Option[Map[String, String]] = None) = {
 
+    RequestOptions(user,
+      authTarget = Option(resource.id),
+      policyOwner = Option(resource.id),
+      policyTarget = Option(resource),
+      data)
+  }
+
+  private[this] def standardRequestOperations(action: String) = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.EventsPre(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPost(action))
+  }    
+  
   /* 
    * /{fqon}/resourcetypes/{id}
    *  
@@ -140,43 +195,104 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   /**
    * This function finds and patches the requested resource - it does NOT persist the updated resource.
    */
-  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = {
-
+//  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = {
+//
+//    if (path.isList) {
+//      throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
+//    } else {
+//      resourceController.findResource(path, account).fold {
+//        throw new ResourceNotFoundException(path.path)
+//      }{ r =>
+//        
+//        val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJs)
+//        val patch = transforms.get(r.typeId).fold(PatchDocument(ops: _*)) {
+//          transform => transform(PatchDocument(ops: _*))
+//        }
+//
+//        val handler = {
+//          if (handlers.get(r.typeId).isDefined) {
+//            log.debug(s"Found custom PATCH handler for type: ${r.typeId}")
+//            handlers(r.typeId)
+//          } else {
+//            log.debug("Using default PATCH handler for type: ${r.typeId")
+//            defaultResourcePatch _
+//          }
+//        }
+//        handler(r, patch, account)
+//      }
+//    }
+//  }
+  
+  private[controllers] def Patch(
+      resource: GestaltResourceInstance,
+      patchJson: JsValue,
+      account: AuthAccountWithCreds): Try[GestaltResourceInstance] = {
+    
+    val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJson)
+    
+    val patch = transforms.get(resource.typeId).fold(PatchDocument(ops: _*)) {
+      transform => transform(PatchDocument(ops: _*))
+    }
+    
+    val handler = {
+      if (handlers.get(resource.typeId).isDefined) {
+        log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
+        handlers(resource.typeId)
+        
+      } else {
+        log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
+        defaultResourcePatch _
+      }
+    }
+    handler(resource, patch, account)
+    
+  }
+  
+  private[controllers] def Patch(
+      resource: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]): Try[GestaltResourceInstance] = {
+    
+    Patch(resource, request.body, request.identity)
+    
+//    val ops   = JsonUtil.safeParse[Seq[PatchOp]](request.body)
+//    
+//    val patch = transforms.get(resource.typeId).fold(PatchDocument(ops: _*)) {
+//      transform => transform(PatchDocument(ops: _*))
+//    }
+//    
+//    val handler = {
+//      if (handlers.get(resource.typeId).isDefined) {
+//        log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
+//        handlers(resource.typeId)
+//        
+//      } else {
+//        log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
+//        defaultResourcePatch _
+//      }
+//    }
+//    handler(resource, patch, request.identity) 
+  }
+  
+  
+  def lookupResource(path: ResourcePath, account: AuthAccountWithCreds) = Try {
     if (path.isList) {
       throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
     } else {
-      resourceController.findResource(path, account).fold {
+      resourceController.findResource(path, account) getOrElse {
         throw new ResourceNotFoundException(path.path)
-      }{ r =>
-        
-        val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJs)
-        val patch = transforms.get(r.typeId).fold(PatchDocument(ops: _*)) {
-          transform => transform(PatchDocument(ops: _*))
-        }
-
-        val handler = {
-          if (handlers.get(r.typeId).isDefined) {
-            log.debug(s"Found custom PATCH handler for type: ${r.typeId}")
-            handlers(r.typeId)
-          } else {
-            log.debug("Using default PATCH handler for type: ${r.typeId")
-            defaultResourcePatch _
-          }
-        }
-        handler(r, patch, account)
-        
-        //ResourcePatch.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance] 
       }
     }
   }
-  
   
   private[controllers] def defaultResourcePatch(
     resource: GestaltResourceInstance,
     patch: PatchDocument,
     user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
-
-    PatchInstance.applyPatch(resource, patch).get.asInstanceOf[GestaltResourceInstance]
+    log.debug("entered defaultResourcePatch(_,_,_)")
+    
+    log.debug("Applying patch to resource...")
+    val t = PatchInstance.applyPatch(resource, patch)
+    log.debug("PATCHED RESOURCE : " + t)
+    t.get.asInstanceOf[GestaltResourceInstance]
   }
   
   

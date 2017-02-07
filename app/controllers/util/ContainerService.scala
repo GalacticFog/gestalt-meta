@@ -114,7 +114,7 @@ trait ContainerService extends JsonInput {
 
 object ContainerService {
 
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*): Instance = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
@@ -237,18 +237,26 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
     // make a best effort to get updated stats from the Marathon provider and to update the resource with them
+    
+    log.debug(s"CaaSService::listEnvironmentContainers($fqon, $environment)")
+    
     val env = ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse throwBadRequest("UUID did not correspond to an environment")
+    
+    log.debug("Found environment...Looking up workspace...")
+    
     val wrk = (for {
       props <- env.properties
       parentId <- props.get("workspace")
       parentUUID <- Try{UUID.fromString(parentId)}.toOption
       workspaceResource <- ResourceFactory.findById(ResourceIds.Workspace, parentUUID)
     } yield workspaceResource) getOrElse throwBadRequest("could not find parent workspace for environment")
-
+    
+    log.debug(s"Found workspace: ${wrk.name}[${wrk.id}]")
+    
     val containerSpecsByProvider = ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id) flatMap {
       r => ContainerSpec.fromResourceInstance(r).toOption zip(Some(r)) map (_.swap)
     } groupBy ( _._2.provider.id )
-
+    
     val fStatsFromAllRelevantProviders = Future.traverse(containerSpecsByProvider.keys) { pid =>
       val pidAndStats = for {
         stats <- marathonClient(marathonProvider(pid)).listApplicationsInEnvironment(fqon, wrk.name, env.name)
@@ -256,7 +264,7 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
       } yield (pid -> statsMap)
       futureToFutureTry(pidAndStats)
     } map (_ collect {case Success(x) => x} toMap)
-
+    
     fStatsFromAllRelevantProviders map { pid2id2stats =>
       val allSpecs = containerSpecsByProvider map {
         case (pid, cspecs) =>
@@ -304,13 +312,18 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
 
     val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
     // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val containerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
+    val origContainerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
     // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
     val operations = containerRequestOperations("container.create")
-    val options = containerRequestOptions(user, environment.id, containerResourcePre)
+    val options = containerRequestOptions(user, environment.id, origContainerResourcePre)
 
     SafeRequest (operations, options) ProtectAsync { maybeState =>
+      // TODO: do we need an entitlement check before allowing the user to use this provider?
       val provider = marathonProvider(containerSpec.provider.id)
+      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
+        "name" -> provider.name,
+        "id" -> provider.id
+      ).toString)
       ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(environment.id)) match {
         case Failure(t) => Future.failed(t)
         case Success(resource) =>
@@ -330,6 +343,7 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
             name = containerSpec.name,
             marPayload = marathonAppCreatePayload
           ).transform( updateSuccessfulLaunch(resource), updateFailedLaunch(resource) )
+        
       }
     }
   }
