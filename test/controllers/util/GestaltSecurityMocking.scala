@@ -4,9 +4,7 @@ import java.util.UUID
 
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe
-
 import org.specs2.mock.Mockito
-
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltAPICredentials
 import com.galacticfog.gestalt.security.api.GestaltAccount
@@ -14,20 +12,16 @@ import com.galacticfog.gestalt.security.api.GestaltAuthResponse
 import com.galacticfog.gestalt.security.api.GestaltDirectory
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import com.galacticfog.gestalt.security.api.{ ResourceLink => SecurityLink }
+import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltDelegatedSecurityConfigModule
 import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityEnvironmentModule
 import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityModule
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
-
-import modules.MetaDefaultServices
+import modules.{MetaDefaultServices, ProdSecurityModule}
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.inject.guice.GuiceableModule
@@ -125,8 +119,8 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
     val defaultDisabled = Seq(
       classOf[GestaltFrameworkSecurityConfigModule],
       classOf[GestaltDelegatedSecurityConfigModule],
-      classOf[GestaltSecurityEnvironmentModule],
       classOf[GestaltSecurityModule],
+      classOf[ProdSecurityModule],
       classOf[MetaDefaultServices])
       
     val sc: GuiceableModule = bind(classOf[SecureController]).toInstance(secureController)
