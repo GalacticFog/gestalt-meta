@@ -74,7 +74,6 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
               Try {
                 val licstr = license.properties.get("data")
                 GestaltLicense.instance.install(licstr)
-                GestaltLicense.instance.verify() // check if license is good, exception if not.
               } match {
                 case Failure(e2) => throw e2
                 case Success(_) => Ok {
@@ -128,7 +127,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
       }
     }
   }  
-  
+
   /**
    * Find existing licenses in the given Org and render them to JSON.
    * 
