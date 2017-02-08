@@ -199,7 +199,7 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     }
     
     for {
-      kube       <- initializeKube(provider.id, environment.toString)
+      kube        <- initializeKube(provider.id, environment.toString)
       deployment  <- kube.get[Deployment](depname)
       replicasets <- kube.list[ReplicaSetList]
       pods        <- kube.list[PodList]

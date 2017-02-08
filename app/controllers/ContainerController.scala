@@ -121,11 +121,28 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
    *  - Failed
    */
   
+  
+  import com.galacticfog.gestalt.json.Js
+  
+  def withProviderInfo(json: JsValue) = {    
+    val jprops = (json \ "properties")
+    
+    val pid = (jprops \ "provider" \ "id").as[String]
+
+    val p = ResourceFactory.findById(UUID.fromString(pid)).get
+    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
+    
+    json.as[JsObject] ++ Json.obj("properties" -> newprops)
+  }
+  
+  
   def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
     log.debug(s"postContainer($fqon, $environment)")
     
-    val transform = CaasTransform(fqid(fqon), request.identity, request.body)
+    val payload = withProviderInfo(request.body)
+    
+    val transform = CaasTransform(fqid(fqon), request.identity, payload /*request.body*/)
     val context   = ProviderContext(request, parseProvider(transform.resource), None)
     
     log.info("Creating container in Meta...")

@@ -65,6 +65,12 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
       new BadRequestException(s"launch failed: ${t.getMessage}")
     }
     
+//      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
+//        "name" -> provider.name,
+//        "id" -> provider.id
+//      ).toString)
+//      
+//    context.provider
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) =>          
