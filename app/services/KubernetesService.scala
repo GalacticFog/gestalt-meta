@@ -265,7 +265,8 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     val container = skuber.Container(
         name = containerSpec.name, 
         image = containerSpec.image,
-        resources = Some(requirements))
+        resources = Some(requirements),
+        env = mkEnvVars(containerSpec.env))
 
     // Pod Spec and Template        
     val podname = "pod-" + id.toString
@@ -287,9 +288,13 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     Deployment(metadata = objmeta, spec = Some(deployspec))    
   }
   
+  private[services] def mkEnvVars(env: Map[String,String]): List[EnvVar] = {
+    env.map { case (k,v) => EnvVar(k, EnvVar.StringValue(v)) }.toList
+  }
+  
   private[services] def deploymentName(containerName: String) =
     "deployment-" + containerName
-    
+  
   /**
    * 
    */
