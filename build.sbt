@@ -81,10 +81,9 @@ scalacOptions ++= Seq(
 libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.0" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.1" withSources(),
-	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.1" withSources(),
-	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.1.0-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.3" withSources(),
+	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.3" withSources(),
+	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
 	
 	"org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
