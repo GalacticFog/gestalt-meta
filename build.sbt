@@ -84,6 +84,7 @@ libraryDependencies ++= Seq(
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.3" withSources(),
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.3" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
+	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
 	
 	"org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
@@ -109,12 +110,6 @@ libraryDependencies ++= Seq(
 //libraryDependencies += "org.postgresql" % "postgresql" % "9.3-1102-jdbc4"
 
 //libraryDependencies += "com.rabbitmq" % "amqp-client" % "3.6.1"
-
-
-
-
-
-
 
 //libraryDependencies += "com.typesafe.play" % "play-test_2.11" % "2.4.8" % "test"
 
