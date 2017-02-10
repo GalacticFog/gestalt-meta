@@ -125,15 +125,17 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     Resource.fromPath(path.path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
       val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
+
       log.debug("fqon: %s, env: %s[%s]".format(fqon, env.name, env.id.toString))
       log.debug("Calling external CaaS provider...")
+
       Await.result(
         containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
         5 seconds
       ) map (_._1)
     }
   }
-
+  
   def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
@@ -178,10 +180,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * Get a Resource or list of Resources by path.
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
-    log.debug(s"Entered getResources($fqon, $path)")
-    
     val rp = new ResourcePath(fqon, path)
-    log.debug("PATH : " + rp.path)
+
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
     if (rp.isList) AuthorizedResourceList(rp, action) 

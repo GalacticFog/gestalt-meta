@@ -14,6 +14,7 @@
     This configures the log level to log at for a package and its children packages.
   -->
   
+  <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
   <logger name="com.galacticfog" level="DEBUG"/>
   <logger name="application"  level="DEBUG" />
@@ -21,6 +22,7 @@
   <logger name="scalikejdbc" level="ERROR"/>
   <logger name="com.ning" level="ERROR"/>
   <logger name="javax" level="ERROR"/>
+  <logger name="skuber" level="WARN"/>
   <logger name="controllers.util.MetaController" level="DEBUG"/>
   <logger name="controllers.LaserController" level="DEBUG"/>
   

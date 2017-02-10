@@ -32,7 +32,7 @@ import com.galacticfog.gestalt.security.api.errors.{ ConflictException => Securi
 import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
 import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
 import java.util.UUID
-
+import scala.concurrent.ExecutionContext
 
 package object util {
   
@@ -58,12 +58,16 @@ package object util {
   def ConflictResult(message: String) = Conflict(new ConflictException(message).asJson)
   def ForbiddenResult(message: String) = Forbidden(new ForbiddenException(message).asJson)
   def UnauthorizedResult(message: String) = Unauthorized(new UnauthorizedException(message).asJson)
+  def UnprocessableEntityResult(message: String) = UnprocessableEntity(new UnprocessableEntityException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
   def HandleExceptions(e: Throwable) = {
     log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
+  
+  def HandleExceptionsAsync(e: Throwable)(implicit ec: ExecutionContext) = 
+    scala.concurrent.Future(HandleExceptions(e))
   
   val metaApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
@@ -72,6 +76,7 @@ package object util {
     case e: NotAcceptableException        => NotAcceptable(e.asJson)
     case e: ConflictException             => Conflict(e.asJson)
     case e: ForbiddenException            => Forbidden(e.asJson)
+    case e: UnprocessableEntityException  => UnprocessableEntity(e.asJson)
   }
   
   val securityApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {

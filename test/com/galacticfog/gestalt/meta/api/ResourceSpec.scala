@@ -42,6 +42,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
       Resource.typeOrElse("workspaces") must haveClass[UUID]
       Resource.typeOrElse("environments") must haveClass[UUID]
       Resource.typeOrElse("containers") must haveClass[UUID]
+      Resource.typeOrElse("providers") must haveClass[UUID]
     }
 
     "throw an exception when the type name doesn't exist" in {
@@ -51,13 +52,14 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
 
   "mapPathData" should {
 
-    "succeed when the path points to an FQON" in {
+    "succeed when the path points to an FQON" in { 
+      
       val m = Resource.mapPathData("/alpha")
 
       m must beAnInstanceOf[Map[_, _]]
       m.size === 1
     }
-
+    
     "succeed when the path points to a first-level resource" in {
       val id = uuid.toString
       val m = Resource.mapPathData(s"/alpha/bravo/${id}")
@@ -100,17 +102,26 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
     "fail with Exception if the path points to a resource deeper than the second-level" in {
       Resource.mapPathData("/fqon/workspaces/123/environments/456/lambdas/789") must throwAn[IllegalArgumentException]
     }
+    
+    "fail if any of the IDs are not valid v4 UUIDs" >> {
+      val p1 = "/fqon/workspaces/INVALID-UUID"
+      val p2 = s"/fqon/workspaces/${UUID.randomUUID.toString}/environments/INVALID-UUID"
+      
+      Resource.mapPathData(p1) must throwA[BadRequestException]
+      Resource.mapPathData(p2) must throwA[BadRequestException]
+    }
   }
-
+  
+  
   "mapListPathData" should {
-
+  
     "succeed when the path points to a first-level resource type" in {
       val m = Resource.mapListPathData("/fqon/target")
       m.size === 2
       m.get(Resource.Fqon) must beSome("fqon")
       m.get(Resource.TargetType) must beSome("target")
     }
-
+    
     "succeed when the path points to a second-level resource type" in {
       val pid = uuid.toString
       val m = Resource.mapListPathData(s"/fqon/parent/${pid}/target")
@@ -120,11 +131,11 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
       m.get(Resource.ParentId) must beSome(pid)
       m.get(Resource.TargetType) must beSome("target")
     }
-
+    
     "fail if the path is empty" in {
       Resource.mapListPathData("") must throwA[Throwable]
     }
-
+    
     "fail if the path contains an odd-number of components" in {
       Resource.mapListPathData("foo") must throwA[Throwable]
       Resource.mapListPathData("/foo") must throwA[Throwable]
@@ -132,7 +143,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
       Resource.mapListPathData("/foo/") must throwA[Throwable]
       Resource.mapListPathData("/foo/bar/baz") must throwA[Throwable]
     }
-
+    
     "fail if the path contains more than 4 components" in {
       Resource.mapListPathData("/foo/bar/baz/qux/thud") must throwA[Throwable]
       Resource.mapListPathData("/foo/bar/baz/qux/quux/corge/grault/garply/waldo") must throwA[Throwable]

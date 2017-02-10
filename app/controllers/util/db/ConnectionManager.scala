@@ -3,10 +3,12 @@ package controllers.util.db
 
 import com.galacticfog.gestalt.data.util._
 import controllers.util.AppConf
-import play.api.{Logger => log}
+import play.api.Logger
 import org.apache.commons.dbcp2.BasicDataSource
 
 object ConnectionManager {
+  
+  private[this] val log = Logger(this.getClass)
   
   log.debug("ConnectionManager::init()")
   

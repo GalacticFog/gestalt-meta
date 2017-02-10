@@ -1,5 +1,6 @@
 package controllers
 
+
 import java.util.UUID
 
 import com.galacticfog.gestalt.marathon._
@@ -16,8 +17,7 @@ import scala.util.Try
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import controllers.util._
@@ -38,14 +38,154 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 import javax.inject.Singleton
 
+import services._
+
+
+
 @Singleton
 class ContainerController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                      containerService: ContainerService )
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-
+    extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
+  
+  def postContainer2(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    ???
+  }
+  
+  trait ResourceTransform extends GestaltProviderService
+  case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
+    lazy val resource = jsonToInput(org, caller, normalizeInputContainer(json))
+    lazy val spec = ContainerSpec.fromResourceInstance(resource)
+  }
 
+  trait ServiceProvider[A <: GestaltProviderService] {
+    /**
+     * Get a GestaltService implementation.
+     */
+    def get[A](provider: UUID): Try[A]
+  }
+  
+  def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
+    typeId match {
+      case ResourceIds.CaasProvider     => new KubernetesService(typeId)
+      case ResourceIds.MarathonProvider => new MarathonService()
+      case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
+    }
+  }
+  
+  
+  def ProviderImplNotFound(providerId: UUID) = throw ResourceNotFoundException(
+    s"Implementation for Provider '$providerId' not found."
+  )
+  
+  /**
+   * Parse the provider ID from container.properties
+   */
+  def parseProvider(c: GestaltResourceInstance): UUID = {
+    UUID.fromString((Json.parse(c.properties.get("provider")) \ "id").as[String])
+  }
+  
+  import com.galacticfog.gestalt.meta.api.errors._
+  import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
+  
+  private[controllers] def specToInstance(
+      fqon: String, 
+      user: AuthAccountWithCreds, 
+      containerSpec: ContainerSpec, 
+      containerId: Option[UUID]): Try[GestaltResourceInstance] = Try {
+    
+    val org = orgFqon(fqon)
+      .map(_.id)
+      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
+      
+    val containerResourceInput: GestaltResourceInput = 
+      ContainerSpec.toResourcePrototype(containerSpec).copy( id = containerId )
+      
+    withInputDefaults(org, containerResourceInput, user, None)
+  }  
+  
+  def createMetaContainer(user: AuthAccountWithCreds, container: GestaltResourceInstance, env: UUID) = {
+    ResourceFactory.create(ResourceIds.User, user.account.id)(container, Some(env))
+  }  
+  
+  type MetaCreate = (AuthAccountWithCreds, GestaltResourceInstance, UUID) => Try[GestaltResourceInstance]
+  type BackendCreate = (ProviderContext, GestaltResourceInstance) => Future[GestaltResourceInstance]
+  
+  
+  /*
+   * TODO: ??? Create a custom result type for CaasService to return:
+   *  - SuccessWithUpdates
+   *  - SuccessNoChange
+   *  - Failed
+   */
+  
+  
+  import com.galacticfog.gestalt.json.Js
+  
+  def withProviderInfo(json: JsValue) = {    
+    val jprops = (json \ "properties")
+    
+    val pid = (jprops \ "provider" \ "id").as[String]
+
+    val p = ResourceFactory.findById(UUID.fromString(pid)).get
+    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
+    
+    json.as[JsObject] ++ Json.obj("properties" -> newprops)
+  }
+  
+  
+  def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    
+    log.debug(s"postContainer($fqon, $environment)")
+    
+    val payload = withProviderInfo(request.body)
+    
+    val transform = CaasTransform(fqid(fqon), request.identity, payload /*request.body*/)
+    val context   = ProviderContext(request, parseProvider(transform.resource), None)
+    
+    log.info("Creating container in Meta...")
+    
+    val metaCreate = for {
+      environment <- Try(context.environment)
+      provider    <- Try(context.provider)
+      r1          <- Try(transform.resource)
+      resource    <- createMetaContainer(request.identity, r1, environment.id)
+      serviceImpl <- getProviderImpl(provider.typeId)
+    } yield (serviceImpl, resource)
+    
+    val created = metaCreate match {
+      case Failure(e) => {
+        log.error("Failed creating container in Meta.")
+        HandleExceptionsAsync(e)
+      }
+      case Success((service, metaResource)) => {
+        
+        log.info("Meta container created: " + metaResource.id)
+        log.info("Creating container in backend CaaS...")
+        
+        for {
+            updated   <- service.create(context, metaResource)
+            container <- updateContainer(updated, request.identity.account.id)
+        } yield Created(RenderSingle(container))
+      }
+    }
+    created recoverWith { case e => HandleExceptionsAsync(e) }
+  }
+  
+  
+  /*
+   * TODO: This is a temporary wrapper to adapt ResourceFactory.update() to return a Future
+   * as it will in a forthcoming revision.
+   */
+  private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] = {
+    ResourceFactory.update(container, identity) match {
+      case Failure(e) => Future.failed(e)
+      case Success(r) => Future(r)
+    }
+  }
+  
   def createContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     containerService.findWorkspaceEnvironment(environment) match {
