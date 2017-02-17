@@ -4,19 +4,19 @@ import java.util.UUID
 
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-
 import controllers.ResourceController
 import controllers.util.GestaltSecurityMocking
 import javax.inject.Singleton
+
+import com.galacticfog.gestalt.meta.api.output.Output
+import play.api.libs.json.{JsObject, Json}
 import play.api.mvc.AnyContentAsEmpty
 import play.api.test.FakeHeaders
 import play.api.test.FakeRequest
@@ -32,6 +32,17 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
   lazy val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
   
   override def beforeAll() = pristineDatabase()
+
+  "output" should {
+    "render properties as non-null even if None" in {
+      val json = Output.renderInstance(createInstance(
+        typeId = ResourceIds.Group,
+        name = "dummy-group",
+        properties = None
+      ).get)
+      (json \ "properties").asOpt[JsObject] must beSome(Json.obj())
+    }
+  }
 
   "typeOrElse" should {
 

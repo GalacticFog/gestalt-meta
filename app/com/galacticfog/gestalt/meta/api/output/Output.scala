@@ -53,14 +53,16 @@ object Output {
       description = r.description,
       created = Json.toJson(r.created),
       modified = Json.toJson(r.modified),
-      properties = jsonHstore(r.properties),
+      properties = None, // expanded below
       variables = jsonHstore(r.variables),
       tags = jsonArray(r.tags),
       auth = r.auth)       
 
     // this renders the properties
     val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
-    Json.toJson(res.copy(properties = renderedProps))
+    Json.toJson(res.copy(
+      properties = renderedProps orElse Some(Json.obj())
+    ))
   }
   
   
@@ -180,11 +182,10 @@ object Output {
     }
 
     val givenProperties = collectInstanceProperties(typeId, instanceId, properties)
-    Option {
-      Json.toJson {
-        if (givenProperties.isEmpty) None
-        else loop(templateProps.keys.toList, givenProperties.get, Map[String, JsValue]())
-      }
+    givenProperties map {
+      loop(templateProps.keys.toList, _, Map[String, JsValue]())
+    } map {
+      Json.toJson(_)
     }
   }
 
@@ -297,7 +298,7 @@ object Output {
    * Convert a Map[String,String] to a JsObject.
    */
   protected[output] implicit def jsonHstore(hs: Option[Hstore]): Option[JsValue] = {
-    if (hs.isEmpty) None else Option(Json.toJson(hs))
+    hs.map(Json.toJson(_))
   }
 
   
