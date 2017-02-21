@@ -19,7 +19,8 @@ case class ContainerStats(id: String,
                           serviceAddresses: Option[Seq[ContainerStats.ServiceAddress]] )
 
 case object ContainerStats {
-  case class TaskStat(host: String,
+  case class TaskStat(id: String,
+                      host: String,
                       ipAddresses: Option[Seq[TaskStat.IPAddress]],
                       ports: Seq[Int],
                       startedAt: Option[String])
