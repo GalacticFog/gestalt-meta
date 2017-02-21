@@ -238,7 +238,7 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:c
 ############################
 # APIS
 ############################
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.LaserController.postApiFqon(fqon: String, id: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postApi(fqon: String, id: java.util.UUID)
 
 ############################
 # API_ENDPOINTS

@@ -50,6 +50,8 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   
   def createApi(api: LaserApi): Try[ApiResponse] = {
     val json = Json.toJson(api)
+    log.debug("POSTING NEW API TO GATEWAY:")
+    log.debug(Json.prettyPrint(json))
     apiResponse(gatewayClient.post("/apis", Option(json)), expected = Seq(200,201,202))
   }
   
