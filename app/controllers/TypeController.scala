@@ -25,7 +25,8 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
-
+import com.galacticfog.gestalt.json.Js
+  
 @Singleton
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -33,6 +34,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   
   private[this] val log = Logger(this.getClass)
 
+  case class SchemaEntry(name: String, datatype: String, required: Option[Boolean])  
+  object SchemaEntry {
+    implicit lazy val schemaEntryFormat = Json.format[SchemaEntry]
+  }
+  
   def getAllResourceTypesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
     
     orgFqon(fqon).fold(NotFoundResult(Errors.ORG_NOT_FOUND(fqon))) { org =>
@@ -152,9 +158,10 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
   
   def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon).fold(OrgNotFound(fqon))( _ => getSchemaResult(typeId) )
+    orgFqon(fqon).fold(OrgNotFound(fqon)){
+      _ => getSchemaResult(typeId, request.queryString)
+    }
   }
-  
   
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
     json.validate[GestaltResourceTypeInput].map{
@@ -172,32 +179,71 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       }
     }
     go(names, Seq())
-  }  
+  }
   
-  def getSchemaResult(typeId: UUID) = {
+  def getSchemaResult(typeId: UUID, qs: QueryString) = {
     TypeFactory.findById(typeId).fold{
       NotFoundResult(s"ResourceType ID '$typeId' not found.")
     }{ typ =>
+
       val ps = Properties.getTypeProperties(typeId)
-      Ok {
-        if (ps.isEmpty) s"There are no properties defined for type: ${typ.name}"
-        else renderTypePropertySchema(ps)      
+      
+      val result = {
+        if (ps.isEmpty) s"[]"
+        else if (qs.contains("filter") && qs("filter").contains("config"))
+          renderProviderConfiguration(typ)
+        else 
+          renderTypePropertySchema(ps, qs)      
       }
+      Ok(Json.parse(result))
     }
   }
   
-  private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty]) = {
-    val buf = new StringBuilder
-    val namewidth = maxwidth(ps)
-    val typewidth = 13
+  
+  def renderProviderConfiguration(typ: GestaltResourceType): String = {
+    val emptyArray = "[]"
     
-    buf append "[properties]:\n"
-    ps foreach { p =>   
-      val required = if (p.isRequired) ": [required]" else ""
-      buf append s"\t%-${namewidth}s : %-${typewidth}s %s".format(p.name, typename(p.datatype), required) + "\n"
+    if (typ.properties.isDefined) {
+      typ.properties.get.get("config_schema") match {
+        case None => emptyArray
+        case Some(v) => {
+          Js.find(Json.parse(v).as[JsObject], "/entries") match {
+            case None => emptyArray
+            case Some(js) => Json.prettyPrint(js)
+          }
+        }
+      }
+    } else emptyArray
+  }
+  
+  
+  private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty], qs: QueryString) = {
+    
+    def loop(ps: Seq[GestaltTypeProperty], acc: Seq[SchemaEntry]): Seq[SchemaEntry] = {
+      ps match {
+        case Nil => acc
+        case h :: t => {
+          val required = if (h.isRequired) Some(true) else Some(false)
+          loop(t, SchemaEntry(h.name, typename(h.datatype), required) +: acc)
+        }
+      }
     }
-    buf toString
-  }  
+    
+    val entries = loop(ps, Seq.empty)
+    Json.prettyPrint(Json.toJson(entries))
+    
+//    val buf = new StringBuilder
+//    val namewidth = maxwidth(ps)
+//    val typewidth = 13
+//    
+//    buf append "[properties]:\n"
+//    ps foreach { p =>   
+//      val required = if (p.isRequired) ": [required]" else ""
+//      buf append s"\t%-${namewidth}s : %-${typewidth}s %s".format(p.name, typename(p.datatype), required) + "\n"
+//    }
+//    buf toString
+    
+  }
   
   private def typename(tpe: UUID) = {
     DataType.name(tpe) match {
@@ -211,8 +257,9 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       case other  => other
     }
   }
-
+  
   private def maxwidth(ps: Seq[GestaltTypeProperty]) = {
     ps map ( _.name.size ) reduceLeft ( _ max _)
-  }  
+  }
+  
 }
