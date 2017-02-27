@@ -95,6 +95,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     val parentTypeId = mapPathData(Resource.ParentType) match {
       case a if a == "lambdas" => ResourceIds.Lambda
       case b if b == "environments" => ResourceIds.Environment
+      case c if c == "apis" => ResourceIds.Api
       case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
     }
     
@@ -110,6 +111,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     val lookup: UUID => Seq[GestaltResourceInstance] = parentTypeId match {
       case a if a == ResourceIds.Lambda => findEndpointsByLambda _
       case b if b == ResourceIds.Environment => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
+      case c if c == ResourceIds.Api => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
       case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
     }
     

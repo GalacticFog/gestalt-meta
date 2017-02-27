@@ -359,21 +359,28 @@ class LaserController @Inject()(messagesApi: MessagesApi,
   }
   
   
+  /*
+   *
+   * get/set lambda UUID
+   * create and inject parent-link into payload
+   * 
+   */
+  
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[JsValue]) = {
-
+    
     safeGetInputJson(request.body, Some(ResourceIds.Lambda)) match {
       case Failure(e)     => BadRequestResult(e.getMessage)
       case Success(input) => {
         
         val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
-
-        // Set ID for the Lambda.
+        
+        // Set ID for the Lambda
         val newjson = injectParentLink(
             request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
         
         val ps = getProviderInfo(newjson)
-
+        
         /*
          * TODO: This function needs a lot of help - currently lambdas will be created in laser
          * but creating the API will fail if the request is bad (say the location name is bad).
