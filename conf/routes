@@ -240,6 +240,10 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:c
 ############################
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postApi(fqon: String, id: java.util.UUID)
 
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id/apiendpoints		controllers.ApiController.postApiEndpoint(fqon: String, id: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:eid/apis/:aid/apiendpoints  controllers.ApiController.postApiEndpointEnv(fqon: String, eid: java.util.UUID, aid: java.util.UUID)
+
+
 ############################
 # API_ENDPOINTS
 ############################
