@@ -142,7 +142,7 @@ trait ResourceScope extends Scope {
     createInstance(ResourceIds.Lambda, uuid(),
       parent = Some(env),
       properties = Some(Map(
-          "providers" -> Json.stringify(Json.toJson(List(Json.obj("id" -> gateway.toString)))),
+          "provider" -> Json.stringify(Json.toJson(Json.obj("id" -> gateway.toString))),
           "public" -> "false",
           "runtime" -> "none",
           "code_type" -> "none",
