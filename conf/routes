@@ -59,7 +59,12 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/licenses/:id  @controllers.Lice
 ############################
 # LAMBDAS
 ############################
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas 		controllers.LaserController.postLambdaFqon(fqon: String, envId: java.util.UUID)
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/lambdas 		controllers.LaserController.postLambdaFqon(fqon: String, envId: java.util.UUID)
+
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas     					controllers.LambdaController.postLambdaFqon(fqon: String)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:pid/lambdas     	controllers.LambdaController.postLambda(fqon: String, parentType: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", pid: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:pid/lambdas     controllers.LambdaController.postLambda(fqon: String, parentType: String = "46b28076-9d94-4860-9aca-e8483a56d32c", pid: java.util.UUID)
+
 
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id						controllers.ResourceController.getLambdaByIdFqon(fqon: String, id: java.util.UUID)
 #GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/lambdas  			controllers.ResourceController.getWorkspaceLambdasFqon(fqon: String, id: java.util.UUID)
