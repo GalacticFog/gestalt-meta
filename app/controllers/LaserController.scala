@@ -54,9 +54,12 @@ class LaserController @Inject()(messagesApi: MessagesApi,
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   //private val log = Logger(this.getClass)
   
-  implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
+  
   
   case class LambdaProviderInfo(id: String, external_id: String, locations: Seq[JsValue])
+  object LambdaProviderInfo {
+    implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
+  }
   
   lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
   lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
