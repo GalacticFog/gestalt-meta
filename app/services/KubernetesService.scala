@@ -274,7 +274,7 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     val podtemplatemeta = ObjectMeta(name = podname, labels = labels)
     val podtemplate = Pod.Template.Spec(
         metadata = podtemplatemeta, 
-        spec = Some(Pod.Spec(containers = List(container))))
+        spec = Some(Pod.Spec(containers = List(container), dnsPolicy = skuber.DNSPolicy.ClusterFirst)))
 
     // Deployment Spec
     val deployspec = Deployment.Spec(
