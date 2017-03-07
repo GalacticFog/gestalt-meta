@@ -52,6 +52,7 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
     
     def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): GestaltResourceInstance = {
       val marathonAppId = (marathonResponse \ "id").as[String]
+      log.debug("MARATHON-APPID : " + marathonAppId)
       upsertProperties(resource,
         "external_id" -> marathonAppId,
         "status" -> "LAUNCHED"

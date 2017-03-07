@@ -35,6 +35,8 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.language.postfixOps
 import javax.inject.Singleton
+import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
+
 
 @Singleton
 class ResourceController @Inject()( messagesApi: MessagesApi,
@@ -81,7 +83,6 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     
   }
   
-  import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
   def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
     

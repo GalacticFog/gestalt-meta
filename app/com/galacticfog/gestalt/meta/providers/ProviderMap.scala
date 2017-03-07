@@ -25,15 +25,18 @@ object ServiceBinding {
   def fromJson(js: JsValue): Try[ServiceBinding] = Js.parse[ServiceBinding](js)
 }
 
-case class ProviderService(init: ServiceBinding, container_spec: JsValue /*ContainerSpec*/)
+case class ProviderService(init: ServiceBinding, container_spec: JsValue)
 object ProviderService {
   implicit lazy val providerService = Json.format[ProviderService]
   
   def fromJson(js: JsValue): Try[ProviderService] = Js.parse[ProviderService](js)
   
   def fromResource(r: GestaltResourceInstance): Seq[ProviderService] = {
+    val services = r.properties.get.get("services")
+    if (services.isEmpty) Seq.empty else {
     val svcs = (Json.parse(r.properties.get("services"))).as[JsArray]
-    svcs.value map { fromJson(_).get }
+      svcs.value map { s => fromJson(s).get }
+    }
   }
   
   def providerId(ps: ProviderService): Option[UUID] = {
@@ -87,7 +90,6 @@ case class ProviderMap(root: GestaltResourceInstance, idx: Int = 0) {
     (linkedProviders map { lp => (lp.id, lp.name) }).toMap
   }
 }
-
 
 object ProviderMap {
 
