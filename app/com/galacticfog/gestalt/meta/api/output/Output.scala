@@ -70,7 +70,7 @@ object Output {
     val res = mkTypeOutput(r)
     
     // this renders the properties
-    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    val renderedProps = renderInstanceProperties(r.id, r.id, r.properties)
     Json.toJson(res.copy(properties = renderedProps))
   }
   
@@ -160,6 +160,7 @@ object Output {
    */
   def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
     /* Get a Map of the properties defined for the current ResourceType. */
+    
     val templateProps = Properties.getTypePropertyMap(typeId)
     
     @tailrec
@@ -169,7 +170,7 @@ object Output {
         case property :: tail => {
           /*
            * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
-           * That shouldn't happen as this is output (resource should be validated at create/update).
+           * That shouldn't happen as this is output (resource should been validated at create/update).
            * just a note to look here if you see that error pop up.
            */
           if (skipRender(templateProps(property), given)) loop(tail, given, acc)
