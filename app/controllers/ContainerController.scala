@@ -166,8 +166,8 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
         log.info("Creating container in backend CaaS...")
         
         for {
-            updated   <- service.create(context, metaResource)
-            container <- updateContainer(updated, request.identity.account.id)
+          updated   <- service.create(context, metaResource)
+          container <- updateContainer(updated, request.identity.account.id)
         } yield Created(RenderSingle(container))
       }
     }
@@ -320,9 +320,9 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   }
 
   /**
-    * Ensure Container input JSON is well-formed and valid. Ensures that required properties
-    * are given and fills in default values where appropriate.
-    */
+   * Ensure Container input JSON is well-formed and valid. Ensures that required properties
+   * are given and fills in default values where appropriate.
+   */
   private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
     val defaults = containerWithDefaults(inputJson)
     val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]

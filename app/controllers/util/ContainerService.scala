@@ -194,14 +194,27 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
   }
 
   def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
-    
-    // Find container resource, convert to ContainerSpec
+    println("***Finding container by name...")
+    try {
+      
+      println(s"***ENVORONMENT: $environment, name: $containerName")
+      val cbn = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
+      println("***CHILD-BY-NAME : " + cbn)
+      
+    } catch {
+      case e : Throwable => {
+        println("FAILED CALLING findChildByName()")
+        e.printStackTrace()
+        log.error(e.getMessage, e.getCause)
+      }
+    }
+    // Find container resource in Meta, convert to ContainerSpec
     val maybeContainerSpec = for {
       r <- ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
       s <- ContainerSpec.fromResourceInstance(r).toOption
     } yield (r -> s)
     
-    
+    println("***Getting stats...")
     val maybeStatsFromMarathon = for {
       metaContainerSpec <- maybeContainerSpec
       provider <- Try { marathonProvider(metaContainerSpec._2.provider.id) }.toOption
@@ -359,8 +372,8 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
         "tasks_healthy" -> stats.tasksHealthy.toString,
         "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
         "tasks_staged" -> stats.tasksStaged.toString,
-        "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]"),
-        "service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]")
+        "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]")
+        /*"service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]")*/
       )
       case None => Seq(
         "status" -> "LOST",

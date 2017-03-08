@@ -72,9 +72,10 @@ class JsonInputSpec extends PlaySpecification with ResourceScope with BeforeAll 
     
     "fail when properties are invalid for type" in {
       val js = Json.obj(
-          "name" -> "test",
+          "name" -> "test"
+          /* 'workspace' is no longer a required property, but 'environment_type' still is
           "properties" -> Json.obj(
-              "environment_type" -> EnvironmentType.id("development").toString))
+              "environment_type" -> EnvironmentType.id("development").toString)*/)
       
       // properties.workspace is missing
       in.safeGetInputJson(js, Some(ResourceIds.Environment)) must beFailedTry

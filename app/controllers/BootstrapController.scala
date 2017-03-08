@@ -15,11 +15,18 @@ import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
+import com.galacticfog.gestalt.meta.providers._
 
 @Singleton
 class BootstrapController @Inject()(messagesApi: MessagesApi,
                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
+  def initProviders() = Authenticate() { implicit request =>
+    val results = ProviderManager.loadAllProviders()
+    
+    Ok("TESTING PROVIDER LOADING...")
+  }
   
   def bootstrap() = Authenticate() { implicit request =>
     trace("bootstrap()")

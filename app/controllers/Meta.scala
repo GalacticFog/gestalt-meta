@@ -486,6 +486,9 @@ class Meta @Inject()(messagesApi: MessagesApi,
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
 
+
+  import com.galacticfog.gestalt.meta.providers._
+  
   def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
 
     val providerType = resolveProviderType(json)
@@ -508,23 +511,58 @@ class Meta @Inject()(messagesApi: MessagesApi,
           //Future {
       SafeRequest (operations, options) ProtectAsync { maybeState =>           
       
-      //NOW SET ENTITLEMENTS ON THE NEW PROVIDER!!!
-
+      //
+      // NOW SET ENTITLEMENTS ON THE NEW PROVIDER!!!
+      //
+      
       if (providerType == ResourceIds.ApiGatewayProvider) {
         log.debug("Creating ApiGatewayProvider...")
         postGatewayProvider(org, parentResource)
       } 
       else {
-
+        
         ResourceFactory.findById(UUID.fromString(parentType), parent).fold {
           Future(ResourceNotFound(UUID.fromString(parentType), parent))
         }{ p =>
+          
+          /*
+           * TODO: Validate linked_providers exist!
+           * TODO: Validate services/containers
+           * TODO: Flatten these Trys
+           */
           // We found the parent, inject resource_type and parent into the incoming JSON.
           JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
-            case Failure(e) => Future(HandleRepositoryExceptions(e))
+            case Failure(e) => HandleExceptionsAsync(e)
             case Success(j) => {
               val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
-              createResourceCommon(org, parent, providerType, newjson)
+              
+              Js.parse[GestaltResourceInput](newjson) match {
+                case Failure(e) => HandleExceptionsAsync(e)
+                case Success(input) => {
+                  val res = CreateNewResource(org, request.identity, input, Some(providerType), Some(p.id))
+                  res match {
+                    case Failure(e) => HandleExceptionsAsync(e)
+                    case Success(r) => {
+
+                      log.debug("Loading ProviderMap...")
+                      
+                      val pm = ProviderMap(r)
+                      log.debug("Linked Providers:")
+                      pm.dependencies foreach { d => println("%s, %s".format(d.id, d.name)) }
+                      
+                      log.debug("\nServices Found: " + pm.services.size)
+                      val results = ProviderManager.loadProvider(pm)
+                      /*
+                       * TODO: Use results to create provider.status object
+                       */
+                      Future(Created(RenderSingle(r)))
+                    }
+                  }
+                }
+              }
+              
+              //createResourceCommon(org, parent, providerType, newjson)
+              
             }
           }
         }

@@ -43,13 +43,19 @@ case class ContainerSpec(name: String = "",
 
 case object ContainerSpec extends Spec {
 
+  case class ServiceAddress(host: String, port: Int, protocol: Option[String])
+  case object ServiceAddress {
+    implicit val formatServiceAddress = Json.format[ServiceAddress]
+  }  
+  
   case class PortMapping(protocol: String,
                          container_port: Option[Int] = None,
                          host_port: Option[Int] = None,
                          service_port: Option[Int] = None,
                          name: Option[String] = None,
                          labels: Option[Map[String,String]] = None,
-                         expose_endpoint: Option[Boolean] = None)
+                         expose_endpoint: Option[Boolean] = None,
+                         service_address: Option[ServiceAddress] = None)
 
   case class Volume(container_path: String,
                     host_path: Option[String],
@@ -76,7 +82,7 @@ case object ContainerSpec extends Spec {
                          interval_seconds: Int = 60,
                          timeout_seconds: Int = 10,
                          max_consecutive_failures: Int = 3)
-
+  
   def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
     resource_type = Some(ResourceIds.Container),
@@ -110,13 +116,14 @@ case object ContainerSpec extends Spec {
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-
+    println("***Loading Container from REsource...")
     val created: Option[DateTime] = for {
       c <- metaContainerSpec.created
       ts <- c.get("timestamp")
       parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
     } yield parsedTimestamp
 
+    
     val attempt = for {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
@@ -132,13 +139,15 @@ case object ContainerSpec extends Spec {
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
       volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
-      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
+      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
+      
       port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
       user = props.get("user")
       image <- if (ctype.equalsIgnoreCase("DOCKER")) Try{props("image")} else Try("")
       network = props.get("network")
       force_pull = props.get("force_pull") map {_.toBoolean}
       external_id = props.get("external_id")
+      
     } yield ContainerSpec(
       name = metaContainerSpec.name,
       description = metaContainerSpec.description,
@@ -164,6 +173,7 @@ case object ContainerSpec extends Spec {
       external_id = external_id,
       created = created
     )
+    println("***Finished conversion.")
     attempt.recoverWith {
       case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
     }

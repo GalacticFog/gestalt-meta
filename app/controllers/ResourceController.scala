@@ -35,6 +35,8 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.language.postfixOps
 import javax.inject.Singleton
+import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
+
 
 @Singleton
 class ResourceController @Inject()( messagesApi: MessagesApi,
@@ -81,7 +83,6 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     
   }
   
-  import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
   def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
     
@@ -146,6 +147,11 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
+      
+      /*
+       * Have to pre-process the container-list
+       */
+      
       Await.result(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds

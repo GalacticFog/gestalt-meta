@@ -15,8 +15,8 @@ case class ContainerStats(id: String,
                           tasksRunning: Int,
                           tasksHealthy: Int,
                           tasksUnhealthy: Int,
-                          taskStats: Option[Seq[ContainerStats.TaskStat]],
-                          serviceAddresses: Option[Seq[ContainerStats.ServiceAddress]] )
+                          taskStats: Option[Seq[ContainerStats.TaskStat]]
+                          /*serviceAddresses: Option[Seq[ContainerStats.ServiceAddress]]*/ )
 
 case object ContainerStats {
   case class TaskStat(id: String,
@@ -29,9 +29,7 @@ case object ContainerStats {
     case class IPAddress(ipAddress: String, protocol: String)
   }
 
-  case class ServiceAddress(address: String, ports: Seq[Int])
 
-  implicit val formatServiceAddress = Json.format[ServiceAddress]
   implicit val formatIPAddress = Json.format[TaskStat.IPAddress]
   implicit val formatTaskStat = Json.format[TaskStat]
 }

@@ -145,9 +145,11 @@ case object MarathonClient {
                 (marApp \ "portDefinitions" \\ "labels").map(_.as[Map[String,String]])
             }
           } getOrElse Seq.empty
+          
           vipLabels = portLabels.flatMap(_.collect{
             case (k,v) if k.matches("VIP_[0-9]+") => v
           }) groupBy (_.split(":").head.stripPrefix("/") + ".marathon.l4lb.thisdcos.directory") filter {case (k,v) => k.trim.nonEmpty}
+          /*
           addresses = vipLabels map {
             case (address,vips) => ContainerStats.ServiceAddress(
               address = address,
@@ -157,6 +159,7 @@ case object MarathonClient {
               })
             )
           }
+          */
     } yield ContainerStats(
       status = status,
       containerType = ctype,
@@ -170,8 +173,8 @@ case object MarathonClient {
       tasksStaged = tasksStaged,
       tasksHealthy = tasksHealthy,
       tasksUnhealthy = tasksUnhealthy,
-      taskStats = tasks,
-      serviceAddresses = Some(addresses.toSeq)
+      taskStats = tasks
+      /*serviceAddresses = Some(addresses.toSeq)*/
     )
   }
 
