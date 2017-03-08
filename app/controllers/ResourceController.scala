@@ -147,6 +147,11 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
+      
+      /*
+       * Have to pre-process the container-list
+       */
+      
       Await.result(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds

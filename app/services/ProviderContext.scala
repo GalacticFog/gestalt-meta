@@ -32,7 +32,7 @@ case class ProviderContext(
   private[this] val log = Logger(this.getClass)
   
   val m = mapUri(request.uri)
-
+  println("*****MAP : " + m)
   val fqon = m(Resource.Fqon)
   
   /*
@@ -40,7 +40,8 @@ case class ProviderContext(
    * the environment-id in the resource map.
    */
   val environmentId = {
-    if (UUID.fromString(m(Resource.ParentId)) != ResourceIds.Environment)
+    //if (UUID.fromString(m(Resource.ParentId)) != ResourceIds.Environment)
+    if (m(Resource.ParentType) != "environments")
       UUID.fromString(m(Resource.TargetId))
     else UUID.fromString(m(Resource.ParentId))
   }
@@ -56,8 +57,8 @@ case class ProviderContext(
    */
   lazy val workspace   = {
     val parentid = UUID.fromString(m(Resource.ParentId))
-    val tpe = ResourceFactory.findById(parentid).get.typeId
-    
+    //val tpe = ResourceFactory.findById(parentid).get.typeId
+    val tpe = ResourceFactory.findParent(environmentId).get.typeId
     log.debug(s"Looking up parent for environment: ${environmentId}")
     log.debug(s"Parent Type: ${tpe} [${ResourceLabel(tpe)}]")
 

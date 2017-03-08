@@ -178,8 +178,10 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
       case Success((service, metaResource)) => {
         
         log.info("Meta container created: " + metaResource.id)
-        log.info("Creating container in backend CaaS...")
+        log.info("Setting entitlements on new container.")
+        setNewEntitlements(pm.org, environment.id, account, Some(pm.id))
         
+        log.info("Creating container in backend CaaS...")
         for {
           updated   <- service.create(ctx, metaResource)
           container <- updateContainer(updated, account.account.id)
@@ -188,7 +190,7 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     }
     created
   }
-
+  
   
   def loadCaasProvider(service: ProviderService) = {
     val pid = ProviderService.providerId(service) getOrElse {
@@ -428,8 +430,6 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
   }
   
   def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
-  
-  
   
   
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
