@@ -185,6 +185,31 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   /**
+   * Custom lookup providing a shortcut to Provider containers. 
+   */
+  def getProviderContainers(fqon: String, provider: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(provider).fold {
+      ResourceNotFound(ResourceIds.Provider, provider)
+    }{ _ =>
+      AuthorizeList("container.view") {
+        ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
+      }
+    }
+  }  
+  def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(provider).fold {
+      ResourceNotFound(ResourceIds.Provider, provider)
+    }{ _ =>
+      Authorize(container, "container.view") {
+        //ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
+        ResourceFactory.findById(ResourceIds.Container, container).fold {
+          ResourceNotFound(ResourceIds.Container, container)
+        }{ c => Ok(RenderSingle(c)) }
+      }
+    }    
+  }
+  
+  /**
    * Get a Resource or list of Resources by path.
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
@@ -234,9 +259,11 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
           log.debug("No custom transformer found.")
           Ok( RenderSingle(res) )
         }{ f =>
+          
           log.debug(s"Found custom transformation function for Resource: ${res.id}")
           log.debug(s"type-id: ${res.typeId}, label: ${ResourceLabel(res.typeId)}")
           log.debug("FUNCTION : " + f.getClass.getName)
+          
           f(res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
