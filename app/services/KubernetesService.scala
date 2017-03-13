@@ -2,33 +2,21 @@ package services
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
-
-//import play.api.{Logger => log}
-//
-//import play.api.Logger
 import org.slf4j.LoggerFactory
 
-import play.api.libs.ws.WS
-import play.api.Play.current
-import play.api.libs.json._
-
+import scala.language.implicitConversions
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
-import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.marathon.MarathonClient
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, Resource, ResourcePath}
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.events._
 import com.google.inject.Inject
-
-
 import skuber._
 import skuber.api.client._
 import skuber.json.format._
@@ -37,13 +25,13 @@ import skuber.json.ext.format._
 import org.yaml.snakeyaml._
 import play.api.libs.json._
 import skuber.api.client.ObjKind
-
 import com.galacticfog.gestalt.caas.kube._
-
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
-import scala.concurrent.ExecutionContext
+import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
+import skuber.Container.Port
 
+import scala.concurrent.ExecutionContext
 
 case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
 object ContainerSecret {
@@ -63,14 +51,67 @@ object ContainerSecret {
   def unprocessable(message: String) = throw UnprocessableEntityException(message)
 }
 
-/*
- * TODO: provider constructor argument appears to be unnecessary
- */
-class KubernetesService(provider: UUID) extends CaasService with JsonInput with MetaControllerUtils {
+trait SkuberFactory {
+  def initializeKube( provider: UUID, namespace: String )
+                    ( implicit ec: ExecutionContext ): Future[RequestContext]
+}
+
+class DefaultSkuberFactory extends SkuberFactory {
+
+  /**
+    *
+    */
+  override def initializeKube( provider: UUID, namespace: String )
+                             ( implicit ec: ExecutionContext ): Future[RequestContext] = for {
+    config  <- loadProviderConfiguration(provider)
+    context <- Future.fromTry(KubeConfig.initializeString(config, namespace = Some(namespace)))
+  } yield context
+
+  /**
+    * Get kube configuration from Provider. Performs lookup and validation of provider type.
+    */
+  private[services] def loadProviderConfiguration(provider: UUID)(
+    implicit ec: ExecutionContext): Future[String] = Future {
+
+    log.debug("loadProviderConfiguration({})", provider.toString)
+    val prv = ResourceFactory.findById(provider) getOrElse {
+      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
+    }
+
+    if (prv.typeId != ResourceIds.CaasProvider)
+      throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
+    else extractKubeConfig(prv.properties) getOrElse {
+      throw new RuntimeException(s"Provider configuration not found. This is a bug")
+    }
+  }
+
+  /**
+    * Get kube configuration from provider.properties. Decode if necessary.
+    */
+  private[services] def extractKubeConfig(props: Option[Map[String, String]]): Option[String] = {
+    props flatMap { ps =>
+      ps.get("data").map { config =>
+        if (Ascii.isBase64(config)) Ascii.decode64(config) else config
+      }
+    }
+  }
+
+}
+
+object KubernetesService {
+  val META_CONTAINER_KEY = "meta/container"
+}
+
+class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
+  extends CaasService with JsonInput with MetaControllerUtils {
+
+  import KubernetesService._
   
   private[this] val log = LoggerFactory.getLogger(this.getClass)
   private[services] val DefaultNamespace = "default"
-  
+
+  import ContainerSecret.unprocessable
+
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     
@@ -78,30 +119,29 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
       case Failure(e) => Future.failed(e)
       case Success(sec) =>
         for {
-          k8s        <- initializeKube(context.provider.id, DefaultNamespace)
+          k8s        <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
           namespace  <- getNamespace(k8s, context.environment.id, create = true)
-          kube       <- initializeKube(context.provider.id, namespace.name)
+          kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
           output     <- createKubeSecret(kube, secret.id, sec, namespace.name) map { _ => secret }
         } yield output
     }
   }
-  
-  def create(context: ProviderContext, container: GestaltResourceInstance)(
-      implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
 
+  def create(context: ProviderContext, container: GestaltResourceInstance)
+            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
-    
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
-      case Success(spec) =>
-        for {
-          k8s        <- initializeKube(context.provider.id, DefaultNamespace)
-          namespace  <- getNamespace(k8s, context.environment.id, create = true)
-          kube       <- initializeKube(context.provider.id, namespace.name)
-          deployment <- createKubeDeployment(kube, container.id, spec, namespace.name) map { 
-                          _ => setPostLaunchStatus(container) 
-          }
-        } yield deployment
+      case Success(spec) => for {
+        k8s        <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
+        namespace  <- getNamespace(k8s, context.environment.id, create = true)
+        kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
+        updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
+      } yield upsertProperties(
+        container,
+        "status" -> "LAUNCHED",
+        "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
+      )
     }
   }
 
@@ -125,22 +165,75 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
       }
     }
   }
-  
+
   private[services] def setPostLaunchStatus(container: GestaltResourceInstance): GestaltResourceInstance = {
     upsertProperties(container, "status" -> "LAUNCHED")    
+  }
+
+  private[this] implicit def toProtocol(proto: String): skuber.Protocol.Value = proto.toUpperCase match {
+    case "TCP" => skuber.Protocol.TCP
+    case "UDP" => skuber.Protocol.UDP
+    case _ => unprocessable("port mapping must specify \"TCP\" or \"UDP\" as protocol")
   }
 
   /**
    * Create a Deployment in Kubernetes
    */
-  private[services] def createKubeDeployment(k8s: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String) = {
-    k8s.create[Deployment](mkdeployment(containerId, spec, namespace))
+  private[services] def createKubeDeployment(k8s: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
+    val fDep = k8s.create[Deployment](mkdeployment(containerId, spec, namespace))
+    val fUpdatedPMs = createKubeService(k8s, namespace, containerId, spec)
+    for {
+      dep <- fDep
+      updatedPMs <- fUpdatedPMs
+    } yield (spec.copy(
+      port_mappings = updatedPMs
+    ))
+  }
+
+  private[services] def createKubeService(k8s: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
+    val exposedPorts = container.port_mappings.filter(_.expose_endpoint.contains(true))
+    val srvProto = exposedPorts.foldLeft[Service](
+      Service(metadata=ObjectMeta(name=container.name,namespace=namespace))
+        .withType(Service.Type.NodePort)
+        .withSelector(
+          META_CONTAINER_KEY -> containerId.toString
+        )
+        .addLabel(
+          META_CONTAINER_KEY -> containerId.toString
+        )
+    ){
+      case (svc,pm) => svc.exposeOnPort(Service.Port(
+        name = pm.name.getOrElse(""),
+        protocol = pm.protocol,
+        port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
+        targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
+        nodePort = pm.host_port.getOrElse(0)
+      ))
+    }
+    if (srvProto.spec.exists(_.ports.size > 0)) {
+      val svchost = s"${container.name}.${namespace}.svc.cluster.local"
+      k8s.create[Service](srvProto) map { _ =>
+        container.port_mappings.map {
+          case pm if pm.expose_endpoint.contains(true) => pm.copy(
+            service_address = Some(ContainerSpec.ServiceAddress(
+              host = svchost,
+              port = pm.service_port.orElse(pm.container_port).get,
+              protocol = Some(pm.protocol)
+            ))
+          )
+          case pm => pm.copy(service_address = None)
+        }
+      }
+    } else {
+      // return original port_mappings, clear out the service_address fields
+      Future.successful(container.port_mappings.map(_.copy(service_address = None)))
+    }
   }
 
   private[services] def createKubeSecret(k8s: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
     k8s.create[Secret](mksecret(secretId, spec, namespace))
   }
-  
+
   /**
    * Lookup and return the Provider configured for the given Container.
    */
@@ -155,7 +248,7 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
     }    
   }
-  
+
   /**
    * Parse and format the provider.id property from a container.properties map.
    */
@@ -163,27 +256,8 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
       UUID.fromString(id.as[String])
     }
-  }  
-//  def deleteContainer(container: GestaltResourceInstance): Future[Unit] = {
-//    
-//    val provider = containerProvider(container)
-//    val depname  = deploymentName(container.name)
-//    
-//    for {
-//      deployment  <- k8s.get[Deployment](depname)
-//      replicasets <- k8s.list[ReplicaSetList]
-//      pods        <- k8s.list[PodList]
-//      
-//      replicaToDelete = getByName[ReplicaSet, ReplicaSetList](replicasets, depname).get
-//      podsToDelete = listByName[Pod, PodList](pods, depname)
-//      
-//      _  <- k8s.delete[Deployment](depname)
-//      _  <- k8s.delete[ReplicaSet](replicaToDelete.name)
-//      dp <- Future(podsToDelete.map(pod => k8s.delete[Pod](pod.name)).headOption.get)
-//    } yield dp
-//    
-//  }
-  
+  }
+
   def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
     
     val provider = containerProvider(container)
@@ -197,26 +271,38 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
         throw new RuntimeException(s"Could not find Environment for container '${container.id}' in Meta.")
       }
     }
+
+    val fKube = skuberFactory.initializeKube(provider.id, environment.toString)
     
-    for {
-      kube        <- initializeKube(provider.id, environment.toString)
+    val fDplDel = for {
+      kube        <- fKube
       deployment  <- kube.get[Deployment](depname)
       replicasets <- kube.list[ReplicaSetList]
       pods        <- kube.list[PodList]
       
       replicaToDelete = getByName[ReplicaSet, ReplicaSetList](replicasets, depname).get
       podsToDelete = listByName[Pod, PodList](pods, depname)
-      
+
       _  <- kube.delete[Deployment](depname)
       _  <- kube.delete[ReplicaSet](replicaToDelete.name)
-      dp <- Future(podsToDelete.map(pod => kube.delete[Pod](pod.name)).headOption.get)
-    } yield dp  
+      dp <- Future.traverse(podsToDelete)(pod => kube.delete[Pod](pod.name))
+    } yield dp.headOption.getOrElse(())
+
+    val fSrvDel = for {
+      kube <- fKube
+      srvs <- kube.list[ServiceList]
+      dsrv <- Future.traverse(
+        srvs.items.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
+      )(srv => kube.delete[Service](srv.name))
+    } yield dsrv.headOption.getOrElse(())
+
+    Future.sequence(Seq(fDplDel,fSrvDel)) map (_ => ())
   }
-  
+
   def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
     objs.items filter { _.name.startsWith(prefix) }
   }
-  
+
   def getByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): Option[O] = {
     val found = listByName[O, L](objs, prefix)
     if (found.size > 1) throw new IllegalArgumentException(s"Too many matches.")
@@ -247,30 +333,43 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
     Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
   }
-  
-  
+
+
+  private[services] def mkportmappings(pms: Seq[PortMapping]): Seq[Port] = {
+    pms.map(pm => skuber.Container.Port(
+      containerPort = pm.container_port.getOrElse(unprocessable("port mapping must specify container_port")),
+      protocol = pm.protocol,
+      name = pm.name.getOrElse(
+        if (pms.size > 1) unprocessable("multiple port mappings requires port names") else ""
+      ),
+      hostPort = pm.host_port
+    ))
+  }
+
   /**
    * Create a Kubernetes Deployment object in memory.
-   * 
+   *
    * @param id UUID for the Meta Container. This will be used as a label on all of the.
    * @param containerSpec ContainerSpec with Container data
    */
   private[services] def mkdeployment(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace) = {
     // Container resource requirements.
     val requirements = skuber.Resource.Requirements(requests = Map(
-        "cpu" -> containerSpec.cpus, 
+        "cpu" -> containerSpec.cpus,
         "memory" -> containerSpec.memory))
-    
+
     // Container
     val container = skuber.Container(
-        name = containerSpec.name, 
-        image = containerSpec.image,
-        resources = Some(requirements),
-        env = mkEnvVars(containerSpec.env))
+      name = containerSpec.name,
+      image = containerSpec.image,
+      resources = Some(requirements),
+      env = mkEnvVars(containerSpec.env),
+      ports = mkportmappings(containerSpec.port_mappings).toList
+    )
 
     // Pod Spec and Template        
     val podname = "pod-" + id.toString
-    val labels = containerSpec.labels ++ Map("meta/container" -> id.toString)
+    val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
     val podtemplatemeta = ObjectMeta(name = podname, labels = labels)
     val podtemplate = Pod.Template.Spec(
         metadata = podtemplatemeta, 
@@ -279,7 +378,8 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
     // Deployment Spec
     val deployspec = Deployment.Spec(
         replicas = containerSpec.num_instances, 
-        template = Some(podtemplate))
+        template = Some(podtemplate)
+    )
         
     // Deployment metadata
     val deploymentname = "deployment-" + containerSpec.name
@@ -294,47 +394,8 @@ class KubernetesService(provider: UUID) extends CaasService with JsonInput with 
   
   private[services] def deploymentName(containerName: String) =
     "deployment-" + containerName
-  
-  /**
-   * 
-   */
-  private[services] def initializeKube(provider: UUID, namespace: String)(
-      implicit ec: ExecutionContext): Future[RequestContext] = for {
-    config  <- loadProviderConfiguration(provider)
-    context <- Future(KubeConfig.initializeString(config, namespace = Some(namespace)).get)
-  } yield context
-  
-  
-  /**
-   * Get kube configuration from Provider. Performs lookup and validation of provider type.
-   */
-  private[services] def loadProviderConfiguration(provider: UUID)(
-      implicit ec: ExecutionContext): Future[String] = Future {
-    
-    log.debug("loadProviderConfiguration({})", provider.toString)
-    
-    val prv = ResourceFactory.findById(provider) getOrElse { 
-      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
-    }
-    
-    if (prv.typeId != ResourceIds.CaasProvider)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
-    else extractKubeConfig(prv.properties) getOrElse {
-      throw new RuntimeException(s"Provider configuration not found. This is a bug")
-    }
-  }
-  
-  /**
-   * Get kube configuration from provider.properties. Decode if necessary.
-   */
-  private[services] def extractKubeConfig(props: Option[Map[String, String]]): Option[String] = {
-    props flatMap { ps =>
-      ps.get("data").map { config =>
-        if (Ascii.isBase64(config)) Ascii.decode64(config) else config
-      }
-    }
-  }
-  
+
+
   def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }  

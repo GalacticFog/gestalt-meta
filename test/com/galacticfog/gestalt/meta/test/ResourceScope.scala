@@ -130,10 +130,16 @@ trait ResourceScope extends Scope {
   environments     : array_string  
   parent           : json_object   : [required]
    */
-  
-  
+
+
   def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
     createInstance(ResourceIds.MarathonProvider, name,
+      parent = Option(parent),
+      properties = Option(Map("parent" -> "{}")))
+  }
+
+  def createKubernetesProvider(parent: UUID, name: String = uuid.toString) = {
+    createInstance(ResourceIds.CaasProvider, name,
         parent = Option(parent),
         properties = Option(Map("parent" -> "{}")))
   }
