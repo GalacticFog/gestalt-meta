@@ -59,7 +59,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         else mergeParentEntitlements(ents, res.typeId, parent.get)
         
       } map { ent =>
-        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
         CreateNewResource(org, creator, 
           json   = Json.toJson(ent), 
           typeId = Option(ResourceIds.Entitlement), 
@@ -80,7 +80,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   def mergeParentEntitlements(ours: Seq[Entitlement], ourType: UUID, parent: UUID) = {
     
-    log.debug("mergeParentEntitlements(...)")
+    //log.debug("mergeParentEntitlements(...)")
     
     /*
      * Get a list of Entitlements set on the parent.
@@ -104,7 +104,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
             
           } else {
             
-            log.debug(s"Found duplicate Entitlement in parent (${dup(0).name}- merging identities.")
+            //log.debug(s"Found duplicate Entitlement in parent (${dup(0).name}- merging identities.")
             
             // We already have the property, merge identities
             // -----------------------------------------------

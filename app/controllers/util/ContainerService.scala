@@ -199,11 +199,9 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
       
       println(s"***ENVORONMENT: $environment, name: $containerName")
       val cbn = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
-      println("***CHILD-BY-NAME : " + cbn)
       
     } catch {
       case e : Throwable => {
-        println("FAILED CALLING findChildByName()")
         e.printStackTrace()
         log.error(e.getMessage, e.getCause)
       }
@@ -408,23 +406,23 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
         updatedMetaCon
     }
   }
-
+  
   private def badRequest(message: String) = {
     new BadRequestException(message)
   }
-
+  
   def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
     MarathonClient(WS.client, providerUrl)
   }
-
+  
   def marathonProvider(provider: UUID): GestaltResourceInstance = {
     ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
       throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
     }
   }
-
+  
   def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
     val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
       throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")
@@ -434,9 +432,9 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
     }
     (p -> c)
   }
-
+  
   def publishEvent(event: PolicyEvent) = {
     eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
   }
-
+  
 }

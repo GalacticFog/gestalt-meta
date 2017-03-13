@@ -195,13 +195,17 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
       }
     }
-  }  
+  }
+  
   def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(provider).fold {
       ResourceNotFound(ResourceIds.Provider, provider)
     }{ _ =>
       Authorize(container, "container.view") {
-        //ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
+        /*
+         * TODO: This doesn't check if the container is a descendant of
+         * the provider.
+         */
         ResourceFactory.findById(ResourceIds.Container, container).fold {
           ResourceNotFound(ResourceIds.Container, container)
         }{ c => Ok(RenderSingle(c)) }
@@ -237,7 +241,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         f(res, account, None).get
       }
     }
-  }  
+  }
   
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {

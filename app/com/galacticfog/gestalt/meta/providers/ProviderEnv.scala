@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.meta.providers
 
+
 import play.api.libs.json._
 import com.galacticfog.gestalt.json.Js
 import play.api.libs.json.Reads._ // Custom validation helpers
@@ -11,7 +12,14 @@ import com.galacticfog.gestalt.data.models._
 
 import scala.util.{Try,Success,Failure}
 
-case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map[String, String]])
+
+case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map[String, String]]) {
+  def flatten() = {
+    def getmap(m: Option[Map[String,String]]) = m getOrElse Map.empty
+    getmap(this.public) ++ getmap(this.privatev)
+  }
+}
+
 object ProviderEnv {
   lazy implicit val providerEnvReads: Reads[ProviderEnv] = (
     (JsPath \ "public").readNullable[Map[String,String]] and
@@ -26,3 +34,4 @@ object ProviderEnv {
   lazy implicit val providerEnvFormat: Format[ProviderEnv] =
     Format(providerEnvReads, providerEnvWrites)  
 }
+
