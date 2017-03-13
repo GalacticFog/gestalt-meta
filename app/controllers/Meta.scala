@@ -488,89 +488,147 @@ class Meta @Inject()(messagesApi: MessagesApi,
 
 
   import com.galacticfog.gestalt.meta.providers._
+
+  def load(rootProvider: ProviderMap, identity: UUID) = {
+    ProviderManager.loadProviders(Some(rootProvider)) map { seq =>
+      
+      seq.flatMap { case (provider, services) => 
+        
+        log.debug(s"Provider provisioning complete. Processing: ${provider.name}[${provider.id}]")
+        log.debug("Checking for dynamic updates to provider environment variables.")
+        
+        if (services.isEmpty) {
+          log.debug("No variable updates necessary.")
+          Option(Try(provider.root))
+        }
+        else {
+          provider.env map { vs =>
+            log.debug(s"Updating configuration for provider: ${provider.name}(${provider.id})")
+            saveProvider(provider, vs, identity)
+          }
+        }
+      }
+    }    
+  }
   
-  def postProviderCommon(org: UUID, parentType: String, parent: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-
-    val providerType = resolveProviderType(json)
+  /**
+   * Update a provider resource in Meta DB, replacing its properties.config.env object
+   * with the given ProviderEnv. 
+   */
+  private[controllers] def saveProvider(provider: ProviderMap, env: ProviderEnv, identity: UUID): Try[GestaltResourceInstance] = {
+    val tryResource = ProviderMap.replaceEnvironmentConfig(provider.root, env)
+    tryResource match {
+      case Failure(e) => {
+        log.error(s"Failed updating environment configuration for resource: ${provider.name}(${provider.id})")
+        tryResource
+      }
+      case Success(resource) => {
+        log.debug(s"Successfully updated env configuration for: ${resource.name}(${resource.id})")
+        ResourceFactory.update(resource, identity)
+        log.debug(s"Updated: ${resource.name}(${resource.id})")
+        tryResource
+      }
+    }
+  }
+  
+  /**
+   * Filters the target provider from the result-set obtained when creating a new provider.
+   */
+  private[controllers] def getCurrentProvider(targetId: UUID, results: Future[Seq[Try[GestaltResourceInstance]]]) = {
+    for {
+      seq <- results
+      out = {
+        log.debug(s"Finding provider in result-set. Seeking: ${targetId}")
+        seq filter { t => t.isSuccess && t.get.id == targetId } map { _.get }
+      }
+    } yield {
+      if (out.size > 1) {
+        log.error(s"Could not find Provider ${targetId} in results-list.")
+        throw new RuntimeException("An error occurred launching the Provider")
+      } else out.head
+    }    
+  }
+  
+  /**
+   * Currently just injects the given UUID and resource_type UUID
+   * into the POST JSON paylod for a new Provider.
+   */
+  private[controllers] def normalizeProviderPayload(
+      payload: JsValue, 
+      newId: UUID, 
+      providerType: UUID,
+      parent: GestaltResourceInstance, 
+      baseUrl: Option[String]): Try[JsObject] = {
+    
+    JsonUtil.upsertProperty(payload.as[JsObject], "parent", Json.toJson(toLink(parent, baseUrl))) map {
+      js => 
+        (js ++ Json.obj("id" -> JsString(newId.toString))) ++ 
+        Json.obj("resource_type" -> providerType.toString)
+    }
+  }
+  
+  private[controllers] def providerRequestOptions(org: UUID, user: AuthAccountWithCreds, payload: JsValue, baseUrl: String) = {
+    RequestOptions(user, 
+      authTarget = Option(org), 
+      policyOwner = Option(org), 
+      policyTarget = Option(j2r(org, user, payload, Option(ResourceIds.Provider))),
+      data = Option(Map("host" -> baseUrl)))    
+  }
+  
+  
+  def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
+      implicit request: SecuredRequest[JsValue]) = {
+    
+    val providertpe = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
-
-    ResourceFactory.findById(parentTypeId, parent).fold {
-      Future(ResourceNotFound(parentTypeId, parent))
-    } { parentResource =>
+    
+    ResourceFactory.findById(parentTypeId, parentId).fold {
+      Future(ResourceNotFound(parentTypeId, parentId))
+    } { parent =>
+      
+      // This is the ID we create the new provider with.
+      val targetid = Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
+        uid => UUID.fromString(uid.as[String])
+      }
       
       val user = request.identity
+      val payload = normalizeProviderPayload(json, targetid, providertpe, parent, META_URL).get
       val operations = standardMethods(ResourceIds.Provider, "provider.create")
+      val options = providerRequestOptions(org, user, payload, META_URL.get)
       
-      val inputJson = json.as[JsObject] ++ Json.obj("resource_type" -> providerType.toString)
-      val options = RequestOptions(user, 
-          authTarget = Option(org), 
-          policyOwner = Option(org), 
-          policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Provider))),
-          data = Option(Map("host" -> META_URL.get)))
-      
-          //Future {
       SafeRequest (operations, options) ProtectAsync { maybeState =>           
-      
-      //
-      // NOW SET ENTITLEMENTS ON THE NEW PROVIDER!!!
-      //
-      
-      if (providerType == ResourceIds.ApiGatewayProvider) {
-        log.debug("Creating ApiGatewayProvider...")
-        postGatewayProvider(org, parentResource)
-      } 
-      else {
         
-        ResourceFactory.findById(UUID.fromString(parentType), parent).fold {
-          Future(ResourceNotFound(UUID.fromString(parentType), parent))
-        }{ p =>
-          
-          /*
-           * TODO: Validate linked_providers exist!
-           * TODO: Validate services/containers
-           * TODO: Flatten these Trys
-           */
-          // We found the parent, inject resource_type and parent into the incoming JSON.
-          JsonUtil.upsertProperty(json.as[JsObject], "parent", Json.toJson(toLink(p, META_URL))) match {
-            case Failure(e) => HandleExceptionsAsync(e)
-            case Success(j) => {
-              val newjson = j ++ Json.obj("resource_type" -> providerType.toString)
-              
-              Js.parse[GestaltResourceInput](newjson) match {
-                case Failure(e) => HandleExceptionsAsync(e)
-                case Success(input) => {
-                  val res = CreateNewResource(org, request.identity, input, Some(providerType), Some(p.id))
-                  res match {
-                    case Failure(e) => HandleExceptionsAsync(e)
-                    case Success(r) => {
-
-                      log.debug("Loading ProviderMap...")
-                      
-                      val pm = ProviderMap(r)
-                      log.debug("Linked Providers:")
-                      pm.dependencies foreach { d => println("%s, %s".format(d.id, d.name)) }
-                      
-                      log.debug("\nServices Found: " + pm.services.size)
-                      val results = ProviderManager.loadProvider(pm)
-                      /*
-                       * TODO: Use results to create provider.status object
-                       */
-                      Future(Created(RenderSingle(r)))
-                    }
-                  }
-                }
+        val identity = user.account.id
+        val created = for {
+          input <- Js.parse[GestaltResourceInput](payload)
+          res   <- CreateNewResource(org, user, input, Some(providertpe), Some(parentId))  
+        } yield res
+        
+        created match {
+          case Failure(e) => {
+            /*
+             * TODO: Update container as 'FAILED' in Meta
+             */
+            HandleExceptionsAsync(e)
+          }
+          case Success(newMetaProvider) => {
+            
+            val results = load(ProviderMap(newMetaProvider), identity)
+            getCurrentProvider(targetid, results) map { t => 
+              Created(RenderSingle(t)) 
+            } recover { 
+              case e => {
+                /*
+                 * TODO: Update container as 'FAILED' in Meta
+                 */                
+                HandleExceptions(e)
               }
-              
-              //createResourceCommon(org, parent, providerType, newjson)
-              
             }
           }
         }
       }
-
-      } // SafeRequest
       
-    }    
+    }
   }
   
   def laserClient(lambdaUrl: String, gatewayUrl: String) = {

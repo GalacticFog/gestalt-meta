@@ -14,11 +14,12 @@ import com.galacticfog.gestalt.data.models._
 import scala.util.{Try,Success,Failure}
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.json._
-
+import com.galacticfog.gestalt.meta.api.errors._
 
 case class ServiceBinding(
     binding: Option[String] = Some("eager"), 
     singleton: Option[Boolean] = Some(true))
+    
 object ServiceBinding {
   implicit lazy val providerServiceBindingFormat = Json.format[ServiceBinding]
   
@@ -46,7 +47,8 @@ object ProviderService {
   }
 }
 
-case class ProviderMap(root: GestaltResourceInstance, idx: Int = 0) {
+
+case class ProviderMap(root: GestaltResourceInstance, idx: Int = 0, env: Option[ProviderEnv] = None) {
 
   def this(id: UUID, idx: Int) = this{
     ResourceFactory.findById(id) getOrElse {
@@ -67,17 +69,22 @@ case class ProviderMap(root: GestaltResourceInstance, idx: Int = 0) {
   /**
    * The original properties.config.env - not merged with linked vars.
    */
-  lazy val envConfig: Option[ProviderEnv] = ProviderMap.parseEnvironment(root)
-
+  lazy val envConfig: Option[ProviderEnv] = {
+    if (env.isDefined) env else ProviderMap.parseEnvironment(root)
+  }
+  
   /**
    * These are the linked providers that this provider depends on.
    */
   lazy val dependencies: Seq[ProviderMap] = {
     val pids = linkedProviders.map(_.id)
     val providers = ResourceFactory.findAllIn(pids)
-
+    
     if (pids.size != providers.size) {
-      // TODO: throw exception, report missing providers.
+      val found = providers map { _.id }
+      val missing = pids.diff(found).mkString(",")
+      throw new UnprocessableEntityException(
+          s"${found.size} of ${pids.size} linked_providers found. missing: [$missing]")
     }
     providers map { ProviderMap(_) }
   }
@@ -91,8 +98,19 @@ case class ProviderMap(root: GestaltResourceInstance, idx: Int = 0) {
   }
 }
 
-object ProviderMap {
 
+object ProviderMap {
+  
+  /**
+   * Replace the [properties.config] for a given resource with the given ProviderEnv.
+   */
+  def replaceEnvironmentConfig(r: GestaltResourceInstance, env: ProviderEnv): Try[GestaltResourceInstance] = Try{
+    val newconfig = Json.obj("env" -> Json.toJson(env)).toString
+    val newprops = (r.properties.get - "config") ++ Map("config" -> newconfig)
+    val out = r.copy(properties = Some(newprops))
+    out
+  }
+  
   def parseEnvironment(r: GestaltResourceInstance): Option[ProviderEnv] = {
     val props = r.properties getOrElse {
       throw new IllegalArgumentException(s"Resource '${r.id}' does not have properties.")

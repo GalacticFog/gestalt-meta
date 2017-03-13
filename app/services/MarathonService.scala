@@ -43,39 +43,42 @@ import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import scala.concurrent.ExecutionContext
-
+import com.galacticfog.gestalt.meta.api.ContainerSpec._
 
 class MarathonService extends CaasService with JsonInput with MetaControllerUtils {
   
   
-  import com.galacticfog.gestalt.meta.api.ContainerSpec._
-  
+  import scala.language.implicitConversions
+  implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
   
   def create(context: ProviderContext, container: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    log.debug("Entered create(...)")
     
     def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): GestaltResourceInstance = {
-      
-      updateServiceAddresses(marathonResponse, container)
-      
+      log.debug("Entered updateSuccessfulLaunch(...)")
+    
       val marathonAppId = (marathonResponse \ "id").as[String]
-      log.debug("MARATHON-APPID : " + marathonAppId)
-      upsertProperties(resource,
+      
+      // This parses the marathon VIP labels into meta port_mapping.service_address 
+      val updated = updateServiceAddresses(marathonResponse, container)
+      
+      upsertProperties(updated,
         "external_id" -> marathonAppId,
-        "status" -> "LAUNCHED"
-      )
+        "status" -> "LAUNCHED")
     }
     
     import com.galacticfog.gestalt.json._
     import com.galacticfog.gestalt.json.Js.find
     
-    implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
+
     
-    def updateServiceAddresses(marApp: JsValue, r: GestaltResourceInstance) = {
+    def updateServiceAddresses(marApp: JsValue, r: GestaltResourceInstance): GestaltResourceInstance = {
       val clusterid = ".marathon.l4lb.thisdcos.directory"
       
+      log.debug("Parsing port labels...")
       val portlabels: Seq[Map[String,String]] = {
-        Js.find(marApp.as[JsObject], "/container/docker/network") map {
+        Js.find(marApp, "/container/docker/network") map {
           _.as[String] match {
             case "USER" | "BRIDGE" =>
               (marApp \ "container" \ "docker" \ "portMappings" \\ "labels").map(_.as[Map[String,String]])
@@ -85,54 +88,85 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
         } getOrElse Seq.empty
       }
       
-      val pmaps = Js.find(marApp.as[JsObject], "/container/docker/portMappings") map { portmaps =>
-        portmaps.as[JsArray].value map { pm =>
-          val name     = find(pm, "/name").get.as[String]
-          val protocol = find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
-          val port     = find(pm, "/containerPort").get.as[Int]
-          
-          find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) => 
-            val labelvalue = next.as[Map[String, String]] collect { case (k,v) if k.matches("VIP_[0-9]+") => 
-                v.split(":").head.stripPrefix("/") + clusterid 
+      //Option[Seq[Map[String, ContainerSpec.ServiceAddress]]]
+      val portMappings = Js.find(marApp, "/container/docker/portMappings") map { portmaps =>
+      
+        /*
+         * This guard is to get around a bug in the dcos API where, if you pass in
+         * an empty array (or omit the array) for container.docker.portMappings, the
+         * API returns `portMappings: null` (instead of the expected nothing or empty array).
+         */
+        if (portmaps == JsNull) {
+          log.warn("[container.docker.portMappings] == null")
+          Seq.empty
+        } 
+        else {
+          portmaps.as[JsArray].value map { pm =>
+            
+            val name = find(pm, "/name") map { _.as[String] } getOrElse {
+              throw new RuntimeException(s"Could not parse 'name' from portMapping")
             }
-            acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
+            
+            val port = find(pm, "/containerPort") map { _.as[Int] } getOrElse {
+              throw new RuntimeException(s"Could not parse 'port' from portMapping")
+            }
+            
+            val protocol = find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
+            
+            find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) => 
+              val labelvalue = next.as[Map[String, String]] collect { 
+                case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
+              }
+              acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
+            }
           }
         }
+        
       }
   
       /*
-       * TODO: WIP - this needs to be cleaned up and validated safely.
+       * TODO: If portMappings is empty, we can return the original resource here.
        */
-      val portList = pmaps.get.head
 
-      val portprops = r.properties.get.get("port_mappings") map { 
-        p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
-          throw new RuntimeException("Could not parse portMappings to JSON.")
+      val resultResource = {
+        if (portMappings.isEmpty || portMappings.get.isEmpty) {
+          log.debug("No portMappings found - returning original resource.")
+          r
+        }
+        else {
+          val portList = portMappings.get.head
+          
+          // This loads Meta PortMappings from the resource
+          val metaPortMaps = r.properties.get.get("port_mappings") map {
+            p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
+              throw new RuntimeException("Could not parse portMappings to JSON.")
+            }
+          }
+          
+          def isExposed(p: PortMapping): Boolean = 
+            p.expose_endpoint getOrElse false
+          
+          // Get PortMappings where `expose_endpoint == true`
+          val exposedPorts = metaPortMaps.get collect { case p if isExposed(p) => 
+            p.copy(service_address = Some(portList(p.name.get)))
+          }
+          
+          if (exposedPorts.isEmpty) {
+            log.info("No exposed ports found. Returning.")
+            container 
+          }
+          else {
+            log.info(s"${exposedPorts.size} exposed ports found.")
+
+            // Replace container.properties.port_mappings
+            val newproperties = container.properties.get ++ Map(
+                "port_mappings" -> Json.toJson(exposedPorts).toString)
+
+            container.copy(properties = Some(newproperties))
+          }
         }
       }
- 
-      def isExposed(p: PortMapping): Boolean = p.expose_endpoint getOrElse false
-      
-      val finalmap = portprops.get collect { case p if isExposed(p) => 
-        p.copy(service_address = Some(portList(p.name.get)))
-      }
-      
-      val finaljson = Json.toJson(finalmap)
-      
-      val newproperties = container.properties.get ++ Map("port_mappings" -> finaljson.toString)
-      
-      newproperties foreach { case (k,v) => println("%s:\n%s\n".format(k, v)) }
-      
-      container.copy(properties = Some(newproperties))
-      
-      /*
-       * NOW have to map each of these service addresses to a properties.port_mapping in the
-       * container resource. 
-       * Don't think i have a choice but to filter and replace (inject service_address into port_mapping).
-       * 
-       * Then, back in ProviderManager, we have to read any service addresses defined to set the variables
-       * on the provider.
-       */
+      resultResource
     }
     
     
@@ -160,6 +194,7 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
           props = spec,
           provider = context.provider
         )
+        log.debug("About to launch container...")
         val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
         marathonClient(context.provider).launchApp(
           fqon = context.fqon,
@@ -171,7 +206,6 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
           
     }
   }
-  
   
   def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"

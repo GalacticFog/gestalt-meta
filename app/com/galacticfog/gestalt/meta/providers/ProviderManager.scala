@@ -26,8 +26,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import services._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
-import services._
-
 import controllers.util.JsonInput
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import scala.concurrent.Future
@@ -38,43 +36,99 @@ import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch._
+import com.galacticfog.gestalt.meta.api.ContainerSpec
+
+import com.galacticfog.gestalt.meta.api._
 
 
 object ProviderManager extends AuthorizationMethods with JsonInput {
-
+  
   private[this] val log = Logger(this.getClass)
   
   private type ServiceList = Seq[Future[GestaltResourceInstance]]
   
-  def getenv(pm: ProviderMap) = {
-    
+
+  def loadProviders(root: Option[ProviderMap] = None): Future[Seq[(ProviderMap,Seq[GestaltResourceInstance])]] = {
+    val ps = {
+      if (root.isEmpty) findEagerProviders()
+      else depthCollect(root.get, Set.empty, 0).toList.reverse
+    }
+    processAllProviders(ps)
   }
 
-  def loadAllProviders(): Map[ProviderMap,ServiceList] = {
-    val ps = findEagerProviders()
-    processProviders(ps, Map.empty)
+  private[providers] def processAllProviders(ps: Seq[ProviderMap]) = {
+    log.debug("Entered procAllProviders(_)...")
+    Future.sequence(ps map { p => processProvider(p) })  
   }
-  
-  def loadProvider(pm: ProviderMap): Map[ProviderMap,ServiceList] = {
-    val ps = depthCollect(pm, Set.empty, 0).toList.reverse
-    processProviders(ps, Map.empty)
+
+  private[providers] def processProvider(p: ProviderMap): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
+    log.debug("Entered procProvider(_)...")
+    val servicelist = processServices(p, p.services.toList, Seq.empty)
+    for {
+      vars <- mapPorts(servicelist)
+      env = vars.toMap
+      np  = updatePublicEnv(p, env)
+      sl   <- Future.sequence(servicelist)
+    } yield (np -> sl)
   }
-  
-  private[providers] def processProviders(
-      ps: Seq[ProviderMap], acc: Map[ProviderMap,ServiceList]): Map[ProviderMap,ServiceList] = {
-    ps match {
-      case Nil => acc
-      case provider :: tail => {
-        
-        /*
-         * The map value should probably be an Either[Throwable,ServiceList]
-         */
-        
-        // Start any containers associated with this provider.
-        val servicelist = processServices(provider, provider.services.toList, Seq.empty)
-        processProviders(tail, Map(provider -> servicelist) ++ acc)
-      }
+
+  /**
+   * Add the values in newVars to the given ProviderMap's envConfig.public
+   */
+  private[providers] def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
+    log.debug("Entered updatePublicEnv(_,_)...")
+    val penv = p.envConfig map { env =>
+      env.copy(public = env.public map { pub => newVars.toMap ++ pub })
     }
+    p.copy(env = penv)
+  }
+  
+  private[providers] def mapPorts(ss: Seq[Future[GestaltResourceInstance]]): Future[Seq[(String, String)]] = {
+    log.debug("Entered mapPorts(_)...")
+    Future.sequence(ss) map { services =>
+      val t = services map { s =>
+        parsePortMappings(s) filter { _.expose_endpoint == Some(true) } flatMap {  
+          portMappingToVariables(_)
+        }
+      }
+      t.flatten
+    }
+  }
+  
+  private[providers] def portMappingToVariables(
+      mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
+    
+    log.debug("Entered portMappingToVariables(_)...")
+    log.debug("PortMapping => " + mapping)
+    
+    def trMapName(mn: String): String = {
+      mn.trim.replaceAll("-","_").toUpperCase
+    }
+    
+    val basename = trMapName(mapping.name.get)
+    val protocol = mapping.protocol
+    val host = mapping.service_address.get.host
+    val port = mapping.service_address.get.port
+    
+    def varname(s: String) = "%s_%s".format(basename, s)
+    
+    Seq(
+      varname("PROTOCOL") -> protocol,
+      varname("HOST") -> host,
+      varname("PORT") -> port.toString)
+  }
+  
+  private[providers] def parsePortMappings(r: GestaltResourceInstance) = {
+    log.debug("Entered parsePortMappings(_)...")
+    r.properties.get.get("port_mappings") map { pmstr =>
+      Js.parse[Seq[ContainerSpec.PortMapping]](Json.parse(pmstr)) match {
+        case Success(pm) => pm
+        case Failure(e) => {
+          log.error("Failed parsing PortMappings from Resource." + e.getMessage)
+          throw e
+        }
+      }
+    } getOrElse Seq.empty
   }
   
   private[providers] def processServices(
@@ -85,11 +139,9 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     ss match {
       case Nil => acc
       case service :: tail => {
-
+        
         val caas = loadCaasProvider(service)
-        /*
-         * TODO: Check if there is already a service running for the current container.
-         */
+
         val account = getUserAccount(parent)
         val environment = getOrCreateProviderEnvironment(parent.resource, account)
         val containers = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id)
@@ -98,11 +150,15 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
         val fcontainer = {
           if (containers.isEmpty) {
             log.info(s"No containers found for Provider [${label}]...launching...")
+            
+            /*
+             * TODO: Variable MUST be created by this point.
+             */
+            
             launchContainer(parent, service, environment, caas)
           }
           else {
             log.info(s"Found running containers for Provider ${label}. Nothing to do.")
-            
             Future(containers(0))
           }
         }
@@ -111,9 +167,6 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     }
   }
   
-  def isLaunched(pm: ProviderMap) = {
-    
-  }
   
   private[providers] def mergeContainerVars(spec: JsValue, vars: Map[String,String]): Try[JsValue] = {
     val cvars = Js.find(spec.as[JsObject], "/properties/env") map { env =>
@@ -130,6 +183,9 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     patch.applyPatch(spec.as[JsObject])
   }
   
+  /**
+   * 
+   */
   private[providers] def normalizeContainerPayload(spec: JsValue, providerVars: Map[String,String]) = {
     mergeContainerVars(withProviderInfo(spec), providerVars)match {
       case Failure(e) => 
@@ -298,31 +354,7 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
   def getProviderEnvironment(provider: UUID): Option[GestaltResourceInstance] = {
     ResourceFactory.findChildByName(provider, ResourceIds.Environment, "services")
   }
-  
-  /**
-   * Launch eager providers
-   */
-  def launchProvider(pm: ProviderMap, environment: UUID) = {
-    
-    /* 
-     * 1.) Parse the 'provider' from the container_spec.
-     * 2.) Use that to get the ContainerService implementation
-     * 3.) launch the container
-     *
-     * A challenge here is determining if a service is already started. This function will
-     * start the containers for the the entire graph of providers represented by the given
-     * ProviderMap. The given provider *may* be a dependency of some other provider, so it
-     * doesn't need to be started when we're given that provider as argument. How do we know?
-     * 
-     * We can create a 'status' property that indicates the running status of the provider's containers.
-     * We can look for the container in the provider /env to determine its status.
-     * 
-     * ??? Which of these is the right strategy ???  
-     */
-    
-    //issue right now is ProviderContext requires a play.api.mvc.Request!!!
-    
-  }
+
   
   /**
    * Get a list of all providers that have an associated service (container) that
@@ -366,16 +398,8 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     val allmaps = depthCollect(pm, Set.empty, 0)
     val dependencyOrder = allmaps.toList.sortBy(_.idx).reverse
     val envs = mapLinkedEnvironments(dependencyOrder)
-
-    flattenEnv(envs(pm.id))
-  }
-  
-  /**
-   * Flatten the public and private environment maps into a single Map
-   */
-  def flattenEnv(penv: ProviderEnv): Map[String, String] = {
-    def getmap(m: Option[Map[String,String]]) = m getOrElse Map.empty
-    getmap(penv.public) ++ getmap(penv.privatev)
+    
+    envs(pm.id).flatten
   }
   
   /**
@@ -429,26 +453,49 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     }).toMap
   }
   
-  def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
+  /**
+   * Find a ProviderMap by ID in a Seq[ProviderMap]
+   */
+  private[providers] def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
   
-  
+
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
       case ResourceIds.CaasProvider     => new KubernetesService(typeId)
       case ResourceIds.MarathonProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
-  }  
+  }
   
-  def withProviderInfo(json: JsValue) = {    
-    val jprops = (json \ "properties")
-    
-    val pid = (jprops \ "provider" \ "id").as[String]
+  /*
+   * TODO: Everything below is 'container-centric' - should be in Container services somewhere.
+   */
+  def withProviderInfo(json: JsValue): JsObject = {    
 
-    val p = ResourceFactory.findById(UUID.fromString(pid)).get
-    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
+    val oldprops = Js.find(json.as[JsObject], "/properties") getOrElse {
+      throw new UnprocessableEntityException(s"Invalid container JSON. No propertites found.")
+    }
+    Js.find(json.as[JsObject], "/properties/provider/id").fold {
+      throw new UnprocessableEntityException(s"Invalid provider JSON. [properties.provider.id] not found.")
+    }{ pid =>
+      parseUUID(pid.as[String]).fold {
+        throw new UnprocessableEntityException(s"Invalid provider ID (not a GUID). found: '$pid'")
+      }{ uid =>
+        ResourceFactory.findById(uid).fold {
+          throw new UnprocessableEntityException(
+              s"Container Provider not found. Value from [properties.provider.id]: $pid")
+        }{ provider =>
+          // Plug provider values into json object and add to properties.
+          val pobj = Json.obj("provider" -> Json.obj("id" -> provider.id, "name" -> provider.name)) 
+          json.as[JsObject] ++ Json.obj("properties" -> (oldprops.as[JsObject] ++ pobj))
+        }
+      }
+    }
     
-    json.as[JsObject] ++ Json.obj("properties" -> newprops)
+//    val p = ResourceFactory.findById(UUID.fromString(pid)).get
+//    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
+//    
+//    json.as[JsObject] ++ Json.obj("properties" -> newprops)
   }
   
   /**
@@ -457,10 +504,6 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
   def parseProvider(c: GestaltResourceInstance): UUID = {
     UUID.fromString((Json.parse(c.properties.get("provider")) \ "id").as[String])
   }
-  
-  
-  import com.galacticfog.gestalt.meta.api._
-  
   
   /**
     * Ensure Container input JSON is well-formed and valid. Ensures that required properties
@@ -472,7 +515,12 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
     (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
   }
   
-  def containerWithDefaults(json: JsValue) = {
+  /**
+   * Ensure the given container JSON contains required properties, using defaults
+   * where possible.
+   */
+  private def containerWithDefaults(json: JsValue) = {
+
     val ctype = (json \ "properties" \ "container_type").asOpt[String] match {
       case Some(t) if ! t.trim.isEmpty => t
       case _ => throw new IllegalArgumentException(s"'container_type' is missing or empty.")
@@ -489,6 +537,7 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
         throw new IllegalArgumentException("Invalid provider JSON: " + Js.errorString(e))
       }
     }
+    
     ContainerSpec(
       name = "",
       container_type = ctype,
