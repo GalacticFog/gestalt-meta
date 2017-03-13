@@ -4,36 +4,30 @@ package com.galacticfog.gestalt.meta.providers
 import play.api.Logger
 import play.api.libs.json._
 
-import scala.util.{Try,Success,Failure}
-
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.json.Js
-import play.api.libs.json.Reads._ // Custom validation helpers
-import play.api.libs.functional.syntax._ // Combinator syntax
+import play.api.libs.json.Reads._
+import play.api.libs.functional.syntax._
 import java.util.UUID
+import javax.inject.Inject
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.providers._
-
-
 import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.meta.api.errors._
-
 import services._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
 import services._
-
 import controllers.util.JsonInput
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
-
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
@@ -45,7 +39,7 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
   private[this] val log = Logger(this.getClass)
   
   private type ServiceList = Seq[Future[GestaltResourceInstance]]
-  
+
   def getenv(pm: ProviderMap) = {
     
   }
@@ -431,10 +425,10 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
   
   def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
   
-  
+
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.CaasProvider     => new KubernetesService(typeId)
+      case ResourceIds.CaasProvider     => new KubernetesService(new DefaultSkuberFactory())
       case ResourceIds.MarathonProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
