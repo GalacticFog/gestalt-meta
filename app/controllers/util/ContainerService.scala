@@ -78,11 +78,17 @@ trait ContainerService extends JsonInput {
       if (qs(PROVIDER_KEY).size > 1) {
         throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
       } else {
-
+        
         val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
-        ResourceFactory.findById(ResourceIds.MarathonProvider, pid).fold {
+        ResourceFactory.findById(pid).fold {
           throw badRequest(s"Provider with ID '$pid' not found.")
-        }{ _ => pid }
+        }{ res =>
+          import com.galacticfog.gestalt.data.CoVariant
+          // Ensure resource we got is a sub-type of CaasProvider
+          val caasids = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
+          if (caasids.contains(res.typeId)) pid
+          else throw badRequest(s"Given ID '$pid' is not a CaaS Provider. No changes made.") 
+        }
       }
     } match {
       case Success(id) => id
@@ -418,7 +424,7 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
   }
   
   def marathonProvider(provider: UUID): GestaltResourceInstance = {
-    ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
+    ResourceFactory.findById(ResourceIds.DcosProvider, provider) getOrElse {
       throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
     }
   }

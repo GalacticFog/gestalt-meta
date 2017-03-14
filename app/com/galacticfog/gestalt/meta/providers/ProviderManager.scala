@@ -461,8 +461,8 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
 
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.CaasProvider     => new KubernetesService(typeId)
-      case ResourceIds.MarathonProvider => new MarathonService()
+      case ResourceIds.KubeProvider     => new KubernetesService(typeId)
+      case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }
