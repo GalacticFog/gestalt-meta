@@ -182,8 +182,8 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
   "isSubTypeOf" should {
 
     "return TRUE if targetType is a sub-type of baseType" in {
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.MarathonProvider) must beTrue
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.ApiGatewayProvider) must beTrue
+      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.DcosProvider) must beTrue
+      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.GatewayManager) must beTrue
 
       Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleEvent) must beTrue
       Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleLimit) must beTrue
@@ -191,8 +191,8 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
 
     "return FALSE if the targetType is NOT a sub-type of baseType" in {
 
-      Resource.isSubTypeOf(ResourceIds.MarathonProvider, ResourceIds.Provider) must beFalse
-      Resource.isSubTypeOf(ResourceIds.ApiGatewayProvider, ResourceIds.Provider) must beFalse
+      Resource.isSubTypeOf(ResourceIds.DcosProvider, ResourceIds.Provider) must beFalse
+      Resource.isSubTypeOf(ResourceIds.GatewayManager, ResourceIds.Provider) must beFalse
       Resource.isSubTypeOf(ResourceIds.RuleLimit, ResourceIds.Rule) must beFalse
 
       // random false
@@ -281,7 +281,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecu
         val (wid, eid) = createWorkspaceEnvironment(org.get.id)
         val g1 = createDummyGateway(eid, org = org.get.id)
 
-        findById(ResourceIds.ApiGatewayProvider, g1.get.id) must beSome
+        findById(ResourceIds.GatewayManager, g1.get.id) must beSome
 
         Resource.lookupResource("providers", g1.get.id) must beSome
       }

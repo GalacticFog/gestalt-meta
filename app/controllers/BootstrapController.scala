@@ -23,7 +23,7 @@ class BootstrapController @Inject()(messagesApi: MessagesApi,
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
-    val results = ProviderManager.loadAllProviders()
+    val results = ProviderManager.loadProviders()
     
     Ok("TESTING PROVIDER LOADING...")
   }

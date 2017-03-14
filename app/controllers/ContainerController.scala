@@ -64,8 +64,8 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.CaasProvider     => kubernetesService
-      case ResourceIds.MarathonProvider => new MarathonService()
+      case ResourceIds.KubeProvider     => kubernetesService
+      case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }

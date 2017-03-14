@@ -68,7 +68,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
-    ResourceIds.ApiEndpoint -> lookupApiEndpoints,
+    /*ResourceIds.ApiEndpoint -> lookupApiEndpoints,*/
     ResourceIds.Rule        -> lookupPolicyRules
   )
   
@@ -80,48 +80,47 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     log.debug("Finding rules for policy : " + policy)
     
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
-    
   }
   
-  def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
-    log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
-    
-    val mapPathData = Resource.mapListPathData(path.path)
-    val lambda = mapPathData(Resource.ParentId)
-
-    /*
-     * TODO: This is dumb - investigate why Resource.mapListPathData doesn't
-     * put the actual type ID into the map instead of the REST name for the type.
-     */
-    val parentTypeId = mapPathData(Resource.ParentType) match {
-      case a if a == "lambdas" => ResourceIds.Lambda
-      case b if b == "environments" => ResourceIds.Environment
-      case c if c == "apis" => ResourceIds.Api
-      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
-    }
-    
-    val debugParentLabel = ResourceLabel(parentTypeId)
-    log.debug(s"Looking up ApiEndpoints by parent type '$debugParentLabel'")
-    
-    /*
-     * The idea here is that if the request comes in through the /lambdas path we need to
-     * execute a special function (findEndpointsByLambda()) since apiendpoints are not
-     * children of lambdas currently. This all goes away when we revamp the api-gateway
-     * code.
-     */
-    val lookup: UUID => Seq[GestaltResourceInstance] = parentTypeId match {
-      case a if a == ResourceIds.Lambda => findEndpointsByLambda _
-      case b if b == ResourceIds.Environment => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
-      case c if c == ResourceIds.Api => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
-      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
-    }
-    
-    val targetId = UUID.fromString(mapPathData(Resource.ParentId))
-    
-    log.debug(s"Searching for ApiEndpoints in $debugParentLabel '$targetId'")
-    
-    lookup(targetId)
-  }
+//  def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
+//    log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
+//    
+//    val mapPathData = Resource.mapListPathData(path.path)
+//    val lambda = mapPathData(Resource.ParentId)
+//
+//    /*
+//     * TODO: This is dumb - investigate why Resource.mapListPathData doesn't
+//     * put the actual type ID into the map instead of the REST name for the type.
+//     */
+//    val parentTypeId = mapPathData(Resource.ParentType) match {
+//      case a if a == "lambdas" => ResourceIds.Lambda
+//      case b if b == "environments" => ResourceIds.Environment
+//      case c if c == "apis" => ResourceIds.Api
+//      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
+//    }
+//    
+//    val debugParentLabel = ResourceLabel(parentTypeId)
+//    log.debug(s"Looking up ApiEndpoints by parent type '$debugParentLabel'")
+//    
+//    /*
+//     * The idea here is that if the request comes in through the /lambdas path we need to
+//     * execute a special function (findEndpointsByLambda()) since apiendpoints are not
+//     * children of lambdas currently. This all goes away when we revamp the api-gateway
+//     * code.
+//     */
+//    val lookup: UUID => Seq[GestaltResourceInstance] = parentTypeId match {
+//      case a if a == ResourceIds.Lambda => findEndpointsByLambda _
+//      case b if b == ResourceIds.Environment => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
+//      case c if c == ResourceIds.Api => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
+//      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
+//    }
+//    
+//    val targetId = UUID.fromString(mapPathData(Resource.ParentId))
+//    
+//    log.debug(s"Searching for ApiEndpoints in $debugParentLabel '$targetId'")
+//    
+//    lookup(targetId)
+//  }
   
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
@@ -185,6 +184,35 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   /**
+   * Custom lookup providing a shortcut to Provider containers. 
+   */
+  def getProviderContainers(fqon: String, provider: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(provider).fold {
+      ResourceNotFound(ResourceIds.Provider, provider)
+    }{ _ =>
+      AuthorizeList("container.view") {
+        ResourceFactory.findDescendantsOfType(ResourceIds.Container, provider)
+      }
+    }
+  }
+  
+  def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(provider).fold {
+      ResourceNotFound(ResourceIds.Provider, provider)
+    }{ _ =>
+      Authorize(container, "container.view") {
+        /*
+         * TODO: This doesn't check if the container is a descendant of
+         * the provider.
+         */
+        ResourceFactory.findById(ResourceIds.Container, container).fold {
+          ResourceNotFound(ResourceIds.Container, container)
+        }{ c => Ok(RenderSingle(c)) }
+      }
+    }    
+  }
+  
+  /**
    * Get a Resource or list of Resources by path.
    */
   def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
@@ -212,7 +240,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         f(res, account, None).get
       }
     }
-  }  
+  }
   
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
@@ -234,9 +262,11 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
           log.debug("No custom transformer found.")
           Ok( RenderSingle(res) )
         }{ f =>
+          
           log.debug(s"Found custom transformation function for Resource: ${res.id}")
           log.debug(s"type-id: ${res.typeId}, label: ${ResourceLabel(res.typeId)}")
           log.debug("FUNCTION : " + f.getClass.getName)
+          
           f(res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
@@ -304,33 +334,53 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  /*
-   * 
-   * TODO: Need to 're-implement' this. Generalize filtering into resource lookups
-   * 
+  
+  import com.galacticfog.gestalt.data.CoVariant
+  import com.galacticfog.gestalt.data.ResourceType
+  import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance 
+  
+  /* 
+   * TODO: Need to 're-implement' this. Generalize filtering into resource lookups 
    */
   def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+    
+    val cps = Seq("kubernetes", "dcos")
+    
     if (qs.contains("type")) {
 
-      val typeName = "Gestalt::Configuration::Provider::" + qs("type")(0)
+      /*
+       * TODO: This is a hack to produce the correct type name when filtering
+       * for sub-types of ::CaaS. Need something more generic, but ideally not
+       * expensive.
+       */
+      val typeName = {
+        val base = "Gestalt::Configuration::Provider::" 
+        val given = qs("type")(0).trim
+        if (cps.contains(given.toLowerCase)) base + "CaaS::" + qs("type")(0)
+        else base + given
+      }
+      
       log.debug("Filtering providers for type : " + typeName)
 
-      import com.galacticfog.gestalt.data.CoVariant
-      import com.galacticfog.gestalt.data.ResourceType
-      import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
-      
-      val validProviderTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider))
-      val typeId = Try(ResourceType.id(typeName)) match {
+      val typeIds: List[UUID] = Try(ResourceType.id(typeName)) match {
         case Failure(err) => 
           throw new BadRequestException(s"Unknown provider type : '$typeName'")
         case Success(tid) => {
-          def validTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
-          if(validTypes.contains(tid)) tid
-          else throw new BadRequestException(s"Unknown provider type : '$typeName'")
+          // Given type ID is valid resource type.          
+          if (tid == ResourceIds.CaasProvider) {
+            findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
+          } else {
+            val validTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
+            if (validTypes.contains(tid)) List(tid)
+            else {
+              throw new BadRequestException(s"Type '$typeName' is not a provider.")
+            }        
+          }
         }
       }
-      log.debug(s"Filtering for type-id : $typeId")
-      rs filter { _.typeId == typeId }
+      
+      log.debug(s"Filtering for types : $typeIds")
+      rs filter { r => typeIds.contains(r.typeId) }
     } else rs
   }  
   

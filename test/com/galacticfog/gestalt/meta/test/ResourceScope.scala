@@ -90,7 +90,7 @@ trait ResourceScope extends Scope {
   }
   
   def newDummyGateway(env: UUID, name: String = uuid()) = {
-    createInstance(ResourceIds.ApiGatewayProvider, 
+    createInstance(ResourceIds.GatewayManager, 
         name,
         parent = Some(env),
         properties = Some(Map(
@@ -133,7 +133,7 @@ trait ResourceScope extends Scope {
 
 
   def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
-    createInstance(ResourceIds.MarathonProvider, name,
+    createInstance(ResourceIds.DcosProvider, name,
       parent = Option(parent),
       properties = Option(Map("parent" -> "{}")))
   }
@@ -211,7 +211,7 @@ trait ResourceScope extends Scope {
   }
   
   def createDummyGateway(env: UUID, name: String = uuid(), org: UUID = dummyRootOrgId) = {
-    createInstance(ResourceIds.ApiGatewayProvider, 
+    createInstance(ResourceIds.GatewayManager, 
         name,
         org = org,
         parent = Some(env),
@@ -386,7 +386,7 @@ trait ResourceScope extends Scope {
     ResourceFactory.create(ResourceIds.Org, org)(
       newInstance(id = id, owner = owner, org = org, typeId = typeId, name = name, properties = properties, description = description), parent
     )
-  }  
+  }
   
   def newInstance(typeId: UUID, name: String, id: UUID = uuid(), 
       owner: ResourceOwnerLink = dummyOwner, 

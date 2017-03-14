@@ -63,11 +63,14 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
         ResourceIds.Org -> deleteExternalOrg,
         ResourceIds.User -> deleteExternalUser,
         ResourceIds.Group -> deleteExternalGroup,
-        ResourceIds.Container -> deleteExternalContainer,
+        ResourceIds.Container -> deleteExternalContainer
+      /*
         ResourceIds.Lambda -> deleteExternalLambda,
         ResourceIds.Api -> deleteExternalApi,
         ResourceIds.ApiEndpoint -> deleteExternalEndpoint,
-        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway))
+        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway
+        */
+      ))
 
   
   private def deleteOps(typeId: UUID) = {
@@ -152,11 +155,11 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
   import services._
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.CaasProvider     => kubernetesService
-      case ResourceIds.MarathonProvider => new MarathonService()
+      case ResourceIds.KubeProvider     => kubernetesService
+      case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
-  }  
+  }
   
   private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
     Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
@@ -221,7 +224,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
    * need to skip the delete from Marathon.
    */
   protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
-    if (res.typeId == ResourceIds.MarathonProvider &&
+    if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider).contains(res.typeId) &&
         !singleParamBoolean(qs, "deleteContainers")) {
       
       log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")

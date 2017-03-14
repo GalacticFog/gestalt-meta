@@ -6,9 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-
-version := "0.6.2"
-
+version := "0.6.3"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -20,7 +18,6 @@ resolvers ++= Seq(
     "Atlassian Releases" at "https://maven.atlassian.com/public/",
     "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
 )
-
 
 dockerBaseImage := "java:8-jre-alpine"
 
@@ -57,7 +54,6 @@ buildInfoOptions += BuildInfoOption.ToMap
 
 buildInfoOptions += BuildInfoOption.ToJson
 
-
 EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 javaOptions in Universal ++= Seq(
@@ -67,20 +63,16 @@ javaOptions in Universal ++= Seq(
 
 scalaVersion := "2.11.8"
 
-
 scalacOptions ++= Seq(
   "-deprecation", 	// Emit warning and location for usages of deprecated APIs.
   "-feature", 		// Emit warning and location for usages of features that should be imported explicitly.
   "-unchecked") 	// Enable additional warnings where generated code depends on assumptions.
   
   //"-Xlint" 		// Enable recommended additional warnings.
-//)
-
-//scalikejdbcSettings
 
 
 libraryDependencies ++= Seq(
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.5" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.6" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.3" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
@@ -105,6 +97,7 @@ libraryDependencies ++= Seq(
 	ws,
     filters
 )
+
 
 scalacOptions in Test ++= Seq("-Yrangepos")
 
