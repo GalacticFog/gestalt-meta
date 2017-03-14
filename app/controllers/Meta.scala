@@ -31,12 +31,6 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
-import ApiGateway.GatewayInput
-import ApiGateway.buildGatewayInfo
-import ApiGateway.gatewayInput
-import ApiGateway.getGatewayLocation
-import ApiGateway.parseLaserResponseId
-import ApiGateway.setMetaGatewayProps
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
@@ -56,9 +50,6 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 
 import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
-
-import ApiGateway._
-
 
 /**
  * Code for POST and PATCH of all resource types.
@@ -645,38 +636,38 @@ class Meta @Inject()(messagesApi: MessagesApi,
       Option(EnvConfig.securityKey), 
       Option(EnvConfig.securitySecret))  
   
-  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
-    import ApiGateway._
-    
-    // TODO: Check resource_type if not gateway-type.
-    val input = JsonUtil.safeParse[GatewayInput](request.body)
-    
-    val url = input.properties.config.url
-    //val laser = client(url)
-    
-    log.debug("Creating provider resource in gestalt-apigateway...")
-    val laserProvider = LaserProvider(None, name = input.name)
-    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
-    
-    log.debug("Creating Location resource in gestalt-apigateway...")
-    val location = getGatewayLocation(input)
-    val laserLocation = LaserLocation(None, name = location.name, providerId.toString)
-    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
-    
-    log.debug("Creating Gateway resource in gestalt-apigateway...")
-    val gatewayInfo = buildGatewayInfo(input)
-    val laserGateway = LaserGateway(None, input.name, locationId.toString, gatewayInfo)
-    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
-
-    log.debug("Creating ApiGatewayProvider in Meta...")
-    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
-      case Failure(err) => Future { HandleExceptions(err) }
-      case Success(jsn) => {
-        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
-      }
-    }
-    
-  }  
+//  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
+//    import ApiGateway._
+//    
+//    // TODO: Check resource_type if not gateway-type.
+//    val input = JsonUtil.safeParse[GatewayInput](request.body)
+//    
+//    val url = input.properties.config.url
+//    //val laser = client(url)
+//    
+//    log.debug("Creating provider resource in gestalt-apigateway...")
+//    val laserProvider = LaserProvider(None, name = input.name)
+//    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
+//    
+//    log.debug("Creating Location resource in gestalt-apigateway...")
+//    val location = getGatewayLocation(input)
+//    val laserLocation = LaserLocation(None, name = location.name, providerId.toString)
+//    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
+//    
+//    log.debug("Creating Gateway resource in gestalt-apigateway...")
+//    val gatewayInfo = buildGatewayInfo(input)
+//    val laserGateway = LaserGateway(None, input.name, locationId.toString, gatewayInfo)
+//    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
+//
+//    log.debug("Creating ApiGatewayProvider in Meta...")
+//    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
+//      case Failure(err) => Future { HandleExceptions(err) }
+//      case Success(jsn) => {
+//        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
+//      }
+//    }
+//    
+//  }  
   
   // --------------------------------------------------------------------------
   //
