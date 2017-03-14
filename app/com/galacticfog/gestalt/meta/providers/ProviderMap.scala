@@ -116,16 +116,16 @@ object ProviderMap {
       throw new IllegalArgumentException(s"Resource '${r.id}' does not have properties.")
     }
 
-    val config = props.get("config") getOrElse {
-      throw new IllegalArgumentException("Could not find 'properties.config'")
-    }
-
-    Try(Json.parse(config).as[JsObject]) match {
-      case Failure(e) =>
-        throw new IllegalArgumentException("Could not parse 'properties.config': " + e.getMessage)
-      case Success(configjs) => {
-        Js.find(configjs, "/env") flatMap { ev => Js.parse[ProviderEnv](ev).toOption }
-      }
+    props.get("config").fold {
+      val none: Option[ProviderEnv] = None; none
+    }{ config =>
+      Try(Json.parse(config).as[JsObject]) match {
+        case Failure(e) =>
+          throw new IllegalArgumentException("Could not parse 'properties.config': " + e.getMessage)
+        case Success(configjs) => {
+          Js.find(configjs, "/env") flatMap { ev => Js.parse[ProviderEnv](ev).toOption }
+        }
+      }      
     }
   }
 }
