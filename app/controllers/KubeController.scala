@@ -1,85 +1,39 @@
 package controllers
 
-import java.net.URL
 import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-
+import scala.language.implicitConversions
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.data.EnvironmentType
-import com.galacticfog.gestalt.data.ResourceFactory
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
-
-import com.galacticfog.gestalt.laser._
-
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-import com.galacticfog.gestalt.meta.api.sdk.HostConfig
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
-
-import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
-import ApiGateway.GatewayInput
-import ApiGateway.buildGatewayInfo
-import ApiGateway.gatewayInput
-import ApiGateway.getGatewayLocation
-import ApiGateway.parseLaserResponseId
-import ApiGateway.setMetaGatewayProps
-import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util._
-import controllers.util.JsonUtil.replaceJsonPropValue
-import controllers.util.JsonUtil.replaceJsonProps
-import controllers.util.JsonUtil.str2js
-import controllers.util.JsonUtil.upsertProperty
-import controllers.util.db.EnvConfig
-import play.api.i18n.MessagesApi
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsUndefined
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-
-import scala.language.implicitConversions
-import com.galacticfog.gestalt.json.Js
-
-import ApiGateway._
-
-
-import javax.inject.Singleton
+import org.yaml.snakeyaml.Yaml
 
 import com.galacticfog.gestalt.caas.kube._
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
+import com.google.inject.Inject
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
+import controllers.util.HandleExceptionsAsync
+import controllers.util.SecureController
+import javax.inject.Singleton
+import play.api.i18n.MessagesApi
+import play.api.libs.json._
+import play.api.mvc.AnyContent
+import play.api.mvc.Result
 import skuber._
 import skuber.api.client._
-import skuber.json.format._
 import skuber.ext._
 import skuber.json.ext.format._
-import org.yaml.snakeyaml._
-import play.api.libs.json._
-import skuber.api.client.ObjKind
-
-import play.api.mvc.Result
-
-import com.galacticfog.gestalt.meta.api.errors._
-import play.api.mvc.AnyContent
-import com.galacticfog.gestalt.json.Js
-import controllers.util.HandleExceptions
-
-import play.api.Logger
+import skuber.json.format._
 
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException

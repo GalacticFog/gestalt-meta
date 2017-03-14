@@ -181,6 +181,10 @@ GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*> 		  		controllers.ResourceContro
 ### GET override for lambda endpoints
 # GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
 
+### Shortcut lookup to get Containers directly from Provider (without going through Environment)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers  		controllers.ResourceController.getProviderContainers(fqon: String, pid: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers/:cid  	controllers.ResourceController.getProviderContainer(fqon: String, pid: java.util.UUID, cid: java.util.UUID)
+
 
 ### Get any system resource.
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.getResources(fqon: String, path: String)

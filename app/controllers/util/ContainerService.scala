@@ -78,11 +78,17 @@ trait ContainerService extends JsonInput {
       if (qs(PROVIDER_KEY).size > 1) {
         throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
       } else {
-
+        
         val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
-        ResourceFactory.findById(ResourceIds.MarathonProvider, pid).fold {
+        ResourceFactory.findById(pid).fold {
           throw badRequest(s"Provider with ID '$pid' not found.")
-        }{ _ => pid }
+        }{ res =>
+          import com.galacticfog.gestalt.data.CoVariant
+          // Ensure resource we got is a sub-type of CaasProvider
+          val caasids = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
+          if (caasids.contains(res.typeId)) pid
+          else throw badRequest(s"Given ID '$pid' is not a CaaS Provider. No changes made.") 
+        }
       }
     } match {
       case Success(id) => id
@@ -199,11 +205,9 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
       
       println(s"***ENVORONMENT: $environment, name: $containerName")
       val cbn = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
-      println("***CHILD-BY-NAME : " + cbn)
       
     } catch {
       case e : Throwable => {
-        println("FAILED CALLING findChildByName()")
         e.printStackTrace()
         log.error(e.getMessage, e.getCause)
       }
@@ -408,23 +412,23 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
         updatedMetaCon
     }
   }
-
+  
   private def badRequest(message: String) = {
     new BadRequestException(message)
   }
-
+  
   def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
     MarathonClient(WS.client, providerUrl)
   }
-
+  
   def marathonProvider(provider: UUID): GestaltResourceInstance = {
-    ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
+    ResourceFactory.findById(ResourceIds.DcosProvider, provider) getOrElse {
       throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
     }
   }
-
+  
   def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
     val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
       throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")
@@ -434,9 +438,9 @@ class ContainerServiceImpl @Inject() ( eventsClient: AmqpClient )
     }
     (p -> c)
   }
-
+  
   def publishEvent(event: PolicyEvent) = {
     eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
   }
-
+  
 }
