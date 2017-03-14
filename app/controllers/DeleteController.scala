@@ -34,19 +34,20 @@ import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
-
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
-
 import scala.language.postfixOps
 import javax.inject.Singleton
+
+import services.KubernetesService
 
 @Singleton
 class DeleteController @Inject()( messagesApi: MessagesApi,
                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                  containerService: ContainerService )
+                                  containerService: ContainerService,
+                                  kubernetesService: KubernetesService )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
@@ -142,8 +143,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
    */
   
   import com.galacticfog.gestalt.json.Js
-  import services.KubeService
-  
+
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
     
@@ -151,11 +151,11 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
       val _ = Await.result(service.destroyContainer(res), 5 seconds)  
     }
   }
-  
+
   import services._
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.KubeProvider     => new KubernetesService(typeId)
+      case ResourceIds.KubeProvider     => kubernetesService
       case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }

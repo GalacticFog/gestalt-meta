@@ -40,20 +40,15 @@ import javax.inject.Singleton
 
 import services._
 
-
-
 @Singleton
 class ContainerController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     containerService: ContainerService )
+                                     containerService: ContainerService,
+                                     kubernetesService: KubernetesService )
     extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
-  
-  def postContainer2(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }
-  
+
   trait ResourceTransform extends GestaltProviderService
   case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
     lazy val resource = jsonToInput(org, caller, normalizeInputContainer(json))
@@ -69,7 +64,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.KubeProvider     => new KubernetesService(typeId)
+      case ResourceIds.KubeProvider     => kubernetesService
       case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }

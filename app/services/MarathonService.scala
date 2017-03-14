@@ -1,6 +1,7 @@
 package services
 
 
+import scala.language.implicitConversions
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
