@@ -36,7 +36,8 @@ false)
   ;;
 *)
   echo Starting DB container
-  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e DB_NAME=$DBNAME -e DB_USER=$DBUSER -e DB_PASS=$DBPASS galacticfog.artifactoryonline.com/centos7postgresql944:latest)
+  docker pull postgres:9.4
+  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e POSTGRES_USER=$DBUSER -e POSTGRES_PASSWORD=$DBPASS postgres:9.4)
   ;;
 esac
 
