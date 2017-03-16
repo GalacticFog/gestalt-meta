@@ -78,7 +78,8 @@ class DefaultSkuberFactory extends SkuberFactory {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
 
-    if (prv.typeId != ResourceIds.CaasProvider)
+    // todo: (cgbaker) this is wrong, should be kube provider
+    if (prv.typeId != ResourceIds.KubeProvider)
       throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
     else extractKubeConfig(prv.properties) getOrElse {
       throw new RuntimeException(s"Provider configuration not found. This is a bug")
