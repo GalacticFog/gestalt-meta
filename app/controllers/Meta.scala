@@ -6,19 +6,13 @@ import java.util.UUID
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
-
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.data.EnvironmentType
-import com.galacticfog.gestalt.data.ResourceFactory
-
+import com.galacticfog.gestalt.data.{CoVariant, EnvironmentType, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
-
+import com.galacticfog.gestalt.keymgr.{GestaltFeature, GestaltLicense}
 import com.galacticfog.gestalt.laser._
-
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
@@ -26,10 +20,8 @@ import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.HostConfig
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
-
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
@@ -40,13 +32,8 @@ import controllers.util.JsonUtil.str2js
 import controllers.util.JsonUtil.upsertProperty
 import controllers.util.db.EnvConfig
 import play.api.i18n.MessagesApi
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsString
-import play.api.libs.json.JsUndefined
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
+import play.api.libs.json._
 
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
 
 import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
@@ -550,12 +537,28 @@ class Meta @Inject()(messagesApi: MessagesApi,
       providerType: UUID,
       parent: GestaltResourceInstance, 
       baseUrl: Option[String]): Try[JsObject] = {
-    
-    JsonUtil.upsertProperty(payload.as[JsObject], "parent", Json.toJson(toLink(parent, baseUrl))) map {
-      js => 
-        (js ++ Json.obj("id" -> JsString(newId.toString))) ++ 
-        Json.obj("resource_type" -> providerType.toString)
-    }
+
+    lazy val addKubeDefaultNetworks = (__ \ 'properties \ 'config).json.update(
+      __.read[JsObject].map{ _ ++ Json.obj(
+        "networks" -> Json.arr(Json.obj("name" -> "default"))
+      ) }
+    )
+
+    for {
+      withSpecifics <- providerType match {
+        case ResourceIds.KubeProvider => Try {
+          payload.transform(addKubeDefaultNetworks).get
+        }
+        case _ => Success(payload.as[JsObject])
+      }
+      withParentProp <- JsonUtil.upsertProperties(withSpecifics,
+        "parent" -> Json.toJson(toLink(parent, baseUrl))
+      )
+      withIdAndType = withParentProp ++ Json.obj(
+        "id" -> newId.toString,
+        "resource_type" -> providerType.toString
+      )
+    } yield withIdAndType
   }
   
   private[controllers] def providerRequestOptions(org: UUID, user: AuthAccountWithCreds, payload: JsValue, baseUrl: String) = {
@@ -570,7 +573,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
       implicit request: SecuredRequest[JsValue]) = {
     
-    val providertpe = resolveProviderType(json)
+    val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
     
     ResourceFactory.findById(parentTypeId, parentId).fold {
@@ -583,7 +586,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
       }
       
       val user = request.identity
-      val payload = normalizeProviderPayload(json, targetid, providertpe, parent, META_URL).get
+      val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
       val operations = standardMethods(ResourceIds.Provider, "provider.create")
       val options = providerRequestOptions(org, user, payload, META_URL.get)
       
@@ -597,7 +600,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
         val identity = user.account.id
         val created = for {
           input <- Js.parse[GestaltResourceInput](payload)
-          res   <- CreateNewResource(org, user, input, Some(providertpe), Some(parentId))  
+          res   <- CreateNewResource(org, user, input, Some(providerType), Some(parentId))
         } yield res
         
         created match {
