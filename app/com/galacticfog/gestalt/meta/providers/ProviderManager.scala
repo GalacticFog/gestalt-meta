@@ -396,9 +396,10 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
   def getMergedEnvironment(pm: ProviderMap): Map[String, String] = {
     val allmaps = depthCollect(pm, Set.empty, 0)
     val dependencyOrder = allmaps.toList.sortBy(_.idx).reverse
-    val envs = mapLinkedEnvironments(dependencyOrder)
-    
-    envs(pm.id).flatten
+//    val envs = mapLinkedEnvironments(dependencyOrder)
+//    envs(pm.id).flatten
+    val env = mapLinkedEnvironments(pm)
+    env.fold(Map[String,String]())(_.flatten)
   }
   
   /**
@@ -413,17 +414,102 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
     } + target
   }
   
+  
+  
+ private[providers] def mapLinkedEnvironments(provider: ProviderMap): Option[ProviderEnv] = {
+   
+        if (provider.dependencies.isEmpty) provider.envConfig      
+        else {
+          
+          def go(mps: Seq[ProviderMap], acc: ProviderEnv): ProviderEnv = {
+            mps match {
+              case Nil => acc
+              case link :: tail => {
+                println(s"***Looking up ${link.id}, ${link.name} to get env...")
+                // Lookup provider corresponding to current link to get environment.
+                val targetLink = select(link.id, mps).get
+                
+                // Extract public vars from link.env and merge into current provider privatevars.
+                
+                targetLink.envConfig match {
+                  case None => go(tail, acc)
+                  case Some(providerenv) => {
+                    //val oldenvconfig = acc//provider.envConfig getOrElse ProviderEnv(None,None)
+                    val oldprivate = acc.privatev getOrElse Map.empty
+                    
+                    val newpublic = providerenv.public map { vars =>
+                      vars map { case (k, v) => 
+                        ("%s_%s".format(provider.prefixMap(link.id), k), v)
+                      } 
+                    } getOrElse Map[String,String]()
+                    
+                    val nenv = acc.copy(privatev = Some(oldprivate ++ newpublic))
+                    go(tail, nenv)                    
+                  }
+                }
+              }
+            }
+          }
+          
+          val newenvironment = go(provider.dependencies, ProviderEnv(None,None))
+          val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
+          
+          Option(merged)
+        }
+//    (ps map { provider =>
+//      val m = mergevars(provider)
+//      (provider.id, m(provider.id).get)
+//    }).toMap
+  }  
+ 
   /**
    * Create a map of provider envs with the public variables from any links merged
    * into the private variables of the 'linker'
    */
-  private[providers] def mapLinkedEnvironments(ps: Seq[ProviderMap]): Map[UUID, ProviderEnv] = {
+  private[providers] def mapLinkedEnvironments2(ps: Seq[ProviderMap]): Map[UUID, ProviderEnv] = {
     def mergevars(provider: ProviderMap): Map[UUID, Option[ProviderEnv]] = {    
       val tups = 
         if (provider.dependencies.isEmpty) Seq((provider.id, provider.envConfig))      
         else {
+          
+          def go(mps: Seq[ProviderMap], acc: ProviderEnv): ProviderEnv = {
+            mps match {
+              case Nil => acc
+              case link :: tail => {
+                println(s"***Looking up ${link.id}, ${link.name} to get env...")
+                // Lookup provider corresponding to current link to get environment.
+                val targetLink = select(link.id, ps).get
+                
+                // Extract public vars from link.env and merge into current provider privatevars.
+                
+                targetLink.envConfig match {
+                  case None => go(tail, acc)
+                  case Some(providerenv) => {
+                    //val oldenvconfig = acc//provider.envConfig getOrElse ProviderEnv(None,None)
+                    val oldprivate = acc.privatev getOrElse Map.empty
+                    
+                    val newpublic = providerenv.public map { vars =>
+                      vars map { case (k, v) => 
+                        ("%s_%s".format(provider.prefixMap(link.id), k), v)
+                      } 
+                    } getOrElse Map[String,String]()
+                    
+                    val nenv = acc.copy(privatev = Some(oldprivate ++ newpublic))
+                    go(tail, nenv)                    
+                  }
+                }
+              }
+            }
+          }
+          
+          val newenvironment = go(provider.dependencies, ProviderEnv(None,None))
+          val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
+          
+          (provider.id, merged)
+        
           provider.dependencies map { link =>
             
+            println(s"***Looking up ${link.id}, ${link.name} to get env...")
             // Lookup provider corresponding to current link to get environment.
             val targetLink = select(link.id, ps).get
             
@@ -438,7 +524,15 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
                 } 
               } getOrElse Map[String,String]()
               
+              println("***MERGING PUBLIC")
+              newpublic foreach { case (k,v) => println("%s, %s".format(k,v)) }
+              
               oldenvconfig.copy(privatev = Some(oldprivate ++ newpublic))
+            }
+            
+            println("***NEW-ENV***")
+            if (newenv.isDefined) {
+              newenv.get.privatev.get foreach { case (k,v) => println("%s, %s".format(k,v)) }
             }
             (provider.id, newenv)
           }

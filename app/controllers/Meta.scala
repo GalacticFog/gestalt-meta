@@ -579,7 +579,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     ResourceFactory.findById(parentTypeId, parentId).fold {
       Future(ResourceNotFound(parentTypeId, parentId))
-    } { parent =>
+    }{ parent =>
       
       // This is the ID we create the new provider with.
       val targetid = Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
@@ -592,6 +592,11 @@ class Meta @Inject()( messagesApi: MessagesApi,
       val options = providerRequestOptions(org, user, payload, META_URL.get)
       
       SafeRequest (operations, options) ProtectAsync { maybeState =>           
+        
+        // Ensure linked providers parse
+        Js.find(payload, "/properties/linked_providers") map { lp =>
+          LinkedProvider.fromJson(lp)
+        }
         
         val identity = user.account.id
         val created = for {
