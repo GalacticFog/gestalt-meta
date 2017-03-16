@@ -18,9 +18,25 @@ case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map
     def getmap(m: Option[Map[String,String]]) = m getOrElse Map.empty
     getmap(this.public) ++ getmap(this.privatev)
   }
+  
 }
 
 object ProviderEnv {
+  
+  def fromResource(r: GestaltResourceInstance): Option[ProviderEnv] = for {
+    ps  <- r.properties
+    cf  <- ps.get("config")
+    js = Json.parse(cf)
+    env <- Js.find(js.as[JsObject], "/env")
+    out = Js.parse[ProviderEnv](env).get
+  } yield out  
+  
+  def merge(a: ProviderEnv, b: ProviderEnv): ProviderEnv = {
+    val npublic = a.public map { pub => pub ++ b.public.getOrElse(Map.empty) }
+    val nprivate = a.privatev map { priv => priv ++ b.privatev.getOrElse(Map.empty) }
+    ProviderEnv(npublic, nprivate)
+  }
+  
   lazy implicit val providerEnvReads: Reads[ProviderEnv] = (
     (JsPath \ "public").readNullable[Map[String,String]] and
     (JsPath \ "private").readNullable[Map[String,String]]
