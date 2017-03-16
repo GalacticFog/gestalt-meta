@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.6.3"
+version := "0.6.4"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -72,13 +72,13 @@ scalacOptions ++= Seq(
 
 
 libraryDependencies ++= Seq(
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.6" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.7" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.3" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
     "net.codingwell"  %% "scala-guice" % "4.1.0",
-
+	
     "org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
 	"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
