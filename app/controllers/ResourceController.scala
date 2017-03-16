@@ -82,46 +82,6 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
   
-//  def lookupApiEndpoints(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
-//    log.debug(s"lookupApiEndpoints(${path.path},_,_)...")
-//    
-//    val mapPathData = Resource.mapListPathData(path.path)
-//    val lambda = mapPathData(Resource.ParentId)
-//
-//    /*
-//     * TODO: This is dumb - investigate why Resource.mapListPathData doesn't
-//     * put the actual type ID into the map instead of the REST name for the type.
-//     */
-//    val parentTypeId = mapPathData(Resource.ParentType) match {
-//      case a if a == "lambdas" => ResourceIds.Lambda
-//      case b if b == "environments" => ResourceIds.Environment
-//      case c if c == "apis" => ResourceIds.Api
-//      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
-//    }
-//    
-//    val debugParentLabel = ResourceLabel(parentTypeId)
-//    log.debug(s"Looking up ApiEndpoints by parent type '$debugParentLabel'")
-//    
-//    /*
-//     * The idea here is that if the request comes in through the /lambdas path we need to
-//     * execute a special function (findEndpointsByLambda()) since apiendpoints are not
-//     * children of lambdas currently. This all goes away when we revamp the api-gateway
-//     * code.
-//     */
-//    val lookup: UUID => Seq[GestaltResourceInstance] = parentTypeId match {
-//      case a if a == ResourceIds.Lambda => findEndpointsByLambda _
-//      case b if b == ResourceIds.Environment => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
-//      case c if c == ResourceIds.Api => findChildrenOfType(ResourceIds.ApiEndpoint, _: UUID)
-//      case _ => throw BadRequestException(s"Invalid parent-type for ApiEndpoint.")
-//    }
-//    
-//    val targetId = UUID.fromString(mapPathData(Resource.ParentId))
-//    
-//    log.debug(s"Searching for ApiEndpoints in $debugParentLabel '$targetId'")
-//    
-//    lookup(targetId)
-//  }
-  
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
     Resource.fromPath(path.path) flatMap { r =>
@@ -335,19 +295,60 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   
-  import com.galacticfog.gestalt.data.CoVariant
+  import com.galacticfog.gestalt.data.{Variance, Invariant, CoVariant}
   import com.galacticfog.gestalt.data.ResourceType
   import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance 
+  
+  
+  
+  private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
+    val typeid = ResourceType.id(typeName)
+    val abstractProviders = Seq(
+        ResourceIds.CaasProvider,
+        ResourceIds.DataProvider,
+        ResourceIds.MessageProvider,
+        ResourceIds.ExecutorProvider)
+    if (abstractProviders.contains(typeid)) CoVariant(typeid)
+    else Invariant(typeid)
+  }
+  
+def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+
+    val allnames = TypeFactory.allProviderNames()
+    val prefixes = TypeFactory.typeNamePrefixes(allnames)
+    
+    if (qs.get("type").isEmpty) rs
+    else {
+      val ids: Seq[UUID] = TypeFactory.validTypeFilter(qs("type").head, allnames, prefixes).fold {
+        throw new BadRequestException(s"Unknown provider type : '${qs.get("type").head}'")
+      }{ typename =>
+        log.debug("Filtering providers for type : " + typename)
+     
+        val variance = providerTypeVariance(typename)
+        println("***VARIANCE : " + variance)
+        findTypesWithVariance(variance) map { _.id }
+      }
+      rs filter { r => 
+        println("***filtering : " + r.typeId)
+        ids.contains(r.typeId) }
+    }
+  }    
   
   /* 
    * TODO: Need to 're-implement' this. Generalize filtering into resource lookups 
    */
-  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+  def filterProvidersByType2(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
     
     val cps = Seq("kubernetes", "dcos")
     
     if (qs.contains("type")) {
 
+      /*
+       * 1.) Get list of all provider names
+       * 2.) remove last component of all provider names
+       * 3.) if all.contains()
+       */
+      
       /*
        * TODO: This is a hack to produce the correct type name when filtering
        * for sub-types of ::CaaS. Need something more generic, but ideally not

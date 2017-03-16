@@ -59,20 +59,114 @@ class ApiController @Inject()(
     implicit lazy val endpointImplFormat = Json.format[EndpointImpl]  
   }
   
+  def configureClient(config: HostConfig, credential: Option[APICredential]) = { 
+	  val authconfig = if (credential.isDefined) {
+       HostConfig(config.protocol, config.host, config.port, config.timeout, credential)
+    } else config 
+    
+    new JsonWebClient(authconfig)
+  }
+  
+  import com.galacticfog.gestalt.meta.providers._
+  
+  def configureWebClient(provider: GestaltResourceInstance): JsonWebClient = {
+
+    val privatevars = for {
+      env <- ProviderEnv.fromResource(provider)
+      prv <- env.privatev
+    } yield prv
+        
+    println("***PRIVATEVARS : " + privatevars)
+    
+    val config = privatevars map { vs =>
+      val url = vs.get("PROVIDER_URL") getOrElse {
+        throw new UnprocessableEntityException("Missing 'PROVIDER_URL' variable.") 
+      }
+      val key = vs.get("AUTH_KEY") getOrElse {
+        throw new UnprocessableEntityException("Missing 'AUTH_KEY' variable.") 
+      }
+      val secret = vs.get("AUTH_SECRET") getOrElse {
+        throw new UnprocessableEntityException("Missing 'AUTH_SECRET' variable.") 
+      }
+      HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
+      //HostConfig.make(new URL(url), creds = Some(BearerCredential("76762798-07bb-42c4-ba3f-429f297a7335")))
+    } getOrElse {
+      throw new UnprocessableEntityException("Could not parse [properties.config.env] from provider")
+    }
+    log.debug("***API-HOSTCONFIG : " + config)
+    new JsonWebClient(config)
+  }
+  
+  def get[T](client: JsonWebClient, resource: String, expected: Seq[Int])
+      (implicit fmt: Format[T]): Option[T] = {
+    
+    JsonWebClient.apiResponse(client.get(resource), expected = expected) match {
+      case Failure(err) => throw err
+      case Success(res) => res.output match {
+        case Some(out) => out.validate[T] match {
+          case s: JsSuccess[T] => Some(s.get)
+          case e: JsError => 
+            throw new RuntimeException(Js.errorString(e))
+        }
+        case None => None
+      }
+    }    
+  }
+  
   def postApi(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(ResourceNotFound(ResourceIds.Environment, parent))
     }{ _ =>
-      val payload = validateNewApi(request.body)
+      val (payload, provider, location) = validateNewApi(request.body)
+      println(s"***Provider: ${provider.id}, Location: $location")  
+      
+      import scala.concurrent.Await
+      import scala.concurrent.duration.DurationInt
+      
+      val client = configureWebClient(provider)
+      val response = JsonWebClient.wait(client.get("/apis"))
+      
+      println("********************************")
+      println(response)
+      println("********************************")
+      val id = UUID.randomUUID()
+      val lapi = LaserApi(Some(id), "api-name", 
+            provider = Some(Json.obj(
+            	"id" -> provider.id.toString, 
+            	"location" -> location)))
+      println("********************************")
+      println("POST TO API-GATEWAY:")
+      println(Json.toJson(lapi))
+      println("********************************")
+      
+      /*
+       * Get/validate provider ID and location
+       * 
+			val laserjson = LaserApi(
+					id = Some(id), 
+					name = lambdaName, 
+					description = None,
+          provider = Some(Json.obj(
+          	"id" -> provider.external_id.toString, 
+          	"location" -> locationName)))
+            
+       */
+      
       createResourceCommon(fqid(fqon), parent, ResourceIds.Api, payload)
     }
   }
   
-  private[controllers] def validateNewApi(js: JsValue): JsValue = {
+  private[controllers] def validateNewApi(js: JsValue): (JsValue, GestaltResourceInstance, String) = {
 
     // provider.id property exists
     val pid = Js.find(js.as[JsObject], "/properties/provider/id") getOrElse {
       unprocessable("Missing required property [properties.provider.id]")
+    }
+    
+    val location = Js.find(js.as[JsObject], "/properties/provider/locations") flatMap { locs =>
+      locs.as[JsArray].value.headOption
+    } getOrElse {
+      unprocessable("Missing required property [properties.provider.locations]")
     }
     
     // 'provider.id' is valid UUID
@@ -82,9 +176,9 @@ class ApiController @Inject()(
     
     // 'provider.id' is an existing gateway-manager provider.
     ResourceFactory.findById(ResourceIds.GatewayManager, uid).fold {
-      throw new ResourceNotFoundException(s"GatewayManager provider with ID '$pid' not found")
+      unprocessable(s"GatewayManager provider with ID '$pid' not found")
     }{
-      _ => js
+      gateway => (js, gateway, location.as[String])
     }
   }
   
