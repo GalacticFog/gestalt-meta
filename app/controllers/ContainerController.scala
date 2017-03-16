@@ -187,6 +187,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
                 log.debug(s"Scaling Marathon App to $numInstances instances...")
                 
                 // TODO: Check for failure!!!
+                // TODO: this needs to be converted to code against a generic CaaSService, not just marathon
                 val marathonJson = scaleMarathonAppSync(c, numInstances)
                 
                 ResourceFactory.update(c.copy(

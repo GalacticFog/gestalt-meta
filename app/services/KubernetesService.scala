@@ -401,7 +401,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  override def find(context: ProviderContext, spec: ContainerSpec): Future[Option[ContainerStats]] = ???
+  override def find(context: ProviderContext, spec: ContainerSpec): Future[Option[ContainerStats]] = Future.successful(None)
 
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = ???
+  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = Future.successful(Seq.empty)
 }
