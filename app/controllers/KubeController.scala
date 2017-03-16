@@ -8,9 +8,7 @@ import scala.language.implicitConversions
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-
 import org.yaml.snakeyaml.Yaml
-
 import com.galacticfog.gestalt.caas.kube._
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.json.Js
@@ -21,14 +19,15 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
 import controllers.util.HandleExceptionsAsync
 import controllers.util.SecureController
 import javax.inject.Singleton
+
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import play.api.mvc.AnyContent
 import play.api.mvc.Result
+import services.SkuberFactory
 import skuber._
 import skuber.api.client._
 import skuber.ext._
@@ -40,18 +39,18 @@ case class NotAcceptableMediaTypeException(message: String) extends RuntimeExcep
 
 
 @Singleton
-class KubeController @Inject()(
-    messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+class KubeController @Inject()( messagesApi: MessagesApi,
+                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                skuberFactory: SkuberFactory )
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   private type Headers = Map[String, Seq[String]]
   private type YamlString = String
-  
+
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
-  
-  
+
+
   private val api = """
     | /*
     |  * Retrieve data as JSON or YAML
@@ -78,18 +77,16 @@ class KubeController @Inject()(
     | POST /{fqon}/kube/replicasets
     | POST /{fqon}/kube/secrets
     """.stripMargin.trim
-    
+
   /**
    * List objects in a Kubernetes cluster
    */
   def get(fqon: String, provider: UUID, path: String) = Authenticate(fqon).async { implicit request =>
-
-    initializeKube(provider) match {
-      case Failure(e)  => HandleExceptionsAsync(e)
-      case Success(k8) => getResult(path, request, k8)
-    }
+    skuberFactory.initializeKube(provider, "default")
+        .flatMap {  getResult(path, request, _) }
+        .recoverWith { case t: Throwable => HandleExceptionsAsync(t) }
   }
-  
+
   def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext) = {
     val headers = request.headers.toMap
     val lists: PartialFunction[String, Future[Result]] = {
@@ -116,70 +113,29 @@ class KubeController @Inject()(
     
     (lists orElse singles orElse notfound)(path)    
   }
-  
-  /**
-   * 
-   */
-  private[controllers] def initializeKube(provider: UUID): Try[RequestContext] = for {
-    config  <- loadProviderConfiguration(provider)
-    context <- KubeConfig.initializeString(config)
-  } yield context
-  
-  
-  /**
-   * Get kube configuration from Provider. Performs lookup and validation of provider type.
-   */
-  private[controllers] def loadProviderConfiguration(provider: UUID): Try[String] = Try {
-    val prv = ResourceFactory.findById(provider) getOrElse { 
-      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
-    }
-    
-    if (prv.typeId != ResourceIds.CaasProvider)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
-    else extractKubeConfig(prv.properties) getOrElse {
-      throw new RuntimeException(s"Provider configuration not found. This is a bug")
-    }
-  }
-  
-  /**
-   * Get kube configuration from provider.properties. Decode if necessary.
-   */
-  private[controllers] def extractKubeConfig(props: Option[Map[String, String]]): Option[String] = {
-    props flatMap { ps =>
-      ps.get("data").map { config =>
-        if (Ascii.isBase64(config)) Ascii.decode64(config) else config
-      }
-    }
-  }
-  
+
   /**
    * Create objects in a Kubernetes cluster
    */
   def post(fqon: String, provider: UUID, path: String) = Authenticate(fqon).async { implicit request =>
     val headers = request.headers.toMap
-    
-      (for {
-        context <- initializeKube(provider)
-        body    <- jsonPayload(request.body, request.contentType)
-      } yield (context, body)) match {
-        
-        case Failure(e) => HandleExceptionsAsync(e)
-        case Success((context, body)) =>   
-          parseKind(body) match {
-            case None => Future(BadRequest("Malformed request. Cannot find object 'kind'"))
-            case Some(kind) => kind.toLowerCase match {
-              case "pod"        => CreateResult(createKubeObject[Pod](body, context), headers)
-              case "service"    => CreateResult(createKubeObject[Service](body, context), headers)
-              case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
-              case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
-              case "secrets"    => CreateResult(createKubeObject[Secret](body, context), headers)
-              case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
-            }
-          }
+    (for {
+      context <- skuberFactory.initializeKube(provider, "default")
+      body <- Future.fromTry(jsonPayload(request.body, request.contentType))
+      createResponse <- parseKind(body) match {
+        case None => Future(BadRequest("Malformed request. Cannot find object 'kind'"))
+        case Some(kind) => kind.toLowerCase match {
+          case "pod"        => CreateResult(createKubeObject[Pod](body, context), headers)
+          case "service"    => CreateResult(createKubeObject[Service](body, context), headers)
+          case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
+          case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
+          case "secrets"    => CreateResult(createKubeObject[Secret](body, context), headers)
+          case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
+        }
       }
-      
+    } yield createResponse) recoverWith {case t: Throwable => HandleExceptionsAsync(t)}
   }
-  
+
   /**
    * Handles marshaling a Kubernetes object to an appropriate data-type based on Accept headers.
    */
@@ -195,12 +151,11 @@ class KubeController @Inject()(
         Created(toYaml(o)).withHeaders(ContentType("text/plain"))
     }
   }
-  
+
   /**
    * Attempt to parse request.body to a JsValue
    */
   private[controllers] def jsonPayload(payload: AnyContent, contentType: Option[String]): Try[JsValue] = {
-
     contentType match {
       case None => 
         throw UnsupportedMediaTypeException("You must specify header `Content-Type`.")
@@ -215,7 +170,7 @@ class KubeController @Inject()(
         else throw UnsupportedMediaTypeException(s"Cannot process content-type '$content'")
     }
   }    
-  
+
   /**
    * Create an object in Kubernetes
    */
@@ -227,7 +182,7 @@ class KubeController @Inject()(
       case Success(v) => context create[B] v
     }
   }
-  
+
   /**
    * Render Kube object to the correct format based on Accept header.
    * 
@@ -251,7 +206,7 @@ class KubeController @Inject()(
       NotAcceptable(s"Acceptable mime-types are: $mimetypes")
     }
   }
-  
+
   /**
    * Convert a Kubernetes object to YAML
    */
@@ -261,36 +216,35 @@ class KubeController @Inject()(
       yaml.load(Json.toJson(objs).toString)
     }
   }    
-  
+
   /**
    * Parse top-level 'kind' property from Kubernetes JSON object.
    */
   private[controllers] def parseKind(js: JsValue): Option[String] = 
      Js.find(js.as[JsObject], "/kind") map { _.as[String] }  
-  
-  
+
   private lazy val MimeYaml = List(
     "text/vnd.yaml", // <-- the default
     "text/yaml",
     "text/x-yaml",
     "application/x-yaml")
-    
+
   private lazy val MimeJson = List(
       "text/json",
       "application/json")
 
   private def ContentType(mime: String) = "Content-Type" -> mime        
-  
+
   private def isYamlType(mime: String) = MimeYaml.contains(mime.trim.toLowerCase)
   private def isJsonType(mime: String) = MimeJson.contains(mime.trim.toLowerCase)
-  
-  private[controllers] def valueList(hvs: Seq[String]): Seq[String] = 
+
+  private[controllers] def valueList(hvs: Seq[String]): Seq[String] =
     if (hvs.isEmpty) hvs else (hvs(0).split(",").map(_.trim)).toList
-  
+
   private[controllers] def AcceptsYaml(headers: Map[String, Seq[String]]): Boolean = 
     valueList(headers("Accept")).intersect(MimeYaml).nonEmpty
-  
+
   private[controllers] def AcceptsJson(headers: Map[String, Seq[String]]): Boolean = 
     valueList(headers("Accept")).intersect(MimeJson).nonEmpty
-    
+
 }
