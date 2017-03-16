@@ -174,7 +174,6 @@ case object MarathonClient {
       tasksHealthy = tasksHealthy,
       tasksUnhealthy = tasksUnhealthy,
       taskStats = tasks
-      /*serviceAddresses = Some(addresses.toSeq)*/
     )
   }
 

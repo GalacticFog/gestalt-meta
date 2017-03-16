@@ -28,6 +28,7 @@ import skuber.api.client.ObjKind
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 import skuber.Container.Port
 
@@ -78,9 +79,8 @@ class DefaultSkuberFactory extends SkuberFactory {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
 
-    // todo: (cgbaker) this is wrong, should be kube provider
     if (prv.typeId != ResourceIds.KubeProvider)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
+      throw ResourceNotFoundException(s"Provider '$provider' is not a Kubernetes Provider")
     else extractKubeConfig(prv.properties) getOrElse {
       throw new RuntimeException(s"Provider configuration not found. This is a bug")
     }
@@ -399,5 +399,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-  }  
+  }
+
+  override def find(context: ProviderContext, spec: ContainerSpec): Future[Option[ContainerStats]] = ???
+
+  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = ???
 }

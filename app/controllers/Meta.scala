@@ -34,9 +34,9 @@ import controllers.util.db.EnvConfig
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
-
 import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 
 /**
  * Code for POST and PATCH of all resource types.
@@ -44,8 +44,9 @@ import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 
 @Singleton
-class Meta @Inject()(messagesApi: MessagesApi,
-                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class Meta @Inject()( messagesApi: MessagesApi,
+                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                      providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
@@ -468,7 +469,7 @@ class Meta @Inject()(messagesApi: MessagesApi,
   import com.galacticfog.gestalt.meta.providers._
 
   def load(rootProvider: ProviderMap, identity: UUID) = {
-    ProviderManager.loadProviders(Some(rootProvider)) map { seq =>
+    providerManager.loadProviders(Some(rootProvider)) map { seq =>
       
       seq.flatMap { case (provider, services) => 
         

@@ -56,19 +56,20 @@ trait CaasService extends GestaltProviderService {
   type CaasPod = ***
   type CaasService = ***
   type CaasDeployment = ***
-  
-  
-//  def find(id: UUID): Future[Option[***]]
-//  
+
+  def find(context: ProviderContext, spec: ContainerSpec): Future[Option[ContainerStats]]
+
+  def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]]
+
 //  def find(fqon: String, criteria: ***): Future[Option[***]]
 //  
 //  def findAll(fqon: String, criteria: ***): Future[Seq[***]]
-  
-  def create(context: ProviderContext, container: GestaltResourceInstance)(
-      implicit ec: ExecutionContext): Future[GestaltResourceInstance] 
-    
+
+  def create(context: ProviderContext, container: GestaltResourceInstance)
+            (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
+
   def destroyContainer(id: GestaltResourceInstance): Future[Unit]
-  
+
 //  
 //  def start(id: UUID): Future[JsValue]
 //  
@@ -85,24 +86,5 @@ trait CaasService extends GestaltProviderService {
 //   */
 //  def toResource(fqon: String, user: AuthAccountWithCreds, input: JsValue): Try[GestaltResourceInstance]
 //
-//  def launchContainer(fqon: String,
-//                      workspace: GestaltResourceInstance,
-//                      environment: GestaltResourceInstance,
-//                      user: AuthAccountWithCreds,
-//                      containerSpec: ContainerSpec,
-//                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])]
-//
-//  def marathonClient(provider: GestaltResourceInstance): MarathonClient
-//
-//  def marathonProvider(provider: UUID): GestaltResourceInstance
 
-  /**
-   * Parse the provider ID from container.properties
-   */
-  def containerProviderId(c: GestaltResourceInstance): UUID = {
-    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
-    log.debug("Provider-ID : " + pid)
-    UUID.fromString(pid)
-  }
-  
 }

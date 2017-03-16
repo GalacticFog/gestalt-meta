@@ -25,8 +25,7 @@ import javax.inject.Singleton
 
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
-import play.api.mvc.AnyContent
-import play.api.mvc.Result
+import play.api.mvc.{Action, AnyContent, Result}
 import services.SkuberFactory
 import skuber._
 import skuber.api.client._
@@ -81,13 +80,13 @@ class KubeController @Inject()( messagesApi: MessagesApi,
   /**
    * List objects in a Kubernetes cluster
    */
-  def get(fqon: String, provider: UUID, path: String) = Authenticate(fqon).async { implicit request =>
+  def get(fqon: String, provider: UUID, path: String): Action[AnyContent] = Authenticate(fqon).async { implicit request =>
     skuberFactory.initializeKube(provider, "default")
         .flatMap {  getResult(path, request, _) }
         .recoverWith { case t: Throwable => HandleExceptionsAsync(t) }
   }
 
-  def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext) = {
+  def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext): Future[Result] = {
     val headers = request.headers.toMap
     val lists: PartialFunction[String, Future[Result]] = {
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
@@ -117,7 +116,7 @@ class KubeController @Inject()( messagesApi: MessagesApi,
   /**
    * Create objects in a Kubernetes cluster
    */
-  def post(fqon: String, provider: UUID, path: String) = Authenticate(fqon).async { implicit request =>
+  def post(fqon: String, provider: UUID, path: String): Action[AnyContent] = Authenticate(fqon).async { implicit request =>
     val headers = request.headers.toMap
     (for {
       context <- skuberFactory.initializeKube(provider, "default")
@@ -239,7 +238,7 @@ class KubeController @Inject()( messagesApi: MessagesApi,
   private def isJsonType(mime: String) = MimeJson.contains(mime.trim.toLowerCase)
 
   private[controllers] def valueList(hvs: Seq[String]): Seq[String] =
-    if (hvs.isEmpty) hvs else (hvs(0).split(",").map(_.trim)).toList
+    if (hvs.isEmpty) hvs else hvs.head.split(",").map(_.trim).toList
 
   private[controllers] def AcceptsYaml(headers: Map[String, Seq[String]]): Boolean = 
     valueList(headers("Accept")).intersect(MimeYaml).nonEmpty

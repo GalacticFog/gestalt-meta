@@ -3,25 +3,19 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.security.api.errors.UnauthorizedAPIException
-import play.api.mvc._
 
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import controllers.util._
-import play.api.Play.current
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 
@@ -29,8 +23,8 @@ import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 
-//import com.galacticfog.gestalt.meta.auth.Actions
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -44,7 +38,7 @@ import services._
 class ContainerController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                      containerService: ContainerService,
-                                     kubernetesService: KubernetesService )
+                                     providerManager: ProviderManager )
     extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
@@ -61,20 +55,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
      */
     def get[A](provider: UUID): Try[A]
   }
-  
-  def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
-    typeId match {
-      case ResourceIds.KubeProvider     => kubernetesService
-      case ResourceIds.DcosProvider => new MarathonService()
-      case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
-    }
-  }
-  
-  
-  def ProviderImplNotFound(providerId: UUID) = throw ResourceNotFoundException(
-    s"Implementation for Provider '$providerId' not found."
-  )
-  
+
   /**
    * Parse the provider ID from container.properties
    */
@@ -104,7 +85,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   def createMetaContainer(user: AuthAccountWithCreds, container: GestaltResourceInstance, env: UUID) = {
     ResourceFactory.create(ResourceIds.User, user.account.id)(container, Some(env))
   }  
-  
+
   type MetaCreate = (AuthAccountWithCreds, GestaltResourceInstance, UUID) => Try[GestaltResourceInstance]
   type BackendCreate = (ProviderContext, GestaltResourceInstance) => Future[GestaltResourceInstance]
   
@@ -141,13 +122,13 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     val context   = ProviderContext(request, parseProvider(transform.resource), None)
     
     log.info("Creating container in Meta...")
-    
+
+    val env      = context.environment
+    val provider = context.provider
+    val r1       = transform.resource
     val metaCreate = for {
-      environment <- Try(context.environment)
-      provider    <- Try(context.provider)
-      r1          <- Try(transform.resource)
-      resource    <- createMetaContainer(request.identity, r1, environment.id)
-      serviceImpl <- getProviderImpl(provider.typeId)
+      resource    <- createMetaContainer(request.identity, r1, env.id)
+      serviceImpl <- providerManager.getProviderImpl(provider.typeId)
     } yield (serviceImpl, resource)
     
     val created = metaCreate match {
@@ -168,8 +149,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     }
     created recoverWith { case e => HandleExceptionsAsync(e) }
   }
-  
-  
+
   /*
    * TODO: This is a temporary wrapper to adapt ResourceFactory.update() to return a Future
    * as it will in a forthcoming revision.
@@ -180,48 +160,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
       case Success(r) => Future(r)
     }
   }
-  
-  def createContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-
-    containerService.findWorkspaceEnvironment(environment) match {
-      case Failure(e) => Future { HandleExceptions(e) }
-      case Success((wrk,env)) => {
-
-        // This initializes all required properties if missing, implicit in the route
-        val inputJson = normalizeInputContainer(request.body)
-
-        val org = fqid(fqon)
-        val user = request.identity
-
-        /*
-         * Take the input JSON payload and convert it to a GestaltResourceInstance. This is
-         * needed to check any attribute/property values against policy rules (if any).
-         */
-        val target = jsonToInput(org, user, inputJson)
-
-        val fCreated = for {
-          containerSpec <- Future.fromTry {
-            ContainerSpec.fromResourceInstance(target)
-          }
-          container <- containerService.launchContainer(
-            fqon = fqon,
-            workspace = wrk,
-            environment = env,
-            containerSpec = containerSpec,
-            user = request.identity,
-            inId = Some(target.id)
-          )
-        } yield {
-          val outputContainer = container._1
-          setNewEntitlements(fqid(fqon), outputContainer.id, request.identity, parent = Some(env.id))
-          Created(Output.renderInstance(outputContainer))
-        }
-
-        fCreated recover {case err: Throwable => HandleExceptions(err)}
-      }
-    }
-  }
-
 
   def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")
@@ -325,7 +263,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   }
 
   protected [controllers] def scaleMarathonAppSync(container: GestaltResourceInstance, numInstances: Int) /*: Future[JsValue]*/ = {
-    val provider = containerService.marathonProvider(containerService.containerProviderId(container))
+    val provider = containerService.caasProvider(containerService.containerProviderId(container))
     container.properties.flatMap(_.get("external_id")).fold {
       throw new RuntimeException("container.properties.external_id not found.")
     }{ id =>
