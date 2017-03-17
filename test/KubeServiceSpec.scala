@@ -269,6 +269,68 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(mockSkuber).delete(mockService.name,0)(client.serviceKind)
     }
 
+    "not fail if no service to delete on container delete" in new FakeKube {
+      val ks = injector.instanceOf[KubernetesService]
+
+      val testProps = ContainerSpec(
+        name = "",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get)
+        )
+      )
+
+      val mockDep = mock[skuber.ext.Deployment]
+      mockDep.name returns "deployment-test-container"
+      val mockRS  = mock[skuber.ext.ReplicaSet]
+      mockRS.name returns "deployment-test-container-12431234"
+
+      mockSkuber.get(meq(mockDep.name))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
+      mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
+      mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
+      mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
+
+      val fDeleted = ks.destroyContainer( metaContainer )
+
+      await(fDeleted)
+
+      there were no(mockSkuber).delete(any,any)(meq(client.serviceKind))
+    }
+
   }
 
 }
