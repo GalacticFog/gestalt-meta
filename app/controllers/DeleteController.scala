@@ -149,7 +149,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
     val provider = containerProvider(res)
     
     providerManager.getProviderImpl(provider.typeId) map { service =>
-      val _ = Await.result(service.destroyContainer(res), 5 seconds)  
+      Await.result(service.destroyContainer(res), 5 seconds)
     }
   }
 

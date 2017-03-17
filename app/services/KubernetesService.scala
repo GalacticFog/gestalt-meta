@@ -300,12 +300,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       dsrv <- Future.traverse(
         srvs.items.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
       ){srv =>
-        log.debug(s"deleting Kuberenetes Service ${environment}/${srv.name}")
+        log.debug(s"deleting Kubernetes Service ${environment}/${srv.name}")
         kube.delete[Service](srv.name)
       }
     } yield dsrv.headOption.getOrElse(())
 
-    Future.sequence(Seq(fDplDel,fSrvDel)) map (_ => ())
+    Future.sequence(Seq(fDplDel,fSrvDel)) map {_ =>
+      log.debug(s"finished deleting Deployment, ReplicaSet, Pods and Service for container ${container.id}")
+      ()
+    }
   }
 
   def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
