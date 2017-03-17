@@ -141,6 +141,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
       } yield upsertProperties(
         container,
+        "external_id" -> s"deployment-${container.name}",
         "status" -> "LAUNCHED",
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
@@ -424,9 +425,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
       depls <- kube.list[DeploymentList]()
       allPods <- kube.list[PodList]()
+      _ = log.debug(s"listInEnvironment returned ${depls.size} deployments and ${allPods.size} pods")
       stats = depls.flatMap (depl =>
         depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
           val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
+          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods")
           kubeDeplAndPodsToContainerStatus(depl, thesePods)
         }
       )
