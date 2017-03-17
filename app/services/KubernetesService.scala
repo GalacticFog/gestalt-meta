@@ -287,7 +287,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ){
         rs => kube.delete[ReplicaSet](rs.name)
       }
-      pods <- kube.list[PodList]
+      pods <- kube.list[PodList] recover {
+        case e: Throwable =>
+          log.debug(s"error listing Kubernetes Pod resources: ${e.toString}")
+          PodList()
+      }
       _ = log.debug(s"found ${pods.size} Pods")
       dp <- Future.traverse({
         val thesePods = listByLabel[Pod, PodList](pods, META_CONTAINER_KEY -> container.id.toString)
@@ -305,7 +309,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val fSrvDel = for {
       kube <- fKube
-      srvs <- kube.list[ServiceList]
+      srvs <- kube.list[ServiceList] recover {
+        case e: Throwable =>
+          log.debug(s"error listing Kubernetes Service resources: ${e.toString}")
+          ServiceList()
+      }
       _ = log.debug(s"found ${srvs.size} Services")
       dsrv <- Future.traverse({
         val theseSrvs = listByLabel[Service, ServiceList](srvs, META_CONTAINER_KEY -> container.id.toString)
