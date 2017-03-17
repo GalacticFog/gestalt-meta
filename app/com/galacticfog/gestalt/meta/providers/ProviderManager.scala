@@ -255,6 +255,7 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
   }
   
   private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] = {
+    log.debug(s"Entered updateContainer(_,_)...")
     ResourceFactory.update(container, identity) match {
       case Failure(e) => Future.failed(e)
       case Success(r) => Future(r)
