@@ -2,6 +2,8 @@ package controllers.util
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.meta.providers.ProviderManager
+
 import scala.reflect.ClassTag
 import scala.reflect.runtime.universe
 import org.specs2.mock.Mockito
@@ -37,6 +39,7 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   lazy val testAuthResponse = dummyAuthResponseWithCreds()
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
   lazy val containerService = mock[ContainerService]//.verbose
+  lazy val providerManager = mock[ProviderManager]
   lazy val secureController = mock[SecureController]
   
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)  
@@ -138,7 +141,10 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   def containerApp(
       disabled: Seq[Class[_]] = Seq.empty,
       additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
-    application(additionalBindings = Seq(bind(classOf[ContainerService]).toInstance(containerService)))
+    application(additionalBindings = Seq(
+      bind(classOf[ContainerService]).toInstance(containerService),
+      bind(classOf[ProviderManager]).toInstance(providerManager)
+    ))
   }
 
   private[this] def uuid() = UUID.randomUUID()  

@@ -47,7 +47,6 @@ import services.KubernetesService
 @Singleton
 class DeleteController @Inject()( messagesApi: MessagesApi,
                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                  containerService: ContainerService,
                                   providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
