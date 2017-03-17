@@ -45,21 +45,20 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
   private[this] val log = Logger(this.getClass)
   
   private type ServiceList = Seq[Future[GestaltResourceInstance]]
-
+  
   def loadProviders(root: Option[ProviderMap] = None): Future[Seq[(ProviderMap,Seq[GestaltResourceInstance])]] = {
     val ps = {
       if (root.isEmpty) findEagerProviders()
       else depthCollect(root.get, Set.empty, 0).toList.reverse
     }
     processAllProviders(ps)
-
   }
-
+  
   private[providers] def processAllProviders(ps: Seq[ProviderMap]) = {
     log.debug("Entered procAllProviders(_)...")
     Future.sequence(ps map { p => processProvider(p) })  
   }
-
+  
   private[providers] def processProvider(p: ProviderMap): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
     log.debug("Entered procProvider(_)...")
     val servicelist = processServices(p, p.services.toList, Seq.empty)
@@ -70,7 +69,7 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
       sl   <- Future.sequence(servicelist)
     } yield (np -> sl)
   }
-
+  
   /**
    * Add the values in newVars to the given ProviderMap's envConfig.public
    */
@@ -149,11 +148,6 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
         val fcontainer = {
           if (containers.isEmpty) {
             log.info(s"No containers found for Provider [${label}]...launching...")
-            
-            /*
-             * TODO: Variable MUST be created by this point.
-             */
-            
             launchContainer(parent, service, environment, caas)
           }
           else {
@@ -165,7 +159,6 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
       }
     }
   }
-  
   
   private[providers] def mergeContainerVars(spec: JsValue, vars: Map[String,String]): Try[JsValue] = {
     val cvars = Js.find(spec.as[JsObject], "/properties/env") map { env =>
@@ -396,8 +389,6 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
   def getMergedEnvironment(pm: ProviderMap): Map[String, String] = {
     val allmaps = depthCollect(pm, Set.empty, 0)
     val dependencyOrder = allmaps.toList.sortBy(_.idx).reverse
-//    val envs = mapLinkedEnvironments(dependencyOrder)
-//    envs(pm.id).flatten
     val env = mapLinkedEnvironments(pm)
     env.fold(Map[String,String]())(_.flatten)
   }
@@ -413,139 +404,61 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
       else depthCollect(next, results + target, idx + 1)
     } + target
   }
-  
-  
-  
- private[providers] def mapLinkedEnvironments(provider: ProviderMap): Option[ProviderEnv] = {
-   
-        if (provider.dependencies.isEmpty) provider.envConfig      
-        else {
-          
-          def go(mps: Seq[ProviderMap], acc: ProviderEnv): ProviderEnv = {
-            mps match {
-              case Nil => acc
-              case link :: tail => {
-                println(s"***Looking up ${link.id}, ${link.name} to get env...")
-                // Lookup provider corresponding to current link to get environment.
-                val targetLink = select(link.id, mps).get
-                
-                // Extract public vars from link.env and merge into current provider privatevars.
-                
-                targetLink.envConfig match {
-                  case None => go(tail, acc)
-                  case Some(providerenv) => {
-                    //val oldenvconfig = acc//provider.envConfig getOrElse ProviderEnv(None,None)
-                    val oldprivate = acc.privatev getOrElse Map.empty
-                    
-                    val newpublic = providerenv.public map { vars =>
-                      vars map { case (k, v) => 
-                        ("%s_%s".format(provider.prefixMap(link.id), k), v)
-                      } 
-                    } getOrElse Map[String,String]()
-                    
-                    val nenv = acc.copy(privatev = Some(oldprivate ++ newpublic))
-                    go(tail, nenv)                    
-                  }
-                }
-              }
-            }
-          }
-          
-          val newenvironment = go(provider.dependencies, ProviderEnv(None,None))
-          val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
-          
-          Option(merged)
-        }
-//    (ps map { provider =>
-//      val m = mergevars(provider)
-//      (provider.id, m(provider.id).get)
-//    }).toMap
-  }  
- 
+
   /**
    * Create a map of provider envs with the public variables from any links merged
    * into the private variables of the 'linker'
    */
-  private[providers] def mapLinkedEnvironments2(ps: Seq[ProviderMap]): Map[UUID, ProviderEnv] = {
-    def mergevars(provider: ProviderMap): Map[UUID, Option[ProviderEnv]] = {    
-      val tups = 
-        if (provider.dependencies.isEmpty) Seq((provider.id, provider.envConfig))      
-        else {
-          
-          def go(mps: Seq[ProviderMap], acc: ProviderEnv): ProviderEnv = {
-            mps match {
-              case Nil => acc
-              case link :: tail => {
-                println(s"***Looking up ${link.id}, ${link.name} to get env...")
-                // Lookup provider corresponding to current link to get environment.
-                val targetLink = select(link.id, ps).get
-                
-                // Extract public vars from link.env and merge into current provider privatevars.
-                
-                targetLink.envConfig match {
-                  case None => go(tail, acc)
-                  case Some(providerenv) => {
-                    //val oldenvconfig = acc//provider.envConfig getOrElse ProviderEnv(None,None)
-                    val oldprivate = acc.privatev getOrElse Map.empty
-                    
-                    val newpublic = providerenv.public map { vars =>
-                      vars map { case (k, v) => 
-                        ("%s_%s".format(provider.prefixMap(link.id), k), v)
-                      } 
-                    } getOrElse Map[String,String]()
-                    
-                    val nenv = acc.copy(privatev = Some(oldprivate ++ newpublic))
-                    go(tail, nenv)                    
+  private[providers] def mapLinkedEnvironments(provider: ProviderMap): Option[ProviderEnv] = {
+
+    if (provider.dependencies.isEmpty) provider.envConfig
+    else {
+
+      def go(mps: Seq[ProviderMap], acc: ProviderEnv): ProviderEnv = {
+        mps match {
+          case Nil => acc
+          case link :: tail => {
+
+            // Lookup provider corresponding to current link to get environment.
+            val targetLink = select(link.id, mps).get
+
+            targetLink.envConfig match {
+              case None => go(tail, acc)
+              case Some(providerenv) => {
+                val oldprivate = acc.privatev getOrElse Map.empty
+                val newpublic = providerenv.public map { vars =>
+                  vars map {
+                    case (k, v) =>
+                      ("%s_%s".format(provider.prefixMap(link.id), k), v)
                   }
-                }
+                } getOrElse Map[String, String]()
+
+                val nenv = acc.copy(privatev = Some(oldprivate ++ newpublic))
+                go(tail, nenv)
               }
             }
           }
-          
-          val newenvironment = go(provider.dependencies, ProviderEnv(None,None))
-          val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
-          
-          (provider.id, merged)
-        
-          provider.dependencies map { link =>
-            
-            println(s"***Looking up ${link.id}, ${link.name} to get env...")
-            // Lookup provider corresponding to current link to get environment.
-            val targetLink = select(link.id, ps).get
-            
-            // Extract public vars from link.env and merge into current provider privatevars.
-            val newenv = targetLink.envConfig map { providerenv =>
-              
-              val oldenvconfig = provider.envConfig getOrElse ProviderEnv(None,None)
-              val oldprivate = oldenvconfig.privatev getOrElse Map.empty
-              val newpublic = providerenv.public map { vars =>
-                vars map { case (k, v) => 
-                  ("%s_%s".format(provider.prefixMap(link.id), k), v)
-                } 
-              } getOrElse Map[String,String]()
-              
-              println("***MERGING PUBLIC")
-              newpublic foreach { case (k,v) => println("%s, %s".format(k,v)) }
-              
-              oldenvconfig.copy(privatev = Some(oldprivate ++ newpublic))
-            }
-            
-            println("***NEW-ENV***")
-            if (newenv.isDefined) {
-              newenv.get.privatev.get foreach { case (k,v) => println("%s, %s".format(k,v)) }
-            }
-            (provider.id, newenv)
-          }
+        }
       }
-      tups.toMap
+
+      // These are all the linked provider public variables named with the correct prefix.
+      val newenvironment = go(provider.dependencies, ProviderEnv(None, None))
+
+      // These are the {prefix}_META_ID variables with the ID of each linked provider.
+      val linkIdVariables = provider.dependencies.foldLeft(Map[String, String]()) { (results, current) =>
+        val id = current.id
+        val prefix = provider.prefixMap(id)
+        Map((prefix + "_META_ID") -> id.toString) ++ results
+      }
+
+      // Merge in linked provider public variables
+      val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
+
+      // Merge in linked provider ID variables and return
+      Option(ProviderEnv.merge(merged, ProviderEnv(None, privatev = Some(linkIdVariables))))
     }
-    
-    (ps map { provider =>
-      val m = mergevars(provider)
-      (provider.id, m(provider.id).get)
-    }).toMap
-  }
-  
+  }  
+
   /**
    * Find a ProviderMap by ID in a Seq[ProviderMap]
    */
@@ -583,11 +496,6 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
         }
       }
     }
-    
-//    val p = ResourceFactory.findById(UUID.fromString(pid)).get
-//    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
-//    
-//    json.as[JsObject] ++ Json.obj("properties" -> newprops)
   }
   
   /**
@@ -629,7 +537,6 @@ class ProviderManager @Inject() (kubernetesService: KubernetesService) extends A
         throw new IllegalArgumentException("Invalid provider JSON: " + Js.errorString(e))
       }
     }
-    
     ContainerSpec(
       name = "",
       container_type = ctype,
