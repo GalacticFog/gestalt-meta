@@ -288,7 +288,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
       _  <- kube.delete[Deployment](depname)
       _  <- kube.delete[ReplicaSet](replicaToDelete.name)
-      dp <- Future.traverse(podsToDelete)(pod => kube.delete[Pod](pod.name))
+      dp <- Future.traverse(podsToDelete){pod =>
+        log.debug(s"deleting Kubernetes Pod ${environment}/${pod.name}")
+        kube.delete[Pod](pod.name)
+      }
     } yield dp.headOption.getOrElse(())
 
     val fSrvDel = for {
@@ -296,7 +299,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       srvs <- kube.list[ServiceList]
       dsrv <- Future.traverse(
         srvs.items.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
-      )(srv => kube.delete[Service](srv.name))
+      ){srv =>
+        log.debug(s"deleting Kuberenetes Service ${environment}/${srv.name}")
+        kube.delete[Service](srv.name)
+      }
     } yield dsrv.headOption.getOrElse(())
 
     Future.sequence(Seq(fDplDel,fSrvDel)) map (_ => ())

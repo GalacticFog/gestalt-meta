@@ -99,12 +99,13 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   
   
   import com.galacticfog.gestalt.json.Js
-  
-  def withProviderInfo(json: JsValue) = {    
+
+  def withProviderInfo(json: JsValue): JsObject = {
     val jprops = (json \ "properties")
-    
+
     val pid = (jprops \ "provider" \ "id").as[String]
 
+    // TODO: need to check that this was a Some, throw/handle appropriate error
     val p = ResourceFactory.findById(UUID.fromString(pid)).get
     val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
     
