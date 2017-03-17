@@ -298,7 +298,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       kube <- fKube
       srvs <- kube.list[ServiceList]
       dsrv <- Future.traverse(
-        srvs.items.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
+        srvs.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
       ){srv =>
         log.debug(s"deleting Kubernetes Service ${environment}/${srv.name}")
         kube.delete[Service](srv.name)
@@ -312,11 +312,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
-    objs.items filter { _.name.startsWith(prefix) }
+    objs filter { _.name.startsWith(prefix) }
   }
 
   def listByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): List[O] = {
-    objs.items filter { _.metadata.labels.exists(_ == label)}
+    objs filter { _.metadata.labels.get(label._1).contains(label._2) }
   }
 
 
