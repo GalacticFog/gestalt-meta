@@ -92,7 +92,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       log.debug("Calling external CaaS provider...")
 
       Await.result(
-        containerService.findEnvironmentContainerByName(fqon, env.id, r.name),
+        containerService.getEnvironmentContainer(fqon, env.id, r.id),
         5 seconds
       ) map (_._1)
     }

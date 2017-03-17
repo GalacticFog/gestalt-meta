@@ -1,13 +1,7 @@
 package services
 
-
 import scala.language.implicitConversions
 import java.util.UUID
-
-import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
-
-
-import play.api.Logger
 
 import play.api.libs.ws.WS
 import play.api.Play.current
@@ -15,21 +9,16 @@ import play.api.libs.json._
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{Await, Future}
+import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance}
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, Resource, ResourcePath}
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.events._
 import com.google.inject.Inject
-
-
 import skuber._
 import skuber.api.client._
 import skuber.json.format._
@@ -38,17 +27,13 @@ import skuber.json.ext.format._
 import org.yaml.snakeyaml._
 import play.api.libs.json._
 import skuber.api.client.ObjKind
-
 import com.galacticfog.gestalt.caas.kube._
-
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
-import scala.concurrent.ExecutionContext
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
 
 class MarathonService extends CaasService with JsonInput with MetaControllerUtils {
-  
-  
+
   import scala.language.implicitConversions
   implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
   
@@ -70,7 +55,7 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
     }
     
     import com.galacticfog.gestalt.json._
-    import com.galacticfog.gestalt.json.Js.find
+    import com.galacticfog.gestalt.json.Js
     
 
     
@@ -104,17 +89,17 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
         else {
           portmaps.as[JsArray].value map { pm =>
             
-            val name = find(pm, "/name") map { _.as[String] } getOrElse {
+            val name = Js.find(pm, "/name") map { _.as[String] } getOrElse {
               throw new RuntimeException(s"Could not parse 'name' from portMapping")
             }
             
-            val port = find(pm, "/containerPort") map { _.as[Int] } getOrElse {
+            val port = Js.find(pm, "/containerPort") map { _.as[Int] } getOrElse {
               throw new RuntimeException(s"Could not parse 'port' from portMapping")
             }
             
-            val protocol = find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
+            val protocol = Js.find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
             
-            find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) => 
+            Js.find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
               val labelvalue = next.as[Map[String, String]] collect { 
                 case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
               }
@@ -178,12 +163,6 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
       new BadRequestException(s"launch failed: ${t.getMessage}")
     }
     
-//      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
-//        "name" -> provider.name,
-//        "id" -> provider.id
-//      ).toString)
-//      
-//    context.provider
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) =>          
@@ -229,115 +208,6 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
     }
   }  
   
-//def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
-//    println("***Finding container by name...")
-//    try {
-//      
-//      println(s"***ENVORONMENT: $environment, name: $containerName")
-//      val cbn = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
-//      println("***CHILD-BY-NAME : " + cbn)
-//      
-//    } catch {
-//      case e : Throwable => {
-//        println("***FAILED CALLING findChildByName()")
-//        e.printStackTrace()
-//        log.error(e.getMessage, e.getCause)
-//      }
-//    }
-//    // Find container resource in Meta, convert to ContainerSpec
-//    val maybeContainerSpec = for {
-//      r <- ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
-//      s <- ContainerSpec.fromResourceInstance(r).toOption
-//    } yield (r -> s)
-//    
-//    println("***Getting stats...")
-//    val maybeStatsFromMarathon = for {
-//      metaContainerSpec <- maybeContainerSpec
-//      provider <- Try { marathonProvider(metaContainerSpec._2.provider.id) }.toOption
-//      extId    <- metaContainerSpec._2.external_id
-//      
-//      // Lookup container in marathon, convert to ContainerStats
-//      marathonApp = for {
-//        client <- Future.fromTry(Try(
-//          marathonClient(provider)
-//        ))
-//        js <- client.getApplicationByAppId(extId)
-//        stats <- Future.fromTry(Try {MarathonClient.marathon2Container(js).get})
-//      } yield stats
-//      
-//    } yield marathonApp
-//    
-//    maybeStatsFromMarathon match {
-//      case None => Future {
-//        maybeContainerSpec.map(containerSpec =>
-//          updateMetaContainerWithStats(containerSpec._1, None) -> Seq.empty
-//        )
-//      }
-//      case Some(fStatsFromMarathon) => fStatsFromMarathon.map(stats =>
-//        Some(updateMetaContainerWithStats(maybeContainerSpec.get._1, Some(stats)) -> Seq.empty)
-//      ) recover {
-//        case e: Throwable =>
-//          maybeContainerSpec.map(containerSpec =>
-//            updateMetaContainerWithStats(containerSpec._1, None) -> Seq.empty
-//          )
-//      }
-//    }
-//  }  
-//  
-//  def marathonProvider(provider: UUID): GestaltResourceInstance = {
-//    ResourceFactory.findById(ResourceIds.MarathonProvider, provider) getOrElse {
-//      throw new ResourceNotFoundException(s"MarathonProvider with ID '$provider' not found.")
-//    }
-//  }
-//  
-//  protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
-//    // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
-//    val newStats = stats match {
-//      case Some(stats) => Seq(
-//        "age" -> stats.age.toString,
-//        "status" -> stats.status,
-//        "num_instances" -> stats.numInstances.toString,
-//        "tasks_running" -> stats.tasksRunning.toString,
-//        "tasks_healthy" -> stats.tasksHealthy.toString,
-//        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-//        "tasks_staged" -> stats.tasksStaged.toString,
-//        "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]")
-//        /*"service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]")*/
-//      )
-//      case None => Seq(
-//        "status" -> "LOST",
-//        "num_instances" -> "0",
-//        "tasks_running" -> "0",
-//        "tasks_healthy" -> "0",
-//        "tasks_unhealthy" -> "0",
-//        "tasks_staged" -> "0",
-//        "instances"       -> "[]",
-//        "service_addresses" -> "[]"
-//      )
-//    }
-//    val updatedMetaCon = metaCon.copy(
-//      properties = metaCon.properties map {
-//        _ ++ newStats
-//      } orElse {
-//        Some(newStats toMap)
-//      }
-//    )
-//    // this update is passive... mark the "modifier" as the last person to have actively modified the container, or the creator...
-//    (metaCon.modified.flatMap(_.get("id")) orElse metaCon.created.flatMap(_.get("id"))) flatMap {s => Try(UUID.fromString(s)).toOption} match {
-//      case None => metaCon // TODO: not sure what else to do here
-//      case Some(updater) =>
-//        Future{ ResourceFactory.update(updatedMetaCon, updater) } onComplete {
-//          case Success(Success(updatedContainer)) =>
-//            log.trace(s"updated container ${updatedContainer.id} with info from marathon")
-//          case Success(Failure(e)) =>
-//            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-//          case Failure(e) =>
-//            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-//        }
-//        updatedMetaCon
-//    }
-//  }  
-  
   private[services] def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
@@ -349,5 +219,21 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
   }
 
   private[services] def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
-  
+
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    // Lookup container in marathon, convert to ContainerStats
+    container.properties.flatMap(_.get("external_id")) match {
+      case None => Future.successful(None)
+      case Some(eid) =>
+        for {
+          client <- Future(marathonClient(context.provider))
+          js <- client.getApplicationByAppId(eid)
+          stats <- Future.fromTry(Try {MarathonClient.marathon2Container(js).get})
+        } yield Some(stats)
+    }
+  }
+
+  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    marathonClient(context.provider).listApplicationsInEnvironment(context.fqon, context.workspace.name, context.environment.name)
+  }
 }

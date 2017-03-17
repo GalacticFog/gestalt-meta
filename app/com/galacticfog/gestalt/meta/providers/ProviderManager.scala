@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.json.Js
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import java.util.UUID
-import javax.inject.Inject
+import javax.inject.{Inject, Singleton}
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
@@ -39,7 +39,8 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api._
 
 
-object ProviderManager extends AuthorizationMethods with JsonInput {
+@Singleton
+class ProviderManager @Inject() (kubernetesService: KubernetesService) extends AuthorizationMethods with JsonInput {
   
   private[this] val log = Logger(this.getClass)
   
@@ -550,11 +551,9 @@ object ProviderManager extends AuthorizationMethods with JsonInput {
    */
   private[providers] def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
 
-  
-
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.KubeProvider     => new KubernetesService(new DefaultSkuberFactory())
+      case ResourceIds.KubeProvider     => kubernetesService
       case ResourceIds.DcosProvider => new MarathonService()
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }

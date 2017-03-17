@@ -41,13 +41,14 @@ import play.api.i18n.MessagesApi
 import scala.language.postfixOps
 import javax.inject.Singleton
 
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import services.KubernetesService
 
 @Singleton
 class DeleteController @Inject()( messagesApi: MessagesApi,
                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                   containerService: ContainerService,
-                                  kubernetesService: KubernetesService )
+                                  providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
@@ -147,20 +148,13 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
     
-    getProviderImpl(provider.typeId) map { service =>
+    providerManager.getProviderImpl(provider.typeId) map { service =>
       val _ = Await.result(service.destroyContainer(res), 5 seconds)  
     }
   }
 
   import services._
-  def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
-    typeId match {
-      case ResourceIds.KubeProvider     => kubernetesService
-      case ResourceIds.DcosProvider => new MarathonService()
-      case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
-    }
-  }
-  
+
   private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
     Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
       UUID.fromString(id.as[String])

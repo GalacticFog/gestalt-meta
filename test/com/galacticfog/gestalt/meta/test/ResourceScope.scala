@@ -139,7 +139,7 @@ trait ResourceScope extends Scope {
   }
 
   def createKubernetesProvider(parent: UUID, name: String = uuid.toString) = {
-    createInstance(ResourceIds.CaasProvider, name,
+    createInstance(ResourceIds.KubeProvider, name,
         parent = Option(parent),
         properties = Option(Map("parent" -> "{}")))
   }

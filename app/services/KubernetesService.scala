@@ -1,6 +1,6 @@
 package services
 
-import java.util.UUID
+import java.util.{TimeZone, UUID}
 
 import org.slf4j.LoggerFactory
 
@@ -28,7 +28,9 @@ import skuber.api.client.ObjKind
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
+import org.joda.time.{DateTime, DateTimeZone}
 import skuber.Container.Port
 
 import scala.concurrent.ExecutionContext
@@ -78,8 +80,8 @@ class DefaultSkuberFactory extends SkuberFactory {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
 
-    if (prv.typeId != ResourceIds.CaasProvider)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a CaaS Provider")
+    if (prv.typeId != ResourceIds.KubeProvider)
+      throw ResourceNotFoundException(s"Provider '$provider' is not a Kubernetes Provider")
     else extractKubeConfig(prv.properties) getOrElse {
       throw new RuntimeException(s"Provider configuration not found. This is a bug")
     }
@@ -139,6 +141,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
       } yield upsertProperties(
         container,
+        "external_id" -> s"deployment-${container.name}",
         "status" -> "LAUNCHED",
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
@@ -303,12 +306,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     objs.items filter { _.name.startsWith(prefix) }
   }
 
+  def listByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): List[O] = {
+    objs.items filter { _.metadata.labels.exists(_ == label)}
+  }
+
+
   def getByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): Option[O] = {
     val found = listByName[O, L](objs, prefix)
     if (found.size > 1) throw new IllegalArgumentException(s"Too many matches.")
     else found.headOption
   }
-  
+
   /**
    * Convert a ContainerSpec to a GestaltResourceInstance
    */
@@ -387,16 +395,93 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             
     Deployment(metadata = objmeta, spec = Some(deployspec))    
   }
-  
+
   private[services] def mkEnvVars(env: Map[String,String]): List[EnvVar] = {
     env.map { case (k,v) => EnvVar(k, EnvVar.StringValue(v)) }.toList
   }
-  
-  private[services] def deploymentName(containerName: String) =
-    "deployment-" + containerName
 
+  private[services] def deploymentName(containerName: String) = "deployment-" + containerName
 
   def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-  }  
+  }
+
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    val depname  = deploymentName(container.name)
+    for {
+      kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
+      maybeDepl <- kube.getOption[Deployment](depname)
+      pods <- maybeDepl match {
+        case None    => Future.successful(PodList())
+        case Some(_) => kube.list[PodList]
+      }
+      thesePods = listByLabel[Pod,PodList](pods, META_CONTAINER_KEY -> container.id.toString)
+      update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, thesePods))
+    } yield update
+  }
+
+  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    for {
+      kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
+      depls <- kube.list[DeploymentList]()
+      allPods <- kube.list[PodList]()
+      _ = log.debug(s"listInEnvironment returned ${depls.size} deployments and ${allPods.size} pods")
+      stats = depls.flatMap (depl =>
+        depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
+          val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
+          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods")
+          kubeDeplAndPodsToContainerStatus(depl, thesePods)
+        }
+      )
+    } yield stats
+  }
+
+  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod]): ContainerStats = {
+    // meta wants: SCALING, SUSPENDED, RUNNING, HEALTHY, UNHEALTHY
+    // kube provides: waiting, running, terminated
+    val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses).flatMap(_.state.toSeq).map(_.id)
+    val numRunning = containerStates.count(_ == "running")
+    val numTarget  = depl.spec.map(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
+    val specPorts = depl.spec.toSeq.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.ports).map(_.containerPort)
+    val status = if (numRunning != numTarget) "SCALING"
+    else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
+    else if (numRunning == numTarget) "RUNNING"
+    else "UNKNOWN"
+    val specImage = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.image).getOrElse("")
+    val age = depl.metadata.creationTimestamp.map(
+      zdt => new DateTime(
+        zdt.toInstant().toEpochMilli(),
+        DateTimeZone.forTimeZone(TimeZone.getTimeZone(zdt.getZone())))
+    )
+    val resources = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)
+    val taskStats = pods.map {
+      pod =>
+        ContainerStats.TaskStat(
+          id = pod.name,
+          host = pod.status.flatMap(_.hostIP).getOrElse(""),
+          startedAt = pod.status.flatMap(_.startTime).map(_.toString),
+          ipAddresses = pod.status.flatMap(_.podIP).map(ip => Seq(ContainerStats.TaskStat.IPAddress(
+            ipAddress = ip,
+            protocol = "IPv4"
+          ))),
+          ports = specPorts
+        )
+    }
+    ContainerStats(
+      id = depl.name,
+      containerType = "DOCKER",
+      status = status,
+      cpus = resources.flatMap(_.limits.get("cpu")).map(_.value).map(_.toDouble).getOrElse(0),
+      memory = resources.flatMap(_.limits.get("memory")).map(_.value).map(_.toDouble).getOrElse(0),
+      image = specImage,
+      age = age.getOrElse(DateTime.now()),
+      numInstances = numTarget,
+      tasksStaged = 0,
+      tasksRunning = numRunning,
+      tasksHealthy = 0,
+      tasksUnhealthy = 0,
+      taskStats = Some(taskStats)
+    )
+  }
+
 }

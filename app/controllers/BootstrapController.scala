@@ -18,12 +18,13 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.providers._
 
 @Singleton
-class BootstrapController @Inject()(messagesApi: MessagesApi,
-                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class BootstrapController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
-    val results = ProviderManager.loadProviders()
+    val results = providerManager.loadProviders()
     
     Ok("TESTING PROVIDER LOADING...")
   }

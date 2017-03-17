@@ -102,7 +102,7 @@ class AuthorizationControllerSpec
       mockMarathonClient = mock[MarathonClient]
       val cs = containerService
       cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
-      cs.marathonProvider(testPID) returns testProvider
+      cs.caasProvider(testPID) returns testProvider
       cs.marathonClient(testProvider) returns mockMarathonClient
       t
     }
