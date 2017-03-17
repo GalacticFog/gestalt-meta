@@ -280,34 +280,71 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val fDplDel = for {
       kube        <- fKube
       deployment  <- kube.get[Deployment](depname)
+      _           <- kube.delete[Deployment](depname)
       replicasets <- kube.list[ReplicaSetList]
-      pods        <- kube.list[PodList]
-      
-      replicaToDelete = getByName[ReplicaSet, ReplicaSetList](replicasets, depname).get
-      podsToDelete = listByName[Pod, PodList](pods, depname)
-
-      _  <- kube.delete[Deployment](depname)
-      _  <- kube.delete[ReplicaSet](replicaToDelete.name)
-      dp <- Future.traverse(podsToDelete)(pod => kube.delete[Pod](pod.name))
-    } yield dp.headOption.getOrElse(())
+      _ <- Future.traverse(
+        listByLabel[ReplicaSet,ReplicaSetList](replicasets, META_CONTAINER_KEY -> container.id.toString)
+      ){
+        rs => kube.delete[ReplicaSet](rs.name)
+      }
+      pods <- kube.list[PodList] recover {
+        case e: Throwable =>
+          log.debug(s"error listing Kubernetes Pod resources: ${e.toString}")
+          PodList()
+      }
+      _ = log.debug(s"found ${pods.size} Pods")
+      dp <- Future.traverse({
+        val thesePods = listByLabel[Pod, PodList](pods, META_CONTAINER_KEY -> container.id.toString)
+        log.debug(s"identified ${thesePods.size} Pods to delete")
+        thesePods
+      }){pod =>
+        log.debug(s"deleting Kubernetes Pod ${environment}/${pod.name}")
+        kube.delete[Pod](pod.name)
+      }
+      _ = log.debug(s"deleted ${dp.size} Pods")
+    } yield dp.headOption.getOrElse({
+      log.debug("deleted no Pods")
+      ()
+    })
 
     val fSrvDel = for {
       kube <- fKube
-      srvs <- kube.list[ServiceList]
-      dsrv <- Future.traverse(
-        srvs.items.filter(_.metadata.labels.get(META_CONTAINER_KEY).contains(container.id.toString))
-      )(srv => kube.delete[Service](srv.name))
-    } yield dsrv.headOption.getOrElse(())
+      srvs <- kube.list[ServiceList] recover {
+        case e: Throwable =>
+          log.debug(s"error listing Kubernetes Service resources: ${e.toString}")
+          ServiceList()
+      }
+      _ = log.debug(s"found ${srvs.size} Services")
+      dsrv <- Future.traverse({
+        val theseSrvs = listByLabel[Service, ServiceList](srvs, META_CONTAINER_KEY -> container.id.toString)
+        log.debug(s"identified ${theseSrvs.size} Services to delete")
+        theseSrvs
+      }){srv =>
+        log.debug(s"deleting Kubernetes Service ${environment}/${srv.name}")
+        kube.delete[Service](srv.name)
+      }
+      _ = log.debug(s"deleted ${dsrv.size} Services")
+    } yield dsrv.headOption.getOrElse({
+      log.debug("deleted no Services")
+      ()
+    })
 
-    Future.sequence(Seq(fDplDel,fSrvDel)) map (_ => ())
+    Future.sequence(Seq(fDplDel,fSrvDel)) map {_ =>
+      log.debug(s"finished deleting Deployment, ReplicaSet, Pods and Service for container ${container.id}")
+      ()
+    }
   }
 
   def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
-    objs.items filter { _.name.startsWith(prefix) }
+    objs filter { _.name.startsWith(prefix) }
   }
 
   def listByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): List[O] = {
-    objs.items filter { _.metadata.labels.exists(_ == label)}
+    objs filter { _.metadata.labels.get(label._1).contains(label._2) }
+  }
+
+  def getByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): Option[O] = {
+    objs find { _.metadata.labels.get(label._1).contains(label._2) }
   }
 
 
