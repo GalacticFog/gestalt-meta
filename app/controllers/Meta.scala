@@ -701,7 +701,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
 
     val stringprops = stringmap(input.properties)
-    val creator = request.identity.account.id
+    val creator = request.identity//.account.id
     
     for {
       sr <- sc(org, request.identity, input)

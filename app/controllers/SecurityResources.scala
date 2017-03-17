@@ -28,33 +28,33 @@ import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource
 trait SecurityResources {
   
   type SecurityResourceFunction = (UUID, AuthAccountWithCreds, GestaltResourceInput) => Try[SecurityResource]
-  type MetaResourceFunction     = (UUID, UUID, SecurityResource,  Option[Hstore], Option[String]) => Try[GestaltResourceInstance]
+  type MetaResourceFunction     = (AuthAccountWithCreds, UUID, SecurityResource,  Option[Hstore], Option[String]) => Try[GestaltResourceInstance]
   type SecurityDelete           = (UUID, AuthAccountWithCreds) => Try[Boolean]
   
-  def createNewMetaOrg[T](creator: UUID, owningOrg: UUID, org: SecurityResource, properties: Option[Hstore], description: Option[String]) = { //(implicit securedRequest: SecuredRequest[T]) = {
+  def createNewMetaOrg[T](creator: AuthAccountWithCreds, owningOrg: UUID, org: SecurityResource, properties: Option[Hstore], description: Option[String]) = { //(implicit securedRequest: SecuredRequest[T]) = {
     Try {
       val o = org.asInstanceOf[GestaltOrg]
       val parent = o.parent map { _.id }
       val props = Some(Map("fqon" -> o.fqon) ++ properties.getOrElse(Map()))
-      ResourceFactory.create(ResourceIds.User, creator)(
+      ResourceFactory.create(ResourceIds.User, creator.account.id)(
           fromSecurityResource(org, ResourceIds.Org, owningOrg, creator, props, description), parent).get
     }
   }
   
-  def createNewMetaGroup[T](creator: UUID, owningOrg: UUID, group: SecurityResource, properties: Option[Hstore], description: Option[String]) = {
+  def createNewMetaGroup[T](creator: AuthAccountWithCreds, owningOrg: UUID, group: SecurityResource, properties: Option[Hstore], description: Option[String]) = {
     Try {
       val g = group.asInstanceOf[GestaltGroup]
-      ResourceFactory.create(ResourceIds.Group, creator)(
+      ResourceFactory.create(ResourceIds.Group, creator.account.id)(
         fromSecurityResource(g, ResourceIds.Group, owningOrg, creator, properties, description),
         Option(owningOrg)).get
     }
   }
   
   
-  def createNewMetaUser[T](creator: UUID, owningOrg: UUID, account: SecurityResource, properties: Option[Hstore], description: Option[String]) = {//(implicit securedRequest: SecuredRequest[T]) = {
+  def createNewMetaUser[T](creator: AuthAccountWithCreds, owningOrg: UUID, account: SecurityResource, properties: Option[Hstore], description: Option[String]) = {//(implicit securedRequest: SecuredRequest[T]) = {
     Try {
       val a = account.asInstanceOf[GestaltAccount]
-      ResourceFactory.create(ResourceIds.User, creator)(
+      ResourceFactory.create(ResourceIds.User, creator.account.id)(
           fromSecurityResource(a, ResourceIds.User, owningOrg, creator, properties, description),
           Option(owningOrg)).get
     }
@@ -74,7 +74,7 @@ trait SecurityResources {
    * Convert Security::GestaltOrg or Security::GestaltAccount to GestaltResourceInstance
    * (could be used for other object types as well)
    */
-  def fromSecurityResource[T](sr: SecurityResource, typeId: UUID, org: UUID, creator: UUID, properties: Option[Hstore] = None, description: Option[String] = None) = { //(implicit request: SecuredRequest[T]) = {
+  def fromSecurityResource2[T](sr: SecurityResource, typeId: UUID, org: UUID, creator: UUID, properties: Option[Hstore] = None, description: Option[String] = None) = { //(implicit request: SecuredRequest[T]) = {
     GestaltResourceInstance(
       id = sr.id,
       typeId = typeId,
@@ -84,8 +84,26 @@ trait SecurityResources {
       description = description,
       state = ResourceState.id(ResourceStates.Active),
       properties = properties)
-  }  
+  }
   
+  def fromSecurityResource[T](
+      sr: SecurityResource, 
+      typeId: UUID, 
+      org: UUID, 
+      creator: AuthAccountWithCreds, properties: Option[Hstore] = None, description: Option[String] = None) = { //(implicit request: SecuredRequest[T]) = {
+    
+    val ownerLink = SecurityResources.ownerFromAccount(creator)
+    
+    GestaltResourceInstance(
+      id = sr.id,
+      typeId = typeId,
+      orgId = org, // this needs to be org from URI
+      owner = SecurityResources.ownerFromAccount(creator),//ResourceOwnerLink(ResourceIds.User, creator /*request.identity.account.id*/),
+      name = sr.name,
+      description = description,
+      state = ResourceState.id(ResourceStates.Active),
+      properties = properties)
+  }   
 }
 
 object SecurityResources {

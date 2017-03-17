@@ -152,7 +152,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
       
       val parent = parentOrgId(org, account)
       
-      createNewMetaOrg(adminId, parent, org, properties = None, None) match {
+      createNewMetaOrg(account, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
           setNewEntitlements(org.id, org.id, account, parent = Option(parent))
@@ -188,7 +188,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
       
       val org = group.directory.orgId
       
-      createNewMetaGroup(creator, org, group, 
+      createNewMetaGroup(account, org, group, 
           properties = None, group.description) match {
         case Failure(err) => throw err
         case Success(group) => {
@@ -218,7 +218,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
       
       val org = acc.directory.orgId
       
-      createNewMetaUser(creator, org, acc,
+      createNewMetaUser(account, org, acc,
           properties = Some(
             (userProps(acc) ++ Seq("gestalt_home" -> getRootOrgFqon(account))).toMap
           ),
