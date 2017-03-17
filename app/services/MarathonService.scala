@@ -33,8 +33,7 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
 
 class MarathonService extends CaasService with JsonInput with MetaControllerUtils {
-  
-  
+
   import scala.language.implicitConversions
   implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
   
@@ -221,14 +220,14 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
 
   private[services] def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
-  override def find(context: ProviderContext, spec: ContainerSpec): Future[Option[ContainerStats]] = {
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     // Lookup container in marathon, convert to ContainerStats
-    spec.external_id match {
+    container.properties.flatMap(_.get("external_id")) match {
       case None => Future.successful(None)
       case Some(eid) =>
         for {
           client <- Future(marathonClient(context.provider))
-          js <- client.getApplicationByAppId(spec.external_id.get)
+          js <- client.getApplicationByAppId(eid)
           stats <- Future.fromTry(Try {MarathonClient.marathon2Container(js).get})
         } yield Some(stats)
     }

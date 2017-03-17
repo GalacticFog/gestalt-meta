@@ -21,6 +21,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.events._
+import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.google.inject.Inject
 import services.{FakeRequest, ProviderContext}
@@ -46,6 +47,8 @@ trait ContainerService extends JsonInput {
   def deleteContainer(container: GestaltResourceInstance): Future[Unit]
 
   def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
+
+  def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
@@ -173,25 +176,16 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     (operations,options)
   }
 
+  // TODO: gotta find a way to get rid of this weird method, only used by the MarathonController for its API
   def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
     log.debug("***Finding container by name...")
-    try {
-
-      log.debug(s"***ENVIRONMENT: $environment, name: $containerName")
-      val cbn = ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
-
-    } catch {
-      case e : Throwable => {
-        e.printStackTrace()
-        log.error(e.getMessage, e.getCause)
-      }
-    }
     // Find container resource in Meta, convert to ContainerSpec
+    log.debug(s"***ENVIRONMENT: $environment, name: $containerName")
     val maybeContainerSpec = for {
-      r <- ResourceFactory.findChildByName(parent = environment, childType = ResourceIds.Container, name = containerName)
+      // this is not well-defined if there are multiple containers in the environment with the same name
+      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find {_.name == containerName}
       s <- ContainerSpec.fromResourceInstance(r).toOption
     } yield (r -> s)
-
 
     log.debug("***Getting stats...")
     val fMaybeUpdate = (for {
@@ -199,7 +193,32 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
       provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
       saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
       ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
-      stats = saasProvider.find(ctx, metaContainerSpec._2)
+      stats = saasProvider.find(ctx, metaContainerSpec._1)
+    } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
+
+    fMaybeUpdate map {
+      maybeUpdate => maybeContainerSpec map {
+        case (containerResource,containerSpec) => updateMetaContainerWithStats(containerResource, maybeUpdate) -> Seq.empty
+      }
+    }
+  }
+
+  override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
+    log.debug("***Finding container by id...")
+    // Find container resource in Meta, convert to ContainerSpec
+    log.debug(s"***ENVIRONMENT: $environment, id: $containerId")
+    val maybeContainerSpec = for {
+      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find {_.id == containerId}
+      s <- ContainerSpec.fromResourceInstance(r).toOption
+    } yield (r -> s)
+
+    log.debug("***Getting stats...")
+    val fMaybeUpdate = (for {
+      metaContainerSpec <- maybeContainerSpec
+      provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
+      saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
+      ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
+      stats = saasProvider.find(ctx, metaContainerSpec._1)
     } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
 
     fMaybeUpdate map {
@@ -326,11 +345,18 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     }
     (p -> c)
   }
-  
-  def publishEvent(event: PolicyEvent) = {
-    eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), event.toJson)
-  }
 
+  /**
+    * Parse and format the provider.id property from a container.properties map.
+    */
+  private def providerId(r: GestaltResourceInstance): Option[UUID] = {
+    for {
+      props <- r.properties
+      providerStr <- props.get("provider")
+      provider <- Try(Json.parse(providerStr)).toOption
+      pid <- (provider \ "id").asOpt[UUID]
+    } yield pid
+  }
 
   // TODO: this is only used by MarathonController, and should be deleted as soon as that controller switches to the CaaSProvider interface
   @deprecated("this should be replaced by CaaSService::create()", "now")

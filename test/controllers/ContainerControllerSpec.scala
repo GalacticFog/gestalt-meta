@@ -272,8 +272,8 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "force_pull" -> testProps.force_pull.toString,
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get))).get
-      
-        containerService.findEnvironmentContainerByName("root", testEnv.id, testContainer.name) returns Future(Some(testContainer -> Seq.empty))
+
+      containerService.getEnvironmentContainer("root", testEnv.id, testContainer.id) returns Future(Some(testContainer -> Seq.empty))
       
       // Set entitlements on new container
       val ces = Ents.setNewEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
