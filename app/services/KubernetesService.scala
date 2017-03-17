@@ -305,7 +305,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val fSrvDel = for {
       kube <- fKube
-      srvs <- kube.list[ServiceList]()
+      srvs <- kube.list[ServiceList]
       _ = log.debug(s"found ${srvs.size} Services")
       dsrv <- Future.traverse({
         val theseSrvs = listByLabel[Service, ServiceList](srvs, META_CONTAINER_KEY -> container.id.toString)
@@ -320,8 +320,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       log.debug("deleted no Services")
       ()
     })
-
-    log.debug("last song before the dance is done")
 
     Future.sequence(Seq(fDplDel,fSrvDel)) map {_ =>
       log.debug(s"finished deleting Deployment, ReplicaSet, Pods and Service for container ${container.id}")
