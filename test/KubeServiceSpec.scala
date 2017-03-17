@@ -244,10 +244,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
 
-      val mockDep = mock[skuber.ext.Deployment]
-      mockDep.name returns "deployment-test-container"
-      val mockRS  = mock[skuber.ext.ReplicaSet]
-      mockRS.name returns "deployment-test-container-12431234"
+      val mockDep = skuber.ext.Deployment("deployment-test-container")
+      val mockRS  = skuber.ext.ReplicaSet("deployment-test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
       val mockService = skuber.Service("test-container").withSelector(
         KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       ).addLabel(
@@ -312,10 +310,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
 
-      val mockDep = mock[skuber.ext.Deployment]
-      mockDep.name returns "deployment-test-container"
-      val mockRS  = mock[skuber.ext.ReplicaSet]
-      mockRS.name returns "deployment-test-container-12431234"
+      val mockDep = skuber.ext.Deployment("deployment-test-container")
+      val mockRS  = skuber.ext.ReplicaSet("deployment-test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
 
       mockSkuber.get(meq(mockDep.name))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
