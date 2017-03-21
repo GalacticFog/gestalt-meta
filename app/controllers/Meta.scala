@@ -609,7 +609,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             /*
              * TODO: Update container as 'FAILED' in Meta
              */
-            HandleExceptionsAsync(e)
+            Future.successful(HandleExceptions(e))
           }
           case Success(newMetaProvider) => {
             

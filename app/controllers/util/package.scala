@@ -65,10 +65,7 @@ package object util {
     log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
-  
-  def HandleExceptionsAsync(e: Throwable)(implicit ec: ExecutionContext) = 
-    scala.concurrent.Future(HandleExceptions(e))
-  
+
   val metaApiExceptions: PartialFunction[Throwable, play.api.mvc.Result] = {
     case e: ResourceNotFoundException     => NotFound(e.asJson)
     case e: BadRequestException           => BadRequest(e.asJson)

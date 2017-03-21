@@ -19,9 +19,9 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.HandleExceptionsAsync
 import controllers.util.SecureController
 import javax.inject.Singleton
+import controllers.util.HandleExceptions
 
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
@@ -83,7 +83,7 @@ class KubeController @Inject()( messagesApi: MessagesApi,
   def get(fqon: String, provider: UUID, path: String): Action[AnyContent] = Authenticate(fqon).async { implicit request =>
     skuberFactory.initializeKube(provider, "default")
         .flatMap {  getResult(path, request, _) }
-        .recoverWith { case t: Throwable => HandleExceptionsAsync(t) }
+        .recover { case t: Throwable => HandleExceptions(t) }
   }
 
   def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext): Future[Result] = {
@@ -132,7 +132,7 @@ class KubeController @Inject()( messagesApi: MessagesApi,
           case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
         }
       }
-    } yield createResponse) recoverWith {case t: Throwable => HandleExceptionsAsync(t)}
+    } yield createResponse) recover {case t: Throwable => HandleExceptions(t)}
   }
 
   /**

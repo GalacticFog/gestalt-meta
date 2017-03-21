@@ -97,59 +97,37 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
    *  - Failed
    */
   
-  
-  import com.galacticfog.gestalt.json.Js
-
-  def withProviderInfo(json: JsValue): JsObject = {
+  def withProviderInfo(json: JsValue): Try[JsObject] = {
     val jprops = (json \ "properties")
-
-    val pid = (jprops \ "provider" \ "id").as[String]
-
-    // TODO: need to check that this was a Some, throw/handle appropriate error
-    val p = ResourceFactory.findById(UUID.fromString(pid)).get
-    val newprops = (jprops.as[JsObject] ++ Json.obj("provider" -> Json.obj("name" -> p.name, "id" -> p.id)))
-    
-    json.as[JsObject] ++ Json.obj("properties" -> newprops)
+    for {
+      pid <- Try((jprops \ "provider" \ "id").as[String])
+      provider <- ResourceFactory.findById(UUID.fromString(pid)) match {
+        case None => Failure(new BadRequestException(s"provider does not exist"))
+        case Some(p) => Success(p)
+      }
+      newprops = jprops.as[JsObject] ++ Json.obj(
+        "provider" -> Json.obj("name" -> provider.name, "id" -> provider.id)
+      )
+    } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
   }
-  
-  
-  def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    
-    log.debug(s"postContainer($fqon, $environment)")
-    
-    val payload = withProviderInfo(request.body)
-    
-    val transform = CaasTransform(fqid(fqon), request.identity, payload /*request.body*/)
-    val context   = ProviderContext(request, parseProvider(transform.resource), None)
-    
-    log.info("Creating container in Meta...")
-    log.debug(context.toString)
 
-    val env      = context.environment
-    val provider = context.provider
-    val r1       = transform.resource
-    val metaCreate = for {
-      resource    <- createMetaContainer(request.identity, r1, env.id)
-      serviceImpl <- providerManager.getProviderImpl(provider.typeId)
-    } yield (serviceImpl, resource)
-    
-    val created = metaCreate match {
-      case Failure(e) => {
-        log.error("Failed creating container in Meta.")
-        HandleExceptionsAsync(e)
-      }
-      case Success((service, metaResource)) => {
-        
-        log.info("Meta container created: " + metaResource.id)
-        log.info("Creating container in backend CaaS...")
-        
-        for {
-          updated   <- service.create(context, metaResource)
-          container <- updateContainer(updated, request.identity.account.id)
-        } yield Created(RenderSingle(container))
-      }
-    }
-    created recoverWith { case e => HandleExceptionsAsync(e) }
+  def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val created = for {
+      payload   <- Future.fromTry(withProviderInfo(request.body))
+      transform = CaasTransform(fqid(fqon), request.identity, payload)
+      context   = ProviderContext(request, parseProvider(transform.resource), None)
+      env       = context.environment
+      provider  = context.provider
+      r1        = transform.resource
+      _ = log.info("Creating container in Meta...")
+      metaResource <- Future.fromTry(createMetaContainer(request.identity, r1, env.id))
+      service      <- Future.fromTry(providerManager.getProviderImpl(provider.typeId))
+      _ = log.info("Meta container created: " + metaResource.id)
+      _ = log.info("Creating container in backend CaaS...")
+      updated   <- service.create(context, metaResource)
+      container <- updateContainer(updated, request.identity.account.id)
+    } yield Created(RenderSingle(container))
+    created recover { case e => HandleExceptions(e) }
   }
 
   /*
