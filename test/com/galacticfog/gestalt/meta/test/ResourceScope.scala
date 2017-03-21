@@ -234,10 +234,7 @@ trait ResourceScope extends Scope {
         properties = Option(workspaceProps))
       e <- createInstance(ResourceIds.Environment, envName,
         org = org,
-        parent = Option(createInstance(ResourceIds.Workspace, wrkName,
-          org = org,
-          parent = Option(org),
-          properties = Option(workspaceProps)).get.id),
+        parent = Option(w.id),
         properties = Option(
           (environmentProps ++ Map("workspace" -> createInstance(ResourceIds.Workspace, wrkName,
             org = org,
