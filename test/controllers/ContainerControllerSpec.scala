@@ -349,6 +349,35 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
     }
 
+    "create containers with non-existent provider should 400" in new TestApplication {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = UUID.randomUUID())
+      )
+
+      val newResource = newInstance(
+        typeId = ResourceIds.Container,
+        name = testContainerName,
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Json.toJson(testProps.provider).toString
+        ))
+      )
+
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/containers", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(request)
+
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("provider does not exist")
+    }
+
     "create containers using CaaSService interface" in new TestApplication {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
