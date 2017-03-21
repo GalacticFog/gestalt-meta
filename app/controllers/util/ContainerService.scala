@@ -177,6 +177,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
   }
 
   // TODO: gotta find a way to get rid of this weird method, only used by the MarathonController for its API
+  @deprecated("this should be replaced by CaaSService::find()", "now")
   def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
     log.debug("***Finding container by name...")
     // Find container resource in Meta, convert to ContainerSpec
@@ -397,8 +398,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     val options = containerRequestOptions(user, environment.id, origContainerResourcePre)
 
     SafeRequest (operations, options) ProtectAsync { maybeState =>
-      // TODO: do we need an entitlement check before allowing the user to use this provider?
-      // TODO: yes
+      // TODO: we need an entitlement check before allowing the user to use this provider
       val provider = caasProvider(containerSpec.provider.id)
       val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
         "name" -> provider.name,

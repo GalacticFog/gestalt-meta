@@ -41,14 +41,13 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   lazy val containerService = mock[ContainerService]//.verbose
   lazy val providerManager = mock[ProviderManager]
   lazy val secureController = mock[SecureController]
-  
+
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)  
 
   val account2auth = dummyAuthResponseWithCreds()
   val account2creds = account2auth.creds
   val account2 = AuthAccountWithCreds(account2auth.account, Seq.empty, Seq.empty, account2creds, dummyRootOrgId)
-  
-  
+
   def dummyAuthResponse(userInfo: Map[String,String] = Map(), groups: Seq[SecurityLink] = Seq(), orgId: UUID = uuid()): GestaltAuthResponse = {
     val defaultStr = "foo"
     val directory = GestaltDirectory(uuid(), defaultStr, None, uuid())
@@ -148,18 +147,18 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   }
 
   private[this] def uuid() = UUID.randomUUID()  
-  
+
   /*
    * Still playing with this - DO NOT DELETE!
    */
 //  type FakeFrameworkEnv = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator]
 //  type FrameworkEnvType = GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-//  
+//
 //  def injectController[A : ClassTag](
-//      auth: Option[GestaltAuthResponseWithCreds] = None, 
+//      auth: Option[GestaltAuthResponseWithCreds] = None,
 //      env: Option[FakeFrameworkEnv]   = None,
 //      overrides: Seq[GuiceableModule] = Seq.empty) = {
-//    
+//
 //    val authResponse = auth getOrElse dummyAuthResponseWithCreds()
 //    val environment  = env getOrElse fakeSecurityEnvironment(authResponse)
 //    val envBinding: GuiceableModule = bind(classOf[FrameworkEnvType]).toInstance(environment)
@@ -169,5 +168,5 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
 //      .build()
 //      .injector
 //      .instanceOf[A]
-//  }  
+//  }
 }

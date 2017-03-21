@@ -7,7 +7,7 @@ import scala.util.Success
 import scala.util.Try
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.JsonMatchers
+import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -17,34 +17,48 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
-import javax.inject.Singleton
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
-import services.{KubernetesService, MarathonService}
-
+import services.{KubernetesService, MarathonService, ProviderContext}
 
 class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
-  override def beforeAll(): Unit = pristineDatabase()
+  override def beforeAll(): Unit = {
+    pristineDatabase()
+    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+      Some(Map(
+        "firstName" -> user.account.firstName,
+        "lastName" -> user.account.lastName,
+        "email" -> user.account.email.getOrElse(""),
+        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
+      )),
+      user.account.description
+    )
+  }
 
   sequential
 
   abstract class FakeSecurity extends WithApplication(containerApp()) {
   }
 
-  import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-  object Ents extends AuthorizationMethods
+  def matchesProviderContext(provider: GestaltResourceInstance, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Matcher[ProviderContext] =
+    ((_: ProviderContext).workspace.id == workspace.id, (_: ProviderContext).workspace.id.toString + " does not contain the expected workspace resource " + workspace.id) and
+    ((_: ProviderContext).environment.id == environment.id, (_: ProviderContext).environment.id.toString + " does not contain the expected environment resource " + environment.id) and
+    ((_: ProviderContext).environmentId == environment.id, (_: ProviderContext).environmentId.toString + " does not contain the expected environmentId " + environment.id) and
+    ((_: ProviderContext).provider.id == provider.id, (_: ProviderContext).provider.id.toString + " does not contain the expected provider resource " + provider.id) and
+    ((_: ProviderContext).providerId == provider.id, (_: ProviderContext).providerId.toString + " does not contain the expected providerId " + provider.id)
+
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
   trait TestApplication extends FakeSecurity {
     val containerController = spy(app.injector.instanceOf[ContainerController])
 
-    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
     Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     
@@ -260,7 +274,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
       containerService.getEnvironmentContainer("root", testEnv.id, testContainer.id) returns Future(Some(testContainer -> Seq.empty))
 
-      // Set entitlements on new container
+      // Set entitlements on new environment for container creation
       val ces = Ents.setNewEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
       ces exists { _.isFailure } must beFalse
 
@@ -281,7 +295,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
 
     "list containers via the ContainerService interface" in new TestApplication {
-
 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
@@ -336,13 +349,13 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
 
     }
 
-    "create containers using the ContainerService interface" in new TestApplication {
+    "create containers using CaaSService interface" in new TestApplication {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id, name = Some(testDCOSProvider.name)),
+        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
         cpus = 1.0,
         memory = 128,
@@ -366,7 +379,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testDCOSProvider).toString,
+          "provider" -> Json.toJson(testProps.provider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "disk" -> testProps.disk.toString,
@@ -377,17 +390,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         )
       )
 
-//      containerService.launchContainer(
-//        meq("root"),
-//        meq(testWork),
-//        meq(testEnv),
-//        any[AuthAccountWithCreds],
-//        meq(testProps),
-//        any[Option[UUID]]) returns Future(createdResource -> Seq.empty)
-
-      mockDCOSService.create(
-        any, argThat( (r: GestaltResourceInstance) => r.id == newResource.id )
-      ) returns Future.successful(newResource)
+      mockDCOSService.create(any,any)(any) returns Future.successful(newResource)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/containers", testCreds).withBody(
         Output.renderInstance(newResource)
@@ -403,8 +406,14 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
 
-      //there was one(containerController).createContainer(anyString, any[UUID])
-      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec], any[Option[UUID]])
+      there was one(mockDCOSService).create(
+        context = argThat(matchesProviderContext(
+          provider = testDCOSProvider,
+          workspace = testWork,
+          environment = testEnv
+        )),
+        container = any
+      )(any)
     }
 
     "create containers using the ContainerService interface with specific ID" in new TestApplication {
@@ -413,7 +422,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id),
+        provider = ContainerSpec.InputProvider(id = testKubeProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
@@ -432,13 +441,15 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         user = None
       )
 
-      val testUUID = uuid()
-      val createdResource = createInstance(ResourceIds.Container, testContainerName,
-        parent = Some(testEnv.id),
+      val userSpecificUUID = uuid()
+      val newResource = newInstance(
+        typeId = ResourceIds.Container,
+        id = userSpecificUUID,
+        name = testContainerName,
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testDCOSProvider).toString,
+          "provider" -> Json.toJson(testProps.provider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "disk" -> testProps.disk.toString,
@@ -446,31 +457,32 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
           "force_pull" -> testProps.force_pull.toString,
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get
-        )),
-        id = testUUID
-      ).get
-      containerService.launchContainer(
-        meq("root"),
-        meq(testWork),
-        meq(testEnv),
-        any[AuthAccountWithCreds],
-        meq(testProps),
-        meq(Some(testUUID))
-      ) returns Future(createdResource -> Seq.empty)
+        ))
+      )
+
+      mockKubeService.create(any,any)(any) returns Future.successful(newResource)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/containers", testCreds).withBody(
-        Output.renderInstance(createdResource)
+        Output.renderInstance(newResource)
       )
       val Some(result) = route(request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
-      (json \ "id").asOpt[UUID] must beSome(testUUID)
+      (json \ "id").asOpt[UUID] must beSome(userSpecificUUID)
       (json \ "name").asOpt[String] must beSome(testContainerName)
       (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
 
-      //there was one(containerController).createContainer(anyString, any[UUID])
-      there was one(containerService).launchContainer(anyString, meq(testWork), meq(testEnv), any[AuthAccountWithCreds], any[ContainerSpec], meq(Some(testUUID)))
+      there was one(mockKubeService).create(
+        context = argThat(matchesProviderContext(
+          provider = testKubeProvider,
+          workspace = testWork,
+          environment = testEnv
+        )),
+        container = argThat(
+          (c: GestaltResourceInstance) => c.id == userSpecificUUID
+        )
+      )(any)
     }
 
     "delete kube containers using the ContainerService interface" in new TestApplication {

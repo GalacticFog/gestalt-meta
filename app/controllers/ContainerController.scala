@@ -123,6 +123,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     val context   = ProviderContext(request, parseProvider(transform.resource), None)
     
     log.info("Creating container in Meta...")
+    log.debug(context.toString)
 
     val env      = context.environment
     val provider = context.provider
@@ -155,12 +156,8 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
    * TODO: This is a temporary wrapper to adapt ResourceFactory.update() to return a Future
    * as it will in a forthcoming revision.
    */
-  private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] = {
-    ResourceFactory.update(container, identity) match {
-      case Failure(e) => Future.failed(e)
-      case Success(r) => Future(r)
-    }
-  }
+  private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] =
+    Future.fromTry(ResourceFactory.update(container, identity))
 
   def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     log.debug("Looking up workspace and environment for container...")

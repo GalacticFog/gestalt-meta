@@ -3,7 +3,7 @@ package controllers
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import controllers.util.GestaltSecurityMocking
+import controllers.util.{ContainerService, GestaltSecurityMocking}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
@@ -11,16 +11,34 @@ import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsObject, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
+import play.api.inject.bind
+
+import scala.util.Success
 
 class MetaControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
-  override def beforeAll(): Unit = pristineDatabase()
+  override def beforeAll(): Unit = {
+    pristineDatabase()
+    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+      Some(Map(
+        "firstName" -> user.account.firstName,
+        "lastName" -> user.account.lastName,
+        "email" -> user.account.email.getOrElse(""),
+        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
+      )),
+      user.account.description
+    )
+  }
 
   sequential
 
-  abstract class FakeSecurity extends WithApplication(containerApp()) {
-  }
-  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+  abstract class FakeSecurity extends WithApplication(application(
+    additionalBindings = Seq(
+      bind(classOf[ContainerService]).toInstance(mock[ContainerService])
+    )
+  ))
+
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   trait TestApplication extends FakeSecurity {
     Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)

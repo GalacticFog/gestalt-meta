@@ -61,8 +61,6 @@ trait CaasService extends GestaltProviderService {
 
   def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]]
 
-//  def find(fqon: String, criteria: ***): Future[Option[***]]
-//  
 //  def findAll(fqon: String, criteria: ***): Future[Seq[***]]
 
   def create(context: ProviderContext, container: GestaltResourceInstance)
@@ -70,13 +68,10 @@ trait CaasService extends GestaltProviderService {
 
   def destroyContainer(id: GestaltResourceInstance): Future[Unit]
 
-//  
 //  def start(id: UUID): Future[JsValue]
 //  
-//  def suspend(id: UUID): Future[JsValue]
-//  
 //  def restart(id: UUID): Future[JsValue]
-//  
+//
 //  def scale(id: UUID, quantity: UUID): Future[JsValue]
 //  
 //  def migrate(id: UUID, to: ***): Future[JsValue]
@@ -85,6 +80,5 @@ trait CaasService extends GestaltProviderService {
 //   * Convert input container JSON to a Meta Container Resource.
 //   */
 //  def toResource(fqon: String, user: AuthAccountWithCreds, input: JsValue): Try[GestaltResourceInstance]
-//
 
 }
