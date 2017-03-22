@@ -109,4 +109,22 @@ class ResourcePathSpec extends Specification {
     
   }
   
+  "isOrg" should {
+    
+    "be TRUE if the path contains only FQON" >> {
+      new ResourcePath(s"/testorg").isOrg must beTrue
+    }
+  
+    "be FALSE if the path points to a first-level resource or list" >> {
+      new ResourcePath(s"/testorg/environments").isOrg must beFalse
+      new ResourcePath(s"/testorg/environments/${uuid}").isOrg must beFalse
+    }
+    
+    "be FALSE if the path points to a second-level resource of list" >> {
+      new ResourcePath(s"/testorg/workspaces/${uuid}/environments").isOrg must beFalse
+      new ResourcePath(s"/testorg/workspaces/${uuid}/environments/${uuid}").isOrg must beFalse
+    }
+    
+  }
+  
 }
