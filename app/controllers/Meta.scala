@@ -38,9 +38,6 @@ import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 
-/**
- * Code for POST and PATCH of all resource types.
- */
 import javax.inject.Singleton
 
 @Singleton
@@ -339,17 +336,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }  
 
-  /**
-   * Convert input JSON to an in-memory GestaltResourceInstance
-   */
-  def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    
-    withInputDefaults(
-          org = org, 
-          typeId = typeId,
-          input = safeGetInputJson(json).get, 
-          creator = creator)
-  }
 
 // --------------------------------------------------------------------------
 // ENVIRONMENTS
@@ -430,7 +416,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       }
     }
   }
-  
+  /************** END PROVIDER CODE ********************/
   
   // --------------------------------------------------------------------------
   // GATEWAY_PROVIDERS
@@ -630,6 +616,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
     }
   }
+  
+  
+  /************** END PROVIDER CODE ********************/
   
   def laserClient(lambdaUrl: String, gatewayUrl: String) = {
     val gateway = HostConfig.make(new URL(gatewayUrl))

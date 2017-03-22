@@ -279,8 +279,6 @@ class LaserController @Inject()(messagesApi: MessagesApi,
                   "gateway_url" -> JsString(laserEndpoint.url.get),
                   "api" -> JsString(api.get.toString))))
                   
-          
-          
           // Create the ApiEndpoint in Meta
           val metaEndpoint = 
             CreateResource(ResourceIds.User, 

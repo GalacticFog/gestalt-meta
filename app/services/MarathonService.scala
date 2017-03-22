@@ -57,7 +57,6 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
     import com.galacticfog.gestalt.json._
     import com.galacticfog.gestalt.json.Js
     
-
     def updateServiceAddresses(marApp: JsValue, r: GestaltResourceInstance): GestaltResourceInstance = {
       val clusterid = ".marathon.l4lb.thisdcos.directory"
       
@@ -71,6 +70,35 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
               (marApp \ "portDefinitions" \\ "labels").map(_.as[Map[String,String]])            
           }
         } getOrElse Seq.empty
+      }
+      
+      val portDefinitions = Js.find(marApp, "/portDefinitions") map { portdefs =>
+        if (portdefs == JsNull) {
+          log.info("[container.portDefinitions] is null")
+          Seq.empty
+        } else {
+          portdefs.as[JsArray].value map { pd =>
+
+            val name = Js.find(pd, "/name") map { _.as[String] } getOrElse {
+              throw new RuntimeException(s"Could not parse 'name' from portDefinition")
+            }
+
+            val port = Js.find(pd, "/port") map { _.as[Int] } getOrElse {
+              throw new RuntimeException(s"Could not parse 'port' from portDefinition")
+            }
+            
+            val protocol = Js.find(pd, "/protocol").map(_.as[String]) orElse Some("tcp")
+            
+            Js.find(pd.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
+              val labelvalue = next.as[Map[String, String]] collect { 
+                case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
+              }
+              acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
+            }
+          }
+            
+          
+        }
       }
       
       //Option[Seq[Map[String, ContainerSpec.ServiceAddress]]]
@@ -95,11 +123,10 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
             val port = Js.find(pm, "/containerPort") map { _.as[Int] } getOrElse {
               throw new RuntimeException(s"Could not parse 'port' from portMapping")
             }
-
+            
             val protocol = Js.find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
-
+            
             Js.find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
-              println("***NEXT : " + next)
               val labelvalue = next.as[Map[String, String]] collect { 
                 case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
               }
@@ -107,22 +134,25 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
             }
           }
         }
-        
       }
-
+      
+      val ports = {
+        (portMappings getOrElse Seq.empty) ++ (portDefinitions getOrElse Seq.empty)
+      }
+      
       /*
        * TODO: If portMappings is empty, we can return the original resource here.
        */
-
       val resultResource = {
-        if (portMappings.isEmpty || portMappings.get.isEmpty) {
-          log.debug("No portMappings found - returning original resource.")
+        if (portMappings.isEmpty) {
+          log.debug("No ServiceAddresses found - returning original resource.")
           r
         }
         else {
           //val t =portMappings.get.flatten.toMap
-          val portList = portMappings.get.flatten.toMap
-
+          //val portList = portMappings.get.flatten.toMap
+          val portList = ports.flatten.toMap
+          
           // This loads Meta PortMappings from the resource
           val metaPortMaps = r.properties.get.get("port_mappings") map {
             p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
@@ -153,6 +183,45 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
           }
         }
       }
+//      val resultResource = {
+//        if (portMappings.isEmpty || portMappings.get.isEmpty) {
+//          log.debug("No portMappings found - returning original resource.")
+//          r
+//        }
+//        else {
+//          //val t =portMappings.get.flatten.toMap
+//          val portList = portMappings.get.flatten.toMap
+//
+//          // This loads Meta PortMappings from the resource
+//          val metaPortMaps = r.properties.get.get("port_mappings") map {
+//            p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
+//              throw new RuntimeException("Could not parse portMappings to JSON.")
+//            }
+//          }
+//
+//          def isExposed(p: PortMapping): Boolean = 
+//            p.expose_endpoint getOrElse false
+//          
+//          // Get PortMappings where `expose_endpoint == true`
+//          val exposedPorts = metaPortMaps.get collect { case p if isExposed(p) => 
+//            p.copy(service_address = Some(portList(p.name.get)))
+//          }
+//          
+//          if (exposedPorts.isEmpty) {
+//            log.info("No exposed ports found. Returning.")
+//            container 
+//          }
+//          else {
+//            log.info(s"${exposedPorts.size} exposed ports found.")
+//
+//            // Replace container.properties.port_mappings
+//            val newproperties = container.properties.get ++ Map(
+//                "port_mappings" -> Json.toJson(exposedPorts).toString)
+//
+//            container.copy(properties = Some(newproperties))
+//          }
+//        }
+//      }
       resultResource
     }    
 //    def updateServiceAddresses(marApp: JsValue, r: GestaltResourceInstance): GestaltResourceInstance = {
@@ -277,6 +346,10 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
         )
         log.debug("About to launch container...")
         val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
+        
+        println("APP-PAYLOAD: ")
+        println(Json.prettyPrint(marathonAppCreatePayload))
+        
         marathonClient(context.provider).launchApp(
           fqon = context.fqon,
           wrkName = context.workspace.name,

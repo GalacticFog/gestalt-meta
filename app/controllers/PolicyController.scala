@@ -171,17 +171,6 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   //
   // TODO: Add entitlements and authorization.
   //
-    /**
-   * Convert input JSON to an in-memory GestaltResourceInstance
-   */
-  def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    
-    withInputDefaults(
-          org = org, 
-          typeId = typeId,
-          input = safeGetInputJson(json).get, 
-          creator = creator)
-  }
   
   def createPolicyCommon(org: UUID, parentType: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
     
