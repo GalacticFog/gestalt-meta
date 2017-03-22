@@ -191,18 +191,5 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
           policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Integration)))/*,
           data = Option(Map("host" -> baseUri.get))*/)
   }
-
-  /*
-   * TODO: This method will be factored out into controllers.util package.
-   * Convert input JSON into a GestaltResourceInstance with default values. This is needed
-   * for policy checks.
-   */
-  private[this] def j2r(org: UUID, creator: AuthAccountWithCreds, json: JsValue, typeId: Option[UUID] = None) = {
-    withInputDefaults(
-          org = org, 
-          input = safeGetInputJson(json).get,
-          creator = creator,
-          typeId = typeId)
-  }    
   
 }
