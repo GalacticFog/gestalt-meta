@@ -51,7 +51,8 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
 
       upsertProperties(updated,
         "external_id" -> marathonAppId,
-        "status" -> "LAUNCHED")
+        "status" -> "LAUNCHED"
+      )
     }
     
     import com.galacticfog.gestalt.json._

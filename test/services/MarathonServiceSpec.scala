@@ -1,32 +1,30 @@
+package services
+
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.google.inject.AbstractModule
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
+import org.mockito.Matchers.{eq => meq}
+import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mock.Mockito
-import org.specs2.mutable._
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.test.{FakeRequest, PlaySpecification}
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
 import services.{KubernetesService, ProviderContext, SkuberFactory}
-import skuber.ObjectResource
 import skuber.api.client
 import skuber.json.format._
-import skuber.json.ext.format._
 
-import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
-class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
+class MarathonServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
   override def beforeAll(): Unit = pristineDatabase()
@@ -187,8 +185,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
       ) )(any,meq(client.serviceKind))
 
-      import ContainerSpec.PortMapping
-      import ContainerSpec.ServiceAddress
+      import ContainerSpec.{PortMapping, ServiceAddress}
 
       val svcHost = s"${metaContainer.name}.${testEnv.id}.svc.cluster.local"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
