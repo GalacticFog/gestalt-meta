@@ -72,35 +72,8 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
         } getOrElse Seq.empty
       }
       
-      val portDefinitions = Js.find(marApp, "/portDefinitions") map { portdefs =>
-        if (portdefs == JsNull) {
-          log.info("[container.portDefinitions] is null")
-          Seq.empty
-        } else {
-          portdefs.as[JsArray].value map { pd =>
-
-            val name = Js.find(pd, "/name") map { _.as[String] } getOrElse {
-              throw new RuntimeException(s"Could not parse 'name' from portDefinition")
-            }
-
-            val port = Js.find(pd, "/port") map { _.as[Int] } getOrElse {
-              throw new RuntimeException(s"Could not parse 'port' from portDefinition")
-            }
-            
-            val protocol = Js.find(pd, "/protocol").map(_.as[String]) orElse Some("tcp")
-            
-            Js.find(pd.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
-              val labelvalue = next.as[Map[String, String]] collect { 
-                case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
-              }
-              acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
-            }
-          }
-            
-          
-        }
-      }
       
+      log.debug("Parsing portMappings...")
       //Option[Seq[Map[String, ContainerSpec.ServiceAddress]]]
       val portMappings = Js.find(marApp, "/container/docker/portMappings") map { portmaps =>
       
@@ -134,6 +107,41 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
             }
           }
         }
+      }      
+      
+      log.debug("Parsing portDefinitions...")
+      
+      val portDefinitions = 
+        if (portMappings.isDefined && portMappings.get.nonEmpty) {
+          log.debug("portMappings were found - ignoring portDefinitions")
+          Option(Seq[Map[String,ContainerSpec.ServiceAddress]]())
+        } else {
+          Js.find(marApp, "/portDefinitions") map { portdefs =>
+          if (portdefs == JsNull) {
+            log.info("[container.portDefinitions] is null")
+            Seq.empty
+          } else {
+            portdefs.as[JsArray].value map { pd =>
+  
+              val name = Js.find(pd, "/name") map { _.as[String] } getOrElse {
+                throw new RuntimeException(s"Could not parse 'name' from portDefinition")
+              }
+  
+              val port = Js.find(pd, "/port") map { _.as[Int] } getOrElse {
+                throw new RuntimeException(s"Could not parse 'port' from portDefinition")
+              }
+              
+              val protocol = Js.find(pd, "/protocol").map(_.as[String]) orElse Some("tcp")
+              
+              Js.find(pd.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
+                val labelvalue = next.as[Map[String, String]] collect { 
+                  case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid 
+                }
+                acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
+              }
+            }
+          }
+        }
       }
       
       val ports = {
@@ -141,7 +149,7 @@ class MarathonService extends CaasService with JsonInput with MetaControllerUtil
       }
       
       /*
-       * TODO: If portMappings is empty, we can return the original resource here.
+       * TODO: If ports is empty, we can return the original resource here.
        */
       val resultResource = {
         if (portMappings.isEmpty) {
