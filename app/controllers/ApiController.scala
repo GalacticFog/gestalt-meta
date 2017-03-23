@@ -151,26 +151,67 @@ class ApiController @Inject()(
           }
         }
       }
-
     }
   }
-  
-
   
   def putApi(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ???
   }
-  
   
   def postApiEndpoint(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     ResourceFactory.findById(ResourceIds.Api, api).fold {
       Future(ResourceNotFound(ResourceIds.Api, api)) 
     }{ a =>
-      /*
-       * TODO: validate endpoint payload
-       */
-      val payload = validateNewEndpoint(request.body)
+      
+      val caller = request.identity
+      // provider.id property exists
+      import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+      val pid = Js.find(Json.toJson(a).as[JsObject], "/properties/provider/id").fold {
+        unprocessable("Missing required property [properties.provider.id]")
+      }{ js => UUID.fromString(js.as[String]) }
+
+      log.debug("Parsed provider ID from API for endpoint: " + pid)
+
+      val provider = ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold {
+        unprocessable(s"GatewayManager provider with ID '$pid' not found")
+      }{ gateway => gateway }
+      
+      val client = configureWebClient(provider)
+      
+      log.debug("Creating Endpoint in Meta...")
+      
+      val metaCreate = for {
+        p <- validateNewEndpoint(request.body)
+        l <- toLaserEndpoint(p, api)
+        r <- CreateResource(fqid(fqon), p, caller, ResourceIds.ApiEndpoint, api) 
+      } yield (r, l)
+      
+      metaCreate match {
+        case Failure(e) => {
+          log.error("Failed creating Endpoint in Meta")
+          HandleExceptionsAsync(e)
+        }
+        case Success((metaep, laserep)) => {
+          log.debug("Endoint created in Meta")
+          log.debug("Creating Endpoint in GatewayManager...")
+          client.post("/endpoints", Option(Json.toJson(laserep))) map { result =>
+            val response = client.unwrapResponse(result, Seq(200, 201))
+            log.debug("Response from GatewayManager: " + response.output)
+            Created(RenderSingle(metaep))
+          } recover {
+            case e: Throwable => {
+              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
+              log.error("Setting Meta API state to 'FAILED'")
+
+              val failstate = ResourceState.id(ResourceStates.Failed)
+              ResourceFactory.update(metaep.copy(state = failstate), caller.account.id)
+              HandleExceptions(e)
+            }
+          }
+        }
+      }
+      
       /*
   case class LaserEndpoint(
       id: Option[String], 
@@ -188,7 +229,7 @@ class ApiController @Inject()(
        * Create in gestalt-api-gateway
        * return
        */
-      createResourceCommon(fqid(fqon), api, ResourceIds.ApiEndpoint, payload)
+      //createResourceCommon(fqid(fqon), api, ResourceIds.ApiEndpoint, payload)
     }
   }
   
@@ -239,35 +280,58 @@ class ApiController @Inject()(
     
 
   }
+    
+/*
+{
+  "name":"ApiEndpoint-2",
   
-  private[controllers] def validateNewEndpoint(js: JsValue): JsValue = {
+  "properties":{
+    "resource": "/path",
+    "http_method":"GET",
+    "auth_type":{
+      "type":"None"
+    },
+    "upstream_url": "https://lambda.lambda.io:5432/lambdas/{uuid}/invoke"
+}
 
-    val implobj = Js.find(js.as[JsObject], "/properties/implementation") getOrElse {
-      unprocessable("Required value [properties.implementation] is missing.")
-    }
-
-    Js.parse[EndpointImpl](implobj) match {
-      case Failure(e) => unprocessable(s"Malformed [implementation] JSON. found: '${implobj}'")
-      case Success(impl) => {
-
-        // 'type' == lambda
-        if (impl.`type`.toLowerCase != "lambda")
-          unprocessable(s"Unsupported [implementation.type]. found: '${impl.`type`}'")
-
-        // 'id' is valid UUID
-        val implid = parseUUID(impl.id) getOrElse {
-          unprocessable(s"Invalid [implementation.id] (not a valid UUID). found '${impl.id}'")
-        }
-        
-        // 'id' points to existing lambda
-        ResourceFactory.findById(ResourceIds.Lambda, implid).fold {
-          throw new ResourceNotFoundException(s"Lambda with ID '${implid}' not found.")
-        }{ 
-          lmb => js
-        }
-      }
-    }
+case class EndpointDao(
+  id : Option[String],
+  apiId : String,
+  upstreamUrl : String,
+  path : Option[String],
+  domain : Option[String],
+  endpointInfo : Option[JsValue],
+  url : Option[String] = None,
+  payload : Option[String]
+)
+*/  
+  
+  
+  private[controllers] def validateNewEndpoint(js: JsValue): Try[JsValue] = Try {
+    val json = js.as[JsObject]
+    val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
+    val upstreamUrl = Js.find(json, "/upstream_url").fold {
+      unprocessable("Invalid payload: [apiendpoint.properties.upstream_url] is missing.")
+    }{ url => url.toString }
+    val path = Js.find(json, "/resource") map (_.toString) getOrElse {
+      unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
+    }    
+    json ++ Json.obj("id" -> id)
   }
+  
+  
+  def toLaserEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = Try {
+    val json = js.as[JsObject]
+    val id = Js.find(json, "/id").get.toString
+    val upstreamUrl = Js.find(json, "/upstream_url").get.toString
+    val path = Js.find(json, "/resource").get.toString
+    
+    LaserEndpoint(Some(id), 
+        apiId = api.toString,
+        upstreamUrl = upstreamUrl, 
+        path = path)
+  }
+
   
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,

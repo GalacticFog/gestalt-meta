@@ -46,9 +46,10 @@ package object laser {
       path: String, 
       domain: Option[JsValue] = None,
       url: Option[String] = None,
-      provider: Option[JsValue],
+      provider: Option[JsValue] = None,
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None)
+
 
   case class LaserArtifactDescription(
       artifactUri: Option[String],
