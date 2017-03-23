@@ -347,7 +347,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     objs find { _.metadata.labels.get(label._1).contains(label._2) }
   }
 
-
   def getByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): Option[O] = {
     val found = listByName[O, L](objs, prefix)
     if (found.size > 1) throw new IllegalArgumentException(s"Too many matches.")
@@ -372,13 +371,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       
     withInputDefaults(org, containerResourceInput, user, None)
   }
-  
+
   private[services] def mksecret(id: UUID, secret: ContainerSecret, namespace: String = DefaultNamespace) = {
     val metadata = ObjectMeta(name = secret.name, namespace = namespace)
     val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
     Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
   }
-
 
   private[services] def mkportmappings(pms: Seq[PortMapping]): Seq[Port] = {
     pms.map(pm => skuber.Container.Port(
