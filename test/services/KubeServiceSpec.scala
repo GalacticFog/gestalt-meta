@@ -78,7 +78,66 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
   def hasSelector(p: (String,String)) = ((_: skuber.Service).spec.map(_.selector).getOrElse(Map.empty)) ^^ havePair(p)
 
+  def hasEnv(vs: (String,String)*) = ((_: skuber.ext.Deployment).spec) ^^ beSome(
+    ((_: skuber.ext.Deployment.Spec).template) ^^ beSome(
+      ((_ : skuber.Pod.Template.Spec).spec) ^^ beSome(
+        ((_ : skuber.Pod.Spec).containers.headOption) ^^ beSome(
+          ((_ : skuber.Container).env) ^^ containTheSameElementsAs(
+            vs.map {
+              case (k,v) => skuber.EnvVar(k, skuber.EnvVar.StringValue(v))
+            }
+          )
+        )
+      )
+    )
+  )
+
   "KubernetesService" should {
+
+    "configure environment variables for containers" in new FakeKube {
+      val ks = injector.instanceOf[KubernetesService]
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+
+      mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+
+      val fupdatedMetaContainer = ks.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )
+
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+
+      there was one(mockSkuber).create( argThat(
+        inNamespace[skuber.ext.Deployment](skTestNs.name)
+          and
+          hasEnv(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
 
     "deploy service for exposed port mappings and set service addresses" in new FakeKube {
       val ks = injector.instanceOf[KubernetesService]
