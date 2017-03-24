@@ -405,7 +405,7 @@ package object marathon {
       servicePort = pm.service_port.filter(_ => exposeHost),
       name = pm.name,
       labels = for {
-        cp <- pm.container_port
+        cp <- pm.service_port orElse pm.container_port
         ep <- pm.expose_endpoint if ep == true
       } yield Map("VIP_0" -> s"${vip}:${cp}")
     )

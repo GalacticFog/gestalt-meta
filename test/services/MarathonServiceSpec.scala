@@ -14,12 +14,13 @@ import org.specs2.mock.Mockito
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
 import services.{KubernetesService, ProviderContext, SkuberFactory}
 import skuber.api.client
 import skuber.json.format._
 import com.galacticfog.gestalt.marathon.toMarathonLaunchPayload
+import com.galacticfog.gestalt.marathon
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
@@ -61,7 +62,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     (r.metadata.namespace == name,  r.name+" in namespace "+name, r.name+" not in namespace "+name)
   }
 
-  def hasExactlyContainerPorts(ps: skuber.Container.Port*) = ((_: skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).map(_.containers.flatMap(_.ports)).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
+  def hasExactlyContainerPorts(ps: marathon.Container.Docker.PortMapping*) = ((_: JsObject).\("container").\("docker").\("portMappings").asOpt[Seq[marathon.Container.Docker.PortMapping]]) ^^ beSome(containTheSameElementsAs(Seq(ps:_*)))
 
   def hasExactlyServicePorts(ps: skuber.Service.Port*) = ((_: skuber.Service).spec.map(_.ports).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
 
@@ -149,16 +150,17 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       there was atLeastOne(mockMCF).getClient(testProvider)
 
-//      there was two(mockSkuberFactory).initializeKube(meq(testProvider.id), any)(any)
-//      there was one(mockSkuber).create( argThat(
-//        inNamespace[skuber.ext.Deployment](skTestNs.name)
-//          and
-//        hasExactlyContainerPorts(
-//          skuber.Container.Port(80,   skuber.Protocol.TCP, "http"),
-//          skuber.Container.Port(443,  skuber.Protocol.TCP, "https"),
-//          skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
-//        )
-//      ) )(any,meq(skuber.ext.deploymentKind))
+      there was one(mockMarClient).launchApp(
+        meq("root"),
+        meq(testWork.name),
+        meq(testEnv.name),
+        meq("test-container"),
+        hasExactlyContainerPorts(
+          marathon.Container.Docker.PortMapping(Some(80),         None,       None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
+          marathon.Container.Docker.PortMapping(Some(443),        None, Some(8443), Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
+          marathon.Container.Docker.PortMapping(Some(9999), Some(9999),       None, Some("udp"), Some("debug"), None)
+        )
+      )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
 
@@ -166,7 +168,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
-        (pm: PortMapping) => pm.name == Some("http") && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
+        (pm: PortMapping) => pm.name == Some("http")  && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))

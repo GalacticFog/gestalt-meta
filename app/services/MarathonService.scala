@@ -21,6 +21,7 @@ import play.api.libs.json._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
+import scala.language.postfixOps
 
 trait MarathonClientFactory {
   def getClient(provider: GestaltResourceInstance): MarathonClient
@@ -133,117 +134,65 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
   private[services] def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
-  private[services] def updateServiceAddresses(marApp: JsValue, r: GestaltResourceInstance): GestaltResourceInstance = {
+  /**
+    * Look at the Marathon payload and extract VIP_{n} labels from portDefinitions
+    *
+    * A port from a Mesos container can have multiple VIPs assigned, but the Meta Container API only allows a single service address. In this case,
+    * we will save only the first VIP. It should be noted that Mesos containers created by the Meta Container API and unmodified will therefore only
+    * ever have a single VIP per port.
+    *
+    * @param marApp the marathon application definition, returned from a GET/LIST
+    * @param origResource the resource for the container being updated
+    * @return a resource for the container, potentially updated with ServiceAddress info for the port mappings
+    */
+  private[services] def updateServiceAddresses(marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
     val clusterid = ".marathon.l4lb.thisdcos.directory"
+    val VIPLabel = "VIP_([0-9]+)".r
+    val VIPValue = "/([^:]+):(\\d+)".r
 
-    log.debug("Parsing portMappings...")
-    val portMappings = Js.find(marApp, "/container/docker/portMappings") map { portmaps =>
-      /*
-       * This guard is to get around a bug in the dcos API where, if you pass in
-       * an empty array (or omit the array) for container.docker.portMappings, the
-       * API returns `portMappings: null` (instead of the expected nothing or empty array).
-       */
-      if (portmaps == JsNull) {
-        log.warn("[container.docker.portMappings] == null")
-        Seq.empty
+    val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
+      case Some("BRIDGE") =>
+        log.debug("Detected BRIDGE networking, parsing portMappings...")
+        Js.find(marApp, "/container/docker/portMappings") filterNot( _ == JsNull )
+      case _ =>
+        log.debug("Did not detected BRIDGE networking, parsing portDefinitions...")
+        Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
+    }) map {
+      // port names are required by Meta Container API, but not by Marathon, therefore we will map service addresses using port index
+      _.as[JsArray].value.zipWithIndex flatMap { case (portDef, portIndex) =>
+        val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp") // optional in marathon API, default is "tcp"
+        for {
+          labels <- Js.find(portDef.as[JsObject], "/labels")
+          labelMap <- Try {
+            labels.as[Map[String, String]]
+          }.toOption
+          serviceAddress <- labelMap.collectFirst {
+            case (VIPLabel(_), VIPValue(address, port)) => ServiceAddress(address + clusterid, port.toInt, protocol)
+          }
+        } yield (portIndex -> serviceAddress)
+      } toMap
+    } getOrElse Map.empty
+
+    // This loads Meta PortMappings from the resource
+    val metaPortMaps = origResource.properties.flatMap(_.get("port_mappings")) map {
+      p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
+        throw new RuntimeException("Could not parse portMappings to JSON.")
       }
-      else {
-        portmaps.as[JsArray].value map { pm =>
-          val name = Js.find(pm, "/name") map { _.as[String] } getOrElse {
-            throw new RuntimeException(s"Could not parse 'name' from portMapping")
-          }
-          val port = Js.find(pm, "/containerPort") map { _.as[Int] } getOrElse {
-            throw new RuntimeException(s"Could not parse 'port' from portMapping")
-          }
-          val protocol = Js.find(pm, "/protocol").map(_.as[String]) orElse Some("tcp")
-          Js.find(pm.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
-            val labelvalue = next.as[Map[String, String]] collect {
-              case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid
-            }
-            acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
-          }
-        }
-      }
+    } getOrElse Seq.empty
+
+    val updatedPortMappings = metaPortMaps.zipWithIndex map {
+      case (pm,portIndex) =>
+        pm.copy(
+          service_address = serviceAddresses.get(portIndex)
+        )
     }
 
-    log.debug("Parsing portDefinitions...")
-
-    val portDefinitions =
-      if (portMappings.isDefined && portMappings.get.nonEmpty) {
-        log.debug("portMappings were found - ignoring portDefinitions")
-        Option(Seq[Map[String,ContainerSpec.ServiceAddress]]())
-      } else {
-        Js.find(marApp, "/portDefinitions") map { portdefs =>
-          if (portdefs == JsNull) {
-            log.info("[container.portDefinitions] is null")
-            Seq.empty
-          } else {
-            portdefs.as[JsArray].value map { pd =>
-
-              val name = Js.find(pd, "/name") map { _.as[String] } getOrElse {
-                throw new RuntimeException(s"Could not parse 'name' from portDefinition")
-              }
-
-              val port = Js.find(pd, "/port") map { _.as[Int] } getOrElse {
-                throw new RuntimeException(s"Could not parse 'port' from portDefinition")
-              }
-
-              val protocol = Js.find(pd, "/protocol").map(_.as[String]) orElse Some("tcp")
-
-              Js.find(pd.as[JsObject], "/labels").foldLeft(Map[String,ServiceAddress]()) { (acc, next) =>
-                val labelvalue = next.as[Map[String, String]] collect {
-                  case (k,v) if k.matches("VIP_[0-9]+") => v.split(":").head.stripPrefix("/") + clusterid
-                }
-                acc + (name -> ServiceAddress(labelvalue.headOption.get, port, protocol))
-              }
-            }
-          }
-        }
-      }
-
-    val ports = {
-      (portMappings getOrElse Seq.empty) ++ (portDefinitions getOrElse Seq.empty)
-    }
-
-    val resultResource = {
-      if (portMappings.isEmpty) {
-        log.debug("No ServiceAddresses found - returning original resource.")
-        r
-      }
-      else {
-        val portList = ports.flatten.toMap
-
-        // This loads Meta PortMappings from the resource
-        val metaPortMaps = r.properties.get.get("port_mappings") map {
-          p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
-            throw new RuntimeException("Could not parse portMappings to JSON.")
-          }
-        }
-
-        def isExposed(p: PortMapping): Boolean =
-          p.expose_endpoint getOrElse false
-
-        // Get PortMappings where `expose_endpoint == true`
-        val exposedPorts = metaPortMaps.get collect { case p if isExposed(p) =>
-          p.copy(service_address = Some(portList(p.name.get)))
-        }
-
-        if (exposedPorts.isEmpty) {
-          log.info("No exposed ports found. Returning.")
-          r
-        }
-        else {
-          log.info(s"${exposedPorts.size} exposed ports found.")
-
-          // Replace r.properties.port_mappings
-          val newproperties = r.properties.get ++ Map(
-            "port_mappings" -> Json.toJson(exposedPorts).toString)
-
-          r.copy(properties = Some(newproperties))
-        }
-      }
-    }
-    resultResource
+    val newproperties = origResource.properties.getOrElse(Map.empty) ++ Map(
+      "port_mappings" -> Json.toJson(updatedPortMappings).toString
+    )
+    origResource.copy(
+      properties = Some(newproperties)
+    )
   }
 
 }
