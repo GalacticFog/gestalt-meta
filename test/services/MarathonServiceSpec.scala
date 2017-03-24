@@ -147,6 +147,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
 
+      there was atLeastOne(mockMCF).getClient(testProvider)
+
 //      there was two(mockSkuberFactory).initializeKube(meq(testProvider.id), any)(any)
 //      there was one(mockSkuber).create( argThat(
 //        inNamespace[skuber.ext.Deployment](skTestNs.name)
@@ -157,19 +159,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 //          skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
 //        )
 //      ) )(any,meq(skuber.ext.deploymentKind))
-
-//      there was one(mockSkuber).create( argThat(
-//        inNamespace[skuber.Service](skTestNs.name)
-//          and
-//        hasExactlyServicePorts(
-//          skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80))),
-//          skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)))
-//        )
-//          and
-//        hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-//          and
-//        hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-//      ) )(any,meq(client.serviceKind))
 
       import ContainerSpec.{PortMapping, ServiceAddress}
 
