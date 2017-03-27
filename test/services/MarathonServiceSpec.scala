@@ -62,9 +62,15 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     (r.metadata.namespace == name,  r.name+" in namespace "+name, r.name+" not in namespace "+name)
   }
 
-  def hasExactlyContainerPorts(ps: marathon.Container.Docker.PortMapping*) = ((_: JsObject).\("container").\("docker").\("portMappings").asOpt[Seq[marathon.Container.Docker.PortMapping]]) ^^ beSome(containTheSameElementsAs(Seq(ps:_*)))
+  def hasExactlyContainerPorts(ps: marathon.Container.Docker.PortMapping*) = {
+    (((_: JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beSome) and
+      (((_: JsObject).\("container").\("docker").\("portMappings").as[Seq[marathon.Container.Docker.PortMapping]]) ^^ containTheSameElementsAs(Seq(ps:_*)))
+  }
 
-  def hasExactlyPortDefs(ps: marathon.AppUpdate.PortDefinition*) = ((_: JsObject).\("portDefinitions").asOpt[Seq[marathon.AppUpdate.PortDefinition]]) ^^ beSome(containTheSameElementsAs(Seq(ps:_*)))
+  def hasExactlyPortDefs(ps: marathon.AppUpdate.PortDefinition*) = {
+    (((_: JsObject).\("portDefinitions").toOption) ^^ beSome) and
+      (((_: JsObject).\("portDefinitions").as[Seq[marathon.AppUpdate.PortDefinition]]) ^^ containTheSameElementsAs(Seq(ps:_*)))
+  }
 
   def hasPair(p: (String,String)) = ((_: skuber.ObjectResource).metadata.labels) ^^ havePair(p)
 
@@ -272,7 +278,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.Container.Docker.PortMapping(Some(80),         None,       None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
           marathon.Container.Docker.PortMapping(Some(443),        None, Some(8443), Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
           marathon.Container.Docker.PortMapping(Some(9999), Some(9999),       None, Some("udp"), Some("debug"), None)
-        )
+        ) and ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone )
       )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
@@ -285,7 +291,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))
-
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
@@ -455,7 +460,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.AppUpdate.PortDefinition(80, "tcp", Some("http"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
           marathon.AppUpdate.PortDefinition( 0, "udp", Some("debug"), Map.empty)
-        )
+        ) and ( ((_:JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beNone )
       )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
@@ -468,7 +473,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.isEmpty,
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))
-
     }
 
     "delete service on container delete using external_id" in new FakeDCOS {
