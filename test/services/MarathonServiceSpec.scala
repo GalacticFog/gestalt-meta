@@ -16,10 +16,6 @@ import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
-import services.{KubernetesService, ProviderContext, SkuberFactory}
-import skuber.api.client
-import skuber.json.format._
-import com.galacticfog.gestalt.marathon.toMarathonLaunchPayload
 import com.galacticfog.gestalt.marathon
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -40,7 +36,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
   }
 
-  abstract class FakeDCOS() extends Scope {
+  abstract class FakeDCOS extends Scope {
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     var testProvider = createMarathonProvider(testEnv.id, "test-provider").get
@@ -54,6 +50,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         .disable[modules.ProdSecurityModule]
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
+        .disable[modules.MetaDefaultDCOS]
         .bindings(FakeDCOSModule(mockMCF))
         .injector
   }
