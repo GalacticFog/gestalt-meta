@@ -28,23 +28,18 @@ class MetaControllerSpec extends PlaySpecification with GestaltSecurityMocking w
       )),
       user.account.description
     )
+    Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
   }
 
   sequential
 
-  abstract class FakeSecurity extends WithApplication(application(
-    additionalBindings = Seq(
-      bind(classOf[ContainerService]).toInstance(mock[ContainerService])
-    )
-  ))
-
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
-  trait TestApplication extends FakeSecurity {
-    Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
-  }
-
-  //val in = new Loader(testAuthResponse, mock[GestaltSecurityConfig], mock[GestaltSecurityClient]) 
+  abstract class TestApplication extends WithApplication(
+    application(
+      additionalBindings = Seq(new modules.MetaDefaultDCOS, new modules.MetaDefaultSkuber, new modules.MetaDefaultServices, bind(classOf[ContainerService]).toInstance(mock[ContainerService]))
+    )
+  )
 
   "Kubernetes providers" should {
 

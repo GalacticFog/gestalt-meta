@@ -2,69 +2,20 @@ package controllers
 
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.util.Success
-import scala.util.Try
-
-import org.joda.time.DateTimeZone
-import org.mockito.Matchers.{ eq => meq }
-import org.specs2.execute.AsResult
-import org.specs2.execute.Result
-import org.specs2.matcher.JsonMatchers
 import org.specs2.specification.BeforeAll
-
-import com.galacticfog.gestalt.data.Instance
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
-import controllers.util.GestaltSecurityMocking
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.PlaySpecification
-import play.api.test.WithApplication
-
-import java.util.UUID
-
-import scala.concurrent.Future
-import scala.util.Success
-import scala.util.Try
-
-import org.joda.time.DateTime
-import org.mockito.Matchers.{ eq => meq }
-import org.specs2.matcher.JsonMatchers
-import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.specification.BeforeAll
+import org.specs2.mock.Mockito
 
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.errors._
 
 import controllers.util.GestaltSecurityMocking
-import javax.inject.Singleton
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
 
-import org.specs2.mock.Mockito
-
-class AuthorizationControllerSpec 
+class AuthorizationControllerSpec
   extends PlaySpecification 
     with GestaltSecurityMocking 
     with ResourceScope 
@@ -75,88 +26,27 @@ class AuthorizationControllerSpec
 
   sequential
 
-  
-  abstract class FakeSecurity extends WithApplication(containerApp()) {
-  }
-  
-  import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-  
-  object Ents extends AuthorizationMethods
   abstract class TestApplication extends WithApplication(containerApp()) {
-
-    var testEnv: Instance = null
-    var testWork: Instance = null
-    var testProvider: Instance = null
-    var mockMarathonClient: MarathonClient = null
-
-    def testFQON: String = "root"
-    def testWID: UUID = testWork.id
-    def testEID: UUID = testEnv.id
-    def testPID: UUID = testProvider.id
-
-    override def around[T: AsResult](t: => T): Result = super.around {
-      var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = tW
-      testEnv = tE
-      testProvider = createMarathonProvider(testEID, "test-provider").get
-      mockMarathonClient = mock[MarathonClient]
-      val cs = containerService
-      cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
-      cs.caasProvider(testPID) returns testProvider
-      cs.marathonClient(testProvider) returns mockMarathonClient
-      t
-    }
-
-  }  
-//  trait TestApplication extends FakeSecurity {
-//    
-//    val controller = app.injector.instanceOf[AuthorizationController]
-//    
-//    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-//
-//    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-//    
-//    
-//    val user2 = createMetaUser(account2)
-//    
-//    var testProvider = createMarathonProvider(testEnv.id, "test-provider").get
-//    var mockMarathonClient = mock[MarathonClient]
-//    
-//    containerService.findWorkspaceEnvironment(testEnv.id) returns Try((testWork, testEnv))
-//    containerService.marathonProvider(testProvider.id) returns testProvider
-//    containerService.marathonClient(testProvider) returns mockMarathonClient 
-//  }
-  
-//  abstract class TestApplication extends WithApplication(containerApp()) {
-//  }  
-  
-
-  def controllerInstance()(implicit app: play.api.Application) = app.injector.instanceOf[AuthorizationController]
-                                                             
+    val ac = app.injector.instanceOf[AuthorizationController]
+  }
 
   "findOrFail" should {
     
-    "succeed when the resource ID is valid" in new WithApplication {
-      val ac = controllerInstance()
-      
+    "succeed when the resource ID is valid" in new TestApplication {
       val resource = createInstance(ResourceIds.Org, uuid().toString)
       resource must beSuccessfulTry
       
       ac.findOrFail(ResourceIds.Org, resource.get.id) must beSuccessfulTry
     }
     
-    "fail when the resource ID is invalid" in new WithApplication {
-      val ac = controllerInstance() 
-      
+    "fail when the resource ID is invalid" in new TestApplication {
       ac.findOrFail(ResourceIds.Resource, uuid()) must beFailedTry.withThrowable[ResourceNotFoundException]
     }
   }
 
   "reconcile" should {
     
-    "preserve a given list when there are no additions or deletions" in new WithApplication {
-      val ac = controllerInstance()
-      
+    "preserve a given list when there are no additions or deletions" in new TestApplication {
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = Seq.empty
@@ -164,9 +54,7 @@ class AuthorizationControllerSpec
       ac.reconcile(base, adds, deletes) === base
     }
     
-    "preserve a given list while reflecting additions" in new WithApplication {
-      val ac = controllerInstance()
-      
+    "preserve a given list while reflecting additions" in new TestApplication {
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq("f", "g", "h")
       val deletes = Seq.empty
@@ -174,9 +62,7 @@ class AuthorizationControllerSpec
       ac.reconcile(base, adds, deletes) === base ++ adds
     }
     
-    "preserve a given list while reflecting deletions" in new WithApplication {
-      val ac = controllerInstance()
-      
+    "preserve a given list while reflecting deletions" in new TestApplication {
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = Seq("b", "d")
@@ -184,9 +70,7 @@ class AuthorizationControllerSpec
       ac.reconcile(base, adds, deletes) === Seq("a", "c", "e") 
     }
     
-    "return empty if all entries are deleted" in new WithApplication {
-      val ac = controllerInstance()
-      
+    "return empty if all entries are deleted" in new TestApplication {
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = base
@@ -194,12 +78,10 @@ class AuthorizationControllerSpec
       ac.reconcile(base, adds, deletes) === Seq.empty
     }
     
-    "return additions if empty and only additions are made" in new WithApplication {
+    "return additions if empty and only additions are made" in new TestApplication {
       /*
        * start with an empty base, supply additions, should return == additions
        */
-      val ac = controllerInstance()
-      
       val base = Seq.empty
       val adds = Seq("a", "b", "c", "d", "e")
       val deletes = Seq.empty
@@ -214,7 +96,7 @@ class AuthorizationControllerSpec
   
   "cascadeEntitlements" should {
     
-    "cascade ADD identity when all descendant identities are empty" in new WithApplication {
+    "cascade ADD identity when all descendant identities are empty" in new TestApplication {
       
       val acts = Seq("environment.view" -> Seq(dummyRootOrgId))
       val actsb = Seq("environment.view" -> Seq.empty)
@@ -256,8 +138,6 @@ class AuthorizationControllerSpec
       es.size === 15
       (es exists { actionValue(_) != "environment.view" }) === false
       
-      val ac = controllerInstance()
-      
       // Create new user to add to root ACL
       val bob = createNewUser(dummyRootOrgId)
       
@@ -297,7 +177,7 @@ class AuthorizationControllerSpec
       
     }
     
-    "reconcile ADDED identities when descendants have unique identity entries" in new WithApplication {
+    "reconcile ADDED identities when descendants have unique identity entries" in new TestApplication {
       
       // Create new user to add to root ACL
       val bob = createNewUser(dummyRootOrgId)      
@@ -343,8 +223,6 @@ class AuthorizationControllerSpec
       es.size === 15
       (es exists { actionValue(_) != "environment.view" }) === false
       
-      val ac = controllerInstance()
-      
       // Select the root entitlement - this is the one we perform the cascade against.
       val rootEntitlement = ResourceFactory.findChildrenOfType(
           dummyRootOrgId, l1.get.id, ResourceIds.Entitlement)(0)
@@ -384,7 +262,7 @@ class AuthorizationControllerSpec
       isroot(0).id === rootEntitlement.id
     }
     
-    "cascade REMOVE identities" in new WithApplication {
+    "cascade REMOVE identities" in new TestApplication {
       
       // Create new user to add to root ACL      
       val martha = createNewUser(dummyRootOrgId)
@@ -428,8 +306,6 @@ class AuthorizationControllerSpec
       val es = ResourceFactory.findDescendantEntitlements(l1.get.id, "environment.view")
       es.size === 15
       (es exists { actionValue(_) != "environment.view" }) === false
-      
-      val ac = controllerInstance()
       
       // Select the root entitlement - this is the one we perform the cascade against.
       val rootEntitlement = ResourceFactory.findChildrenOfType(
