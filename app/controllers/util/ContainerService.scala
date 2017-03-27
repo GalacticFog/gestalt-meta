@@ -290,7 +290,6 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
         "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
         "tasks_staged" -> stats.tasksStaged.toString,
         "instances"       -> stats.taskStats.map{Json.toJson(_).toString}.getOrElse("[]")
-        /*"service_addresses" -> stats.serviceAddresses.map{Json.toJson(_).toString}.getOrElse("[]")*/
       )
       case None => Seq(
         "status" -> "LOST",

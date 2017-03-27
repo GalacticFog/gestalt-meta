@@ -410,6 +410,7 @@ package object marathon {
       } yield Map("VIP_0" -> s"${vip}:${cp}")
     )
 
+    // TODO: marathon supports requesting a specific host port with host networking (set .portDefintions.port and .requirePorts == true), however meta has not defined any semantics to activate that use case
     def portDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
       port = pm.service_port getOrElse 0,
       protocol = pm.protocol,
