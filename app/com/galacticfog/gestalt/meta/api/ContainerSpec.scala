@@ -43,7 +43,7 @@ case class ContainerSpec(name: String = "",
 
 case object ContainerSpec extends Spec {
 
-  case class ServiceAddress(host: String, port: Int, protocol: Option[String])
+  case class ServiceAddress(host: String, port: Int, protocol: Option[String], virtual_hosts: Option[Seq[String]] = None)
   case object ServiceAddress {
     implicit val formatServiceAddress = Json.format[ServiceAddress]
   }  
@@ -55,8 +55,9 @@ case object ContainerSpec extends Spec {
                          name: Option[String] = None,
                          labels: Option[Map[String,String]] = None,
                          expose_endpoint: Option[Boolean] = None,
-                         service_address: Option[ServiceAddress] = None)
-
+                         service_address: Option[ServiceAddress] = None,
+                         virtual_hosts: Option[Seq[String]] = None)
+                         
   case class Volume(container_path: String,
                     host_path: Option[String],
                     persistent: Option[Volume.PersistentVolumeInfo],
