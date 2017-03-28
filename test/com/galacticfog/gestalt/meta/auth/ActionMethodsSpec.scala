@@ -1,42 +1,27 @@
 package com.galacticfog.gestalt.meta.auth
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-
-import org.specs2.mutable._
 import org.specs2.specification._
-import org.specs2.specification.Step
-import play.api.libs.json._
-
-import java.util.UUID
-
 import com.galacticfog.gestalt.meta.test._
-
-//import org.scalatestplus.play.{OneAppPerSuite, PlaySpec}
 import play.api.test._
-import play.api.test.Helpers._
 import com.galacticfog.gestalt.data.bootstrap.SystemType
 import com.galacticfog.gestalt.data.bootstrap.ActionInfo
 import com.galacticfog.gestalt.data.bootstrap.LineageInfo
 
-
-
 class ActionMethodsSpec extends PlaySpecification with ResourceScope with BeforeAll {
-  
+
   sequential
-  
-   override def beforeAll(): Unit = pristineDatabase
-  
+
+  override def beforeAll(): Unit = pristineDatabase
+
   case object Auth extends AuthorizationMethods
-  
+
   def cat[A](a: A, b: String) = "%s.%s".format(a,b)
-  
 
   "getSelfActions" should {
     
-    "return a list of fully qualified action names for the given resource" in new WithApplication {
+    "return a list of fully qualified action names for the given resource" in {
       
       val acts = Auth.getSelfActions(ResourceIds.Resource)
       
@@ -172,7 +157,7 @@ class ActionMethodsSpec extends PlaySpecification with ResourceScope with Before
       acts1 === acts2
     }
   }  
-  
+
   "getChildActions" should {
     
     "return list of actions defined for all child-types of given type (include inherited)" in {
@@ -237,7 +222,7 @@ class ActionMethodsSpec extends PlaySpecification with ResourceScope with Before
         Auth.getChildActions(child1).isEmpty must beTrue
     }
   }  
-  
+
  "getNewResourceEntitlementSet" should {
     
     "contain actions names for the new ResourceType plus the actions of all child ResourceTypes" in {
@@ -324,5 +309,5 @@ class ActionMethodsSpec extends PlaySpecification with ResourceScope with Before
     }
     
   }  
-  
+
 }

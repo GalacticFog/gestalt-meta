@@ -37,7 +37,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltSecurityMocking 
 
     "Environment Variables" should {
 
-      "add a new env object when it does not exist" in new WithApplication {
+      "add a new env object when it does not exist" in new TestApplication {
         
         val orgName = "patchtest1"
         val org = newOrg(id = dummyRootOrgId, name = orgName)

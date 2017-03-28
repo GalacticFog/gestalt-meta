@@ -405,11 +405,12 @@ package object marathon {
       servicePort = pm.service_port.filter(_ => exposeHost),
       name = pm.name,
       labels = for {
-        cp <- pm.container_port
+        cp <- pm.service_port orElse pm.container_port
         ep <- pm.expose_endpoint if ep == true
       } yield Map("VIP_0" -> s"${vip}:${cp}")
     )
 
+    // TODO: marathon supports requesting a specific host port with host networking (set .portDefintions.port and .requirePorts == true), however meta has not defined any semantics to activate that use case
     def portDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
       port = pm.service_port getOrElse 0,
       protocol = pm.protocol,
@@ -422,10 +423,11 @@ package object marathon {
 
     val namedVIP = "/" + (Array(name.stripPrefix("/").stripSuffix("/"),environmentName,workspaceName) ++ fqon.split('.').reverse).mkString(".")
 
-    def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo]) = {
-      val requestedNetwork = props.network getOrElse ""
+    def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo], Option[Seq[AppUpdate.PortDefinition]]) = {
+      val requestedNetwork = props.network.map(_.trim) getOrElse ""
       val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(Container.Docker.Parameter("user",u)))
-      if (providerNetworkNames.isEmpty || props.network.isEmpty ) {
+      // TODO: (cgbaker) DRY-clean this
+      if (providerNetworkNames.isEmpty || requestedNetwork.isEmpty ) {
         (Some(Container.Docker(
           image = props.image,
           network = if (requestedNetwork.nonEmpty) Some(requestedNetwork) else None,
@@ -433,7 +435,10 @@ package object marathon {
           portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
           parameters = dockerParams,
           privileged = Some(false)
-        )), None)
+        )),
+          None,
+          if (requestedNetwork.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None
+        )
       } else {
         providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
           case None => throw new BadRequestException(
@@ -448,7 +453,10 @@ package object marathon {
               portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
               parameters = dockerParams,
               privileged = Some(false)
-            )), None)
+            )),
+              None,
+              if (stdNet.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None
+            )
           case Some(calicoNet) =>
             val docker = Container.Docker(
               image = props.image,
@@ -459,14 +467,14 @@ package object marathon {
               privileged = Some(false)
             )
             val ippertask = AppUpdate.IPPerTaskInfo( discovery = None, networkName = Some(calicoNet) )
-            (Some(docker), Some(ippertask))
+            (Some(docker), Some(ippertask), None)
         }
       }
     }
 
-    val (docker,ipPerTask) =
+    val (docker,ipPerTask,portDefs) =
       if (isDocker) toDocker(props)
-      else (None,None) // no support for non-docker ipPerTask right now
+      else (None,None,None) // no support for non-docker ipPerTask right now
 
     val container = Container(
         docker = docker,
@@ -499,7 +507,7 @@ package object marathon {
       cmd = props.cmd,
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
-      portDefinitions = if (ipPerTask.isEmpty) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None,
+      portDefinitions = portDefs,
       labels = Some(props.labels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),
