@@ -139,7 +139,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ) )(any,meq(skuber.ext.deploymentKind))
     }
 
-    "deploy service for exposed port mappings and set service addresses" in new FakeKube {
+    "deploy service for exposed port mappings and set service addresses and host port" in new FakeKube {
       val ks = injector.instanceOf[KubernetesService]
 
       // three ports:
@@ -214,8 +214,20 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
 
+      val mockService = skuber.Service(
+        name = "test-container",
+        spec = skuber.Service.Spec(
+          clusterIP = "10.0.161.84",
+          ports = List(
+            skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80)), 30784),
+            skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)), 31374)
+          ),
+          _type = skuber.Service.Type.NodePort
+        )
+      )
       mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
+      mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mockService)
+      mockSkuber.get(meq("test-container"))(any,meq(client.serviceKind)) returns Future.successful(mockService)
 
       val fupdatedMetaContainer = ks.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -235,7 +247,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       ) )(any,meq(skuber.ext.deploymentKind))
 
-      there was one(mockSkuber).create( argThat(
+      there was one(mockSkuber).create(argThat(
         inNamespace[skuber.Service](skTestNs.name)
           and
         hasExactlyServicePorts(
@@ -246,7 +258,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
           and
         hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-      ) )(any,meq(client.serviceKind))
+      ))(any,meq(client.serviceKind))
 
       import ContainerSpec.PortMapping
       import ContainerSpec.ServiceAddress
@@ -255,9 +267,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
-        (pm: PortMapping) => pm.name == Some("http") && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
-        (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
-        (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
+        (pm: PortMapping) => pm.name.contains("http")  && pm.host_port.contains(30784) && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
+        (pm: PortMapping) => pm.name.contains("https") && pm.host_port.contains(31374) && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
+        (pm: PortMapping) => pm.name.contains("debug") && pm.service_address.isEmpty
       ))
 
     }
@@ -305,15 +317,18 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
 
-      val mockDep = skuber.ext.Deployment("deployment-test-container")
-      val mockRS  = skuber.ext.ReplicaSet("deployment-test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
+        name = "test-container",
+        labels = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      ))
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
       val mockService = skuber.Service("test-container").withSelector(
         KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       ).addLabel(
         KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       )
 
-      mockSkuber.get(meq(mockDep.name))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
@@ -371,10 +386,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
 
-      val mockDep = skuber.ext.Deployment("deployment-test-container")
-      val mockRS  = skuber.ext.ReplicaSet("deployment-test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
+        name = "test-container",
+        labels = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      ))
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
 
-      mockSkuber.get(meq(mockDep.name))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())

@@ -215,14 +215,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
     if (srvProto.spec.exists(_.ports.size > 0)) {
       val svchost = s"${container.name}.${namespace}.svc.cluster.local"
-      k8s.create[Service](srvProto) map { _ =>
+      k8s.create[Service](srvProto) map { srv =>
+        val servicePorts = srv.spec.map(_.ports).getOrElse(List.empty)
+        // need to map srv nodePorts back to container ports
         container.port_mappings.map {
           case pm if pm.expose_endpoint.contains(true) => pm.copy(
             service_address = Some(ContainerSpec.ServiceAddress(
               host = svchost,
               port = pm.service_port.orElse(pm.container_port).get,
               protocol = Some(pm.protocol)
-            ))
+            )),
+            host_port = servicePorts.find {
+              _.targetPort.flatMap(_.left.toOption) == pm.container_port
+            } map {_.nodePort}
           )
           case pm => pm.copy(service_address = None)
         }
@@ -264,7 +269,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
     
     val provider = containerProvider(container)
-    val depname  = deploymentName(container.name)
     /*
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers 
      * must never user ResourceFactory directly.
@@ -279,20 +283,32 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     
     val fDplDel = for {
       kube        <- fKube
-      deployment  <- kube.get[Deployment](depname)
-      _           <- kube.delete[Deployment](depname)
+      // list deployments
+      deployments <- kube.list[DeploymentList]()
+      // delete labeled deployments
+      _           <- Future.traverse(
+        listByLabel[Deployment,DeploymentList](deployments, META_CONTAINER_KEY -> container.id.toString)
+      ){ d =>
+        log.info(s"deleting Deployment /${environment}/${d.name} labeled with META_CONTAINER_KEY -> ${container.id}")
+        kube.delete[Deployment](d.name)
+      }
+      // list replicasets
       replicasets <- kube.list[ReplicaSetList]
+      // delete labeled replicasets
       _ <- Future.traverse(
         listByLabel[ReplicaSet,ReplicaSetList](replicasets, META_CONTAINER_KEY -> container.id.toString)
-      ){
-        rs => kube.delete[ReplicaSet](rs.name)
+      ){ rs =>
+        log.info(s"deleting ReplicaSet /${environment}/${rs.name} labeled with META_CONTAINER_KEY -> ${container.id}")
+        kube.delete[ReplicaSet](rs.name)
       }
+      // list pods
       pods <- kube.list[PodList] recover {
         case e: Throwable =>
           log.debug(s"error listing Kubernetes Pod resources: ${e.toString}")
           PodList()
       }
       _ = log.debug(s"found ${pods.size} Pods")
+      // delete labeled pods
       dp <- Future.traverse({
         val thesePods = listByLabel[Pod, PodList](pods, META_CONTAINER_KEY -> container.id.toString)
         log.debug(s"identified ${thesePods.size} Pods to delete")
@@ -309,12 +325,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val fSrvDel = for {
       kube <- fKube
+      // list services
       srvs <- kube.list[ServiceList] recover {
         case e: Throwable =>
           log.debug(s"error listing Kubernetes Service resources: ${e.toString}")
           ServiceList()
       }
       _ = log.debug(s"found ${srvs.size} Services")
+      // delete labeled services
       dsrv <- Future.traverse({
         val theseSrvs = listByLabel[Service, ServiceList](srvs, META_CONTAINER_KEY -> container.id.toString)
         log.debug(s"identified ${theseSrvs.size} Services to delete")
@@ -392,10 +410,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   /**
    * Create a Kubernetes Deployment object in memory.
    *
-   * @param id UUID for the Meta Container. This will be used as a label on all of the.
+   * @param id UUID for the Meta Container. This will be used as a label on all of the created resourced for later indexing.
    * @param containerSpec ContainerSpec with Container data
    */
   private[services] def mkdeployment(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace) = {
+
+    val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
+
     // Container resource requirements.
     val requirements = skuber.Resource.Requirements(requests = Map(
         "cpu" -> containerSpec.cpus,
@@ -410,47 +431,53 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ports = mkportmappings(containerSpec.port_mappings).toList
     )
 
-    // Pod Spec and Template        
-    val podname = "pod-" + id.toString
-    val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
-    val podtemplatemeta = ObjectMeta(name = podname, labels = labels)
-    val podtemplate = Pod.Template.Spec(
-        metadata = podtemplatemeta, 
-        spec = Some(Pod.Spec(containers = List(container), dnsPolicy = skuber.DNSPolicy.ClusterFirst)))
+    val podTemplate = Pod.Template.Spec(
+      spec = Some(Pod.Spec(
+        containers = List(container),
+        dnsPolicy = skuber.DNSPolicy.ClusterFirst
+      ))
+    ).addLabels( labels )
 
-    // Deployment Spec
-    val deployspec = Deployment.Spec(
+    val depSpec = Deployment.Spec(
         replicas = containerSpec.num_instances, 
-        template = Some(podtemplate)
+        template = Some(podTemplate)
     )
         
-    // Deployment metadata
-    val deploymentname = "deployment-" + containerSpec.name
-    val objmeta = ObjectMeta(name = deploymentname, namespace = namespace)
-            
-    Deployment(metadata = objmeta, spec = Some(deployspec))    
+    Deployment(
+      metadata = ObjectMeta(
+        name = containerSpec.name,
+        namespace = namespace,
+        labels = labels
+      ),
+      spec = Some(depSpec)
+    )
   }
 
   private[services] def mkEnvVars(env: Map[String,String]): List[EnvVar] = {
     env.map { case (k,v) => EnvVar(k, EnvVar.StringValue(v)) }.toList
   }
 
-  private[services] def deploymentName(containerName: String) = "deployment-" + containerName
-
   def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    val depname  = deploymentName(container.name)
+    val lbl = META_CONTAINER_KEY -> container.id.toString
     for {
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
-      maybeDepl <- kube.getOption[Deployment](depname)
+      deployments <- kube.list[DeploymentList]()
+      maybeDepl = listByLabel[Deployment,DeploymentList](deployments, lbl) match {
+        case Nil          =>
+          None
+        case head :: tail =>
+          if (tail.nonEmpty) log.warn(s"found multiple deployments in namespace ${context.environmentId} tagged against container ${container.id}")
+          Some(head)
+      }
       pods <- maybeDepl match {
         case None    => Future.successful(PodList())
         case Some(_) => kube.list[PodList]
       }
-      thesePods = listByLabel[Pod,PodList](pods, META_CONTAINER_KEY -> container.id.toString)
+      thesePods = listByLabel[Pod,PodList](pods, lbl)
       update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, thesePods))
     } yield update
   }
