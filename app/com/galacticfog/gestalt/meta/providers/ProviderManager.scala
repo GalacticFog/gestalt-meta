@@ -57,7 +57,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   
   private[providers] def processAllProviders(ps: Seq[ProviderMap]) = {
     log.debug("Entered procAllProviders(_)...")
-    Future.sequence(ps map { p => processProvider(p) })  
+    Future.sequence(ps map { p => processProvider(p) })
   }
   
   private[providers] def processProvider(p: ProviderMap): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
@@ -110,11 +110,18 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     val port = mapping.service_address.get.port
     
     def varname(s: String) = "%s_%s".format(basename, s)
-    
-    Seq(
+    val publichost = mapping.virtual_hosts.fold {
+      val result: Option[String] = None
+      result
+    }{ vhs =>
+      if (vhs.isDefinedAt(0)) Some(vhs(0)) else None 
+    }
+    val newvars = Seq(
       varname("PROTOCOL") -> protocol,
       varname("HOST") -> host,
       varname("PORT") -> port.toString)
+    val publics = if (publichost.isDefined) Seq(varname("PUBLIC_HOST") -> publichost.get) else Seq.empty
+    newvars ++ publics
   }
   
   private[providers] def parsePortMappings(r: GestaltResourceInstance) = {

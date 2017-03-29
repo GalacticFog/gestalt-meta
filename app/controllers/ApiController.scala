@@ -70,15 +70,18 @@ class ApiController @Inject()(
     } yield prv
 
     val config = privatevars map { vs =>
-      val url = vs.get("PROVIDER_URL") getOrElse {
-        throw new UnprocessableEntityException("Missing 'PROVIDER_URL' variable.") 
-      }
-      val key = vs.get("AUTH_KEY") getOrElse {
-        throw new UnprocessableEntityException("Missing 'AUTH_KEY' variable.") 
-      }
-      val secret = vs.get("AUTH_SECRET") getOrElse {
-        throw new UnprocessableEntityException("Missing 'AUTH_SECRET' variable.") 
-      }
+      val url = "http://example.com"
+      val key = ""
+      val secret = ""
+//      val url = vs.get("PROVIDER_URL") getOrElse {
+//        throw new UnprocessableEntityException("Missing 'PROVIDER_URL' variable.") 
+//      }
+//      val key = vs.get("AUTH_KEY") getOrElse {
+//        throw new UnprocessableEntityException("Missing 'AUTH_KEY' variable.") 
+//      }
+//      val secret = vs.get("AUTH_SECRET") getOrElse {
+//        throw new UnprocessableEntityException("Missing 'AUTH_SECRET' variable.") 
+//      }
       HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
       //HostConfig.make(new URL(url), creds = Some(BearerCredential("76762798-07bb-42c4-ba3f-429f297a7335")))
     } getOrElse {
@@ -125,32 +128,41 @@ class ApiController @Inject()(
       
       val caller = request.identity
       val client = configureWebClient(provider)
+      val org = fqid(fqon)
       
       /*
        * Create API resource in Meta - if successful, create in GatewayManager.
        * If the create subsequently fails in GatewayManager, we set the status
        * of the already created Meta resource to 'FAILED'.
        */
-      CreateResource(fqid(fqon), payload, caller, ResourceIds.Api, parent) match {
+      CreateResource(org, payload, caller, ResourceIds.Api, parent) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(r) => {
-          client.post("/apis", Option(Json.toJson(lapi))) map { result =>
-            log.debug("Creating API in GatewayManager...")
-            val response = client.unwrapResponse(result, Seq(200))
-            log.debug("Response from GatewayManager: " + response.output)
-            Created(RenderSingle(r))
-          } recover {
-            case e: Throwable => {
-              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
-              log.error("Setting Meta API state to 'FAILED'")
-
-              val failstate = ResourceState.id(ResourceStates.Failed)
-              ResourceFactory.update(r.copy(state = failstate), caller.account.id)
-              HandleExceptions(e)
-            }
-          }
+          setNewEntitlements(org, r.id, caller, Some(parent))
+          Future(Created(RenderSingle(r)))
         }
       }
+      
+//      CreateResource(fqid(fqon), payload, caller, ResourceIds.Api, parent) match {
+//        case Failure(e) => HandleExceptionsAsync(e)
+//        case Success(r) => {
+//          client.post("/apis", Option(Json.toJson(lapi))) map { result =>
+//            log.debug("Creating API in GatewayManager...")
+//            val response = client.unwrapResponse(result, Seq(200))
+//            log.debug("Response from GatewayManager: " + response.output)
+//            Created(RenderSingle(r))
+//          } recover {
+//            case e: Throwable => {
+//              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
+//              log.error("Setting Meta API state to 'FAILED'")
+//
+//              val failstate = ResourceState.id(ResourceStates.Failed)
+//              ResourceFactory.update(r.copy(state = failstate), caller.account.id)
+//              HandleExceptions(e)
+//            }
+//          }
+//        }
+//      }
     }
   }
   
@@ -167,10 +179,21 @@ class ApiController @Inject()(
       val caller = request.identity
       // provider.id property exists
       import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
-      val pid = Js.find(Json.toJson(a).as[JsObject], "/properties/provider/id").fold {
+      
+      val prvder = Json.parse(a.properties.get("provider")).as[JsObject]
+
+      val pid = Js.find(/*Json.toJson(a).as[JsObject]*/ prvder, "/id").fold {
         unprocessable("Missing required property [properties.provider.id]")
       }{ js => UUID.fromString(js.as[String]) }
 
+//      val pid = ResourceFactory.findById(ResourceIds.Api, api).fold {
+//        unprocessable(s"API with ID '$api' not found.")
+//      }{ a => 
+//Js.find(Json.toJson(a).as[JsObject], "/properties/provider/id").fold {
+////        unprocessable("Missing required property [properties.provider.id]")
+////      }{ js => UUID.fromString(js.as[String]) }        
+//      }
+      
       log.debug("Parsed provider ID from API for endpoint: " + pid)
 
       val provider = ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold {
@@ -181,55 +204,46 @@ class ApiController @Inject()(
       
       log.debug("Creating Endpoint in Meta...")
       
+      val org = fqid(fqon)
       val metaCreate = for {
-        p <- validateNewEndpoint(request.body)
+        p <- validateNewEndpoint(request.body, api)
         l <- toLaserEndpoint(p, api)
-        r <- CreateResource(fqid(fqon), p, caller, ResourceIds.ApiEndpoint, api) 
+        r <- CreateResource(org, p, caller, ResourceIds.ApiEndpoint, api) 
       } yield (r, l)
       
       metaCreate match {
-        case Failure(e) => {
-          log.error("Failed creating Endpoint in Meta")
-          HandleExceptionsAsync(e)
-        }
-        case Success((metaep, laserep)) => {
-          log.debug("Endoint created in Meta")
-          log.debug("Creating Endpoint in GatewayManager...")
-          client.post("/endpoints", Option(Json.toJson(laserep))) map { result =>
-            val response = client.unwrapResponse(result, Seq(200, 201))
-            log.debug("Response from GatewayManager: " + response.output)
-            Created(RenderSingle(metaep))
-          } recover {
-            case e: Throwable => {
-              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
-              log.error("Setting Meta API state to 'FAILED'")
-
-              val failstate = ResourceState.id(ResourceStates.Failed)
-              ResourceFactory.update(metaep.copy(state = failstate), caller.account.id)
-              HandleExceptions(e)
-            }
-          }
+        case Failure(e) => HandleExceptionsAsync(e)
+        case Success((r, _)) => {
+          setNewEntitlements(org, r.id, request.identity, Some(api))
+          Future(Created(RenderSingle(r)))
         }
       }
       
-      /*
-  case class LaserEndpoint(
-      id: Option[String], 
-      apiId: String, 
-      upstreamUrl: String,
-      path: String, 
-      domain: Option[JsValue] = None,
-      url: Option[String] = None,
-      provider: Option[JsValue],
-      endpointInfo: Option[JsValue] = None, 
-      authentication: Option[JsValue] = None)
-       */
-      /*
-       * Create in Meta
-       * Create in gestalt-api-gateway
-       * return
-       */
-      //createResourceCommon(fqid(fqon), api, ResourceIds.ApiEndpoint, payload)
+//      metaCreate match {
+//        case Failure(e) => {
+//          log.error("Failed creating Endpoint in Meta")
+//          HandleExceptionsAsync(e)
+//        }
+//        case Success((metaep, laserep)) => {
+//          log.debug("Endoint created in Meta")
+//          log.debug("Creating Endpoint in GatewayManager...")
+//          client.post("/endpoints", Option(Json.toJson(laserep))) map { result =>
+//            val response = client.unwrapResponse(result, Seq(200, 201))
+//            log.debug("Response from GatewayManager: " + response.output)
+//            Created(RenderSingle(metaep))
+//          } recover {
+//            case e: Throwable => {
+//              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
+//              log.error("Setting Meta API state to 'FAILED'")
+//
+//              val failstate = ResourceState.id(ResourceStates.Failed)
+//              ResourceFactory.update(metaep.copy(state = failstate), caller.account.id)
+//              HandleExceptions(e)
+//            }
+//          }
+//        }
+//      }
+
     }
   }
   
@@ -277,8 +291,6 @@ class ApiController @Inject()(
     }{
       gateway => (finaljson, gateway, location.as[String])
     }
-    
-
   }
     
 /*
@@ -305,30 +317,41 @@ case class EndpointDao(
   payload : Option[String]
 )
 */  
+      import com.galacticfog.gestalt.patch._
   
-  
-  private[controllers] def validateNewEndpoint(js: JsValue): Try[JsValue] = Try {
+  private[controllers] def validateNewEndpoint(js: JsValue, api: UUID): Try[JsValue] = Try {
     val json = js.as[JsObject]
     val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
-    val upstreamUrl = Js.find(json, "/upstream_url").fold {
-      unprocessable("Invalid payload: [apiendpoint.properties.upstream_url] is missing.")
-    }{ url => url.toString }
-    val path = Js.find(json, "/resource") map (_.toString) getOrElse {
+
+    val path = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
       unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
-    }    
-    json ++ Json.obj("id" -> id)
+    }
+    
+//    val upstreamUrl = Js.find(json, "/properties/upstream_url").fold {
+//      unprocessable("Invalid payload: [apiendpoint.properties.upstream_url] is missing.")
+//    }{ url => url.toString }
+//
+//    val implid = Js.find(json, "/properties/implementation_id") map (i => UUID.fromString(i.as[String])) getOrElse {
+//      unprocessable("Invalid payload: [apiendpoint.properties.implementation_id] is missing.")
+//    }
+
+    val patch = PatchDocument(
+        PatchOp.Replace("/id", JsString(id.toString)),
+        PatchOp.Add("/properties/parent", JsString(api.toString)))
+        
+    patch.applyPatch(json).get
   }
   
   
   def toLaserEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = Try {
     val json = js.as[JsObject]
     val id = Js.find(json, "/id").get.toString
-    val upstreamUrl = Js.find(json, "/upstream_url").get.toString
-    val path = Js.find(json, "/resource").get.toString
+    val upstreamUrl = Js.find(json, "/properties/upstream_url") getOrElse JsString("") //.get.toString
+    val path = Js.find(json, "/properties/resource").get.toString
     
     LaserEndpoint(Some(id), 
         apiId = api.toString,
-        upstreamUrl = upstreamUrl, 
+        upstreamUrl = upstreamUrl.toString, 
         path = path)
   }
 

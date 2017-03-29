@@ -615,9 +615,9 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
     
     this.AuthorizedResourceList(path, "apiendpoint.view") 
     
-//      val org = fqid(fqon)
-//      handleExpansion(ResourceFactory.findEndpointsByLambda(lambda), request.queryString)
-    
+    handleExpansion(
+      ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", lambda.toString),
+    request.queryString)
   }  
   
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
