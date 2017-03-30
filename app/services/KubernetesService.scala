@@ -414,12 +414,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         skuber.Resource.memory -> containerSpec.memory
     ))
 
+    // TODO: this is almost certainly insufficient
+    val parse = """([^\s"]+)|((?:")([^"]*)(?:"))""".r
+    val cmdArray = containerSpec.cmd map {
+      parse.findAllIn(_).toList
+    }
+
     val container = skuber.Container(
       name = containerSpec.name,
       image = containerSpec.image,
       resources = Some(requirements),
       env = mkEnvVars(containerSpec.env),
-      ports = mkportmappings(containerSpec.port_mappings).toList
+      ports = mkportmappings(containerSpec.port_mappings).toList,
+      imagePullPolicy = if (containerSpec.force_pull) Container.PullPolicy.Always else Container.PullPolicy.IfNotPresent,
+      args = containerSpec.args.getOrElse(Seq.empty).toList,
+      command = cmdArray.getOrElse(Nil)
     )
 
     val podTemplate = Pod.Template.Spec(
