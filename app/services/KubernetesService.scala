@@ -34,6 +34,7 @@ import org.joda.time.{DateTime, DateTimeZone}
 import skuber.Container.Port
 
 import scala.concurrent.ExecutionContext
+import scala.reflect.runtime.universe._
 
 case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
 object ContainerSecret {
@@ -216,7 +217,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     if (srvProto.spec.exists(_.ports.size > 0)) {
       val svchost = s"${container.name}.${namespace}.svc.cluster.local"
       k8s.create[Service](srvProto) map { srv =>
-        val servicePorts = srv.spec.map(_.ports).getOrElse(List.empty)
         // need to map srv nodePorts back to container ports
         container.port_mappings.map {
           case pm if pm.expose_endpoint.contains(true) => pm.copy(
@@ -224,10 +224,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               host = svchost,
               port = pm.service_port.orElse(pm.container_port).get,
               protocol = Some(pm.protocol)
-            )),
-            host_port = servicePorts.find {
-              _.targetPort.flatMap(_.left.toOption) == pm.container_port
-            } map {_.nodePort}
+            ))
           )
           case pm => pm.copy(service_address = None)
         }
@@ -266,6 +263,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
+
+
   def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
     
     val provider = containerProvider(container)
@@ -280,69 +279,23 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
 
     val fKube = skuberFactory.initializeKube(provider.id, environment.toString)
+
+    val targetLabel = META_CONTAINER_KEY -> container.id.toString
     
     val fDplDel = for {
       kube        <- fKube
-      // list deployments
-      deployments <- kube.list[DeploymentList]()
-      // delete labeled deployments
-      _           <- Future.traverse(
-        listByLabel[Deployment,DeploymentList](deployments, META_CONTAINER_KEY -> container.id.toString)
-      ){ d =>
-        log.info(s"deleting Deployment /${environment}/${d.name} labeled with META_CONTAINER_KEY -> ${container.id}")
-        kube.delete[Deployment](d.name)
-      }
-      // list replicasets
-      replicasets <- kube.list[ReplicaSetList]
-      // delete labeled replicasets
-      _ <- Future.traverse(
-        listByLabel[ReplicaSet,ReplicaSetList](replicasets, META_CONTAINER_KEY -> container.id.toString)
-      ){ rs =>
-        log.info(s"deleting ReplicaSet /${environment}/${rs.name} labeled with META_CONTAINER_KEY -> ${container.id}")
-        kube.delete[ReplicaSet](rs.name)
-      }
-      // list pods
-      pods <- kube.list[PodList] recover {
-        case e: Throwable =>
-          log.debug(s"error listing Kubernetes Pod resources: ${e.toString}")
-          PodList()
-      }
-      _ = log.debug(s"found ${pods.size} Pods")
-      // delete labeled pods
-      dp <- Future.traverse({
-        val thesePods = listByLabel[Pod, PodList](pods, META_CONTAINER_KEY -> container.id.toString)
-        log.debug(s"identified ${thesePods.size} Pods to delete")
-        thesePods
-      }){pod =>
-        log.debug(s"deleting Kubernetes Pod ${environment}/${pod.name}")
-        kube.delete[Pod](pod.name)
-      }
-      _ = log.debug(s"deleted ${dp.size} Pods")
-    } yield dp.headOption.getOrElse({
+      deps <- deleteAllWithLabel[Deployment,DeploymentList](kube, targetLabel)
+      rses <- deleteAllWithLabel[ReplicaSet,ReplicaSetList](kube, targetLabel)
+      pods <- deleteAllWithLabel[Pod,PodList](kube, targetLabel)
+    } yield pods.headOption.getOrElse({
       log.debug("deleted no Pods")
       ()
     })
 
     val fSrvDel = for {
       kube <- fKube
-      // list services
-      srvs <- kube.list[ServiceList] recover {
-        case e: Throwable =>
-          log.debug(s"error listing Kubernetes Service resources: ${e.toString}")
-          ServiceList()
-      }
-      _ = log.debug(s"found ${srvs.size} Services")
-      // delete labeled services
-      dsrv <- Future.traverse({
-        val theseSrvs = listByLabel[Service, ServiceList](srvs, META_CONTAINER_KEY -> container.id.toString)
-        log.debug(s"identified ${theseSrvs.size} Services to delete")
-        theseSrvs
-      }){srv =>
-        log.debug(s"deleting Kubernetes Service ${environment}/${srv.name}")
-        kube.delete[Service](srv.name)
-      }
-      _ = log.debug(s"deleted ${dsrv.size} Services")
-    } yield dsrv.headOption.getOrElse({
+      svcs <- deleteAllWithLabel[Service,ServiceList](kube, targetLabel)
+    } yield svcs.headOption.getOrElse({
       log.debug("deleted no Services")
       ()
     })
@@ -371,22 +324,61 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     else found.headOption
   }
 
+  def safeList[L <: KList[_]: TypeTag]( kube: RequestContext )(implicit fmt: Format[L], kind: ListKind[L]) : Future[L] = {
+    // handle https://github.com/doriordan/skuber/issues/26
+    kube.list[L]() recover {
+      case e: Throwable =>
+        log.debug(s"error listing Kubernetes resources: ${e.toString}, will assume empty list")
+        typeTag[L].mirror.runtimeClass(typeOf[L]).newInstance().asInstanceOf[L]
+    }
+  }
+
+  def findByLabel[O <: ObjectResource : TypeTag, L <: KList[O] : TypeTag](kube: RequestContext, lbl: (String,String) )(implicit fmt: Format[L], kind: ListKind[L]) : Future[Option[O]] = {
+    val otype = typeOf[O]
+    safeList[L](kube) map {
+      listByLabel[O,L](_, lbl) match {
+        case Nil          => None
+        case head :: tail =>
+          if (tail.nonEmpty) log.warn(s"found multiple ${otype} resources tagged, will use the first one")
+          Some(head)
+      }
+    }
+  }
+
+  // TODO (cgbaker): this is pretty unsavory... gotta be a way to get O out of L without having to explicitly template on it
+  def deleteAllWithLabel[O <: ObjectResource : TypeTag, L <: skuber.KList[O] : TypeTag]( kube: RequestContext, label: (String, String) )
+                                                                   ( implicit fmtL: Format[L], kindL: ListKind[L],
+                                                                     fmtO: Format[O], kindO: ObjKind[O] ) : Future[List[Unit]] = {
+    val otype = typeOf[O]
+    for {
+      allResources <- safeList[L](kube)
+      _ = log.debug(s"found ${allResources.size} ${otype}")
+      selectedResources = listByLabel[O,L](allResources, label)
+      _ = log.debug(s"identified ${selectedResources.size} ${otype} to delete")
+      deletes <- Future.traverse(selectedResources){
+        d =>
+          log.info(s"deleting ${d.kind} ${d.name} labeled with ${label}")
+          kube.delete[O](d.name)
+      }
+    } yield deletes
+  }
+
   /**
    * Convert a ContainerSpec to a GestaltResourceInstance
    */
   private[services] def specToInstance(
-      fqon: String, 
-      user: AuthAccountWithCreds, 
-      containerSpec: ContainerSpec, 
+      fqon: String,
+      user: AuthAccountWithCreds,
+      containerSpec: ContainerSpec,
       containerId: Option[UUID]): Try[GestaltResourceInstance] = Try {
-    
+
     val org = orgFqon(fqon)
       .map(_.id)
       .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-      
-    val containerResourceInput: GestaltResourceInput = 
+
+    val containerResourceInput: GestaltResourceInput =
       ContainerSpec.toResourcePrototype(containerSpec).copy(id = containerId)
-      
+
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
@@ -417,12 +409,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
 
-    // Container resource requirements.
     val requirements = skuber.Resource.Requirements(requests = Map(
-        "cpu" -> containerSpec.cpus,
-        "memory" -> containerSpec.memory))
+        skuber.Resource.cpu    -> containerSpec.cpus,
+        skuber.Resource.memory -> containerSpec.memory
+    ))
 
-    // Container
     val container = skuber.Container(
       name = containerSpec.name,
       image = containerSpec.image,
@@ -432,25 +423,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
 
     val podTemplate = Pod.Template.Spec(
-      spec = Some(Pod.Spec(
-        containers = List(container),
-        dnsPolicy = skuber.DNSPolicy.ClusterFirst
-      ))
+      spec = Some(Pod.Spec()
+          .addContainer(container)
+          .withDnsPolicy(skuber.DNSPolicy.ClusterFirst))
     ).addLabels( labels )
 
-    val depSpec = Deployment.Spec(
-        replicas = containerSpec.num_instances, 
-        template = Some(podTemplate)
-    )
-        
-    Deployment(
-      metadata = ObjectMeta(
-        name = containerSpec.name,
-        namespace = namespace,
-        labels = labels
-      ),
-      spec = Some(depSpec)
-    )
+    Deployment(metadata = ObjectMeta(
+      name = containerSpec.name,
+      namespace = namespace,
+      labels = labels
+    )).withTemplate(podTemplate)
+      .withReplicas(containerSpec.num_instances)
   }
 
   private[services] def mkEnvVars(env: Map[String,String]): List[EnvVar] = {
@@ -465,46 +448,50 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val lbl = META_CONTAINER_KEY -> container.id.toString
     for {
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
-      deployments <- kube.list[DeploymentList]()
-      maybeDepl = listByLabel[Deployment,DeploymentList](deployments, lbl) match {
-        case Nil          =>
-          None
-        case head :: tail =>
-          if (tail.nonEmpty) log.warn(s"found multiple deployments in namespace ${context.environmentId} tagged against container ${container.id}")
-          Some(head)
-      }
+      maybeDepl <- findByLabel[Deployment,DeploymentList](kube, lbl)
       pods <- maybeDepl match {
         case None    => Future.successful(PodList())
-        case Some(_) => kube.list[PodList]
+        case Some(_) => safeList[PodList](kube)
+      }
+      maybeSvc <- maybeDepl match {
+        case None    => Future.successful(None)
+        case Some(_) => findByLabel[Service,ServiceList](kube, lbl)
       }
       thesePods = listByLabel[Pod,PodList](pods, lbl)
-      update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, thesePods))
+      update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, thesePods, maybeSvc))
     } yield update
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     for {
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
-      depls <- kube.list[DeploymentList]()
-      allPods <- kube.list[PodList]()
+      depls <- safeList[DeploymentList](kube)
+      allPods <- safeList[PodList](kube)
+      allServices <- safeList[ServiceList](kube)
       _ = log.debug(s"listInEnvironment returned ${depls.size} deployments and ${allPods.size} pods")
       stats = depls.flatMap (depl =>
         depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
           val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
-          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods")
-          kubeDeplAndPodsToContainerStatus(depl, thesePods)
+          val theseSvcs = listByLabel[Service,ServiceList](allServices, META_CONTAINER_KEY -> id)
+          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods and ${theseSvcs.size} services")
+          val thisSvc = theseSvcs match {
+            case Nil => None
+            case head :: tail =>
+              if (tail.nonEmpty) log.warn("found multiple services corresponding to container, will use only the first one")
+              Some(head)
+          }
+          kubeDeplAndPodsToContainerStatus(depl, thesePods, thisSvc)
         }
       )
     } yield stats
   }
 
-  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod]): ContainerStats = {
+  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], service: Option[Service]): ContainerStats = {
     // meta wants: SCALING, SUSPENDED, RUNNING, HEALTHY, UNHEALTHY
     // kube provides: waiting, running, terminated
-    val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses).flatMap(_.state.toSeq).map(_.id)
-    val numRunning = containerStates.count(_ == "running")
+    val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses.headOption).flatMap(_.state)
+    val numRunning = containerStates.count(_.isInstanceOf[skuber.Container.Running])
     val numTarget  = depl.spec.map(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
-    val specPorts = depl.spec.toSeq.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.ports).map(_.containerPort)
     val status = if (numRunning != numTarget) "SCALING"
     else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
     else if (numRunning == numTarget) "RUNNING"
@@ -515,6 +502,20 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         zdt.toInstant().toEpochMilli(),
         DateTimeZone.forTimeZone(TimeZone.getTimeZone(zdt.getZone())))
     )
+    val hostPorts = (for {
+      svc <- service
+      svcSpec <- svc.spec
+      svcPorts = svcSpec.ports
+      dspec <- depl.spec
+      dtemp <- dspec.template
+      pspec <- dtemp.spec
+      cspec <- pspec.containers.headOption
+      hostPorts = cspec.ports map {
+        cp => svcPorts.find {
+          sp => sp.name == cp.name || sp.targetPort.flatMap(_.left.toOption).contains(cp.containerPort)
+        } map {_.nodePort} getOrElse 0
+      }
+    } yield hostPorts) getOrElse Seq.empty
     val resources = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)
     val taskStats = pods.map {
       pod =>
@@ -526,7 +527,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             ipAddress = ip,
             protocol = "IPv4"
           ))),
-          ports = specPorts
+          ports = hostPorts
         )
     }
     ContainerStats(
