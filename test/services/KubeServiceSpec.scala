@@ -68,7 +68,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
   abstract class FakeKubeCreate( force_pull: Boolean = true,
                                  args: Option[Seq[String]] = None,
-                                 cmd: Option[String] = None ) extends FakeKube() {
+                                 cmd: Option[String] = None,
+                                 virtual_hosts: Map[Int,Seq[String]] = Map.empty
+                               ) extends FakeKube() {
 
     // three ports:
     // - two "exposed", one not
@@ -87,7 +89,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           service_port = None,
           name = Some("http"),
           labels = None,
-          expose_endpoint = Some(true)
+          expose_endpoint = Some(true),
+          virtual_hosts = virtual_hosts.get(0)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
@@ -96,7 +99,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           service_port = Some(8443),
           name = Some("https"),
           labels = None,
-          expose_endpoint = Some(true)
+          expose_endpoint = Some(true),
+          virtual_hosts = virtual_hosts.get(1)
         ),
         ContainerSpec.PortMapping(
           protocol = "udp",
@@ -105,7 +109,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           service_port = None,
           name = Some("debug"),
           labels = None,
-          expose_endpoint = None
+          expose_endpoint = None,
+          virtual_hosts = virtual_hosts.get(2)
         )
       ),
       cpus = 1.0,
@@ -385,17 +390,41 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ) )(any,meq(skuber.ext.deploymentKind))
     }
 
-    "pass cmd when specified" in new FakeKubeCreate(cmd = Some("""echo "hello world" arg2""")) {
+    "pass simple cmd when specified" in new FakeKubeCreate(cmd = Some("""/usr/bin/python""")) {
       val Some(updatedContainerProps) = await(ks.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
       there was one(mockSkuber).create( argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
-          containTheSameElementsAs(Seq("echo","hello world","arg2"))
+          containTheSameElementsAs(Seq("/usr/bin/python"))
         )
       ) )(any,meq(skuber.ext.deploymentKind))
     }
+
+    "pass complicated cmd when specified" in new FakeKubeCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
+          containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
+        )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "pass complicated cmd with difficult bash-compatible spacing" in new FakeKubeCreate(cmd = Some("echo hello|wc")) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
+          containTheSameElementsAs(Seq("echo","hello","|","wc"))
+        )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }.pendingUntilFixed("this is going to be hard")
 
     "pass no cmd when unspecified" in new FakeKubeCreate(cmd = None) {
       val Some(updatedContainerProps) = await(ks.create(
@@ -405,6 +434,32 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(mockSkuber).create( argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
       ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(virtual_hosts = Map(
+      0 -> Seq("galacticfog.com","www.galacticfog.com"),
+      1 -> Seq("secure.galacticfog.com"),
+      2 -> Seq("debug.galacticfog.com")
+    )) {
+      mockSkuber.create(any)(any,meq(skuber.ext.ingressKind)) returns Future(mock[skuber.ext.Ingress])
+
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      import skuber.ext.Ingress
+      import skuber.ext.Ingress._
+
+      there was one(mockSkuber).create( argThat(
+        hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+          and
+        ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
+          Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend("test-container", 80))))),
+          Rule("galacticfog.com",        HttpRule(List(Path("", Backend("test-container", 80))))),
+          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend("test-container", 443)))))
+        ))
+      ) )(any,meq(skuber.ext.ingressKind))
     }
 
     "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKubeCreate {
@@ -446,7 +501,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       containerStats must_== containerStats2
     }
 
-    "delete service on container delete" in new FakeKube {
+    "delete service and any ingress on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -469,21 +524,30 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         name = "test-container",
         labels = Map(label)
       ))
+      val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
+        name = "test-container",
+        labels = Map(label)
+      ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
       val mockService = skuber.Service("test-container").withSelector( label ).addLabel( label )
       mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
+      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList(items = List(mockIngress)))
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
       mockSkuber.delete(mockService.name, 0)(client.serviceKind) returns Future.successful(())
+      mockSkuber.delete(mockIngress.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
 
       await(ks.destroyContainer(metaContainer))
+      there was one(mockSkuber).delete(mockDep.name,0)(skuber.ext.deploymentKind)
+      there was one(mockSkuber).delete(mockRS.name,0)(skuber.ext.replsetsKind)
       there was one(mockSkuber).delete(mockService.name,0)(client.serviceKind)
+      there was one(mockSkuber).delete(mockIngress.name,0)(skuber.ext.ingressKind)
     }
 
-    "not fail if no service to delete on container delete" in new FakeKube {
+    "not fail if no service or ingress to delete on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -511,6 +575,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList())
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
 

@@ -35,6 +35,7 @@ import skuber.Container.Port
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.runtime.universe._
+import scala.language.postfixOps
 
 case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
 object ContainerSecret {
@@ -300,8 +301,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ()
     })
 
-    Future.sequence(Seq(fDplDel,fSrvDel)) map {_ =>
-      log.debug(s"finished deleting Deployment, ReplicaSet, Pods and Service for container ${container.id}")
+    val fIngDel = for {
+      kube <- fKube
+      ings <- deleteAllWithLabel[Ingress,IngressList](kube, targetLabel)
+    } yield ings.headOption.getOrElse({
+      log.debug("deleted no Ingresses")
+      ()
+    })
+
+    Future.sequence(Seq(fDplDel,fSrvDel,fIngDel)) map {_ =>
+      log.debug(s"finished deleting Deployments, ReplicaSets, Pods, Services and Ingresses for container ${container.id}")
       ()
     }
   }
@@ -399,6 +408,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     ))
   }
 
+
   /**
    * Create a Kubernetes Deployment object in memory.
    *
@@ -414,11 +424,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         skuber.Resource.memory -> containerSpec.memory
     ))
 
-    // TODO: this is almost certainly insufficient
-    val parse = """([^\s"]+)|((?:")([^"]*)(?:"))""".r
-    val cmdArray = containerSpec.cmd map {
-      parse.findAllIn(_).toList
-    }
+    val cmdArray = containerSpec.cmd map CommandParser.translate
+//      containerSpec.cmd map {
+//      parse.findAllIn(_).toList
+//    }
 
     val container = skuber.Container(
       name = containerSpec.name,
@@ -556,4 +565,79 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+}
+
+object CommandParser {
+
+  import java.util.StringTokenizer
+  import java.util.Vector
+
+  val NORMAL = 0
+  val IN_QUOTE = 1
+  val IN_DOUBLE_QUOTE = 2
+
+  def translate(toProcess: String) = {
+
+    if (toProcess == null || toProcess.isEmpty) {
+      Array[String]()
+    }
+
+    var state = NORMAL;
+
+    val tok = new StringTokenizer(toProcess, "\"\' ", true)
+    val v = new Vector[String]
+    var current = new StringBuffer()
+
+    var lastTokenHasBeenQuoted = false;
+
+    while (tok.hasMoreTokens()) {
+
+      val nextTok = tok.nextToken();
+
+      state match {
+        case IN_QUOTE => {
+          if ("\'".equals( nextTok )) {
+            lastTokenHasBeenQuoted = true
+            state = NORMAL
+          } else {
+            current.append( nextTok )
+          }
+        }
+        case IN_DOUBLE_QUOTE => {
+          if ("\"".equals( nextTok )) {
+            lastTokenHasBeenQuoted = true
+            state = NORMAL
+          } else {
+            current.append( nextTok )
+          }
+        }
+        case _ => {
+          if ("\'".equals(nextTok))      state = IN_QUOTE;
+          else if ("\"".equals(nextTok)) state = IN_DOUBLE_QUOTE;
+          else if (" ".equals(nextTok)) {
+            if (lastTokenHasBeenQuoted || current.length() != 0) {
+              v.addElement(current.toString());
+              current = new StringBuffer();
+            }
+          }
+          else {
+            current.append(nextTok);
+          }
+          lastTokenHasBeenQuoted = false;
+        }
+      }
+    } // while
+
+    if (lastTokenHasBeenQuoted || current.length() != 0) {
+      v.addElement(current.toString());
+    }
+
+    if (state == IN_QUOTE || state == IN_DOUBLE_QUOTE) {
+      throw new IllegalArgumentException("unbalanced quotes in " + toProcess);
+    }
+
+    val args = new Array[Object]( v.size );
+    v.copyInto(args);
+    args map { a => a.toString } toList;
+  }
 }
