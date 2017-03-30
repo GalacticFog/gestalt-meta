@@ -117,7 +117,7 @@ case object ContainerSpec extends Spec {
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-    println("***Loading Container from REsource...")
+    println("***Loading Container from Resource...")
     val created: Option[DateTime] = for {
       c <- metaContainerSpec.created
       ts <- c.get("timestamp")
