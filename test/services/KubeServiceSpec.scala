@@ -457,7 +457,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
           Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend("test-container", 80))))),
           Rule("galacticfog.com",        HttpRule(List(Path("", Backend("test-container", 80))))),
-          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend("test-container", 443)))))
+          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend("test-container", 8443)))))
         ))
       ) )(any,meq(skuber.ext.ingressKind))
     }
