@@ -63,6 +63,174 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         .disable[modules.MetaDefaultServices]
         .bindings(FakeKubeModule(mockSkuberFactory))
         .injector
+    val ks = injector.instanceOf[KubernetesService]
+  }
+
+  abstract class FakeKubeCreate( force_pull: Boolean = true,
+                                 args: Option[Seq[String]] = None,
+                                 cmd: Option[String] = None,
+                                 virtual_hosts: Map[Int,Seq[String]] = Map.empty
+                               ) extends FakeKube() {
+
+    // three ports:
+    // - two "exposed", one not
+    // - one exposure has default container_port==service_port, the other overrides the service_port
+    // - one port has a required host port
+    val testProps = ContainerSpec(
+      name = "",
+      container_type = "DOCKER",
+      image = "nginx",
+      provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      port_mappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          host_port = None,
+          service_port = None,
+          name = Some("http"),
+          labels = None,
+          expose_endpoint = Some(true),
+          virtual_hosts = virtual_hosts.get(0)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(443),
+          host_port = None,
+          service_port = Some(8443),
+          name = Some("https"),
+          labels = None,
+          expose_endpoint = Some(true),
+          virtual_hosts = virtual_hosts.get(1)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "udp",
+          container_port = Some(9999),
+          host_port = Some(9999),
+          service_port = None,
+          name = Some("debug"),
+          labels = None,
+          expose_endpoint = None,
+          virtual_hosts = virtual_hosts.get(2)
+        )
+      ),
+      cpus = 1.0,
+      memory = 128,
+      disk = 0.0,
+      num_instances = 1,
+      network = Some("default"),
+      cmd = cmd,
+      constraints = Seq(),
+      accepted_resource_roles = None,
+      args = args,
+      force_pull = force_pull,
+      health_checks = Seq(),
+      volumes = Seq(),
+      labels = Map(),
+      env = Map(),
+      user = None
+    )
+
+    val Success(metaContainer) = createInstance(
+      ResourceIds.Container,
+      "test-container",
+      parent = Some(testEnv.id),
+      properties = Some(Map(
+        "container_type" -> testProps.container_type,
+        "image" -> testProps.image,
+        "provider" -> Output.renderInstance(testProvider).toString,
+        "cpus" -> testProps.cpus.toString,
+        "memory" -> testProps.memory.toString,
+        "num_instances" -> testProps.num_instances.toString,
+        "force_pull" -> testProps.force_pull.toString,
+        "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+        "network" -> testProps.network.get
+      ) ++ Seq[Option[(String,String)]](
+        args map ("args" -> Json.toJson(_).toString),
+        cmd  map ("cmd" -> _)
+      ).flatten.toMap)
+    )
+
+    val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+
+    val mockService = skuber.Service(
+      name = "test-container",
+      spec = skuber.Service.Spec(
+        clusterIP = "10.0.161.84",
+        ports = List(
+          skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80)), 30784),
+          skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)), 31374)
+        ),
+        _type = skuber.Service.Type.NodePort
+      )
+    ).addLabels(lbls)
+
+    val mockDepl = skuber.ext.Deployment(
+      metadata = skuber.ObjectMeta(
+        name = "test-container",
+        labels = lbls,
+        creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+      )
+    ).withTemplate(
+      skuber.Pod.Template.Spec().addContainer(
+        skuber.Container(
+          name = "test-container",
+          image = testProps.image,
+          ports = List(
+            skuber.Container.Port(80, skuber.Protocol.TCP, "http"),
+            skuber.Container.Port(443, skuber.Protocol.TCP, "https"),
+            skuber.Container.Port(9999, skuber.Protocol.UDP, "debug")
+          )
+        )
+      )
+    )
+
+    val startA = ZonedDateTime.now(ZoneOffset.UTC)
+    val startB = ZonedDateTime.now(ZoneOffset.UTC)
+    val mockPodA = skuber.Pod(
+      metadata = skuber.ObjectMeta(
+        name = "test-container-hash-a",
+        labels = lbls
+      ),
+      status = Some(skuber.Pod.Status(
+        hostIP = Some("host-a"),
+        podIP = Some("10.10.10.1"),
+        containerStatuses = List(skuber.Container.Status(
+          name = "test-container-hash-a",
+          ready = true,
+          restartCount = 0,
+          image = testProps.image,
+          imageID = "who-knows",
+          state = Some(skuber.Container.Running(startedAt = Some(startA)))
+        )),
+        startTime = Some(startA)
+      ))
+    )
+    val mockPodB = skuber.Pod(
+      metadata = skuber.ObjectMeta(
+        name = "test-container-hash-b",
+        labels = lbls
+      ),
+      status = Some(skuber.Pod.Status(
+        hostIP = Some("host-b"),
+        podIP = Some("10.10.10.2"),
+        containerStatuses = List(skuber.Container.Status(
+          name = "test-container-hash-b",
+          ready = true,
+          restartCount = 0,
+          image = testProps.image,
+          imageID = "who-knows",
+          state = Some(skuber.Container.Running(startedAt = Some(startB)))
+        )),
+        startTime = Some(startB)
+      ))
+    )
+
+    mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+    mockSkuber.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
+    mockSkuber.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList(items = List(mockPodA,mockPodB)))
+
+    mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+    mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mockService)
   }
 
   def inNamespace[R <: skuber.ObjectResource](name: String): Matcher[R] = { r: R =>
@@ -94,8 +262,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   "KubernetesService" should {
 
     "configure environment variables for containers" in new FakeKube {
-      val ks = injector.instanceOf[KubernetesService]
-
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -106,8 +272,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "provider" -> Json.obj(
             "id" -> testProvider.id
           ).toString,
-          "cpus" -> "1.0",
-          "memory" -> "128.0",
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
           "num_instances" -> "1",
           "force_pull" -> "true",
           "port_mappings" -> "[]",
@@ -121,12 +287,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
 
-      val fupdatedMetaContainer = ks.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
-      )
-
-      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+      )).properties
 
       there was one(mockSkuber).create( argThat(
         inNamespace[skuber.ext.Deployment](skTestNs.name)
@@ -138,101 +302,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ) )(any,meq(skuber.ext.deploymentKind))
     }
 
-    "deploy service for exposed port mappings and set service addresses and host port" in new FakeKube {
-      val ks = injector.instanceOf[KubernetesService]
-
-      // three ports:
-      // - two "exposed", one not
-      // - one exposure has default container_port==service_port, the other overrides the service_port
-      // - one port has a required host port
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(80),
-            host_port = None,
-            service_port = None,
-            name = Some("http"),
-            labels = None,
-            expose_endpoint = Some(true)
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(443),
-            host_port = None,
-            service_port = Some(8443),
-            name = Some("https"),
-            labels = None,
-            expose_endpoint = Some(true)
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "udp",
-            container_port = Some(9999),
-            host_port = Some(9999),
-            service_port = None,
-            name = Some("debug"),
-            labels = None,
-            expose_endpoint = None
-          )
-        ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
-      val Success(metaContainer) = createInstance(
-        ResourceIds.Container,
-        "test-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get)
-        )
-      )
-
-      val mockService = skuber.Service(
-        name = "test-container",
-        spec = skuber.Service.Spec(
-          clusterIP = "10.0.161.84",
-          ports = List(
-            skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80)), 30784),
-            skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)), 31374)
-          ),
-          _type = skuber.Service.Type.NodePort
-        )
-      )
-      mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mockService)
-
-      val fupdatedMetaContainer = ks.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+    "deploy service for exposed port mappings and set service addresses and host port" in new FakeKubeCreate {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
-      )
-
-      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+      )).properties
 
       there was two(mockSkuberFactory).initializeKube(meq(testProvider.id), any)(any)
       there was one(mockSkuber).create( argThat(
@@ -244,7 +318,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
             skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
           )
       ) )(any,meq(skuber.ext.deploymentKind))
-
       there was one(mockSkuber).create(argThat(
         inNamespace[skuber.Service](skTestNs.name)
           and
@@ -271,160 +344,125 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
     }
 
-    "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKube {
-      val ks = injector.instanceOf[KubernetesService]
-
-      // three ports:
-      // - two "exposed", one not
-      // - one exposure has default container_port==service_port, the other overrides the service_port
-      // - one port has a required host port
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(80),
-            host_port = None,
-            service_port = None,
-            name = Some("http"),
-            labels = None,
-            expose_endpoint = Some(true)
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(443),
-            host_port = None,
-            service_port = Some(8443),
-            name = Some("https"),
-            labels = None,
-            expose_endpoint = Some(true)
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "udp",
-            container_port = Some(9999),
-            host_port = Some(9999),
-            service_port = None,
-            name = Some("debug"),
-            labels = None,
-            expose_endpoint = None
+    "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+          ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
+            skuber.Container.PullPolicy.Always
           )
-        ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("default"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
 
-      val Success(metaContainer) = createInstance(
-        ResourceIds.Container,
-        "test-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get
-        ))
-      )
-
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-
-      val mockService = skuber.Service(
-        name = "test-container",
-        spec = skuber.Service.Spec(
-          clusterIP = "10.0.161.84",
-          ports = List(
-            skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80)), 30784),
-            skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)), 31374)
-          ),
-          _type = skuber.Service.Type.NodePort
+    "set PullPolicy Always when force_pull == false" in new FakeKubeCreate(force_pull = false) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
+          skuber.Container.PullPolicy.IfNotPresent
         )
-      ).addLabels(lbls)
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
 
-      val mockDepl = skuber.ext.Deployment(
-        metadata = skuber.ObjectMeta(
-          name = "test-container",
-          labels = lbls,
-          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+    "pass args when specified" in new FakeKubeCreate(args = Some(Seq("echo","hello","world"))) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(
+          containTheSameElementsAs(Seq("echo","hello","world"))
         )
-      ).withTemplate(
-        skuber.Pod.Template.Spec().addContainer(
-          skuber.Container(
-            name = "test-container",
-            image = testProps.image,
-            ports = List(
-              skuber.Container.Port(80, skuber.Protocol.TCP, "http"),
-              skuber.Container.Port(443, skuber.Protocol.TCP, "https"),
-              skuber.Container.Port(9999, skuber.Protocol.UDP, "debug")
-            )
-          )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "pass no args when unspecified" in new FakeKubeCreate(args = None) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(empty)
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "pass simple cmd when specified" in new FakeKubeCreate(cmd = Some("""/usr/bin/python""")) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
+          containTheSameElementsAs(Seq("/usr/bin/python"))
         )
-      )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
 
-      val startA = ZonedDateTime.now(ZoneOffset.UTC)
-      val startB = ZonedDateTime.now(ZoneOffset.UTC)
-      val mockPodA = skuber.Pod(
-        metadata = skuber.ObjectMeta(
-          name = "test-container-hash-a",
-          labels = lbls
-        ),
-        status = Some(skuber.Pod.Status(
-          hostIP = Some("host-a"),
-          podIP = Some("10.10.10.1"),
-          containerStatuses = List(skuber.Container.Status(
-            name = "test-container-hash-a",
-            ready = true,
-            restartCount = 0,
-            image = testProps.image,
-            imageID = "who-knows",
-            state = Some(skuber.Container.Running(startedAt = Some(startA)))
-          )),
-          startTime = Some(startA)
+    "pass complicated cmd when specified" in new FakeKubeCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
+          containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
+        )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "pass complicated cmd with difficult bash-compatible spacing" in new FakeKubeCreate(cmd = Some("echo hello|wc")) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
+          containTheSameElementsAs(Seq("echo","hello","|","wc"))
+        )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }.pendingUntilFixed("this is going to be hard")
+
+    "pass no cmd when unspecified" in new FakeKubeCreate(cmd = None) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(virtual_hosts = Map(
+      0 -> Seq("galacticfog.com","www.galacticfog.com"),
+      1 -> Seq("secure.galacticfog.com"),
+      2 -> Seq("debug.galacticfog.com")
+    )) {
+      mockSkuber.create(any)(any,meq(skuber.ext.ingressKind)) returns Future(mock[skuber.ext.Ingress])
+
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      import skuber.ext.Ingress
+      import skuber.ext.Ingress._
+
+      there was one(mockSkuber).create( argThat(
+        hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+          and
+        ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
+          Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend("test-container", 80))))),
+          Rule("galacticfog.com",        HttpRule(List(Path("", Backend("test-container", 80))))),
+          Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend("test-container", 8443)))))
         ))
-      )
-      val mockPodB = skuber.Pod(
-        metadata = skuber.ObjectMeta(
-          name = "test-container-hash-b",
-          labels = lbls
-        ),
-        status = Some(skuber.Pod.Status(
-          hostIP = Some("host-b"),
-          podIP = Some("10.10.10.2"),
-          containerStatuses = List(skuber.Container.Status(
-            name = "test-container-hash-b",
-            ready = true,
-            restartCount = 0,
-            image = testProps.image,
-            imageID = "who-knows",
-            state = Some(skuber.Container.Running(startedAt = Some(startB)))
-          )),
-          startTime = Some(startB)
-        ))
-      )
+      ) )(any,meq(skuber.ext.ingressKind))
+    }
 
-      mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
-      mockSkuber.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
-      mockSkuber.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList(items = List(mockPodA,mockPodB)))
-
+    "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKubeCreate {
       import com.galacticfog.gestalt.marathon.ContainerStats
 
       val Some(containerStats) = await(ks.find(
@@ -463,135 +501,85 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       containerStats must_== containerStats2
     }
 
-    "delete service on container delete" in new FakeKube {
-      val ks = injector.instanceOf[KubernetesService]
-
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
+    "delete service and any ingress on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get)
-        )
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
       )
 
+      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
-        labels = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+        labels = Map(label)
       ))
-      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-      val mockService = skuber.Service("test-container").withSelector(
-        KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
-      ).addLabel(
-        KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
-      )
-
+      val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
+        name = "test-container",
+        labels = Map(label)
+      ))
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
+      val mockService = skuber.Service("test-container").withSelector( label ).addLabel( label )
       mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
+      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList(items = List(mockIngress)))
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
       mockSkuber.delete(mockService.name, 0)(client.serviceKind) returns Future.successful(())
+      mockSkuber.delete(mockIngress.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
 
-      val fDeleted = ks.destroyContainer( metaContainer )
-
-      await(fDeleted)
-
+      await(ks.destroyContainer(metaContainer))
+      there was one(mockSkuber).delete(mockDep.name,0)(skuber.ext.deploymentKind)
+      there was one(mockSkuber).delete(mockRS.name,0)(skuber.ext.replsetsKind)
       there was one(mockSkuber).delete(mockService.name,0)(client.serviceKind)
+      there was one(mockSkuber).delete(mockIngress.name,0)(skuber.ext.ingressKind)
     }
 
-    "not fail if no service to delete on container delete" in new FakeKube {
-      val ks = injector.instanceOf[KubernetesService]
-
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
+    "not fail if no service or ingress to delete on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get)
-        )
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
       )
 
+      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
-        labels = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+        labels = Map(label)
       ))
-      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
       mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
       mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList())
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
 
-      val fDeleted = ks.destroyContainer( metaContainer )
-
-      await(fDeleted)
-
+      await(ks.destroyContainer(metaContainer))
       there were no(mockSkuber).delete(any,any)(meq(client.serviceKind))
     }
 

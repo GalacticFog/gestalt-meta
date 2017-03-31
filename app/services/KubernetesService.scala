@@ -35,6 +35,7 @@ import skuber.Container.Port
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.runtime.universe._
+import scala.language.postfixOps
 
 case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
 object ContainerSecret {
@@ -122,8 +123,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case Failure(e) => Future.failed(e)
       case Success(sec) =>
         for {
-          k8s        <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
-          namespace  <- getNamespace(k8s, context.environment.id, create = true)
+          kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
+          namespace  <- getNamespace(kube, context.environment.id, create = true)
           kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
           output     <- createKubeSecret(kube, secret.id, sec, namespace.name) map { _ => secret }
         } yield output
@@ -136,8 +137,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
-        k8s        <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
-        namespace  <- getNamespace(k8s, context.environment.id, create = true)
+        kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
+        namespace  <- getNamespace(kube, context.environment.id, create = true)
         kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
         updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
       } yield upsertProperties(
@@ -180,21 +181,45 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     case _ => unprocessable("port mapping must specify \"TCP\" or \"UDP\" as protocol")
   }
 
+  def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Option[Ingress]] = {
+    val ingressPMs = for {
+      pm <- spec.port_mappings
+      vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
+    } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
+
+    if (ingressPMs.isEmpty) Future.successful(None)
+    else {
+      val ingress = ingressPMs.foldLeft[Ingress](
+        Ingress(metadata = ObjectMeta(
+          name = spec.name,
+          labels = Map(META_CONTAINER_KEY -> containerId.toString)
+        ))
+      ){
+        case (acc, (vhost,port)) => acc.addHttpRule(
+          vhost, Map("" -> s"${spec.name}:${port}")
+        )
+      }
+      kube.create[Ingress](ingress) map (Some(_))
+    }
+  }
+
   /**
    * Create a Deployment in Kubernetes
    */
-  private[services] def createKubeDeployment(k8s: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDep = k8s.create[Deployment](mkdeployment(containerId, spec, namespace))
-    val fUpdatedPMs = createKubeService(k8s, namespace, containerId, spec)
+  private[services] def createKubeDeployment(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
+    val fDep = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
+    val fUpdatedPMs = createKubeService(kube, namespace, containerId, spec)
+    val fIngress = createIngress(kube, namespace, containerId, spec)
     for {
       dep <- fDep
+      _ <- fIngress
       updatedPMs <- fUpdatedPMs
     } yield (spec.copy(
       port_mappings = updatedPMs
     ))
   }
 
-  private[services] def createKubeService(k8s: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
+  private[services] def createKubeService(kube: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
     val exposedPorts = container.port_mappings.filter(_.expose_endpoint.contains(true))
     val srvProto = exposedPorts.foldLeft[Service](
       Service(metadata=ObjectMeta(name=container.name,namespace=namespace))
@@ -216,7 +241,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
     if (srvProto.spec.exists(_.ports.size > 0)) {
       val svchost = s"${container.name}.${namespace}.svc.cluster.local"
-      k8s.create[Service](srvProto) map { srv =>
+      kube.create[Service](srvProto) map { srv =>
         // need to map srv nodePorts back to container ports
         container.port_mappings.map {
           case pm if pm.expose_endpoint.contains(true) => pm.copy(
@@ -235,8 +260,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  private[services] def createKubeSecret(k8s: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
-    k8s.create[Secret](mksecret(secretId, spec, namespace))
+  private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
+    kube.create[Secret](mksecret(secretId, spec, namespace))
   }
 
   /**
@@ -300,8 +325,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ()
     })
 
-    Future.sequence(Seq(fDplDel,fSrvDel)) map {_ =>
-      log.debug(s"finished deleting Deployment, ReplicaSet, Pods and Service for container ${container.id}")
+    val fIngDel = for {
+      kube <- fKube
+      ings <- deleteAllWithLabel[Ingress,IngressList](kube, targetLabel)
+    } yield ings.headOption.getOrElse({
+      log.debug("deleted no Ingresses")
+      ()
+    })
+
+    Future.sequence(Seq(fDplDel,fSrvDel,fIngDel)) map {_ =>
+      log.debug(s"finished deleting Deployments, ReplicaSets, Pods, Services and Ingresses for container ${container.id}")
       ()
     }
   }
@@ -399,6 +432,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     ))
   }
 
+
   /**
    * Create a Kubernetes Deployment object in memory.
    *
@@ -414,12 +448,20 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         skuber.Resource.memory -> containerSpec.memory
     ))
 
+    val cmdArray = containerSpec.cmd map CommandParser.translate
+//      containerSpec.cmd map {
+//      parse.findAllIn(_).toList
+//    }
+
     val container = skuber.Container(
       name = containerSpec.name,
       image = containerSpec.image,
       resources = Some(requirements),
       env = mkEnvVars(containerSpec.env),
-      ports = mkportmappings(containerSpec.port_mappings).toList
+      ports = mkportmappings(containerSpec.port_mappings).toList,
+      imagePullPolicy = if (containerSpec.force_pull) Container.PullPolicy.Always else Container.PullPolicy.IfNotPresent,
+      args = containerSpec.args.getOrElse(Seq.empty).toList,
+      command = cmdArray.getOrElse(Nil)
     )
 
     val podTemplate = Pod.Template.Spec(
@@ -547,4 +589,79 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+}
+
+object CommandParser {
+
+  import java.util.StringTokenizer
+  import java.util.Vector
+
+  val NORMAL = 0
+  val IN_QUOTE = 1
+  val IN_DOUBLE_QUOTE = 2
+
+  def translate(toProcess: String) = {
+
+    if (toProcess == null || toProcess.isEmpty) {
+      Array[String]()
+    }
+
+    var state = NORMAL;
+
+    val tok = new StringTokenizer(toProcess, "\"\' ", true)
+    val v = new Vector[String]
+    var current = new StringBuffer()
+
+    var lastTokenHasBeenQuoted = false;
+
+    while (tok.hasMoreTokens()) {
+
+      val nextTok = tok.nextToken();
+
+      state match {
+        case IN_QUOTE => {
+          if ("\'".equals( nextTok )) {
+            lastTokenHasBeenQuoted = true
+            state = NORMAL
+          } else {
+            current.append( nextTok )
+          }
+        }
+        case IN_DOUBLE_QUOTE => {
+          if ("\"".equals( nextTok )) {
+            lastTokenHasBeenQuoted = true
+            state = NORMAL
+          } else {
+            current.append( nextTok )
+          }
+        }
+        case _ => {
+          if ("\'".equals(nextTok))      state = IN_QUOTE;
+          else if ("\"".equals(nextTok)) state = IN_DOUBLE_QUOTE;
+          else if (" ".equals(nextTok)) {
+            if (lastTokenHasBeenQuoted || current.length() != 0) {
+              v.addElement(current.toString());
+              current = new StringBuffer();
+            }
+          }
+          else {
+            current.append(nextTok);
+          }
+          lastTokenHasBeenQuoted = false;
+        }
+      }
+    } // while
+
+    if (lastTokenHasBeenQuoted || current.length() != 0) {
+      v.addElement(current.toString());
+    }
+
+    if (state == IN_QUOTE || state == IN_DOUBLE_QUOTE) {
+      throw new IllegalArgumentException("unbalanced quotes in " + toProcess);
+    }
+
+    val args = new Array[Object]( v.size );
+    v.copyInto(args);
+    args map { a => a.toString } toList;
+  }
 }
