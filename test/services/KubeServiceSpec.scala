@@ -69,7 +69,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   abstract class FakeKubeCreate( force_pull: Boolean = true,
                                  args: Option[Seq[String]] = None,
                                  cmd: Option[String] = None,
-                                 virtual_hosts: Map[Int,Seq[String]] = Map.empty
+                                 virtual_hosts: Map[Int,Seq[String]] = Map.empty,
+                                 labels: Map[String,String] = Map.empty
                                ) extends FakeKube() {
 
     // three ports:
@@ -125,7 +126,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       force_pull = force_pull,
       health_checks = Seq(),
       volumes = Seq(),
-      labels = Map(),
+      labels = labels,
       env = Map(),
       user = None
     )
@@ -143,7 +144,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "num_instances" -> testProps.num_instances.toString,
         "force_pull" -> testProps.force_pull.toString,
         "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-        "network" -> testProps.network.get
+        "network" -> testProps.network.get,
+        "labels" -> Json.toJson(labels).toString
       ) ++ Seq[Option[(String,String)]](
         args map ("args" -> Json.toJson(_).toString),
         cmd  map ("cmd" -> _)
@@ -344,6 +346,22 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
     }
 
+    "provision with the requested labels" in new FakeKubeCreate(labels = Map(
+      "labela" -> "value a",
+      "labelb" -> "value b"
+    )) {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create( argThat(
+        ((_:skuber.ext.Deployment).metadata.labels) ^^ havePairs(
+          "labela" -> "value a",
+          "labelb" -> "value b"
+        )
+      ) )(any,meq(skuber.ext.deploymentKind))
+    }
+
     "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
       val Some(updatedContainerProps) = await(ks.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -452,6 +470,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       import skuber.ext.Ingress._
 
       there was one(mockSkuber).create( argThat(
+        inNamespace[skuber.ext.Ingress](skTestNs.name)
+          and
         hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
           and
         ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(

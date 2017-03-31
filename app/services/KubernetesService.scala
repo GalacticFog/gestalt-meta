@@ -192,6 +192,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val ingress = ingressPMs.foldLeft[Ingress](
         Ingress(metadata = ObjectMeta(
           name = spec.name,
+          namespace = namespace,
           labels = Map(META_CONTAINER_KEY -> containerId.toString)
         ))
       ){
@@ -449,9 +450,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     ))
 
     val cmdArray = containerSpec.cmd map CommandParser.translate
-//      containerSpec.cmd map {
-//      parse.findAllIn(_).toList
-//    }
 
     val container = skuber.Container(
       name = containerSpec.name,
