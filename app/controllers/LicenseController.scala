@@ -68,14 +68,14 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
     } match {
       case Failure(e) =>
         ResourceFactory.findAll(ResourceIds.License, fqid(fqon)).headOption match {
-          case None          => throw e
+          case None          => throw new BadRequestException("No license found.")
           case Some(license) => {
               log.info("Installing license from resource.")
               Try {
                 val licstr = license.properties.get("data")
                 GestaltLicense.instance.install(licstr)
               } match {
-                case Failure(e2) => throw e2
+                case Failure(e2) => throw new BadRequestException("Invalid license.")
                 case Success(_) => Ok {
                   findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL.get)
                 }
