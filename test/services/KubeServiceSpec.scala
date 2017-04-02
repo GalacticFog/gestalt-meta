@@ -169,6 +169,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     val mockDepl = skuber.ext.Deployment(
       metadata = skuber.ObjectMeta(
         name = "test-container",
+        namespace = testEnv.id.toString,
         labels = lbls,
         creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
       )
@@ -191,6 +192,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     val mockPodA = skuber.Pod(
       metadata = skuber.ObjectMeta(
         name = "test-container-hash-a",
+        namespace = testEnv.id.toString,
         labels = lbls
       ),
       status = Some(skuber.Pod.Status(
@@ -210,6 +212,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     val mockPodB = skuber.Pod(
       metadata = skuber.ObjectMeta(
         name = "test-container-hash-b",
+        namespace = testEnv.id.toString,
         labels = lbls
       ),
       status = Some(skuber.Pod.Status(
@@ -344,6 +347,31 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         (pm: PortMapping) => pm.name.contains("https") && pm.host_port.isEmpty && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name.contains("debug") && pm.host_port.contains(9999) && pm.service_address.isEmpty
       ))
+    }
+
+    "provision with the expected external_id property" in new FakeKubeCreate() {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      updatedContainerProps must havePair(
+        "external_id" -> s"/namespaces/${testEnv.id}/deployments/test-container"
+      )
+    }
+
+    "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val Seq(stat) = await(ks.listInEnvironment(
+        context = ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      ))
+
+      val Some(externalId) = updatedContainerProps.get("external_id")
+
+      stat.external_id must_== externalId
     }
 
     "provision with the requested labels" in new FakeKubeCreate(labels = Map(
@@ -542,10 +570,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
+        namespace = testEnv.id.toString,
         labels = Map(label)
       ))
       val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
         name = "test-container",
+        namespace = testEnv.id.toString,
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
@@ -588,6 +618,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
+        namespace = testEnv.id.toString,
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )

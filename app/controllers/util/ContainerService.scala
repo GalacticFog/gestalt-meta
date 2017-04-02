@@ -257,7 +257,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
       val pidAndStats = for {
         caasP <- Future.fromTry(providerManager.getProviderImpl(cp.typeId))
         stats <- caasP.listInEnvironment(ctx)
-        statsMap = stats map (stat => stat.id -> stat) toMap
+        statsMap = stats map (stat => stat.external_id -> stat) toMap
       } yield (pid -> statsMap)
       futureToFutureTry(pidAndStats)
     } map (_ collect {case Success(x) => x} toMap)
