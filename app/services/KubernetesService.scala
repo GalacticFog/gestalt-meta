@@ -143,7 +143,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
       } yield upsertProperties(
         container,
-        "external_id" -> s"deployment-${container.name}",
+        "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
         "status" -> "LAUNCHED",
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
@@ -363,7 +363,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     kube.list[L]() recover {
       case e: Throwable =>
         log.debug(s"error listing Kubernetes resources: ${e.toString}, will assume empty list")
-        // TODO: this instantiation code did not work:
+        // TODO: (cgbaker) this instantiation code did not work:
         //   typeTag[L].mirror.runtimeClass(typeOf[L]).newInstance().asInstanceOf[L]
         // I don't feel like investigating it right now, so hack for now
         typeOf[L] match {
@@ -580,7 +580,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
     }
     ContainerStats(
-      id = depl.name,
+      external_id = s"/namespaces/${depl.namespace}/deployments/${depl.name}",
       containerType = "DOCKER",
       status = status,
       cpus = resources.flatMap(_.limits.get("cpu")).map(_.value).map(_.toDouble).getOrElse(0),

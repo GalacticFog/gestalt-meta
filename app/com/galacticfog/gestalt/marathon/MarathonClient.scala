@@ -163,7 +163,7 @@ case object MarathonClient {
     } yield ContainerStats(
       status = status,
       containerType = ctype,
-      id = appId,
+      external_id = appId,
       cpus = cpus,
       memory = memory,
       image = image,
