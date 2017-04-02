@@ -363,7 +363,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     kube.list[L]() recover {
       case e: Throwable =>
         log.debug(s"error listing Kubernetes resources: ${e.toString}, will assume empty list")
-        typeTag[L].mirror.runtimeClass(typeOf[L]).newInstance().asInstanceOf[L]
+        // TODO: this instantiation code did not work:
+        //   typeTag[L].mirror.runtimeClass(typeOf[L]).newInstance().asInstanceOf[L]
+        // I don't feel like investigating it right now, so hack for now
+        typeOf[L] match {
+          case t if t =:= typeOf[PodList] => PodList().asInstanceOf[L]
+          case t if t =:= typeOf[DeploymentList] => DeploymentList().asInstanceOf[L]
+          case t if t =:= typeOf[ServiceList] => ServiceList().asInstanceOf[L]
+          case t if t =:= typeOf[IngressList] => IngressList().asInstanceOf[L]
+        }
+
     }
   }
 

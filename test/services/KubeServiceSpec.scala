@@ -593,9 +593,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
       mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
-      mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
-      mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
-      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList())
+      mockSkuber.list()(any, meq(client.podListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      mockSkuber.list()(any, meq(client.serviceListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      mockSkuber.list()(any, meq(skuber.ext.ingressListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
 
