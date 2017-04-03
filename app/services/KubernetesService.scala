@@ -8,38 +8,39 @@ import scala.language.implicitConversions
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.events._
 import com.google.inject.Inject
+
 import skuber._
 import skuber.api.client._
-import skuber.json.format._
 import skuber.ext._
+import skuber.json.format._
 import skuber.json.ext.format._
-import org.yaml.snakeyaml._
-import play.api.libs.json._
 import skuber.api.client.ObjKind
+import skuber.Container.Port
+
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 import org.joda.time.{DateTime, DateTimeZone}
-import skuber.Container.Port
 
 import scala.concurrent.ExecutionContext
 import scala.reflect.runtime.universe._
 import scala.language.postfixOps
 
+import play.api.libs.json._
+import play.api.libs.functional.syntax._
+
 case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
 object ContainerSecret {
-  
+
   def fromResource(secret: GestaltResourceInstance) = {
     val parsed = for {
       ps <- Try(secret.properties getOrElse unprocessable("Unspecified properties: data, secret_type"))
@@ -116,6 +117,39 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   import ContainerSecret.unprocessable
 
+  // TODO: skuber issue #38 is a formatting error around Ingress rules with empty path
+  implicit val ingressBackendFmt: Format[Ingress.Backend] = Json.format[Ingress.Backend]
+  // we'll override that formatter until then
+  implicit val ingressPathFmt: Format[Ingress.Path] = (
+    (JsPath \ "path").formatMaybeEmptyString() and
+      (JsPath \ "backend").format[Ingress.Backend]
+    ) (Ingress.Path.apply _, unlift(Ingress.Path.unapply))
+  implicit val ingressHttpRuledFmt: Format[Ingress.HttpRule] = Json.format[Ingress.HttpRule]
+  implicit val ingressRuleFmt: Format[Ingress.Rule] = Json.format[Ingress.Rule]
+  implicit val ingressTLSFmt: Format[Ingress.TLS] = Json.format[Ingress.TLS]
+
+  implicit val ingressSpecFormat: Format[Ingress.Spec] = (
+    (JsPath \ "backend").formatNullable[Ingress.Backend] and
+      (JsPath \ "rules").formatMaybeEmptyList[Ingress.Rule] and
+      (JsPath \ "tls").formatMaybeEmptyList[Ingress.TLS]
+    )(Ingress.Spec.apply _, unlift(Ingress.Spec.unapply))
+
+  implicit val ingrlbingFormat: Format[Ingress.Status.LoadBalancer.Ingress] =
+    Json.format[Ingress.Status.LoadBalancer.Ingress]
+
+  implicit val ingrlbFormat: Format[Ingress.Status.LoadBalancer] =
+    Json.format[Ingress.Status.LoadBalancer]
+
+  implicit val ingressStatusFormat = Json.format[Ingress.Status]
+
+  implicit lazy val ingressFormat: Format[Ingress] = (
+    objFormat and
+      (JsPath \ "spec").formatNullable[Ingress.Spec] and
+      (JsPath \ "status").formatNullable[Ingress.Status]
+    ) (Ingress.apply _, unlift(Ingress.unapply))
+
+  implicit val ingressListFmt: Format[IngressList] = KListFormat[Ingress].apply(IngressList.apply _,unlift(IngressList.unapply))
+
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     
@@ -140,7 +174,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
         namespace  <- getNamespace(kube, context.environment.id, create = true)
         kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
-        updatedContainerSpec <- createKubeDeployment(kube, container.id, spec, namespace.name)
+        updatedContainerSpec <- createDeploymentEtAl(kube, container.id, spec, namespace.name)
       } yield upsertProperties(
         container,
         "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
@@ -153,7 +187,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   /**
    * Get the Kubernetes Namespace for the given Environment ID. Namespaces are named after the
    * Environment UUID. If a corresponding namespace is not found, it will be created if create is 'true'
-   * 
+   *
    * @param rc RequestContext for communicating with Kubernetes
    * @param environment UUID of the Meta Environment you want a Namespace for
    * @param create when set to true, a new Namespace will be created if and existing one is not found
@@ -172,7 +206,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   private[services] def setPostLaunchStatus(container: GestaltResourceInstance): GestaltResourceInstance = {
-    upsertProperties(container, "status" -> "LAUNCHED")    
+    upsertProperties(container, "status" -> "LAUNCHED")
   }
 
   private[this] implicit def toProtocol(proto: String): skuber.Protocol.Value = proto.toUpperCase match {
@@ -200,24 +234,36 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           vhost, Map("" -> s"${spec.name}:${port}")
         )
       }
+
       kube.create[Ingress](ingress) map (Some(_))
     }
   }
 
   /**
-   * Create a Deployment in Kubernetes
+   * Create a Deployment with services in Kubernetes
    */
-  private[services] def createKubeDeployment(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDep = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
-    val fUpdatedPMs = createKubeService(kube, namespace, containerId, spec)
-    val fIngress = createIngress(kube, namespace, containerId, spec)
+  private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
+    val fDeployment = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
+
+    val fUpdatedPMsFromService = createKubeService(kube, namespace, containerId, spec) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
+        spec.port_mappings
+    }
+
+    val fIngress = createIngress(kube, namespace, containerId, spec) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
+        ()
+    }
+
     for {
-      dep <- fDep
+      dep <- fDeployment
       _ <- fIngress
-      updatedPMs <- fUpdatedPMs
-    } yield (spec.copy(
+      updatedPMs <- fUpdatedPMsFromService
+    } yield spec.copy(
       port_mappings = updatedPMs
-    ))
+    )
   }
 
   private[services] def createKubeService(kube: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
@@ -400,7 +446,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       _ = log.debug(s"identified ${selectedResources.size} ${otype} to delete")
       deletes <- Future.traverse(selectedResources){
         d =>
-          log.info(s"deleting ${d.kind} ${d.name} labeled with ${label}")
+          log.info(s"deleting ${typeOf[O]} ${d.name} labeled with ${label}")
           kube.delete[O](d.name)
       }
     } yield deletes
