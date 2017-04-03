@@ -35,6 +35,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 
 import com.galacticfog.gestalt.meta.api._
 
@@ -65,7 +66,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     val servicelist = processServices(p, p.services.toList, Seq.empty)
     for {
       vars <- mapPorts(servicelist)
-      env = vars.toMap
+      env = vars.toMap ++ getMergedEnvironment(p)
       np  = updatePublicEnv(p, env)
       sl   <- Future.sequence(servicelist)
     } yield (np -> sl)
@@ -74,10 +75,14 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   /**
    * Add the values in newVars to the given ProviderMap's envConfig.public
    */
+  import scala.collection.immutable.ListMap
   private[providers] def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
     log.debug("Entered updatePublicEnv(_,_)...")
     val penv = p.envConfig map { env =>
-      env.copy(public = env.public map { pub => newVars.toMap ++ pub })
+      val sorted = env.public map { pub => 
+        ListMap((newVars.toMap ++ pub).toSeq.sortBy(_._1):_*)
+      }
+      env.copy(public = sorted /*env.public map { pub => newVars.toMap ++ pub }*/)
     }
     p.copy(env = penv)
   }
@@ -94,40 +99,68 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     }
   }
   
+  /*
+   * create method 'usesVhost' if true, create the vhost provider variables.
+   */
+  
+  /**
+   * 
+   */
   private[providers] def portMappingToVariables(
       mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
     
     log.debug("Entered portMappingToVariables(_)...")
     log.debug("PortMapping => " + mapping)
     
-    def trMapName(mn: String): String = {
+    /*
+     * port_mapping.name becomes the name of the variable. This function
+     * should be used to ensure the name is a valid variable name.
+     */
+    def trMappingName(mn: String): String = {
       mn.trim.replaceAll("-","_").toUpperCase
     }
     
-    val basename = trMapName(mapping.name.get)
+    val basename = trMappingName(mapping.name.get)
     val protocol = mapping.protocol
     val host = mapping.service_address.get.host
     val port = mapping.service_address.get.port
     
     def varname(s: String) = "%s_%s".format(basename, s)
-    val publichost = mapping.virtual_hosts.fold {
-      val result: Option[String] = None
-      result
-    }{ vhs =>
-      if (vhs.isDefinedAt(0)) Some(vhs(0)) else None 
-    }
+
     val newvars = Seq(
       varname("PROTOCOL") -> protocol,
       varname("HOST") -> host,
       varname("PORT") -> port.toString)
-    val publics = if (publichost.isDefined) Seq(varname("PUBLIC_HOST") -> publichost.get) else Seq.empty
-    newvars ++ publics
+    
+    val vhostVars = mapping.virtual_hosts.fold(Map[String,String]()) { vs =>
+      getvhostvars(basename, vs, Map.empty, 0)
+    }
+    newvars ++ vhostVars
   }
   
-  private[providers] def parsePortMappings(r: GestaltResourceInstance) = {
+  def mkvhostvar(prefix: String, host: String, index: Int) = {
+    val key = "%s_VHOST_%d".format(prefix, index)
+    Map(key -> host)
+  }
+  
+  def getvhostvars(prefix: String, hosts: Seq[String], acc: Map[String,String], index: Int): Map[String,String] = {
+    val out = hosts match {
+      case Nil => acc
+      case h :: t => {
+        getvhostvars(prefix, t, mkvhostvar(prefix, h, index) ++ acc, index+1)
+      }
+    }
+    out
+  }  
+  
+  /**
+   * Parse the port_mappings from a Meta container resourcce to PortMapping objects.
+   * @param r a Meta container resource
+   */
+  private[providers] def parsePortMappings(r: GestaltResourceInstance): Seq[PortMapping] = {
     log.debug("Entered parsePortMappings(_)...")
     r.properties.get.get("port_mappings") map { pmstr =>
-      Js.parse[Seq[ContainerSpec.PortMapping]](Json.parse(pmstr)) match {
+      Js.parse[Seq[PortMapping]](Json.parse(pmstr)) match {
         case Success(pm) => pm
         case Failure(e) => {
           log.error("Failed parsing PortMappings from Resource." + e.getMessage)
@@ -187,7 +220,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
    * 
    */
   private[providers] def normalizeContainerPayload(spec: JsValue, providerVars: Map[String,String]) = {
-    mergeContainerVars(withProviderInfo(spec), providerVars)match {
+    mergeContainerVars(withProviderInfo(spec), providerVars) match {
       case Failure(e) => 
         throw new UnprocessableEntityException(s"Invalid container_spec: " + e.getMessage)
       case Success(p) => p
@@ -240,7 +273,10 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
         log.info("Creating container in backend CaaS...")
         for {
           updated   <- service.create(ctx, metaResource)
-          container <- updateContainer(updated, account.account.id)
+          container <- {
+            println("***UPDATE LABELS: " + updated.properties.get.get("labels"))
+            updateContainer(updated, account.account.id)
+          }
         } yield container
       }
     }
@@ -289,8 +325,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
       p <- o.properties
       f <- p.get("fqon")
     } yield f
-  }  
-
+  }
 
   private[providers] def createProviderEnvironment(
       provider: GestaltResourceInstance, 
@@ -321,7 +356,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
       env
     }
   }
-    
+  
   /**
    * Return a list of the containers
    */
@@ -355,7 +390,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   def getProviderEnvironment(provider: UUID): Option[GestaltResourceInstance] = {
     ResourceFactory.findChildByName(provider, ResourceIds.Environment, "services")
   }
-
+  
   
   /**
    * Get a list of all providers that have an associated service (container) that

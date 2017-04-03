@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.data.{CoVariant, EnvironmentType, ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.keymgr.{GestaltFeature, GestaltLicense}
 import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
@@ -545,7 +545,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
         "id" -> newId.toString,
         "resource_type" -> providerType.toString
       )
-    } yield withIdAndType
+      output <- updateLinkedProviders(withIdAndType)
+    } yield output
+    
   }
   
   private[controllers] def providerRequestOptions(org: UUID, user: AuthAccountWithCreds, payload: JsValue, baseUrl: String) = {
@@ -554,6 +556,42 @@ class Meta @Inject()( messagesApi: MessagesApi,
       policyOwner = Option(org), 
       policyTarget = Option(j2r(org, user, payload, Option(ResourceIds.Provider))),
       data = Option(Map("host" -> baseUrl)))    
+  }
+  
+  def updateLinkedProviders(json: JsObject): Try[JsObject] = {
+
+    val lps = Js.find(json, "/properties/linked_providers") map { lp =>
+      LinkedProvider.fromJson(lp)
+    }
+    
+    val updatedLinks = lps.fold(Seq[LinkedProvider]()) { links =>
+      val linkids = links map { _.id }
+      
+      // Lookup all given linked_providers by their ID - load into a map keyed by ID
+      val providers = ResourceFactory.findAllIn(linkids).map { 
+        res => (res.id, res) 
+      }.toMap 
+      
+			// If we found fewer providers than we asked for the request is invalid.
+      if (providers.size < linkids.size) {
+        val missing = linkids.diff( (providers.keys.toSeq) )
+        throw new UnprocessableEntityException(
+            s"Invalid linked_providers. The following were not found: [${missing.mkString(",")}]")
+      }
+      
+      // Inject the type-id of each provider into the given links.
+      links map { k =>
+        k.copy(`type` = Some(providers(k.id).typeId))
+      }
+    }
+    
+    if (updatedLinks.isEmpty) Success(json) 
+    else {
+      val jsonLinks = Json.toJson(updatedLinks)
+      import com.galacticfog.gestalt.patch._
+      val patch = PatchDocument(PatchOp.Replace("/properties/linked_providers", jsonLinks))
+      patch.applyPatch(json)
+    }
   }
   
   
@@ -579,21 +617,36 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
       SafeRequest (operations, options) ProtectAsync { maybeState =>           
         
-        // Ensure linked providers parse
-        Js.find(payload, "/properties/linked_providers") map { lp =>
-          LinkedProvider.fromJson(lp)
-        }
+//        // Ensure linked providers parse
+//        val lps = Js.find(payload, "/properties/linked_providers") map { lp =>
+//          LinkedProvider.fromJson(lp)
+//        }
+//        
+//        updateLinkedProviders(payload) match {
+//          case Failure(e) => log.error("Failed updating linked_providers : " + e.getMessage)
+//          case Success(ps) => {
+//            log.debug("LINKED PROVIDERS UPDATED:")
+//            println(Json.prettyPrint(ps))
+//          }
+//        }
         
+        /*
+         * TODO: Validate linked provider IDs
+         * 1 - they exist
+         * 2 - they are providers
+         * 
+         * then inject the type-id into linked providers
+         */
         val identity = user.account.id
         val created = for {
           input <- Js.parse[GestaltResourceInput](payload)
-          res   <- CreateNewResource(org, user, input, Some(providerType), Some(parentId))
+          res   <- CreateNewResource(org, user, input, Some(providerType), Some(parentId)) 
         } yield res
         
         created match {
           case Failure(e) => {
             /*
-             * TODO: Update container as 'FAILED' in Meta
+             * TODO: Update Provider as 'FAILED' in Meta
              */
             Future.successful(HandleExceptions(e))
           }
@@ -605,7 +658,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             } recover { 
               case e => {
                 /*
-                 * TODO: Update container as 'FAILED' in Meta
+                 * TODO: Update Provider as 'FAILED' in Meta
                  */                
                 HandleExceptions(e)
               }
