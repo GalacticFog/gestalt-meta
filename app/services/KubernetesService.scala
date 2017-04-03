@@ -642,6 +642,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
 }
 
 object CommandParser {

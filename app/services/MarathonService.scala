@@ -195,4 +195,5 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     )
   }
 
+  override def scale(context: ProviderContext, container: Instance, numInstances: Int): Future[Instance] = ???
 }
