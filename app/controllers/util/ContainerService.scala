@@ -2,7 +2,7 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.events.{AmqpClient, AmqpEndpoint, PolicyEvent}
+import com.galacticfog.gestalt.events.AmqpClient
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
@@ -10,7 +10,6 @@ import play.api.libs.json._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
-import scala.concurrent.duration._
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
@@ -20,8 +19,6 @@ import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
-import com.galacticfog.gestalt.events._
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.google.inject.Inject
 import services.{FakeRequest, ProviderContext}
@@ -29,20 +26,6 @@ import services.{FakeRequest, ProviderContext}
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
-
-  def containerRequestOperations(action: String): List[Operation[Seq[String]]]
-
-  def containerRequestOptions(user: AuthAccountWithCreds,
-                              environment: UUID,
-                              container: GestaltResourceInstance,
-                              data: Option[Map[String, String]] = None): RequestOptions
-
-  def setupMigrateRequest(fqon: String,
-                          env: UUID,
-                          container: GestaltResourceInstance,
-                          user: AuthAccountWithCreds,
-                          metaUrl: String,
-                          queryString: QueryString): (List[Operation[Seq[String]]], RequestOptions)
 
   def deleteContainer(container: GestaltResourceInstance): Future[Unit]
 
@@ -59,59 +42,10 @@ trait ContainerService extends JsonInput {
                       containerSpec: ContainerSpec,
                       inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])]
 
-  /**
-    * Extract and validate the 'provider' querystring parameter.
-    * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
-    *
-    * @param qs the complete, unmodified queryString from the original request.
-    */
-  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = Try {
-    val PROVIDER_KEY = "provider"
-
-    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
-      throw badRequest(
-        "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
-    else Try{
-      if (qs(PROVIDER_KEY).size > 1) {
-        throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
-      } else {
-        
-        val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
-        ResourceFactory.findById(pid).fold {
-          throw badRequest(s"Provider with ID '$pid' not found.")
-        }{ res =>
-          import com.galacticfog.gestalt.data.CoVariant
-          // Ensure resource we got is a sub-type of CaasProvider
-          val caasids = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
-          if (caasids.contains(res.typeId)) pid
-          else throw badRequest(s"Given ID '$pid' is not a CaaS Provider. No changes made.") 
-        }
-      }
-    } match {
-      case Success(id) => id
-      case Failure(e)  => e match {
-        case i: IllegalArgumentException =>
-          throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
-        case e: Throwable => throw e
-      }
-    }
-  }
-
-  private def badRequest(message: String) = {
-    new BadRequestException(message)
-  }
 
   def marathonClient(provider: GestaltResourceInstance): MarathonClient
 
-  def caasProvider(provider: UUID): GestaltResourceInstance
-
   def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)]
-
-  def containerProviderId(c: GestaltResourceInstance): UUID = {
-    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
-    log.debug("Provider-ID : " + pid)
-    UUID.fromString(pid)
-  }
 
 }
 
@@ -122,14 +56,6 @@ object ContainerService {
   }
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
-
-}
-
-class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
-                                       eventsClient: AmqpClient )
-  extends ContainerService with MetaControllerUtils {
-
-  import ContainerService._
 
   def containerRequestOperations(action: String) = List(
     controllers.util.Authorize(action),
@@ -175,6 +101,69 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
 
     (operations,options)
   }
+
+  /**
+    * Extract and validate the 'provider' querystring parameter.
+    * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
+    *
+    * @param qs the complete, unmodified queryString from the original request.
+    */
+  protected [controllers] def providerQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = Try {
+    val PROVIDER_KEY = "provider"
+
+    if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
+      throw badRequest(
+        "'provider' parameter not found. (i.e. */migrate?provider={UUID})")
+    else Try{
+      if (qs(PROVIDER_KEY).size > 1) {
+        throw badRequest(s"Multiple provider IDs found. found: [${qs("provider").mkString(",")}]")
+      } else {
+
+        val pid = UUID.fromString(qs(PROVIDER_KEY)(0))
+        ResourceFactory.findById(pid).fold {
+          throw badRequest(s"Provider with ID '$pid' not found.")
+        }{ res =>
+          import com.galacticfog.gestalt.data.CoVariant
+          // Ensure resource we got is a sub-type of CaasProvider
+          val caasids = ResourceFactory.findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
+          if (caasids.contains(res.typeId)) pid
+          else throw badRequest(s"Given ID '$pid' is not a CaaS Provider. No changes made.")
+        }
+      }
+    } match {
+      case Success(id) => id
+      case Failure(e)  => e match {
+        case i: IllegalArgumentException =>
+          throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
+        case e: Throwable => throw e
+      }
+    }
+  }
+
+  private def badRequest(message: String) = {
+    new BadRequestException(message)
+  }
+
+  def containerProviderId(c: GestaltResourceInstance): UUID = {
+    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
+    UUID.fromString(pid)
+  }
+
+  def caasProvider(provider: UUID): GestaltResourceInstance = {
+    ResourceFactory.findById(provider) filter {
+      Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider) contains _.typeId
+    } getOrElse {
+      throw new ResourceNotFoundException(s"CaaS provider with ID '$provider' not found.")
+    }
+  }
+
+}
+
+class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
+                                       eventsClient: AmqpClient )
+  extends ContainerService with MetaControllerUtils {
+
+  import ContainerService._
 
   // TODO: gotta find a way to get rid of this weird method, only used by the MarathonController for its API
   @deprecated("this should be replaced by CaaSService::find()", "now")
@@ -325,17 +314,6 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     }
   }
 
-  private def badRequest(message: String) = {
-    new BadRequestException(message)
-  }
-
-  def caasProvider(provider: UUID): GestaltResourceInstance = {
-    // TODO: check that this is actually a CaaSProvider
-    ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
-    }
-  }
-  
   def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
     val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
       throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")

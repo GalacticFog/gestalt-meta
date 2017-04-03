@@ -634,6 +634,51 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were no(mockSkuber).delete(any,any)(meq(client.serviceKind))
     }
 
+    "scale appropriately using skuber PUT" in new FakeKube {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
+      )
+
+      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val testDepl = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
+        name = "test-container",
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      ))
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
+      mockSkuber.getOption(meq("test-container"))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(Some(testDepl))
+      mockSkuber.update(any)(any, meq(skuber.ext.deploymentKind)) returns Future.successful(
+        testDepl.withReplicas(4)
+      )
+
+      val Some(updatedContainerProps) = await(ks.scale(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer,
+        numInstances = 4
+      )).properties
+
+      there was one(mockSkuber).update(argThat(
+        (depl: skuber.ext.Deployment) => depl.spec.map(_.replicas).getOrElse(-1) must_== 4
+      ))(any,meq(skuber.ext.deploymentKind))
+
+      updatedContainerProps must havePair(
+        "num_instances" -> "4"
+      )
+    }
+
   }
 
 }
