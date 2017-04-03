@@ -535,7 +535,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     env.map { case (k,v) => EnvVar(k, EnvVar.StringValue(v)) }.toList
   }
 
-  def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+  private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
@@ -642,6 +642,24 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
+    for {
+      kube       <- skuberFactory.initializeKube(context.provider.id, context.environmentId.toString)
+      extantDepl <- kube.getOption[Deployment](container.name) flatMap {
+        case Some(depl) => Future.successful(depl)
+        case None => Future.failed(new RuntimeException(
+          s"could not locate associated Deployment in kubernetes provider for container ${container.id}"
+        ))
+      }
+      updatedDepl <- kube.update(extantDepl.withReplicas(numInstances))
+      updatedNumInstances = updatedDepl.spec.map(_.replicas).getOrElse(
+        throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
+      )
+    } yield upsertProperties(
+      container,
+      "num_instances" -> s"${updatedNumInstances}"
+    )
+  }
 }
 
 object CommandParser {

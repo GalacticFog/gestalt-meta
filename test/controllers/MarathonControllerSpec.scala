@@ -57,7 +57,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       mockMarathonClient = mock[MarathonClient]
       val cs = containerService
       cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
-      cs.caasProvider(testPID) returns testProvider
       cs.marathonClient(testProvider) returns mockMarathonClient
       t
     }

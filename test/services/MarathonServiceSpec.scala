@@ -53,6 +53,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         .disable[modules.MetaDefaultDCOS]
         .bindings(FakeDCOSModule(mockMCF))
         .injector
+
+    val ms = injector.instanceOf[MarathonService]
   }
 
   def inNamespace[R <: skuber.ObjectResource](name: String): Matcher[R] = { r: R =>
@@ -76,8 +78,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
   "MarathonService" should {
 
     "set labels for exposed port mappings and set service addresses (bridged networking)" in new FakeDCOS {
-      val ms = injector.instanceOf[MarathonService]
-
       // - one exposure has default container_port==service_port, the other overrides the service_port
       // - one port has a required host port
       val testProps = ContainerSpec(
@@ -291,8 +291,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
-      val ms = injector.instanceOf[MarathonService]
-
       // - one exposure has service_port, as required
       // - another exposure is missing service_port, so it won't work
       // - a third isn't exposed
@@ -473,8 +471,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "delete service on container delete using external_id" in new FakeDCOS {
-      val ms = injector.instanceOf[MarathonService]
-
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",
@@ -533,8 +529,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "delete service on container delete reconstructing external_id" in new FakeDCOS {
-      val ms = injector.instanceOf[MarathonService]
-
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",
@@ -581,6 +575,158 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       await(fDeleted)
 
       there were no(mockMarClient).deleteApplication(any)(any)
+    }
+
+    "scale appropriately using Marathon PUT" in new FakeDCOS {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default",
+          "external_id" -> "/some/marathon/app"
+        ))
+      )
+
+      mockMarClient.scaleApplication(any, any)(any) returns Future.successful(Json.parse(
+        """
+{
+    "acceptedResourceRoles": null,
+    "args": null,
+    "backoffFactor": 1.15,
+    "backoffSeconds": 1,
+    "cmd": null,
+    "constraints": [],
+    "container": {
+        "docker": {
+            "forcePullImage": false,
+            "image": "nginx",
+            "network": "BRIDGE",
+            "parameters": [],
+            "portMappings": [
+                {
+                    "containerPort": 80,
+                    "hostPort": 0,
+                    "labels": {
+                        "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+                    },
+                    "name": "http",
+                    "protocol": "tcp",
+                    "servicePort": 0
+                },
+                {
+                    "containerPort": 443,
+                    "hostPort": 0,
+                    "labels": {
+                        "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+                    },
+                    "name": "https",
+                    "protocol": "tcp",
+                    "servicePort": 8443
+                },
+                {
+                    "containerPort": 9999,
+                    "hostPort": 9999,
+                    "labels": {},
+                    "name": "debug",
+                    "protocol": "udp",
+                    "servicePort": 0
+                }
+            ],
+            "privileged": false
+        },
+        "type": "DOCKER",
+        "volumes": []
+    },
+    "cpus": 1,
+    "dependencies": [],
+    "deployments": [
+        {
+            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
+        }
+    ],
+    "disk": 0,
+    "env": {},
+    "executor": "",
+    "fetch": [],
+    "gpus": 0,
+    "healthChecks": [],
+    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
+    "instances": 4,
+    "ipAddress": null,
+    "labels": {},
+    "maxLaunchDelaySeconds": 3600,
+    "mem": 128,
+    "portDefinitions": [
+        {
+            "labels": {},
+            "name": "http",
+            "port": 0,
+            "protocol": "tcp"
+        },
+        {
+            "labels": {
+                "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+            },
+            "name": "https",
+            "port": 8443,
+            "protocol": "tcp"
+        },
+        {
+            "labels": {},
+            "name": "debug",
+            "port": 0,
+            "protocol": "udp"
+        }
+    ],
+    "ports": [
+        0,
+        8443,
+        0
+    ],
+    "readinessChecks": [],
+    "requirePorts": false,
+    "residency": null,
+    "secrets": {},
+    "storeUrls": [],
+    "taskKillGracePeriodSeconds": null,
+    "tasks": [],
+    "tasksHealthy": 0,
+    "tasksRunning": 0,
+    "tasksStaged": 0,
+    "tasksUnhealthy": 0,
+    "upgradeStrategy": {
+        "maximumOverCapacity": 1,
+        "minimumHealthCapacity": 1
+    },
+    "uris": [],
+    "user": null,
+    "version": "2017-03-27T17:07:03.684Z"
+}"""
+      ))
+
+      val Some(updatedContainerProps) = await(ms.scale(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer,
+        numInstances = 4
+      )).properties
+
+      there was one(mockMarClient).scaleApplication(
+        "/some/marathon/app",
+        4
+      )
+
+      updatedContainerProps must havePair(
+        "num_instances" -> "4"
+      )
     }
 
   }

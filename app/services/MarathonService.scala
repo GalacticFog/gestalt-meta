@@ -195,4 +195,25 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     )
   }
 
+  override def scale(context: ProviderContext, container: Instance, numInstances: Int): Future[Instance] = {
+    container.properties.flatMap(_.get("external_id")) match {
+      case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
+      case Some(external_id) =>
+        val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
+        val marClient = marathonClientFactory.getClient(provider)
+        marClient.scaleApplication(
+          appId = external_id,
+          numInstances
+        ) map { js =>
+          val numInstances = (js \ "instances").asOpt[Int].getOrElse(
+            throw new RuntimeException(s"updated application for container ${container.id} did not contain 'instances'")
+          ).toString
+          upsertProperties(
+            container,
+            "num_instances" -> numInstances
+          )
+        }
+    }
+  }
+
 }
