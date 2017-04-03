@@ -8,6 +8,7 @@ import scala.{Either, Left, Right}
 import scala.math.BigDecimal.int2bigDecimal
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
+import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.laser.Laser
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -63,11 +64,13 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
         ResourceIds.Org -> deleteExternalOrg,
         ResourceIds.User -> deleteExternalUser,
         ResourceIds.Group -> deleteExternalGroup,
-        ResourceIds.Container -> deleteExternalContainer
+        ResourceIds.Container -> deleteExternalContainer,
+        ResourceIds.Api -> deleteExternalApi,
+        ResourceIds.ApiEndpoint -> deleteExternalEndpoint
       /*
         ResourceIds.Lambda -> deleteExternalLambda,
-        ResourceIds.Api -> deleteExternalApi,
-        ResourceIds.ApiEndpoint -> deleteExternalEndpoint,
+        ,
+        ,
         ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway
         */
       ))
@@ -177,20 +180,65 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
     laser.deleteLambda(res.id) map ( _ => () )
   }
 
-  def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    laser.deleteApi(res.id) map ( _ => () )
+  import controllers.util.GatewayMethods
+  def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds): Try[Unit] = Try {
+    
+    val provider = (for {
+      ps  <- res.properties
+      pr  <- ps.get("provider")
+      pid <- Js.find(Json.parse(pr).as[JsObject], "/id")
+      prv <- findById(ResourceIds.GatewayManager, UUID.fromString(pid.as[String]))
+    } yield prv) getOrElse {
+      
+      throw new RuntimeException("Could not parse GatewayManager ID from API.")
+    }
+
+    val client = GatewayMethods.configureWebClient(provider)
+    val fdelete = client.delete(s"/apis/${res.id.toString}") map { result =>
+      log.info("Deleting API from GatewayManager...")
+      val response = client.unwrapResponse(result, Seq(200))
+      log.debug("Response from GatewayManager: " + response.output)
+    } recover {
+      case e: Throwable => {
+        log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
+        throw e
+      }
+    }
+    ()
+    //laser.deleteApi(res.id) map ( _ => () )
+  }
+  
+  def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
+
+    val api = ResourceFactory.findParent(res.id) getOrElse {
+      throw new ResourceNotFoundException(s"Could not find parent API for endpoint: '${res.id}'")
+    }
+
+    val client = (for {
+      provider <- GatewayMethods.findGatewayProvider(api)
+      client = GatewayMethods.configureWebClient(provider)
+    } yield client) getOrElse {
+      throw new RuntimeException("Could not parse GatewayManager ID from API.")
+    }
+    
+    val uri = s"/apis/${api.id.toString}/endpoints/${res.id.toString}"
+    val fdelete = client.delete(uri) map { result =>
+      log.info("Deleting Endpoint from GatewayManager...")
+      val response = client.unwrapResponse(result, Seq(200))
+      log.debug("Response from GatewayManager: " + response.output)
+    } recover {
+      case e: Throwable => {
+        log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)
+        throw e
+      }
+    }
+    ()
   }
   
   def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     val externalId = res.properties.get("external_id")
     laser.deleteGateway(externalId) map ( _ => () )
   }
-  
-  def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    val api = UUID.fromString(res.properties.get("api"))
-    laser.deleteEndpoint(api, res.id) map ( _ => () )
-  }
-  
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
