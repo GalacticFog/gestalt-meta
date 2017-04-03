@@ -64,6 +64,7 @@ object LambdaMethods {
       }  
     }    
     
+    log.debug("Finding lambda in backend system...")
     // Get lambda from gestalt-lambda
     val lambda = laser.lambdas(r.id) getOrElse {
       throw new RuntimeException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
@@ -74,7 +75,7 @@ object LambdaMethods {
       val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
       (fieldName -> o.value)
     }
-    
+    log.debug("Lambda found. Performing PATCH...")
     // Update the Lambda DAO (in-memory), then in gestalt-lambda   
     val updatedLambda = replace(ops, lambda)
     laser.updateLambda(updatedLambda) match {

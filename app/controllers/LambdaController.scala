@@ -88,13 +88,7 @@ class LambdaController @Inject()(
             request.body.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
         
         val ps = getProviderInfo(newjson)
-        /*
-         * TODO: This function needs a lot of help - currently lambdas will be created in laser
-         * but creating the API will fail if the request is bad (say the location name is bad).
-         * I can either verify location-names first, or is there any reason not to create the
-         * APIs first?
-         */
-        
+
         val resource = 
           createResourceInstance(org, newjson, Some(ResourceIds.Lambda), Some(parent.id))
         

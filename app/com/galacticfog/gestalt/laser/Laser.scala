@@ -133,7 +133,10 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
       (implicit fmt: Format[T]): Option[T] = {
     
     apiResponse(client.get(resource), expected = expected) match {
-      case Failure(err) => throw err
+      case Failure(err) => {
+        log.error(err.getMessage)
+        throw err
+      }
       case Success(res) => res.output match {
         case Some(out) => out.validate[T] match {
           case s: JsSuccess[T] => Some(s.get)
@@ -164,6 +167,7 @@ class Laser(gatewayConfig: HostConfig, lambdaConfig: HostConfig, key: Option[Str
   }
   
   def updateLambda(lambda: LaserLambda): Try[ApiResponse] = {
+    log.debug("Entered Laser.updateLambda()")
     val id = lambda.id getOrElse {
       throw new RuntimeException("Cannot update Lambda without ID. found: " + lambda)
     }
