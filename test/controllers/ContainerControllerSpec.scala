@@ -69,8 +69,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
     val mockDCOSService = mock[MarathonService]
 
     containerService.findWorkspaceEnvironment(testEnv.id) returns Try((testWork, testEnv))
-    containerService.caasProvider(testDCOSProvider.id) returns testDCOSProvider
-    containerService.caasProvider(testKubeProvider.id) returns testKubeProvider
     containerService.marathonClient(testDCOSProvider) returns mockMarathonClient
     providerManager.getProviderImpl(ResourceIds.KubeProvider) returns Success(mockKubeService)
     providerManager.getProviderImpl(ResourceIds.DcosProvider) returns Success(mockDCOSService)
@@ -443,6 +441,12 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         )),
         container = any
       )(any)
+
+      ResourceFactory.findParent(newResource.id) must beSome(
+        (r: GestaltResourceInstance) => r.typeId == ResourceIds.Environment && r.id == testEnv.id
+      )
+
+
     }
 
     "create containers using the ContainerService interface with specific ID" in new TestApplication {
@@ -634,6 +638,76 @@ class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMock
         )
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.DcosProvider)
+    }
+
+    "scale containers using the ContainerService and CaaSService interfaces" in new TestApplication {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testKubeProvider.id),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val extId = s"/${testEnv.id}/test-container"
+      val createdResource = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testKubeProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "disk" -> testProps.disk.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> s"${extId}"
+        ))
+      ).get
+
+      mockKubeService.scale(
+        any, any, any
+      ) returns Future(createdResource.copy(
+        properties = Some(createdResource.properties.get ++ Map("num_instances" -> "4"))
+      ))
+
+      val request = fakeAuthRequest(POST,
+        s"/root/environments/${testEnv.id}/containers/${createdResource.id}/scale?numInstances=4", testCreds
+      )
+
+      val Some(result) = route(request)
+
+      status(result) must equalTo(ACCEPTED)
+
+      there was one(mockKubeService).scale(
+        context = argThat(matchesProviderContext(
+          provider = testKubeProvider,
+          workspace = testWork,
+          environment = testEnv
+        )),
+        container = argThat(
+          (r: GestaltResourceInstance) => r.id == createdResource.id
+        ),
+        numInstances = meq(4)
+      )
+      there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
     }
 
   }

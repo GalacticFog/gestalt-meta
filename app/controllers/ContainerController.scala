@@ -137,52 +137,36 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] =
     Future.fromTry(ResourceFactory.update(container, identity))
 
-  def scaleContainer(fqon: String, environment: UUID, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
-    log.debug("Looking up workspace and environment for container...")
+  def scaleContainer(fqon: String, unused: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+    ResourceFactory.findById(ResourceIds.Container, id).fold {
+      Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
+    }{ c =>
+      val environment = ResourceFactory.findParent(
+        parentType = ResourceIds.Environment,
+        childId = c.id
+      ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${c.id}")}
 
-    val org = fqid(fqon)
+      val operations = ContainerService.containerRequestOperations("container.scale")
+      val options    = ContainerService.containerRequestOptions(
+        user = request.identity,
+        environment = environment.id,
+        container = c,
+        data = Option(Map("scaleTo" -> numInstances.toString))
+      )
 
-    containerService.findWorkspaceEnvironment(environment) match {
-      case Failure(e) => Future.successful(HandleExceptions(e))
-      case Success((wrk, env)) => {
-        
-        ResourceFactory.findById(ResourceIds.Container, id).fold {
-          Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
-        }{ c =>
-          
-            val operations = containerService.containerRequestOperations("container.scale")
-            val options    = containerService.containerRequestOptions(request.identity, environment, c,
-                              data = Option(Map("scaleTo" -> numInstances.toString)))
-            
-            val props     = c.properties.get ++ Map("num_instances" -> numInstances.toString)
-            val container = c.copy(properties = Option(props))
-            
-            Future {
-              
-              SafeRequest (operations, options) Protect { maybeState => 
-                log.debug(s"Scaling Marathon App to $numInstances instances...")
-                
-                // TODO: Check for failure!!!
-                // TODO: this needs to be converted to code against a generic CaaSService, not just marathon
-                val marathonJson = scaleMarathonAppSync(c, numInstances)
-                
-                ResourceFactory.update(c.copy(
-                  properties = transformScaleProps(c.properties, numInstances)),
-                  identity = request.identity.account.id) match {
-                  case Failure(error) => HandleExceptions(error)
-                  case Success(updatedContainer) => Accepted(RenderSingle(updatedContainer)) 
-                }
-              }
-            }
-          }
-        
-        }
+      SafeRequest (operations, options) ProtectAsync { (_:Option[UUID]) =>
+        log.debug(s"scaling container ${c.id} to $numInstances instances...")
+        val context = ProviderContext(request.copy(
+          uri = request.uri.replaceFirst("/scale.*$","")
+        ), parseProvider(c), Some(c))
+        val scaled = for {
+          service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
+          updated <- service.scale(context, c, numInstances)
+          updatedResource <- updateContainer(updated, request.identity.account.id)
+        } yield Accepted(RenderSingle(updatedResource))
+        scaled recover { case e => HandleExceptions(e) }
       }
-  }
-
-  def transformScaleProps(props: Option[Map[String,String]], numInstances: Int): Option[Map[String,String]] = {
-    val scaleProps = Seq("num_instances" -> numInstances.toString, "status" -> "SCALING")
-    props map { _ ++ scaleProps } orElse Option(Map(scaleProps:_*))
+    }
   }
 
   def findMigrationRule(start: UUID) = {
@@ -196,7 +180,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     } else {
       val user = request.identity
       val container = getMigrationContainer(envId, id)
-      val (operations, options) = containerService.setupMigrateRequest(
+      val (operations, options) = ContainerService.setupMigrateRequest(
           fqon, envId, container, user, META_URL.get, request.queryString)
       
       SafeRequest (operations, options) Protect { maybeState =>    
@@ -237,17 +221,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     val defaults = containerWithDefaults(inputJson)
     val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
     (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
-  }
-
-  protected [controllers] def scaleMarathonAppSync(container: GestaltResourceInstance, numInstances: Int) /*: Future[JsValue]*/ = {
-    val provider = containerService.caasProvider(containerService.containerProviderId(container))
-    container.properties.flatMap(_.get("external_id")).fold {
-      throw new RuntimeException("container.properties.external_id not found.")
-    }{ id =>
-      Await.result(
-          containerService.marathonClient(provider).scaleApplication(id, numInstances),
-          5 seconds)
-    }
   }
 
   private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."

@@ -4,14 +4,13 @@ package services
 import java.util.UUID
 
 import scala.language.postfixOps
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.errors._
-import play.api.mvc.Request
+import play.api.mvc.{Request, RequestHeader}
 import play.api.Logger
 
 
@@ -25,7 +24,7 @@ import play.api.Logger
  * - Change 'workspace' to 'environmentParent' - because that's what we really need.
  */
 case class ProviderContext(
-    request: Request[_],
+    request: RequestHeader,
     providerId: UUID,
     target: Option[GestaltResourceInstance]) extends GestaltProviderService{
   

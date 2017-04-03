@@ -71,7 +71,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info
    */
   def getInfo(fqon: String, environment: UUID, provider: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.marathonClient(containerService.caasProvider(provider)).getInfo.map { Ok( _ ) } recover {
+    containerService.marathonClient(ContainerService.caasProvider(provider)).getInfo.map { Ok( _ ) } recover {
       case e: Throwable => HandleExceptions(e)
     }
   }
@@ -144,7 +144,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
     containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
       case Success((wrk,env)) => {
-        val provider = containerService.caasProvider(providerId)
+        val provider = ContainerService.caasProvider(providerId)
         for {
           body <- Future.fromTry {
             request.body.asJson.fold[Try[JsValue]](Failure(BadRequestException("requires json body")))(Success(_))
