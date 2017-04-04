@@ -24,6 +24,8 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
+import services.{FakeURI, ProviderContext}
+
 @Singleton
 class MarathonAPIController @Inject()( messagesApi: MessagesApi,
                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
@@ -139,7 +141,6 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
   /**
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
-  // TODO: needs to be converted to CaaSProvider layer
   def createApp(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     containerService.findWorkspaceEnvironment(environment) match {
       case Failure(e) => throw e
@@ -159,15 +160,15 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
               case Some(name) => Success((name,cspec))
             }
           })
-          (metaContainer,instances) <- containerService.launchContainer(
-            fqon = fqon,
-            workspace = wrk,
-            environment = env,
+          metaContainer <- containerService.createContainer(
+            context = ProviderContext(FakeURI(s"/${fqon}/environments/${environment}/containers"), providerId, None),
             user = request.identity,
-            containerSpec = props)
+            containerSpec = props,
+            userRequestedId = None
+          )
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
             spec = ContainerSpec.fromResourceInstance(metaContainer).get,
-            instances = Some(instances),
+            instances = None,
             deploymentIDs = None
           ))
         } yield Created(Json.toJson(marv2Container))

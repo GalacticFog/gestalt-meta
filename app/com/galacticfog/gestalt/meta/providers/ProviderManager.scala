@@ -213,7 +213,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     
     val uri = s"/${fqon}/providers/${pm.id}/environments/${environment.id}"
     
-    val req = new FakeRequest(uri)
+    val req = new FakeURI(uri)
     val account = getUserAccount(pm)
 
     val transform = CaasTransform(pm.org, account, payload)

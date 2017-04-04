@@ -6,14 +6,12 @@ import scala.concurrent.ExecutionContext
 import scala.concurrent.Future
 import scala.util.Success
 import scala.util.Try
-
 import org.joda.time.DateTimeZone
-import org.mockito.Matchers.{ eq => meq }
+import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.AsResult
 import org.specs2.execute.Result
 import org.specs2.matcher.JsonMatchers
 import org.specs2.specification.BeforeAll
-
 import com.galacticfog.gestalt.data.Instance
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
@@ -22,7 +20,6 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
 import controllers.util.GestaltSecurityMocking
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
@@ -30,6 +27,7 @@ import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
+import services.ProviderContext
 
 class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
@@ -55,7 +53,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
       testEnv = tE
       testProvider = createMarathonProvider(testEID, "test-provider").get
       mockMarathonClient = mock[MarathonClient]
-      val cs = containerService
+      val cs = mockContainerService
       cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
       cs.marathonClient(testProvider) returns mockMarathonClient
       t
@@ -217,7 +215,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |}
         """.stripMargin
       )
-      containerService.listEnvironmentContainers(
+      mockContainerService.listEnvironmentContainers(
         meq("root"),
         meq(testEnv.id)
       ) returns Future(Seq(testContainer -> Seq.empty))
@@ -229,7 +227,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     }
 
     "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
-      containerService.findEnvironmentContainerByName(
+      mockContainerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testEnv.id),
         meq("nonexistent")
@@ -245,7 +243,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
     }
 
     "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
-      containerService.findEnvironmentContainerByName(
+      mockContainerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testEnv.id),
         meq("nonexistent")
@@ -380,7 +378,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
            |}
         """.stripMargin
       )
-      containerService.findEnvironmentContainerByName(
+      mockContainerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testEnv.id),
         meq("test-container")
@@ -431,12 +429,12 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           "network" -> testProps.network.get
         ))
       ).get
-      containerService.findEnvironmentContainerByName(
+      mockContainerService.findEnvironmentContainerByName(
         meq("root"),
         meq(testEnv.id),
         meq("test-container")
       ) returns Future(Some(testContainer -> Seq.empty))
-      containerService.deleteContainer(
+      mockContainerService.deleteContainer(
         any[GestaltResourceInstance]
       ) returns Future(())
 
@@ -586,20 +584,22 @@ class MarathonControllerSpec extends PlaySpecification with GestaltSecurityMocki
           |}
         """.stripMargin
       )
-      containerService.launchContainer(
-        meq("root"),
-        meq(testWork),
-        meq(testEnv),
-        any[AuthAccountWithCreds],
-        meq(testProps),
-        any[Option[UUID]]
-      ) returns Future(createdContainer -> Seq.empty)
+      mockContainerService.createContainer(
+        any, any, meq(testProps), any
+      ) returns Future(createdContainer)
 
       val request = fakeAuthRequest(POST, 
         s"/root/environments/${testEID}/providers/${testPID}/v2/apps", testCreds).withBody(requestBody)
       val Some(result) = route(request)
       status(result) must equalTo(CREATED)
       jsResponse must equalTo(contentAsJson(result))
+
+      there was one(mockContainerService).createContainer(
+        context = argThat( (cp: ProviderContext) => cp.environmentId == testEID && cp.workspace.id == testWork.id && cp.providerId == testProvider.id),
+        user = argThat( (id: AuthAccountWithCreds) => id.account.id == testAuthResponse.account.id),
+        containerSpec = any,
+        userRequestedId = any
+      )
     }
 
   }

@@ -21,7 +21,7 @@ import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.google.inject.Inject
-import services.{FakeRequest, ProviderContext}
+import services.{FakeURI, ProviderContext}
 
 import scala.language.postfixOps
 
@@ -35,13 +35,10 @@ trait ContainerService extends JsonInput {
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
-  def launchContainer(fqon: String,
-                      workspace: GestaltResourceInstance,
-                      environment: GestaltResourceInstance,
+  def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
-                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])]
-
+                      userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
 
   def marathonClient(provider: GestaltResourceInstance): MarathonClient
 
@@ -159,8 +156,7 @@ object ContainerService {
 
 }
 
-class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
-                                       eventsClient: AmqpClient )
+class ContainerServiceImpl @Inject() ( providerManager: ProviderManager )
   extends ContainerService with MetaControllerUtils {
 
   import ContainerService._
@@ -182,7 +178,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
       metaContainerSpec <- maybeContainerSpec
       provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
       saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
+      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
       stats = saasProvider.find(ctx, metaContainerSpec._1)
     } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
 
@@ -207,7 +203,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
       metaContainerSpec <- maybeContainerSpec
       provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
       saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
+      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
       stats = saasProvider.find(ctx, metaContainerSpec._1)
     } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
 
@@ -242,7 +238,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
 
     val fStatsFromAllRelevantProviders: Future[Map[UUID, Map[String, ContainerStats]]] = Future.traverse(containerSpecsByProvider.keys) { pid =>
       val cp = caasProvider(pid)
-      val ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
+      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
       val pidAndStats = for {
         caasP <- Future.fromTry(providerManager.getProviderImpl(cp.typeId))
         stats <- caasP.listInEnvironment(ctx)
@@ -336,72 +332,37 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     } yield pid
   }
 
-  // TODO: this is only used by MarathonController, and should be deleted as soon as that controller switches to the CaaSProvider interface
-  @deprecated("this should be replaced by CaaSService::create()", "now")
-  def launchContainer(fqon: String,
-                      workspace: GestaltResourceInstance,
-                      environment: GestaltResourceInstance,
+  def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
-                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
+                      userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance] = {
 
-    def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): (GestaltResourceInstance, Seq[ContainerInstance]) = {
-      val marathonAppId = (marathonResponse \ "id").as[String]
-      val updatedResource = upsertProperties(resource,
-        "external_id" -> marathonAppId,
-        "status" -> "LAUNCHED"
-      )
-      ResourceFactory.update(updatedResource, user.account.id).get -> Seq.empty
-    }
-
-    def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
-      val updatedResource = upsertProperties(resource,
-        "status" -> "LAUNCH_FAILED"
-      )
-      ResourceFactory.update(updatedResource, user.account.id).get -> Seq.empty
-      log.error("launch failed", t)
-      new BadRequestException(s"launch failed: ${t.getMessage}")
-    }
-
-    val orgId = orgFqon(fqon)
-      .map(_.id)
-      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-
-    val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
-    // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val origContainerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
-    // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
+    val input = ContainerSpec.toResourcePrototype(containerSpec).copy( id = userRequestedId )
+    val proto = withInputDefaults(context.workspace.orgId, input, user, None)
     val operations = containerRequestOperations("container.create")
-    val options = containerRequestOptions(user, environment.id, origContainerResourcePre)
+    val options    = containerRequestOptions(user, context.environmentId, proto)
 
-    SafeRequest (operations, options) ProtectAsync { maybeState =>
-      // TODO: we need an entitlement check before allowing the user to use this provider
+    SafeRequest (operations, options) ProtectAsync { _ =>
+
+      // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
       val provider = caasProvider(containerSpec.provider.id)
-      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
+      val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
         "name" -> provider.name,
         "id" -> provider.id
       ).toString)
-      ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(environment.id)) match {
-        case Failure(t) => Future.failed(t)
-        case Success(resource) =>
-          val marathonApp = toMarathonLaunchPayload(
-            fqon = fqon,
-            workspaceName = workspace.name,
-            environmentName = environment.name,
-            name = containerResourcePre.name,
-            props = containerSpec,
-            provider = provider
-          )
-          val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
-          marathonClient(provider).launchApp(
-            fqon = fqon,
-            wrkName = workspace.name,
-            envName = environment.name,
-            name = containerSpec.name,
-            marPayload = marathonAppCreatePayload
-          ).transform( updateSuccessfulLaunch(resource), updateFailedLaunch(resource) )
 
-      }
+      for {
+        metaResource <- Future.fromTry{
+          log.debug("Creating container resource in Meta")
+          ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+        }
+        _ = log.info("Meta container created: " + metaResource.id)
+        _ = log.debug("Retrieving CaaSService from ProviderManager")
+        service      <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
+        _ = log.info("Creating container in backend CaaS...")
+        updated   <- service.create(context, metaResource)
+        container <- Future.fromTry(ResourceFactory.update(updated, user.account.id))
+      } yield container
     }
   }
 
