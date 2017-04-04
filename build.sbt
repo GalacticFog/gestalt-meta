@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.6.6"
+version := "0.6.8"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -36,7 +36,7 @@ lazy val root = (project in file(".")).
     buildInfoKeys := Seq[BuildInfoKey](
       name, version, scalaVersion, sbtVersion,
       "builtBy" -> System.getProperty("user.name"),
-      "gitHash" -> new java.lang.Object(){
+      "gitHash" -> new java.lang.Object() {
               override def toString(): String = {
                       try { 
                     val extracted = new java.io.InputStreamReader(
@@ -70,9 +70,8 @@ scalacOptions ++= Seq(
   
   //"-Xlint" 		// Enable recommended additional warnings.
 
-
 libraryDependencies ++= Seq(
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.9" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.10" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.4" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",

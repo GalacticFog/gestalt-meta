@@ -13,7 +13,7 @@ import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.meta.api.errors._
 
-case class LinkedProvider(name: String, id: UUID, location: Option[String])
+case class LinkedProvider(name: String, id: UUID, location: Option[String], `type`: Option[UUID] = None)
 
 object LinkedProvider {
   lazy implicit val linkedProviderFormat = Json.format[LinkedProvider]  
