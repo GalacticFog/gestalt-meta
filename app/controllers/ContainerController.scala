@@ -151,8 +151,9 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
         ResourceFactory.update(
             ContainerService.upsertProperties(container, "status" -> "MIGRATING"),
             user.account.id) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+            case Failure(e) => HandleExceptions(e)
+            case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+          }}
         }
       }
     }
