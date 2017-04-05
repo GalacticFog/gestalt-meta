@@ -113,23 +113,13 @@ trait JsonInput {
   /**
    * Convert raw JSON to a GestaltResourceInput
    */
-  def jsonToInput(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
+  def jsonToInput(org: UUID, creator: AuthAccountWithCreds, json: JsValue): Instance = {
     withInputDefaults(
       org     = org, 
       input   = safeGetInputJson(json).get,
       creator = creator,
       typeId  = None)
   }
-  
- /**
-  * Inspect a GestaltResourceInput, supplying default values where possible.
-  */
-//  def withInputDefaults(org: UUID, input: GestaltResourceInput, creator: AuthAccountWithCreds): Instance = {
-//    inputToInstance(org, input.copy(
-//        id             = input.id orElse Option(UUID.randomUUID()), 
-//        owner          = input.owner orElse Option(ownerFromAccount(creator)), 
-//        resource_state = input.resource_state orElse Option(ResourceStates.Active)))    
-//  }
   
  /**
   * Inspect a GestaltResourceInput, supplying default values where possible. Asserts validity

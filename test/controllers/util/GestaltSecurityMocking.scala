@@ -33,16 +33,12 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.FakeRequest
 import play.api.test.PlaySpecification
 
-
 trait GestaltSecurityMocking extends PlaySpecification with Mockito with ResourceScope {
 
   lazy val testAuthResponse = dummyAuthResponseWithCreds()
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
-  lazy val containerService = mock[ContainerService]//.verbose
-  lazy val providerManager = mock[ProviderManager]
-  lazy val secureController = mock[SecureController]
 
-  lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)  
+  lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
 
   val account2auth = dummyAuthResponseWithCreds()
   val account2creds = account2auth.creds
@@ -75,7 +71,7 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   }
 
   def dummyAuthResponseWithCreds(
-      groups: Seq[SecurityLink] = Seq(), 
+      groups: Seq[SecurityLink] = Seq(),
       orgId: UUID = uuid(),
       creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds = {
     val directory = GestaltDirectory(uuid(), "test-directory", None, uuid())
@@ -100,51 +96,15 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
       auth: GestaltAuthResponseWithCreds = testAuthResponse,
       config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
       client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
-    
+
     FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
       identities = Seq(auth.creds -> auth),
       config = config,
       client = client)
   }
-  
+
   def fakeAuthRequest(method: String, path: String, creds: GestaltAPICredentials) =
-    FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)  
-
-  /**
-   * Get a Play Application configured with Guice. All Meta and Security modules are
-   * disabled by default and the GestaltSecurityEnvironment is bound to a fake.
-   */
-  def application(
-      disabled: Seq[Class[_]] = Seq.empty, 
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
-    
-    val defaultDisabled = Seq(
-      classOf[GestaltFrameworkSecurityConfigModule],
-      classOf[GestaltDelegatedSecurityConfigModule],
-      classOf[GestaltSecurityModule],
-      classOf[ProdSecurityModule],
-      classOf[MetaDefaultServices])
-      
-    val sc: GuiceableModule = bind(classOf[SecureController]).toInstance(secureController)
-    
-    new GuiceApplicationBuilder()
-      .disable((disabled ++ defaultDisabled): _*)
-      .bindings(FakeGestaltSecurityModule(fakeSecurityEnvironment()))
-      .bindings((sc +: additionalBindings): _*)
-      .build
-  }
-
-  /**
-   * Return a Play Application with ContainerService bound to a mock[ContainerService]
-   */
-  def containerApp(
-      disabled: Seq[Class[_]] = Seq.empty,
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
-    application(additionalBindings = Seq(
-      bind(classOf[ContainerService]).toInstance(containerService),
-      bind(classOf[ProviderManager]).toInstance(providerManager)
-    ))
-  }
+    FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
 
   private[this] def uuid() = UUID.randomUUID()  
 

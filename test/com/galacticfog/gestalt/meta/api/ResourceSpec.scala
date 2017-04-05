@@ -12,7 +12,7 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import controllers.ResourceController
-import controllers.util.GestaltSecurityMocking
+import controllers.util.GestaltProviderMocking
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -23,7 +23,7 @@ import play.api.test.FakeRequest
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
 
-class ResourceSpec extends PlaySpecification with ResourceScope with GestaltSecurityMocking with BeforeAll {
+class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProviderMocking with BeforeAll {
 
   stopOnFail
   sequential
