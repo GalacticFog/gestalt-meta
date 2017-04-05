@@ -14,21 +14,21 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.google.inject.Inject
+import controllers.DeleteController
+import play.api.mvc.RequestHeader
 import services.{FakeURI, ProviderContext}
 
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
 
-  def deleteContainer(container: GestaltResourceInstance): Future[Unit]
-
-  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
+  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
@@ -38,8 +38,6 @@ trait ContainerService extends JsonInput {
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
                       userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
-
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient
 
   def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)]
 
@@ -155,38 +153,10 @@ object ContainerService {
 
 }
 
-class ContainerServiceImpl @Inject() ( providerManager: ProviderManager )
+class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteController: DeleteController )
   extends ContainerService with MetaControllerUtils {
 
   import ContainerService._
-
-  // TODO: gotta find a way to get rid of this weird method, only used by the MarathonController for its API
-  @deprecated("this should be replaced by CaaSService::find()", "now")
-  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
-    log.debug("***Finding container by name...")
-    // Find container resource in Meta, convert to ContainerSpec
-    log.debug(s"***ENVIRONMENT: $environment, name: $containerName")
-    val maybeContainerSpec = for {
-      // this is not well-defined if there are multiple containers in the environment with the same name
-      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find {_.name == containerName}
-      s <- ContainerSpec.fromResourceInstance(r).toOption
-    } yield (r -> s)
-
-    log.debug("***Getting stats...")
-    val fMaybeUpdate = (for {
-      metaContainerSpec <- maybeContainerSpec
-      provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
-      saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
-      stats = saasProvider.find(ctx, metaContainerSpec._1)
-    } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
-
-    fMaybeUpdate map {
-      maybeUpdate => maybeContainerSpec map {
-        case (containerResource,containerSpec) => updateMetaContainerWithStats(containerResource, maybeUpdate) -> Seq.empty
-      }
-    }
-  }
 
   override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
     log.debug("***Finding container by id...")
@@ -369,34 +339,9 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager )
     }
   }
 
-  // TODO: this is only used by MarathonController, and should be deleted as soon as that controller switches to the CaaSService interface
-  @deprecated("this should be replaced by CaaSService::destroyContainer()", "now")
-  def deleteContainer(container: GestaltResourceInstance): Future[Unit] = {
-    val providerId = Json.parse(container.properties.get("provider")) \ "id"
-    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
-      throw new RuntimeException("Could not find Provider : " + providerId)
-    }
-    // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
-    val maybeExternalId = for {
-      props <- container.properties
-      eid <- props.get("external_id")
-    } yield eid
-
-    maybeExternalId match {
-      case Some(eid) => marathonClient(provider).deleteApplication(eid) map { js =>
-        log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
-      }
-      case None =>
-        log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
-        Future.successful(())
-    }
-  }
-
-  @deprecated("this should be replaced by generic CaaSService usage", "now")
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
-    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
-    log.debug("Marathon URL: " + providerUrl)
-    MarathonClient(WS.client, providerUrl)
+  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
+    // just a convenient interface for testing... we'll let DeleteController do this for us
+    deleteController.deleteResource(container, identity)(request)
   }
 
 }

@@ -227,13 +227,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
     }
 
     "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
-      mockContainerService.findEnvironmentContainerByName(
-        meq("root"),
-        meq(testEnv.id),
-        meq("nonexistent")
-      ) returns Future(None)
-
-      val request = fakeAuthRequest(GET, 
+      val request = fakeAuthRequest(GET,
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(NOT_FOUND)
@@ -243,13 +237,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
     }
 
     "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
-      mockContainerService.findEnvironmentContainerByName(
-        meq("root"),
-        meq(testEnv.id),
-        meq("nonexistent")
-      ) returns Future(None)
-
-      val request = fakeAuthRequest(DELETE, 
+      val request = fakeAuthRequest(DELETE,
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(NOT_FOUND)
@@ -378,11 +366,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
            |}
         """.stripMargin
       )
-      mockContainerService.findEnvironmentContainerByName(
-        meq("root"),
-        meq(testEnv.id),
-        meq("test-container")
-      ) returns Future(Some(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, 
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container", testCreds)
@@ -429,11 +412,6 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
           "network" -> testProps.network.get
         ))
       ).get
-      mockContainerService.findEnvironmentContainerByName(
-        meq("root"),
-        meq(testEnv.id),
-        meq("test-container")
-      ) returns Future(Some(testContainer -> Seq.empty))
       mockContainerService.deleteContainer(
         any[GestaltResourceInstance]
       ) returns Future(())
