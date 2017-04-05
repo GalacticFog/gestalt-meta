@@ -12,6 +12,7 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
+import services.{MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
 
@@ -37,7 +38,11 @@ class MetaControllerSpec extends PlaySpecification with GestaltProviderMocking w
 
   abstract class TestApplication extends WithApplication(
     application(
-      additionalBindings = Seq(new modules.MetaDefaultDCOS, new modules.MetaDefaultSkuber, new modules.MetaDefaultServices, bind(classOf[ContainerService]).toInstance(mock[ContainerService]))
+      additionalBindings = Seq(
+        bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
+        bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+        bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
+      )
     )
   )
 

@@ -11,11 +11,12 @@ import com.galacticfog.gestalt.security.play.silhouette.modules.{GestaltDelegate
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import modules.{MetaDefaultDCOS, MetaDefaultServices, MetaDefaultSkuber, ProdSecurityModule}
 import org.specs2.mock.Mockito
-import play.api.inject.bind
+import play.api.inject._
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.{FakeRequest, PlaySpecification}
+import services.{MarathonClientFactory, SkuberFactory}
 
 trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocking with Mockito with ResourceScope {
 
@@ -40,24 +41,26 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       classOf[ProdSecurityModule],
       classOf[MetaDefaultServices])
 
-    val sc: GuiceableModule = bind(classOf[SecureController]).toInstance(mockSecureController)
+    val sc: Seq[GuiceableModule] = Seq(
+      FakeGestaltSecurityModule(fakeSecurityEnvironment()),
+      bind(classOf[SecureController]).toInstance(mockSecureController)
+    )
 
     new GuiceApplicationBuilder()
       .disable((disabled ++ defaultDisabled): _*)
-      .bindings(FakeGestaltSecurityModule(fakeSecurityEnvironment()))
-      .bindings((sc +: additionalBindings): _*)
+      .bindings((sc ++ additionalBindings): _*)
       .build
   }
 
   /**
    * Return a Play Application with ContainerService bound to a mock[ContainerService]
    */
-  def containerApp(
-      disabled: Seq[Class[_]] = Seq.empty,
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
+  def containerApp(): play.api.Application = {
     application(additionalBindings = Seq(
       bind(classOf[ContainerService]).toInstance(mockContainerService),
-      bind(classOf[ProviderManager]).toInstance(mockProviderManager)
+      bind(classOf[ProviderManager]).toInstance(mockProviderManager),
+      bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+      bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
     ))
   }
 

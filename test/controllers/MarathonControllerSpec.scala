@@ -82,9 +82,9 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
   "MarathonAPIController" should {
 
     "support Marathon GET /v2/info" in new TestMarathonController {
+      val js = Json.obj()
       mockMCF.getClient(testProvider) returns mockMarathonClient
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
-      val js = Json.obj()
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info", testCreds)
       val Some(result) = route(request)
@@ -381,6 +381,9 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
            |}
         """.stripMargin
       )
+      mockContainerService.getEnvironmentContainer(
+        any, any, any
+      ) returns Future.successful(Some(testContainer -> Seq.empty))
 
       val request = fakeAuthRequest(GET, 
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/test-container", testCreds)

@@ -25,7 +25,6 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import services.{FakeURI, MarathonClientFactory, ProviderContext}
 
@@ -78,6 +77,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
 
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/apps
+   * TODO: this is not protected by policy
    */
   def listApps(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
     for {
