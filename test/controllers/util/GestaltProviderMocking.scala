@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, G
 import com.galacticfog.gestalt.security.play.silhouette.fakes.{FakeGestaltFrameworkSecurityEnvironment, FakeGestaltSecurityModule}
 import com.galacticfog.gestalt.security.play.silhouette.modules.{GestaltDelegatedSecurityConfigModule, GestaltFrameworkSecurityConfigModule, GestaltSecurityModule}
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import modules.{MetaDefaultServices, ProdSecurityModule}
+import modules.{MetaDefaultDCOS, MetaDefaultServices, MetaDefaultSkuber, ProdSecurityModule}
 import org.specs2.mock.Mockito
 import play.api.inject.bind
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
@@ -35,6 +35,8 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       classOf[GestaltFrameworkSecurityConfigModule],
       classOf[GestaltDelegatedSecurityConfigModule],
       classOf[GestaltSecurityModule],
+      classOf[MetaDefaultDCOS],
+      classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
       classOf[MetaDefaultServices])
 

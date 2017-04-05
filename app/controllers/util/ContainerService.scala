@@ -39,8 +39,6 @@ trait ContainerService extends JsonInput {
                       containerSpec: ContainerSpec,
                       userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
 
-  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)]
-
 }
 
 object ContainerService {
@@ -277,28 +275,6 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
         }
         updatedMetaCon
     }
-  }
-
-  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
-    val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
-      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")
-    }
-    val c = ResourceFactory.findById(ResourceIds.Environment, environmentId) getOrElse {
-      throw new ResourceNotFoundException(s"Environment with ID '$environmentId' not found.")
-    }
-    (p -> c)
-  }
-
-  /**
-    * Parse and format the provider.id property from a container.properties map.
-    */
-  private def providerId(r: GestaltResourceInstance): Option[UUID] = {
-    for {
-      props <- r.properties
-      providerStr <- props.get("provider")
-      provider <- Try(Json.parse(providerStr)).toOption
-      pid <- (provider \ "id").asOpt[UUID]
-    } yield pid
   }
 
   def createContainer(context: ProviderContext,

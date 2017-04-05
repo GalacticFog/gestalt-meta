@@ -18,55 +18,73 @@ import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.GestaltProviderMocking
+import controllers.util.{ContainerService, GestaltProviderMocking}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
-import services.ProviderContext
+import play.api.inject.bind
+import services.{MarathonClientFactory, MarathonService, ProviderContext, SkuberFactory}
 
 class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
-  override def beforeAll(): Unit = pristineDatabase()
-  
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
+  lazy val mockMCF = mock[MarathonClientFactory]
+
+  override def beforeAll(): Unit = {
+    pristineDatabase()
+    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+      Some(Map(
+        "firstName" -> user.account.firstName,
+        "lastName" -> user.account.lastName,
+        "email" -> user.account.email.getOrElse(""),
+        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
+      )),
+      user.account.description
+    )
+  }
+
   sequential
 
-  abstract class TestApplication extends WithApplication(containerApp()) {
+  abstract class FakeSecurity extends WithApplication(application(
+    additionalBindings = Seq(
+      bind(classOf[MarathonClientFactory]).toInstance(mockMCF),
+      bind(classOf[ContainerService]).toInstance(mockContainerService),
+      bind(classOf[ProviderManager]).toInstance(mockProviderManager),
+      bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory])
+    ))) {
+  }
 
-    var testEnv: Instance = null
-    var testWork: Instance = null
-    var testProvider: Instance = null
-    var mockMarathonClient: MarathonClient = null
+  trait TestMarathonController extends FakeSecurity {
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+
+    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+
+    val testProvider = createMarathonProvider(testEnv.id, "test-provider").get
+    val mockProviderService = mock[MarathonService]
+
+    mockProviderManager.getProviderImpl(ResourceIds.DcosProvider) returns Success(mockProviderService)
+
+    val mockMarathonClient = mock[MarathonClient]
 
     def testFQON: String = "root"
     def testWID: UUID = testWork.id
     def testEID: UUID = testEnv.id
     def testPID: UUID = testProvider.id
-
-    override def around[T: AsResult](t: => T): Result = super.around {
-      var Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = tW
-      testEnv = tE
-      testProvider = createMarathonProvider(testEID, "test-provider").get
-      mockMarathonClient = mock[MarathonClient]
-      val cs = mockContainerService
-      cs.findWorkspaceEnvironment(testEID) returns Try((testWork,testEnv))
-      cs.marathonClient(testProvider) returns mockMarathonClient
-      t
-    }
-
   }
-
 
   "MarathonAPIController" should {
 
-    "support Marathon GET /v2/info" in new TestApplication {
-      val js = Json.obj()
+    "support Marathon GET /v2/info" in new TestMarathonController {
+      mockMCF.getClient(testProvider) returns mockMarathonClient
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
+      val js = Json.obj()
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info", testCreds)
       val Some(result) = route(request)
@@ -75,19 +93,16 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
     }
     
 
-    "support Marathon GET /v2/deployments" in new TestApplication {
+    "support Marathon GET /v2/deployments" in new TestMarathonController {
       val js = Json.arr()
-      mockMarathonClient.listDeploymentsAffectingEnvironment(meq(testFQON), meq(testWork.name), meq(testEnv.name))(any[ExecutionContext]) returns Future.successful(js)
-      mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
-
-      val request = fakeAuthRequest(GET, 
+      val request = fakeAuthRequest(GET,
           s"/${testFQON}/environments/${testEID}/providers/${testPID}/v2/deployments", testCreds)
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must equalTo(js)
     }
 
-    "support Marathon GET /v2/apps" in new TestApplication {
+    "support Marathon GET /v2/apps" in new TestMarathonController {
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",
@@ -226,7 +241,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
       contentAsJson(result) must equalTo(jsResponse)
     }
 
-    "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestApplication {
+    "appropriate 404 Marathon GET /v2/apps/nonExistantApp" in new TestMarathonController {
       val request = fakeAuthRequest(GET,
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
@@ -236,7 +251,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
       ))
     }
 
-    "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestApplication {
+    "appropriate 404 Marathon DELETE /v2/apps/nonExistantApp" in new TestMarathonController {
       val request = fakeAuthRequest(DELETE,
           s"/root/environments/${testEID}/providers/${testPID}/v2/apps/nonexistent", testCreds)
       val Some(result) = route(request)
@@ -246,7 +261,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
       ))
     }
 
-    "support Marathon GET /v2/apps/:appId" in new TestApplication {
+    "support Marathon GET /v2/apps/:appId" in new TestMarathonController {
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",
@@ -374,7 +389,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
       contentAsJson(result) must equalTo(jsResponse)
     }
 
-    "support Marathon DELETE /v2/apps/:appId" in new TestApplication {
+    "support Marathon DELETE /v2/apps/:appId" in new TestMarathonController {
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",
@@ -413,7 +428,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
         ))
       ).get
       mockContainerService.deleteContainer(
-        any[GestaltResourceInstance]
+        any, any, any
       ) returns Future(())
 
       val request = fakeAuthRequest(DELETE, 
@@ -424,7 +439,7 @@ class MarathonControllerSpec extends PlaySpecification with GestaltProviderMocki
       (contentAsJson(result) \ "version").asOpt[String] must beSome
     }
 
-    "support Marathon POST /v2/apps (minimal container)" in new TestApplication {
+    "support Marathon POST /v2/apps (minimal container)" in new TestMarathonController {
       val requestBody = Json.parse(
         """{
           |  "id": "test-container",

@@ -27,6 +27,8 @@ import services.{KubernetesService, MarathonService, ProviderContext}
 
 class ContainerControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
   override def beforeAll(): Unit = {
     pristineDatabase()
     val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
@@ -52,8 +54,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
     ((_: ProviderContext).provider.id == provider.id, (_: ProviderContext).provider.id.toString + " does not contain the expected provider resource " + provider.id) and
     ((_: ProviderContext).providerId == provider.id, (_: ProviderContext).providerId.toString + " does not contain the expected providerId " + provider.id)
 
-  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
-
   trait TestContainerController extends FakeSecurity {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
@@ -64,7 +64,6 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
     val mockKubeService = mock[KubernetesService]
     val mockDCOSService = mock[MarathonService]
 
-    mockContainerService.findWorkspaceEnvironment(testEnv.id) returns Try((testWork, testEnv))
     mockProviderManager.getProviderImpl(ResourceIds.KubeProvider) returns Success(mockKubeService)
     mockProviderManager.getProviderImpl(ResourceIds.DcosProvider) returns Success(mockDCOSService)
   }

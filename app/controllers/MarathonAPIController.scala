@@ -11,7 +11,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment, OrgContextRequest}
 import controllers.util._
 import play.api.libs.json._
@@ -25,6 +25,7 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import services.{FakeURI, MarathonClientFactory, ProviderContext}
 
@@ -62,12 +63,8 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
   /**
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/deployments
    */
-  def listDeployments(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.findWorkspaceEnvironment(environment) match {
-      case Failure(e) => throw e
-      case Success((wrk,env)) =>
-        Future.successful(Ok(Json.arr()))
-    }
+  def listDeployments(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon) { implicit request =>
+    Ok(Json.arr())
   }
 
   /**
@@ -156,9 +153,11 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
    * POST /{fqon}/environments/{eid}/providers/{pid}/v2/apps
    */
   def createApp(fqon: String, environment: UUID, providerId: UUID) = MarAuth(fqon).async { implicit request =>
-    containerService.findWorkspaceEnvironment(environment) match {
-      case Failure(e) => throw e
-      case Success((wrk,env)) => {
+    ResourceFactory.findById(ResourceIds.Environment, environment) match {
+      case None    => Future.successful(BadRequest(Json.obj(
+        "message" -> s"Could not find environment corresponding to UUID ${environment}, check your client configuration"
+      )))
+      case Some(_) =>
         val provider = ContainerService.caasProvider(providerId)
         for {
           body <- Future.fromTry {
@@ -186,7 +185,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
             deploymentIDs = None
           ))
         } yield Created(Json.toJson(marv2Container))
-      }
+
     }
   }
 

@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import controllers.{ContainerController, SecurityResources}
+import controllers.{ContainerController, DeleteController, SecurityResources}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
@@ -49,6 +49,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
     var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
     val mockCaasService = mock[KubernetesService]
     mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
+    val mockDeleteController = mock[DeleteController]
 
     val injector =
       new GuiceApplicationBuilder()
@@ -57,7 +58,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         .disable[modules.MetaDefaultServices]
         .bindings(
           bind(classOf[ProviderManager]).toInstance(mockProviderManager),
-          bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl])
+          bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl]),
+          bind(classOf[DeleteController]).toInstance(mockDeleteController)
         )
         .injector
   }
