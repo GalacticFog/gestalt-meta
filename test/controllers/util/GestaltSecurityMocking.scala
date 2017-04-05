@@ -33,14 +33,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.FakeRequest
 import play.api.test.PlaySpecification
 
-
 trait GestaltSecurityMocking extends PlaySpecification with Mockito with ResourceScope {
 
   lazy val testAuthResponse = dummyAuthResponseWithCreds()
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
-  lazy val mockContainerService = mock[ContainerService]//.verbose
-  lazy val mockProviderManager  = mock[ProviderManager]
-  lazy val mockSecureController = mock[SecureController]
 
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
 
@@ -109,42 +105,6 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
 
   def fakeAuthRequest(method: String, path: String, creds: GestaltAPICredentials) =
     FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
-
-  /**
-   * Get a Play Application configured with Guice. All Meta and Security modules are
-   * disabled by default and the GestaltSecurityEnvironment is bound to a fake.
-   */
-  def application(
-      disabled: Seq[Class[_]] = Seq.empty,
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
-
-    val defaultDisabled = Seq(
-      classOf[GestaltFrameworkSecurityConfigModule],
-      classOf[GestaltDelegatedSecurityConfigModule],
-      classOf[GestaltSecurityModule],
-      classOf[ProdSecurityModule],
-      classOf[MetaDefaultServices])
-
-    val sc: GuiceableModule = bind(classOf[SecureController]).toInstance(mockSecureController)
-
-    new GuiceApplicationBuilder()
-      .disable((disabled ++ defaultDisabled): _*)
-      .bindings(FakeGestaltSecurityModule(fakeSecurityEnvironment()))
-      .bindings((sc +: additionalBindings): _*)
-      .build
-  }
-
-  /**
-   * Return a Play Application with ContainerService bound to a mock[ContainerService]
-   */
-  def containerApp(
-      disabled: Seq[Class[_]] = Seq.empty,
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
-    application(additionalBindings = Seq(
-      bind(classOf[ContainerService]).toInstance(mockContainerService),
-      bind(classOf[ProviderManager]).toInstance(mockProviderManager)
-    ))
-  }
 
   private[this] def uuid() = UUID.randomUUID()  
 

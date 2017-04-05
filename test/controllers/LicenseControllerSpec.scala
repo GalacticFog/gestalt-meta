@@ -13,9 +13,9 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerService, GestaltSecurityMocking}
-import org.joda.time.{DateTimeZone, DateTime}
-import org.specs2.execute.{Result, AsResult}
+import controllers.util.{ContainerService, GestaltProviderMocking}
+import org.joda.time.{DateTime, DateTimeZone}
+import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.specification._
 import play.api.libs.json.{JsArray, Json}
@@ -25,10 +25,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import org.mockito.Matchers.{eq => meq}
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Try, Success}
+import scala.util.{Success, Try}
 
 
-class LicenseControllerSpec extends GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+class LicenseControllerSpec extends GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
   
   override def beforeAll(): Unit = pristineDatabase()
 

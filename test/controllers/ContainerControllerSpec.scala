@@ -17,7 +17,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.GestaltSecurityMocking
+import controllers.util.GestaltProviderMocking
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
@@ -25,7 +25,7 @@ import play.api.test.PlaySpecification
 import play.api.test.WithApplication
 import services.{KubernetesService, MarathonService, ProviderContext}
 
-class ContainerControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+class ContainerControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
   override def beforeAll(): Unit = {
     pristineDatabase()

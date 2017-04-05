@@ -2,7 +2,6 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.events.AmqpClient
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
@@ -357,12 +356,16 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager )
           ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta container created: " + metaResource.id)
-        _ = log.debug("Retrieving CaaSService from ProviderManager")
-        service      <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
-        _ = log.info("Creating container in backend CaaS...")
-        updated   <- service.create(context, metaResource)
-        container <- Future.fromTry(ResourceFactory.update(updated, user.account.id))
-      } yield container
+        service      <- Future.fromTry{
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Creating container in backend CaaS...")
+          service.create(context, metaResource)
+        }
+        updatedInstace <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstace
     }
   }
 

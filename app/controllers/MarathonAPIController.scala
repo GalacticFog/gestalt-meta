@@ -168,7 +168,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
           )
           marv2Container <- Future.fromTry(metaToMarathonAppInfo(
             spec = ContainerSpec.fromResourceInstance(metaContainer).get,
-            instances = None,
+            instances = Some(Seq.empty),
             deploymentIDs = None
           ))
         } yield Created(Json.toJson(marv2Container))

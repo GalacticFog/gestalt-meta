@@ -475,7 +475,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
 
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
-      case ResourceIds.KubeProvider     => kubernetesService
+      case ResourceIds.KubeProvider => kubernetesService
       case ResourceIds.DcosProvider => marathonService
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
