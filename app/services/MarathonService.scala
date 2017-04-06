@@ -268,14 +268,11 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         val marClient = marathonClientFactory.getClient(provider)
         marClient.scaleApplication(
           appId = external_id,
-          numInstances
-        ) map { js =>
-          val numInstances = (js \ "instances").asOpt[Int].getOrElse(
-            throw new RuntimeException(s"updated application for container ${container.id} did not contain 'instances'")
-          ).toString
+          numInstances = numInstances
+        ) map { _ =>
           upsertProperties(
             container,
-            "num_instances" -> numInstances
+            "num_instances" -> numInstances.toString
           )
         }
     }
