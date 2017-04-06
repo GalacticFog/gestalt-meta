@@ -4,26 +4,25 @@ import java.util.UUID
 
 import scala.concurrent.Future
 import scala.util.Success
-import scala.util.Try
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.GestaltProviderMocking
+import controllers.util.{ContainerService, GestaltProviderMocking, GestaltSecurityMocking}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
-import services.{KubernetesService, MarathonService, ProviderContext}
+import play.api.inject.bind
+import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
 
 class ContainerControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
@@ -31,7 +30,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -44,8 +43,13 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
   sequential
 
-  abstract class FakeSecurity extends WithApplication(containerApp()) {
-  }
+  abstract class FakeSecurity extends WithApplication(application(
+    additionalBindings = Seq(
+      bind(classOf[ContainerService]).toInstance(mockContainerService),
+      bind(classOf[ProviderManager]).toInstance(mockProviderManager),
+      bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+      bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
+    )))
 
   def matchesProviderContext(provider: GestaltResourceInstance, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Matcher[ProviderContext] =
     ((_: ProviderContext).workspace.id == workspace.id, (_: ProviderContext).workspace.id.toString + " does not contain the expected workspace resource " + workspace.id) and
@@ -59,13 +63,9 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
     Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
-    val testDCOSProvider = createMarathonProvider(testEnv.id, "test-dcos-provider").get
-    val testKubeProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
-    val mockKubeService = mock[KubernetesService]
-    val mockDCOSService = mock[MarathonService]
-
-    mockProviderManager.getProviderImpl(ResourceIds.KubeProvider) returns Success(mockKubeService)
-    mockProviderManager.getProviderImpl(ResourceIds.DcosProvider) returns Success(mockDCOSService)
+    val testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
+    val mockCaasService = mock[CaasService]
+    mockProviderManager.getProviderImpl(any) returns Success(mockCaasService)
   }
 
   "ContainerController" should {
@@ -76,7 +76,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = "",
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id, name = Some(testDCOSProvider.name)),
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
         cpus = 1.0,
         memory = 128,
@@ -102,7 +102,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testDCOSProvider).toString,
+          "provider" -> Output.renderInstance(testProvider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "num_instances" -> testProps.num_instances.toString,
@@ -134,7 +134,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = "",
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id, name = Some(testDCOSProvider.name)),
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
         cpus = 1.0,
         memory = 128,
@@ -156,7 +156,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testDCOSProvider).toString,
+          "provider" -> Output.renderInstance(testProvider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "num_instances" -> testProps.num_instances.toString,
@@ -217,7 +217,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id),
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
         cpus = 1.0,
         memory = 128,
@@ -271,7 +271,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
       there was one(mockContainerService).createContainer(
         context = argThat(matchesProviderContext(
-          provider = testDCOSProvider,
+          provider = testProvider,
           workspace = testWork,
           environment = testEnv
         )),
@@ -285,7 +285,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testKubeProvider.id),
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
@@ -338,7 +338,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
       there was one(mockContainerService).createContainer(
         context = argThat(matchesProviderContext(
-          provider = testKubeProvider,
+          provider = testProvider,
           workspace = testWork,
           environment = testEnv
         )),
@@ -354,7 +354,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testKubeProvider.id),
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
@@ -378,7 +378,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testKubeProvider).toString,
+          "provider" -> Output.renderInstance(testProvider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "disk" -> testProps.disk.toString,
@@ -390,7 +390,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         ))
       ).get
 
-      mockKubeService.destroyContainer(
+      mockCaasService.destroyContainer(
         argThat((c: GestaltResourceInstance) => c.id == createdResource.id)
       ) returns Future(())
 
@@ -401,7 +401,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
       status(result) must equalTo(NO_CONTENT)
 
-      there was one(mockKubeService).destroyContainer(
+      there was one(mockCaasService).destroyContainer(
         argThat(
           (r: GestaltResourceInstance) => r.id == createdResource.id && r.properties.flatMap(_.get("external_id")).contains(extId)
         )
@@ -415,7 +415,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testDCOSProvider.id),
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
@@ -439,7 +439,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testDCOSProvider).toString,
+          "provider" -> Output.renderInstance(testProvider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "disk" -> testProps.disk.toString,
@@ -451,7 +451,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         ))
       ).get
 
-      mockDCOSService.destroyContainer(
+      mockCaasService.destroyContainer(
         argThat((c: GestaltResourceInstance) => c.id == createdResource.id)
       ) returns Future(())
 
@@ -462,12 +462,12 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
       status(result) must equalTo(NO_CONTENT)
 
-      there was one(mockDCOSService).destroyContainer(
+      there was one(mockCaasService).destroyContainer(
         argThat(
           (r: GestaltResourceInstance) => r.id == createdResource.id && r.properties.flatMap(_.get("external_id")).contains(extId)
         )
       )
-      there was atLeastOne(mockProviderManager).getProviderImpl(ResourceIds.DcosProvider)
+      there was atLeastOne(mockProviderManager).getProviderImpl(testProvider.typeId)
     }
 
     "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController {
@@ -476,7 +476,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         name = testContainerName,
         container_type = "DOCKER",
         image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testKubeProvider.id),
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
         port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
         cpus = 1.0,
         memory = 128,
@@ -500,7 +500,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         properties = Some(Map(
           "container_type" -> testProps.container_type,
           "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testKubeProvider).toString,
+          "provider" -> Output.renderInstance(testProvider).toString,
           "cpus" -> testProps.cpus.toString,
           "memory" -> testProps.memory.toString,
           "disk" -> testProps.disk.toString,
@@ -512,23 +512,23 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
         ))
       ).get
 
-      mockKubeService.scale(
+      mockCaasService.scale(
         any, any, any
       ) returns Future(createdResource.copy(
         properties = Some(createdResource.properties.get ++ Map("num_instances" -> "4"))
       ))
 
       val request = fakeAuthRequest(POST,
-        s"/root/environments/${testEnv.id}/containers/${createdResource.id}/scale?numInstances=4", testCreds
+        s"/root/containers/${createdResource.id}/scale?numInstances=4", testCreds
       )
 
       val Some(result) = route(request)
 
       status(result) must equalTo(ACCEPTED)
 
-      there was one(mockKubeService).scale(
+      there was one(mockCaasService).scale(
         context = argThat(matchesProviderContext(
-          provider = testKubeProvider,
+          provider = testProvider,
           workspace = testWork,
           environment = testEnv
         )),

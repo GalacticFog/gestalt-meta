@@ -106,7 +106,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     created recover { case e => HandleExceptions(e) }
   }
 
-  def scaleContainer(fqon: String, unused: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
     }{ c =>
@@ -126,7 +126,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
       SafeRequest (operations, options) ProtectAsync { (_:Option[UUID]) =>
         log.debug(s"scaling container ${c.id} to $numInstances instances...")
         val context = ProviderContext(request.copy(
-          uri = request.uri.replaceFirst("/scale.*$","")
+          uri = s"/${fqon}/environments/${environment.id}/containers/${c.id}"
         ), parseProvider(c), Some(c))
         val scaled = for {
           service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
@@ -138,22 +138,34 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     }
   }
 
-  def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    if (findMigrationRule(envId).isEmpty) HandleExceptions {
-      throw new ConflictException("No migration policy found.")
-    } else {
-      val user = request.identity
-      val container = getMigrationContainer(envId, id)
-      val (operations, options) = ContainerService.setupMigrateRequest(
-          fqon, envId, container, user, META_URL.get, request.queryString)
-      
-      SafeRequest (operations, options) Protect { maybeState =>    
-        ResourceFactory.update(
+  def migrateContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Container, id).fold {
+      NotFoundResult(s"Container with ID '$id' not found.")
+    } { c =>
+      val environment = ResourceFactory.findParent(
+        parentType = ResourceIds.Environment,
+        childId = c.id
+      ) getOrElse {
+        throw new RuntimeException(s"could not find Environment parent for container ${c.id}")
+      }
+
+      if (findMigrationRule(environment.id).isEmpty) {
+        HandleExceptions(new ConflictException("No migration policy found."))
+      } else {
+        val user = request.identity
+        val container = getMigrationContainer(environment.id, id)
+        val (operations, options) = ContainerService.setupMigrateRequest(
+          fqon, environment.id, container, user, META_URL.get, request.queryString
+        )
+
+        SafeRequest(operations, options) Protect { _ =>
+          ResourceFactory.update(
             ContainerService.upsertProperties(container, "status" -> "MIGRATING"),
-            user.account.id) match {
+            user.account.id
+          ) match {
             case Failure(e) => HandleExceptions(e)
             case Success(c) => Accepted(Output.renderInstance(c, META_URL))
-          }}
+          }
         }
       }
     }
