@@ -21,6 +21,9 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.JsonWebClient
 import com.galacticfog.gestalt.laser._
+import com.galacticfog.gestalt.meta.providers._
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.sdk._
 
 object LambdaMethods {
   
@@ -89,7 +92,7 @@ object LambdaMethods {
     }
     PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
   }    
-  
+
   /**
    * Update a Lambda both in Meta and gestalt-lambda.
    */

@@ -44,15 +44,20 @@ import javax.inject.Singleton
 
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import services.KubernetesService
+import play.api.libs.ws.WSClient
+
 
 @Singleton
-class DeleteController @Inject()( messagesApi: MessagesApi,
-                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                  providerManager: ProviderManager )
+class DeleteController @Inject()(
+    ws: WSClient,
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
  
+  private[this] val hostVariableGatewayManager = "HTTP_API_VHOST_0"
   /*
    * Each of the types named by the keys in this map have representations both in
    * Meta and in some external system. When delete is called on any of these types
@@ -193,11 +198,10 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }
 
-    val client = GatewayMethods.configureWebClient(provider)
+    val client = ProviderMethods.configureWebClient(provider, hostVariableGatewayManager, Some(ws))
     val fdelete = client.delete(s"/apis/${res.id.toString}") map { result =>
       log.info("Deleting API from GatewayManager...")
-      val response = client.unwrapResponse(result, Seq(200))
-      log.debug("Response from GatewayManager: " + response.output)
+      log.debug("Response from GatewayManager: " + result.body)
     } recover {
       case e: Throwable => {
         log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
@@ -205,7 +209,6 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
       }
     }
     ()
-    //laser.deleteApi(res.id) map ( _ => () )
   }
   
   def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
@@ -216,7 +219,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
 
     val client = (for {
       provider <- GatewayMethods.findGatewayProvider(api)
-      client = GatewayMethods.configureWebClient(provider)
+      client = ProviderMethods.configureWebClient(provider, hostVariableGatewayManager, Some(ws))
     } yield client) getOrElse {
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }
@@ -224,8 +227,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
     val uri = s"/apis/${api.id.toString}/endpoints/${res.id.toString}"
     val fdelete = client.delete(uri) map { result =>
       log.info("Deleting Endpoint from GatewayManager...")
-      val response = client.unwrapResponse(result, Seq(200))
-      log.debug("Response from GatewayManager: " + response.output)
+      log.debug("Response from GatewayManager: " + result.body)
     } recover {
       case e: Throwable => {
         log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)

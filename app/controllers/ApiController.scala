@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
+
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk._
@@ -36,27 +37,28 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import com.galacticfog.gestalt.json.Js
 
-/*
- * 
- * TODO:
- * 
- * -| More refactoring - cleanup and generalize function to translate meta gateway providers
- * -| to laser gateway providers. Need to ensure that properties.external_id is used in any
- * -| call to laser that needs a provider ID.
- * 
- */
+
 import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.patch._
 import controllers.util.GatewayMethods._
+import play.api.libs.ws.WSClient
+
 
 @Singleton
 class ApiController @Inject()(
+    ws: WSClient,
     messagesApi: MessagesApi,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
+  /*
+   *  This is the name of the provider variable needed to get the host address.
+   */
+  private[this] val hostVariable = "HTTP_API_VHOST_0"
+  
   
   def postApi(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
@@ -68,7 +70,7 @@ class ApiController @Inject()(
       val lapi = toGatewayApi(payload.as[JsObject], location)
             	
       val caller = request.identity
-      val client = configureWebClient(provider)
+      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
       val org = fqid(fqon)
       
       /*
@@ -76,23 +78,25 @@ class ApiController @Inject()(
        * If the create subsequently fails in GatewayManager, we set the status
        * of the already created Meta resource to 'FAILED'.
        */
+
       CreateResource(fqid(fqon), payload, caller, ResourceIds.Api, parent) match {
         case Failure(e) => HandleExceptionsAsync(e)
-        case Success(r) => {
+        case Success(resource) => {
+          log.debug("Creating API in GatewayManager...")
           client.post("/apis", Option(Json.toJson(lapi))) map { result =>
-            log.debug("Creating API in GatewayManager...")
-            val response = client.unwrapResponse(result, Seq(200))
-            log.debug("Response from GatewayManager: " + response.output)
-            setNewEntitlements(org, r.id, caller, Some(parent))
-            Created(RenderSingle(r))
+            
+            if (Seq(200, 201).contains(result.status)) {
+              log.info("Successfully created API in GatewayManager.")
+              setNewEntitlements(org, resource.id, caller, Some(parent))
+              Created(RenderSingle(resource))
+            } else {
+              log.error("Error creating API in GatewayManager.")
+              updateFailedBackendCreate(caller, resource, ApiError(result.status, result.body).throwable)
+            }
           } recover {
             case e: Throwable => {
-              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
-              log.error("Setting Meta API state to 'FAILED'")
-
-              val failstate = ResourceState.id(ResourceStates.Failed)
-              ResourceFactory.update(r.copy(state = failstate), caller.account.id)
-              HandleExceptions(e)
+              log.error(s"Error creating API in GatewayManager.")
+              updateFailedBackendCreate(caller, resource, e)
             }
           }
         }
@@ -112,7 +116,7 @@ class ApiController @Inject()(
       
       val caller = request.identity
       val provider = findGatewayProvider(a).get // <-- can generate in 'for' below
-
+      
       log.info("Creating Endpoint in Meta...")
       
       val org = fqid(fqon)
@@ -133,21 +137,23 @@ class ApiController @Inject()(
           
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
-          val client = configureWebClient(provider)
+          val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
           
           client.post(uri, Option(Json.toJson(laserep))) map { result =>
-            val response = client.unwrapResponse(result, Seq(200, 201))
-            log.debug("Response from GatewayManager: " + response.output)
-            Created(RenderSingle(metaep))
+            if (Seq(200, 201).contains(result.status)) {
+              log.info("Successfully created Endpoint in GatewayManager.")
+              setNewEntitlements(org, metaep.id, caller, Some(api))
+              Created(RenderSingle(metaep))
+            } else {
+              log.error("Error creating Endpoint in GatewayManager.")
+              updateFailedBackendCreate(caller, metaep, ApiError(result.status, result.body).throwable)
+            }
           } recover {
             case e: Throwable => {
-              log.error(s"Error creating API in Gateway Manager: " + e.getMessage)
-              log.error("Setting Meta API state to 'FAILED'")
-
-              val failstate = ResourceState.id(ResourceStates.Failed)
-              ResourceFactory.update(metaep.copy(state = failstate), caller.account.id)
-              HandleExceptions(e)
+              log.error(s"Error creating Endpoint in Gateway Manager.")
+              updateFailedBackendCreate(caller, metaep, e)
             }
+            
           }
         }
       }
