@@ -18,6 +18,7 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
 
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Success

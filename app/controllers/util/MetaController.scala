@@ -3,7 +3,8 @@ package controllers.util
 
 import play.api.http.HeaderNames
 
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import controllers.util.db._
 import play.api.Logger
@@ -390,6 +391,13 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     fromResourceInput(org, newInput)
   }
 
+  def updateFailedBackendCreate(caller: AuthAccountWithCreds, metaResource: GestaltResourceInstance, ex: Throwable) = {
+    log.error(s"Setting state of resource '${metaResource.id}' to FAILED")
+    val failstate = ResourceState.id(ResourceStates.Failed)
+    ResourceFactory.update(metaResource.copy(state = failstate), caller.account.id)
+    HandleExceptions(ex)
+  }  
+  
 //  protected[controllers] def throwBadRequest(message: String) =
 //    throw new BadRequestException(message)
 }

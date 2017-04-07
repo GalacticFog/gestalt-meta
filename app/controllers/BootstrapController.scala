@@ -19,10 +19,11 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.providers._
 
 @Singleton
-class BootstrapController @Inject()( messagesApi: MessagesApi,
-                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     providerManager: ProviderManager,
-                                     deleteController: DeleteController)
+class BootstrapController @Inject()( 
+   messagesApi: MessagesApi,
+   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+   providerManager: ProviderManager,
+   deleteController: DeleteController)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
