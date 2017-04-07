@@ -4,20 +4,18 @@ import java.util.UUID
 
 import org.specs2.specification.BeforeAll
 import org.specs2.mock.Mockito
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.errors._
-
-import controllers.util.GestaltSecurityMocking
+import controllers.util.GestaltProviderMocking
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
 
 class AuthorizationControllerSpec
   extends PlaySpecification 
-    with GestaltSecurityMocking 
+    with GestaltProviderMocking
     with ResourceScope 
     with BeforeAll
     with Mockito {

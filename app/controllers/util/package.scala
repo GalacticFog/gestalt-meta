@@ -61,7 +61,7 @@ package object util {
   def UnprocessableEntityResult(message: String) = UnprocessableEntity(new UnprocessableEntityException(message).asJson)
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
-  def HandleExceptions(e: Throwable) = {
+  def HandleExceptions(e: Throwable): Result = {
     log.error(e.getMessage)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }

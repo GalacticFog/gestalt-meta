@@ -3,7 +3,7 @@ package controllers
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import controllers.util.{ContainerService, GestaltSecurityMocking}
+import controllers.util.{ContainerService, GestaltProviderMocking}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
@@ -12,10 +12,11 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
+import services.{MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
 
-class MetaControllerSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+class MetaControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
   override def beforeAll(): Unit = {
     pristineDatabase()
@@ -37,7 +38,11 @@ class MetaControllerSpec extends PlaySpecification with GestaltSecurityMocking w
 
   abstract class TestApplication extends WithApplication(
     application(
-      additionalBindings = Seq(new modules.MetaDefaultDCOS, new modules.MetaDefaultSkuber, new modules.MetaDefaultServices, bind(classOf[ContainerService]).toInstance(mock[ContainerService]))
+      additionalBindings = Seq(
+        bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
+        bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+        bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
+      )
     )
   )
 

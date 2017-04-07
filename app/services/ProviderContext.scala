@@ -10,23 +10,21 @@ import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.errors._
-import play.api.mvc.{Request, RequestHeader}
+import play.api.mvc.RequestHeader
 import play.api.Logger
-
 
 /*
  * TODO: This class needs updating. 
  * 
  * - Remove the 'request' parameter - the object is only used
  * to get the URI - which is essentially the path to the environment where we'll create the
- * container. Request is difficult and uneccessary outside of a controller.
+ * container. Request is difficult and unnecessary outside of a controller.
  * 
  * - Change 'workspace' to 'environmentParent' - because that's what we really need.
  */
-case class ProviderContext(
-    request: RequestHeader,
-    providerId: UUID,
-    target: Option[GestaltResourceInstance]) extends GestaltProviderService{
+case class ProviderContext( request: RequestHeader,
+                            providerId: UUID,
+                            target: Option[GestaltResourceInstance] ) extends GestaltProviderService{
   
   private[this] val log = Logger(this.getClass)
   
@@ -85,26 +83,17 @@ case class ProviderContext(
   }    
 }
 
-import play.api.mvc._
-
-case class FakeHeaders(data: Seq[(String, String)] = Seq.empty) extends Headers(data)
-
-class FakeRequest(url: String) extends Request[AnyContent] {
+case class FakeURI(url: String) extends RequestHeader {
   override def uri(): String = url
-  
-   // Members declared in play.api.mvc.Request
-   def body = AnyContentAsText("foo")
-
-   // Members declared in play.api.mvc.RequestHeader
-   def headers: play.api.mvc.Headers = FakeHeaders()
-   def id: Long = -1L
-   def method: String = "foo"
-   def path: String = "foo"
-   def queryString: Map[String,Seq[String]] = Map.empty
-   def remoteAddress: String = "foo"
-   def secure: Boolean = false
-   def tags: Map[String,String] = Map.empty
-   def version: String = "foo"
+  def headers: play.api.mvc.Headers = play.api.mvc.Headers()
+  def id: Long = -1L
+  def method: String = "foo"
+  def path: String = "foo"
+  def queryString: Map[String,Seq[String]] = Map.empty
+  def remoteAddress: String = "foo"
+  def secure: Boolean = false
+  def tags: Map[String,String] = Map.empty
+  def version: String = "foo"
 }
 
 

@@ -4,8 +4,6 @@ package controllers
 import java.net.URL
 import java.util.UUID
 
-import scala.{Either, Left, Right}
-import scala.math.BigDecimal.int2bigDecimal
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.ResourceFactory.findById
@@ -13,22 +11,13 @@ import com.galacticfog.gestalt.data.models._
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import controllers.util._
 import controllers.util.db.EnvConfig
 import play.api.libs.json._
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.{Logger => log}
-import play.api.mvc.Result
 import play.api.mvc.RequestHeader
-import play.api.mvc.{Security => PlaySecurity}
-import play.api.libs.ws.WS
-import play.api.Play.current
-import com.galacticfog.gestalt.marathon.MarathonClient
 
 //import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -44,9 +33,9 @@ import scala.language.postfixOps
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.meta.providers.ProviderManager
+
 import services.KubernetesService
 import play.api.libs.ws.WSClient
-
 
 @Singleton
 class DeleteController @Inject()(
@@ -56,9 +45,11 @@ class DeleteController @Inject()(
     providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
+
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
  
   private[this] val hostVariableGatewayManager = "HTTP_API_VHOST_0"
+
   /*
    * Each of the types named by the keys in this map have representations both in
    * Meta and in some external system. When delete is called on any of these types
@@ -103,30 +94,27 @@ class DeleteController @Inject()(
         policyTarget = Option(target))    
   }
 
-  
-  def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+  def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
+    val owner      = findResourceParent(resource.id)
+    val operations = deleteOps(resource.typeId)
+    val options    = requestOps(identity, resource.id, resource)
+
+    log.debug(s"Policy Owner : " + owner.id)
+
+    SafeRequest (operations, options) ProtectAsync { _ =>
+      Future.fromTry(DeleteHandler.handle(resource, identity))
+    }
+  }
+
+  def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon).async { implicit request =>
     
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
     
-    Resource.fromPath( p ).fold {
-      NotFoundResult(request.uri)
-    } { resource =>
-
-      val owner      = findResourceParent(resource.id)
-      val operations = deleteOps(resource.typeId)
-      val options    = requestOps(request.identity, resource.id, resource)
-
-      log.debug(s"Policy Owner : " + owner.id)
-      
-      SafeRequest (operations, options) Protect { maybeState => 
-        
-        DeleteHandler.handle(resource, request.identity) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(_) => NoContent
-        }
-        
-      }
-    }
+    Resource.fromPath( p ) map {
+      deleteResource(_, request.identity)
+        .map (_ => NoContent)
+        .recover {case e => HandleExceptions(e)}
+    } getOrElse Future.successful(NotFoundResult(request.uri))
   }
   
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {

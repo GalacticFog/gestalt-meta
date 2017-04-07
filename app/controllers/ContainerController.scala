@@ -44,19 +44,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
-  trait ResourceTransform extends GestaltProviderService
-  case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
-    lazy val resource = jsonToInput(org, caller, normalizeInputContainer(json))
-    lazy val spec = ContainerSpec.fromResourceInstance(resource)
-  }
-
-  trait ServiceProvider[A <: GestaltProviderService] {
-    /**
-     * Get a GestaltService implementation.
-     */
-    def get[A](provider: UUID): Try[A]
-  }
-
   /**
    * Parse the provider ID from container.properties
    */
@@ -66,6 +53,7 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   
   import com.galacticfog.gestalt.meta.api.errors._
   import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
+  import ContainerController._
   
   private[controllers] def specToInstance(
       fqon: String, 
@@ -83,10 +71,6 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
     withInputDefaults(org, containerResourceInput, user, None)
   }  
   
-  def createMetaContainer(user: AuthAccountWithCreds, container: GestaltResourceInstance, env: UUID) = {
-    ResourceFactory.create(ResourceIds.User, user.account.id)(container, Some(env))
-  }  
-
   type MetaCreate = (AuthAccountWithCreds, GestaltResourceInstance, UUID) => Try[GestaltResourceInstance]
   type BackendCreate = (ProviderContext, GestaltResourceInstance) => Future[GestaltResourceInstance]
   
@@ -115,30 +99,15 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val created = for {
       payload   <- Future.fromTry(withProviderInfo(request.body))
-      transform = CaasTransform(fqid(fqon), request.identity, payload)
-      context   = ProviderContext(request, parseProvider(transform.resource), None)
-      env       = context.environment
-      provider  = context.provider
-      r1        = transform.resource
-      _ = log.info("Creating container in Meta...")
-      metaResource <- Future.fromTry(createMetaContainer(request.identity, r1, env.id))
-      service      <- Future.fromTry(providerManager.getProviderImpl(provider.typeId))
-      _ = log.info("Meta container created: " + metaResource.id)
-      _ = log.info("Creating container in backend CaaS...")
-      updated   <- service.create(context, metaResource)
-      container <- updateContainer(updated, request.identity.account.id)
+      proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
+      spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
     } yield Created(RenderSingle(container))
     created recover { case e => HandleExceptions(e) }
   }
 
-  /*
-   * TODO: This is a temporary wrapper to adapt ResourceFactory.update() to return a Future
-   * as it will in a forthcoming revision.
-   */
-  private def updateContainer(container: GestaltResourceInstance, identity: UUID): Future[GestaltResourceInstance] =
-    Future.fromTry(ResourceFactory.update(container, identity))
-
-  def scaleContainer(fqon: String, unused: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
     }{ c =>
@@ -158,38 +127,46 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
       SafeRequest (operations, options) ProtectAsync { (_:Option[UUID]) =>
         log.debug(s"scaling container ${c.id} to $numInstances instances...")
         val context = ProviderContext(request.copy(
-          uri = request.uri.replaceFirst("/scale.*$","")
+          uri = s"/${fqon}/environments/${environment.id}/containers/${c.id}"
         ), parseProvider(c), Some(c))
         val scaled = for {
           service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
           updated <- service.scale(context, c, numInstances)
-          updatedResource <- updateContainer(updated, request.identity.account.id)
+          updatedResource <- Future.fromTry(ResourceFactory.update(updated, request.identity.account.id))
         } yield Accepted(RenderSingle(updatedResource))
         scaled recover { case e => HandleExceptions(e) }
       }
     }
   }
 
-  def findMigrationRule(start: UUID) = {
-    object Finder extends EventMethods
-    Finder.findEffectiveEventRules(start, Option("container.migrate"))
-  }
-  
-  def migrateContainer(fqon: String, envId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
-    if (findMigrationRule(envId).isEmpty) HandleExceptions {
-      throw new ConflictException("No migration policy found.")
-    } else {
-      val user = request.identity
-      val container = getMigrationContainer(envId, id)
-      val (operations, options) = ContainerService.setupMigrateRequest(
-          fqon, envId, container, user, META_URL.get, request.queryString)
-      
-      SafeRequest (operations, options) Protect { maybeState =>    
-        ResourceFactory.update(
+  def migrateContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Container, id).fold {
+      NotFoundResult(s"Container with ID '$id' not found.")
+    } { c =>
+      val environment = ResourceFactory.findParent(
+        parentType = ResourceIds.Environment,
+        childId = c.id
+      ) getOrElse {
+        throw new RuntimeException(s"could not find Environment parent for container ${c.id}")
+      }
+
+      if (findMigrationRule(environment.id).isEmpty) {
+        HandleExceptions(new ConflictException("No migration policy found."))
+      } else {
+        val user = request.identity
+        val container = getMigrationContainer(environment.id, id)
+        val (operations, options) = ContainerService.setupMigrateRequest(
+          fqon, environment.id, container, user, META_URL.get, request.queryString
+        )
+
+        SafeRequest(operations, options) Protect { _ =>
+          ResourceFactory.update(
             ContainerService.upsertProperties(container, "status" -> "MIGRATING"),
-            user.account.id) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+            user.account.id
+          ) match {
+            case Failure(e) => HandleExceptions(e)
+            case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+          }
         }
       }
     }
@@ -227,3 +204,11 @@ class ContainerController @Inject()( messagesApi: MessagesApi,
   private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."
 
 }
+
+object ContainerController {
+  def findMigrationRule(start: UUID) = {
+    object Finder extends EventMethods
+    Finder.findEffectiveEventRules(start, Option("container.migrate"))
+  }
+}
+

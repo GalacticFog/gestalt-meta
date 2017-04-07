@@ -23,7 +23,8 @@ import skuber.json.format._
 import skuber.json.ext.format._
 
 import scala.concurrent.Future
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])

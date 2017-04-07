@@ -2,7 +2,6 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.events.AmqpClient
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
@@ -16,37 +15,30 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.google.inject.Inject
-import services.{FakeRequest, ProviderContext}
+import controllers.DeleteController
+import play.api.mvc.RequestHeader
+import services.{FakeURI, ProviderContext}
 
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
 
-  def deleteContainer(container: GestaltResourceInstance): Future[Unit]
-
-  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
+  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance,Seq[ContainerInstance])]]
 
-  def launchContainer(fqon: String,
-                      workspace: GestaltResourceInstance,
-                      environment: GestaltResourceInstance,
+  def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
-                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])]
-
-
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient
-
-  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)]
+                      userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
 
 }
 
@@ -160,39 +152,10 @@ object ContainerService {
 
 }
 
-class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
-                                       eventsClient: AmqpClient )
+class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteController: DeleteController )
   extends ContainerService with MetaControllerUtils {
 
   import ContainerService._
-
-  // TODO: gotta find a way to get rid of this weird method, only used by the MarathonController for its API
-  @deprecated("this should be replaced by CaaSService::find()", "now")
-  def findEnvironmentContainerByName(fqon: String, environment: UUID, containerName: String): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]] = {
-    log.debug("***Finding container by name...")
-    // Find container resource in Meta, convert to ContainerSpec
-    log.debug(s"***ENVIRONMENT: $environment, name: $containerName")
-    val maybeContainerSpec = for {
-      // this is not well-defined if there are multiple containers in the environment with the same name
-      r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find {_.name == containerName}
-      s <- ContainerSpec.fromResourceInstance(r).toOption
-    } yield (r -> s)
-
-    log.debug("***Getting stats...")
-    val fMaybeUpdate = (for {
-      metaContainerSpec <- maybeContainerSpec
-      provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
-      saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
-      stats = saasProvider.find(ctx, metaContainerSpec._1)
-    } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
-
-    fMaybeUpdate map {
-      maybeUpdate => maybeContainerSpec map {
-        case (containerResource,containerSpec) => updateMetaContainerWithStats(containerResource, maybeUpdate) -> Seq.empty
-      }
-    }
-  }
 
   override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
     log.debug("***Finding container by id...")
@@ -208,7 +171,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
       metaContainerSpec <- maybeContainerSpec
       provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
       saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
+      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
       stats = saasProvider.find(ctx, metaContainerSpec._1)
     } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
 
@@ -243,7 +206,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
 
     val fStatsFromAllRelevantProviders: Future[Map[UUID, Map[String, ContainerStats]]] = Future.traverse(containerSpecsByProvider.keys) { pid =>
       val cp = caasProvider(pid)
-      val ctx = ProviderContext(new FakeRequest(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
+      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
       val pidAndStats = for {
         caasP <- Future.fromTry(providerManager.getProviderImpl(cp.typeId))
         stats <- caasP.listInEnvironment(ctx)
@@ -315,125 +278,47 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager,
     }
   }
 
-  def findWorkspaceEnvironment(environmentId: UUID): Try[(GestaltResourceInstance, GestaltResourceInstance)] = Try {
-    val p = ResourceFactory.findParent(ResourceIds.Workspace, environmentId) getOrElse {
-      throw new ResourceNotFoundException(s"Could not find parent Workspace for Environment '$environmentId'.")
-    }
-    val c = ResourceFactory.findById(ResourceIds.Environment, environmentId) getOrElse {
-      throw new ResourceNotFoundException(s"Environment with ID '$environmentId' not found.")
-    }
-    (p -> c)
-  }
-
-  /**
-    * Parse and format the provider.id property from a container.properties map.
-    */
-  private def providerId(r: GestaltResourceInstance): Option[UUID] = {
-    for {
-      props <- r.properties
-      providerStr <- props.get("provider")
-      provider <- Try(Json.parse(providerStr)).toOption
-      pid <- (provider \ "id").asOpt[UUID]
-    } yield pid
-  }
-
-  // TODO: this is only used by MarathonController, and should be deleted as soon as that controller switches to the CaaSProvider interface
-  @deprecated("this should be replaced by CaaSService::create()", "now")
-  def launchContainer(fqon: String,
-                      workspace: GestaltResourceInstance,
-                      environment: GestaltResourceInstance,
+  def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
-                      inId : Option[UUID] = None ): Future[(GestaltResourceInstance, Seq[ContainerInstance])] = {
+                      userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance] = {
 
-    def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): (GestaltResourceInstance, Seq[ContainerInstance]) = {
-      val marathonAppId = (marathonResponse \ "id").as[String]
-      val updatedResource = upsertProperties(resource,
-        "external_id" -> marathonAppId,
-        "status" -> "LAUNCHED"
-      )
-      ResourceFactory.update(updatedResource, user.account.id).get -> Seq.empty
-    }
-
-    def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
-      val updatedResource = upsertProperties(resource,
-        "status" -> "LAUNCH_FAILED"
-      )
-      ResourceFactory.update(updatedResource, user.account.id).get -> Seq.empty
-      log.error("launch failed", t)
-      new BadRequestException(s"launch failed: ${t.getMessage}")
-    }
-
-    val orgId = orgFqon(fqon)
-      .map(_.id)
-      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-
-    val containerResourceInput: GestaltResourceInput = ContainerSpec.toResourcePrototype(containerSpec).copy( id = inId )
-    // log.trace("GestaltResourceInput from ContainerSpec: %s".format(Json.prettyPrint(Json.toJson(containerResourceInput))))
-    val origContainerResourcePre: GestaltResourceInstance = withInputDefaults(orgId, containerResourceInput, user, None)
-    // log.trace("GestaltResourceInstance from inputWithDefaults: %s".format(Json.prettyPrint(Json.toJson(containerResourcePre))))
+    val input = ContainerSpec.toResourcePrototype(containerSpec).copy( id = userRequestedId )
+    val proto = withInputDefaults(context.workspace.orgId, input, user, None)
     val operations = containerRequestOperations("container.create")
-    val options = containerRequestOptions(user, environment.id, origContainerResourcePre)
+    val options    = containerRequestOptions(user, context.environmentId, proto)
 
-    SafeRequest (operations, options) ProtectAsync { maybeState =>
-      // TODO: we need an entitlement check before allowing the user to use this provider
+    SafeRequest (operations, options) ProtectAsync { _ =>
+
+      // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
       val provider = caasProvider(containerSpec.provider.id)
-      val containerResourcePre = upsertProperties(origContainerResourcePre, "provider" -> Json.obj(
+      val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
         "name" -> provider.name,
         "id" -> provider.id
       ).toString)
-      ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(environment.id)) match {
-        case Failure(t) => Future.failed(t)
-        case Success(resource) =>
-          val marathonApp = toMarathonLaunchPayload(
-            fqon = fqon,
-            workspaceName = workspace.name,
-            environmentName = environment.name,
-            name = containerResourcePre.name,
-            props = containerSpec,
-            provider = provider
-          )
-          val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
-          marathonClient(provider).launchApp(
-            fqon = fqon,
-            wrkName = workspace.name,
-            envName = environment.name,
-            name = containerSpec.name,
-            marPayload = marathonAppCreatePayload
-          ).transform( updateSuccessfulLaunch(resource), updateFailedLaunch(resource) )
 
-      }
+      for {
+        metaResource <- Future.fromTry{
+          log.debug("Creating container resource in Meta")
+          ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+        }
+        _ = log.info("Meta container created: " + metaResource.id)
+        service      <- Future.fromTry{
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Creating container in backend CaaS...")
+          service.create(context, metaResource)
+        }
+        updatedInstace <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstace
     }
   }
 
-  // TODO: this is only used by MarathonController, and should be deleted as soon as that controller switches to the CaaSService interface
-  @deprecated("this should be replaced by CaaSService::destroyContainer()", "now")
-  def deleteContainer(container: GestaltResourceInstance): Future[Unit] = {
-    val providerId = Json.parse(container.properties.get("provider")) \ "id"
-    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
-      throw new RuntimeException("Could not find Provider : " + providerId)
-    }
-    // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
-    val maybeExternalId = for {
-      props <- container.properties
-      eid <- props.get("external_id")
-    } yield eid
-
-    maybeExternalId match {
-      case Some(eid) => marathonClient(provider).deleteApplication(eid) map { js =>
-        log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
-      }
-      case None =>
-        log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
-        Future.successful(())
-    }
-  }
-
-  @deprecated("this should be replaced by generic CaaSService usage", "now")
-  def marathonClient(provider: GestaltResourceInstance): MarathonClient = {
-    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
-    log.debug("Marathon URL: " + providerUrl)
-    MarathonClient(WS.client, providerUrl)
+  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
+    // just a convenient interface for testing... we'll let DeleteController do this for us
+    deleteController.deleteResource(container, identity)(request)
   }
 
 }

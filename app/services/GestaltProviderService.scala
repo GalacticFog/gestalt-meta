@@ -1,6 +1,5 @@
 package services
 
-
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
@@ -26,24 +25,11 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
+import scala.concurrent.Future
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, Resource, ResourcePath}
-import com.galacticfog.gestalt.events._
-import com.google.inject.Inject
-
-import skuber._
-import skuber.api.client._
-import skuber.json.format._
-import skuber.ext._
-import skuber.json.ext.format._
-import org.yaml.snakeyaml._
-import play.api.libs.json._
-import skuber.api.client.ObjKind
-
-import com.galacticfog.gestalt.caas.kube._
-
-import controllers.util._
-import com.galacticfog.gestalt.json.Js
 import scala.concurrent.ExecutionContext
 
 trait GestaltProviderService
@@ -74,8 +60,6 @@ trait CaasService extends GestaltProviderService {
 
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance]
 
-//  def migrate(id: UUID, to: ***): Future[JsValue]
-//  
 //  /**
 //   * Convert input container JSON to a Meta Container Resource.
 //   */
