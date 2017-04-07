@@ -49,8 +49,8 @@ object MetaHealth {
   val rabbitWebUrl = "%s://%s:%s".format(
       EnvConfig.rabbitHttpProtocol, EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
-  val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-  val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+//  val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+//  val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
   
   // TODO: We need to store creds for all of these service in env.
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
@@ -62,8 +62,8 @@ object MetaHealth {
     DataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
     
     val serviceMap = Map(
-        lambdaConfig  -> "/health",
-        gatewayConfig -> "/health",
+//        lambdaConfig  -> "/health",
+//        gatewayConfig -> "/health",
         rabbitConfig  -> "/api/aliveness-test/%2F")
     
     val stats  = checkAll(serviceMap, DEFAULT_SERVICE_TIMEOUT_SECONDS)
