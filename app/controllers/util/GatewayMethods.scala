@@ -3,7 +3,8 @@ package controllers.util
 import java.net.URL
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}

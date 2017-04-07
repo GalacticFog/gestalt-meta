@@ -14,8 +14,10 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 @Singleton
-class InfoController @Inject()(messagesApi: MessagesApi,
-                               env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class InfoController @Inject()(
+    metaHealth: MetaHealth,
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])
@@ -64,7 +66,7 @@ class InfoController @Inject()(messagesApi: MessagesApi,
 //  }
   
   protected[controllers] def checkHealth(verbose: Boolean) = {
-    MetaHealth.selfCheck(verbose) match {
+    metaHealth.selfCheck(verbose) match {
       case Left(err)      => InternalServerError(err)
       case Right(success) => Ok(success)
     }    

@@ -18,27 +18,27 @@ object Global extends WithFilters(LoggingFilter) with GlobalSettings  {
   private[this] var status: String = null
   private[this] var health: JsValue = null
 
-  def setServiceStatus() = {
-    log.info("Checking Meta service health...")
-    health = MetaHealth.selfCheck(verbose = true) match {
-      case Left(error) => {
-        log.warn("Service health is compromised.")
-        error
-      }
-      case Right(info) => {
-        log.info("Meta is healthy.")
-        info
-      }
-    }
-    log.info("Self-check results:\n" + Json.prettyPrint(health))
-    status = (health \ "status").as[String]    
-  }
+//  def setServiceStatus() = {
+//    log.info("Checking Meta service health...")
+//    health = MetaHealth.selfCheck(verbose = true) match {
+//      case Left(error) => {
+//        log.warn("Service health is compromised.")
+//        error
+//      }
+//      case Right(info) => {
+//        log.info("Meta is healthy.")
+//        info
+//      }
+//    }
+//    log.info("Self-check results:\n" + Json.prettyPrint(health))
+//    status = (health \ "status").as[String]    
+//  }
 
   def unavailable() = Option(Action(ServiceUnavailable(health)))
 
   override def onStart(app: Application) {
     log.info("Starting Meta...")
-    setServiceStatus()
+    //setServiceStatus()
   }
 
   override def onRouteRequest(request: RequestHeader): Option[Handler] = {

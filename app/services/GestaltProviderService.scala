@@ -15,7 +15,7 @@ import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._

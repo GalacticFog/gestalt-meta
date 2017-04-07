@@ -260,9 +260,9 @@ POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id/apiendpoints		control
 ############################
 # API_ENDPOINTS
 ############################
-POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints	controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
-POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints	controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  	controllers.LaserController.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
+#POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/apiendpoints	controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
+#POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apiendpoints	controllers.LaserController.postApiEndpointFqon(fqon: String, id: java.util.UUID)
+#POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints  	controllers.LaserController.postLambdaEndpointFqon(fqon: String, id: java.util.UUID)
 
 ############################
 # PROVIDERS

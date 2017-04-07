@@ -7,7 +7,8 @@ import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
 
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}

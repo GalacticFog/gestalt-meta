@@ -29,7 +29,8 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._

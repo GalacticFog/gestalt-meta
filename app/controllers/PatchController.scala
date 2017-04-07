@@ -1,7 +1,7 @@
 package controllers
 
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
@@ -57,7 +57,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> new GroupMethods(secProvider).groupPatch,
-    ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,
+    /*ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,*/
     ResourceIds.Entitlement -> entitlementPatch)    
   
   
