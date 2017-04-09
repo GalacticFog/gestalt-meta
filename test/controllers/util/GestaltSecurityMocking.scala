@@ -98,25 +98,4 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
 
   private[this] def uuid() = UUID.randomUUID()  
 
-  /*
-   * Still playing with this - DO NOT DELETE!
-   */
-//  type FakeFrameworkEnv = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator]
-//  type FrameworkEnvType = GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-//
-//  def injectController[A : ClassTag](
-//      auth: Option[GestaltAuthResponseWithCreds] = None,
-//      env: Option[FakeFrameworkEnv]   = None,
-//      overrides: Seq[GuiceableModule] = Seq.empty) = {
-//
-//    val authResponse = auth getOrElse dummyAuthResponseWithCreds()
-//    val environment  = env getOrElse fakeSecurityEnvironment(authResponse)
-//    val envBinding: GuiceableModule = bind(classOf[FrameworkEnvType]).toInstance(environment)
-//
-//    new GuiceApplicationBuilder().overrides(
-//      (envBinding +: overrides):_*)
-//      .build()
-//      .injector
-//      .instanceOf[A]
-//  }
 }

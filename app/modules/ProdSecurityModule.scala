@@ -6,10 +6,9 @@ import com.mohiva.play.silhouette.api.{EventBus, RequestProvider}
 import com.mohiva.play.silhouette.api.services.{AuthenticatorService, IdentityService}
 import com.mohiva.play.silhouette.impl.authenticators.{DummyAuthenticator, DummyAuthenticatorService}
 import java.util.UUID
-import javax.inject.Singleton
+import javax.inject.{Inject, Singleton}
 
 import com.galacticfog.gestalt.security.api._
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
 import com.google.inject.{AbstractModule, Provides}
 import play.api.Logger
 
@@ -20,17 +19,9 @@ class ProdSecurityModule extends AbstractModule {
 
   override def configure(): Unit = {
     bind(classOf[SecurityClientProvider]).to(classOf[GestaltLateInitSecurityEnvironment])
+    bind(classOf[GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator]]).to(classOf[GestaltLateInitSecurityEnvironment])
   }
 
-  @Singleton
-  @Provides def providesEnvironment( securityConfig: GestaltSecurityConfig,
-                                     securityClient: GestaltSecurityClient,
-                                     eventBus: EventBus,
-                                     identityService: IdentityService[AuthAccountWithCreds],
-                                     authenticatorService: AuthenticatorService[DummyAuthenticator] )
-                                   ( implicit ec: ExecutionContext ): GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator] = {
-    new GestaltLateInitSecurityEnvironment( eventBus, identityService )
-  }
 }
 
 object ProdSecurityModule {
@@ -49,22 +40,19 @@ trait SecurityClientProvider {
   def getClient: GestaltSecurityClient
 }
 
-class GestaltLateInitSecurityEnvironment( bus: EventBus,
-                                          identitySvc: IdentityService[AuthAccountWithCreds] )
-                                        ( implicit ec: ExecutionContext )
+@Singleton
+class GestaltLateInitSecurityEnvironment @Inject() ( bus: EventBus,
+                                                     identitySvc: IdentityService[AuthAccountWithCreds] )
+                                                   ( implicit ec: ExecutionContext )
 
   extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
     with SecurityClientProvider {
 
-  var maybeSecurityConfig = Try{
+  var maybeSecurityConfig = {
     Logger.info("attempting to determine GestaltSecurityConfig for framework authentication mode")
     GestaltSecurityConfig.getSecurityConfig
       .filter(_.isWellDefined)
-      .getOrElse {
-        Logger.warn("could not determine suitable GestaltSecurityConfig; relying on getFallbackSecurityConfig()")
-        GestaltFrameworkSecurityConfigModule.FALLBACK_SECURITY_CONFIG
-      }
-  }.toOption
+  }
 
   override def client: GestaltSecurityClient = {
     ???

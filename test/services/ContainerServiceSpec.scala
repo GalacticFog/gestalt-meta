@@ -7,6 +7,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
 import org.joda.time.DateTime
@@ -59,7 +60,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         .bindings(
           bind(classOf[ProviderManager]).toInstance(mockProviderManager),
           bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl]),
-          bind(classOf[DeleteController]).toInstance(mockDeleteController)
+          bind(classOf[DeleteController]).toInstance(mockDeleteController),
+          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
         )
         .injector
   }
