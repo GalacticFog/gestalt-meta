@@ -36,6 +36,7 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 @Singleton
 class DeleteController @Inject()( messagesApi: MessagesApi,
                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                  security: Security,
                                   providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
@@ -107,12 +108,12 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
   }
   
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    Security.deleteOrg(res.id, account) map ( _ => () )
+    security.deleteOrg(res.id, account) map ( _ => () )
   }
   
   def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    //Security.deleteAccount(res.id, account) map ( _ => () )
-    val result = Security.deleteAccount(res.id, account) 
+    //security.deleteAccount(res.id, account) map ( _ => () )
+    val result = security.deleteAccount(res.id, account)
     
     //log.debug("Security.deleteAccount() result : " + result)
     
@@ -120,7 +121,7 @@ class DeleteController @Inject()( messagesApi: MessagesApi,
   }  
 
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    Security.deleteGroup(res.id, account) map ( _ => () )
+    security.deleteGroup(res.id, account) map ( _ => () )
   }
   
   /* *************************************************

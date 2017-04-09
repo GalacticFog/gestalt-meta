@@ -4,17 +4,13 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltAuthResponseWithCreds}
-import com.galacticfog.gestalt.security.play.silhouette.fakes.{FakeGestaltFrameworkSecurityEnvironment, FakeGestaltSecurityModule}
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import com.galacticfog.gestalt.security.play.silhouette.modules.{GestaltDelegatedSecurityConfigModule, GestaltFrameworkSecurityConfigModule, GestaltSecurityModule}
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import modules.{MetaDefaultDCOS, MetaDefaultServices, MetaDefaultSkuber, ProdSecurityModule}
 import org.specs2.mock.Mockito
 import play.api.inject._
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.{FakeRequest, PlaySpecification}
 import services.{MarathonClientFactory, SkuberFactory}
 

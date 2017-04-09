@@ -18,17 +18,7 @@ import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
-import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltDelegatedSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityModule
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import modules.{MetaDefaultServices, ProdSecurityModule}
-import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.inject.guice.GuiceableModule
-import play.api.inject.guice.GuiceableModule.fromGuiceModule
-import play.api.inject.guice.GuiceableModule.fromPlayBinding
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.FakeRequest
 import play.api.test.PlaySpecification

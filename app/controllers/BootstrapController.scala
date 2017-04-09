@@ -22,6 +22,7 @@ import com.galacticfog.gestalt.meta.providers._
 class BootstrapController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                      providerManager: ProviderManager,
+                                     security: Security,
                                      deleteController: DeleteController)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -52,7 +53,7 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
     }
 
     log.debug("Looking up root Org in gestalt-security...")
-    val rootOrgId = Security.getRootOrg(request.identity)(this.securityClient) match {
+    val rootOrgId = security.getRootOrg(request.identity) match {
       case Success(org) => org.id
       case Failure(err) => {
         log.error("Failed Looking up root user in gestalt-security: " + err.getMessage)

@@ -41,6 +41,7 @@ import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
 @Singleton
 class ResourceController @Inject()( messagesApi: MessagesApi,
                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                    security: Security,
                                     containerService: ContainerService )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -442,7 +443,7 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
    */
   private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     
-    Security.getAccountGroups(res.id, user) match {
+    security.getAccountGroups(res.id, user) match {
       case Failure(er) => {
         throw new RuntimeException(Errors.USER_GROUP_LOOKUP_FAILED(res.id, er.getMessage))
       }
@@ -463,7 +464,7 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
    */
   def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = {
     
-    Security.getGroupAccounts(r.id, user) map { acs =>
+    security.getGroupAccounts(r.id, user) map { acs =>
       // String list of all users in current group.
       val acids = (acs map { _.id.toString }).mkString(",")
       
@@ -541,7 +542,7 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
    * groups will NOT be displayed in user.properties.
    */
   def getGroupUsersFqon(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
-    Security.getGroupAccounts(group, request.identity) match {
+    security.getGroupAccounts(group, request.identity) match {
       case Failure(er) => HandleExceptions(er)
       case Success(gs) => {
         val userids = gs map { _.id }
@@ -561,7 +562,7 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
    * properties collection will NOT display the users in each group.
    */
   def getUserGroupsFqon(fqon: String, user: UUID) = Authenticate(fqon) { implicit request =>
-    Security.getAccountGroups(request.identity) match {
+    security.getAccountGroups(request.identity) match {
       case Failure(err) => HandleExceptions(err)      
       case Success(gs)  => {
         val groupids = gs map { _.id }

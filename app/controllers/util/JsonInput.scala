@@ -1,56 +1,15 @@
 package controllers.util
 
-
-import play.api.http.HeaderNames
-
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Future
-import com.galacticfog.gestalt.meta.api._
-
-import com.galacticfog.gestalt.data.util._
-
-import controllers.util.db._
-
 import play.api.Logger
-import scala.util.{Success,Failure}
-
-import org.postgresql.util.PSQLException
-
-import scalikejdbc._
 import com.galacticfog.gestalt.data._
 import scala.util.Try
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltBaseAuthProvider
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecuredController
-
-import com.mohiva.play.silhouette.api.services.AuthenticatorService
-import com.mohiva.play.silhouette.impl.authenticators.{DummyAuthenticatorService, DummyAuthenticator}
-
 import java.util.UUID
-
 import com.galacticfog.gestalt.data.models._
-
 import com.galacticfog.gestalt.meta.api.errors._
-
-import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
-import com.galacticfog.gestalt.security.api.errors.{ BadRequestException => SecurityBadRequestException }
-import com.galacticfog.gestalt.security.api.errors.{ UnauthorizedAPIException => SecurityUnauthorizedAPIException }
-import com.galacticfog.gestalt.security.api.errors.{ ForbiddenAPIException => SecurityForbiddenAPIException }
-import com.galacticfog.gestalt.security.api.errors.{ ResourceNotFoundException => SecurityResourceNotFoundException }
-import com.galacticfog.gestalt.security.api.errors.{ ConflictException => SecurityConflictException }
-import com.galacticfog.gestalt.security.api.errors.{ UnknownAPIException => SecurityUnknownAPIException }
-import com.galacticfog.gestalt.security.api.errors.{ APIParseException => SecurityAPIParseException }
-import play.api.mvc.RequestHeader
-
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-
 import play.api.libs.json._
-import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
-import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
 
 trait JsonInput {

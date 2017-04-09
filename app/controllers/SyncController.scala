@@ -30,6 +30,7 @@ import javax.inject.Singleton
 @Singleton
 class SyncController @Inject()( messagesApi: MessagesApi,
                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                security: Security,
                                 deleteController: DeleteController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -52,7 +53,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   def sync() = Authenticate() { implicit request =>
   
     Try {
-      val sd = Security.getOrgSyncTree(None, request.identity) match {
+      val sd = security.getOrgSyncTree(None, request.identity) match {
         case Success(data) => data
         case Failure(err)  => throw err
       }
@@ -264,7 +265,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   }
   
   def getRootOrgId(account: AuthAccountWithCreds): UUID = {
-    Security.getRootOrg(account) match {
+    security.getRootOrg(account) match {
       case Success(root) => root.id
       case Failure(err)  =>
         throw new RuntimeException(
@@ -273,7 +274,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
   }
   
   def getRootOrgFqon(account: AuthAccountWithCreds): String = {
-    Security.getRootOrg(account).get.fqon
+    security.getRootOrg(account).get.fqon
   }
 
   private def userProps(acc: GestaltAccount): Seq[(String,String)] = {
@@ -297,14 +298,14 @@ class SyncController @Inject()( messagesApi: MessagesApi,
    */
   private def parentOrgId(o: GestaltOrg, identity: AuthAccountWithCreds) = {
     if (o.parent.isDefined) o.parent.get.id
-    else Security.getRootOrg(identity) match {
+    else security.getRootOrg(identity) match {
       case Success(org) => org.id
       case Failure(err) => throw err
     }
   }
   
   private def securitySyncTree(identity: AuthAccountWithCreds) = 
-    Security.getOrgSyncTree(None, identity) match {
+    security.getOrgSyncTree(None, identity) match {
       case Success(data) => data
       case Failure(err)  => throw err
     }  
