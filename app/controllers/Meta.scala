@@ -4,7 +4,7 @@ package controllers
 import java.net.URL
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
@@ -674,19 +674,19 @@ class Meta @Inject()( messagesApi: MessagesApi,
   
   /************** END PROVIDER CODE ********************/
   
-  def laserClient(lambdaUrl: String, gatewayUrl: String) = {
-    val gateway = HostConfig.make(new URL(gatewayUrl))
-    val lambda  = HostConfig.make(new URL(lambdaUrl))
-    new Laser(gateway, lambda, Option(EnvConfig.securityKey), Option(EnvConfig.securitySecret))
-  }  
-  
-  
-  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  lazy val laser = new Laser(
-      gatewayConfig, lambdaConfig, 
-      Option(EnvConfig.securityKey), 
-      Option(EnvConfig.securitySecret))  
+//  def laserClient(lambdaUrl: String, gatewayUrl: String) = {
+//    val gateway = HostConfig.make(new URL(gatewayUrl))
+//    val lambda  = HostConfig.make(new URL(lambdaUrl))
+//    new Laser(gateway, lambda, Option(EnvConfig.securityKey), Option(EnvConfig.securitySecret))
+//  }  
+//  
+//  
+//  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
+//  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
+//  lazy val laser = new Laser(
+//      gatewayConfig, lambdaConfig, 
+//      Option(EnvConfig.securityKey), 
+//      Option(EnvConfig.securitySecret))  
   
 //  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
 //    import ApiGateway._

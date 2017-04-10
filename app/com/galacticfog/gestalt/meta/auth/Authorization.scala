@@ -16,7 +16,8 @@ import play.api.{Logger => log}
 import play.api.libs.json._
 import play.api.mvc.Result
 import scala.concurrent.Future
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.annotation.tailrec
 import scala.language.postfixOps
 

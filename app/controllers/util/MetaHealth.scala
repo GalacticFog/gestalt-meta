@@ -1,10 +1,11 @@
 package controllers.util
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.sdk.{JsonWebClient => WebClient}
-
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.Await
+import com.galacticfog.gestalt.laser._
+import com.galacticfog.gestalt.meta.api.sdk.JsonClient
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
 import scala.concurrent.duration._
 import scala.util.Try
 import java.net.URL
@@ -19,15 +20,18 @@ import play.api.Logger
 
 import scala.language.postfixOps
 import scala.util.control.NonFatal
+import play.api.libs.ws.WSClient
+import com.google.inject.Inject
+import javax.inject.Singleton
+
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 
 @Singleton
-class MetaHealth @Inject()( dataStore: DataStore ) {
+class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
   
   val log = Logger(this.getClass)
-  
-  private val jsclient = JsonClient.newClient()
+ 
     
   /*
    * Check connectivity with the following services:
@@ -102,7 +106,7 @@ class MetaHealth @Inject()( dataStore: DataStore ) {
   def checkAll(
       serviceMap: Map[HostConfig,String], 
       timeout: Int, 
-      expected: Seq[Int] = WebClient.ALL_GOOD): Map[String,Try[Boolean]] = {
+      expected: Seq[Int] = Seq(200 to 299:_*)): Map[String,Try[Boolean]] = {
       
     serviceMap map { case (config, url) => 
       (mkurl(config), checkService(config, url, timeout, expected)) 
@@ -113,9 +117,9 @@ class MetaHealth @Inject()( dataStore: DataStore ) {
       config: HostConfig, 
       resource: String, 
       timeout: Int,  
-      expected: Seq[Int] = WebClient.ALL_GOOD) = Try {
+      expected: Seq[Int] = Seq(200 to 299:_*)) = Try {
     
-    val client = new JsonClient(config, Some(jsclient))
+    val client = new JsonClient(config, Some(ws))
     
     try {
       val response = Await.result(client.get(resource), timeout seconds)

@@ -4,7 +4,7 @@ package controllers
 import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._

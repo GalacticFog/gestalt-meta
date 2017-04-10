@@ -3,7 +3,8 @@ package controllers
 import java.util.UUID
 
 import scala.annotation.tailrec
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success

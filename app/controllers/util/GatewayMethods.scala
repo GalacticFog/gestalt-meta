@@ -3,7 +3,8 @@ package controllers.util
 import java.net.URL
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext.Implicits.global
+//import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}
@@ -40,6 +41,7 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.ResourceState
+import play.api.libs.ws.WSClient
 
 object GatewayMethods {
   
@@ -85,59 +87,7 @@ object GatewayMethods {
         unprocessable(s"GatewayManager provider with ID '$pid' not found")
       }{ gateway => gateway }    
   }
-  
-  def configureWebClient(provider: GestaltResourceInstance): JsonWebClient = {
 
-    val privatevars = for {
-      env <- ProviderEnv.fromResource(provider)
-      prv <- env.public
-    } yield prv
-
-    /*
-     * This needs to change - need a retry strategy that acknowledges public and private addresses.
-     */
-    val config = privatevars map { vs =>
-      
-      val DEFAULT_PROTOCOL = "https"
-      val url = {
-        val host = vs.get("HTTP_API_VHOST_0") getOrElse {
-          throw new UnprocessableEntityException("Missing 'HTTP_API_VHOST_0' variable.")
-        }
-        val port = "443"
-        "%s://%s:%s".format(DEFAULT_PROTOCOL, host, port)
-      }
-      val key = vs.get("GESTALT_SECURITY_KEY") getOrElse {
-        throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_KEY' variable.") 
-      }
-      val secret = vs.get("GESTALT_SECURITY_SECRET") getOrElse {
-        throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_SECRET' variable.")
-      }
-      
-      HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
-      
-    } getOrElse {
-      throw new UnprocessableEntityException("Could not parse [properties.config.env] from provider")
-    }
-    log.debug("Configuring API Web Client with URL : " + config.url)
-    new JsonWebClient(config)
-  }  
-  
-//  def get[T](client: JsonWebClient, resource: String, expected: Seq[Int])
-//      (implicit fmt: Format[T]): Option[T] = {
-//    
-//    JsonWebClient.apiResponse(client.get(resource), expected = expected) match {
-//      case Failure(err) => throw err
-//      case Success(res) => res.output match {
-//        case Some(out) => out.validate[T] match {
-//          case s: JsSuccess[T] => Some(s.get)
-//          case e: JsError => 
-//            throw new RuntimeException(Js.errorString(e))
-//        }
-//        case None => None
-//      }
-//    }    
-//  }  
-  
   private[controllers] def unprocessable(message: String) =
     throw new UnprocessableEntityException(message)    
   
