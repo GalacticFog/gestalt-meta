@@ -63,6 +63,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         .disable[modules.ProdSecurityModule]
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
+        .disable[modules.HealthModule]
         .bindings(
           FakeKubeModule(mockSkuberFactory),
           bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])

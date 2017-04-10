@@ -1,7 +1,5 @@
 package modules
 
-import java.util.UUID
-
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig}
 import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkAuthProvider, GestaltSecurityEnvironment}
 import com.mohiva.play.silhouette.api.{EventBus, RequestProvider}
@@ -11,6 +9,7 @@ import javax.inject.{Inject, Singleton}
 
 import com.galacticfog.gestalt.security.api._
 import com.google.inject.AbstractModule
+import controllers.util.db.ConnectionManager
 import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
 import play.api.libs.ws.WSClient
@@ -41,7 +40,8 @@ trait SecurityClientProvider {
 @Singleton
 class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
                                                      bus: EventBus,
-                                                     identitySvc: IdentityService[AuthAccountWithCreds] )
+                                                     identitySvc: IdentityService[AuthAccountWithCreds],
+                                                     connectionManager: ConnectionManager )
                                                    ( implicit ec: ExecutionContext )
   extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
     with SecurityClientProvider with SecurityKeyInit {
@@ -102,7 +102,7 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
       )
     }
     sql"""
-      CREATE TABLE sec_init (
+      CREATE TABLE IF NOT EXISTS sec_init (
         id INT PRIMARY KEY NOT NULL DEFAULT(0) CHECK (id = 0),
         api_key TEXT NOT NULL,
         api_secret TEXT NOT NULL
@@ -111,14 +111,10 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
     sql"""
        INSERT INTO sec_init (id, api_key, api_secret)
        VALUES (0,${apiKey},${apiSecret})
-       ON CONFLICT (id) DO UPDATE
-         SET api_key = excluded.apiKey,
-             api_secret = exlcluded.apiSecret;
-    """
+    """.update.apply //    ON CONFLICT (id) DO UPDATE SET api_key = EXCLUDED.api_key, api_secret = EXCLUDED.api_secret;
   }
 
   def getCredsFromDB: Option[(String,String)] = {
-    // TODO: (cgbaker) this requires that db pool is init already, do something about this
     import scalikejdbc._
     implicit val autoSession = AutoSession
     logger.info("attempting to recover security credentials from database")

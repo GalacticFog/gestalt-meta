@@ -215,7 +215,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
       Resource.fromPath("invalid_org") must beNone
     }
 
-    "find a valid top-level resource (i.e. /{fqon}/environments/{id})" in new ResourceScope {
+    "find a valid top-level resource (i.e. /{fqon}/environments/{id})" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
 
@@ -241,7 +241,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
       test2.get.id === eid
     }
 
-    "find a valid second-level resource (i.e. /{fqon}/workspaces/{id}/environments/{id})" in new ResourceScope {
+    "find a valid second-level resource (i.e. /{fqon}/workspaces/{id}/environments/{id})" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
 
@@ -274,7 +274,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
 
     "CONDITION: typeName == 'providers" should {
 
-      "find the resource if it is a valid subtype of Provider" in new ResourceScope {
+      "find the resource if it is a valid subtype of Provider" in {
         val org = Resource.fromPath("galacticfog")
         org must beSome
 
@@ -286,7 +286,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
         Resource.lookupResource("providers", g1.get.id) must beSome
       }
 
-      "return None if the resource is NOT a valid subtype of Provider" in new ResourceScope {
+      "return None if the resource is NOT a valid subtype of Provider" in {
         val org = Resource.fromPath("galacticfog")
         org must beSome
 
@@ -302,7 +302,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
 
     "CONDITION: typeName == 'rules" should {
 
-      "find the resource if it is a valid subtype of Rule" in new ResourceScope {
+      "find the resource if it is a valid subtype of Rule" in {
         val org = Resource.fromPath("galacticfog")
         org must beSome
 
@@ -315,21 +315,21 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
         Resource.lookupResource("rules", rul) must beSome
       }
 
-      "return None if the resource is NOT a valid subtype of Rule]" in new ResourceScope {
+      "return None if the resource is NOT a valid subtype of Rule]" in {
         val org = Resource.fromPath("galacticfog")
         org must beSome
 
         val (wid, eid) = createWorkspaceEnvironment(org.get.id)
 
-        Resource.lookupResource("rules", uuid()) // not exist
-        Resource.lookupResource("rules", wid) // wrong type
+        Resource.lookupResource("rules", uuid()) must beNone
+        Resource.lookupResource("rules", wid) must beNone
       }
     }
   }
 
   "findFirstLevelList" should {
 
-    "find first-level resources of the given type" in new ResourceScope {
+    "find first-level resources of the given type" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
 
@@ -373,7 +373,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
 
   "findSecondLevelList" should {
 
-    "find second-level resources of the given type" in new ResourceScope {
+    "find second-level resources of the given type" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
 
@@ -392,11 +392,11 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
       l1(0).typeId === ResourceIds.Environment
     }
 
-    "find nothing when there are no resources of the given type" in new ResourceScope {
+    "find nothing when there are no resources of the given type" in {
       failure
     }.pendingUntilFixed("Need to work against a clean database")
 
-    "throw an exception when the given Org is invalid" in new ResourceScope {
+    "throw an exception when the given Org is invalid" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
       val (wid, eid) = createWorkspaceEnvironment(org.get.id)
@@ -408,7 +408,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
         Resource.TargetType -> "environments")) must throwA[Throwable]
     }
 
-    "throw an exception when the given parent-type (first-level) is invalid" in new ResourceScope {
+    "throw an exception when the given parent-type (first-level) is invalid" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
       val (wid, eid) = createWorkspaceEnvironment(org.get.id)
@@ -420,7 +420,7 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
         Resource.TargetType -> "environments")) must throwA[Throwable]
     }
 
-    "throw an exception when the given target-type (second-level) is invalid" in new ResourceScope {
+    "throw an exception when the given target-type (second-level) is invalid" in {
       val org = Resource.fromPath("galacticfog")
       org must beSome
       val (wid, eid) = createWorkspaceEnvironment(org.get.id)

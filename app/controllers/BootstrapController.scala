@@ -27,7 +27,8 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
                                      providerManager: ProviderManager,
                                      security: Security,
                                      securityInit: SecurityKeyInit,
-                                     deleteController: DeleteController)
+                                     deleteController: DeleteController,
+                                     connectionManager: ConnectionManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
@@ -73,7 +74,7 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
     log.debug("bootstrap : [root-user-id] : " + rootOrgId.toString)
     
     log.debug("Initializing bootstrapper...")
-    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
+    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, connectionManager.currentDataSource())
     
     log.debug("Beginning migration...")
     

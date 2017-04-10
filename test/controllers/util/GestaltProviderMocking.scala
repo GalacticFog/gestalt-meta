@@ -5,6 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
+import controllers.util.db.ConnectionManager
 import modules._
 import org.specs2.mock.Mockito
 import play.api.inject._
@@ -31,13 +32,18 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       classOf[MetaDefaultDCOS],
       classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
-      classOf[MetaDefaultServices]
+      classOf[MetaDefaultServices],
+      classOf[HealthModule]
     )
 
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
       bind(classOf[SecureController]).toInstance(mockSecureController),
-      bind(classOf[SecurityClientProvider]).toInstance(mock[SecurityClientProvider])
+      bind(classOf[SecurityClientProvider]).toInstance(mock[SecurityClientProvider]),
+      bind(classOf[SecurityKeyInit]).toInstance(mock[SecurityKeyInit]),
+      bind(classOf[MetaHealth]).toInstance(mock[MetaHealth]),
+      bind(classOf[MetaServiceStatus]).toInstance(mock[MetaServiceStatus]),
+      bind(classOf[ConnectionManager]).toInstance(connectionManager)
     )
 
     new GuiceApplicationBuilder()

@@ -53,6 +53,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
         .disable[modules.MetaDefaultDCOS]
+        .disable[modules.HealthModule]
         .bindings(
           FakeDCOSModule(mockMCF),
           bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])

@@ -57,6 +57,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         .disable[modules.ProdSecurityModule]
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
+        .disable[modules.HealthModule]
         .bindings(
           bind(classOf[ProviderManager]).toInstance(mockProviderManager),
           bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl]),

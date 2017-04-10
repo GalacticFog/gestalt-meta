@@ -1,29 +1,29 @@
 package controllers.util
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.sdk.{JsonWebClient => WebClient}
+
 import scala.concurrent.ExecutionContext.Implicits.global
-import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
+import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import java.net.URL
+import javax.inject.{Inject, Singleton}
 
 import org.joda.time.DateTime
-
 import play.api.libs.json._
-
 import controllers.util.db.EnvConfig
 
-import scala.util.{Either,Left,Right}
+import scala.util.{Either, Left, Right}
 import play.api.Logger
-import scala.language.postfixOps
 
+import scala.language.postfixOps
 import scala.util.control.NonFatal
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 
-object MetaHealth {
+@Singleton
+class MetaHealth @Inject()( dataStore: DataStore ) {
   
   val log = Logger(this.getClass)
   
@@ -49,22 +49,18 @@ object MetaHealth {
   val rabbitWebUrl = "%s://%s:%s".format(
       EnvConfig.rabbitHttpProtocol, EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
-//  val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  
   // TODO: We need to store creds for all of these service in env.
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
-      creds = Option(BasicCredential("guest", "guest")))  
+      creds = Option(BasicCredential("guest", "guest")))
   
   
   def selfCheck(verbose: Boolean): Either[JsValue,JsValue] = {
     
-    DataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
+    dataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
     
     val serviceMap = Map(
-//        lambdaConfig  -> "/health",
-//        gatewayConfig -> "/health",
-        rabbitConfig  -> "/api/aliveness-test/%2F")
+        rabbitConfig  -> "/api/aliveness-test/%2F"
+    )
     
     val stats  = checkAll(serviceMap, DEFAULT_SERVICE_TIMEOUT_SECONDS)
     val errors = stats collect { case (k,v) if v.isFailure => (k,v) }

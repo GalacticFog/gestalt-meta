@@ -107,7 +107,7 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
   
   "toJson" should {
     
-    "convert a GestaltResourceInstnce to a JsObject" in new ResourceScope {
+    "convert a GestaltResourceInstnce to a JsObject" in {
       val i = newInstance(uuid(), "dummy-resource", properties = Some(Map("a" -> "foo", "b" -> "bar")))
       i must haveClass[GestaltResourceInstance]
       
@@ -121,7 +121,7 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
   
   "applyOps" should {
     
-    "apply the given PATCH ops to the given resource" in new ResourceScope {
+    "apply the given PATCH ops to the given resource" in {
 
       val props = Map(
         "host" -> "example.com",
