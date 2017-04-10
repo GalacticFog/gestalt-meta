@@ -16,13 +16,17 @@ import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
+
 import com.galacticfog.gestalt.meta.providers._
+import com.galacticfog.gestalt.security.api.GestaltBasicCredentials
+import modules.{GestaltLateInitSecurityEnvironment, SecurityKeyInit}
 
 @Singleton
 class BootstrapController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                      providerManager: ProviderManager,
                                      security: Security,
+                                     securityInit: SecurityKeyInit,
                                      deleteController: DeleteController)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -71,10 +75,6 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
     log.debug("Initializing bootstrapper...")
     val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
     
-    
-    import scala.util.Try
-    
-    
     log.debug("Beginning migration...")
     
     (for {
@@ -86,6 +86,13 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
     } yield e) match {
       case Success(_) => {
         log.info("Successfully rebuilt Meta DB.")
+        request.identity.creds match {
+          case apiCreds: GestaltBasicCredentials =>
+            securityInit.init(apiCreds.username, apiCreds.password)
+            log.info("Initializing gestalt-security-play with API credentials from /bootstrap")
+          case _ =>
+            log.warn("Bootstrap did not use API credentials; will not initialize security client")
+        }
         NoContent
       }
       case Failure(e) => {

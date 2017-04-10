@@ -5,7 +5,6 @@ import java.util.UUID
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.{GestaltDelegatedSecurityConfigModule, GestaltSecurityModule}
 import modules._
 import org.specs2.mock.Mockito
 import play.api.inject._
@@ -29,12 +28,11 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
 
     val defaultDisabled = Seq(
-      classOf[GestaltDelegatedSecurityConfigModule],
-      classOf[GestaltSecurityModule],
       classOf[MetaDefaultDCOS],
       classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
-      classOf[MetaDefaultServices])
+      classOf[MetaDefaultServices]
+    )
 
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),

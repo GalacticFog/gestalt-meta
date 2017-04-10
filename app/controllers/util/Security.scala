@@ -32,7 +32,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   private[this] val log = Logger(this.getClass)
   
   def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds): Try[GestaltOrgSync] = {
-    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   } 
   
   def getRootOrg(auth: AuthAccountWithCreds): Try[GestaltOrg] = {
@@ -50,11 +50,11 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   }
 
   def getGroups(auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try(Await.result(GestaltGroup.listGroups()(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltGroup.listGroups()(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
   
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
-    Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
   
   def createGroup(org: UUID, auth: AuthAccountWithCreds, group: GestaltResourceInput): Try[GestaltGroup] = {
@@ -65,24 +65,24 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
         rights = None,
         description = group.description
       )
-      Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)
+      Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)
     }
   }
   
   def getAccountGroups(auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def getAccountGroups(accountId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try{Await.result(GestaltAccount.listGroupMemberships(accountId)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltAccount.listGroupMemberships(accountId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def deleteGroup(id: UUID, auth: AuthAccountWithCreds): Try[Boolean] = {
-    Try{Await.result(GestaltGroup.deleteGroup(id)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltGroup.deleteGroup(id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def getAllOrgs(org: Option[UUID], auth: AuthAccountWithCreds): Try[Seq[GestaltOrg]] = {
-    Try{Await.result(GestaltOrg.listOrgs()(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltOrg.listOrgs()(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def createOrg(parent: UUID, auth: AuthAccountWithCreds, org: GestaltResourceInput): Try[GestaltOrg] = {
@@ -94,12 +94,12 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
         createDefaultUserGroup = false,
         inheritParentMappings = Some(true),
         description = org.description
-      ))(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds )}
+      ))(secClientProvider.client.withCreds(auth.creds)), 5 seconds )}
   }
   
   def deleteOrg(org: UUID, auth: AuthAccountWithCreds): Try[Boolean] = {
     log.debug(s"Attempting to DELETE Org ${org.toString}. Account: ${auth.account}")
-    Try{Await.result(GestaltOrg.deleteOrg(org)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltOrg.deleteOrg(org)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def createAccount(org: UUID, auth: AuthAccountWithCreds, user: GestaltResourceInput): Try[GestaltAccount] = {
@@ -119,24 +119,24 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       description = user.description
     )
     log.debug(s"Creating account in gestalt-security (org = $org")
-    Try{Await.result( GestaltOrg.createAccount(org, account)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds )}
+    Try{Await.result( GestaltOrg.createAccount(org, account)(secClientProvider.client.withCreds(auth.creds)), 5 seconds )}
   }
 
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
-    Try{Await.result(GestaltOrg.listAccounts(org.get)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltOrg.listAccounts(org.get)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
   def deleteAccount(id: UUID, auth: AuthAccountWithCreds): Try[Boolean] = {
     log.debug(s"Attempting to delete Account ${id} from Gestalt Security.")
-    Try(Await.result(GestaltAccount.deleteAccount(id)(secClientProvider.getClient.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltAccount.deleteAccount(id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
 
   def addAccountsToGroup(group: UUID, accounts: Seq[UUID]): Try[Seq[SecurityLink]] = {
-    Try(Await.result(GestaltGroup.updateMembership(group, accounts, Seq())(secClientProvider.getClient), 5 seconds))
+    Try(Await.result(GestaltGroup.updateMembership(group, accounts, Seq())(secClientProvider.client), 5 seconds))
   }
   
   def removeAccountsFromGroup(group: UUID, accounts: Seq[UUID]): Try[Seq[SecurityLink]] = {
-    Try(Await.result(GestaltGroup.updateMembership(group, Seq(), remove = accounts)(secClientProvider.getClient), 5 seconds))
+    Try(Await.result(GestaltGroup.updateMembership(group, Seq(), remove = accounts)(secClientProvider.client), 5 seconds))
   }
   
   private object Error {
