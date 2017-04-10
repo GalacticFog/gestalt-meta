@@ -16,14 +16,19 @@ import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
+
 import com.galacticfog.gestalt.meta.providers._
+import com.galacticfog.gestalt.security.api.GestaltBasicCredentials
+import modules.{GestaltLateInitSecurityEnvironment, SecurityKeyInit}
 
 @Singleton
-class BootstrapController @Inject()( 
-   messagesApi: MessagesApi,
-   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-   providerManager: ProviderManager,
-   deleteController: DeleteController)
+class BootstrapController @Inject()( messagesApi: MessagesApi,
+                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                     providerManager: ProviderManager,
+                                     security: Security,
+                                     securityInit: SecurityKeyInit,
+                                     deleteController: DeleteController,
+                                     connectionManager: ConnectionManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
@@ -53,7 +58,7 @@ class BootstrapController @Inject()(
     }
 
     log.debug("Looking up root Org in gestalt-security...")
-    val rootOrgId = Security.getRootOrg(request.identity)(this.securityClient) match {
+    val rootOrgId = security.getRootOrg(request.identity) match {
       case Success(org) => org.id
       case Failure(err) => {
         log.error("Failed Looking up root user in gestalt-security: " + err.getMessage)
@@ -69,11 +74,7 @@ class BootstrapController @Inject()(
     log.debug("bootstrap : [root-user-id] : " + rootOrgId.toString)
     
     log.debug("Initializing bootstrapper...")
-    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
-    
-    
-    import scala.util.Try
-    
+    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, connectionManager.currentDataSource())
     
     log.debug("Beginning migration...")
     
@@ -86,6 +87,13 @@ class BootstrapController @Inject()(
     } yield e) match {
       case Success(_) => {
         log.info("Successfully rebuilt Meta DB.")
+        request.identity.creds match {
+          case apiCreds: GestaltBasicCredentials =>
+            securityInit.init(apiCreds.username, apiCreds.password)
+            log.info("Initializing gestalt-security-play with API credentials from /bootstrap")
+          case _ =>
+            log.warn("Bootstrap did not use API credentials; will not initialize security client")
+        }
         NoContent
       }
       case Failure(e) => {

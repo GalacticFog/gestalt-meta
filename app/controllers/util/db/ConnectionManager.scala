@@ -1,29 +1,30 @@
 package controllers.util.db
 
-
 import com.galacticfog.gestalt.data.util._
-import controllers.util.AppConf
+import javax.inject.{Inject,Singleton}
 import play.api.Logger
 import org.apache.commons.dbcp2.BasicDataSource
 
-object ConnectionManager {
+@Singleton
+class ConnectionManager @Inject()() {
   
   private[this] val log = Logger(this.getClass)
   
   log.debug("ConnectionManager::init()")
-  
-  lazy val config = loadConfig
 
-  def currentDataSource(): BasicDataSource = {
-    val info = loadConfig
-    val ds = new BasicDataSource();
-    ds.setDriverClassName(info.driver);
-    ds.setUsername(info.username.get);
-    ds.setPassword(info.password.get);
-    ds.setUrl(info.url());
+  val config = loadConfig
+  
+  val dataSource = {
+    val ds = new BasicDataSource()
+    ds.setDriverClassName(config.driver)
+    ds.setUsername(config.username.get)
+    ds.setPassword(config.password.get)
+    ds.setUrl(config.url())
     ds
   }
-  
+
+  def currentDataSource(): BasicDataSource = dataSource
+
   /**
    * Resolve database configuration info from either the
    * system environment (env) or /conf/application.conf

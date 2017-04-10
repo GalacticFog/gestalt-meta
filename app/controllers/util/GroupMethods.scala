@@ -12,21 +12,15 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 
 import scala.util.Try
-import scala.util.{Either,Right,Left}
-
+import scala.util.{Either, Left, Right}
 import java.util.UUID
+import javax.inject.Inject
 
 import play.api.Logger
 
 
-/**
- * @tparam A type of securityClient
- * @tparam B type of Account
- */
-class GroupMethods[A,B](secProvider: SecurityProvider[A,B]) {
-  
-  private val log = Logger(this.getClass)
-  
+class GroupMethods @Inject()( security: Security ) {
+
   private[controllers] def groupPatch(
         resource: GestaltResourceInstance, 
         patch: PatchDocument, 
@@ -75,9 +69,9 @@ class GroupMethods[A,B](secProvider: SecurityProvider[A,B]) {
         case Nil => Try(result)
         case op :: t => op match {
           case PatchOps.Add => 
-            go(t, Security.addAccountsToGroup(group, opmap(PatchOps.Add)).get)
+            go(t, security.addAccountsToGroup(group, opmap(PatchOps.Add)).get)
           case PatchOps.Remove =>
-            go(t, Security.removeAccountsFromGroup(group, opmap(PatchOps.Remove)).get)
+            go(t, security.removeAccountsFromGroup(group, opmap(PatchOps.Remove)).get)
         }
       }
     }

@@ -24,12 +24,9 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient,GestaltSecurityConfig}
 
-//import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityEnvironment
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
 
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
-//import controllers.util.GestaltSecurityMocking
 
 import org.specs2.specification._
 import play.api.libs.json.{JsArray, Json}
@@ -55,10 +52,9 @@ class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecu
   lazy val fakeSecurity = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
       identities = Seq(testCreds -> testAuthResponse),
       config = mock[GestaltSecurityConfig],
-      client = mock[GestaltSecurityClient])  
-  
-  val fakeSecProvider = new FakeSecurityProvider {}
-  val gm = new GroupMethods(fakeSecProvider)
+      client = mock[GestaltSecurityClient])
+
+  val gm = new GroupMethods(mock[Security])
   
   "opsToMap" should {
     

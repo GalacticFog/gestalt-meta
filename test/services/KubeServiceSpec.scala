@@ -6,6 +6,7 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.google.inject.AbstractModule
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
@@ -26,6 +27,7 @@ import scala.concurrent.Future
 //import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.Success
+import play.api.inject.bind
 
 @RunWith(classOf[JUnitRunner])
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
@@ -62,7 +64,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         .disable[modules.ProdSecurityModule]
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
-        .bindings(FakeKubeModule(mockSkuberFactory))
+        .disable[modules.HealthModule]
+        .bindings(
+          FakeKubeModule(mockSkuberFactory),
+          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
+        )
         .injector
     val ks = injector.instanceOf[KubernetesService]
   }

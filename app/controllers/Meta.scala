@@ -43,6 +43,7 @@ import javax.inject.Singleton
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                      security: Security,
                       providerManager: ProviderManager )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -50,7 +51,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   // ORGS
   // --------------------------------------------------------------------------
   def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
-    Security.getRootOrg(request.identity) match {
+    security.getRootOrg(request.identity) match {
       case Failure(err)  => { 
         log.error(s"Failed to create top-level Org.")
         Future(HandleExceptions(err)) 
@@ -70,7 +71,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     Authorize(parentOrg, "org.create", request.identity) {
       
-      CreateSynchronized(parentOrg, ResourceIds.Org, json)(Security.createOrg, createNewMetaOrg[JsValue]) match {
+      CreateSynchronized(parentOrg, ResourceIds.Org, json)(security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
 
@@ -97,7 +98,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     Authorize(org, "group.create", request.identity) {
       
       CreateSynchronized(org, ResourceIds.Group, request.body)(
-          Security.createGroup, createNewMetaGroup[JsValue]) match {
+          security.createGroup, createNewMetaGroup[JsValue]) match {
         
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
@@ -111,7 +112,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             if (addusers.isEmpty) Output.renderInstance(res, META_URL)
             else {
               log.debug(s"Adding ${addusers.size} users to new group.")
-              Security.addAccountsToGroup(res.id, addusers) match {
+              security.addAccountsToGroup(res.id, addusers) match {
                 case Success(users) => {
                   val jsonusers = Json.toJson(users)
                   JsonUtil.upsertProperty(RenderSingle(res).as[JsObject], "users", jsonusers).get
@@ -163,7 +164,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     uids match {
       case Failure(err) => HandleExceptions(err)
       case Success(ids) => {
-        Security.addAccountsToGroup(group, ids) match {
+        security.addAccountsToGroup(group, ids) match {
           case Success(users) => Ok(Json.toJson(users))
           case Failure(errors) => HandleExceptions(errors)
         }
@@ -197,7 +198,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     uids match {
       case Success(ids) => {
         log.debug(s"Attempting to REMOVE ${ids.size} user(s) from group ($group): " + ids)
-        Security.removeAccountsFromGroup(group, ids) match {
+        security.removeAccountsFromGroup(group, ids) match {
           case Success(members) => Ok(Json.toJson(members))
           case Failure(errors)  => HandleExceptions(errors)
         }
@@ -225,7 +226,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     Authorize(org, "user.create", request.identity) {
       
-      val root = Security.getRootOrg(request.identity).get.fqon
+      val root = security.getRootOrg(request.identity).get.fqon
       val home = Js.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
       
       log.debug(s"Setting 'gestalt_home' to $home")
@@ -233,9 +234,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
       val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", /*JsString(root)*/ home)
       
       CreateSynchronized(org, ResourceIds.User, userJson.get)(
-        Security.createAccount, createNewMetaUser[JsValue]) match {
+        security.createAccount, createNewMetaUser[JsValue]) match {
           case Failure(err) => {
-            log.error("Response from Security.createAccount() : " + err.getMessage)
+            log.error("Response from security.createAccount() : " + err.getMessage)
             HandleExceptions(err)
           }
           case Success(res) => {
@@ -778,7 +779,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     json \ "properties" \ "gestalt_home" match {
       case u: JsUndefined => {
-        val root = Security.getRootOrg(account)
+        val root = security.getRootOrg(account)
         val props = replaceJsonPropValue(json, "gestalt_home", root.get.fqon)
         replaceJsonProps(json, props)
       }
@@ -802,7 +803,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * Unwrap the given UUID or get the root org_id if None.
    */
   private def orgOrElseRoot[T](org: Option[UUID])(implicit request: SecuredRequest[T]) = org getOrElse {
-    Security.getRootOrg(request.identity) match {
+    security.getRootOrg(request.identity) match {
       case Success(org) => org.id
       case Failure(ex)  => throw ex
     }

@@ -1,36 +1,30 @@
 package controllers.util
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.sdk.JsonClient
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
+import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import java.net.URL
 
 import org.joda.time.DateTime
-
 import play.api.libs.json._
-
 import controllers.util.db.EnvConfig
 
-import scala.util.{Either,Left,Right}
+import scala.util.{Either, Left, Right}
 import play.api.Logger
-import scala.language.postfixOps
 
+import scala.language.postfixOps
 import scala.util.control.NonFatal
 import play.api.libs.ws.WSClient
-import com.google.inject.Inject
-import javax.inject.Singleton
+import javax.inject.{Inject,Singleton}
 
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)
 
-
 @Singleton
-class MetaHealth @Inject()(ws: WSClient){
+class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
   
   val log = Logger(this.getClass)
  
@@ -55,22 +49,18 @@ class MetaHealth @Inject()(ws: WSClient){
   val rabbitWebUrl = "%s://%s:%s".format(
       EnvConfig.rabbitHttpProtocol, EnvConfig.rabbitHost, EnvConfig.rabbitHttpPort)
   
-//  val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-  
   // TODO: We need to store creds for all of these service in env.
   val rabbitConfig  = HostConfig.make(new URL(rabbitWebUrl), 
-      creds = Option(BasicCredential("guest", "guest")))  
+      creds = Option(BasicCredential("guest", "guest")))
   
   
   def selfCheck(verbose: Boolean): Either[JsValue,JsValue] = {
     
-    DataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
+    dataStore.assertOnline(System.exit(1), "Check the PostgreSQL connection string.")
     
     val serviceMap = Map(
-//        lambdaConfig  -> "/health",
-//        gatewayConfig -> "/health",
-        rabbitConfig  -> "/api/aliveness-test/%2F")
+        rabbitConfig  -> "/api/aliveness-test/%2F"
+    )
     
     val stats  = checkAll(serviceMap, DEFAULT_SERVICE_TIMEOUT_SECONDS)
     val errors = stats collect { case (k,v) if v.isFailure => (k,v) }

@@ -39,11 +39,12 @@ import play.api.libs.ws.WSClient
 
 @Singleton
 class DeleteController @Inject()(
-    ws: WSClient,
     messagesApi: MessagesApi,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-    providerManager: ProviderManager )
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+    security: Security,
+    providerManager: ProviderManager,
+    ws: WSClient
+ ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
@@ -118,12 +119,12 @@ class DeleteController @Inject()(
   }
   
   def deleteExternalOrg[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    Security.deleteOrg(res.id, account) map ( _ => () )
+    security.deleteOrg(res.id, account) map ( _ => () )
   }
   
   def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    //Security.deleteAccount(res.id, account) map ( _ => () )
-    val result = Security.deleteAccount(res.id, account) 
+    //security.deleteAccount(res.id, account) map ( _ => () )
+    val result = security.deleteAccount(res.id, account)
     
     //log.debug("Security.deleteAccount() result : " + result)
     
@@ -131,7 +132,7 @@ class DeleteController @Inject()(
   }  
 
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    Security.deleteGroup(res.id, account) map ( _ => () )
+    security.deleteGroup(res.id, account) map ( _ => () )
   }
   
   /* *************************************************

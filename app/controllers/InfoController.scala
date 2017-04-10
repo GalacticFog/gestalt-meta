@@ -14,10 +14,10 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 @Singleton
-class InfoController @Inject()(
-    metaHealth: MetaHealth,
+class InfoController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    metaHealth: MetaHealth )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])

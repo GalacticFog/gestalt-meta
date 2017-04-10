@@ -9,14 +9,14 @@ set -o errexit
 set -o nounset
 set -o pipefail
 
-if [ -z ${GESTALT_SECURITY_KEY+x} ]; then
-  echo must set environment variable GESTALT_SECURITY_KEY with key from gestalt-security
-  exit 1
-fi
-if [ -z ${GESTALT_SECURITY_SECRET+x} ]; then
-  echo must set environment variable GESTALT_SECURITY_SECRET with secret from gestalt-security
-  exit 1
-fi
+#if [ -z ${GESTALT_SECURITY_KEY+x} ]; then
+#  echo must set environment variable GESTALT_SECURITY_KEY with key from gestalt-security
+#  exit 1
+#fi
+#if [ -z ${GESTALT_SECURITY_SECRET+x} ]; then
+#  echo must set environment variable GESTALT_SECURITY_SECRET with secret from gestalt-security
+#  exit 1
+#fi
 
 # it's easier to remove it and then start a new one than to try to restart it if it exists with fallback on creation
 

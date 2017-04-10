@@ -18,17 +18,7 @@ import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
-import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltDelegatedSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltFrameworkSecurityConfigModule
-import com.galacticfog.gestalt.security.play.silhouette.modules.GestaltSecurityModule
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import modules.{MetaDefaultServices, ProdSecurityModule}
-import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.inject.guice.GuiceableModule
-import play.api.inject.guice.GuiceableModule.fromGuiceModule
-import play.api.inject.guice.GuiceableModule.fromPlayBinding
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.FakeRequest
 import play.api.test.PlaySpecification
@@ -108,25 +98,4 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
 
   private[this] def uuid() = UUID.randomUUID()  
 
-  /*
-   * Still playing with this - DO NOT DELETE!
-   */
-//  type FakeFrameworkEnv = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator]
-//  type FrameworkEnvType = GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-//
-//  def injectController[A : ClassTag](
-//      auth: Option[GestaltAuthResponseWithCreds] = None,
-//      env: Option[FakeFrameworkEnv]   = None,
-//      overrides: Seq[GuiceableModule] = Seq.empty) = {
-//
-//    val authResponse = auth getOrElse dummyAuthResponseWithCreds()
-//    val environment  = env getOrElse fakeSecurityEnvironment(authResponse)
-//    val envBinding: GuiceableModule = bind(classOf[FrameworkEnvType]).toInstance(environment)
-//
-//    new GuiceApplicationBuilder().overrides(
-//      (envBinding +: overrides):_*)
-//      .build()
-//      .injector
-//      .instanceOf[A]
-//  }
 }

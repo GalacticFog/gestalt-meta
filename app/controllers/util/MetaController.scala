@@ -82,8 +82,6 @@ import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 trait MetaController extends AuthorizationMethods with SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
   private[this] val log = Logger(this.getClass)
-  
-  protected val connection = Session.connection
 
   /**
     * Get the base URL for this Meta instance
@@ -400,20 +398,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
 //  protected[controllers] def throwBadRequest(message: String) =
 //    throw new BadRequestException(message)
-}
-
-/**
- * Singleton holder for objects shared amongst Controllers.
- */
-object Session {
-  /*
-   * JDBC Connection info for binding to Meta's DataStore.
-   * Getting the connection info DOES NOT validate the data - it
-   * only asserts that values were supplied for all connection attributes.
-   */
-  private[util] val connection = ConnectionManager.config
-  
-  implicit val session: DBSession = AutoSession  
 }
 
 object MetaController {}

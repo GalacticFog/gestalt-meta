@@ -17,11 +17,13 @@ import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
+import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 
 //import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.util.Success
+import play.api.inject.bind
 
 @RunWith(classOf[JUnitRunner])
 class MarathonServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
@@ -52,7 +54,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
         .disable[modules.MetaDefaultDCOS]
-        .bindings(FakeDCOSModule(mockMCF))
+        .disable[modules.HealthModule]
+        .bindings(
+          FakeDCOSModule(mockMCF),
+          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
+        )
         .injector
 
     val ms = injector.instanceOf[MarathonService]

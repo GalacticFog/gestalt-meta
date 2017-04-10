@@ -6,12 +6,16 @@ import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, G
 import play.api.mvc.RequestHeader
 import java.util.UUID
 
+import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import play.api.i18n.MessagesApi
 
 
 abstract class SecureController(messagesApi: MessagesApi,
                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends GestaltFrameworkSecuredController[DummyAuthenticator](messagesApi, env) {
+
+
+  implicit def getSecurityClient: GestaltSecurityClient = env.client
 
   def Authenticate() = new GestaltFrameworkAuthActionBuilderUUID(Some({rh: RequestHeader => None: Option[UUID]}))
   def Authenticate(fqon: String) = new GestaltFrameworkAuthActionBuilder(Some({rh: RequestHeader => Some(fqon)}))

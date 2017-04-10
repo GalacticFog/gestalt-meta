@@ -5,45 +5,46 @@ import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-
 import org.specs2.mutable._
 import org.specs2.specification._
-
 import org.joda.time.DateTime
-
 import org.specs2.specification.Scope
 import java.util.UUID
 
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import play.api.libs.json.Json
-import com.galacticfog.gestalt.security.api.{GestaltDirectory,GestaltAccount, GestaltAPICredentials}
+import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import controllers.util.MetaHealth
 import controllers.util.db.ConnectionManager
+import org.specs2.mock.Mockito
+import play.api.inject.guice.GuiceApplicationBuilder
+import play.api.inject.bind
 
+trait ResourceScope extends Scope with Mockito {
 
-trait ResourceScope extends Scope {
-  
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
   
-  
-  import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-  
-  object Entitlements extends AuthorizationMethods  
-  
-  def pristineDatabase() = {
-    val cnn = controllers.util.db.EnvConfig.getConnection()
+  object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
+  lazy val appBuilder = new GuiceApplicationBuilder().disable(
+    classOf[modules.HealthModule]
+  )
+  lazy val injector = appBuilder.injector()
+  lazy val connectionManager = injector.instanceOf(classOf[ConnectionManager])
+
+  def pristineDatabase() = {
     println("***************************************************")
-    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(cnn.host, cnn.database))
+    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(connectionManager.config.host, connectionManager.config.database))
     println("***************************************************")
     
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org, 
         dummyRootOrgId, dummyRootOrgId, owner, 
-        ConnectionManager.currentDataSource())
+        connectionManager.currentDataSource())
 
     for {
       a <- db.clean

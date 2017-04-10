@@ -2,21 +2,17 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.events
 import com.galacticfog.gestalt.events.AmqpClient
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceIds}
-import com.galacticfog.gestalt.meta.policy.{MetaResourceScope, EventArgs, EventMessage}
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
+import com.galacticfog.gestalt.meta.policy.{EventArgs, EventMessage}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import controllers.util.db.ConnectionManager
 import org.joda.time.DateTime
 import org.specs2.matcher._
 import org.specs2.mock.Mockito
 import org.specs2.mock.mockito._
 import org.specs2.specification.BeforeAll
-import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.libs.json.JsValue
 import play.api.test.PlaySpecification
 import com.galacticfog.gestalt.data._
 
@@ -29,19 +25,7 @@ class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope 
   stopOnFail
   sequential
 
-  override def beforeAll(): Unit = {
-    controllers.util.db.EnvConfig.getConnection()
-
-    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, ConnectionManager.currentDataSource())
-
-    for {
-      a <- db.clean
-      b <- db.migrate
-      c <- db.loadReferenceData
-      d <- db.loadSystemTypes
-      e <- db.initialize("root")
-    } yield e
-  }
+  override def beforeAll(): Unit = pristineDatabase()
 
   lazy val mockAmqpClient = mock[AmqpClient]
   lazy val eventMethods = new EventMethods {

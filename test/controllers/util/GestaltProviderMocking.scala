@@ -4,18 +4,14 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltAuthResponseWithCreds}
-import com.galacticfog.gestalt.security.play.silhouette.fakes.{FakeGestaltFrameworkSecurityEnvironment, FakeGestaltSecurityModule}
-import com.galacticfog.gestalt.security.play.silhouette.modules.{GestaltDelegatedSecurityConfigModule, GestaltFrameworkSecurityConfigModule, GestaltSecurityModule}
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import modules.{MetaDefaultDCOS, MetaDefaultServices, MetaDefaultSkuber, ProdSecurityModule}
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
+import controllers.util.db.ConnectionManager
+import modules._
 import org.specs2.mock.Mockito
 import play.api.inject._
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.test.{FakeRequest, PlaySpecification}
+import play.api.test.PlaySpecification
 import services.{MarathonClientFactory, SkuberFactory}
 
 trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocking with Mockito with ResourceScope {
@@ -33,17 +29,21 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
 
     val defaultDisabled = Seq(
-      classOf[GestaltFrameworkSecurityConfigModule],
-      classOf[GestaltDelegatedSecurityConfigModule],
-      classOf[GestaltSecurityModule],
       classOf[MetaDefaultDCOS],
       classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
-      classOf[MetaDefaultServices])
+      classOf[MetaDefaultServices],
+      classOf[HealthModule]
+    )
 
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
-      bind(classOf[SecureController]).toInstance(mockSecureController)
+      bind(classOf[SecureController]).toInstance(mockSecureController),
+      bind(classOf[SecurityClientProvider]).toInstance(mock[SecurityClientProvider]),
+      bind(classOf[SecurityKeyInit]).toInstance(mock[SecurityKeyInit]),
+      bind(classOf[MetaHealth]).toInstance(mock[MetaHealth]),
+      bind(classOf[MetaServiceStatus]).toInstance(mock[MetaServiceStatus]),
+      bind(classOf[ConnectionManager]).toInstance(connectionManager)
     )
 
     new GuiceApplicationBuilder()

@@ -21,11 +21,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.data.ResourceFactory.update
-import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
 
-import scala.util.{Either, Left, Right}
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -36,12 +32,11 @@ import com.galacticfog.gestalt.json.Js
 @Singleton
 class PatchController @Inject()( messagesApi: MessagesApi,
                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                 groupMethods: GroupMethods,
                                  resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-  
-  protected[controllers] val secProvider = new SecurityProviderImpl(securityClient)
-  
-  /* 
+
+  /*
    * Function to transform a PatchDocument
    */
   type PatchTransform = (PatchDocument => PatchDocument)
@@ -56,7 +51,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
-    ResourceIds.Group -> new GroupMethods(secProvider).groupPatch,
+    ResourceIds.Group -> groupMethods.groupPatch,
     /*ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,*/
     ResourceIds.Entitlement -> entitlementPatch)    
   
