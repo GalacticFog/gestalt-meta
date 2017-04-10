@@ -1,15 +1,12 @@
 package controllers.util
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.sdk.JsonClient
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.{ ExecutionContext, Future, Promise, Await }
+import scala.concurrent.Await
 import scala.concurrent.duration._
 import scala.util.Try
 import java.net.URL
-import javax.inject.{Inject, Singleton}
 
 import org.joda.time.DateTime
 import play.api.libs.json._
@@ -21,8 +18,7 @@ import play.api.Logger
 import scala.language.postfixOps
 import scala.util.control.NonFatal
 import play.api.libs.ws.WSClient
-import com.google.inject.Inject
-import javax.inject.Singleton
+import javax.inject.{Inject,Singleton}
 
 
 case class ServiceUnavailableException(message: String) extends RuntimeException(message)

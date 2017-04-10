@@ -1,45 +1,11 @@
 package controllers.util
 
 import play.api.Logger
-import play.api.libs.json._
-
-import scala.util.{Failure, Success, Try}
-import com.galacticfog.gestalt.json.Js
-import play.api.libs.json.Reads._
-import play.api.libs.functional.syntax._
-import java.util.UUID
-import javax.inject.{Inject, Singleton}
-
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.providers._
-import com.galacticfog.gestalt.data.CoVariant
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.meta.api.errors._
-import services._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
-import services._
-
-import controllers.util.JsonInput
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
-import scala.concurrent.Future
-import scala.concurrent.ExecutionContext
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.patch._
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
-
-import com.galacticfog.gestalt.meta.api._
 import java.net.URL
-import play.api.libs.ws.ning.{NingWSRequest, NingAsyncHttpClientConfigBuilder, NingWSClient}
 import play.api.libs.ws._
 
 object ProviderMethods {

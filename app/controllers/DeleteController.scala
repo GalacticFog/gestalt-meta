@@ -38,11 +38,13 @@ import services.KubernetesService
 import play.api.libs.ws.WSClient
 
 @Singleton
-class DeleteController @Inject()( messagesApi: MessagesApi,
-                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                  security: Security,
-                                  providerManager: ProviderManager )
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+class DeleteController @Inject()(
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    security: Security,
+    providerManager: ProviderManager,
+    ws: WSClient
+ ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
