@@ -213,6 +213,7 @@ package object util {
   def standardMethods(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
     List(
       controllers.util.Authorize(action),
+      controllers.util.Validate(action),
       controllers.util.PolicyCheck(action),
       controllers.util.EventsPre(action),
       controllers.util.EventsPost(action))

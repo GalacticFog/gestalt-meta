@@ -39,12 +39,14 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 
 import javax.inject.Singleton
+import com.galacticfog.gestalt.meta.providers._
 
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                       security: Security,
                       providerManager: ProviderManager )
+
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
@@ -247,181 +249,32 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }        
 
-  // --------------------------------------------------------------------------
-  // GENERIC RESOURCE
-  // --------------------------------------------------------------------------
   
-  def postResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      CreateResourceResult(
-          ResourceIds.User, 
-          request.identity.account.id, 
-          fqid(fqon), request.body, request.identity)
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // RESOURCE PATCH
-  // --------------------------------------------------------------------------
-  
-  import com.galacticfog.gestalt.patch.PatchDocument
-  
-//  def patchResourceOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    resourcePatch(ResourceIds.Org, fqid(fqon))
-//  }
-
-//  def patchResourceFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    ResourceFactory.findById(id).fold(Future(NotFoundResult(request.uri))) { r =>
-//      if (r.typeId == ResourceIds.Lambda) {
-//        LambdaMethods.patchGestaltLambda(r, request.body).get
-//      }
-//      resourcePatch(r.typeId, id)
-//    }
-//  }
-
-//  def resourcePatch(typeId: UUID, id: UUID)(implicit request: SecuredRequest[JsValue]) = {
-//    Future {
-//      //safeGetPatchDocument(request.body) match {
-//      Try(PatchDocument.fromJsValue(request.body)) match {
-//        case Failure(e) => BadRequestResult(e.getMessage)
-//        case Success(patch) => {
-//          
-//          val identity = request.identity.account.id
-//          
-//          patch.applyPatch(json)
-//          
-//          PatchHandler(UUID.randomUUID(), id, patch).applyPatch(ResourceIds.User, identity) match {
-//            case Success(r) => Ok(Output.renderInstance(r))
-//            case Failure(e) => HandleExceptions(e) 
-//          }
-//        }
-//      }      
-//    }
-//  }
-  
-  
-  // --------------------------------------------------------------------------
-  // WORKSPACES
-  // --------------------------------------------------------------------------
-  
-  def postWorkspaceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createWorkspaceResult(fqid(fqon), request.body, request.identity, META_URL)
-  }
-
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel
   
-  private[controllers] def createWorkspaceResult(org: UUID, json: JsValue, user: AuthAccountWithCreds, baseUri: Option[String]) = {
-
-    Future {
-
-      val operations = standardMethods(ResourceIds.Workspace, "workspace.create")
-      
-      val options = RequestOptions(user, 
-          authTarget = Option(org), 
-          policyOwner = Option(org), 
-          policyTarget = Option(j2r(org, user, json, Option(ResourceIds.Workspace))),
-          data = Option(Map("host" -> baseUri.get)))
-      
-      SafeRequest (operations, options) Protect { maybeState =>      
-        
-        CreateNewResource(org, user, json, Option(ResourceIds.Workspace), Option(org)) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(w) => {
-            setNewEntitlements(org, w.id, user, parent = Option(org))
-            Created(Output.renderInstance(w, baseUri))
-          }
-        }
-   
-      }
-      
-    }
-  }  
-
-
-// --------------------------------------------------------------------------
-// ENVIRONMENTS
-// --------------------------------------------------------------------------
-
-  /*
-   * POST /{fqon}/environments
-   */
-  def postEnvironmentFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    parseWorkspaceId(request.body) match {
-      case Failure(err) => Future { HandleExceptions(err) }
-      case Success(workspace) => createEnvironmentResult(fqid(fqon), workspace)
-    }          
+  
+  def postResourceToOrg(fqon: String, typ: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = UUID.fromString(typ)
+    newDefaultResourceResult(org, typeid, parent = org, payload = request.body)
   }
   
-  /*
-   * POST /{fqon}/workspaces/{id}/environments
-   */
-  def postEnvironmentWorkspaceFqon(fqon: String, workspaceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createEnvironmentResult(fqid(fqon), workspaceId)
+  def postResource(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = UUID.fromString(typ)
+    newDefaultResourceResult(org, typeid, parent, request.body)
   }
   
-  private[controllers] def createEnvironmentResult(org: UUID, workspace: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    log.debug(s"createEnvironmentResult($org, $workspace)")
-    
-    Future {
-      val user = request.identity
-      Authorize(workspace, "environment.create", user) {
-        (for {
-          json <- normalizeEnvironment(request.body, Option(workspace))
-          env  <- CreateNewResource(org, user, json, Option(ResourceIds.Environment), Option(workspace))
-        } yield env) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(env) => {
-            setNewEntitlements(org, env.id, user, parent = Option(workspace))
-            Created(Output.renderInstance(env, META_URL))
-          }
-        }             
-      }
+  def postResource2(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = UUID.fromString(typ)
+    newResourceResult2(org, typeid, parent, request.body) { resource =>
+      CreateWithEntitlements(org, resource, Some(parent)) match {
+        case Failure(err) => HandleExceptions(err)
+        case Success(res) => Created(RenderSingle(res))
+      }    
     }
   }
-  
-  
-  
-  /**
-   * Parse properties.workspace from Environment input JSON.
-   */
-  private[controllers] def parseWorkspaceId(json: JsValue): Try[UUID] = Try {
-    Js.find(json.as[JsObject], "/properties/workspace").fold {
-      throw new BadRequestException(s"You must provide a valid 'workspace' property.")
-    } { workspace =>
-      UUID.fromString(workspace.as[String])
-    }
-  }
-
-  // --------------------------------------------------------------------------
-  // DOMAINS
-  // --------------------------------------------------------------------------
-  
-  def postDomain(org: UUID, parent: UUID) = Authenticate(org).async(parse.json) { implicit request =>
-    createResourceCommon(org, parent, ResourceIds.Domain, request.body)
-  }
-  
-  
-  def postDomainFqon(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {      
-      val org = fqid(fqon)
-      val user = request.identity
-      
-      Authorize(parent, "domain.create") {
-        CreateNewResource(org, user, request.body, Option(ResourceIds.Domain), Option(parent)) match {
-          case Failure(e) => HandleExceptions(e)
-          case Success(d) => {   
-            setNewEntitlements(org, d.id, user, parent = Option(parent))
-            Created(Output.renderInstance(d, META_URL))
-          }
-        }
-      }
-    }
-  }
-  /************** END PROVIDER CODE ********************/
-  
-  // --------------------------------------------------------------------------
-  // GATEWAY_PROVIDERS
-  // --------------------------------------------------------------------------
   
   def resolveProviderType(json: JsValue): UUID = {
     json \ "resource_type" match {
@@ -451,9 +304,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
   def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
-
-
-  import com.galacticfog.gestalt.meta.providers._
 
   def load(rootProvider: ProviderMap, identity: UUID) = {
     providerManager.loadProviders(Some(rootProvider)) map { seq =>
@@ -611,40 +461,13 @@ class Meta @Inject()( messagesApi: MessagesApi,
         uid => UUID.fromString(uid.as[String])
       }
       
-      val user = request.identity
+      val user    = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
-      val operations = standardMethods(ResourceIds.Provider, "provider.create")
-      val options = providerRequestOptions(org, user, payload, META_URL.get)
-      
-      SafeRequest (operations, options) ProtectAsync { maybeState =>           
-        
-//        // Ensure linked providers parse
-//        val lps = Js.find(payload, "/properties/linked_providers") map { lp =>
-//          LinkedProvider.fromJson(lp)
-//        }
-//        
-//        updateLinkedProviders(payload) match {
-//          case Failure(e) => log.error("Failed updating linked_providers : " + e.getMessage)
-//          case Success(ps) => {
-//            log.debug("LINKED PROVIDERS UPDATED:")
-//            println(Json.prettyPrint(ps))
-//          }
-//        }
-        
-        /*
-         * TODO: Validate linked provider IDs
-         * 1 - they exist
-         * 2 - they are providers
-         * 
-         * then inject the type-id into linked providers
-         */
+
+     newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
+       
         val identity = user.account.id
-        val created = for {
-          input <- Js.parse[GestaltResourceInput](payload)
-          res   <- CreateNewResource(org, user, input, Some(providerType), Some(parentId)) 
-        } yield res
-        
-        created match {
+        CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
@@ -670,56 +493,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
     }
   }
-  
-  
-  /************** END PROVIDER CODE ********************/
-  
-//  def laserClient(lambdaUrl: String, gatewayUrl: String) = {
-//    val gateway = HostConfig.make(new URL(gatewayUrl))
-//    val lambda  = HostConfig.make(new URL(lambdaUrl))
-//    new Laser(gateway, lambda, Option(EnvConfig.securityKey), Option(EnvConfig.securitySecret))
-//  }  
-//  
-//  
-//  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  lazy val lambdaConfig = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-//  lazy val laser = new Laser(
-//      gatewayConfig, lambdaConfig, 
-//      Option(EnvConfig.securityKey), 
-//      Option(EnvConfig.securitySecret))  
-  
-//  def postGatewayProvider(org: UUID, parent: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
-//    import ApiGateway._
-//    
-//    // TODO: Check resource_type if not gateway-type.
-//    val input = JsonUtil.safeParse[GatewayInput](request.body)
-//    
-//    val url = input.properties.config.url
-//    //val laser = client(url)
-//    
-//    log.debug("Creating provider resource in gestalt-apigateway...")
-//    val laserProvider = LaserProvider(None, name = input.name)
-//    val providerId = parseLaserResponseId(laser.createProvider(laserProvider))
-//    
-//    log.debug("Creating Location resource in gestalt-apigateway...")
-//    val location = getGatewayLocation(input)
-//    val laserLocation = LaserLocation(None, name = location.name, providerId.toString)
-//    val locationId = parseLaserResponseId(laser.createLocation(laserLocation))
-//    
-//    log.debug("Creating Gateway resource in gestalt-apigateway...")
-//    val gatewayInfo = buildGatewayInfo(input)
-//    val laserGateway = LaserGateway(None, input.name, locationId.toString, gatewayInfo)
-//    val gatewayId = parseLaserResponseId(laser.createGateway(laserGateway))
-//
-//    log.debug("Creating ApiGatewayProvider in Meta...")
-//    setMetaGatewayProps(request.body, UUID.randomUUID, providerId, Json.toJson(toLink(parent, META_URL))) match {
-//      case Failure(err) => Future { HandleExceptions(err) }
-//      case Success(jsn) => {
-//        createResourceCommon(org, parent.id, ResourceIds.ApiGatewayProvider, jsn)
-//      }
-//    }
-//    
-//  }  
   
   // --------------------------------------------------------------------------
   //
@@ -752,27 +525,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
     } yield mr
   }
   
-  
-  // TODO: Need to generalize name->uuid lookups
-  // Replace environment_type simple-name into type UUID in environment properties
-  def normalizeEnvironmentType(env: JsObject) = Try {
-    val envTypeId = env \ "properties" \ "environment_type" match {
-      case u : JsUndefined => throw new BadRequestException("Missing required property : 'environment_type'")
-      case n => EnvironmentType.id(n.as[String])
-    }
-    env ++ Json.obj(
-        "properties" -> 
-        replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
-  }
-  
-  def normalizeEnvironment(env: JsValue, wk: Option[UUID] = None) = {
-    for {
-      a <- normalizeResourceType(env, ResourceIds.Environment)
-      b <- upsertProperty(a, "workspace", JsString(wk.get.toString))
-      c <- normalizeEnvironmentType(b)
-    } yield c    
-  }
-  
   def normalizeUserJson(json: JsObject, account: AuthAccountWithCreds) = {
     // Check if gestalt_home property is set - if not
     // create property and set to 'root' Org.
@@ -787,18 +539,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
-    (obj \ "resource_type" match {
-      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
-      case t => {
-        if (!(t.as[UUID] == expectedType))
-          throw new BadRequestException(
-              s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
-        else obj
-      }
-    }).as[JsObject]    
-  }
-
   /**
    * Unwrap the given UUID or get the root org_id if None.
    */

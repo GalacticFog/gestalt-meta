@@ -60,27 +60,39 @@ class ApiController @Inject()(
    */
   private[this] val hostVariable = "HTTP_API_VHOST_0"
   
+  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = {
+      (typ.map(UUID.fromString(_)) orElse resolveTypeFromPayload(request.body)) getOrElse {
+        throw new UnprocessableEntityException(s"Missing [resource_type].")
+      }
+    }
+    val (payload, provider, location) = validateNewApi(request.body)
+    newResourceResultAsync(org, typeid, parent, payload) { resource =>
+      createApi(org, payload, parent, provider, location)
+    }
+  }
   
-  def postApi(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: String)(
+      implicit request: SecuredRequest[JsValue]) = {
+    
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(ResourceNotFound(ResourceIds.Environment, parent))
     }{ _ =>
-      val (payload, provider, location) = validateNewApi(request.body)
-      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
-
-      val lapi = toGatewayApi(payload.as[JsObject], location)
-            	
-      val caller = request.identity
-      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
-      val org = fqid(fqon)
       
+      //val (payload, provider, location) = validateNewApi(json)
+      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
+      
+      val lapi = toGatewayApi(payload.as[JsObject], location)
+      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+      val caller = request.identity
       /*
        * Create API resource in Meta - if successful, create in GatewayManager.
        * If the create subsequently fails in GatewayManager, we set the status
        * of the already created Meta resource to 'FAILED'.
        */
-
-      CreateResource(fqid(fqon), payload, caller, ResourceIds.Api, parent) match {
+       
+      CreateResource(org, caller, payload, ResourceIds.Api, Some(parent)) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(resource) => {
           log.debug("Creating API in GatewayManager...")
@@ -88,12 +100,12 @@ class ApiController @Inject()(
             
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created API in GatewayManager.")
-              setNewEntitlements(org, resource.id, caller, Some(parent))
               Created(RenderSingle(resource))
             } else {
               log.error("Error creating API in GatewayManager.")
               updateFailedBackendCreate(caller, resource, ApiError(result.status, result.body).throwable)
             }
+            
           } recover {
             case e: Throwable => {
               log.error(s"Error creating API in GatewayManager.")
@@ -105,9 +117,54 @@ class ApiController @Inject()(
     }
   }
   
+  
+//  def postApi(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+//    ResourceFactory.findById(ResourceIds.Environment, parent).fold {
+//      Future(ResourceNotFound(ResourceIds.Environment, parent))
+//    }{ _ =>
+//      val (payload, provider, location) = validateNewApi(request.body)
+//      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
+//
+//      val lapi = toGatewayApi(payload.as[JsObject], location)
+//      val caller = request.identity
+//      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+//      val org = fqid(fqon)
+//      
+//      /*
+//       * Create API resource in Meta - if successful, create in GatewayManager.
+//       * If the create subsequently fails in GatewayManager, we set the status
+//       * of the already created Meta resource to 'FAILED'.
+//       */
+//
+//      CreateResource(fqid(fqon), caller, payload, ResourceIds.Api, Some(parent)) match {
+//        case Failure(e) => HandleExceptionsAsync(e)
+//        case Success(resource) => {
+//          log.debug("Creating API in GatewayManager...")
+//          client.post("/apis", Option(Json.toJson(lapi))) map { result =>
+//            
+//            if (Seq(200, 201).contains(result.status)) {
+//              log.info("Successfully created API in GatewayManager.")
+//              Created(RenderSingle(resource))
+//            } else {
+//              log.error("Error creating API in GatewayManager.")
+//              updateFailedBackendCreate(caller, resource, ApiError(result.status, result.body).throwable)
+//            }
+//            
+//          } recover {
+//            case e: Throwable => {
+//              log.error(s"Error creating API in GatewayManager.")
+//              updateFailedBackendCreate(caller, resource, e)
+//            }
+//          }
+//        }
+//      }
+//    }
+//    
+//  }
+  
   def putApi(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ???
-  }
+  }  
   
   def postApiEndpoint(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
@@ -124,7 +181,7 @@ class ApiController @Inject()(
       val metaCreate = for {
         p <- validateNewEndpoint(request.body, api)
         l <- toGatewayEndpoint(p, api)
-        r <- CreateResource(org, p, caller, ResourceIds.ApiEndpoint, api) 
+        r <- CreateResource(org, caller, p, ResourceIds.ApiEndpoint, Some(api)) 
       } yield (r, l)
       
       metaCreate match {
@@ -180,7 +237,7 @@ class ApiController @Inject()(
     val uid = parseUUID(pid.as[String]) getOrElse {
       unprocessable(s"Invalid [provider.id] (not a valid UUID). found: '${pid}'")
     }
-
+    
     val locationuid = parseUUID(location.as[String]) getOrElse {
       unprocessable(s"Invalid [provider.location] (not a valid UUID). found: '$location'")
     }

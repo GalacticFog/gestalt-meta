@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.6.10"
+version := "0.6.11"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -71,7 +71,7 @@ scalacOptions ++= Seq(
   //"-Xlint" 		// Enable recommended additional warnings.
 
 libraryDependencies ++= Seq(
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.12" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.13" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.4" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
@@ -96,6 +96,8 @@ libraryDependencies ++= Seq(
 	ws,
     filters
 )
+
+libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.1.12"
 
 
 scalacOptions in Test ++= Seq("-Yrangepos")

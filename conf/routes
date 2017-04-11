@@ -105,25 +105,18 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/entitlements					cont
 ############################
 # POLICIES AND RULES
 ############################
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies								controllers.PolicyController.postPolicyOrgFqon(fqon: String)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies								controllers.PolicyController.getResourceListOrgFqon(fqon: String, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:resourceId					controllers.PolicyController.getResourceByIdOrgFqon(fqon: String, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:resourceId					controllers.PolicyController.hardDeleteSimpleOrgFqon(fqon: String, resourceId: java.util.UUID)
 
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies				  	controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies				  	controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies/:resourceId   	controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies/:resourceId   	controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID, resourceId: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies 							controllers.PolicyController.postResourceToOrg(fqon: String, typ: String = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/policies  		controllers.PolicyController.postResource(fqon: String, typ: String = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parent: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parent/policies		controllers.PolicyController.postResourceOpt(fqon: String, typ: Option[String] = Some("c3c05a39-acb3-4a45-97a8-5696ad1b4214"), parent: java.util.UUID)
 
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies				controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID)
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies				controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214")
-#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies/:resourceId   controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", resourceId: java.util.UUID, subTypes: Boolean = false)
-#DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies/:resourceId   controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID, resourceId: java.util.UUID)  
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies								controllers.PolicyController.postPolicyOrgFqon(fqon: String)
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parentId/policies				  	controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parentId: java.util.UUID)
+#POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parentId/policies				controllers.PolicyController.postPolicyFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", parentId: java.util.UUID)
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules   					controllers.PolicyController.postRuleFqon(fqon: String, parentId: java.util.UUID)
 
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules   					controllers.PolicyController.postRuleFqon(fqon: String, parentId: java.util.UUID)
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules 						controllers.PolicyController.getResourceListFqon(fqon: String,parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceType = "51af837d-544d-4c60-be66-984a6f2f658a")
-#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  		controllers.PolicyController.getResourceByIdFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceType = "51af837d-544d-4c60-be66-984a6f2f658a", resourceId: java.util.UUID, subTypes: Boolean = true)
-#DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parentId/rules/:resourceId  		controllers.PolicyController.hardDeleteSimpleFqon(fqon: String, parentType = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parentId: java.util.UUID, resourceId: java.util.UUID)
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parent/rules controllers.PolicyController.postResourceOpt(fqon: String, typ: Option[String] = None, parent: java.util.UUID)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.ResourceController.getGroupUsersFqon(fqon: String, group: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:id/groups  	controllers.ResourceController.getUserGroupsFqon(fqon: String, id: java.util.UUID)
@@ -222,23 +215,28 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 				controllers.Meta.postU
 ############################
 # RESOURCES
 ############################
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   				 controllers.Meta.postResourceFqon(fqon: String)
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   				 controllers.Meta.postResourceFqon(fqon: String)
 
 #PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    				 @controllers.ResourceController.getAllResourcesFqon(fqon: String)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 @controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources    				 @controllers.ResourceController.getAllResourcesFqon(fqon: String)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 @controllers.ResourceController.getResourceByIdFqon(fqon: String, resId: java.util.UUID)
 
 
 ############################
 # WORKSPACES
 ############################
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces				   controllers.Meta.postWorkspaceFqon(fqon: String)
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments  controllers.Meta.postEnvironmentWorkspaceFqon(fqon: String, id: java.util.UUID)
+
+POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces  						controllers.Meta.postResourceToOrg(fqon: String, typ: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343")
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/environments 	controllers.Meta.postResource2(fqon: String, typ: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID)
+
+
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces				   controllers.Meta.postWorkspaceFqon(fqon: String)
+#POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments  controllers.Meta.postEnvironmentWorkspaceFqon(fqon: String, id: java.util.UUID)
 
 ############################
 # ENVIRONMENTS
 ############################
-POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments				  controllers.Meta.postEnvironmentFqon(fqon: String)
+#POST  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments				  controllers.Meta.postEnvironmentFqon(fqon: String)
 
 ############################
 # CONTAINERS
@@ -250,7 +248,10 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/migrate          
 ############################
 # APIS
 ############################
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postApi(fqon: String, id: java.util.UUID)
+
+#POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postApi(fqon: String, id: java.util.UUID)
+
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postResourceOpt(fqon: String, typ: Option[String] = Some("df4bf8b5-170f-453e-9526-c37c898d96c9"), id: java.util.UUID)
 
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id/apiendpoints		controllers.ApiController.postApiEndpoint(fqon: String, id: java.util.UUID)
 #POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:eid/apis/:aid/apiendpoints  controllers.ApiController.postApiEndpointEnv(fqon: String, eid: java.util.UUID, aid: java.util.UUID)
@@ -273,7 +274,7 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers 	cont
 ############################
 # DOMAINS
 ############################
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
 
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.PatchController.patchResourceFqon(fqon: String)
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.PatchController.patchResource(fqon, path)

@@ -124,10 +124,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
-    orgFqon(fqon).fold( OrgNotFound(fqon) ) { org =>
-      Authorize(org.id, "org.view", request.identity) {   
-        Ok(RenderSingle(Resource.fromPath(fqon).get))
-      }
+    Authorize(fqid(fqon), "org.view", request.identity) {   
+      Ok(RenderSingle(Resource.fromPath(fqon).get))
     }
   }
   
@@ -262,6 +260,19 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
   
+//  def lookupApiEndpoint(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+//    
+//
+//    val endpointId = UUID.fromString(path.targetId.get)
+//    val endpoint = ResourceFactory.findById(ResourceIds.ApiEndpoint, endpointId)
+//    
+//    ResourceFactory.findById(ResourceIds.ApiEndpoint, endpointId) map { ep =>
+//      val apiId = UUID.fromString(path.parentId getOrElse ep.properties.get("parent"))
+//      
+//    
+//    ???
+//  }
+  
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.fromPath(path.path) map { transformEntitlement(_, account).get }
   }
@@ -313,7 +324,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     else Invariant(typeid)
   }
   
-def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
 
     val allnames = TypeFactory.allProviderNames()
     val prefixes = TypeFactory.typeNamePrefixes(allnames)
@@ -582,22 +593,16 @@ def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[
    * Get all Resources by Type ID
    */
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon).fold(OrgNotFound(fqon)){ org =>
-      Ok(Output.renderLinks(ResourceFactory.findAll(typeId, org.id)))
-    }
+    Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
   
   def getAllResourcesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    orgFqon(fqon).fold(OrgNotFound(fqon)){ org =>
-      Ok(Output.renderLinks(ResourceFactory.findAllByOrg(org.id)))
-    }
+    Ok(Output.renderLinks(ResourceFactory.findAllByOrg(fqid(fqon))))
   }
   
   def getResourceByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    orgFqon(fqon).fold(OrgNotFound(fqon)) { org =>
-      ResourceFactory.findById(id).fold(NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))) { r =>
-        Ok(Output.renderInstance(r))
-      }
+    ResourceFactory.findById(id).fold(NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))) { r =>
+      Ok(Output.renderInstance(r))
     }
   }
   

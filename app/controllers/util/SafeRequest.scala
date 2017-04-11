@@ -36,7 +36,7 @@ case class Feature(override val args: String*) extends Operation(args) {
   private[this] val log = Logger(this.getClass)
   
   def proceed(opts: RequestOptions) = {
-    log.debug("Checking license for feature: " + args(0))
+    log.info("Checking license for feature: " + args(0))
     val feature = s2f(args(0))
     
     if (GestaltLicense.instance.isFeatureActive(feature)) Continue
@@ -46,6 +46,34 @@ case class Feature(override val args: String*) extends Operation(args) {
   private def s2f(s: String): GestaltFeature = GestaltFeature.valueOf(s)
 }
 
+import com.galacticfog.gestalt.meta.validation._
+
+case class Validate(override val args: String*) extends Operation(args) {
+  def proceed(opts: RequestOptions) = {
+    val r = opts.policyTarget
+    
+    val parentId = for {
+      data <- opts.data
+      pid  <- data.get("parentId")
+      uid = UUID.fromString(pid)
+    } yield uid
+        
+    parentId.fold {
+        Halt(s"Could not find 'parentId' to perform validation. This is a bug.")
+          .asInstanceOf[OperationResponse[Option[UUID]]]
+    } { pid =>
+      opts.policyTarget.fold {
+        Halt(s"Could not find 'policyTarget' in request options. This is a bug.")
+          .asInstanceOf[OperationResponse[Option[UUID]]]
+      }{ resource =>
+        DefaultValidation.validate(resource, pid) match {
+          case Failure(e) => Halt(e.getMessage)
+          case Success(_) => Continue
+        }
+      }
+    }
+  }
+}
 
 case class Authorize(override val args: String*) extends Operation(args) with AuthorizationMethods {
   //private[this] val log = Logger(this.getClass)
@@ -123,16 +151,14 @@ trait EventMethods {
   private[this] val log = Logger(this.getClass)
   
   def findEffectiveEventRules(parentId: UUID, event: Option[String] = None): Option[GestaltResourceInstance] = {
-    //val policies = ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)//ResourceFactory.findAncestorsOfSubType(ResourceIds.Policy, parentId)
-    
+
     val rs = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
     } yield r
     
-    log.debug(s"Found ${rs.size} Event Rules:")
-    
-    rs foreach { r => log.debug(r.name) }
+//    log.debug(s"Found ${rs.size} Event Rules:")
+//    rs foreach { r => log.debug(r.name) }
     
     val fs = if (event.isEmpty) rs else {
       rs filter { _.properties.get("actions").contains(event.get) }
@@ -148,14 +174,10 @@ trait EventMethods {
       opts: RequestOptions): Try[OperationResponse[Option[UUID]]] = Try {
     
     val eventName = s"${actionName}.${eventType}"
-    
-    val target = opts.policyOwner.get //opts.policyTarget.get.id
+    val target = opts.policyOwner.get
     
     findEffectiveEventRules(target, Option(eventName)) match { 
-      case None => {
-        log.debug(s"***No events matching $eventName found.")
-        Continue
-      }
+      case None => Continue
       case Some(rule) => {
         
         val event = EventMessage.make(
@@ -216,7 +238,9 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     val actionName = args(0)
     val eventName = s"${actionName}.${EventType.Pre}"
     
-    // policyOwner is the resource on which the policy was set.
+    /*
+     * policyOwner is the resource on which the policy was set.
+     */
     val policyOwner = ResourceFactory.findById(opts.policyOwner.get) getOrElse {
       throw new ResourceNotFoundException(
         s"Given policy-owner '${opts.policyOwner.get}' not found.")
@@ -238,7 +262,7 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
   private def predicateMessage(p: Predicate[Any]) = {
     val value = p.value.toString.replaceAll("\"", "")
     "[%s %s %s]".format(p.property, p.operator, value)
-  }  
+  }
 }
 
 case class EventsPost(override val args: String*) extends Operation(args) with EventMethods {
@@ -267,13 +291,94 @@ case class RequestOptions(
     policyTarget: Option[GestaltResourceInstance],
     data: Option[Map[String,String]] = None)
 
-
 class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) {
   
   private val log = Logger(this.getClass)
   
   type OptIdResponse = OperationResponse[Option[UUID]]
   type SeqStringOp = Operation[Seq[String]]
+  
+  
+  def Execute[T](f: GestaltResourceInstance => Result): Result = {
+
+    @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
+      os match {
+        case Nil => proceed
+        case op :: tail => op.proceed(options) match {
+          case Continue => evaluate(tail, Continue)
+          case Accepted => evaluate(tail, Accepted)
+          case e: Halt  => e
+        }
+      }
+    }
+
+    /*
+     * Separate operations list into pre and post ops.
+     */
+    val (beforeOps, afterOps) = sansPost(operations)
+    
+    val result = evaluate(beforeOps, Continue).toTry match {
+      case Success(state) => {
+        val resource = {
+          val res = options.policyTarget.get
+          state.fold(res)(st => res.copy(state = st))
+        }
+        f( resource )
+      }
+      case Failure(error) => HandleExceptions(error) 
+    }
+    
+    if (afterOps.isDefined) {
+      log.debug(s"Found *.post events: ${afterOps.get}")
+    } else {
+      log.debug("No *.post events found.")
+    }
+    
+    afterOps map( _.proceed(options) )
+    
+    result
+  }  
+  
+  
+def ExecuteAsync[T](f: GestaltResourceInstance => Future[Result]): Future[Result] = {
+
+    @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
+      os match {
+        case Nil => proceed
+        case op :: tail => op.proceed(options) match {
+          case Continue => evaluate(tail, Continue)
+          case Accepted => evaluate(tail, Accepted)
+          case e: Halt  => e
+        }
+      }
+    }
+
+    /*
+     * Separate operations list into pre and post ops.
+     */
+    val (beforeOps, afterOps) = sansPost(operations)
+    
+    val result = evaluate(beforeOps, Continue).toTry match {
+      case Success(state) => {
+        val resource = {
+          val res = options.policyTarget.get
+          state.fold(res)(st => res.copy(state = st))
+        }
+        f( resource )
+      }
+      case Failure(error) => HandleExceptionsAsync(error) 
+    }
+    
+    if (afterOps.isDefined) {
+      log.debug(s"Found *.post events: ${afterOps.get}")
+    } else {
+      log.debug("No *.post events found.")
+    }
+    
+    afterOps map( _.proceed(options) )
+    
+    result
+  }    
   
   def Protect[T](f: Option[UUID] => Result): Result = {
 

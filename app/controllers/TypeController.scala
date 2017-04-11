@@ -59,9 +59,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
   
   def createResourceTypeFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    orgFqon(fqon).fold(Future(OrgNotFound(fqon))) { org =>
-      CreateTypeWithPropertiesResult(org.id, request.body)  
-    }
+    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
 
   private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
@@ -158,9 +156,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
   
   def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
-    orgFqon(fqon).fold(OrgNotFound(fqon)){
-      _ => getSchemaResult(typeId, request.queryString)
-    }
+    getSchemaResult(typeId, request.queryString)
   }
   
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
@@ -256,6 +252,10 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       case "json" => "json_object"        
       case other  => other
     }
+  }
+  
+  def typeId(name: String): Option[UUID] = {
+    TypeFactory.findByName(name) map { _.id }
   }
   
   private def maxwidth(ps: Seq[GestaltTypeProperty]) = {

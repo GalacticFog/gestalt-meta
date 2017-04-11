@@ -48,9 +48,8 @@ trait Authorization extends MetaController with ActionMethods with Authorization
       mergeParentEntitlements(entitlements, resourceType, parent.get)
     }
     newEntitlements map { e =>
-      CreateResource(
-        ResourceIds.User, user.account.id, org, Json.toJson(e), user,
-        Option(ResourceIds.Entitlement), parentId = Option(resourceId))
+      CreateResource(org, user, Json.toJson(e), ResourceIds.Entitlement, 
+          parentId = Some(resourceId))
     }
   }
   

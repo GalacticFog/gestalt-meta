@@ -62,6 +62,13 @@ trait ActionMethods {
     }   
   }
   
+  def prefixFromResource(resource: GestaltResourceInstance): Option[String] = {
+    for {
+      tpe    <- TypeFactory.findById(resource.typeId)
+      prefix <- Option(prefix(tpe))
+    } yield prefix
+  }
+  
   def actionInfo(typeId: UUID): ActionInfo = {
     actionInfo(getType(typeId))
   }
