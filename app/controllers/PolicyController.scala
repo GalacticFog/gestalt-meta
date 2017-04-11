@@ -27,391 +27,54 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
 import javax.inject.Singleton
+import com.galacticfog.gestalt.json.Js
 
 @Singleton
 class PolicyController @Inject()(messagesApi: MessagesApi,
                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  type FilterFunction = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
-  type LookupFunction = ((UUID,UUID) => Try[ResourceLike])
-  
-  //case class LookFunction[T <: ResourceLike](t1: UUID, t2: UUID) extends ((UUID,UUID) => T)
-  
-  def getResourceListOrgFqon(fqon: String, resourceType: String) = Authenticate(fqon) { implicit request =>
-    val rtid = UUID.fromString(resourceType)
-    val (subtypes,filter) = setupFilter(rtid)
-    getResourceListFqonCommon(fqon, ResourceIds.Org, fqid(fqon), rtid, subtypes)(filter, Some(request.queryString))
-  }
-  
-  def getResourceListFqon(fqon: String, parentType: String, parentId: UUID, resourceType: String) = Authenticate(fqon) { implicit request =>
-    val ptid = UUID.fromString(parentType)
-    val rtid = UUID.fromString(resourceType)
-    val (subtypes,filter) = setupFilter(rtid)
-    getResourceListFqonCommon(fqon, ptid, parentId, rtid, subtypes)(filter, Some(request.queryString))
-  }
-  
-  def getResourceListFqonCommon(
-      fqon: String, 
-      parentType: UUID, 
-      parentId: UUID, 
-      resourceType: UUID,
-      includeSubTypes: Boolean = false)(
-          filter: Option[FilterFunction] = None, 
-          qs: Option[QueryString] = None)(
-              implicit request: SecuredRequest[_]) = {
-    
-    ResourceFactory.findById(parentType, parentId) match {
-      case None => ResourceNotFound(parentType, parentId)
-      case Some(_) => {
-        val rs = if (includeSubTypes) 
-          ResourceFactory.findChildrenOfSubType(resourceType, parentId)
-        else ResourceFactory.findChildrenOfType(resourceType, parentId)
-        
-        handleExpansion(if (filter.isDefined) filter.get(rs, qs.get) else rs, request.queryString, META_URL)        
-      }
-    }
 
-  }
-
-//  def getResourceByIdOrgFqon(fqon: String, resourceType: String, resourceId: UUID, subTypes: Boolean = false) = Authenticate(fqon) { implicit request =>
-//    val rtid = UUID.fromString(resourceType)
-//    getResourceByIdFqonCommon(fqon, ResourceIds.Org, fqid(fqon), rtid, resourceId){
-//      if (subTypes) Some(findCovariantResource _) else None
-//    }
-//  }
-  
-  def getResourceByIdFqon(
-      fqon: String, 
-      parentType: String, 
-      parentId: UUID, 
-      resourceType: String, 
-      resourceId: UUID, 
-      subTypes: Boolean = false) = Authenticate(fqon) { implicit request =>
-        
-    val ptid = UUID.fromString(parentType)
-    val rtid = UUID.fromString(resourceType)
-
-    getResourceByIdFqonCommon(fqon, ptid, parentId, rtid, resourceId) {
-      if (subTypes) Some(findCovariantResource _) else None
-    }
-  }
-  
-  def getResourceByIdFqonCommon[T](
-      fqon: String, 
-      parentType: UUID, 
-      parentId: UUID, 
-      resourceType: UUID, 
-      resourceId: UUID)(fn: Option[LookupFunction] = None)(implicit request: SecuredRequest[_]) = {
-    
-    val lookup: LookupFunction = if (fn.isDefined) fn.get else findResource _
-    
-    val target = for {
-      p <- findResource(parentType, parentId)
-      c <- lookup(resourceType, resourceId)
-    } yield c
-
-    target match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(r) => {
-        val out = postProcess(r.asInstanceOf[GestaltResourceInstance])
-        Ok(Output.renderInstance(out))
-      }
-    }
-  }
-  
-  def postProcess(r: GestaltResourceInstance)(implicit request: SecuredRequest[_]): GestaltResourceInstance = {
-    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-    }
-    
-    if (r.typeId != ResourceIds.Policy) r else {
-      val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, r.id) map { r => 
-        toLink(r, META_URL)  
-      }
-      upsertProperties(r, "rules" -> Json.stringify(Json.toJson(rs)))
-    }
-    
-  }
-  
-  protected [controllers] def findCovariantResource(baseType: UUID, id: UUID) = Try {
-    val out = ResourceFactory.findTyped(CoVariant(baseType), id) getOrElse {
-      throw new ResourceNotFoundException(s"${ResourceLabel(baseType)} with ID '$id' not found.")
-    }
-    out.asInstanceOf[GestaltResourceInstance]
-  }
-  
-  protected [controllers] def findResource(typeId: UUID, id: UUID) = Try {
-    ResourceFactory.findById(typeId, id) getOrElse {
-      throw new ResourceNotFoundException(s"${ResourceLabel(typeId)} with ID '$id' not found.")
-    }
-  }
   // --------------------------------------------------------------------------
   // POST POLICY
   // --------------------------------------------------------------------------
-
-  def postPolicyOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  
+  def postResourceToOrg(fqon: String, typ: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
-    createPolicyCommon(org, ResourceIds.Org, org)
+    val typeid = UUID.fromString(typ)
+    newDefaultResourceResult(org, typeid, parent = org, payload = request.body)
   }
   
-  def postPolicyFqon(fqon: String, parentType: String, parentId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    createPolicyCommon(fqid(fqon), UUID.fromString(parentType), parentId) recoverWith { case e =>
-      Future(HandleExceptions(e))
-    }
+  def postResource(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = UUID.fromString(typ)
+    newDefaultResourceResult(org, typeid, parent, request.body)
   }
   
-  def WithFeature(feature: GestaltFeature, failMessage: String)(block: => Future[Result]) = {
-    if (!GestaltLicense.instance.isFeatureActive(feature)) {
-      log.warn(s"Attempt to use feature '${feature.toString}' denied due to license.")
-      Future(throw new NotAcceptableException(failMessage))
-    } else block
-  }
-  
-  //
-  // TODO: Add entitlements and authorization.
-  //
-  
-  def createPolicyCommon(org: UUID, parentType: UUID, parentId: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    
-    //WithFeature(GestaltFeature.Policy, "Policy creation is disabled under your current license.") {
-      
-    Future {
-      ResourceFactory.findById(parentType, parentId) match {
-        case None => ResourceNotFound(parentType, parentId)
-        case Some(parent) => {
-          
-          val user = request.identity
-          val resource = j2r(org, user, request.body, Option(ResourceIds.Policy))
-          val options = standardRequestOptions(user, parentId, resource)
-          val operations = standardRequestOperations("policy.create")
-          
-          SafeRequest(operations, options) Protect { maybeState =>
-            
-            val json = updatePolicyJson(request.body, parentId)
-            CreateNewResource(org, user, json, 
-                Some(ResourceIds.Policy), parent = Some(parentId)) match {
-              case Failure(e) => HandleExceptions(e)
-              case Success(res) => {
-                setNewEntitlements(org, res.id, user, parent = Some(parentId))
-                Created(RenderSingle(res))
-              }
-            }
-            
-          }
-        }
-      }
-      
-    }
-  }
-  
-  
-  def postResourceCommon(
-      org: UUID, 
-      parentType: UUID, 
-      parentId: UUID,  
-      resourceJson: JsValue,
-      resourceType: Option[UUID] = None)(
-          pre: Option[(JsValue => JsValue)])(
-          post: Option[(ResourceLike => ResourceLike)])(
-            implicit request: SecuredRequest[JsValue]) = Future {
-    
-    val json = if (pre.isDefined) pre.get(resourceJson) else resourceJson
-    
-    (for {
-      p <- findResource(parentType, parentId)
-      c <- createResourceInstance(org, json, resourceType, Some(p.id))
-    } yield c) match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(r) => {
-        val out = if (post.isDefined) post.get(r) else r
-        Created(Output.renderInstance(out.asInstanceOf[GestaltResourceInstance]))
+  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val org = fqid(fqon)
+    val typeid = {
+      (typ.map(UUID.fromString(_)) orElse resolveTypeFromPayload(request.body)) getOrElse {
+        throw new UnprocessableEntityException(s"Missing [resource_type].")
       }
     }
-  }
-  
-
-  def hardDeleteSimpleOrgFqon(fqon: String, targetId: UUID) = Authenticate(fqon) {
-    val org = fqid(fqon)
-    hardDeleteSimple(org, ResourceIds.Org, org, targetId)
-  }
-  def hardDeleteSimpleFqon(fqon: String, parentType: String, parentId: UUID, targetId: UUID) = Authenticate(fqon) {
-    hardDeleteSimple(fqid(fqon), UUID.fromString(parentType), parentId, targetId)
-  }
-  
-  def hardDeleteSimple(org: UUID, parentType: UUID, parentId: UUID, targetId: UUID) = {
-    (for {
-      p <- findResource(parentType, parentId)
-      x <- ResourceFactory.hardDeleteResource(targetId)
-    } yield x) match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(_) => NoContent
-    }
-  }
-  
+    newDefaultResourceResult(org, typeid, parent, request.body)
+  }  
   
   // ==========================================================================
   // RULES
   // ==========================================================================
-
 
   /**
    * Implements http://{host}/rules?type={rule-type}
    */
   def getRulesGlobal() = Authenticate() { implicit request =>
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
-  }  
-  
-    import com.galacticfog.gestalt.json.Js
-    
-    def resolveRuleTypeFromString(json: JsValue) = Try {
-      Js.find(json.as[JsObject], "/resource_type").fold {
-        throw new BadRequestException("You must provide a resource_type")
-      }{ tpe =>
-        ruleTypeId(expandRuleTypeName(tpe.as[String])).get
-      }
-    }  
-      
-  def createRule(
-      org: UUID, 
-      user: AuthAccountWithCreds, 
-      policyId: UUID, 
-      ruleJson: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-    
-    val resource = j2r(org, user, ruleJson, Option(ResourceIds.Rule))
-    val options = standardRequestOptions(user, policyId, resource)
-    val operations = standardRequestOperations("rule.create")  
-    
-    SafeRequest(operations, options) ProtectAsync { maybeState =>   
-      log.debug("Creating Rule:\n" + Json.prettyPrint(ruleJson))
-      createResourceD(org, ruleJson, parentId = Some(policyId))
-    }
-  }
-  
-  def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    
-    log.debug(s"Received request to create new Rule for Policy($policy)")
-    
-    resolveRuleTypeFromString(request.body) match {
-      case Failure(e) => Future(HandleExceptions(e))
-      case Success(resourceType) => {
-        
-        ResourceFactory.findById(ResourceIds.Policy, policy).fold {
-          Future(NotFoundResult(s"Policy with ID '$policy' not found."))
-        }{ pol =>  
-          val json = updateRuleJson(request.body, resourceType, pol)
-          createRule(fqid(fqon), request.identity, policy, json)     
-        }
-        
-      }
-    }
-  }
-
-//      resourceType match {
-//        case Failure(e) => Future(HandleExceptions(e))
-//        case Success(tpe) => {
-//
-//          ResourceFactory.findById(ResourceIds.Policy, policy).fold {
-//            Future(NotFoundResult(s"Policy with ID '$policy' not found."))
-//          }{ pol =>  
-//            val json = updateRuleJson(request.body, r, pol)
-//            log.debug("Creating Rule:\n" + Json.prettyPrint(json))
-//            createResourceD(fqid(fqon), json, tpe, Some(policy))
-//          }
-//        }
-//      }
-//  def postRuleFqon(fqon: String, policy: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    
-//    log.debug(s"Received request to create new Rule for Policy($policy)")
-//    
-//    val org = fqid(fqon)
-//    val user = request.identity
-//    
-//    
-//    
-//    val resource = j2r(org, user, request.body, Option(ResourceIds.Rule))
-//    val options = standardRequestOptions(user, policy, resource)
-//    val operations = standardRequestOperations("rule.create")  
-//    SafeRequest(operations, options) ProtectAsync { maybeState =>    
-//      
-//      val resourceType = Try {
-//        (request.body \ "resource_type") match {
-//          case u: JsUndefined => 
-//            throw new BadRequestException("You must provide a 'resource_type'")
-//          case v => {
-//            val expanded = expandRuleTypeName(v.as[String])
-//            ruleTypeId(expanded)
-//          }
-//        }
-//      }
-//  
-//      resourceType match {
-//        case Failure(e) => Future(HandleExceptions(e))
-//        case Success(tpe) => {
-//
-//          ResourceFactory.findById(ResourceIds.Policy, policy).fold {
-//            Future(NotFoundResult(s"Policy with ID '$policy' not found."))
-//          }{ pol =>  
-//            val json = updateRuleJson(request.body, tpe.get, pol)
-//            log.debug("Creating Rule:\n" + Json.prettyPrint(json))
-//            createResourceD(fqid(fqon), json, tpe, Some(policy))
-//          }
-//        }
-//      }
-//    }
-//  }
-  
-  protected [controllers] def parentLink(pid: UUID, baseUri: Option[String]): Option[ResourceLink] = {
-    ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
-  }
-  
-  /**
-   * Add parent link to Policy JSON from input payload.
-   */
-  protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
-    val link = Json.toJson(parentLink(parent, META_URL).get)
-    JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
-  }
-  
-  protected [controllers] def updateRuleJson(ruleJson: JsValue, resourceType: UUID, parent: GestaltResourceInstance) = {
-    val json = ruleJson.as[JsObject] ++ Json.obj("resource_type" -> JsString(resourceType.toString))
-    val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parent.id.toString))
-    val definedAt = Json.parse(parent.properties.get("parent"))
-    JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
-  }
-  
-  protected [controllers] def getPolicyParentLink(policy: GestaltResourceInstance) = {
-    val id = (Json.parse(policy.properties.get("parent")) \ "id") match {
-      case u: JsUndefined => throw new RuntimeException(s"Failed to parse policy.properties.parent")
-      case v => UUID.fromString(v.as[String]) 
-    }
-  }
-
-  /**
-   * Get Rule type ID from its fully-qualified name.
-   */
-  protected [controllers] def ruleTypeId(typeName: String) = {
-    typeName match {
-      case a if a == Resources.RuleEvent  => Some(ResourceIds.RuleEvent)
-      case b if b == Resources.RuleConfig => Some(ResourceIds.RuleConfig)
-      case c if c == Resources.RuleLimit  => Some(ResourceIds.RuleLimit)
-      case _ => None
-    }
   }
   
   private lazy val RULE_TYPE_NAME = Resources.Rule
   
-  /**
-   * Create a fully-qualified Rule type name from it's simple name, i.e.,
-   * 'event' becomes 'Gestalt::Resource::Rule::Event'
-   */
-  protected [controllers] def expandRuleTypeName(shortName: String) = {
-    if (Seq("config", "event", "limit").contains(shortName.trim.toLowerCase)) {
-      "%s::%s".format(RULE_TYPE_NAME, shortName.trim.capitalize)
-    } else throw new BadRequestException(s"Invalid Rule type - found: '$shortName'")
-  }
 
-  
   /**
    * Filter a list of Rule resources based on the type names given in a querystring.
    * TODO: This only handles a single 'type' filter.
@@ -446,26 +109,5 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   protected [controllers] def setupFilter(typeId: UUID)(implicit request: SecuredRequest[_]) = {
     if (typeId == ResourceIds.Rule) (true, Some(typeFilter _)) else (false, None)
   }
-  
-  private[this] def standardRequestOptions(
-    user: AuthAccountWithCreds,
-    parent: UUID,
-    resource: GestaltResourceInstance,
-    data: Option[Map[String, String]] = None) = {
-
-    RequestOptions(user,
-      authTarget = Option(parent),
-      policyOwner = Option(parent),
-      policyTarget = Option(resource),
-      data)
-  }
-
-  private[this] def standardRequestOperations(action: String) = {
-    List(
-      controllers.util.Authorize(action),
-      controllers.util.EventsPre(action),
-      controllers.util.PolicyCheck(action),
-      controllers.util.EventsPost(action))
-  }    
   
 }

@@ -81,8 +81,8 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
      * 4.) Check for and fire post-create event
      */
     SafeRequest (operations, options) Protect { maybeState =>
-      
-      createResourceInstance(org, inputJson, Some(typeId), Some(parent)) match {
+
+      CreateResource(org, user, inputJson, typeId, Some(parent)) match {
         case Failure(e) => HandleExceptions(e)
         case Success(integration) => {
           setNewEntitlements(org, integration.id, user, Option(parent))
@@ -162,7 +162,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
    */
   private[controllers] def createIntegration(orgid: UUID, envid: UUID)(implicit request: SecuredRequest[JsValue]) = {
     log.info(s"INFO - creating integration resource in meta." + request.body.toString)
-    createResourceInstance(orgid, request.body, Some(ResourceIds.Integration), Some(envid))
+    CreateResource(orgid, request.identity, request.body, ResourceIds.Integration, Some(envid))
   }
   
   private[controllers] def IntegrationNotFound(integrationId: UUID) = {

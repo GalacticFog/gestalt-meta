@@ -60,7 +60,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         else mergeParentEntitlements(ents, res.typeId, parent.get)
         
       } map { ent =>
-        //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
         CreateNewResource(org, creator, 
           json   = Json.toJson(ent), 
           typeId = Option(ResourceIds.Entitlement), 

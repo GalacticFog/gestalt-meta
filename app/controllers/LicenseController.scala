@@ -196,11 +196,8 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
     (for {
       _ <- removeExistingLicense(org)
       _ <- installNewLicense(json.as[JsObject])
-      r <- createResourceInstance(org, json, Some(ResourceIds.License), Some(org))
-      
+      r <- CreateResource(org, request.identity, json, ResourceIds.License, Some(org))
     } yield r) map { license =>
-      
-      setNewEntitlements(org, license.id, request.identity, parent = Option(org))
       license 
     }
   }    
@@ -246,9 +243,9 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
    * @param request the
    */
   private[controllers] def createLicense(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    createResourceInstance(org, request.body, Some(ResourceIds.License), Some(org))
+    CreateResource(org, request.identity, request.body, ResourceIds.License, Some(org))
   }
-  
+
   private[this] def LicenseNotFound(licenseId: UUID) = {
     NotFoundResult(s"License with ID '$licenseId' not found.")
   }

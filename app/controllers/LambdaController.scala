@@ -91,9 +91,9 @@ class LambdaController @Inject()(
         
         val caller = request.identity
         val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
-        
+  
         val metaCreate = for {
-          metalambda <- createResourceInstance(org, newjson, Some(ResourceIds.Lambda), Some(parent.id))
+          metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
           laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString, "")
         } yield (metalambda, laserlambda)
         

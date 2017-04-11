@@ -61,26 +61,24 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * Implements route `PATCH /{fqon}`
    */
   def patchResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    log.debug(s"patchResourceFqon($fqon)")
-    Future( orgFqon(fqon).fold(OrgNotFound(fqon))(org =>applyPatch(org)) )
+    Future{
+      orgFqon(fqon).fold(NotFoundResult(fqon))(org => applyPatch(org)) 
+    }
   }
   
   /**
    * Patch a Resource by its URI (path)
    */
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    log.debug(s"patchResource($fqon, $path)")
-    Future {      
-
+    Future {
       val respath = new ResourcePath(fqon, path)
-
       lookupResource(respath, request.identity) match {
         case Failure(e) => HandleExceptions(e)
         case Success(resource) => applyPatch(resource)
       }
     }
-  }  
-
+  }
+  
   /**
    * Apply policy and authorization checks to PATCH operation. Orchestrates
    * application of the patch and persisting the updated resource to Meta DB.
@@ -107,8 +105,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
       }
     }
   }
-  
-  
+
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,
     resource: GestaltResourceInstance,
@@ -128,65 +125,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
       controllers.util.PolicyCheck(action),
       controllers.util.EventsPost(action))
   }    
-  
-  /* 
-   * /{fqon}/resourcetypes/{id}
-   *  
-   */
-  def patchResourceType(fqon: String, tpe: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     
-    TypeFactory.findById(tpe).fold { 
-      ResourceNotFound(ResourceIds.ResourceType, tpe)
-    }{ t => ???
-      /*
-       *[cannot change]:
-       *  
-       * 	- id, type-id, org, created, modified, owner
-       *  - cannot PATCH state to 'deleted'
-       *  
-       *[can change]:
-       *  
-       *  - state
-       *  - name
-       *  - description
-       *  - tags
-       *  - variables
-       *  - properties {
-       *  
-       *    }
-       * 
-       */
-   
-    }
-    ???
-  }
-  
-  /* 
-   * /{fqon}/typeproperties/{id}
-   *  
-   */
-  def patchTypeProperty(fqon: String, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    PropertyFactory.findById(property).fold {
-      ResourceNotFound(ResourceIds.TypeProperty, property)
-    }{ p => ???
-      
-    }
-    ???
-  }
-  
-  /*
-   * /{fqon}/resourcetypes/{id}/typeproperties/{id}
-   *  
-   */
-  def patchTypePropertyChild(fqon: String, tpe: UUID, property: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    PropertyFactory.findById(tpe, property).fold {
-      ResourceNotFound(ResourceIds.TypeProperty, property)
-    }{ p => ???
-      
-    }
-    ???
-  }
-  
   /**
    * This function finds and patches the requested resource - it does NOT persist the updated resource.
    */
@@ -243,28 +182,9 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     
   }
   
-  private[controllers] def Patch(
-      resource: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]): Try[GestaltResourceInstance] = {
-    
+  private[controllers] def Patch(resource: GestaltResourceInstance)(
+      implicit request: SecuredRequest[JsValue]): Try[GestaltResourceInstance] = {
     Patch(resource, request.body, request.identity)
-    
-//    val ops   = JsonUtil.safeParse[Seq[PatchOp]](request.body)
-//    
-//    val patch = transforms.get(resource.typeId).fold(PatchDocument(ops: _*)) {
-//      transform => transform(PatchDocument(ops: _*))
-//    }
-//    
-//    val handler = {
-//      if (handlers.get(resource.typeId).isDefined) {
-//        log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
-//        handlers(resource.typeId)
-//        
-//      } else {
-//        log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
-//        defaultResourcePatch _
-//      }
-//    }
-//    handler(resource, patch, request.identity) 
   }
   
   

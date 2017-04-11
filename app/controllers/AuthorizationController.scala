@@ -217,66 +217,49 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
   def gatherTargets(typeId: UUID, parent: UUID) = {
     ResourceFactory.findChildrenOfType(typeId, parent)
   }
-  
-  private[controllers] def postEntitlementCommon2(
-      org: UUID, 
-      typeId: UUID, 
-      resourceId: UUID,
-      user: AuthAccountWithCreds,
-      json: JsValue,
-      metaUrl: Option[String]): Future[GestaltResourceInstance] = Future {
-
-    /*
-     * TODO: Authorize 'entitlement.create'
-     */
-
-    /*
-     * 1 - lookup target resource (entitlement parent)
-     * 2 - validate entitlement payload
-     * 3 - lookup children of target.typeId
-     * 4 - if children found, get identities from payload, add them to each child.identities
-     * 5 - create entitlement on the target resource.
-     */
-    
-    
-    /*
-     * Cascading needs to happen on update as well.
-     */
-    val target = findOrFail(typeId, resourceId)
-    val children = ResourceFactory.findChildrenOfType(typeId, resourceId)
-    
-
-    
-   (for {
-      parent <- findOrFail(typeId, resourceId)
-      input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
-      output <- {
-        CreateResource(
-            ResourceIds.User, user.account.id, org, json, user, 
-            Some(ResourceIds.Entitlement), Some(resourceId))
-      }
-    } yield output).get
-    
-//    entitlement map { resource =>
-//      transformEntitlement(resource, org, metaUrl)
-//    } match {
-//      case Failure(e) => throw e
-//      case Success(ent) => ent
-//    }
-  }  
+//  
+//  private[controllers] def postEntitlementCommon2(
+//      org: UUID, 
+//      typeId: UUID, 
+//      resourceId: UUID,
+//      user: AuthAccountWithCreds,
+//      json: JsValue,
+//      metaUrl: Option[String]): Future[GestaltResourceInstance] = Future {
+//
+//    /*
+//     * TODO: Authorize 'entitlement.create'
+//     */
+//
+//    /*
+//     * 1 - lookup target resource (entitlement parent)
+//     * 2 - validate entitlement payload
+//     * 3 - lookup children of target.typeId
+//     * 4 - if children found, get identities from payload, add them to each child.identities
+//     * 5 - create entitlement on the target resource.
+//     */
+//    
+//    
+//    /*
+//     * Cascading needs to happen on update as well.
+//     */
+//    val target = findOrFail(typeId, resourceId)
+//    val children = ResourceFactory.findChildrenOfType(typeId, resourceId)
+//    
+//   (for {
+//      parent <- findOrFail(typeId, resourceId)
+//      input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
+//      output <- CreateResource(org, json, user, ResourceIds.Entitlement, resourceId)
+//    } yield output).get
+//    
+////    entitlement map { resource =>
+////      transformEntitlement(resource, org, metaUrl)
+////    } match {
+////      case Failure(e) => throw e
+////      case Success(ent) => ent
+////    }
+//  }  
   
 
-/*
-  protected[controllers] def CreateResource(
-    creatorType: UUID,
-    creator: UUID,
-    org: UUID,
-    resourceJson: JsValue,
-    user: AuthAccountWithCreds,
-    typeId: Option[UUID] = None,
-    parentId: Option[UUID] = None)
-*/
-  
   private[controllers] def postEntitlementCommon(
       org: UUID, 
       typeId: UUID, 
@@ -295,9 +278,9 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
     val entitlement = for {
       parent <- findOrFail(typeId, resourceId)
       input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
-      output <- createResourceInstance(org, json, Some(ResourceIds.Entitlement), Some(resourceId))
+      output <- CreateResource(org, user, json, ResourceIds.Entitlement, Some(resourceId))
     } yield output
-    
+
     entitlement match {
       case Failure(e) => HandleExceptions(e)
       case Success(resource) => {
@@ -305,26 +288,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
         Created(transformed)
       }
     }
-    
-//    parentResource match {
-//      case None => NotFoundResult(s"${ResourceLabel(typeId)} with ID '$resourceId' not found.")
-//      case Some(parent) => {
-//
-//        validateEntitlementPayload(org, parent.id, request.identity, request.body, "create") match {
-//          case Failure(e) => HandleExceptions(e)
-//          case Success(r) => {
-//            createResourceInstance(
-//              org, request.body, 
-//              Some(ResourceIds.Entitlement), 
-//              Some(resourceId)) match {
-//                case Failure(err) => HandleExceptions(err)
-//                case Success(res) => Created(transformEntitlement(res, org, META_URL)) 
-//              }
-//
-//          }
-//        }   
-//      }
-//    }
   }
   
   /**
