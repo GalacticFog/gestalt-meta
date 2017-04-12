@@ -118,50 +118,6 @@ class ApiController @Inject()(
   }
   
   
-//  def postApi(fqon: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-//    ResourceFactory.findById(ResourceIds.Environment, parent).fold {
-//      Future(ResourceNotFound(ResourceIds.Environment, parent))
-//    }{ _ =>
-//      val (payload, provider, location) = validateNewApi(request.body)
-//      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
-//
-//      val lapi = toGatewayApi(payload.as[JsObject], location)
-//      val caller = request.identity
-//      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
-//      val org = fqid(fqon)
-//      
-//      /*
-//       * Create API resource in Meta - if successful, create in GatewayManager.
-//       * If the create subsequently fails in GatewayManager, we set the status
-//       * of the already created Meta resource to 'FAILED'.
-//       */
-//
-//      CreateResource(fqid(fqon), caller, payload, ResourceIds.Api, Some(parent)) match {
-//        case Failure(e) => HandleExceptionsAsync(e)
-//        case Success(resource) => {
-//          log.debug("Creating API in GatewayManager...")
-//          client.post("/apis", Option(Json.toJson(lapi))) map { result =>
-//            
-//            if (Seq(200, 201).contains(result.status)) {
-//              log.info("Successfully created API in GatewayManager.")
-//              Created(RenderSingle(resource))
-//            } else {
-//              log.error("Error creating API in GatewayManager.")
-//              updateFailedBackendCreate(caller, resource, ApiError(result.status, result.body).throwable)
-//            }
-//            
-//          } recover {
-//            case e: Throwable => {
-//              log.error(s"Error creating API in GatewayManager.")
-//              updateFailedBackendCreate(caller, resource, e)
-//            }
-//          }
-//        }
-//      }
-//    }
-//    
-//  }
-  
   def putApi(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     ???
   }  
@@ -179,7 +135,7 @@ class ApiController @Inject()(
       
       val org = fqid(fqon)
       val metaCreate = for {
-        p <- validateNewEndpoint(request.body, api)
+        p <- validateNewEndpoint(request.body, a)
         l <- toGatewayEndpoint(p, api)
         r <- CreateResource(org, caller, p, ResourceIds.ApiEndpoint, Some(api)) 
       } yield (r, l)
@@ -254,17 +210,40 @@ class ApiController @Inject()(
     }
   }
 
-  private[controllers] def validateNewEndpoint(js: JsValue, api: UUID): Try[JsValue] = Try {
+  private[controllers] def validateNewEndpoint(js: JsValue, api: GestaltResourceInstance): Try[JsValue] = Try {
     val json = js.as[JsObject]
     val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
 
     val path = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
       unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
     }
-
+    
+    val location = {
+      api.properties.fold {
+        unprocessable(s"Parent API [${api.id}] does not have properties. This resource is invalid.")
+      }{ ps =>
+        ps.get("provider").fold {
+          unprocessable(s"Parent API [${api.id}] is missing proprty [provider]. This resource is invalid.")
+        }{ pstr =>
+          val provider = Json.parse(pstr).as[JsObject]
+          Js.find(provider, "/locations").fold {
+            unprocessable(s"Parent API [${api.id}] is missing property [provider.locations]. This resource is invalid.")
+          }{ locationsjson =>
+            val locs = locationsjson.as[JsArray]
+            locs.value.headOption.fold {
+              unprocessable(s"Parent API [provider.locations] property is empty. This resource is invalid.")
+            }{ 
+              locjs => locjs.as[String]
+            }
+          }
+        }
+      }
+    }
+    
     val patch = PatchDocument(
         PatchOp.Replace("/id", JsString(id.toString)),
-        PatchOp.Add("/properties/parent", JsString(api.toString)))
+        PatchOp.Add("/properties/parent", JsString(api.id.toString)),
+        PatchOp.Add("/properties/location_id", JsString(location)))
         
     patch.applyPatch(json).get
   }

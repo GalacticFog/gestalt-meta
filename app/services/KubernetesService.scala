@@ -652,7 +652,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           s"could not locate associated Deployment in Kubernetes provider for container ${container.id}"
         ))
       }
-      updatedDepl <- kube.partiallyUpdate(Deployment(extantDepl.name).withReplicas(numInstances))
+      updatedDepl <- {
+        val newDepl = extantDepl.withReplicas(numInstances)
+        log.debug("updating deployment to scale:\n" + Json.prettyPrint(Json.toJson(newDepl)))
+        kube.update(newDepl)
+      }
       updatedNumInstances = updatedDepl.spec.map(_.replicas).getOrElse(
         throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
       )

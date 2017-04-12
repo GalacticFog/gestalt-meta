@@ -373,6 +373,18 @@ trait ResourceScope extends Scope with Mockito {
 //        description = description), Some(parent))
 //  }
   
+  
+  def createApi( 
+     name: String = uuid.toString,
+     id: UUID = uuid(),
+     owner: ResourceOwnerLink = dummyOwner,
+     org: UUID = dummyRootOrgId,
+     properties: Option[Hstore] = None,
+     parent: Option[UUID] = None,
+     description: Option[String] = None): Try[GestaltResourceInstance] = {
+    createInstance(ResourceIds.Api, name, id, owner, org, properties, parent, description)  
+  }
+  
   def createInstance(typeId: UUID,
                      name: String,
                      id: UUID = uuid(),

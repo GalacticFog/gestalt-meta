@@ -668,7 +668,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
       mockSkuber.getOption(meq("test-container"))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(Some(testDepl))
-      mockSkuber.partiallyUpdate(any)(any, meq(skuber.ext.deploymentKind)) answers {
+      mockSkuber.update(any)(any, meq(skuber.ext.deploymentKind)) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
           val depl = arr(0).asInstanceOf[skuber.ext.Deployment]
@@ -682,7 +682,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         numInstances = testScale
       )).properties
 
-      there was one(mockSkuber).partiallyUpdate(argThat(
+      there was one(mockSkuber).update(argThat(
         (depl: skuber.ext.Deployment) => (depl.spec.map(_.replicas).getOrElse(-1) must_== testScale) and (depl.name must_== "test-container")
       ))(any,meq(skuber.ext.deploymentKind))
 
