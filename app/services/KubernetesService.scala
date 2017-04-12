@@ -151,6 +151,20 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   implicit val ingressListFmt: Format[IngressList] = KListFormat[Ingress].apply(IngressList.apply _,unlift(IngressList.unapply))
 
+  implicit val depSpecFmt: Format[Deployment.Spec] = (
+    (JsPath \ "replicas").format[Int] and
+      (JsPath \ "selector").formatNullableLabelSelector and
+      (JsPath \ "template").formatNullable[Pod.Template.Spec] and
+      (JsPath \ "strategy").formatNullable[Deployment.Strategy] and
+      (JsPath \ "minReadySeconds").formatMaybeEmptyInt()
+    )(Deployment.Spec.apply _, unlift(Deployment.Spec.unapply))
+
+  implicit lazy val depFormat: Format[Deployment] = (
+    objFormat and
+      (JsPath \ "spec").formatNullable[Deployment.Spec] and
+      (JsPath \ "status").formatNullable[Deployment.Status]
+    ) (Deployment.apply _, unlift(Deployment.unapply))
+  
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance)(
       implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     
