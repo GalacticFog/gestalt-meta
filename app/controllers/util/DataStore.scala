@@ -7,14 +7,18 @@ import scala.util.Success
 import org.postgresql.util.PSQLException
 import com.galacticfog.gestalt.data.util.JdbcConnectionInfo
 import com.galacticfog.gestalt.data.util.PostgresHealth
-import db.ConnectionManager
+//import db.ConnectionManager
 import play.api.Logger
 
+import play.api.db.Database
+
 @Singleton
-class DataStore @Inject()(connectionManager: ConnectionManager) {
+class DataStore @Inject()(db: Database /*connectionManager: ConnectionManager*/) {
   
   val log = Logger(this.getClass)
-  val online = metaOnline( connectionManager.config )
+  val online = true//metaOnline( connectionManager.config )
+  
+
   
   def assertOnline(onFail: => Unit, failMessage: String) = {
     if ( online ) {
@@ -23,7 +27,7 @@ class DataStore @Inject()(connectionManager: ConnectionManager) {
     else {
       log.error("FATAL: Cannot connect to Meta Data-Store")
       log.error("Current configuration:")
-      log.error(connectionManager.toString)
+      log.error("N/A")//connectionManager.toString)
       log.error(failMessage)
       onFail
     }
@@ -40,7 +44,7 @@ class DataStore @Inject()(connectionManager: ConnectionManager) {
     PostgresHealth.verifyDataStore( config.database ) match {
       case Success( _ )  => {
         log.info( "data-store: Available" )
-        log.info( connectionManager.toString )
+        //log.info( connectionManager.toString )
         true
       }
       case Failure( ex ) => ex match {

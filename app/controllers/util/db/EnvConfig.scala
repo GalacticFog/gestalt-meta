@@ -34,7 +34,7 @@ object EnvConfig extends JdbcConfiguration {
   
   val gatewayUrl  = apigateway
   val lambdaUrl   = lambda
-
+  
   val databaseUrl = {
     "jdbc:postgresql://%s:%s/%s?user=%s&password=*****".format(host, port, dbname, username)
   }

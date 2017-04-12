@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import controllers.util.{SecureController, Security, trace}
-import controllers.util.db.ConnectionManager
+//import controllers.util.db.ConnectionManager
 import play.api.{Logger => log}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
@@ -21,6 +21,10 @@ import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.security.api.GestaltBasicCredentials
 import modules.{GestaltLateInitSecurityEnvironment, SecurityKeyInit}
 
+import play.db.Database
+import play.api.db._
+import play.api.Play.current
+
 @Singleton
 class BootstrapController @Inject()( messagesApi: MessagesApi,
                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
@@ -28,7 +32,8 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
                                      security: Security,
                                      securityInit: SecurityKeyInit,
                                      deleteController: DeleteController,
-                                     connectionManager: ConnectionManager )
+                                     db: play.api.db.Database
+                                    /* connectionManager: ConnectionManager*/ )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
@@ -74,22 +79,69 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
     log.debug("bootstrap : [root-user-id] : " + rootOrgId.toString)
     
     log.debug("Initializing bootstrapper...")
-    val db = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, connectionManager.currentDataSource())
+    val dbootstrap = new Bootstrap(ResourceIds.Org, rootOrgId, rootOrgId, owner, db.dataSource/* connectionManager.currentDataSource()*/)
     
     log.debug("Beginning migration...")
     
-    (for {
-      a <- db.clean
-      b <- db.migrate
-      c <- db.loadReferenceData
-      d <- db.loadSystemTypes
-      e <- db.initialize("root")
-    } yield e) match {
+    def rebuildDatabase() = scalikejdbc.DB.autoCommit { session => 
+      for {
+        a <- dbootstrap.clean
+        b <- dbootstrap.migrate
+      } yield b
+    }
+    
+    import scala.util.Try
+    def resetClientConnections() = Try {
+      scalikejdbc.config.DBs.closeAll()
+      scalikejdbc.config.DBs.setupAll()
+    }
+    
+    def initializeDatabase() = scalikejdbc.DB.autoCommit { session => 
+      for {
+        c <- dbootstrap.loadReferenceData
+        d <- dbootstrap.loadSystemTypes
+        e <- dbootstrap.initialize("root")
+      } yield e
+    }
+    
+    val refreshed = scalikejdbc.DB.autoCommit { session => 
+      for {
+        a <- dbootstrap.clean
+        b <- dbootstrap.migrate
+      } yield b
+    }
+    
+    val seeded = for {
+      _ <- rebuildDatabase()
+      _ <- resetClientConnections()
+      x <- initializeDatabase()
+    } yield x
+    
+//    scalikejdbc.config.DBs.closeAll()
+//    scalikejdbc.config.DBs.setupAll()
+//    
+//    val database = db.dataSource.getConnection.getCatalog
+//    val hostname = db.dataSource.getConnection.getMetaData.getURL    
+//    val typemap = db.dataSource.getConnection.getTypeMap
+//    println("*****DATABASE : " + database)
+//    println("*****HOSTNAME : " + hostname)
+//    println("*****TYPEMAP  : " + typemap)
+    
+//    val seeded = scalikejdbc.DB.autoCommit { session => 
+//      for {
+//        _ <- refreshed
+//        c <- dbootstrap.loadReferenceData
+//        d <- dbootstrap.loadSystemTypes
+//        e <- dbootstrap.initialize("root")
+//      } yield e
+//    }
+
+    seeded match {
       case Success(_) => {
         log.info("Successfully rebuilt Meta DB.")
         request.identity.creds match {
           case apiCreds: GestaltBasicCredentials =>
-            securityInit.init(apiCreds.username, apiCreds.password)
+            securityInit.init(rootOrgId, request.identity)
             log.info("Initializing gestalt-security-play with API credentials from /bootstrap")
           case _ =>
             log.warn("Bootstrap did not use API credentials; will not initialize security client")
@@ -101,6 +153,35 @@ class BootstrapController @Inject()( messagesApi: MessagesApi,
         InternalServerError(e.getMessage)
       }
     }
+    
+    
+    
+    
+    
+//    (for {
+//      a <- dbootstrap.clean
+//      b <- dbootstrap.migrate
+//      c <- dbootstrap.loadReferenceData
+//      d <- dbootstrap.loadSystemTypes
+//      e <- dbootstrap.initialize("root")
+//    } yield e) match {
+//      case Success(_) => {
+//        log.info("Successfully rebuilt Meta DB.")
+//
+//        request.identity.creds match {
+//          case apiCreds: GestaltBasicCredentials =>
+//            securityInit.init(rootOrgId, request.identity/*apiCreds.username, apiCreds.password*/)
+//            log.info("Initializing gestalt-security-play with API credentials from /bootstrap")
+//          case _ =>
+//            log.warn("Bootstrap did not use API credentials; will not initialize security client")
+//        }
+//        NoContent
+//      }
+//      case Failure(e) => {
+//        log.error("Could not rebuild Meta DB: " + e.getMessage)
+//        InternalServerError(e.getMessage)
+//      }
+//    }
     
   }
   

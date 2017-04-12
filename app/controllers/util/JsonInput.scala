@@ -88,7 +88,7 @@ trait JsonInput {
       org: UUID, 
       input: GestaltResourceInput,  
       creator: AuthAccountWithCreds,
-      typeId: Option[UUID] = None) = {
+      typeId: Option[UUID] = None): GestaltResourceInstance = {
     
     inputToInstance(org, input.copy(
           id             = input.id orElse Option(UUID.randomUUID()), 
