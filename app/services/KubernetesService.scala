@@ -649,10 +649,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       extantDepl <- kube.getOption[Deployment](container.name) flatMap {
         case Some(depl) => Future.successful(depl)
         case None => Future.failed(new RuntimeException(
-          s"could not locate associated Deployment in kubernetes provider for container ${container.id}"
+          s"could not locate associated Deployment in Kubernetes provider for container ${container.id}"
         ))
       }
-      updatedDepl <- kube.update(extantDepl.withReplicas(numInstances))
+      updatedDepl <- kube.partiallyUpdate(Deployment(extantDepl.name).withReplicas(numInstances))
       updatedNumInstances = updatedDepl.spec.map(_.replicas).getOrElse(
         throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
       )
