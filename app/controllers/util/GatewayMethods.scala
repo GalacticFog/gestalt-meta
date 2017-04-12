@@ -69,9 +69,9 @@ object GatewayMethods {
     val path = Js.find(json, "/properties/resource").get.as[String]
     
     LaserEndpoint(Some(id), 
-        apiId = api.toString,
+        apiId       = api.toString,
         upstreamUrl = upstreamUrl.as[String], 
-        path = path)
+        path        = path)
   }  
   
   def findGatewayProvider(api: GestaltResourceInstance): Try[GestaltResourceInstance] = Try {
