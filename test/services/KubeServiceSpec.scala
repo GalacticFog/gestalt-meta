@@ -641,7 +641,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were no(mockSkuber).delete(any,any)(meq(client.serviceKind))
     }
 
-    "scale appropriately using skuber PUT" in new FakeKube {
+    "scale appropriately using skuber PATCH" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -659,6 +659,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
 
+      val testScale = 4
       val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val testDepl = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
@@ -667,22 +668,26 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
       mockSkuber.getOption(meq("test-container"))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(Some(testDepl))
-      mockSkuber.update(any)(any, meq(skuber.ext.deploymentKind)) returns Future.successful(
-        testDepl.withReplicas(4)
-      )
+      mockSkuber.partiallyUpdate(any)(any, meq(skuber.ext.deploymentKind)) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          val depl = arr(0).asInstanceOf[skuber.ext.Deployment]
+          Future.successful(depl.withReplicas(testScale))
+      }
+
 
       val Some(updatedContainerProps) = await(ks.scale(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer,
-        numInstances = 4
+        numInstances = testScale
       )).properties
 
-      there was one(mockSkuber).update(argThat(
-        (depl: skuber.ext.Deployment) => depl.spec.map(_.replicas).getOrElse(-1) must_== 4
+      there was one(mockSkuber).partiallyUpdate(argThat(
+        (depl: skuber.ext.Deployment) => (depl.spec.map(_.replicas).getOrElse(-1) must_== testScale) and (depl.name must_== "test-container")
       ))(any,meq(skuber.ext.deploymentKind))
 
       updatedContainerProps must havePair(
-        "num_instances" -> "4"
+        "num_instances" -> testScale.toString
       )
     }
 
