@@ -659,7 +659,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
 
-      val testScale = 4
+      val testScale = 0
       val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
       val testDepl = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = "test-container",
@@ -675,7 +675,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           Future.successful(depl.withReplicas(testScale))
       }
 
-
       val Some(updatedContainerProps) = await(ks.scale(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer,
@@ -690,7 +689,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "num_instances" -> testScale.toString
       )
     }
-
   }
 
 }
