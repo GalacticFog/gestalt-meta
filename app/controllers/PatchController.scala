@@ -33,6 +33,7 @@ import com.galacticfog.gestalt.json.Js
 class PatchController @Inject()( messagesApi: MessagesApi,
                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                  groupMethods: GroupMethods,
+                                 lambdaMethods: LambdaMethods,
                                  resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
