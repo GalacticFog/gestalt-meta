@@ -13,12 +13,12 @@ import play.api.Logger
 import play.api.db.Database
 
 @Singleton
-class DataStore @Inject()(db: Database /*connectionManager: ConnectionManager*/) {
+class DataStore @Inject()(db: Database) {
+  
+  scalikejdbc.config.DBs.setupAll()
   
   val log = Logger(this.getClass)
-  val online = true//metaOnline( connectionManager.config )
-  
-
+  val online = metaOnline()
   
   def assertOnline(onFail: => Unit, failMessage: String) = {
     if ( online ) {
@@ -27,7 +27,7 @@ class DataStore @Inject()(db: Database /*connectionManager: ConnectionManager*/)
     else {
       log.error("FATAL: Cannot connect to Meta Data-Store")
       log.error("Current configuration:")
-      log.error("N/A")//connectionManager.toString)
+      log.error(db.dataSource.getConnection.getMetaData.getURL)
       log.error(failMessage)
       onFail
     }
@@ -37,11 +37,13 @@ class DataStore @Inject()(db: Database /*connectionManager: ConnectionManager*/)
    * Ensure we can reach the server specified in configuration and
    * that the specified database exists.
    */
-  def metaOnline(config: JdbcConnectionInfo): Boolean = {
+  def metaOnline(): Boolean = {
+    val database = db.dataSource.getConnection.getCatalog
+    val jdbcurl  = db.dataSource.getConnection.getMetaData.getURL    
+
+    log.info(s"Pinging Meta Repository: [${jdbcurl}]...")
     
-    log.info(s"Pinging Meta Repository: [${config.host}, ${config.database}]...")
-    
-    PostgresHealth.verifyDataStore( config.database ) match {
+    PostgresHealth.verifyDataStore( database ) match {
       case Success( _ )  => {
         log.info( "data-store: Available" )
         //log.info( connectionManager.toString )
