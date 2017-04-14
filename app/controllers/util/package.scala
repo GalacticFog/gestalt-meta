@@ -1,8 +1,10 @@
 package controllers
 
+import java.io.{PrintWriter, StringWriter}
+
 import com.galacticfog.gestalt.data.models._
 
-import scala.util.{Try,Success,Failure}
+import scala.util.{Failure, Success, Try}
 import play.api.{Logger => log}
 import play.api.mvc._
 import play.api.mvc.Results._
@@ -63,6 +65,9 @@ package object util {
   
   def HandleExceptions(e: Throwable): Result = {
     log.error(e.getMessage)
+    val err = new StringWriter()
+    e.printStackTrace(new PrintWriter(err));
+    log.trace(err.toString)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
   
