@@ -435,7 +435,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   /**
-   * Builds lambda.properties.funtion_mappings object.
+   * Builds lambda.properties.function_mappings object.
    */
   private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
@@ -609,12 +609,27 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   // --------------------------------------------------------------------------
   // API_ENDPOINTS
   // --------------------------------------------------------------------------
-  
+
+  /**
+    * Finding Endpoints by Container calls a different factory endpoint, because Endpoints are NOT
+    * stored as children of Containers, because Endpoints are stored as children of Apis
+    * TODO: there is some duplication here with getEndpointsByContainerFqon, not a big deal for now
+    */
+  def getEndpointsByContainerFqon(fqon: String, containerId: UUID) = Authenticate(fqon) { implicit request =>
+
+    val path = new ResourcePath(fqon, s"containers/$containerId/apiendpoints")
+
+    this.AuthorizedResourceList(path, "apiendpoint.view")
+
+    handleExpansion(
+      ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", containerId.toString),
+      request.queryString)
+  }
+
   /**
    * Finding Endpoints by Lambda calls a different factory endpoint, because Endpoints are NOT
-   * stored as children of Lambdas. Why not?
+   * stored as children of Lambdas, because Endpoints are stored as children of Apis
    */
-   
   def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Authenticate(fqon) { implicit request =>
     
     val path = new ResourcePath(fqon, s"lambdas/$lambda/apiendpoints")
@@ -625,7 +640,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", lambda.toString),
     request.queryString)
   }  
-  
+
   def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
     
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
