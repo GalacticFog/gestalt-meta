@@ -7,12 +7,11 @@ import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
 import play.api.libs.json.{JsValue, Json}
 
-class HealthModule extends AbstractModule with ScalaModule {
 
+class HealthModule extends AbstractModule with ScalaModule {
   override def configure(): Unit = {
     bind[MetaServiceStatus].asEagerSingleton()
   }
-
 }
 
 class MetaServiceStatus @Inject()(metaHealth: MetaHealth) {

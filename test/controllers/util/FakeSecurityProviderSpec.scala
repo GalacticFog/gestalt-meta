@@ -3,7 +3,6 @@ package controllers.util
 
 import java.util.UUID
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import controllers.util.db.ConnectionManager
 import org.specs2.mutable._
 import org.specs2.specification._
 import play.api.libs.json._

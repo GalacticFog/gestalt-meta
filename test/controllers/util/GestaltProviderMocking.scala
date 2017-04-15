@@ -5,7 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-import controllers.util.db.ConnectionManager
+
 import modules._
 import org.specs2.mock.Mockito
 import play.api.inject._
@@ -36,14 +36,14 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       classOf[HealthModule]
     )
 
+    //val dataStore = injector.instanceOf(classOf[DataStore])
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
       bind(classOf[SecureController]).toInstance(mockSecureController),
       bind(classOf[SecurityClientProvider]).toInstance(mock[SecurityClientProvider]),
       bind(classOf[SecurityKeyInit]).toInstance(mock[SecurityKeyInit]),
       bind(classOf[MetaHealth]).toInstance(mock[MetaHealth]),
-      bind(classOf[MetaServiceStatus]).toInstance(mock[MetaServiceStatus]),
-      bind(classOf[ConnectionManager]).toInstance(connectionManager)
+      bind(classOf[MetaServiceStatus]).toInstance(mock[MetaServiceStatus])
     )
 
     new GuiceApplicationBuilder()
@@ -55,13 +55,18 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
   /**
    * Return a Play Application with ContainerService bound to a mock[ContainerService]
    */
-  def containerApp(): play.api.Application = {
-    application(additionalBindings = Seq(
+  def containerApp(additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
+    val bindings: Seq[GuiceableModule] = Seq(
       bind(classOf[ContainerService]).toInstance(mockContainerService),
       bind(classOf[ProviderManager]).toInstance(mockProviderManager),
       bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
       bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
-    ))
+    )
+    application(additionalBindings = (bindings ++ additionalBindings)) 
+  }
+  
+  def databaseApp(): play.api.Application = {
+    containerApp(additionalBindings = Seq(bind(classOf[DataStore]).toInstance(injector.instanceOf(classOf[DataStore]))))
   }
 
   private[this] def uuid() = UUID.randomUUID()  
