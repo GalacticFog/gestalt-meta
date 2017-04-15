@@ -309,7 +309,8 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   val payloadTransforms: Map[UUID, JsonPayloadTransform] = Map(
     ResourceIds.Environment -> transformEnvironment,
     ResourceIds.Policy      -> transformPolicy,
-    ResourceIds.RuleLimit   -> transformRule
+    ResourceIds.RuleLimit   -> transformRule,
+    ResourceIds.RuleEvent   -> transformRule
   )
   
   def transformEnvironment(json: JsValue, data: Map[String, String]): Try[JsValue] = {
@@ -320,6 +321,9 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     } yield c      
   }
   
+  /*
+   * TODO: clean this up - use PatchOps to transform json.
+   */
   def transformRule(json3: JsValue, data: Map[String, String]): Try[JsValue] = Try {
 
     val parentId = data("parent")
@@ -454,15 +458,30 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     }
   }    
   
-  def resolveTypeFromPayload(json: JsValue): Option[UUID] = {
-    Js.find(json.as[JsObject], "/resource_type") flatMap { typename =>
+  private[controllers] def resolveTypeFromPayload(json: JsValue): Option[UUID] = {
+    Js.find(json.as[JsObject], "/resource_type") flatMap { typeIdentifier =>
       /*
-       * TODO: Delegate finding the type to the TypeController/Service so
+       * TODO: Delegate finding/validating the type to the TypeController/Service so
        * it can be retrieved from cache if available.
        */
-      TypeFactory.findByName(typename.as[String]) map { _.id }
-    }    
-  }  
+      
+      val ti = typeIdentifier.as[String]
+      val InvalidResourceType = 
+        s"Invalid resource_type identifier. You must provide either the fully-qualified resource type-name or the resource type UUID. found: '${ti}'."
+      
+      val givenId = parseUUID(ti).fold {
+        log.info(s"Found resource_type value, but it is not a UUID. Attempting to resolve type-name...")
+        TypeFactory.findByName(ti).fold { 
+          throw new UnprocessableEntityException(InvalidResourceType)
+        }{ typ => typ.id }
+      }{ id => UUID.fromString(id) }
+      
+      if (TypeFactory.typeExists(givenId)) Some(givenId) else {
+        throw new UnprocessableEntityException(InvalidResourceType)
+      }
+    }
+  }
+  
 }
 
 object MetaController {}
