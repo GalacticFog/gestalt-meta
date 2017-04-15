@@ -59,12 +59,12 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
       }
     }
     newDefaultResourceResult(org, typeid, parent, request.body)
-  }  
+  }
   
   // ==========================================================================
   // RULES
   // ==========================================================================
-
+  
   /**
    * Implements http://{host}/rules?type={rule-type}
    */
@@ -74,7 +74,7 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   
   private lazy val RULE_TYPE_NAME = Resources.Rule
   
-
+  
   /**
    * Filter a list of Rule resources based on the type names given in a querystring.
    * TODO: This only handles a single 'type' filter.

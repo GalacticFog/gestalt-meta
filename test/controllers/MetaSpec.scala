@@ -16,7 +16,7 @@ import services.{MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
 
-class MetaControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+class MetaSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
 
   override def beforeAll(): Unit = {
     pristineDatabase()
@@ -31,9 +31,9 @@ class MetaControllerSpec extends PlaySpecification with GestaltProviderMocking w
     )
     Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
   }
-
+  
   sequential
-
+  
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   abstract class TestApplication extends WithApplication(
