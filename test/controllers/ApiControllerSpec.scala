@@ -19,7 +19,7 @@ import com.galacticfog.gestalt.meta.test._
 
 
 class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
-
+  
   abstract class ApiApp extends WithDatabase[ApiController](containerApp())
   
   def endpointJson(lambdaId: UUID = uuid()) = Json.parse {
@@ -33,7 +33,6 @@ class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
       |}
     }""".trim.stripMargin
   }
-  
   
   "validateNewEndpoint" should {
     

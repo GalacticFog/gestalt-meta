@@ -22,11 +22,9 @@ import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.inject.bind
+import controllers.util.db.ConnectionManager
 
 trait ResourceScope extends Scope with Mockito {
-  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
-  println("RESOURCE SCOPE INIT")
-  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
@@ -37,31 +35,18 @@ trait ResourceScope extends Scope with Mockito {
     classOf[modules.HealthModule]
   )
   lazy val injector = appBuilder.injector()
+  lazy val connectionManager = injector.instanceOf(classOf[ConnectionManager])
 
- def setupDb() = scalikejdbc.config.DBs.setupAll()
- 
-  def refreshDb(ds: javax.sql.DataSource) = {
+  def pristineDatabase() = {
+    println("***************************************************")
+    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(connectionManager.config.host, connectionManager.config.database))
+    println("***************************************************")
+    
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org, 
         dummyRootOrgId, dummyRootOrgId, owner, 
-        ds)
- 
-    for {
-      a <- db.clean
-      b <- db.migrate
-      c <- db.loadReferenceData
-      d <- db.loadSystemTypes
-      e <- db.initialize("root")
-    } yield e     
-  }
-  
-  def pristineDatabase() = {
-    val dataStore = injector.instanceOf(classOf[DataStore])
-        
-    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-    val db = new Bootstrap(ResourceIds.Org, 
-        dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
-    
+        connectionManager.currentDataSource())
+
     for {
       a <- db.clean
       b <- db.migrate
@@ -70,6 +55,52 @@ trait ResourceScope extends Scope with Mockito {
       e <- db.initialize("root")
     } yield e    
   } 
+//  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
+//  println("RESOURCE SCOPE INIT")
+//  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
+//  val dummyRootOrgId = UUID.randomUUID()
+//  val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
+//  val adminUserId = UUID.randomUUID()
+//  
+//  object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+//
+//  lazy val appBuilder = new GuiceApplicationBuilder().disable(
+//    classOf[modules.HealthModule]
+//  )
+//  lazy val injector = appBuilder.injector()
+//
+// def setupDb() = scalikejdbc.config.DBs.setupAll()
+// 
+//  def refreshDb(ds: javax.sql.DataSource) = {
+//    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+//    val db = new Bootstrap(ResourceIds.Org, 
+//        dummyRootOrgId, dummyRootOrgId, owner, 
+//        ds)
+// 
+//    for {
+//      a <- db.clean
+//      b <- db.migrate
+//      c <- db.loadReferenceData
+//      d <- db.loadSystemTypes
+//      e <- db.initialize("root")
+//    } yield e     
+//  }
+//  
+//  def pristineDatabase() = {
+//    val dataStore = injector.instanceOf(classOf[DataStore])
+//        
+//    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+//    val db = new Bootstrap(ResourceIds.Org, 
+//        dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
+//    
+//    for {
+//      a <- db.clean
+//      b <- db.migrate
+//      c <- db.loadReferenceData
+//      d <- db.loadSystemTypes
+//      e <- db.initialize("root")
+//    } yield e    
+//  } 
   
   def newOrg(
       id: UUID = uuid(), 

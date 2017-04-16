@@ -42,7 +42,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
   }
 
   sequential
-
+  
   abstract class FakeSecurity extends WithApplication(application(
     additionalBindings = Seq(
       bind(classOf[ContainerService]).toInstance(mockContainerService),
