@@ -172,7 +172,8 @@ DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controller
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*> 		  		controllers.ResourceController.getOrgFqon(fqon: String)
 
 ### GET override for lambda endpoints
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		    controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
+GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:id/apiendpoints		controllers.ResourceController.getEndpointsByContainerFqon(fqon: String, id: java.util.UUID)
 
 ### Shortcut lookup to get Containers directly from Provider (without going through Environment)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers  		controllers.ResourceController.getProviderContainers(fqon: String, pid: java.util.UUID)

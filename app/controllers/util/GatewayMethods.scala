@@ -3,6 +3,9 @@ package controllers.util
 import java.net.URL
 import java.util.UUID
 
+import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
+
 //import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
@@ -62,17 +65,77 @@ object GatewayMethods {
           	"location" -> location.toString)))
   }
   
-  def toGatewayEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = Try {
-    val json = js.as[JsObject]
-    val id = Js.find(json, "/id").get.as[String]
-    val upstreamUrl = Js.find(json, "/properties/upstream_url") getOrElse JsString("") //.get.toString
-    val path = Js.find(json, "/properties/resource").get.as[String]
-    
-    LaserEndpoint(Some(id), 
-        apiId       = api.toString,
-        upstreamUrl = upstreamUrl.as[String], 
-        path        = path)
-  }  
+  def toGatewayEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = {
+
+    // TODO: error handling here should be better, a lot of Try{_.get}
+    def mkUpstreamUrl(implType: String, implId: UUID, maybePortName: Option[String], sync: Boolean): Try[String] = {
+      (implType,maybePortName.map(_.trim).filter(_.nonEmpty)) match {
+        case ("lambda",_) =>
+          ResourceFactory.findById(ResourceIds.Lambda, implId) match {
+            case None => Failure(new BadRequestException("no lambda with id matching ApiEndpoint \"implementation_id\""))
+            case Some(l) =>
+              val invoke = if (sync) "invokeSync" else "invoke"
+              for {
+                providerId <- Try{ UUID.fromString((Json.parse(l.properties.get("provider")) \ "id").as[String]) }
+                provider <- Try{ ResourceFactory.findById(providerId).get }
+                config <- Try{Json.parse(provider.properties.get("config")).as[JsObject]}
+                svcHost <- Try{ Js.find(config, "/env/public/SERVICE_HOST").map(_.as[String]).get }
+                svcPort <- Try{ Js.find(config, "/env/public/SERVICE_PORT").map(_.as[String].toInt).get }
+              } yield s"http://${svcHost}:${svcPort}/lambdas/${l.id}/${invoke}"
+          }
+        case ("container",None) =>
+          Failure(new BadRequestException("""ApiEndpoint with "implementation_type" == "container" must also provide non-empty "container_port_name""""))
+        case ("container",Some(portName)) =>
+          ResourceFactory.findById(ResourceIds.Container, implId) match {
+            case None => Failure(new BadRequestException("no container with id matching ApiEndpoint \"implementation_id\""))
+            case Some(c) => for {
+              spec <- ContainerSpec.fromResourceInstance(c)
+              (svcHost,svcPort) <- spec.port_mappings.find(pm => pm.name.contains(portName)) match {
+                case None =>
+                  Failure(new BadRequestException("no port mapping with the specified name on the specified container"))
+                case Some(ContainerSpec.PortMapping(_,_,_,_,_,_,Some(true),Some(ServiceAddress(svcHost,svcPort,_,_)),_)) =>
+                  Success((svcHost,svcPort))
+                case Some(_) =>
+                  Failure(new BadRequestException("port mapping with the specified name was not exposed or did not contain service address"))
+              }
+            } yield s"http://${svcHost}:${svcPort}"
+          }
+        case _ => Failure(new BadRequestException("ApiEndpoint \"implementation_type\" must be \"container\" or \"lambda\""))
+      }
+    }
+
+    for {
+      json  <- Try{js.as[JsObject]}
+      apiId <- Try{Js.find(json, "/id").flatMap(_.asOpt[String]).getOrElse(
+        throw BadRequestException("ApiEndpoint did not contain \"id\"")
+      )}
+      path  <- Try{ Js.find(json, "/properties/resource").flatMap(_.asOpt[String]).getOrElse(
+        throw BadRequestException("ApiEndpoint did not contain \"/properties/resource\"")
+      )}
+      implId <- Try{ Js.find(json, "/properties/implementation_id").flatMap(_.asOpt[UUID]).getOrElse(
+        throw BadRequestException("ApiEndpoint did not contain properly-formatted \"/properties/implementation_id\"")
+      )}
+      sync = Js.find(json, "/properties/synchronous").flatMap(_.asOpt[Boolean]).getOrElse(true)
+      implType <- Try{ Js.find(json, "/properties/implementation_type")
+        .flatMap(_.asOpt[String])
+        .orElse(ResourceFactory.findById(implId).flatMap(_.typeId match {
+          case ResourceIds.Lambda => Some("lambda")
+          case ResourceIds.Container => Some("container")
+          case _ => None
+        }))
+        .getOrElse(
+          throw BadRequestException("ApiEndpoint did not contain valid \"/properties/implementation_type\"")
+        )
+      }
+      portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
+      upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
+    } yield LaserEndpoint(
+      id = Some(apiId),
+      apiId       = api.toString,
+      upstreamUrl = upstreamUrl,
+      path        = path
+    )
+  }
   
   def findGatewayProvider(api: GestaltResourceInstance): Try[GestaltResourceInstance] = Try {
       val prvder = Json.parse(api.properties.get("provider")).as[JsObject]

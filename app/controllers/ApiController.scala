@@ -125,21 +125,32 @@ class ApiController @Inject()(
   def postApiEndpoint(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     ResourceFactory.findById(ResourceIds.Api, api).fold {
-      Future(ResourceNotFound(ResourceIds.Api, api)) 
+      Future(ResourceNotFound(ResourceIds.Api, api))
     }{ a =>
-      
+
       val caller = request.identity
       val provider = findGatewayProvider(a).get // <-- can generate in 'for' below
-      
+
       log.info("Creating Endpoint in Meta...")
-      
+
+      def addUpstreamUrl(json: JsValue, upstreamUrl: String): Try[JsObject] = {
+        val urlAdder = (__ \ 'properties).json.update(
+          __.read[JsObject].map{ o => o ++ Json.obj( "upstream_url" -> upstreamUrl ) }
+        )
+        json.transform(urlAdder) match {
+          case JsSuccess(o,_) => Success(o)
+          case JsError(_) => Failure(new RuntimeException("unable to add upstream_url to ApiEndpoint resource"))
+        }
+      }
+
       val org = fqid(fqon)
       val metaCreate = for {
         p <- validateNewEndpoint(request.body, a)
         l <- toGatewayEndpoint(p, api)
-        r <- CreateResource(org, caller, p, ResourceIds.ApiEndpoint, Some(api)) 
+        pWithUpstream <- addUpstreamUrl(p, l.upstreamUrl)
+        r <- CreateResource(org, caller, pWithUpstream, ResourceIds.ApiEndpoint, Some(api))
       } yield (r, l)
-      
+
       metaCreate match {
         case Failure(e) => {
           log.error("Failed creating Endpoint in Meta")
@@ -148,11 +159,11 @@ class ApiController @Inject()(
         case Success((metaep, laserep)) => {
           log.info("Endpoint created in Meta.")
           setNewEntitlements(org, metaep.id, caller, Some(api))
-          
+
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
           val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
-          
+
           client.post(uri, Option(Json.toJson(laserep))) map { result =>
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created Endpoint in GatewayManager.")

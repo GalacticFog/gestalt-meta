@@ -3,7 +3,9 @@ package controllers.util
 
 import java.net.URL
 
-import scala.util.{Try,Success,Failure}
+import com.galacticfog.gestalt.laser
+
+import scala.util.{Failure, Success, Try}
 
 //import com.galacticfog.gestalt.meta.api.{PatchDocument => OldPatchDoc}
 
@@ -24,8 +26,9 @@ import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
+import javax.inject.Inject
 
-object LambdaMethods {
+class LambdaMethods @Inject()() {
   
   private val log = Logger(this.getClass)
 
@@ -55,8 +58,8 @@ object LambdaMethods {
   }
 
 //  private[controllers] def patchLambdaHandler(
-//      r: GestaltResourceInstance, 
-//      patch: PatchDocument, 
+//      r: GestaltResourceInstance,
+//      patch: PatchDocument,
 //      user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
 //
 //    @scala.annotation.tailrec
@@ -64,22 +67,22 @@ object LambdaMethods {
 //      data match {
 //        case Nil => lm
 //        case h :: t => replace(t, updateLambdaData(lm, h._1, h._2.get))
-//      }  
-//    }    
-//    
+//      }
+//    }
+//
 //    log.debug("Finding lambda in backend system...")
 //    // Get lambda from gestalt-lambda
 //    val lambda = laser.lambdas(r.id) getOrElse {
 //      throw new RuntimeException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
 //    }
-//    
+//
 //    // Strip path to last component to get field name.
-//    val ops = patch.ops map { o => 
+//    val ops = patch.ops map { o =>
 //      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
 //      (fieldName -> o.value)
 //    }
 //    log.debug("Lambda found. Performing PATCH...")
-//    // Update the Lambda DAO (in-memory), then in gestalt-lambda   
+//    // Update the Lambda DAO (in-memory), then in gestalt-lambda
 //    val updatedLambda = replace(ops, lambda)
 //    laser.updateLambda(updatedLambda) match {
 //      case Failure(e) => {
@@ -91,7 +94,7 @@ object LambdaMethods {
 //      }
 //    }
 //    PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
-//  }    
+//  }
 
   /**
    * Update a Lambda both in Meta and gestalt-lambda.
