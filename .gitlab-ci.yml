@@ -39,7 +39,7 @@ variables:
 test:
   stage: test
   services:
-    - postgres:9.4
+    - galacticfog/fat-postgres:9.4
     #- galacticfog/gestalt-security:2.2.5-SNAPSHOT-b246c46b
   script:
     - sbt clean update test docker:stage
