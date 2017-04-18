@@ -13,7 +13,7 @@ variables:
   POSTGRES_DB: gestalt-meta
   POSTGRES_USER: gestaltdev
   POSTGRES_PASSWORD: letmein
-  DATABASE_HOSTNAME: postgres
+  DATABASE_HOSTNAME: galacticfog-fat-postgres
   DATABASE_NAME: gestalt-meta
   DATABASE_PORT: "5432"
   DATABASE_USERNAME: gestaltdev
@@ -39,7 +39,7 @@ variables:
 test:
   stage: test
   services:
-    - postgres:9.4
+    - galacticfog/fat-postgres:9.4
     #- galacticfog/gestalt-security:2.2.5-SNAPSHOT-b246c46b
   script:
     - sbt clean update test docker:stage
