@@ -30,6 +30,8 @@ dockerCommands := dockerCommands.value.flatMap {
   case other => List(other)
 }
 
+parallelExecution in Test := false
+
 lazy val root = (project in file(".")).
   enablePlugins(PlayScala,SbtNativePackager).
   enablePlugins(BuildInfoPlugin).
@@ -70,6 +72,9 @@ scalacOptions ++= Seq(
   "-unchecked") 	// Enable additional warnings where generated code depends on assumptions.
   
   //"-Xlint" 		// Enable recommended additional warnings.
+
+
+javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
 libraryDependencies ++= Seq(
 

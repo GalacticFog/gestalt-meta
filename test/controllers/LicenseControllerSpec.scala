@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
@@ -28,13 +28,13 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Success, Try}
 
 
-class LicenseControllerSpec extends GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+class LicenseControllerSpec extends MetaRepositoryOps with JsonMatchers {
   
-  override def beforeAll(): Unit = pristineDatabase()
-
+  //override def beforeAll(): Unit = pristineDatabase()
+override def beforeAll(): Unit = ()
   sequential
   
-  abstract class TestApplication extends WithApplication(containerApp()) {
+  abstract class TestApplication extends WithDb(containerApp()) {
     
   }
   

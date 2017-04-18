@@ -43,7 +43,8 @@ import javax.inject.Singleton
 @Singleton
 class AuthorizationController @Inject()(
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    db: play.api.db.Database)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------

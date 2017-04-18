@@ -20,7 +20,9 @@ import com.galacticfog.gestalt.meta.test._
 
 class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
   
-  abstract class ApiApp extends WithDatabase[ApiController](containerApp())
+  sequential
+  
+  abstract class ApiApp extends WithDbController[ApiController](containerApp())
   
   def endpointJson(lambdaId: UUID = uuid()) = Json.parse {
     s"""
@@ -36,7 +38,7 @@ class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
   
   "validateNewEndpoint" should {
     
-    "inject api.providers.locations[0] into endpoint payload" in new ApiApp { setup
+    "inject api.providers.locations[0] into endpoint payload" in new ApiApp { 
       val location = uuid()
       val provider = Json.obj(
           "id" -> uuid.toString,
@@ -55,14 +57,14 @@ class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
       UUID.fromString(locid.get.as[String]) === location
     }
     
-    "fail if api.properties is none" in new ApiApp { setup
+    "fail if api.properties is none" in new ApiApp { 
       val api = createApi(properties = None)
       api must beSuccessfulTry
       
       controller.validateNewEndpoint(endpointJson(), api.get) must beFailedTry.withThrowable[UnprocessableEntityException]
     }
     
-    "fail if api.properties.locations is missing" in new ApiApp { setup
+    "fail if api.properties.locations is missing" in new ApiApp { 
       val location = uuid()
       val provider = Json.obj("id" -> uuid.toString)
           
@@ -73,7 +75,7 @@ class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
       controller.validateNewEndpoint(endpointJson(), api.get) must beFailedTry.withThrowable[UnprocessableEntityException]
     }
     
-    "fail if api.properties.locations is empty" in new ApiApp { setup
+    "fail if api.properties.locations is empty" in new ApiApp { 
       val location = uuid()
       val provider = Json.obj(
           "id" -> uuid.toString,

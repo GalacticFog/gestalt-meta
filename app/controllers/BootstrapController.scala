@@ -107,28 +107,27 @@ class BootstrapController @Inject()(
         InternalServerError(e.getMessage)
       }
     }
-    
   }
   
-  def rebuildDatabase(bootstrap: Bootstrap) = scalikejdbc.DB.autoCommit { session => 
+  private[controllers] def rebuildDatabase(bootstrap: Bootstrap) = scalikejdbc.DB.autoCommit { session => 
     for {
       a <- bootstrap.clean
       b <- bootstrap.migrate
     } yield b
   }
   
-  def resetClientConnections() = Try {
+  private[controllers] def resetClientConnections() = Try {
     scalikejdbc.config.DBs.closeAll()
     scalikejdbc.config.DBs.setupAll()
   }
   
-  def initializeDatabase(bootstrap: Bootstrap) = scalikejdbc.DB.autoCommit { session => 
+  private[controllers] def initializeDatabase(bootstrap: Bootstrap) = scalikejdbc.DB.autoCommit { session => 
     for {
       c <- bootstrap.loadReferenceData
       d <- bootstrap.loadSystemTypes
       e <- bootstrap.initialize("root")
     } yield e
-  }      
+  }
   
   
 }

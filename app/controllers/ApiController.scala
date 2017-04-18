@@ -52,7 +52,8 @@ import play.api.libs.ws.WSClient
 class ApiController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    db: play.api.db.Database)
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   /*

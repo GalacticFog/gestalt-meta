@@ -20,20 +20,22 @@ import controllers.PolicyController
 
 class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll {
   
+  sequential
+  
   override def beforeAll(): Unit = pristineDatabase
   
-  abstract class App extends WithApplication(containerApp()) {
+  abstract class App extends WithDbController[PolicyController](containerApp()) {
     /*
      * Using PolicyController here is incidental - I just need something
      * that extends MetaController in order to access its members.
      */
-    val mc = app.injector.instanceOf[PolicyController]         
+    //val mc = app.injector.instanceOf[PolicyController]         
   }
   
   "resolveTypeFromPayload" should {
     
-    "return a valid resource_type UUID when given a valid UUID" in new App {
-      val f = mc.resolveTypeFromPayload _
+    "return a valid resource_type UUID when given a valid UUID" in new App { 
+      val f = controller.resolveTypeFromPayload _
       
       f(GoodUUIDs.org)         must beSome(ResourceIds.Org)
       f(GoodUUIDs.workspace)   must beSome(ResourceIds.Workspace)
@@ -44,8 +46,8 @@ class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking 
       f(GoodUUIDs.apiendpoint) must beSome(ResourceIds.ApiEndpoint)
     }
     
-    "return a valid resource_type UUID when given a valid resource type NAME" in new App {
-      val f = mc.resolveTypeFromPayload _
+    "return a valid resource_type UUID when given a valid resource type NAME" in new App { 
+      val f = controller.resolveTypeFromPayload _
       
       f(GoodNames.org)         must beSome(ResourceIds.Org)
       f(GoodNames.workspace)   must beSome(ResourceIds.Workspace)
@@ -56,12 +58,12 @@ class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking 
       f(GoodNames.apiendpoint) must beSome(ResourceIds.ApiEndpoint)      
     }
     
-    "fail when given invalid UUIDs" in new App {
-      mc.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
+    "fail when given invalid UUIDs" in new App { 
+      controller.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
     }
     
-    "fail when given invalid type names" in new App {
-      mc.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
+    "fail when given invalid type names" in new App { 
+      controller.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
     }
     
   }
