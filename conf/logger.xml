@@ -14,6 +14,7 @@
     This configures the log level to log at for a package and its children packages.
   -->
   
+  
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
   <logger name="com.galacticfog" level="DEBUG"/>

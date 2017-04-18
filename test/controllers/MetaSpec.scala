@@ -2,7 +2,7 @@ package controllers
 
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 import controllers.util.{ContainerService, GestaltProviderMocking}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
@@ -16,7 +16,7 @@ import services.{MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
 
-class MetaSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   override def beforeAll(): Unit = {
     pristineDatabase()
@@ -44,8 +44,17 @@ class MetaSpec extends PlaySpecification with GestaltProviderMocking with Resour
         bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
       )
     )
-  )
-
+  ) {
+    import org.specs2.execute.{AsResult,Result}
+    
+    override def around[T: AsResult](t: => T): Result = super.around {
+      println("******************AROUND")
+      scalikejdbc.config.DBs.closeAll()
+      scalikejdbc.config.DBs.setupAll()
+      t
+    }    
+  }
+//  abstract class TestApplication extends UseData(containerApp())
   "Kubernetes providers" should {
 
     "be created with a \"default\" network" in new TestApplication {

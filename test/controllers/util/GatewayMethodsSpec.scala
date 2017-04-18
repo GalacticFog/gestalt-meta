@@ -61,7 +61,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         )
         .injector
   }
-
+  
   trait TestApplication extends FakeCaaSScope {
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
       "config" ->

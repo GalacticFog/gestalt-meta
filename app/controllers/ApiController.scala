@@ -52,7 +52,8 @@ import play.api.libs.ws.WSClient
 class ApiController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    db: play.api.db.Database)
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   /*
@@ -91,7 +92,7 @@ class ApiController @Inject()(
        * If the create subsequently fails in GatewayManager, we set the status
        * of the already created Meta resource to 'FAILED'.
        */
-       
+      
       CreateResource(org, caller, payload, ResourceIds.Api, Some(parent)) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(resource) => {

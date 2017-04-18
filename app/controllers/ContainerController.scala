@@ -36,10 +36,12 @@ import javax.inject.Singleton
 import services._
 
 @Singleton
-class ContainerController @Inject()( messagesApi: MessagesApi,
-                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                     containerService: ContainerService,
-                                     providerManager: ProviderManager )
+class ContainerController @Inject()( 
+     messagesApi: MessagesApi,
+     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+     containerService: ContainerService,
+     providerManager: ProviderManager,
+     db: play.api.db.Database)
     extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})

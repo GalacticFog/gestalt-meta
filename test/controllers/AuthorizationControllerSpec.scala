@@ -12,71 +12,67 @@ import controllers.util.GestaltProviderMocking
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
 import play.api.test.WithApplication
+import controllers.util.DataStore
+import com.galacticfog.gestalt.meta.test._
 
 class AuthorizationControllerSpec
   extends PlaySpecification 
-    with GestaltProviderMocking
-    with ResourceScope 
-    with BeforeAll
+    with MetaRepositoryOps
     with Mockito {
-  
-  override def beforeAll(): Unit = pristineDatabase()
 
   sequential
 
-  abstract class TestApplication extends WithApplication(containerApp()) {
-    val ac = app.injector.instanceOf[AuthorizationController]
-  }
-
+  abstract class TestApplication extends WithDbController[AuthorizationController](containerApp())
+  
   "findOrFail" should {
     
-    "succeed when the resource ID is valid" in new TestApplication {
+    "succeed when the resource ID is valid" in new TestApplication { 
       val resource = createInstance(ResourceIds.Org, uuid().toString)
       resource must beSuccessfulTry
       
-      ac.findOrFail(ResourceIds.Org, resource.get.id) must beSuccessfulTry
+      controller.findOrFail(ResourceIds.Org, resource.get.id) must beSuccessfulTry
     }
     
-    "fail when the resource ID is invalid" in new TestApplication {
-      ac.findOrFail(ResourceIds.Resource, uuid()) must beFailedTry.withThrowable[ResourceNotFoundException]
+    "fail when the resource ID is invalid" in new TestApplication { 
+      controller.findOrFail(ResourceIds.Resource, uuid()) must beFailedTry.withThrowable[ResourceNotFoundException]
     }
   }
 
   "reconcile" should {
     
-    "preserve a given list when there are no additions or deletions" in new TestApplication {
+    "preserve a given list when there are no additions or deletions" in new TestApplication { 
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = Seq.empty
       
-      ac.reconcile(base, adds, deletes) === base
+      controller.reconcile(base, adds, deletes) === base
     }
     
-    "preserve a given list while reflecting additions" in new TestApplication {
+    "preserve a given list while reflecting additions" in new TestApplication { 
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq("f", "g", "h")
       val deletes = Seq.empty
       
-      ac.reconcile(base, adds, deletes) === base ++ adds
+      controller.reconcile(base, adds, deletes) === base ++ adds
     }
     
-    "preserve a given list while reflecting deletions" in new TestApplication {
+    "preserve a given list while reflecting deletions" in new TestApplication { 
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = Seq("b", "d")
       
-      ac.reconcile(base, adds, deletes) === Seq("a", "c", "e") 
+      controller.reconcile(base, adds, deletes) === Seq("a", "c", "e") 
     }
     
-    "return empty if all entries are deleted" in new TestApplication {
+    "return empty if all entries are deleted" in new TestApplication { 
       val base = Seq("a", "b", "c", "d", "e")
       val adds = Seq.empty
       val deletes = base
       
-      ac.reconcile(base, adds, deletes) === Seq.empty
+      controller.reconcile(base, adds, deletes) === Seq.empty
     }
     
-    "return additions if empty and only additions are made" in new TestApplication {
+    "return additions if empty and only additions are made" in new TestApplication { 
       /*
        * start with an empty base, supply additions, should return == additions
        */
@@ -84,7 +80,7 @@ class AuthorizationControllerSpec
       val adds = Seq("a", "b", "c", "d", "e")
       val deletes = Seq.empty
       
-      ac.reconcile(base, adds, deletes) === adds
+      controller.reconcile(base, adds, deletes) === adds
     }
   }
   
@@ -154,7 +150,7 @@ class AuthorizationControllerSpec
 
       // Copy identities back into properties map - cascade update to all descendants.
       val newEntitlement = rootEntitlement.copy(properties = Some(newprops))
-      val updated = ac.cascadeEntitlementIdentities(
+      val updated = controller.cascadeEntitlementIdentities(
           l1.get.id, rootEntitlement, newEntitlement)
 
       // Ensure we have same number of entitlements in 'current' and 'updated'
@@ -236,7 +232,7 @@ class AuthorizationControllerSpec
 
       // Copy identities back into properties map - cascade update to all descendants.
       val newEntitlement = rootEntitlement.copy(properties = Some(newprops))
-      val updated = ac.cascadeEntitlementIdentities(
+      val updated = controller.cascadeEntitlementIdentities(
           l1.get.id, rootEntitlement, newEntitlement)
 
       // Ensure we have same number of entitlements in 'current' and 'updated'
@@ -326,7 +322,7 @@ class AuthorizationControllerSpec
       
       // Copy identities back into properties map - cascade update to all descendants.
       val newEntitlement = rootEntitlement.copy(properties = Some(newprops))
-      val updated = ac.cascadeEntitlementIdentities(
+      val updated = controller.cascadeEntitlementIdentities(
           l1.get.id, rootEntitlement, newEntitlement)
 
       // Ensure we have same number of entitlements in 'current' and 'updated'
@@ -348,24 +344,21 @@ class AuthorizationControllerSpec
 //      val org = createInstance(ResourceIds.Org, uuid.toString)
 //      org must beSuccessfulTry
 //      
-//      val ac = controllerInstance()
+//      //val controller = controllerInstance()
 //      implicit val request = fakeAuthRequest(GET, s"/foo", testCreds)
 //      
-//
-//      
-//
 //      val input = Json.obj("name" -> "foo", "properties" -> Json.obj("action" -> "org.create"))
-//      ac.postEntitlementCommon2(
+//      controller.postEntitlementCommon(
 //          org.get.id, ResourceIds.Org, 
 //          org.get.id, user, input, None) 
 //    }
-//    
+    
 //    "fail when the parent resource can't be found" >> {
 //      failure
 //    }
-//    
+    
 //  }
-//  
+  
 //  "validateEntitlementPayload" should {
 //    
 //    "succeed when given valid data" >> {

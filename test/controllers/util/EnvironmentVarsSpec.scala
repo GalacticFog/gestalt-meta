@@ -1,24 +1,13 @@
 package controllers.util
 
+import org.specs2.matcher.ValueCheck.typedValueCheck
+import org.specs2.mutable.Specification
+import org.specs2.specification.BeforeAll
 
-import java.util.UUID
-
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import controllers.util.db.ConnectionManager
-import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Scope
-import play.api.libs.json._
-
-import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.Resource
+import com.galacticfog.gestalt.meta.test.ResourceScope
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-
-import scala.util.Success
+import play.api.libs.json.Json
 
 
 class EnvironmentVarsSpec extends Specification with ResourceScope with BeforeAll {

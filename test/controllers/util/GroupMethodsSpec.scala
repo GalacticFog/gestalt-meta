@@ -1,44 +1,23 @@
 package controllers.util
 
-import java.util.UUID
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import controllers.util.db.ConnectionManager
-import org.specs2.mutable._
-import org.specs2.specification._
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import play.api.test._
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import org.specs2.matcher.JsonMatchers
+import scala.Left
+import scala.reflect.runtime.universe
 
-import com.galacticfog.gestalt.patch._
-import com.galacticfog.gestalt.meta.api.ResourcePath
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.{GestaltSecurityClient,GestaltSecurityConfig}
+import org.specs2.mutable.Specification
+import org.specs2.specification.BeforeAll
 
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.patch.PatchOp
+import com.galacticfog.gestalt.patch.PatchOps
+import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
-
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import org.specs2.specification._
-import play.api.libs.json.{JsArray, Json}
-import play.api.test._
-import play.api.{Application, GlobalSettings, Play}
+import javax.inject.Inject
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.{ExecutionContext, Future}
-
-
-  import com.galacticfog.gestalt.security.play.silhouette._
-  import com.galacticfog.gestalt.security.api._
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}  
+import play.api.libs.json.JsString
 
 class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecurityMocking with BeforeAll {
 

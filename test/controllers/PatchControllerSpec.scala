@@ -5,7 +5,7 @@ import controllers.util.GestaltProviderMocking
 import org.specs2.mock.Mockito
 import org.specs2.specification._
 import play.api.libs.json._
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data._
 import play.api.test._
@@ -20,7 +20,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
   override def beforeAll(): Unit = pristineDatabase
   
   
-  abstract class TestApplication extends WithApplication(containerApp()) {
+  abstract class TestApplication extends WithDb(containerApp()) {
   }
   
   "Patch" should {

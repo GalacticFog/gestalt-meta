@@ -17,13 +17,47 @@ import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccou
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import controllers.util.MetaHealth
-import controllers.util.db.ConnectionManager
+//import controllers.util.db.ConnectionManager
+import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.inject.bind
+//import controllers.util.db.ConnectionManager
 
 trait ResourceScope extends Scope with Mockito {
-
+//  val dummyRootOrgId = UUID.randomUUID()
+//  val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
+//  val adminUserId = UUID.randomUUID()
+//  
+//  object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+//
+//  lazy val appBuilder = new GuiceApplicationBuilder().disable(
+//    classOf[modules.HealthModule]
+//  )
+//  lazy val injector = appBuilder.injector()
+//  lazy val connectionManager = injector.instanceOf(classOf[ConnectionManager])
+//
+//  def pristineDatabase() = {
+//    println("***************************************************")
+//    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(connectionManager.config.host, connectionManager.config.database))
+//    println("***************************************************")
+//    
+//    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
+//    val db = new Bootstrap(ResourceIds.Org, 
+//        dummyRootOrgId, dummyRootOrgId, owner, 
+//        connectionManager.currentDataSource())
+//
+//    for {
+//      a <- db.clean
+//      b <- db.migrate
+//      c <- db.loadReferenceData
+//      d <- db.loadSystemTypes
+//      e <- db.initialize("root")
+//    } yield e    
+//  } 
+  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
+  println("RESOURCE SCOPE INIT")
+  println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
@@ -34,18 +68,13 @@ trait ResourceScope extends Scope with Mockito {
     classOf[modules.HealthModule]
   )
   lazy val injector = appBuilder.injector()
-  lazy val connectionManager = injector.instanceOf(classOf[ConnectionManager])
-
+ 
   def pristineDatabase() = {
-    println("***************************************************")
-    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(connectionManager.config.host, connectionManager.config.database))
-    println("***************************************************")
-    
+    val dataStore = injector.instanceOf(classOf[DataStore])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org, 
-        dummyRootOrgId, dummyRootOrgId, owner, 
-        connectionManager.currentDataSource())
-
+        dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
+    
     for {
       a <- db.clean
       b <- db.migrate
@@ -53,6 +82,7 @@ trait ResourceScope extends Scope with Mockito {
       d <- db.loadSystemTypes
       e <- db.initialize("root")
     } yield e    
+    // scalikejdbc.config.DBs.closeAll()
   } 
   
   def newOrg(

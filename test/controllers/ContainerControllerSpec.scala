@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.{ContainerService, GestaltProviderMocking, GestaltSecurityMocking}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -24,7 +24,7 @@ import play.api.test.WithApplication
 import play.api.inject.bind
 import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
 
-class ContainerControllerSpec extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -42,15 +42,9 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
   }
 
   sequential
-
-  abstract class FakeSecurity extends WithApplication(application(
-    additionalBindings = Seq(
-      bind(classOf[ContainerService]).toInstance(mockContainerService),
-      bind(classOf[ProviderManager]).toInstance(mockProviderManager),
-      bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
-      bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
-    )))
-
+  
+  abstract class FakeSecurity extends WithDb(containerApp())  
+  
   def matchesProviderContext(provider: GestaltResourceInstance, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Matcher[ProviderContext] =
     ((_: ProviderContext).workspace.id == workspace.id, (_: ProviderContext).workspace.id.toString + " does not contain the expected workspace resource " + workspace.id) and
     ((_: ProviderContext).environment.id == environment.id, (_: ProviderContext).environment.id.toString + " does not contain the expected environment resource " + environment.id) and
@@ -67,10 +61,10 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
     val mockCaasService = mock[CaasService]
     mockProviderManager.getProviderImpl(any) returns Success(mockCaasService)
   }
-
+  
   "ContainerController" should {
 
-    "get a container via the ContainerService interface" in new TestContainerController {
+    "get a container via the ContainerService interface" in new TestContainerController { 
 
       val testProps = ContainerSpec(
         name = "",
@@ -127,7 +121,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
 
 
-    "list containers via the ContainerService interface" in new TestContainerController {
+    "list containers via the ContainerService interface" in new TestContainerController { 
 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
@@ -182,7 +176,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
 
     }
 
-    "create containers with non-existent provider should 400" in new TestContainerController {
+    "create containers with non-existent provider should 400" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -211,7 +205,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
       contentAsString(result) must contain("provider does not exist")
     }
 
-    "create containers using CaaSService interface" in new TestContainerController {
+    "create containers using CaaSService interface" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -279,7 +273,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
       )
     }
 
-    "create containers using the ContainerService interface with specific ID" in new TestContainerController {
+    "create containers using the ContainerService interface with specific ID" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -348,7 +342,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
       )
     }
 
-    "delete kube containers using the ContainerService interface" in new TestContainerController {
+    "delete kube containers using the ContainerService interface" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -409,7 +403,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
       there was atLeastOne(mockProviderManager).getProviderImpl(ResourceIds.KubeProvider)
     }
 
-    "delete dcos containers using the ContainerService interface" in new TestContainerController {
+    "delete dcos containers using the ContainerService interface" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -470,7 +464,7 @@ class ContainerControllerSpec extends PlaySpecification with GestaltProviderMock
       there was atLeastOne(mockProviderManager).getProviderImpl(testProvider.typeId)
     }
 
-    "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController {
+    "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController { 
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,

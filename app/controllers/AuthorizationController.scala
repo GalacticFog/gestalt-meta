@@ -41,8 +41,10 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 @Singleton
-class AuthorizationController @Inject()(messagesApi: MessagesApi,
-                                        env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class AuthorizationController @Inject()(
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    db: play.api.db.Database)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
@@ -217,48 +219,6 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
   def gatherTargets(typeId: UUID, parent: UUID) = {
     ResourceFactory.findChildrenOfType(typeId, parent)
   }
-//  
-//  private[controllers] def postEntitlementCommon2(
-//      org: UUID, 
-//      typeId: UUID, 
-//      resourceId: UUID,
-//      user: AuthAccountWithCreds,
-//      json: JsValue,
-//      metaUrl: Option[String]): Future[GestaltResourceInstance] = Future {
-//
-//    /*
-//     * TODO: Authorize 'entitlement.create'
-//     */
-//
-//    /*
-//     * 1 - lookup target resource (entitlement parent)
-//     * 2 - validate entitlement payload
-//     * 3 - lookup children of target.typeId
-//     * 4 - if children found, get identities from payload, add them to each child.identities
-//     * 5 - create entitlement on the target resource.
-//     */
-//    
-//    
-//    /*
-//     * Cascading needs to happen on update as well.
-//     */
-//    val target = findOrFail(typeId, resourceId)
-//    val children = ResourceFactory.findChildrenOfType(typeId, resourceId)
-//    
-//   (for {
-//      parent <- findOrFail(typeId, resourceId)
-//      input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
-//      output <- CreateResource(org, json, user, ResourceIds.Entitlement, resourceId)
-//    } yield output).get
-//    
-////    entitlement map { resource =>
-////      transformEntitlement(resource, org, metaUrl)
-////    } match {
-////      case Failure(e) => throw e
-////      case Success(ent) => ent
-////    }
-//  }  
-  
 
   private[controllers] def postEntitlementCommon(
       org: UUID, 
@@ -267,8 +227,7 @@ class AuthorizationController @Inject()(messagesApi: MessagesApi,
       implicit request: SecuredRequest[JsValue]) = Future {
     
     // This is the resource we're creating the Entitlement for.
-//    val parentResource = ResourceFactory.findById(typeId, resourceId)
-    
+  
     /*
      * TODO: Authorize 'entitlement.create'
      */
