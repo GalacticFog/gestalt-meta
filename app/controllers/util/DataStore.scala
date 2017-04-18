@@ -80,33 +80,42 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
    */
   def repositoryOnline(): Boolean = {
 
-    val database = db.dataSource.getConnection.getCatalog
-    val jdbcurl  = db.dataSource.getConnection.getMetaData.getURL
-
-    log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+    val connection = db.dataSource.getConnection()
     
-    /*
-     * verifyDataStore checks that the named database exists
-     * and has tables created.
-     */
-    PostgresHealth.verifyDataStore(database) match {
-      case Success(_) => {
-        log.info( "Repository is AVAILABLE" )
-        logPoolInfo(config)
-        true
-      }
-      case Failure(ex) => ex match {
-        case p: PSQLException => {
-          log.error(s"Could not verify repository: ${p.getMessage}")
-          false
+    try {
+      
+      val database = connection.getCatalog
+      val jdbcurl  = connection.getMetaData.getURL
+
+      log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+    
+      /*
+       * verifyDataStore checks that the named database exists
+       * and has tables created.
+       */
+      PostgresHealth.verifyDataStore(database) match {
+        case Success(_) => {
+          log.info( "Repository is AVAILABLE" )
+          logPoolInfo(config)
+          true
         }
-        case e: Throwable => {
-          log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
-          false
+        case Failure(ex) => ex match {
+          case p: PSQLException => {
+            log.error(s"Could not verify repository: ${p.getMessage}")
+            false
+          }
+          case e: Throwable => {
+            log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
+            false
+          }
         }
       }
-    }  
+    }
+    finally {
+      connection.close()
+    }
   }
+
 }
 
 object DataStore {
