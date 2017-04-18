@@ -13,7 +13,7 @@ variables:
   POSTGRES_DB: gestalt-meta
   POSTGRES_USER: gestaltdev
   POSTGRES_PASSWORD: letmein
-  DATABASE_HOSTNAME: postgres
+  DATABASE_HOSTNAME: galacticfog-fat-postgres
   DATABASE_NAME: gestalt-meta
   DATABASE_PORT: "5432"
   DATABASE_USERNAME: gestaltdev
