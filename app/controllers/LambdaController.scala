@@ -48,7 +48,7 @@ class LambdaController @Inject()(
    * This is the provider variable containing the provider host address.
    */
   private[this] val hostVariable = "SERVICE_VHOST_0"
-  
+
   
   def postLambdaFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = orgFqon(fqon).get
@@ -77,7 +77,7 @@ class LambdaController @Inject()(
     safeGetInputJson(request.body, Some(ResourceIds.Lambda)) match {
       case Failure(e)     => HandleExceptionsAsync(e)
       case Success(input) => {
-        
+
         val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
         
         // Set ID for the Lambda.
@@ -103,7 +103,7 @@ class LambdaController @Inject()(
             HandleExceptionsAsync(e)
           }
           case Success((meta,laser)) => {
-            log.debug("Creating API in GatewayManager...")            
+            log.debug("Creating lambda in Laser...")
             client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
 
               if (Seq(200, 201).contains(result.status)) {
@@ -131,20 +131,21 @@ class LambdaController @Inject()(
   def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
     
     log.debug("toLaserLambda(...)")
-    
+
     val props = lambda.properties.get
-    
+
     val handler = props("handler").as[String]
     val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
     val compressed = if (props.contains("compressed")) props("compressed").as[Boolean] else false
     val artifactUri = if (props.contains("package_url")) Some(props("package_url").as[String]) else None
-    
+    val periodic = if( props.contains("periodic_info" )) props("periodic_info").asOpt[JsValue] else None
+
     LaserLambda(
       id          = Some(lambda.id.get.toString), 
       eventFilter = Some(UUID.randomUUID.toString),
       public      = isPublic,
       provider    = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")),
-      
+
       LaserArtifactDescription(
           artifactUri = artifactUri,
           description = if (props.contains("description")) props("description").asOpt[String] else None,
@@ -156,6 +157,7 @@ class LambdaController @Inject()(
           runtime     = props("runtime").as[String],
           timeoutSecs = props("timeout").as[Int],
           compressed  = compressed,
+          periodicInfo= periodic,
           code        = if (props.contains("code")) props("code").asOpt[String] else None,
           headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
     ))
