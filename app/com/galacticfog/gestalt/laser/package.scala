@@ -64,6 +64,7 @@ package object laser {
       timeoutSecs: Int = 180,
       code: Option[String] = None,
       synchronous: Boolean = false,
+      periodicInfo : Option[JsValue] = None,
       headers : Map[String,String] = Map.empty)
   
   case class LaserLambda(
