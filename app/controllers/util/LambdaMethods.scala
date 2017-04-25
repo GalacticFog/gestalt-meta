@@ -2,8 +2,12 @@ package controllers.util
 
 
 import java.net.URL
+import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.laser
+import play.api.libs.json.{JsObject, Json}
 
 import scala.util.{Failure, Success, Try}
 
@@ -57,33 +61,48 @@ class LambdaMethods @Inject()() {
     }
   }
 
-//  private[controllers] def patchLambdaHandler(
-//      r: GestaltResourceInstance,
-//      patch: PatchDocument,
-//      user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
-//
-//    @scala.annotation.tailrec
-//    def replace(data: Seq[(String,Option[JsValue])], lm: LaserLambda): LaserLambda = {
-//      data match {
-//        case Nil => lm
-//        case h :: t => replace(t, updateLambdaData(lm, h._1, h._2.get))
-//      }
+  private[controllers] def getLambdaProvider(res: GestaltResourceInstance): GestaltResourceInstance = {
+    (for {
+      ps  <- res.properties
+      pr  <- ps.get("provider")
+      pid <- Js.find(Json.parse(pr).as[JsObject], "/id")
+      prv <- ResourceFactory.findById(ResourceIds.LambdaProvider, UUID.fromString(pid.as[String]))
+    } yield prv) getOrElse {
+      throw new RuntimeException("Could not parse LambdaProvider ID from API.")
+    }
+  }
+
+  def patchLambdaHandler(
+      r: GestaltResourceInstance,
+      patch: PatchDocument,
+      user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
+
+    @scala.annotation.tailrec
+    def replace(data: Seq[(String,Option[JsValue])], lm: LaserLambda): LaserLambda = {
+      data match {
+        case Nil => lm
+        case h :: t => replace(t, updateLambdaData(lm, h._1, h._2.get))
+      }
+    }
+
+    log.debug("Finding lambda in backend system...")
+    val provider = getLambdaProvider(r)
+    val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+    // Get lambda from gestalt-lambda
+    val lambda: LaserLambda = ??? // GET LaserLambda from lambda provider
+//   laser.lambdas(r.id) getOrElse {
+//      throw new ResourceNotFoundException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
 //    }
-//
-//    log.debug("Finding lambda in backend system...")
-//    // Get lambda from gestalt-lambda
-//    val lambda = laser.lambdas(r.id) getOrElse {
-//      throw new RuntimeException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda")
-//    }
-//
-//    // Strip path to last component to get field name.
-//    val ops = patch.ops map { o =>
-//      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
-//      (fieldName -> o.value)
-//    }
-//    log.debug("Lambda found. Performing PATCH...")
-//    // Update the Lambda DAO (in-memory), then in gestalt-lambda
-//    val updatedLambda = replace(ops, lambda)
+
+    // Strip path to last component to get field name.
+    val ops = patch.ops map { o =>
+      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
+      (fieldName -> o.value)
+    }
+    log.debug("Lambda found. Performing PATCH...")
+    // Update the Lambda DAO (in-memory), then in gestalt-lambda
+    val patchedLambda = replace(ops, lambda)
+    val updatedLambda = ??? // ask provider to update lambda
 //    laser.updateLambda(updatedLambda) match {
 //      case Failure(e) => {
 //        log.error(s"Error updating Lambda in gestalt-lambda: " + e.getMessage)
@@ -93,8 +112,9 @@ class LambdaMethods @Inject()() {
 //        log.info(s"Successfully updated Lambda in gestalt-lambda.")
 //      }
 //    }
-//    PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
-//  }
+    // TODO: why aren't we using updatedLambda from the line above?
+    PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
+  }
 
   /**
    * Update a Lambda both in Meta and gestalt-lambda.

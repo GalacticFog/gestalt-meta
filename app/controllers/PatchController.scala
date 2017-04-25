@@ -53,8 +53,8 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> groupMethods.groupPatch,
-    /*ResourceIds.Lambda -> LambdaMethods.patchLambdaHandler,*/
-    ResourceIds.Entitlement -> entitlementPatch)    
+    ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
+    ResourceIds.Entitlement -> entitlementPatch)
   
   
   /**
@@ -168,19 +168,15 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     val patch = transforms.get(resource.typeId).fold(PatchDocument(ops: _*)) {
       transform => transform(PatchDocument(ops: _*))
     }
-    
-    val handler = {
-      if (handlers.get(resource.typeId).isDefined) {
+
+    handlers.get(resource.typeId) match {
+      case Some(customHandler) =>
         log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
-        handlers(resource.typeId)
-        
-      } else {
+        customHandler(resource, patch, account)
+      case None =>
         log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
-        defaultResourcePatch _
-      }
+        defaultResourcePatch(resource, patch, account)
     }
-    handler(resource, patch, account)
-    
   }
   
   private[controllers] def Patch(resource: GestaltResourceInstance)(

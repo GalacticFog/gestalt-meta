@@ -1,36 +1,21 @@
 package controllers
 
-import java.net.URL
 import java.util.UUID
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
-import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.parseUUID
-import com.galacticfog.gestalt.data.session
-import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.sdk._
-
 import controllers.util._
-import controllers.util.JsonUtil._
-import controllers.util.db.EnvConfig
-import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
-
-import scala.util.Either
-import com.galacticfog.gestalt.keymgr.GestaltFeature
+import com.galacticfog.gestalt.data.string2uuid
 
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -40,11 +25,8 @@ import com.galacticfog.gestalt.json.Js
 
 
 import javax.inject.Singleton
-import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.patch._
-import controllers.util.GatewayMethods._
 import play.api.libs.ws.WSClient
 
 
@@ -52,9 +34,12 @@ import play.api.libs.ws.WSClient
 class ApiController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
+    gatewayMethods: GatewayMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-    db: play.api.db.Database)
+    db: play.api.db.Database )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
+  import gatewayMethods.unprocessable
   
   def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
@@ -79,7 +64,7 @@ class ApiController @Inject()(
       //val (payload, provider, location) = validateNewApi(json)
       log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
       
-      val lapi = toGatewayApi(payload.as[JsObject], location)
+      val lapi = gatewayMethods.toGatewayApi(payload.as[JsObject], location)
       val client = ProviderMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
       /*
@@ -125,7 +110,7 @@ class ApiController @Inject()(
     }{ a =>
 
       val caller = request.identity
-      val provider = findGatewayProvider(a).get // <-- can generate in 'for' below
+      val provider = gatewayMethods.findGatewayProvider(a).get // <-- can generate in 'for' below
 
       log.info("Creating Endpoint in Meta...")
 
@@ -142,7 +127,7 @@ class ApiController @Inject()(
       val org = fqid(fqon)
       val metaCreate = for {
         p <- validateNewEndpoint(request.body, a)
-        l <- toGatewayEndpoint(p, api)
+        l <- gatewayMethods.toGatewayEndpoint(p, api)
         pWithUpstream <- addUpstreamUrl(p, l.upstreamUrl)
         r <- CreateResource(org, caller, pWithUpstream, ResourceIds.ApiEndpoint, Some(api))
       } yield (r, l)

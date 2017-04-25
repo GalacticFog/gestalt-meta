@@ -1,70 +1,31 @@
 package controllers.util
 
-import java.net.URL
 import java.util.UUID
 
 import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.Future
-import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.parseUUID
-import com.galacticfog.gestalt.data.session
-import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.sdk._
 
-import controllers.util._
-import controllers.util.JsonUtil._
-import controllers.util.db.EnvConfig
 import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import com.galacticfog.gestalt.meta.auth.Authorization
 
-import scala.util.Either
-import com.galacticfog.gestalt.keymgr.GestaltFeature
-
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
 import com.galacticfog.gestalt.json.Js
 
-import javax.inject.Singleton
-import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data.ResourceState
-import play.api.libs.ws.WSClient
 
-object GatewayMethods {
+class GatewayMethods @Inject() () {
   
   private[this] val log = Logger(this.getClass)
-  
-  
-  def toGatewayApi(api: JsObject, location: UUID) = {
-    val name = Js.find(api.as[JsObject], "/name") match {
-      case None => unprocessable("Could not find /name property in payload")
-      case Some(n) => n.as[String]
-    }
-    
-    // Extract 'id' from payload, use to create backend system API payload
-    val id = Js.find(api.as[JsObject], "/id").get.as[String]
-    LaserApi(Some(UUID.fromString(id)), name, 
-          provider = Some(Json.obj(
-          	"id"       -> location.toString, 
-          	"location" -> location.toString)))
-  }
-  
+
   def toGatewayEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = {
 
     // TODO: error handling here should be better, a lot of Try{_.get}
@@ -151,7 +112,21 @@ object GatewayMethods {
       }{ gateway => gateway }    
   }
 
+  def toGatewayApi(api: JsObject, location: UUID) = {
+    val name = Js.find(api.as[JsObject], "/name") match {
+      case None => unprocessable("Could not find /name property in payload")
+      case Some(n) => n.as[String]
+    }
+
+    // Extract 'id' from payload, use to create backend system API payload
+    val id = Js.find(api.as[JsObject], "/id").get.as[String]
+    LaserApi(Some(UUID.fromString(id)), name,
+      provider = Some(Json.obj(
+        "id"       -> location.toString,
+        "location" -> location.toString)))
+  }
+
   private[controllers] def unprocessable(message: String) =
-    throw new UnprocessableEntityException(message)    
-  
+    throw new UnprocessableEntityException(message)
+
 }

@@ -19,6 +19,8 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
   lazy val mockContainerService = mock[ContainerService]//.verbose
   lazy val mockProviderManager  = mock[ProviderManager]
   lazy val mockSecureController = mock[SecureController]
+  lazy val mockLambdaMethods    = mock[LambdaMethods]
+  lazy val mockGatewayMethods   = mock[GatewayMethods]
 
   /**
    * Get a Play Application configured with Guice. All Meta and Security modules are
