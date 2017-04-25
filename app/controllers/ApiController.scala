@@ -56,11 +56,6 @@ class ApiController @Inject()(
     db: play.api.db.Database)
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  /*
-   *  This is the name of the provider variable needed to get the host address.
-   */
-  private[this] val hostVariable = "HTTP_API_VHOST_0"
-  
   def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
     val typeid = {
@@ -85,7 +80,7 @@ class ApiController @Inject()(
       log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
       
       val lapi = toGatewayApi(payload.as[JsObject], location)
-      val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+      val client = ProviderMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
       /*
        * Create API resource in Meta - if successful, create in GatewayManager.
@@ -163,7 +158,7 @@ class ApiController @Inject()(
 
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
-          val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+          val client = ProviderMethods.configureWebClient(provider, Some(ws))
 
           client.post(uri, Option(Json.toJson(laserep))) map { result =>
             if (Seq(200, 201).contains(result.status)) {

@@ -12,50 +12,66 @@ object ProviderMethods {
   
   private[this] val log = Logger(this.getClass)
   
+  val DEFAULT_PROTOCOL = "http"
+  
   /**
-   * 
+   * Configure a JSON Web Client for communicating with Provider Services.
    * @param provider the provider resource you want a web client configured for
-   * @param hostVar the name of the provider variable containing the hostname
    * @param client the underlying web client to configure
-   */
-  def configureWebClient(
-      provider: GestaltResourceInstance, 
-      hostVar: String, 
-      client: Option[WSClient] = None): JsonClient = {
+   */  
+  def configureWebClient(provider: GestaltResourceInstance, client: Option[WSClient] = None): JsonClient = {
+
+    val publicvars = {
+      for {
+        env <- ProviderEnv.fromResource(provider)
+        pub <- env.public
+      } yield pub
+    }
     
-    val wsclient = client orElse Some(JsonClient.newClient()) 
-    val privatevars = for {
-      env <- ProviderEnv.fromResource(provider)
-      prv <- env.public
-    } yield prv
+    val config = publicvars map { vs =>
     
-    /*
-     * This needs to change - need a retry strategy that acknowledges public and private addresses.
-     */
-    val config = privatevars map { vs =>
+      val isOverride = vs.get("SERVICE_HOST_OVERRIDE").isDefined
       
-      val DEFAULT_PROTOCOL = "https"
-      val url = {
-        val host = vs.get(hostVar) getOrElse {
-          throw new UnprocessableEntityException(s"Missing '${hostVar}' variable.")
-        }
-        val port = "443"
-        "%s://%s:%s".format(DEFAULT_PROTOCOL, host, port)
+      if (log.isDebugEnabled && isOverride) {
+        log.debug("Found OVERRIDES for host configuration")
       }
+      
+      val hostVar = if(isOverride) "SERVICE_HOST_OVERRIDE" else "SERVICE_HOST"
+      val portVar = if(isOverride) "SERVICE_PORT_OVERRIDE" else "SERVICE_PORT"
+      
+      val host = vs.get(hostVar) getOrElse {
+        throw new UnprocessableEntityException(
+          s"Could not find host address variable for provider with ID '${provider.id}'")
+      }
+      
+      val port = vs.get(portVar) getOrElse {
+        throw new UnprocessableEntityException(
+          s"Could not find port variable for provider with ID '${provider.id}'")
+      }
+      
       val key = vs.get("GESTALT_SECURITY_KEY") getOrElse {
         throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_KEY' variable.") 
       }
+      
       val secret = vs.get("GESTALT_SECURITY_SECRET") getOrElse {
         throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_SECRET' variable.")
-      }
+      }    
       
+      val protocol = {
+        if (isOverride) 
+          vs.get("SERVICE_PROTOCOL_OVERRIDE") getOrElse DEFAULT_PROTOCOL
+        else DEFAULT_PROTOCOL
+      }
+      val url = "%s://%s:%s".format(protocol, host, port)
       HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
       
     } getOrElse {
       throw new UnprocessableEntityException("Could not parse [properties.config.env] from provider")
     }
+    
     log.debug("Configuring API Web Client with URL : " + config.url)
-    new JsonClient(config, wsclient)
+    val wsclient = client orElse Some(JsonClient.newClient())
+    new JsonClient(config, wsclient)    
   }
   
 }

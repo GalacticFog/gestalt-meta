@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.13"
+version := "0.6.14"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 

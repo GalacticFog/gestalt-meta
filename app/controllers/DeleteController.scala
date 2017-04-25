@@ -46,10 +46,7 @@ class DeleteController @Inject()(
     ws: WSClient
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
-
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
- 
-  private[this] val hostVariableGatewayManager = "HTTP_API_VHOST_0"
 
   /*
    * Each of the types named by the keys in this map have representations both in
@@ -188,7 +185,7 @@ class DeleteController @Inject()(
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }
 
-    val client = ProviderMethods.configureWebClient(provider, hostVariableGatewayManager, Some(ws))
+    val client = ProviderMethods.configureWebClient(provider, Some(ws))
     val fdelete = client.delete(s"/apis/${res.id.toString}") map { result =>
       log.info("Deleting API from GatewayManager...")
       log.debug("Response from GatewayManager: " + result.body)
@@ -209,7 +206,7 @@ class DeleteController @Inject()(
 
     val client = (for {
       provider <- GatewayMethods.findGatewayProvider(api)
-      client = ProviderMethods.configureWebClient(provider, hostVariableGatewayManager, Some(ws))
+      client = ProviderMethods.configureWebClient(provider, Some(ws))
     } yield client) getOrElse {
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }

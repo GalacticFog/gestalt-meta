@@ -47,8 +47,6 @@ class LambdaController @Inject()(
   /*
    * This is the provider variable containing the provider host address.
    */
-  private[this] val hostVariable = "SERVICE_VHOST_0"
-
   
   def postLambdaFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = orgFqon(fqon).get
@@ -90,7 +88,7 @@ class LambdaController @Inject()(
         }
         
         val caller = request.identity
-        val client = ProviderMethods.configureWebClient(provider, hostVariable, Some(ws))
+        val client = ProviderMethods.configureWebClient(provider, Some(ws))
   
         val metaCreate = for {
           metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
