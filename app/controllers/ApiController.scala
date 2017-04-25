@@ -36,6 +36,7 @@ class ApiController @Inject()(
     messagesApi: MessagesApi,
     gatewayMethods: GatewayMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    providerMethods: ProviderMethods,
     db: play.api.db.Database )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -65,7 +66,7 @@ class ApiController @Inject()(
       log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
       
       val lapi = gatewayMethods.toGatewayApi(payload.as[JsObject], location)
-      val client = ProviderMethods.configureWebClient(provider, Some(ws))
+      val client = providerMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
       /*
        * Create API resource in Meta - if successful, create in GatewayManager.
@@ -143,7 +144,7 @@ class ApiController @Inject()(
 
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
-          val client = ProviderMethods.configureWebClient(provider, Some(ws))
+          val client = providerMethods.configureWebClient(provider, Some(ws))
 
           client.post(uri, Option(Json.toJson(laserep))) map { result =>
             if (Seq(200, 201).contains(result.status)) {

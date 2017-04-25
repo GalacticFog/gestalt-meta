@@ -179,20 +179,20 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       there was one(mockLambdaMethods).patchLambdaHandler(any,any,any)
     }
 
-    "use LambdaMethods for external lambda patch" in new TestApplication {
-
-      mockLambdaMethods.patchLambdaHandler(any,any,any) returns Try(testLambda)
-
-      val request = fakeAuthRequest(PATCH,
-        s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
-      ).withBody(PatchDocument().toJson)
-
-      val Some(result) = route(request)
-
-      status(result) must equalTo(OK)
-
-      there was one(mockLambdaMethods).patchLambdaHandler(any,any,any)
-    }
+//    "use GatewayMethods for external apiendpoint patch" in new TestApplication {
+//
+//      mockLambdaMethods.patchLambdaHandler(any,any,any) returns Try(testLambda)
+//
+//      val request = fakeAuthRequest(PATCH,
+//        s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
+//      ).withBody(PatchDocument().toJson)
+//
+//      val Some(result) = route(request)
+//
+//      status(result) must equalTo(OK)
+//
+//      there was one(mockLambdaMethods).patchLambdaHandler(any,any,any)
+//    }
 
   }
   

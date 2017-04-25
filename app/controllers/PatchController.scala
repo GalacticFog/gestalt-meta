@@ -54,7 +54,8 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> groupMethods.groupPatch,
     ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
-    ResourceIds.Entitlement -> entitlementPatch)
+    ResourceIds.Entitlement -> entitlementPatch
+  )
   
   
   /**

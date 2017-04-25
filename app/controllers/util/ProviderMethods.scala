@@ -6,9 +6,11 @@ import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.net.URL
+import javax.inject.Inject
+
 import play.api.libs.ws._
 
-object ProviderMethods {
+class ProviderMethods @Inject() () {
   
   private[this] val log = Logger(this.getClass)
   

@@ -50,7 +50,6 @@ package object laser {
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None)
 
-
   case class LaserArtifactDescription(
       artifactUri: Option[String],
       runtime: String,
@@ -63,7 +62,6 @@ package object laser {
       role: String = "none",
       timeoutSecs: Int = 180,
       code: Option[String] = None,
-      synchronous: Boolean = false,
       periodicInfo : Option[JsValue] = None,
       headers : Map[String,String] = Map.empty)
   
@@ -74,10 +72,6 @@ package object laser {
       provider: Option[JsValue],
       artifactDescription: LaserArtifactDescription)
 
-
-//  def toLaserGateway(input: GestaltResourceInput) = {
-//    LaserGateway(id = None, name = input.name, gatewayInfo = input.properties.get("gateway_info"))
-//  }
 
   def getApiId(apiName: String) = ???
   

@@ -41,6 +41,7 @@ import play.api.libs.ws.WSClient
 class LambdaController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
+    providerMethods: ProviderMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -88,7 +89,7 @@ class LambdaController @Inject()(
         }
         
         val caller = request.identity
-        val client = ProviderMethods.configureWebClient(provider, Some(ws))
+        val client = providerMethods.configureWebClient(provider, Some(ws))
   
         val metaCreate = for {
           metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
@@ -126,7 +127,7 @@ class LambdaController @Inject()(
   }
   
   
-  def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
+  def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String): LaserLambda = {
     
     log.debug("toLaserLambda(...)")
 
