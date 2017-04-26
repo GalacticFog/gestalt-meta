@@ -1,36 +1,21 @@
 package controllers
 
-import java.net.URL
 import java.util.UUID
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
-import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.parseUUID
-import com.galacticfog.gestalt.data.session
-import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.sdk._
-
 import controllers.util._
-import controllers.util.JsonUtil._
-import controllers.util.db.EnvConfig
-import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.Authorization
-
-import scala.util.Either
-import com.galacticfog.gestalt.keymgr.GestaltFeature
+import com.galacticfog.gestalt.data.string2uuid
 
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -40,11 +25,8 @@ import com.galacticfog.gestalt.json.Js
 
 
 import javax.inject.Singleton
-import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.patch._
-import controllers.util.GatewayMethods._
 import play.api.libs.ws.WSClient
 
 
@@ -52,9 +34,13 @@ import play.api.libs.ws.WSClient
 class ApiController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
+    gatewayMethods: GatewayMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-    db: play.api.db.Database)
+    providerMethods: ProviderMethods,
+    db: play.api.db.Database )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  
+  import gatewayMethods.unprocessable
   
   def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val org = fqid(fqon)
@@ -79,8 +65,8 @@ class ApiController @Inject()(
       //val (payload, provider, location) = validateNewApi(json)
       log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
       
-      val lapi = toGatewayApi(payload.as[JsObject], location)
-      val client = ProviderMethods.configureWebClient(provider, Some(ws))
+      val lapi = gatewayMethods.toGatewayApi(payload.as[JsObject], location)
+      val client = providerMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
       /*
        * Create API resource in Meta - if successful, create in GatewayManager.
@@ -125,7 +111,7 @@ class ApiController @Inject()(
     }{ a =>
 
       val caller = request.identity
-      val provider = findGatewayProvider(a).get // <-- can generate in 'for' below
+      val provider = gatewayMethods.findGatewayProvider(a).get // <-- can generate in 'for' below
 
       log.info("Creating Endpoint in Meta...")
 
@@ -142,37 +128,37 @@ class ApiController @Inject()(
       val org = fqid(fqon)
       val metaCreate = for {
         p <- validateNewEndpoint(request.body, a)
-        l <- toGatewayEndpoint(p, api)
-        pWithUpstream <- addUpstreamUrl(p, l.upstreamUrl)
+        ep <- gatewayMethods.toGatewayEndpoint(p, api)
+        pWithUpstream <- addUpstreamUrl(p, ep.upstreamUrl)
         r <- CreateResource(org, caller, pWithUpstream, ResourceIds.ApiEndpoint, Some(api))
-      } yield (r, l)
+      } yield (r, ep)
 
       metaCreate match {
         case Failure(e) => {
           log.error("Failed creating Endpoint in Meta")
           HandleExceptionsAsync(e)
         }
-        case Success((metaep, laserep)) => {
+        case Success((metaEndpoint, gmEndpoint)) => {
           log.info("Endpoint created in Meta.")
-          setNewEntitlements(org, metaep.id, caller, Some(api))
+          setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
 
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
-          val client = ProviderMethods.configureWebClient(provider, Some(ws))
+          val client = providerMethods.configureWebClient(provider, Some(ws))
 
-          client.post(uri, Option(Json.toJson(laserep))) map { result =>
+          client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created Endpoint in GatewayManager.")
-              setNewEntitlements(org, metaep.id, caller, Some(api))
-              Created(RenderSingle(metaep))
+              setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
+              Created(RenderSingle(metaEndpoint))
             } else {
               log.error("Error creating Endpoint in GatewayManager.")
-              updateFailedBackendCreate(caller, metaep, ApiError(result.status, result.body).throwable)
+              updateFailedBackendCreate(caller, metaEndpoint, ApiError(result.status, result.body).throwable)
             }
           } recover {
             case e: Throwable => {
               log.error(s"Error creating Endpoint in Gateway Manager.")
-              updateFailedBackendCreate(caller, metaep, e)
+              updateFailedBackendCreate(caller, metaEndpoint, e)
             }
             
           }

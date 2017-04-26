@@ -60,6 +60,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
         )
         .injector
+
+    val gatewayMethods = injector.instanceOf[GatewayMethods]
   }
   
   trait TestApplication extends FakeCaaSScope {
@@ -118,7 +120,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     "properly create upstream_url for synchronous lambda-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -136,7 +138,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     "properly create upstream_url for asynchronous lambda-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -154,7 +156,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     "properly infer implementation_type from implementation_id for backwards compatibility for lambda-bound endpoints and overwrite upstream_url" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_id" -> testLambda.id.toString,
@@ -171,7 +173,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     "properly create upstream_url for container-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -187,7 +189,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "BadRequest for container-bound endpoints with un-exposed port mapping" in new TestApplication {
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -201,7 +203,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "BadRequest for container-bound endpoints with missing port mapping" in new TestApplication {
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -215,7 +217,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "BadRequest for missing lambda on lambda-bound endpoints" in new TestApplication {
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -229,7 +231,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "BadRequest for missing container on container-bound endpoints" in new TestApplication {
-      GatewayMethods.toGatewayEndpoint(Json.obj(
+      gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",

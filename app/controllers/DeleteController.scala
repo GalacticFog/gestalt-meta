@@ -43,6 +43,8 @@ class DeleteController @Inject()(
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     security: Security,
     providerManager: ProviderManager,
+    providerMethods: ProviderMethods,
+    gatewayMethods: GatewayMethods,
     ws: WSClient
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
@@ -172,7 +174,6 @@ class DeleteController @Inject()(
 //    laser.deleteLambda(res.id) map ( _ => () )
 //  }
 
-  import controllers.util.GatewayMethods
   def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds): Try[Unit] = Try {
     
     val provider = (for {
@@ -185,7 +186,8 @@ class DeleteController @Inject()(
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }
 
-    val client = ProviderMethods.configureWebClient(provider, Some(ws))
+    val client = providerMethods.configureWebClient(provider, Some(ws))
+    // TODO: fdelete is never used, and this method returns a Try.success(()) even if fdelete (eventually) isFailure
     val fdelete = client.delete(s"/apis/${res.id.toString}") map { result =>
       log.info("Deleting API from GatewayManager...")
       log.debug("Response from GatewayManager: " + result.body)
@@ -205,8 +207,8 @@ class DeleteController @Inject()(
     }
 
     val client = (for {
-      provider <- GatewayMethods.findGatewayProvider(api)
-      client = ProviderMethods.configureWebClient(provider, Some(ws))
+      provider <- gatewayMethods.findGatewayProvider(api)
+      client = providerMethods.configureWebClient(provider, Some(ws))
     } yield client) getOrElse {
       throw new RuntimeException("Could not parse GatewayManager ID from API.")
     }

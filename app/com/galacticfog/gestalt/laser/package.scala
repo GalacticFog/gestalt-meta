@@ -50,7 +50,6 @@ package object laser {
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None)
 
-
   case class LaserArtifactDescription(
       artifactUri: Option[String],
       runtime: String,
@@ -63,7 +62,6 @@ package object laser {
       role: String = "none",
       timeoutSecs: Int = 180,
       code: Option[String] = None,
-      synchronous: Boolean = false,
       periodicInfo : Option[JsValue] = None,
       headers : Map[String,String] = Map.empty)
   
@@ -75,95 +73,46 @@ package object laser {
       artifactDescription: LaserArtifactDescription)
 
 
-//  def toLaserGateway(input: GestaltResourceInput) = {
-//    LaserGateway(id = None, name = input.name, gatewayInfo = input.properties.get("gateway_info"))
-//  }
-
-  def getApiId(apiName: String) = ???
-  
-  // lambdaId is the Laser string ID
-  def buildEndpointUri(lambdaHost: String, lambdaId: String) = {
-    "%s/lambdas/%s/invoke".format(lambdaHost, lambdaId)
-  }
-  
-  // uri is implementation.uri
-  def getEndpointPath(uri: String) = uri.drop(uri.lastIndexOf("/"))
-  
-
-  def toLaserApi(api: GestaltResourceInput, provider: UUID, location: String) = {
-    // One LaserApi for each given provider.
-    val input = Json.toJson(api)
-    println("API-INPUT:\n" + Json.prettyPrint(input))
-    val id = api.id.getOrElse(UUID.randomUUID).toString
-    LaserApi(
-        id = Some(id),
-        name = api.name,
-        description = api.description,
-        provider = Some(Json.obj("id" -> provider.toString, "location" -> location)))
-  }
-  
-  
-  def toLaserEndpoint(input: GestaltResourceInput, apiId: UUID, upstreamUrl: String, provider: JsValue) = {
-    val id = Some(input.id.getOrElse(UUID.randomUUID).toString)
-    val props = input.properties.get
-    LaserEndpoint(
-        id = id,  
-        apiId = apiId.toString,           // argument
-        upstreamUrl = upstreamUrl,        // argument
-        path = props("resource").as[String],        // from properties
-        domain = if (props.contains("domain")) Some(props("domain")) else None,      // from properties
-        provider = Some(provider))    // argument
-  }
-  
-  
   /*
    * TODO: This may translate into multiple LaserLambdas
    */
-  def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
-    
+  def toLaserLambda(lambda: GestaltResourceInput, providerId: String): LaserLambda = {
+
     log.debug("toLaserLambda(...)")
-    
+
     val props = lambda.properties.get
-    
+
     val handler = props("handler").as[String]
     val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
     val compressed = if (props.contains("compressed")) props("compressed").as[Boolean] else false
     val artifactUri = if (props.contains("package_url")) Some(props("package_url").as[String]) else None
-    
+    val periodic = if( props.contains("periodic_info" )) props("periodic_info").asOpt[JsValue] else None
+
     LaserLambda(
-      id          = Some(lambda.id.get.toString), 
+      id          = Some(lambda.id.get.toString),
       eventFilter = Some(UUID.randomUUID.toString),
       public      = isPublic,
-      provider    = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")),
-      
+      provider    = Some(Json.obj(
+        "id" -> providerId.toString,
+        "location" -> "",
+        "href" -> "/foo/bar"
+      )),
       LaserArtifactDescription(
-          artifactUri = artifactUri,
-          description = if (props.contains("description")) props("description").asOpt[String] else None,
-          handler     = handler,
-          memorySize  = props("memory").as[Int],
-          cpus        = props("cpus").as[Double],
-          publish     = false,     // <- currently not used
-          role        = "none",    // <- currently not used
-          runtime     = props("runtime").as[String],
-          timeoutSecs = props("timeout").as[Int],
-          compressed  = compressed,
-          code        = if (props.contains("code")) props("code").asOpt[String] else None,
-          headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
-    ))
-  }
-  
-  def requiredProperty(props: Map[String,JsValue], key: String) = {
-    if (props.contains(key)) props(key) else
-      throw new BadRequestException(s"Missing property '$key'.")
+        artifactUri = artifactUri,
+        description = if (props.contains("description")) props("description").asOpt[String] else None,
+        handler     = handler,
+        memorySize  = props("memory").as[Int],
+        cpus        = props("cpus").as[Double],
+        publish     = false,     // <- currently not used
+        role        = "none",    // <- currently not used
+        runtime     = props("runtime").as[String],
+        timeoutSecs = props("timeout").as[Int],
+        compressed  = compressed,
+        periodicInfo= periodic,
+        code        = if (props.contains("code")) props("code").asOpt[String] else None,
+        headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
+      ))
   }
 
-  def splitEntrypoint(ep: String): (String,String) = { 
-    val ps = (for {
-      m <- "^(.*)\\.(.*)$".r.findAllIn(ep.trim).matchData
-      e <- m.subgroups
-    } yield e).toList
-    
-    ps(0) -> ps(1)
-  }
 }
 
