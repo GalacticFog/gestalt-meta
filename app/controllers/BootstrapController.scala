@@ -24,7 +24,7 @@ import modules.{GestaltLateInitSecurityEnvironment, SecurityKeyInit}
 import play.db.Database
 import play.api.db._
 import play.api.Play.current
-
+import com.galacticfog.gestalt.data.util.PostgresHealth
 
 @Singleton
 class BootstrapController @Inject()( 
@@ -34,22 +34,40 @@ class BootstrapController @Inject()(
        security: Security,
        securityInit: SecurityKeyInit,
        deleteController: DeleteController,
-       db: play.api.db.Database)
+       db: play.api.db.Database,
+       appconfig: play.api.Configuration)
      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   def initProviders() = Authenticate() { implicit request =>
     val results = providerManager.loadProviders()
-
     Ok("TESTING PROVIDER LOADING...")
   }
   
+  private[controllers] def isInitialized(): Boolean = {
+    appconfig.getString("meta.db.name").fold {
+      logger.warn("Configuration item 'meta.db.name' not set.")
+      false
+    }{ nm =>
+      logger.info("Checking Meta repository initialization...")
+      PostgresHealth.dbInitialized(nm) match {
+        case Failure(e) => {
+          logger.error("Failed checking repository initialization.")
+          throw e
+        }
+        case Success(initialized) => {
+          if(!initialized) logger.info("Meta repository is NOT initialized.") 
+          initialized
+        }
+      }      
+    }    
+  }  
   def bootstrap() = Authenticate() { implicit request =>
     trace("bootstrap()")
     
     val clean = (request.queryString.contains("clean") && 
         request.queryString("clean")(0) == "true")
     
-    if (clean) {
+    if (clean && isInitialized()) {
       log.info("Cleaning up containers...")
       val containers = ResourceFactory.findAll(ResourceIds.Container)
       if (containers.isEmpty) {
