@@ -180,18 +180,20 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
   
     
   def getCredsFromSystem: Option[(String, String)] = {
-    ResourceFactory.findById(ResourceIds.SystemConfig).foldLeft {
-      logger.info("did not recover security credentials from system config")
-      Option.empty[(String, String)]
-      
-    }{ (_, config) =>
-      logger.info("recovered security credentials from system config")
-      config.properties.foldLeft(Option.empty[(String,String)]) { (_, ps) =>
-        val k = ps.get(KEY_NAME) 
-        val s = ps.get(KEY_SECRET)
-        if (k.isEmpty || s.isEmpty) None else Some((k.get, s.get))
-      }
-    }
+    None
+//    ResourceFactory.findById(ResourceIds.SystemConfig).foldLeft {
+//      logger.info("did not recover security credentials from system config")
+//      Option.empty[(String, String)]
+//      
+//    }{ (_, config) =>
+//      logger.info("recovered security credentials from system config")
+//      config.properties.foldLeft(Option.empty[(String,String)]) { (_, ps) =>
+//        val k = ps.get(KEY_NAME) 
+//        val s = ps.get(KEY_SECRET)
+//        if (k.isEmpty || s.isEmpty) None else Some((k.get, s.get))
+//      }
+//    }
+    
   }
   
 //  def getCredsFromDB: Option[(String,String)] = {

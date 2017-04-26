@@ -71,6 +71,7 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
       log.info(line("autoCommit", ds.isAutoCommit.toString))
       log.info(line("minimumIdle", ds.getMinimumIdle.toString))
       log.info(line("maximumPoolSize", ds.getMaximumPoolSize.toString))
+      log.info(line("maxLifetime", ds.getMaxLifetime.toString))
     }
   }
   
@@ -83,10 +84,13 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
     val connection = db.dataSource.getConnection()
     
     try {
-      
+
       val database = connection.getCatalog
       val jdbcurl  = connection.getMetaData.getURL
 
+//      val database = db.name
+//      val jdbcurl = db.url
+      
       log.info(s"Testing Meta Repository: [${jdbcurl}]...")
     
       /*
@@ -116,6 +120,58 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
     }
   }
 
+//  import scala.util.Try
+//  def repositoryOnline(): Boolean = {
+//
+//    
+//    Try(db.dataSource.getConnection()).flatMap { cnn =>
+//      try {
+//        ???
+//      } finally {
+//        cnn.close()
+//      }
+//    }
+//    
+//    try {
+//      val connection = db.dataSource.getConnection()
+//      
+//      db.name
+//      db.url
+//      
+//      try {
+//
+//        val database = connection.getCatalog
+//        val jdbcurl = connection.getMetaData.getURL
+//
+//        log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+//
+//      /*
+//       * verifyDataStore checks that the named database exists
+//       * and has tables created.
+//       */
+//        PostgresHealth.verifyDataStore(database) match {
+//          case Success(_) => {
+//            log.info("Repository is AVAILABLE")
+//            logPoolInfo(config)
+//            true
+//          }
+//          case Failure(ex) => ex match {
+//            case p: PSQLException => {
+//              log.error(s"Could not verify repository: ${p.getMessage}")
+//              false
+//            }
+//            case e: Throwable => {
+//              log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
+//              false
+//            }
+//          }
+//        }
+//      } finally {
+//        connection.close()
+//      }
+//    
+//  }  
+  
 }
 
 object DataStore {
