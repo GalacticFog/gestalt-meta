@@ -17,6 +17,7 @@ import play.api.libs.ws.WSClient
 import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 import java.util.UUID
+import com.galacticfog.gestalt.data.util.PostgresHealth
 
 
 class ProdSecurityModule extends AbstractModule with ScalaModule {
@@ -39,11 +40,13 @@ trait SecurityClientProvider {
   def client: GestaltSecurityClient
 }
 
+
 @Singleton
 class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
                                                      bus: EventBus,
                                                      identitySvc: IdentityService[AuthAccountWithCreds],
-                                                     db: play.api.db.Database
+                                                     db: play.api.db.Database,
+                                                     appconfig: play.api.Configuration
                                                      /*,
                                                      connectionManager: ConnectionManager */)
                                                    ( implicit ec: ExecutionContext )
@@ -178,19 +181,49 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
   def newSecurityProperties(creds: GestaltBasicCredentials) = 
     Map(KEY_NAME -> creds.username, KEY_SECRET -> creds.password)    
   
-    
+  /**
+   * Determine whether or not it is safe to lookup credentials in Meta repository.
+   * Returns TRUE if meta repository has been initialized. FALSE otherwise.
+   */
+  private[modules] def proceedWithLookup(): Boolean = {
+    appconfig.getString("meta.db.name").fold {
+      logger.warn("Configuration item 'meta.db.name' not set.")
+      false
+    }{ nm =>
+      logger.info("Checking Meta repository initialization...")
+      PostgresHealth.dbInitialized(nm) match {
+        case Failure(e) => {
+          logger.error("Failed checking repository initialization.")
+          throw e
+        }
+        case Success(initialized) => {
+          if(!initialized) logger.info("Meta repository is NOT initialized.") 
+          initialized
+        }
+      }      
+    }    
+  }
+  
   def getCredsFromSystem: Option[(String, String)] = {
-    ResourceFactory.findById(ResourceIds.SystemConfig).foldLeft {
-      logger.info("did not recover security credentials from system config")
-      Option.empty[(String, String)]
+
+    if (proceedWithLookup()) {
+      logger.info("Meta repository is initialized. Looking up credentials...")
       
-    }{ (_, config) =>
-      logger.info("recovered security credentials from system config")
-      config.properties.foldLeft(Option.empty[(String,String)]) { (_, ps) =>
-        val k = ps.get(KEY_NAME) 
-        val s = ps.get(KEY_SECRET)
-        if (k.isEmpty || s.isEmpty) None else Some((k.get, s.get))
+      ResourceFactory.findById(ResourceIds.SystemConfig).foldLeft {
+        logger.info("did not recover security credentials from system config")
+        Option.empty[(String, String)]
+      
+      }{ (_, config) =>
+        logger.info("recovered security credentials from system config")
+        config.properties.foldLeft(Option.empty[(String,String)]) { (_, ps) =>
+          val k = ps.get(KEY_NAME) 
+          val s = ps.get(KEY_SECRET)
+          if (k.isEmpty || s.isEmpty) None else Some((k.get, s.get))
+        }
       }
+    } else {
+      logger.info("Skipping credential lookup.")
+      None
     }
   }
   
