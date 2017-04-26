@@ -79,6 +79,7 @@ javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 libraryDependencies ++= Seq(
 
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.17" withSources(),
+  "com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.11" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.4" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
