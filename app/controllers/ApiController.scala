@@ -128,37 +128,37 @@ class ApiController @Inject()(
       val org = fqid(fqon)
       val metaCreate = for {
         p <- validateNewEndpoint(request.body, a)
-        l <- gatewayMethods.toGatewayEndpoint(p, api)
-        pWithUpstream <- addUpstreamUrl(p, l.upstreamUrl)
+        ep <- gatewayMethods.toGatewayEndpoint(p, api)
+        pWithUpstream <- addUpstreamUrl(p, ep.upstreamUrl)
         r <- CreateResource(org, caller, pWithUpstream, ResourceIds.ApiEndpoint, Some(api))
-      } yield (r, l)
+      } yield (r, ep)
 
       metaCreate match {
         case Failure(e) => {
           log.error("Failed creating Endpoint in Meta")
           HandleExceptionsAsync(e)
         }
-        case Success((metaep, laserep)) => {
+        case Success((metaEndpoint, gmEndpoint)) => {
           log.info("Endpoint created in Meta.")
-          setNewEntitlements(org, metaep.id, caller, Some(api))
+          setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
 
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
           val client = providerMethods.configureWebClient(provider, Some(ws))
 
-          client.post(uri, Option(Json.toJson(laserep))) map { result =>
+          client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created Endpoint in GatewayManager.")
-              setNewEntitlements(org, metaep.id, caller, Some(api))
-              Created(RenderSingle(metaep))
+              setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
+              Created(RenderSingle(metaEndpoint))
             } else {
               log.error("Error creating Endpoint in GatewayManager.")
-              updateFailedBackendCreate(caller, metaep, ApiError(result.status, result.body).throwable)
+              updateFailedBackendCreate(caller, metaEndpoint, ApiError(result.status, result.body).throwable)
             }
           } recover {
             case e: Throwable => {
               log.error(s"Error creating Endpoint in Gateway Manager.")
-              updateFailedBackendCreate(caller, metaep, e)
+              updateFailedBackendCreate(caller, metaEndpoint, e)
             }
             
           }

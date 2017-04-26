@@ -12,13 +12,10 @@ import play.api.libs.ws.WSClient
 import scala.concurrent.{Await, Future}
 import scala.util.Try
 import scala.language.postfixOps
-
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.uuid2string
-
 import com.galacticfog.gestalt.laser.LaserLambda
-import com.galacticfog.gestalt.patch.PatchDocument
-
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import play.api.Logger
 import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -27,6 +24,7 @@ import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import javax.inject.Inject
+
 import scala.concurrent.duration._
 
 class LambdaMethods @Inject()( ws: WSClient,
@@ -49,6 +47,10 @@ class LambdaMethods @Inject()( ws: WSClient,
       case "timeout"  => lambda.copy(artifactDescription = artifact.copy(timeoutSecs = value.as[Int]))
       case "package_url"  => lambda.copy(artifactDescription = artifact.copy(artifactUri = Option(value.as[String])))
       case "code" => lambda.copy(artifactDescription = artifact.copy(code = Option(value.as[String])))
+      case "runtime" => lambda.copy(artifactDescription = artifact.copy(runtime = value.as[String]))
+      case "compressed" => lambda.copy(artifactDescription = artifact.copy(compressed = value.as[Boolean]))
+      case "handler" => lambda.copy(artifactDescription = artifact.copy(handler = value.as[String]))
+      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = Option(value.as[JsObject])))
       case _ => lambda
     }
   }
@@ -69,12 +71,10 @@ class LambdaMethods @Inject()( ws: WSClient,
       patch: PatchDocument,
       user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
 
-    @scala.annotation.tailrec
-    def replace(data: Seq[(String,Option[JsValue])], lm: LaserLambda): LaserLambda = {
-      data match {
-        case Nil => lm
-        case h :: t => replace(t, updateLambdaData(lm, h._1, h._2.get))
-      }
+    def replace(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
+      data.foldLeft[LaserLambda](lm)({
+        case (l, (fieldName,value)) => updateLambdaData(l, fieldName, value)
+      })
     }
 
     log.debug("Finding lambda in backend system...")
@@ -82,9 +82,10 @@ class LambdaMethods @Inject()( ws: WSClient,
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
     // Strip path to last component to get field name.
-    val ops = patch.ops map { o =>
-      val fieldName = o.path.drop(o.path.lastIndexOf("/")+1)
-      (fieldName -> o.value)
+    val ops = patch.ops collect {
+      case PatchOp(_,path,Some(value)) =>
+        val fieldName = path.drop(path.lastIndexOf("/")+1)
+        (fieldName -> value)
     }
 
     val f = for {
@@ -100,15 +101,16 @@ class LambdaMethods @Inject()( ws: WSClient,
           "could not parse lambda GET response from lambda provider: " + e.toString
         ))
       }
-      _ = log.debug("Lambda found in lambda provider. Performing PUT to update...")
+      _ = log.debug("Lambda found in lambda provider.")
       patchedLaserLambda = replace(ops, gotLaserLambda)
+      _ = log.debug("Patched lambda resource before PUT: " + Json.toJson(patchedLaserLambda))
       updatedLaserLambdaReq = client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
       _ <- updatedLaserLambdaReq flatMap { response => response.status match {
         case 200 =>
-          log.info(s"Successfully updated Lambda in lambda provider.")
+          log.info(s"Successfully PUT Lambda in lambda provider.")
           Future.successful(response)
         case _   =>
-          log.error(s"Error updating Lambda in lambda provider: ${response}")
+          log.error(s"Error PUTting Lambda in lambda provider: ${response}")
           Future.failed(new RuntimeException(s"Error updating Lambda in lambda provider: ${response}"))
       }}
       updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]

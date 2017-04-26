@@ -2,32 +2,36 @@ package controllers.util
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.LaserEndpoint
+import com.galacticfog.gestalt.laser.{LaserEndpoint, LaserLambda}
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds}
+import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, HostConfig, JsonClient, ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.patch.PatchDocument
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
-//import mockws.MockWS
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.Json
+import play.api.libs.json.{JsBoolean, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.mvc._
 import play.api.mvc.Results._
 import play.api.http.HttpVerbs._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.ws.WSResponse
+import com.galacticfog.gestalt.laser._
 
+import scala.concurrent.Future
 import scala.util.Success
 
-class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers with JsonInput {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -48,7 +52,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
   sequential
 
-  abstract class FakeCaaSScope extends Scope {
+  abstract class FakeLambdaScope extends Scope {
     val mockProviderMethods = mock[ProviderMethods]
     val injector =
       new GuiceApplicationBuilder()
@@ -90,32 +94,84 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       ).toString
     )))
 
-//    val mockws = MockWS {
-//      case (GET, lambdaUrl) if lambdaUrl == s"/lambdas/${testLambda.id}" =>
-//        Ok(Json.obj())
-//    }
-//    val mockWebClient = new JsonClient(
-//      config = HostConfig("tcp","whatever", Some(80)),
-//      wsClient = Some(mockws)
-//    )
-//    mockProviderMethods.configureWebClient(argThat(
-//      (provider: GestaltResourceInstance) => provider.id == testLambdaProvider.id
-//    ), any) returns mockWebClient
+    val mockJsonClient = mock[JsonClient]
+    mockProviderMethods.configureWebClient(argThat(
+      (provider: GestaltResourceInstance) => provider.id == testLambdaProvider.id
+    ), any) returns mockJsonClient
   }
-  
-  trait TestApplication extends FakeCaaSScope {
+
+  trait TestApplication extends FakeLambdaScope {
   }
 
   "LambdaMethods" should {
 
     "patch against lambda provider" in new TestApplication {
+      // TODO: this is bullshit, but something is wrong with imports preventing me from using MockWS
+      mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
+        val mockResp = mock[WSResponse]
+        mockResp.status returns 200
+        mockResp.json returns Json.toJson(LaserLambda(
+          Some(testLambda.id.toString),
+          None,
+          false,
+          None,
+          LaserArtifactDescription(None,"runtime","handler",0,0.0)
+        ))
+        mockResp
+      })
+      mockJsonClient.put(meq(s"/lambdas/${testLambda.id}"), any, any, any)(any) returns Future.successful({
+        val mockResp = mock[WSResponse]
+        mockResp.status returns 200
+      })
+
       lambdaMethods.patchLambdaHandler(
         r = testLambda,
         patch = PatchDocument(
+          PatchOp.Replace("/properties/public",        true),
+          PatchOp.Replace("/properties/compressed",    true),
+          PatchOp.Replace("/properties/package_url",   "http://code.com/hello.js"),
+          PatchOp.Replace("/properties/code",          "ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="),
+          PatchOp.Replace("/properties/handler",       "hello"),
+          PatchOp.Replace("/properties/timeout",       300),
+          PatchOp.Replace("/properties/runtime",       "newruntime"),
+          PatchOp.Replace("/properties/cpus",          2.0),
+          PatchOp.Replace("/properties/memory",        2048),
+          PatchOp.Replace("/properties/code_type",     "inline"),
+          PatchOp.Replace("/properties/periodic_info", Json.obj("new" -> "periodicity")),
+          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
         ),
         user = user
       ) must beSuccessfulTry
-    }.pendingUntilFixed("mockws not working, figure it out")
+
+      there was one(mockJsonClient).put(
+        uri = meq(s"/lambdas/${testLambda.id}"),
+        payload = argThat((js: Option[JsValue]) => {
+          js.get.as[LaserLambda] must_== LaserLambda(
+            id = Some(testLambda.id.toString),
+            eventFilter = None,
+            public = true,
+            provider = None,
+            artifactDescription = LaserArtifactDescription(
+              cpus = 2.0,
+              memorySize = 2048,
+              timeoutSecs = 300,
+              artifactUri = Some("http://code.com/hello.js"),
+              code = Some("ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="),
+              runtime = "newruntime",
+              handler = "hello",
+              description = None,
+              compressed = true,
+              publish = false,
+              role = "none",
+              periodicInfo = Some(Json.obj("new" -> "periodicity")),
+              headers = Map.empty
+            )
+          )
+        }),
+        hdrs = any,
+        timeout = any
+      )(any)
+    }
 
   }
 

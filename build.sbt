@@ -97,8 +97,6 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-config"           % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer" % "2.5.1",
 
-  "de.leanovate.play-mockws" %% "play-mockws" % "2.4.2" % Test,
-
 	Library.Play.specs2          % Test,
 	Library.Specs2.matcherExtra  % Test,
 	
