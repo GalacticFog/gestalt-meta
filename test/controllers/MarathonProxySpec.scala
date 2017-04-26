@@ -31,10 +31,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     val p = mock[GestaltResourceInstance]
     val config = Json.obj(
       "networks" -> Json.arr(Json.obj(
-        "name" -> "apps",
-        "id" -> "8332a2e4711a",
-        "description" -> "full ingress/egress",
-        "sub_net" -> "192.168.0.0/16"
+        "name" -> "apps"
       ))
     ).toString
     p.properties returns Some(Map(
@@ -381,10 +378,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       val provider = mock[GestaltResourceInstance]
       val config = Json.obj(
         "networks" -> Json.arr(Json.obj(
-          "name" -> "HOST",
-          "id" -> "8332a2e4711a",
-          "description" -> "",
-          "sub_net" -> "192.168.0.0/16"
+          "name" -> "HOST"
         ))
       ).toString
       provider.properties returns Some(Map(
@@ -420,10 +414,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       val provider = mock[GestaltResourceInstance]
       val config = Json.obj(
         "networks" -> Json.arr(Json.obj(
-          "name" -> "HOST",
-          "id" -> "8332a2e4711a",
-          "description" -> "",
-          "sub_net" -> "192.168.0.0/16"
+          "name" -> "HOST"
         ))
       ).toString
       provider.properties returns Some(Map(
@@ -463,6 +454,83 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       )
 
       toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider) must_== marApp
+    }
+
+    "do not pass meta service_port through to marathon servicePort in HOST networking mode" in {
+      val providerId = UUID.randomUUID()
+      val resourceJson = Json.obj(
+        "container_type" -> "DOCKER",
+        "image" -> "some/image:tag",
+        "provider" -> Json.obj(
+          "id" -> providerId
+        ),
+        "port_mappings" -> Json.toJson(Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            service_port = Some(80), // user specified service port but...
+            name = Some("web")
+          )
+        )),
+        "cmd" -> "/usr/bin/someCmd",
+        "cpus" -> 2.0,
+        "memory" -> 256.0,
+        "num_instances" -> 3,
+        "network" -> "HOST",
+        "force_pull" -> true,
+        "env" -> Json.obj()
+      )
+      val provider = mock[GestaltResourceInstance]
+      val config = Json.obj(
+        "networks" -> Json.arr(Json.obj(
+          "name" -> "HOST"
+        ))
+      ).toString
+      provider.properties returns Some(Map(
+        "config" -> config
+      ))
+      provider.id returns providerId
+
+      val Some(Seq(pdef)) = toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider).portDefinitions
+      pdef.port must_== 0          // we did not pass service port through to Marathon
+    }
+
+    "do not pass meta service_port through to marathon servicePort in BRIDGE networking mode" in {
+      val providerId = UUID.randomUUID()
+      val resourceJson = Json.obj(
+        "container_type" -> "DOCKER",
+        "image" -> "some/image:tag",
+        "provider" -> Json.obj(
+          "id" -> providerId
+        ),
+        "port_mappings" -> Json.toJson(Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            service_port = Some(80), // user specified service port but...
+            name = Some("web")
+          )
+        )),
+        "cmd" -> "/usr/bin/someCmd",
+        "cpus" -> 2.0,
+        "memory" -> 256.0,
+        "num_instances" -> 3,
+        "network" -> "BRIDGE",
+        "force_pull" -> true,
+        "env" -> Json.obj()
+      )
+      val provider = mock[GestaltResourceInstance]
+      val config = Json.obj(
+        "networks" -> Json.arr(Json.obj(
+          "name" -> "BRIDGE"
+        ))
+      ).toString
+      provider.properties returns Some(Map(
+        "config" -> config
+      ))
+      provider.id returns providerId
+
+      val Some(Seq(pm)) = toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider).container.get.docker.get.portMappings
+      pm.servicePort must beNone or beSome(0)
     }
 
     "throw exception for marathon payload with invalid provider network" in {

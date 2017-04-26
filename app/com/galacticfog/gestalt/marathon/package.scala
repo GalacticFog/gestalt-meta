@@ -402,7 +402,7 @@ package object marathon {
       protocol = Some(pm.protocol),
       containerPort = pm.container_port,
       hostPort = pm.host_port,
-      servicePort = pm.service_port.filter(_ => exposeHost),
+      servicePort = None,  //  TODO: need to revisit this: https://gitlab.com/galacticfog/gestalt-meta/issues/226
       name = pm.name,
       labels = for {
         cp <- pm.service_port orElse pm.container_port
@@ -410,9 +410,9 @@ package object marathon {
       } yield Map("VIP_0" -> s"${vip}:${cp}")
     )
 
-    // TODO: marathon supports requesting a specific host port with host networking (set .portDefintions.port and .requirePorts == true), however meta has not defined any semantics to activate that use case
+    // TODO: marathon supports requesting a specific host port with host networking (set .portDefinitions.port and .requirePorts == true), however meta has not defined any semantics to activate that use case
     def portDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
-      port = pm.service_port getOrElse 0,
+      port = 0, //  TODO: need to revisit this: https://gitlab.com/galacticfog/gestalt-meta/issues/226
       protocol = pm.protocol,
       name = pm.name,
       labels = (for {
@@ -457,7 +457,7 @@ package object marathon {
               None,
               if (stdNet.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None
             )
-          case Some(calicoNet) =>
+          case Some(userNetwork) =>
             val docker = Container.Docker(
               image = props.image,
               network = Some("USER"),
@@ -466,7 +466,7 @@ package object marathon {
               parameters = dockerParams,
               privileged = Some(false)
             )
-            val ippertask = AppUpdate.IPPerTaskInfo( discovery = None, networkName = Some(calicoNet) )
+            val ippertask = AppUpdate.IPPerTaskInfo( discovery = None, networkName = Some(userNetwork) )
             (Some(docker), Some(ippertask), None)
         }
       }

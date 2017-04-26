@@ -179,7 +179,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |                    },
           |                    "name": "https",
           |                    "protocol": "tcp",
-          |                    "servicePort": 8443
+          |                    "servicePort": 0
           |                },
           |                {
           |                    "containerPort": 9999,
@@ -279,9 +279,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         meq(testEnv.name),
         meq("test-container"),
         hasExactlyContainerPorts(
-          marathon.Container.Docker.PortMapping(Some(80),         None,       None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
-          marathon.Container.Docker.PortMapping(Some(443),        None, Some(8443), Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
-          marathon.Container.Docker.PortMapping(Some(9999), Some(9999),       None, Some("udp"), Some("debug"), None)
+          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
+          marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
+          marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
         ) and ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone )
       )(any)
 
@@ -310,8 +310,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
-            host_port = Some(81), // not used
-            service_port = Some(80),
+            host_port = Some(81),    // not used
+            service_port = Some(80), // used *only* for VIP
             name = Some("http"),
             labels = None,
             expose_endpoint = Some(true)
@@ -401,26 +401,26 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
           |            },
           |            "name": "http",
-          |            "port": 80,
+          |            "port": 1234,
           |            "protocol": "tcp"
           |        },
           |        {
           |            "labels": {},
           |            "name": "https",
-          |            "port": 0,
+          |            "port": 1235,
           |            "protocol": "tcp"
           |        },
           |        {
           |            "labels": {},
           |            "name": "debug",
-          |            "port": 0,
+          |            "port": 1236,
           |            "protocol": "udp"
           |        }
           |    ],
           |    "ports": [
-          |        80,
-          |        0,
-          |        0
+          |        1234,
+          |        1235,
+          |        1236
           |    ],
           |    "readinessChecks": [],
           |    "requirePorts": false,
@@ -459,7 +459,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         meq(testEnv.name),
         meq("test-container"),
         hasExactlyPortDefs(
-          marathon.AppUpdate.PortDefinition(80, "tcp", Some("http"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")),
+          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
           marathon.AppUpdate.PortDefinition( 0, "udp", Some("debug"), Map.empty)
         ) and ( ((_:JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beNone )
