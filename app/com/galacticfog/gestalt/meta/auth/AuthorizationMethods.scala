@@ -104,9 +104,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
             go(t, (h.copy(id = UUID.randomUUID) +: acc))
             
           } else {
-            
-            //log.debug(s"Found duplicate Entitlement in parent (${dup(0).name}- merging identities.")
-            
+
             // We already have the property, merge identities
             // -----------------------------------------------
             // 
@@ -205,7 +203,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    log.debug(s"Finding entitlements matching: $action($resource)")
+//    log.debug(s"Finding entitlements matching: $action($resource)")
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
@@ -214,9 +212,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         val membership = getUserMembership(identity, account)
         val intersection = (allowed intersect membership)
         
-        log.debug("identities : " + allowed)
-        log.debug("membership : " + membership)
-        log.debug("intersection : " + (allowed intersect membership))        
+//        log.debug("identities : " + allowed)
+//        log.debug("membership : " + membership)
+//        log.debug("intersection : " + (allowed intersect membership))        
         
         //(allowed intersect membership).isDefinedAt(0)
         if (intersection.isDefinedAt(0)) {
@@ -311,12 +309,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * @param action   exact name of the action to search for
    */
   private[auth] def findMatchingEntitlement(resource: UUID, action: String): Option[GestaltResourceInstance] = {
-    
-    log.debug(s"findMatchingEntitlement($resource, $action)")
-    
     val ents = getEntitlementsMerged(resource) filter { ent =>
-//      log.debug(">>>ent : " + ent.name)
-//      log.debug(">>>  ent.ids : " + ent.properties.get.get("identities"))
       ent.properties.get("action") == action
     }
     
@@ -392,12 +385,5 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       description = description,
       properties = EntitlementProps(action, value, identities) )
   }
-  
-  
-  
-
-  
-  
-  
   
 }

@@ -44,24 +44,26 @@ object Resource {
    * Find  a single resource by path
    */
   def fromPath(p: String): Option[GestaltResourceInstance] = {
-    log.debug(s"fromPath($p)")
+    toInstance(new ResourcePath(p))
+  }
+  
+  
+  def toInstance(p: ResourcePath): Option[GestaltResourceInstance] = {
     
     // Normalize the path
-    val cmps = components(p)
+    val cmps = p.components
     
     // Get target type-name from path (REST name)
-    val typeName = components(p) size match {
+    val typeName = cmps size match {
       case 1 => "orgs"
       case _ => cmps(cmps.size - 2)
     }
     
     if (isPolymorphic(typeName)) {
-      log.debug(s"Found polymorphic type s'$typeName'")
-      
       val resourceId = UUID.fromString(cmps.last)
       lookupResource(typeName, resourceId)
-    } else findByPath(p)
-  }
+    } else findResource(p.info)
+  }  
   
   /**
    * Indicates whether or not the path is a list selector.
@@ -74,19 +76,22 @@ object Resource {
 
   private[api] def findByPath(path: String): Option[GestaltResourceInstance] = {
     findResource(mapPathData(path))
-  }    
+  }
   
   /**
    * Determine if a given type is a sub-type of another.
    */
   private[api] def isSubTypeOf(superType: UUID, subType: UUID) = {
-    log.debug(s"isSubTypeOf(super = $superType, sub = $subType)")
-    
     ResourceFactory.findTypesWithVariance(CoVariant(superType)) exists {
       subType == _.id  
     }
   }  
   
+  /*
+   * TODO: Generalize this function once type information is cached. We need
+   * to find the type corresponding to `typeRestName` and check if it is marked
+   * `abstract`. If it is, the type is polymorphic.
+   */
   private[api] def isPolymorphic(typeRestName: String): Boolean = {
     polymorphic.contains(typeRestName)
   }
@@ -113,7 +118,6 @@ object Resource {
   }
   
   private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {
-    log.debug(s"isValidSubType(typeName = $typeName, typeId = $typeId)")
     typeName match {
       case "providers" => isSubTypeOf(ResourceIds.Provider, typeId)
       case "rules" => isSubTypeOf(ResourceIds.Rule, typeId)
@@ -170,7 +174,6 @@ object Resource {
     // If the function takes an Account parameter, we can do the Authorization here and
     // return a filtered list.
     //
-    
     ResourceFactory.findChildrenOfType(org, parentId, targetTypeId)
   }
   
@@ -200,7 +203,6 @@ object Resource {
    * Parse a resource URI into a Map naming the path components.
    */
   def mapPathData(path: String): Map[String,String] = {
-    log.debug(s"mapPathData($path)")
     val cmps = { path.trim
         .stripPrefix("/")
         .stripSuffix("/")

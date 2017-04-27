@@ -74,18 +74,14 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   )
   
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
-    log.debug("Entered => lookupPolicyRules(_,_,_)...")
     val mapPathData = Resource.mapListPathData(path.path)
     val policy = mapPathData(Resource.ParentId)
-    
-    log.debug("Finding rules for policy : " + policy)
-    
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
   
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
-    Resource.fromPath(path.path) flatMap { r =>
+    Resource.toInstance(path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
       val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
 
@@ -124,7 +120,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }
   
   def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
-    Authorize(fqid(fqon), "org.view", request.identity) {   
+    val action = "org.view"
+    log.debug(s"Authorizing lookup : user=${request.identity.account.id}, ${action}")
+    Authorize(fqid(fqon), action, request.identity) {   
       Ok(RenderSingle(Resource.fromPath(fqon).get))
     }
   }
@@ -135,7 +133,6 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    */
   def getGlobalResourceList(targetTypeId: String) = Authenticate() { implicit request =>
     val typeId = uuid(targetTypeId)
-    //val action = s"${Actions.typePrefix(typeId)}.view"
     val action = actionInfo(typeId).prefix + ".view"
     AuthorizeList(action) {
       ResourceFactory.findAll(typeId)
@@ -183,34 +180,15 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     else AuthorizedResourceSingle(rp, action)
   }  
   
-  private[controllers] def findResource(path: ResourcePath, account: AuthAccountWithCreds)
-      : Option[GestaltResourceInstance] = {
-
-    val resource = lookups.get(path.targetTypeId).fold {
-      Resource.fromPath(path.path)
-    }{ f =>
-      log.debug(s"Found custom lookup function for Resource.")
-      f(path, account, None) 
-    }
-    
-    resource map { res =>
-      transforms.get(res.typeId).fold(res){ f =>
-        log.debug(s"Found custom transformation function for Resource: ${res.id}")
-        f(res, account, None).get
-      }
-    }
-  }
-  
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
     
-    log.debug(s"AuthorizedResourceSingle($path, $action)")
+    log.debug(s"Authorizing lookup : user=${request.identity.account.id}, $action")
     
     Authorize(path.targetId.get, action) {
       
       val resource = lookups.get(path.targetTypeId).fold {
-        log.debug("Applying standard lookup function")
-        Resource.fromPath(path.path)
+        Resource.toInstance(path)
       }{ f=>
         log.debug(s"Found custom lookup function for Resource. Executing...")
         f(path, request.identity, Option(request.queryString))
@@ -218,14 +196,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       
       resource.fold(NotFoundResult(request.uri)) { res =>
         transforms.get(res.typeId).fold {
-          log.debug("No custom transformer found.")
           Ok( RenderSingle(res) )
         }{ f =>
-          
-          log.debug(s"Found custom transformation function for Resource: ${res.id}")
-          log.debug(s"type-id: ${res.typeId}, label: ${ResourceLabel(res.typeId)}")
-          log.debug("FUNCTION : " + f.getClass.getName)
-          
+
           f(res, request.identity, Option(request.queryString)) match {
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
@@ -249,6 +222,25 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
   
+  private[controllers] def findResource(path: ResourcePath, account: AuthAccountWithCreds)
+      : Option[GestaltResourceInstance] = {
+
+    val resource = lookups.get(path.targetTypeId).fold {
+      Resource.fromPath(path.path)
+    }{ f =>
+      log.debug(s"Found custom lookup function for Resource.")
+      f(path, account, None) 
+    }
+    
+    resource map { res =>
+      transforms.get(res.typeId).fold(res){ f =>
+        log.debug(s"Found custom transformation function for Resource: ${res.id}")
+        f(res, account, None).get
+      }
+    }
+  }  
+  
+  
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
@@ -259,22 +251,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       o.properties.get("fqon") != path.fqon  
     }
   }
-  
-//  def lookupApiEndpoint(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
-//    
-//
-//    val endpointId = UUID.fromString(path.targetId.get)
-//    val endpoint = ResourceFactory.findById(ResourceIds.ApiEndpoint, endpointId)
-//    
-//    ResourceFactory.findById(ResourceIds.ApiEndpoint, endpointId) map { ep =>
-//      val apiId = UUID.fromString(path.parentId getOrElse ep.properties.get("parent"))
-//      
-//    
-//    ???
-//  }
-  
+
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
-    Resource.fromPath(path.path) map { transformEntitlement(_, account).get }
+    Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
   
   def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
@@ -337,11 +316,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         log.debug("Filtering providers for type : " + typename)
      
         val variance = providerTypeVariance(typename)
-        println("***VARIANCE : " + variance)
         findTypesWithVariance(variance) map { _.id }
       }
       rs filter { r => 
-        println("***filtering : " + r.typeId)
         ids.contains(r.typeId) }
     }
   }    

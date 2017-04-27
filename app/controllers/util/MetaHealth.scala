@@ -27,8 +27,7 @@ case class ServiceUnavailableException(message: String) extends RuntimeException
 class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
   
   val log = Logger(this.getClass)
- 
-    
+  
   /*
    * Check connectivity with the following services:
    * - security
@@ -36,8 +35,8 @@ class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
    * - lambda
    * - apigateway
    * - rabbit - for policy
-   * 
    */
+  
   object Status {
     val Healthy = "healthy"
     val Degraded = "degraded"
@@ -67,7 +66,6 @@ class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
     
     if (errors.isEmpty) Right(goodHealthMessage()) 
     else Left(badHealthMessage(Status.Unavailable, errors, verbose))
-    
   }
   
   def goodHealthMessage() = {
@@ -108,7 +106,7 @@ class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
       (mkurl(config), checkService(config, url, timeout, expected)) 
     }
   }
-
+  
   def checkService(
       config: HostConfig, 
       resource: String, 
@@ -144,6 +142,5 @@ class MetaHealth @Inject()( dataStore: DataStore, ws: WSClient ) {
     "%s://%s%s".format(config.protocol, config.host, 
         (if (config.port.isDefined) s":${config.port.get}" else ""))
   }
-
   
 }

@@ -18,7 +18,11 @@ import scala.concurrent.ExecutionContext
 import scala.util.{Failure, Success, Try}
 import java.util.UUID
 import com.galacticfog.gestalt.data.util.PostgresHealth
-
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.sdk._
+import controllers.util.JsonInput
+import play.api.libs.json._  
 
 class ProdSecurityModule extends AbstractModule with ScalaModule {
 
@@ -42,20 +46,22 @@ trait SecurityClientProvider {
 
 
 @Singleton
-class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
-                                                     bus: EventBus,
-                                                     identitySvc: IdentityService[AuthAccountWithCreds],
-                                                     db: play.api.db.Database,
-                                                     appconfig: play.api.Configuration
-                                                     /*,
-                                                     connectionManager: ConnectionManager */)
-                                                   ( implicit ec: ExecutionContext )
-  extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-    with SecurityClientProvider with SecurityKeyInit {
+class GestaltLateInitSecurityEnvironment @Inject() ( 
+     wsclient: WSClient,
+     bus: EventBus,
+     identitySvc: IdentityService[AuthAccountWithCreds],
+     db: play.api.db.Database,
+     appconfig: play.api.Configuration)(implicit ec: ExecutionContext)
+      extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
+      with SecurityClientProvider with SecurityKeyInit {
 
-  val logger = Logger(this.getClass)
+  private val logger = Logger(this.getClass)
 
-  var maybeEnvSecConfig: Option[GestaltSecurityConfig] = {
+  private object jsonInput extends JsonInput {}
+  private val KEY_NAME = "GESTALT_SECURITY_KEY"
+  private val KEY_SECRET = "GESTALT_SECURITY_SECRET"  
+  
+  private var maybeEnvSecConfig: Option[GestaltSecurityConfig] = {
     logger.info("attempting to determine well-defined GestaltSecurityConfig for framework authentication mode from environment variables")
     discoverSecurityConfig
   }
@@ -95,44 +101,9 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
     }
   }
 
-  import com.galacticfog.gestalt.data.ResourceFactory
-  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-  import com.galacticfog.gestalt.meta.api.sdk._
-  import controllers.util.JsonInput
-  import play.api.libs.json._  
-  
   override def eventBus: EventBus = bus
 
   override implicit val executionContext: ExecutionContext = ec
-
-//  override def init(apiKey: String, apiSecret: String): Unit = {
-//    import scalikejdbc._
-//    implicit val autoSession = AutoSession
-//    maybeEnvSecConfig = maybeEnvSecConfig map {
-//      _.copy(
-//        apiKey = apiKey,
-//        apiSecret = apiSecret
-//      )
-//    }
-//
-//    sql"""
-//      CREATE TABLE IF NOT EXISTS sec_init (
-//        id INT PRIMARY KEY NOT NULL DEFAULT(0) CHECK (id = 0),
-//        api_key TEXT NOT NULL,
-//        api_secret TEXT NOT NULL
-//      );
-//    """.update.apply
-//    
-//    sql"""
-//       INSERT INTO sec_init (id, api_key, api_secret)
-//       VALUES (0,${apiKey},${apiSecret})
-//    """.update.apply //    ON CONFLICT (id) DO UPDATE SET api_key = EXCLUDED.api_key, api_secret = EXCLUDED.api_secret;
-//  }
-  
-
-  object jsonInput extends JsonInput {}
-  val KEY_NAME = "GESTALT_SECURITY_KEY"
-  val KEY_SECRET = "GESTALT_SECURITY_SECRET"
   
   override def init(org: UUID, caller: AuthAccountWithCreds) = {
     
@@ -169,7 +140,7 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
       typeId = Some(ResourceIds.Configuration), 
       parent = Some(org))    
   }
-
+  
   def sysConfigJson(creds: GestaltBasicCredentials) = {
     val props = newSecurityProperties(creds)
     Json.obj(
@@ -225,31 +196,8 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
       logger.info("Skipping credential lookup.")
       None
     }
+
   }
-  
-//  def getCredsFromDB: Option[(String,String)] = {
-//    import scalikejdbc._
-//    implicit val autoSession = AutoSession
-//    logger.info("attempting to recover security credentials from database")
-//    Try{
-//      sql"""
-//        SELECT * FROM sec_init
-//        WHERE id = 0
-//      """
-//      .map { rs => ( rs.string("api_key") , rs.string("api_secret") ) }
-//      .single.apply
-//    } match {
-//      case Success(Some(o)) =>
-//        logger.info("recovered security credentials from database")
-//        Some(o)
-//      case Success(None) =>
-//        logger.info("did not recover security credentials from database")
-//        None
-//      case Failure(e) =>
-//        logger.warn("failure recovering security credentials from database",e)
-//        None
-//    }
-//  }
 
   private def discoverSecurityConfig: Option[GestaltSecurityConfig] = {
     logger.info("> checking environment for Gestalt security config")

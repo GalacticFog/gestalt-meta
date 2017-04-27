@@ -4,8 +4,8 @@
 
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
-      <pattern>%coloredLevel: %logger{35} - %message%n%xException</pattern>
-      
+      <!-- <pattern>%coloredLevel: %logger{35} - %message%n%xException</pattern>  -->
+      <pattern>%d{HH:mm:ss.SSS} |-%-5level| %logger{0}: %message%n%xException</pattern>
     </encoder>
   </appender>
 
@@ -14,7 +14,7 @@
     This configures the log level to log at for a package and its children packages.
   -->
   
-  
+  <logger name="sun.rmi" level="WARN"/>
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
   <logger name="com.galacticfog" level="DEBUG"/>
