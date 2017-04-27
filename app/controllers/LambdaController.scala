@@ -41,6 +41,7 @@ import play.api.libs.ws.WSClient
 class LambdaController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
+    providerMethods: ProviderMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -88,11 +89,11 @@ class LambdaController @Inject()(
         }
         
         val caller = request.identity
-        val client = ProviderMethods.configureWebClient(provider, Some(ws))
+        val client = providerMethods.configureWebClient(provider, Some(ws))
   
         val metaCreate = for {
           metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-          laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString, "")
+          laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString)
         } yield (metalambda, laserlambda)
         
         metaCreate match {
@@ -125,41 +126,6 @@ class LambdaController @Inject()(
     }
   }
   
-  
-  def toLaserLambda(lambda: GestaltResourceInput, providerId: String, location: String) = {
-    
-    log.debug("toLaserLambda(...)")
-
-    val props = lambda.properties.get
-
-    val handler = props("handler").as[String]
-    val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
-    val compressed = if (props.contains("compressed")) props("compressed").as[Boolean] else false
-    val artifactUri = if (props.contains("package_url")) Some(props("package_url").as[String]) else None
-    val periodic = if( props.contains("periodic_info" )) props("periodic_info").asOpt[JsValue] else None
-
-    LaserLambda(
-      id          = Some(lambda.id.get.toString), 
-      eventFilter = Some(UUID.randomUUID.toString),
-      public      = isPublic,
-      provider    = Some(Json.parse(s"""{ "id": "${providerId.toString}", "location": "$location", "href": "/foo/bar" }""")),
-
-      LaserArtifactDescription(
-          artifactUri = artifactUri,
-          description = if (props.contains("description")) props("description").asOpt[String] else None,
-          handler     = handler,
-          memorySize  = props("memory").as[Int],
-          cpus        = props("cpus").as[Double],
-          publish     = false,     // <- currently not used
-          role        = "none",    // <- currently not used
-          runtime     = props("runtime").as[String],
-          timeoutSecs = props("timeout").as[Int],
-          compressed  = compressed,
-          periodicInfo= periodic,
-          code        = if (props.contains("code")) props("code").asOpt[String] else None,
-          headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
-    ))
-  }  
   
   def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
     val parentLink = toLink(parent, None)

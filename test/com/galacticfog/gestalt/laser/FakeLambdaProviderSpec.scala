@@ -146,8 +146,7 @@ class FakeLambdaProviderSpec extends Specification {
           publish      = avm.boolean("publish", false),
           role         = avm.string("role", "none"),
           timeoutSecs  = avm.int("timeoutSecs", 30),
-          code         = avm.stringOpt("code"),
-          synchronous  = avm.boolean("synchronous", false)) )
+          code         = avm.stringOpt("code") ) )
       
   }
     
