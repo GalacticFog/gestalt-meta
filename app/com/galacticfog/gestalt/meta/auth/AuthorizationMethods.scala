@@ -104,9 +104,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
             go(t, (h.copy(id = UUID.randomUUID) +: acc))
             
           } else {
-            
-            //log.debug(s"Found duplicate Entitlement in parent (${dup(0).name}- merging identities.")
-            
+
             // We already have the property, merge identities
             // -----------------------------------------------
             // 
@@ -387,12 +385,5 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       description = description,
       properties = EntitlementProps(action, value, identities) )
   }
-  
-  
-  
-
-  
-  
-  
   
 }

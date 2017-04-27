@@ -75,7 +75,8 @@ trait ActionMethods {
   
   def actionInfo(tpe: GestaltResourceType): ActionInfo = {
     tpe.properties.get.get("actions").fold(
-      throw new RuntimeException(s"Could not find ResourceType.properties.actions for type ${tpe.typeId}")
+      throw new RuntimeException(
+        s"Could not find ResourceType.properties.actions for type ${tpe.typeId}")
     )(JsonUtil.safeParse[ActionInfo]( _ ))
   }
   

@@ -26,9 +26,6 @@ class ResourcePath(val path: String) {
   val info = {
     if (isList) Resource.mapListPathData(path) else Resource.mapPathData(path)
   }
-  
-  // Validate the parent resource type if it exists.
-//  if (info.get(Resource.ParentType).isDefined) Resource.typeOrElse(info(Resource.ParentType))
 
   val parentTypeId = info.get(Resource.ParentType) map { typeOrElse(_) }
   val parentId     = info.get(Resource.ParentId) map { UUID.fromString(_) }

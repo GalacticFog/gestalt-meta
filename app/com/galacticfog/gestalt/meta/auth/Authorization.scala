@@ -61,15 +61,15 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     isAuthorized(target, caller.account.id, actionName, caller) match {
       case Failure(err) => HandleExceptions(err)
       case Success(auth) => if (auth) {
-        log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
+        log.info(s"{AUTHORIZED: user=${caller.account.id}, resource=${target}, ${actionName}}")
         block 
       } else {
-        log.warn(s"{UNAUTHORIZED: user=${caller.account.id}, resource=${target}, action=${actionName}}")
+        log.warn(s"{UNAUTHORIZED: user=${caller.account.id}, resource=${target}, ${actionName}}")
         ForbiddenResult(s"You do not have permission to perform this action. Failed: '$actionName'")
       }
     }
   }
-
+  
   def AuthorizeAsync(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): Future[Result] = {
     AuthorizeAsync(target, actionName, request.identity)(block)
   }
@@ -77,11 +77,11 @@ trait Authorization extends MetaController with ActionMethods with Authorization
   def AuthorizeAsync(target: UUID, actionName: String, caller: AuthAccountWithCreds)(block: => Result): Future[Result] = {
     Future( Authorize(target, actionName, caller)(block) )
   } 
-   
+  
   def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
     val caller = request.identity
     
-    log.info(s"AUTHORIZE-LISTING : user=${caller.account.id}, action=${action}")
+    log.info(s"Authorizing resource listing : user=${caller.account.id}, ${action}")
     
     val output = resources filter { r =>
       isAuthorized(r.id, caller.account.id, action, caller) getOrElse false
