@@ -81,96 +81,39 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
    */
   def repositoryOnline(): Boolean = {
 
-    val connection = db.dataSource.getConnection()
+    val database = config.getString("meta.db.name") getOrElse {
+      throw new RuntimeException("Could not find value for 'meta.db.name'. Cannot verify Meta repository.")
+    }
     
-    try {
-
-      val database = connection.getCatalog
-      val jdbcurl  = connection.getMetaData.getURL
-
-//      val database = db.name
-//      val jdbcurl = db.url
-      
-      log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+    val jdbcurl = config.getString("db.default.url") getOrElse {
+      log.warn("Could not find config value for 'db.default.url'")
+      "n/a"
+    }
     
-      /*
-       * verifyDataStore checks that the named database exists
-       * and has tables created.
-       */
-      PostgresHealth.verifyDataStore(database) match {
-        case Success(_) => {
-          log.info( "Repository is AVAILABLE" )
-          logPoolInfo(config)
-          true
+    log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+  
+    /*
+     * verifyDataStore checks that the named database exists
+     * and has tables created.
+     */
+    PostgresHealth.verifyDataStore(database) match {
+      case Success(_) => {
+        log.info( "Repository is AVAILABLE" )
+        logPoolInfo(config)
+        true
+      }
+      case Failure(ex) => ex match {
+        case p: PSQLException => {
+          log.error(s"Could not verify repository: ${p.getMessage}")
+          false
         }
-        case Failure(ex) => ex match {
-          case p: PSQLException => {
-            log.error(s"Could not verify repository: ${p.getMessage}")
-            false
-          }
-          case e: Throwable => {
-            log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
-            false
-          }
+        case e: Throwable => {
+          log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
+          false
         }
       }
     }
-    finally {
-      connection.close()
-    }
   }
-
-//  import scala.util.Try
-//  def repositoryOnline(): Boolean = {
-//
-//    
-//    Try(db.dataSource.getConnection()).flatMap { cnn =>
-//      try {
-//        ???
-//      } finally {
-//        cnn.close()
-//      }
-//    }
-//    
-//    try {
-//      val connection = db.dataSource.getConnection()
-//      
-//      db.name
-//      db.url
-//      
-//      try {
-//
-//        val database = connection.getCatalog
-//        val jdbcurl = connection.getMetaData.getURL
-//
-//        log.info(s"Testing Meta Repository: [${jdbcurl}]...")
-//
-//      /*
-//       * verifyDataStore checks that the named database exists
-//       * and has tables created.
-//       */
-//        PostgresHealth.verifyDataStore(database) match {
-//          case Success(_) => {
-//            log.info("Repository is AVAILABLE")
-//            logPoolInfo(config)
-//            true
-//          }
-//          case Failure(ex) => ex match {
-//            case p: PSQLException => {
-//              log.error(s"Could not verify repository: ${p.getMessage}")
-//              false
-//            }
-//            case e: Throwable => {
-//              log.error("Unexpected error occurred contacting the Meta repository : " + e.getMessage)
-//              false
-//            }
-//          }
-//        }
-//      } finally {
-//        connection.close()
-//      }
-//    
-//  }  
   
 }
 
