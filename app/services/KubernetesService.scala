@@ -359,13 +359,23 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers 
      * must never user ResourceFactory directly.
      */
-    val environment = {
-      ResourceFactory.findParent(ResourceIds.Environment, container.id) map { _.id } getOrElse {
+    val environment: String = {
+      ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
+        val namespaceGetter = "/namespaces/([^/]*)/deployments/.*".r
+        for {
+          props <- container.properties
+          eid <- props.get("external_id")
+          ns <- eid match {
+            case namespaceGetter(namespace) => Some(namespace)
+            case _ => None
+          }
+        } yield ns
+      } getOrElse {
         throw new RuntimeException(s"Could not find Environment for container '${container.id}' in Meta.")
       }
     }
 
-    val fKube = skuberFactory.initializeKube(provider.id, environment.toString)
+    val fKube = skuberFactory.initializeKube(provider.id, environment)
 
     val targetLabel = META_CONTAINER_KEY -> container.id.toString
     
