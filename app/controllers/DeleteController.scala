@@ -68,7 +68,7 @@ class DeleteController @Inject()(
         ResourceIds.Lambda -> deleteExternalLambda,
         ,
         ,
-        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway
+        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway TODO: what's up with this? why is the resource_type ApiGatewayProvider ?
         */
       ))
 

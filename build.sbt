@@ -106,6 +106,8 @@ libraryDependencies ++= Seq(
 	Library.mockito              % Test,
 	Library.akkaTestkit          % Test,
 	
+    "de.leanovate.play-mockws" %% "play-mockws" % "2.4.2" % Test,
+
   	jdbc,
 	cache,
 	ws,

@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import play.api.inject.bind
+import org.mockito.Matchers.{eq => meq}
 
 import scala.util.{Success, Try}
 
@@ -75,6 +76,14 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           "name" -> testLambdaProvider.name,
           "id" -> testLambdaProvider.id.toString
         ).toString
+      )),
+      parent = Some(testEnv.id)
+    )
+    val Success(testEndpoint) = createInstance(
+      ResourceIds.ApiEndpoint,
+      "test-endpoint",
+      properties = Some(Map(
+        "resource" -> "/the/path"
       )),
       parent = Some(testEnv.id)
     )
@@ -168,31 +177,46 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
       mockLambdaMethods.patchLambdaHandler(any,any,any) returns Try(testLambda)
 
+      val patchDoc = PatchDocument()
+
       val request = fakeAuthRequest(PATCH,
         s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
-      ).withBody(PatchDocument().toJson)
+      ).withBody(patchDoc.toJson)
 
       val Some(result) = route(request)
 
       status(result) must equalTo(OK)
 
-      there was one(mockLambdaMethods).patchLambdaHandler(any,any,any)
+      there was one(mockLambdaMethods).patchLambdaHandler(
+        r = argThat(
+          (r: GestaltResourceInstance) => r.id == testLambda.id
+        ),
+        patch = meq(patchDoc),
+        user = any
+      )
     }
 
-//    "use GatewayMethods for external apiendpoint patch" in new TestApplication {
-//
-//      mockLambdaMethods.patchLambdaHandler(any,any,any) returns Try(testLambda)
-//
-//      val request = fakeAuthRequest(PATCH,
-//        s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
-//      ).withBody(PatchDocument().toJson)
-//
-//      val Some(result) = route(request)
-//
-//      status(result) must equalTo(OK)
-//
-//      there was one(mockLambdaMethods).patchLambdaHandler(any,any,any)
-//    }
+    "use GatewayMethods for external apiendpoint patch" in new TestApplication {
+
+      mockGatewayMethods.patchEndpointHandler(any, any, any) returns Try(testEndpoint)
+
+      val patchDoc = PatchDocument()
+
+      val request = fakeAuthRequest(PATCH,
+        s"/root/environments/${testEnv.id}/apiendpoints/${testEndpoint.id}", testCreds
+      ).withBody(patchDoc.toJson)
+
+      val Some(result) = route(request)
+
+      status(result) must equalTo(OK)
+
+      there was one(mockGatewayMethods).patchEndpointHandler(
+        r = argThat(
+          (r: GestaltResourceInstance) => r.id == testEndpoint.id
+        ),
+        patch = meq(patchDoc),
+        user = any)
+    }
 
   }
   

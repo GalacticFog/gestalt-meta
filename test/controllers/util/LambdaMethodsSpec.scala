@@ -46,13 +46,14 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       )),
       user.account.description
     )
-    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
   }
 
   sequential
 
   abstract class FakeLambdaScope extends Scope {
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+
     val mockProviderMethods = mock[ProviderMethods]
     val injector =
       new GuiceApplicationBuilder()
@@ -65,6 +66,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
         )
         .injector
+
     val lambdaMethods = injector.instanceOf[LambdaMethods]
 
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
@@ -124,7 +126,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         mockResp.status returns 200
       })
 
-      lambdaMethods.patchLambdaHandler(
+      val Success(updatedLambda) = lambdaMethods.patchLambdaHandler(
         r = testLambda,
         patch = PatchDocument(
           PatchOp.Replace("/properties/public",        true),
@@ -141,7 +143,9 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
         ),
         user = user
-      ) must beSuccessfulTry
+      )
+
+      ResourceFactory.findById(testLambda.id).get.properties.get must_== updatedLambda.properties.get
 
       there was one(mockJsonClient).put(
         uri = meq(s"/lambdas/${testLambda.id}"),
