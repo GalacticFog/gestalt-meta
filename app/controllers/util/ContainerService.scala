@@ -311,8 +311,8 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
           log.info("Creating container in backend CaaS...")
           service.create(context, metaResource)
         }
-        updatedInstace <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
-      } yield updatedInstace
+        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstance
     }
   }
 
