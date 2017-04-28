@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
-import mockws.MockWS
+import mockws.{MockWS, Route}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.ValueCheck.typedValueCheck
@@ -28,6 +28,7 @@ import play.api.libs.ws.WSResponse
 import play.api.mvc._
 import play.api.mvc.Results._
 import play.api.test.PlaySpecification
+import play.api.mvc.BodyParsers.parse
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -154,19 +155,28 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       parent = Some(testApi.id)
     )
 
-    val ws = MockWS {
-      case (GET, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {Ok(
-        Json.toJson(LaserEndpoint(
-          id = Some(testEndpoint.id.toString),
-          apiId = testApi.id.toString,
-          upstreamUrl = "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
-          path = "/original/path"
-        ))
-      )}
-      case (PUT, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {Ok(
-        Json.obj("matters" -> "not")
-      )}
+    val routeGet = Route {
+      case (GET, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
+        Ok(
+          Json.toJson(LaserEndpoint(
+            id = Some(testEndpoint.id.toString),
+            apiId = testApi.id.toString,
+            upstreamUrl = "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+            path = "/original/path"
+          ))
+        )
+      }
     }
+    var putBody: JsValue = null
+    val routePut = Route {
+      case (PUT, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action(parse.json) { implicit request =>
+        putBody = request.body
+        Ok(
+          Json.obj("matters" -> "not")
+        )
+      }
+    }
+    val ws = MockWS (routeGet orElse routePut)
     mockProviderMethods.configureWebClient(argThat(
       (provider: GestaltResourceInstance) => provider.id == testGatewayProvider.id
     ), any) returns new JsonClient(HostConfig("http", "gateway.service", Some(6473)), Some(ws))
@@ -303,10 +313,13 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "patch against api-gateway provider to an async lambda" in new TestApplication {
+      val newPath = "/new/path"
+      val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invoke"
+
       val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
-          PatchOp.Replace("/properties/resource",    "/new/path"),
+          PatchOp.Replace("/properties/resource",    newPath),
           PatchOp.Replace("/properties/synchronous", false),
           PatchOp.Replace("/properties/implementation_type", "lambda"),
           PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
@@ -314,18 +327,29 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      updatedEndpoint.properties.get("upstream_url") must_== s"http://laser.service:1111/lambdas/${testLambda.id}/invoke"
-      updatedEndpoint.properties.get("resource") must_== "/new/path"
+      routeGet.timeCalled must_== 1
+      routePut.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
       updatedEndpoint.properties.get("synchronous") must_== "false"
       updatedEndpoint.properties.get("implementation_type") must_== "lambda"
       updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
     }
 
     "patch against api-gateway provider to a synchro lambda" in new TestApplication {
+
+      val newPath = "/new/path"
+      val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync"
+
       val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
-          PatchOp.Replace("/properties/resource",    "/new/path"),
+          PatchOp.Replace("/properties/resource",    newPath),
           PatchOp.Replace("/properties/synchronous", true),
           PatchOp.Replace("/properties/implementation_type", "lambda"),
           PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
@@ -333,18 +357,29 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      updatedEndpoint.properties.get("upstream_url") must_== s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync"
-      updatedEndpoint.properties.get("resource") must_== "/new/path"
+      routeGet.timeCalled must_== 1
+      routePut.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
       updatedEndpoint.properties.get("synchronous") must_== "true"
       updatedEndpoint.properties.get("implementation_type") must_== "lambda"
       updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
     }
 
     "patch against api-gateway provider to a container" in new TestApplication {
+
+      val expUpstreamUrl = "http://my-nginx.service-address:80"
+      val newPath = "/new/path"
+
       val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
-          PatchOp.Replace("/properties/resource",    "/new/path"),
+          PatchOp.Replace("/properties/resource",    newPath),
           PatchOp.Replace("/properties/implementation_type", "container"),
           PatchOp.Replace("/properties/implementation_id", testContainer.id.toString),
           PatchOp.Replace("/properties/container_port_name", "web")
@@ -352,8 +387,15 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      updatedEndpoint.properties.get("upstream_url") must_== s"http://my-nginx.service-address:80"
-      updatedEndpoint.properties.get("resource") must_== "/new/path"
+      routeGet.timeCalled must_== 1
+      routePut.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
       updatedEndpoint.properties.get("implementation_type") must_== "container"
       updatedEndpoint.properties.get("implementation_id") must_== testContainer.id.toString
     }

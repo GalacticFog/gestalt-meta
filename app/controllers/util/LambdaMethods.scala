@@ -6,7 +6,7 @@ import java.util.UUID
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.json.Js
-import play.api.libs.json.{JsError, JsObject, JsSuccess, Json}
+import play.api.libs.json._
 import play.api.libs.ws.WSClient
 
 import scala.concurrent.{Await, Future}
@@ -17,7 +17,6 @@ import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser.LaserLambda
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import play.api.Logger
-import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.laser._
@@ -50,7 +49,7 @@ class LambdaMethods @Inject()( ws: WSClient,
       case "runtime" => lambda.copy(artifactDescription = artifact.copy(runtime = value.as[String]))
       case "compressed" => lambda.copy(artifactDescription = artifact.copy(compressed = value.as[Boolean]))
       case "handler" => lambda.copy(artifactDescription = artifact.copy(handler = value.as[String]))
-      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = Option(value.as[JsObject])))
+      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = value.asOpt[JsObject]))
       case _ => lambda
     }
   }
@@ -82,10 +81,12 @@ class LambdaMethods @Inject()( ws: WSClient,
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
     // Strip path to last component to get field name.
-    val ops = patch.ops collect {
-      case PatchOp(_,path,Some(value)) =>
+    val ops: Seq[(String,JsValue)] = patch.ops collect {
+      case PatchOp("add"|"replace",path,Some(value)) =>
         val fieldName = path.drop(path.lastIndexOf("/")+1)
         (fieldName -> value)
+      case PatchOp("remove","/properties/periodic_info",None) =>
+        ("periodic_info" -> JsNull)
     }
 
     val f = for {
