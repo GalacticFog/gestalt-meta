@@ -12,7 +12,7 @@ import play.api.libs.ws.WSClient
 import scala.concurrent.{Await, Future}
 import scala.util.Try
 import scala.language.postfixOps
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser.LaserLambda
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
@@ -64,6 +64,8 @@ class LambdaMethods @Inject()( ws: WSClient,
       throw new RuntimeException("Could not parse LambdaProvider ID from API.")
     }
   }
+
+  def deleteLambdaHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = ???
 
   def patchLambdaHandler(
       r: GestaltResourceInstance,

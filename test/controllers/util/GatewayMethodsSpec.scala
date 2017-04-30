@@ -400,6 +400,14 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       updatedEndpoint.properties.get("implementation_id") must_== testContainer.id.toString
     }
 
+    "delete against GatewayMethods deletes apis" in new TestApplication {
+      ko("write me")
+    }
+
+    "delete against GatewayMethods deletes apiendpoints" in new TestApplication {
+      ko("write me")
+    }
+
   }
 
 }

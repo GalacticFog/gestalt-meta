@@ -45,6 +45,7 @@ class DeleteController @Inject()(
     providerManager: ProviderManager,
     providerMethods: ProviderMethods,
     gatewayMethods: GatewayMethods,
+    lambdaMethods: LambdaMethods,
     ws: WSClient
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
@@ -62,12 +63,10 @@ class DeleteController @Inject()(
         ResourceIds.User -> deleteExternalUser,
         ResourceIds.Group -> deleteExternalGroup,
         ResourceIds.Container -> deleteExternalContainer,
-        ResourceIds.Api -> deleteExternalApi,
-        ResourceIds.ApiEndpoint -> deleteExternalEndpoint
-      /*
-        ResourceIds.Lambda -> deleteExternalLambda,
-        ,
-        ,
+        ResourceIds.Api -> gatewayMethods.deleteApiHandler,
+        ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
+        ResourceIds.Lambda -> lambdaMethods.deleteLambdaHandler
+        /*
         ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway TODO: what's up with this? why is the resource_type ApiGatewayProvider ?
         */
       ))
@@ -170,9 +169,10 @@ class DeleteController @Inject()(
   }  
   /* ************** END TEMPORARY **************** */
   
-//  def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-//    laser.deleteLambda(res.id) map ( _ => () )
-//  }
+  def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+    // laserMethods.deleteLambda(res.id) map ( _ => () )
+    ???
+  }
 
   def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds): Try[Unit] = Try {
     

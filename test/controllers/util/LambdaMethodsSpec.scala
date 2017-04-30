@@ -262,6 +262,10 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       )(any)
     }
 
+    "delete against LambdaMethods deletes lambdas" in new TestApplication {
+      fail("write me")
+    }
+
   }
 
 }

@@ -8,7 +8,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
@@ -111,7 +111,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
       path        = path
     )
   }
-  
+
   def findGatewayProvider(api: GestaltResourceInstance): Try[GestaltResourceInstance] = Try {
       val prvder = Json.parse(api.properties.get("provider")).as[JsObject]
 
@@ -139,6 +139,10 @@ class GatewayMethods @Inject() ( ws: WSClient,
         "id"       -> location.toString,
         "location" -> location.toString)))
   }
+
+  def deleteApiHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = ???
+
+  def deleteEndpointHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = ???
 
   def patchEndpointHandler( r: GestaltResourceInstance,
                             patch: PatchDocument,
