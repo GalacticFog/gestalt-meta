@@ -8,11 +8,13 @@ import com.galacticfog.gestalt.laser.LaserEndpoint
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
+import mockws.{MockWS, Route}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.ValueCheck.typedValueCheck
@@ -20,9 +22,13 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.Json
+import play.api.libs.json.{JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.libs.ws.WSResponse
+import play.api.mvc._
+import play.api.mvc.Results._
 import play.api.test.PlaySpecification
+import play.api.mvc.BodyParsers.parse
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -46,10 +52,11 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
 
   sequential
 
-  abstract class FakeCaaSScope extends Scope {
+  abstract class FakeGatewayScope extends Scope {
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
+    val mockProviderMethods = mock[ProviderMethods]
     val injector =
       new GuiceApplicationBuilder()
         .disable[modules.ProdSecurityModule]
@@ -57,14 +64,15 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         .disable[modules.MetaDefaultServices]
         .disable[modules.HealthModule]
         .bindings(
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
+          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
+          bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
         )
         .injector
 
     val gatewayMethods = injector.instanceOf[GatewayMethods]
   }
-  
-  trait TestApplication extends FakeCaaSScope {
+
+  trait TestApplication extends FakeGatewayScope {
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
       "config" ->
         """{
@@ -76,6 +84,18 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           |  }
           |}""".stripMargin
     )))
+    val Success(testGatewayProvider) = createInstance(ResourceIds.GatewayManager, "test-gateway-provider", properties = Some(Map(
+      "config" ->
+        """{
+          |  "env": {
+          |     "public": {
+          |       "SERVICE_HOST": "gateway.service",
+          |       "SERVICE_PORT": "6473"
+          |     }
+          |  }
+          |}""".stripMargin
+    )))
+    val Success(testKongProvider) = createInstance(ResourceIds.KongGateway, "test-kong-provider", properties = None)
     val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
       "public" -> "true",
       "cpus" -> "0.1",
@@ -113,6 +133,64 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         "name" -> "nonexistent-provider-does-not-matter"
       ).toString
     )))
+
+    val Success(testApi) = createInstance(
+      ResourceIds.Api,
+      "test-api",
+      properties = Some(Map(
+        "provider" -> Json.obj(
+          "id" -> testGatewayProvider.id.toString,
+          "locations" -> Json.arr(testKongProvider.id.toString).toString
+        ).toString
+      ))
+    )
+
+    val Success(testEndpoint) = createInstance(
+      ResourceIds.ApiEndpoint,
+      "test-endpoint",
+      properties = Some(Map(
+        "resource"     -> "/original/path",
+        "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah"
+      )),
+      parent = Some(testApi.id)
+    )
+
+    val routeGetEndpoint = Route {
+      case (GET, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
+        Ok(
+          Json.toJson(LaserEndpoint(
+            id = Some(testEndpoint.id.toString),
+            apiId = testApi.id.toString,
+            upstreamUrl = "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+            path = "/original/path"
+          ))
+        )
+      }
+    }
+    var putBody: JsValue = null
+    val routePutEndpoint = Route {
+      case (PUT, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action(parse.json) { implicit request =>
+        putBody = request.body
+        Ok(
+          Json.obj("matters" -> "not")
+        )
+      }
+    }
+    val routeDeleteEndpoint = Route {
+      case (DELETE, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
+        Ok( Json.obj() )
+      }
+    }
+    val routeDeleteApi = Route {
+      case (DELETE, uri) if uri == s"http://gateway.service:6473/apis/${testApi.id}" => Action {
+        Ok( Json.obj() )
+      }
+    }
+    val ws = MockWS (routeGetEndpoint orElse routePutEndpoint orElse routeDeleteApi orElse routeDeleteEndpoint)
+    mockProviderMethods.configureWebClient(argThat(
+      (provider: GestaltResourceInstance) => provider.id == testGatewayProvider.id
+    ), any) returns new JsonClient(HostConfig("http", "gateway.service", Some(6473)), Some(ws))
+
   }
 
   "GatewayMethods" should {
@@ -243,6 +321,111 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         (e: Throwable) => (e must beAnInstanceOf[BadRequestException]) and (e.getMessage must contain("no container with id matching"))
       )
     }
+
+    "patch against api-gateway provider to an async lambda" in new TestApplication {
+      val newPath = "/new/path"
+      val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invoke"
+
+      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/resource",    newPath),
+          PatchOp.Replace("/properties/synchronous", false),
+          PatchOp.Replace("/properties/implementation_type", "lambda"),
+          PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
+        ),
+        user = user
+      )
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
+      updatedEndpoint.properties.get("synchronous") must_== "false"
+      updatedEndpoint.properties.get("implementation_type") must_== "lambda"
+      updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
+    }
+
+    "patch against api-gateway provider to a synchro lambda" in new TestApplication {
+
+      val newPath = "/new/path"
+      val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync"
+
+      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/resource",    newPath),
+          PatchOp.Replace("/properties/synchronous", true),
+          PatchOp.Replace("/properties/implementation_type", "lambda"),
+          PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
+        ),
+        user = user
+      )
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
+      updatedEndpoint.properties.get("synchronous") must_== "true"
+      updatedEndpoint.properties.get("implementation_type") must_== "lambda"
+      updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
+    }
+
+    "patch against api-gateway provider to a container" in new TestApplication {
+
+      val expUpstreamUrl = "http://my-nginx.service-address:80"
+      val newPath = "/new/path"
+
+      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/resource",    newPath),
+          PatchOp.Replace("/properties/implementation_type", "container"),
+          PatchOp.Replace("/properties/implementation_id", testContainer.id.toString),
+          PatchOp.Replace("/properties/container_port_name", "web")
+        ),
+        user = user
+      )
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "path").as[String] must_== newPath
+      (putBody \ "upstreamUrl").as[String] must_== expUpstreamUrl
+
+      updatedEndpoint.properties.get("upstream_url") must_== expUpstreamUrl
+      updatedEndpoint.properties.get("resource") must_== newPath
+      updatedEndpoint.properties.get("implementation_type") must_== "container"
+      updatedEndpoint.properties.get("implementation_id") must_== testContainer.id.toString
+    }
+
+    "delete against GatewayMethods deletes apis" in new TestApplication {
+      val Success(_) = gatewayMethods.deleteApiHandler(
+        r = testApi,
+        user = user
+      )
+      routeDeleteApi.timeCalled must_== 1
+    }
+
+    "delete against GatewayMethods deletes apiendpoints" in new TestApplication {
+      val Success(_) = gatewayMethods.deleteEndpointHandler(
+        r = testEndpoint,
+        user = user
+      )
+      routeDeleteEndpoint.timeCalled must_== 1
+    }
+
   }
 
 }

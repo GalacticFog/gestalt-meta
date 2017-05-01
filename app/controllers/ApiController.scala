@@ -55,7 +55,7 @@ class ApiController @Inject()(
     }
   }
   
-  def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: String)(
+  def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: UUID)(
       implicit request: SecuredRequest[JsValue]) = {
     
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {

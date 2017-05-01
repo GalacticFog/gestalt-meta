@@ -6,18 +6,17 @@ import java.util.UUID
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.json.Js
-import play.api.libs.json.{JsError, JsObject, JsSuccess, Json}
+import play.api.libs.json._
 import play.api.libs.ws.WSClient
 
 import scala.concurrent.{Await, Future}
 import scala.util.Try
 import scala.language.postfixOps
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.laser.LaserLambda
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import play.api.Logger
-import play.api.libs.json.JsValue
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.laser._
@@ -50,12 +49,12 @@ class LambdaMethods @Inject()( ws: WSClient,
       case "runtime" => lambda.copy(artifactDescription = artifact.copy(runtime = value.as[String]))
       case "compressed" => lambda.copy(artifactDescription = artifact.copy(compressed = value.as[Boolean]))
       case "handler" => lambda.copy(artifactDescription = artifact.copy(handler = value.as[String]))
-      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = Option(value.as[JsObject])))
+      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = value.asOpt[JsObject]))
       case _ => lambda
     }
   }
 
-  private[controllers] def getLambdaProvider(res: GestaltResourceInstance): GestaltResourceInstance = {
+  private[controllers] def getLambdaProvider(res: ResourceLike): GestaltResourceInstance = {
     (for {
       ps  <- res.properties
       pr  <- ps.get("provider")
@@ -63,6 +62,27 @@ class LambdaMethods @Inject()( ws: WSClient,
       prv <- ResourceFactory.findById(ResourceIds.LambdaProvider, UUID.fromString(pid.as[String]))
     } yield prv) getOrElse {
       throw new RuntimeException("Could not parse LambdaProvider ID from API.")
+    }
+  }
+
+  def deleteLambdaHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
+    log.debug("Finding lambda in backend system...")
+    val provider = getLambdaProvider(r)
+    val client = providerMethods.configureWebClient(provider, Some(ws))
+
+    // TODO: fdelete is never used, and this method returns a Try.success(()) even if fdelete (eventually) isFailure
+    val fdelete = client.delete(s"/lambdas/${r.id.toString}") map { result =>
+      log.info("Deleting API from Lambda backend...")
+      log.debug("Response from Lambda backend: " + result.body)
+    } recover {
+      case e: Throwable => {
+        log.error(s"Error deleting lambda from Lambda backend: " + e.getMessage)
+        throw e
+      }
+    }
+    Try {
+      Await.result(fdelete, LAMBDA_PROVIDER_TIMEOUT_MS millis)
+      ()
     }
   }
 
@@ -82,10 +102,12 @@ class LambdaMethods @Inject()( ws: WSClient,
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
     // Strip path to last component to get field name.
-    val ops = patch.ops collect {
-      case PatchOp(_,path,Some(value)) =>
+    val ops: Seq[(String,JsValue)] = patch.ops collect {
+      case PatchOp("add"|"replace",path,Some(value)) =>
         val fieldName = path.drop(path.lastIndexOf("/")+1)
         (fieldName -> value)
+      case PatchOp("remove","/properties/periodic_info",None) =>
+        ("periodic_info" -> JsNull)
     }
 
     val f = for {

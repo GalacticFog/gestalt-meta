@@ -33,6 +33,7 @@ import com.galacticfog.gestalt.json.Js
 class PatchController @Inject()( messagesApi: MessagesApi,
                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                  groupMethods: GroupMethods,
+                                 gatewayMethods: GatewayMethods,
                                  lambdaMethods: LambdaMethods,
                                  resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
@@ -54,6 +55,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> groupMethods.groupPatch,
     ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
+    ResourceIds.ApiEndpoint -> gatewayMethods.patchEndpointHandler,
     ResourceIds.Entitlement -> entitlementPatch
   )
   

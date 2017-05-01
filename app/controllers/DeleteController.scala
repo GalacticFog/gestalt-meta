@@ -45,6 +45,7 @@ class DeleteController @Inject()(
     providerManager: ProviderManager,
     providerMethods: ProviderMethods,
     gatewayMethods: GatewayMethods,
+    lambdaMethods: LambdaMethods,
     ws: WSClient
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
@@ -62,13 +63,11 @@ class DeleteController @Inject()(
         ResourceIds.User -> deleteExternalUser,
         ResourceIds.Group -> deleteExternalGroup,
         ResourceIds.Container -> deleteExternalContainer,
-        ResourceIds.Api -> deleteExternalApi,
-        ResourceIds.ApiEndpoint -> deleteExternalEndpoint
-      /*
-        ResourceIds.Lambda -> deleteExternalLambda,
-        ,
-        ,
-        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway
+        ResourceIds.Api -> gatewayMethods.deleteApiHandler,
+        ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
+        ResourceIds.Lambda -> lambdaMethods.deleteLambdaHandler
+        /*
+        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway TODO: what's up with this? why is the resource_type ApiGatewayProvider ?
         */
       ))
 
@@ -169,64 +168,8 @@ class DeleteController @Inject()(
     }    
   }  
   /* ************** END TEMPORARY **************** */
-  
-//  def deleteExternalLambda[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-//    laser.deleteLambda(res.id) map ( _ => () )
-//  }
 
-  def deleteExternalApi[A <: ResourceLike](res: A, account: AuthAccountWithCreds): Try[Unit] = Try {
-    
-    val provider = (for {
-      ps  <- res.properties
-      pr  <- ps.get("provider")
-      pid <- Js.find(Json.parse(pr).as[JsObject], "/id")
-      prv <- findById(ResourceIds.GatewayManager, UUID.fromString(pid.as[String]))
-    } yield prv) getOrElse {
-      
-      throw new RuntimeException("Could not parse GatewayManager ID from API.")
-    }
-
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-    // TODO: fdelete is never used, and this method returns a Try.success(()) even if fdelete (eventually) isFailure
-    val fdelete = client.delete(s"/apis/${res.id.toString}") map { result =>
-      log.info("Deleting API from GatewayManager...")
-      log.debug("Response from GatewayManager: " + result.body)
-    } recover {
-      case e: Throwable => {
-        log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
-        throw e
-      }
-    }
-    ()
-  }
-  
-  def deleteExternalEndpoint[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = Try {
-
-    val api = ResourceFactory.findParent(res.id) getOrElse {
-      throw new ResourceNotFoundException(s"Could not find parent API for endpoint: '${res.id}'")
-    }
-
-    val client = (for {
-      provider <- gatewayMethods.findGatewayProvider(api)
-      client = providerMethods.configureWebClient(provider, Some(ws))
-    } yield client) getOrElse {
-      throw new RuntimeException("Could not parse GatewayManager ID from API.")
-    }
-    
-    val uri = s"/apis/${api.id.toString}/endpoints/${res.id.toString}"
-    val fdelete = client.delete(uri) map { result =>
-      log.info("Deleting Endpoint from GatewayManager...")
-      log.debug("Response from GatewayManager: " + result.body)
-    } recover {
-      case e: Throwable => {
-        log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)
-        throw e
-      }
-    }
-    ()
-  }
-  
-//  def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
+  //  def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
 //    val externalId = res.properties.get("external_id")
 //    laser.deleteGateway(externalId) map ( _ => () )
 //  }
@@ -286,20 +229,6 @@ class DeleteController @Inject()(
     }
   }
 
-  /*
-   * TODO: This seems off - why are we using the environment configuration for
-   * lambda and gateway? This information should now come from the provider we
-   * are trying to delete. I think this works by accident - meaning, we're only
-   * working with a single provider at a time, so the env config is always "correct".
-   */
-//  lazy val gatewayConfig = HostConfig.make(new URL(EnvConfig.gatewayUrl))
-//  lazy val lambdaConfig  = HostConfig.make(new URL(EnvConfig.lambdaUrl))
-//  lazy val laser = new Laser(
-//    gatewayConfig, lambdaConfig, 
-//    Option(EnvConfig.securityKey), 
-//    Option(EnvConfig.securitySecret))
-  
-  
   def findResourceParent(child: UUID) = {
     ResourceFactory.findParent(child) getOrElse {
       /* TODO:
