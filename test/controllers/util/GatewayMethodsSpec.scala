@@ -155,7 +155,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       parent = Some(testApi.id)
     )
 
-    val routeGet = Route {
+    val routeGetEndpoint = Route {
       case (GET, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
         Ok(
           Json.toJson(LaserEndpoint(
@@ -168,7 +168,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       }
     }
     var putBody: JsValue = null
-    val routePut = Route {
+    val routePutEndpoint = Route {
       case (PUT, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action(parse.json) { implicit request =>
         putBody = request.body
         Ok(
@@ -176,7 +176,17 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         )
       }
     }
-    val ws = MockWS (routeGet orElse routePut)
+    val routeDeleteEndpoint = Route {
+      case (DELETE, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
+        Ok( Json.obj() )
+      }
+    }
+    val routeDeleteApi = Route {
+      case (DELETE, uri) if uri == s"http://gateway.service:6473/apis/${testApi.id}" => Action {
+        Ok( Json.obj() )
+      }
+    }
+    val ws = MockWS (routeGetEndpoint orElse routePutEndpoint orElse routeDeleteApi orElse routeDeleteEndpoint)
     mockProviderMethods.configureWebClient(argThat(
       (provider: GestaltResourceInstance) => provider.id == testGatewayProvider.id
     ), any) returns new JsonClient(HostConfig("http", "gateway.service", Some(6473)), Some(ws))
@@ -327,8 +337,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      routeGet.timeCalled must_== 1
-      routePut.timeCalled must_== 1
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
 
       (putBody \ "apiId").as[String] must_== testApi.id.toString
       (putBody \ "path").as[String] must_== newPath
@@ -357,8 +367,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      routeGet.timeCalled must_== 1
-      routePut.timeCalled must_== 1
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
 
       (putBody \ "apiId").as[String] must_== testApi.id.toString
       (putBody \ "path").as[String] must_== newPath
@@ -387,8 +397,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
         user = user
       )
 
-      routeGet.timeCalled must_== 1
-      routePut.timeCalled must_== 1
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
 
       (putBody \ "apiId").as[String] must_== testApi.id.toString
       (putBody \ "path").as[String] must_== newPath
@@ -401,11 +411,19 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
     }
 
     "delete against GatewayMethods deletes apis" in new TestApplication {
-      ko("write me")
+      val Success(_) = gatewayMethods.deleteApiHandler(
+        r = testApi,
+        user = user
+      )
+      routeDeleteApi.timeCalled must_== 1
     }
 
     "delete against GatewayMethods deletes apiendpoints" in new TestApplication {
-      ko("write me")
+      val Success(_) = gatewayMethods.deleteEndpointHandler(
+        r = testEndpoint,
+        user = user
+      )
+      routeDeleteEndpoint.timeCalled must_== 1
     }
 
   }
