@@ -54,7 +54,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
 
-  private[controllers] def getLambdaProvider(res: GestaltResourceInstance): GestaltResourceInstance = {
+  private[controllers] def getLambdaProvider(res: ResourceLike): GestaltResourceInstance = {
     (for {
       ps  <- res.properties
       pr  <- ps.get("provider")
@@ -65,7 +65,26 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
 
-  def deleteLambdaHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = ???
+  def deleteLambdaHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
+    log.debug("Finding lambda in backend system...")
+    val provider = getLambdaProvider(r)
+    val client = providerMethods.configureWebClient(provider, Some(ws))
+
+    // TODO: fdelete is never used, and this method returns a Try.success(()) even if fdelete (eventually) isFailure
+    val fdelete = client.delete(s"/lambdas/${r.id.toString}") map { result =>
+      log.info("Deleting API from Lambda backend...")
+      log.debug("Response from Lambda backend: " + result.body)
+    } recover {
+      case e: Throwable => {
+        log.error(s"Error deleting lambda from Lambda backend: " + e.getMessage)
+        throw e
+      }
+    }
+    Try {
+      Await.result(fdelete, LAMBDA_PROVIDER_TIMEOUT_MS millis)
+      ()
+    }
+  }
 
   def patchLambdaHandler(
       r: GestaltResourceInstance,

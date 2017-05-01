@@ -263,7 +263,21 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
     }
 
     "delete against LambdaMethods deletes lambdas" in new TestApplication {
-      fail("write me")
+      mockJsonClient.delete(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
+        val mockResp = mock[WSResponse]
+        mockResp.status returns 200
+      })
+
+      val Success(_) = lambdaMethods.deleteLambdaHandler(
+        r = testLambda,
+        user = user
+      )
+
+      there was one(mockJsonClient).delete(
+        uri = meq(s"/lambdas/${testLambda.id}"),
+        hdrs = any,
+        timeout = any
+      )(any)
     }
 
   }
