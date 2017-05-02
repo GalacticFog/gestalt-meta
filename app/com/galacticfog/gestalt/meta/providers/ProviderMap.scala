@@ -105,10 +105,13 @@ object ProviderMap {
    * Replace the [properties.config] for a given resource with the given ProviderEnv.
    */
   def replaceEnvironmentConfig(r: GestaltResourceInstance, env: ProviderEnv): Try[GestaltResourceInstance] = Try{
-    val newconfig = Json.obj("env" -> Json.toJson(env)).toString
-    val newprops = (r.properties.get - "config") ++ Map("config" -> newconfig)
-    val out = r.copy(properties = Some(newprops))
-    out
+    val props = r.properties.getOrElse(Map.empty)
+    val oldconfig = Json.parse(props.getOrElse("config", "{}")).as[JsObject]
+    val newconfig = oldconfig ++ Json.obj(
+      "env" -> Json.toJson(env)
+    )
+    val newprops = props.updated("config", newconfig.toString)
+    r.copy(properties = Some(newprops))
   }
   
   def parseEnvironment(r: GestaltResourceInstance): Option[ProviderEnv] = {
