@@ -2,6 +2,7 @@ package controllers
 
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.providers.{ProviderEnv, ProviderMap}
 import com.galacticfog.gestalt.meta.test._
 import controllers.util.{ContainerService, GestaltProviderMocking}
 import org.specs2.matcher.JsonMatchers
@@ -54,7 +55,22 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       t
     }    
   }
-//  abstract class TestApplication extends UseData(containerApp())
+
+  "Meta Controller" should {
+    "preserve additional provider config in .properties.config when linking containers" in new TestApplication {
+      val Success(testProvider) = createInstance(ResourceIds.DcosProvider, "test-provider",
+        parent = Option(dummyRootOrgId),
+        properties = Option(Map(
+          "parent" -> "{}",
+          "config" -> """{"env": "{}", "external_protocol": "https", "another_field": "blah"}"""
+        )))
+      val meta = injector.instanceOf[Meta]
+      val Success(updatedProvider) = meta.saveProvider(ProviderMap(testProvider),ProviderEnv(None,None),adminUserId)
+      updatedProvider.properties.get("config") must /("external_protocol" -> "https")
+      updatedProvider.properties.get("config") must /("another_field" -> "blah")
+    }
+  }
+
   "Kubernetes providers" should {
 
     "be created with a \"default\" network" in new TestApplication {
