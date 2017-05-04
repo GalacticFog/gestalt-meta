@@ -51,7 +51,8 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
       account = account,
       groups = groups,
       rights = Seq(),
-      orgId = orgId
+      orgId = orgId,
+      extraData = None
     )
   }
 
@@ -79,7 +80,9 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
       groups = groups,
       rights = Seq(),
       orgId = orgId,
-      creds = creds)
+      creds = creds,
+      extraData = None
+    )
   }
 
   def fakeSecurityEnvironment(
