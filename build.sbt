@@ -83,7 +83,7 @@ libraryDependencies ++= Seq(
   	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.11" withSources(),
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.4" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
   	"net.codingwell"  %% "scala-guice" 					 % "4.1.0",
@@ -95,7 +95,7 @@ libraryDependencies ++= Seq(
 		
 	//"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
 	
-	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.3" withSources(),
+	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.5" withSources(),
 
   "org.scalikejdbc" %% "scalikejdbc-config"           % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer" % "2.5.1",
