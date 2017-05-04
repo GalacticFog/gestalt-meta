@@ -10,7 +10,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
 import play.api.routing.Router.Tags
 
-protected[util] case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long])
+protected[util] case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long], requestId: Long)
 
 protected[util] object LoggingFilter extends Filter {
   
@@ -36,15 +36,15 @@ protected[util] object LoggingFilter extends Filter {
         requestHeader.uri)
       
       val requestTime = System.currentTimeMillis - startTime
-      
-      log.debug ( Json.prettyPrint ( Json.toJson (
-        TraceLog(
-          requestHeader.method,
-          requestUrl, 
-          fqAction,
-          result.header.status,
-          Some(requestTime))
-      )))
+
+      log.debug ( Json.prettyPrint ( Json.toJson ( TraceLog(
+        requestHeader.method,
+        requestUrl,
+        fqAction,
+        result.header.status,
+        Some(requestTime),
+        requestHeader.id
+      ))))
       
       result.withHeaders("Request-Time" -> requestTime.toString)
     }
