@@ -88,7 +88,7 @@ object ContainerService {
       policyTarget = Option(container),
       data = Option(Map(
         "fqon"           -> fqon,
-        "meta_url"       -> metaUrl,
+        "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
         "environment_id" -> env.toString,
         "provider_id"    -> providerQueryParam(queryString).get.toString)))
 
