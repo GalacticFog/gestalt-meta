@@ -135,7 +135,7 @@ class ApiController @Inject()(
 
       metaCreate match {
         case Failure(e) => {
-          log.error("Failed creating Endpoint in Meta")
+          log.error("Failed creating Endpoint in Meta",e)
           HandleExceptionsAsync(e)
         }
         case Success((metaEndpoint, gmEndpoint)) => {
