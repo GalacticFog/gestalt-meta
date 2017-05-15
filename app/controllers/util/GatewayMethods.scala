@@ -152,28 +152,23 @@ class GatewayMethods @Inject() ( ws: WSClient,
   }
 
   def deleteApiHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
-
-    val client = (for {
-      provider <- findGatewayProvider(r)
+    val fdelete = (for {
+      provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))
-    } yield client) getOrElse {
-      throw new RuntimeException("Could not parse GatewayManager ID from API.")
-    }
-
-    val fdelete = client.delete(s"/apis/${r.id}") map { result =>
-      log.info("Deleting API from GatewayManager...")
-      log.debug("Response from GatewayManager: " + result.body)
-    } recover {
+      _ = log.info("Deleting API from GatewayManager...")
+      delResult <-  client.delete(s"/apis/${r.id}")
+    } yield delResult) recover {
       case e: Throwable => {
         log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
         throw e
       }
     }
+
     Try {
-      Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
+      val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
+      log.debug("Response from GatewayManager: " + res.body)
       ()
     }
-
   }
 
   def deleteEndpointHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
