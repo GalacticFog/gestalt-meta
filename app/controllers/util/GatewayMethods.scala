@@ -2,6 +2,7 @@ package controllers.util
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -112,19 +113,29 @@ class GatewayMethods @Inject() ( ws: WSClient,
     )
   }
 
-  def findGatewayProvider(api: ResourceLike): Try[GestaltResourceInstance] = Try {
-      val prvder = Json.parse(api.properties.get("provider")).as[JsObject]
+  def findGatewayProvider(api: ResourceLike): Try[GestaltResourceInstance] = for {
+      apiProps <- api.properties.fold[Try[data.Hstore]] {
+        Failure{unprocessable("API resource missing properties Hstore")}
+      }(Success(_))
 
-      val pid = Js.find(prvder, "/id").fold {
-        unprocessable("Missing required property [properties.provider.id]")
-      }{ js => UUID.fromString(js.as[String]) }
+      providerProps <- apiProps.get("provider").fold[Try[JsObject]] {
+        Failure{unprocessable("API resource missing required property [properties.provider]")}
+      }{
+        jsonStr => Try{ Json.parse(jsonStr).as[JsObject]}
+      }
 
-      log.debug("Parsed provider ID from API for endpoint: " + pid)
+      pid <- Js.find(providerProps, "/id").fold[Try[UUID]] {
+        Failure{unprocessable("Missing required property [properties.provider.id]")}
+      }{
+        js => Try{ UUID.fromString(js.as[String]) }
+      }
 
-      ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold {
-        unprocessable(s"GatewayManager provider with ID '$pid' not found")
-      }{ gateway => gateway }    
-  }
+      _ = log.debug("Parsed provider ID from API for endpoint: " + pid)
+
+      provider <- ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold[Try[GestaltResourceInstance]] {
+        Failure{unprocessable(s"GatewayManager provider with ID '$pid' not found")}
+      }(Success(_))
+  } yield provider
 
   def toGatewayApi(api: JsObject, location: UUID) = {
     val name = Js.find(api.as[JsObject], "/name") match {
@@ -175,9 +186,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }
       provider <- findGatewayProvider(api)
       client = providerMethods.configureWebClient(provider, Some(ws))
-    } yield client) getOrElse {
-      throw new RuntimeException("Could not parse GatewayManager ID from API.")
-    }
+    } yield client) get
 
     val uri = s"/endpoints/${r.id}"
     val fdelete = client.delete(uri) map { result =>
