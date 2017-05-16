@@ -113,13 +113,13 @@ class GatewayMethods @Inject() ( ws: WSClient,
     )
   }
 
-  def findGatewayProvider(api: ResourceLike): Try[GestaltResourceInstance] = for {
-      apiProps <- api.properties.fold[Try[data.Hstore]] {
-        Failure{unprocessable("API resource missing properties Hstore")}
+  def findGatewayProvider(r: ResourceLike): Try[GestaltResourceInstance] = for {
+      apiProps <- r.properties.fold[Try[data.Hstore]] {
+        Failure{unprocessable("API/Endpoint resource missing properties Hstore")}
       }(Success(_))
 
       providerProps <- apiProps.get("provider").fold[Try[JsObject]] {
-        Failure{unprocessable("API resource missing required property [properties.provider]")}
+        Failure{unprocessable("API/Endpoint resource missing required property [properties.provider]")}
       }{
         jsonStr => Try{ Json.parse(jsonStr).as[JsObject]}
       }
@@ -130,7 +130,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
         js => Try{ UUID.fromString(js.as[String]) }
       }
 
-      _ = log.debug("Parsed provider ID from API for endpoint: " + pid)
+      _ = log.debug("Parsed provider ID from API/Endpoint for endpoint: " + pid)
 
       provider <- ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold[Try[GestaltResourceInstance]] {
         Failure{unprocessable(s"GatewayManager provider with ID '$pid' not found")}
@@ -172,29 +172,21 @@ class GatewayMethods @Inject() ( ws: WSClient,
   }
 
   def deleteEndpointHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
-
-    val client = (for {
-      api <- Try {
-        ResourceFactory.findParent(r.id) getOrElse {
-          throw new ResourceNotFoundException(s"Could not find parent API for endpoint: '${r.id}'")
-        }
-      }
-      provider <- findGatewayProvider(api)
+    val fdelete = (for {
+      provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))
-    } yield client) get
-
-    val uri = s"/endpoints/${r.id}"
-    val fdelete = client.delete(uri) map { result =>
-      log.info("Deleting Endpoint from GatewayManager...")
-      log.debug("Response from GatewayManager: " + result.body)
-    } recover {
+      _ = log.info("Deleting Endpoint from GatewayManager...")
+      fdelete <- client.delete(s"/endpoints/${r.id}")
+    } yield fdelete) recover {
       case e: Throwable => {
         log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)
         throw e
       }
     }
+
     Try {
-      Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
+      val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
+      log.debug("Response from GatewayManager: " + res.body)
       ()
     }
   }

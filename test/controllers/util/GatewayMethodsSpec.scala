@@ -150,7 +150,11 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       "test-endpoint",
       properties = Some(Map(
         "resource"     -> "/original/path",
-        "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah"
+        "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+        "provider" -> Json.obj(
+          "id" -> testGatewayProvider.id.toString,
+          "locations" -> Json.arr(testKongProvider.id.toString).toString
+        ).toString
       )),
       parent = Some(testApi.id)
     )
