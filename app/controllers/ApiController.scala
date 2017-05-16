@@ -98,12 +98,8 @@ class ApiController @Inject()(
       }
     }
   }
-  
-  
-  def putApi(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }  
-  
+
+
   def postApiEndpoint(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
 
     ResourceFactory.findById(ResourceIds.Api, api).fold {
@@ -115,22 +111,25 @@ class ApiController @Inject()(
 
       log.info("Creating Endpoint in Meta...")
 
-      def addUpstreamUrl(json: JsValue, upstreamUrl: String): Try[JsObject] = {
-        val urlAdder = (__ \ 'properties).json.update(
-          __.read[JsObject].map{ o => o ++ Json.obj( "upstream_url" -> upstreamUrl ) }
+      def addUpstreamUrlAndProvider(json: JsValue, upstreamUrl: String, provider: JsObject): Try[JsObject] = {
+        val propAdder = (__ \ 'properties).json.update(
+          __.read[JsObject].map{ o =>
+            o ++ Json.obj( "upstream_url" -> upstreamUrl ) ++ Json.obj( "provider" -> provider )
+          }
         )
-        json.transform(urlAdder) match {
+        json.transform(propAdder) match {
           case JsSuccess(o,_) => Success(o)
-          case JsError(_) => Failure(new RuntimeException("unable to add upstream_url to ApiEndpoint resource"))
+          case JsError(_) => Failure(new RuntimeException("unable to add 'upstream_url' and 'provider' to ApiEndpoint resource"))
         }
       }
 
       val org = fqid(fqon)
       val metaCreate = for {
+        apiProvider <- Try{Json.parse(a.properties.get("provider")).as[JsObject]}
         p <- validateNewEndpoint(request.body, a)
         ep <- gatewayMethods.toGatewayEndpoint(p, api)
-        pWithUpstream <- addUpstreamUrl(p, ep.upstreamUrl)
-        r <- CreateResource(org, caller, pWithUpstream, ResourceIds.ApiEndpoint, Some(api))
+        pWithAddlProps <- addUpstreamUrlAndProvider(p, ep.upstreamUrl, apiProvider)
+        r <- CreateResource(org, caller, pWithAddlProps, ResourceIds.ApiEndpoint, Some(api))
       } yield (r, ep)
 
       metaCreate match {
