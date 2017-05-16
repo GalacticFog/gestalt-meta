@@ -115,11 +115,11 @@ class GatewayMethods @Inject() ( ws: WSClient,
 
   def findGatewayProvider(r: ResourceLike): Try[GestaltResourceInstance] = for {
       apiProps <- r.properties.fold[Try[data.Hstore]] {
-        Failure{unprocessable("API/Endpoint resource missing properties Hstore")}
+        Failure{unprocessable("API/endpoint resource missing properties Hstore")}
       }(Success(_))
 
       providerProps <- apiProps.get("provider").fold[Try[JsObject]] {
-        Failure{unprocessable("API/Endpoint resource missing required property [properties.provider]")}
+        Failure{unprocessable("API/endpoint resource missing required property [properties.provider]")}
       }{
         jsonStr => Try{ Json.parse(jsonStr).as[JsObject]}
       }
@@ -130,7 +130,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
         js => Try{ UUID.fromString(js.as[String]) }
       }
 
-      _ = log.debug("Parsed provider ID from API/Endpoint for endpoint: " + pid)
+      _ = log.debug(s"Parsed provider ID from API/endpoint: " + pid)
 
       provider <- ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold[Try[GestaltResourceInstance]] {
         Failure{unprocessable(s"GatewayManager provider with ID '$pid' not found")}
