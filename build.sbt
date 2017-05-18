@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.17"
+version := "0.6.18"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -80,7 +80,7 @@ libraryDependencies ++= Seq(
 
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.22" withSources(),
 
-  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.11" withSources(),
+  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.12" withSources(),
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
