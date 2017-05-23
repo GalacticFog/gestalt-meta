@@ -21,15 +21,8 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
 
   private[this] val log = Logger(this.getClass)
 
-  def listApplicationsInEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
-    listApplicationsInEnvironmentJSON(fqon, wrkName, envName) map (_.flatMap(MarathonClient.marathon2Container))
-  }
-
-  /**
-    * Returns the raw json from Marathon
-   **/
-  def listApplicationsInEnvironmentJSON(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[JsObject]] = {
-    val groupId = MarathonClient.metaContextToMarathonGroup(fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
+  def listApplicationsInEnvironment(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
+    val groupId = metaContextToMarathonAppGroup(groupPrefix, fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
     val allApps = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks").get()
     allApps map { marResp =>
       marResp.status match {
@@ -37,7 +30,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
         case 200 => (marResp.json \ "apps").as[Seq[JsObject]]
         case _ => throw new RuntimeException("unexpected return from Marathon REST API")
       }
-    }
+    } map (_.flatMap(MarathonClient.marathon2Container))
   }
 
   def getApplicationByAppId(appId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
@@ -149,10 +142,6 @@ case object MarathonClient {
       tasksUnhealthy = tasksUnhealthy,
       taskStats = tasks
     )
-  }
-
-  def metaContextToMarathonGroup(fqon: String, wrkName: String, envName: String): String = {
-    (fqon.toLowerCase.split('.').foldLeft("")(_ + "/" + _) + "/" + wrkName.replace(".","").replace("/","-").toLowerCase + "/" + envName.replace(".","").replace("/","-")).replace(" ","-").toLowerCase
   }
 
 }
