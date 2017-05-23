@@ -75,14 +75,14 @@ case object ContainerSpec extends Spec {
                            name: Option[String] = None,
                            locations: Option[Seq[String]] = None)
 
-  // TODO: Marathon health checks require a port index, to specify which port the check is run against
   // ours aren't well defined without something similar, like a label
-  case class HealthCheck(protocol: String,
-                         path: String,
-                         grace_period_seconds: Int = 300,
-                         interval_seconds: Int = 60,
-                         timeout_seconds: Int = 10,
-                         max_consecutive_failures: Int = 3)
+  case class HealthCheck( protocol: String,
+                          path: String,
+                          grace_period_seconds: Int = 300,
+                          interval_seconds: Int = 60,
+                          timeout_seconds: Int = 10,
+                          max_consecutive_failures: Int = 3,
+                          port_index: Option[Int] = None )
   
   def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
