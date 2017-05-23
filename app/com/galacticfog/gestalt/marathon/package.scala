@@ -380,20 +380,36 @@ package object marathon {
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonLaunchPayload(fqon: String, workspaceName: String, environmentName: String, name: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(uncheckedFQON: String, uncheckedWrkName: String, uncheckedEnvName: String, uncheckedCntrName: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+
+    val validMarathonPathComponent = "([a-z]+(-[a-z0-9]+)*[a-z0-9]*)".r
+    def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
+    def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
+    def getProviderProperty[T](propName: String)(implicit rds: Reads[T]): Option[T] = for {
+      providerProps <- provider.properties
+      configStr <- providerProps.get("config")
+      config <- Try{Json.parse(configStr)}.toOption
+      prop <- (config \ propName).validate[T] match {
+        case JsSuccess(p,_) => Some(p)
+        case JsError(_) => None
+      }
+    } yield prop
+
+    val fqon = validate(uncheckedFQON) getOrElse {invalid("'fqon'")}
+    val wrkName = validate(uncheckedWrkName) getOrElse {invalid("'workspaceName'")}
+    val envName = validate(uncheckedEnvName) getOrElse {invalid("'environmentName'")}
+    val cntrName = validate(uncheckedCntrName.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'containerName'")}
+    val appPrefix = for {
+      prefix <- getProviderProperty[String]("appGroupPrefix")
+      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.nonEmpty)
+      splitPrefix = cleanPrefix.split("/")
+      validatedParts = splitPrefix.map(validate(_).getOrElse(invalid("provider 'appGroupPrefix'"))).mkString("/")
+    } yield validatedParts
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
     val providerNetworkNames = (for {
-      providerProps <- provider.properties
-      configStr <- providerProps.get("config")
-      config <- Try{Json.parse(configStr)}.toOption
-      networks <- (config \ "networks").validate[Seq[JsObject]] match {
-        case JsSuccess(list,_) => Some(list)
-        case JsError(_) =>
-          log.warn("error parsing network list to Seq[JsObject]")
-          None
-      }
+      networks <- getProviderProperty[Seq[JsObject]]("networks")
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
     log.debug("found provider networks" + providerNetworkNames)
@@ -421,7 +437,9 @@ package object marathon {
       } yield Map("VIP_0" -> s"${vip}:${sp}")) getOrElse Map.empty
     )
 
-    val namedVIP = "/" + (Array(name.stripPrefix("/").stripSuffix("/"),environmentName,workspaceName) ++ fqon.split('.').reverse).mkString(".")
+    val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName,cntrName)
+    val namedVIP = "/" + nameComponents.reverse.mkString(".")
+    val appId = "/" + nameComponents.mkString("/")
 
     def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo], Option[Seq[AppUpdate.PortDefinition]]) = {
       val requestedNetwork = props.network.map(_.trim) getOrElse ""
@@ -489,7 +507,7 @@ package object marathon {
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
     AppUpdate(
-      id = None,
+      id = Some(appId),
       container = Some(container),
       constraints = if (props.constraints.nonEmpty) Some(props.constraints.map(
         _.split(":") match {

@@ -67,7 +67,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       pm.virtual_hosts.isDefined && pm.virtual_hosts.get.nonEmpty
     
     def makeVhostLabels(mappings: Seq[PortMapping], acc: Map[String,String], index: Int): Map[String,String] = {
-      println(s"***Entered makeVhostLabels(_,_,$index)")
+      log.debug(s"***Entered makeVhostLabels(_,_,$index)")
       mappings match {
         case Nil => acc
         case portmap :: tail => {
@@ -80,27 +80,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val vhosts = getMetaPortMappings(container) filter { usesVirtualHost(_) }    
     val finalLabels = makeVhostLabels(vhosts, Map.empty, 0) ++ Map("HAPROXY_GROUP" -> "external")
     
-    println("*****FINAL LABELS*****")
-    println(finalLabels)
-    
-//    def mkvhostlabel(host: String, index: Int) = {
-//      val key = "HAPROXY_%d_VHOST".format(index)
-//      Map(key -> host)
-//    }
-//    
-//    def getvhostlabels(hosts: Seq[String], acc: Map[String,String], index: Int): Map[String,String] = {
-//      val out = hosts match {
-//        case Nil => acc
-//        case h :: t => {
-//          getvhostlabels(t, mkvhostlabel(h, index) ++ acc, index+1)
-//        }
-//      }
-//      out ++ Map("HAPROXY_GROUP" -> "external")
-//    }
-    
-    /*
-     * if labels.nonempty - patch labels into container spec.
-     */
+    log.debug("*****FINAL LABELS*****")
+    log.debug(finalLabels.toString)
     
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
@@ -114,14 +95,14 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
           container.copy(properties = Some(newprops))
         }
         
-        println("Marathon Spec Labels : " + labels)
-        println("Meta Spec Labels     : " + metaSpecResource.properties.get("labels"))
+        log.debug("Marathon Spec Labels : " + labels)
+        log.debug("Meta Spec Labels     : " + metaSpecResource.properties.get("labels"))
         
         val marathonApp = toMarathonLaunchPayload(
-          fqon = context.fqon,
-          workspaceName = context.workspace.name,
-          environmentName = context.environment.name,
-          name = container.name,
+          uncheckedFQON = context.fqon,
+          uncheckedWrkName = context.workspace.name,
+          uncheckedEnvName = context.environment.name,
+          uncheckedCntrName = container.name,
           props = marathonSpec,
           provider = context.provider
         )
@@ -133,10 +114,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         log.debug(Json.prettyPrint(marathonAppCreatePayload))
 
         val output = marathonClientFactory.getClient(context.provider).launchApp(
-          fqon = context.fqon,
-          wrkName = context.workspace.name,
-          envName = context.environment.name,
-          name = spec.name,
           marPayload = marathonAppCreatePayload
         ).transform( updateSuccessfulLaunch(metaSpecResource), updateFailedLaunch(metaSpecResource) )
         
@@ -211,7 +188,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   private[services] def updateServiceAddresses(marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
     val clusterid = ".marathon.l4lb.thisdcos.directory"
     val VIPLabel = "VIP_([0-9]+)".r
-    val VIPValue = "/([^:]+):(\\d+)".r
+    val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
     val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
       case Some("BRIDGE") =>
