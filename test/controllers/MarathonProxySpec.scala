@@ -232,6 +232,31 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       }
     }
 
+    "handle portIndex for health checks" in {
+      val provider = marathonProviderWithStdNetworks
+      val name = "/some/app/id"
+      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80) , name = Some("http")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
+        ),
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "tcp",
+            path = "/",
+            port_index = Some(1)
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.healthChecks.get(0).portIndex must beSome(1)
+    }
+
     "add default upgradeStrategy for persistent volumes" in {
       val provider = marathonProviderWithStdNetworks
       val name = "/some/app/id"

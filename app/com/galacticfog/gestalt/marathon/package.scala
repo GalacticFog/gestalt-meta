@@ -512,7 +512,7 @@ package object marathon {
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),
-        portIndex = None, // TODO: don't know how to define this
+        portIndex = hc.port_index,
         gracePeriodSeconds = Some(hc.grace_period_seconds),
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
