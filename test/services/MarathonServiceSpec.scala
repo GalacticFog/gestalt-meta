@@ -145,7 +145,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      mockMarClient.launchApp(any, any, any, any, any)(any) returns Future.successful(Json.parse(
+      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
           |{
           |    "acceptedResourceRoles": null,
@@ -274,10 +274,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       there was atLeastOne(mockMCF).getClient(testProvider)
 
       there was one(mockMarClient).launchApp(
-        meq("root"),
-        meq(testWork.name),
-        meq(testEnv.name),
-        meq("test-container"),
         hasExactlyContainerPorts(
           marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
           marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
@@ -355,7 +351,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      mockMarClient.launchApp(any, any, any, any, any)(any) returns Future.successful(Json.parse(
+      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
           |{
           |    "acceptedResourceRoles": null,
@@ -454,10 +450,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       there was atLeastOne(mockMCF).getClient(testProvider)
 
       there was one(mockMarClient).launchApp(
-        meq("root"),
-        meq(testWork.name),
-        meq(testEnv.name),
-        meq("test-container"),
         hasExactlyPortDefs(
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
