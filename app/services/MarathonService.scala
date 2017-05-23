@@ -49,7 +49,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       log.debug("Entered updateSuccessfulLaunch(...)")
       val marathonAppId = (marathonResponse \ "id").as[String]
       // This parses the marathon VIP labels into meta port_mapping.service_address
-      val updated = updateServiceAddresses(marathonResponse, resource /*container*/)
+      val updated = updateServiceAddresses(marathonResponse, resource)
       upsertProperties(updated,
         "external_id" -> marathonAppId,
         "status" -> "LAUNCHED"
@@ -57,6 +57,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
     
     def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
+      // TODO: this has no side-effect
       val updatedResource = upsertProperties(resource,
         "status" -> "LAUNCH_FAILED"
       )
@@ -87,7 +88,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
         
-        val labels = spec.labels ++ finalLabels //getvhostlabels(vhosts.flatten, Map.empty, 0)
+        val labels = spec.labels ++ finalLabels
         val marathonSpec = spec.copy(labels = labels)
         val metaSpecResource = {
           val oldprops = container.properties.get
@@ -165,7 +166,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    marathonClientFactory.getClient(context.provider).listApplicationsInEnvironment(context.fqon, context.workspace.name, context.environment.name)
+    val prefix = getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
+    marathonClientFactory.getClient(context.provider).listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
   }
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {

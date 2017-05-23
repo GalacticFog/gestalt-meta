@@ -233,7 +233,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     def providerWithPrefix(prefix: Option[String]) = {
       val p = mock[GestaltResourceInstance]
       val config = prefix.fold(Json.obj())(pre => Json.obj(
-        "appGroupPrefix" -> pre
+        APP_GROUP_PREFIX_PROP -> pre
       ))
       p.properties returns Some(Map(
         "config" -> config.toString

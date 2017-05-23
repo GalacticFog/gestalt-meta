@@ -2,17 +2,13 @@ package controllers.util
 
 import java.util.UUID
 
-import play.api.libs.ws.WS
-import play.api.Play.current
 import play.api.libs.json._
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds

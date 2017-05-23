@@ -1,6 +1,6 @@
 package com.galacticfog.gestalt
  
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import org.joda.time.DateTimeZone
 import play.api.data.validation.ValidationError
@@ -10,9 +10,9 @@ import scala.util.Try
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
-import play.api.{ Logger => log }
-import play.api.libs.json.Reads._        // Custom validation helpers
-import play.api.libs.functional.syntax._ // Combinator syntax
+import play.api.{Logger => log}
+import play.api.libs.json.Reads._
+import play.api.libs.functional.syntax._
 import com.galacticfog.gestalt.json.Js
 
 package object marathon {
@@ -21,6 +21,8 @@ package object marathon {
     minimumHealthCapacity = 0.5,
     maximumOverCapacity = 0.0
   )
+
+  val APP_GROUP_PREFIX_PROP = "appGroupPrefix"
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
@@ -376,6 +378,24 @@ package object marathon {
     ))
   }
 
+  def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
+    providerProps <- provider.properties
+    configStr <- providerProps.get("config")
+    config <- Try{Json.parse(configStr)}.toOption
+    prop <- (config \ propName).validate[T] match {
+      case JsSuccess(p,_) => Some(p)
+      case JsError(_) => None
+    }
+  } yield prop
+
+  def metaContextToMarathonAppGroup(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String): String = {
+    val appPrefix = for {
+      prefix <- groupPrefix
+      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.nonEmpty)
+    } yield cleanPrefix
+    val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName)
+    "/" + nameComponents.mkString("/")
+  }
 
   /**
    * Convert Meta Container JSON to Marathon App object.
@@ -385,31 +405,22 @@ package object marathon {
     val validMarathonPathComponent = "([a-z]+(-[a-z0-9]+)*[a-z0-9]*)".r
     def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
     def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
-    def getProviderProperty[T](propName: String)(implicit rds: Reads[T]): Option[T] = for {
-      providerProps <- provider.properties
-      configStr <- providerProps.get("config")
-      config <- Try{Json.parse(configStr)}.toOption
-      prop <- (config \ propName).validate[T] match {
-        case JsSuccess(p,_) => Some(p)
-        case JsError(_) => None
-      }
-    } yield prop
 
     val fqon = validate(uncheckedFQON) getOrElse {invalid("'fqon'")}
     val wrkName = validate(uncheckedWrkName) getOrElse {invalid("'workspaceName'")}
     val envName = validate(uncheckedEnvName) getOrElse {invalid("'environmentName'")}
     val cntrName = validate(uncheckedCntrName.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'containerName'")}
     val appPrefix = for {
-      prefix <- getProviderProperty[String]("appGroupPrefix")
+      prefix <- getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
-      validatedParts = splitPrefix.map(validate(_).getOrElse(invalid("provider 'appGroupPrefix'"))).mkString("/")
-    } yield validatedParts
+      validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
+    } yield validatedAppPrefix
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
     val providerNetworkNames = (for {
-      networks <- getProviderProperty[Seq[JsObject]]("networks")
+      networks <- getProviderProperty[Seq[JsObject]](provider, "networks")
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
     log.debug("found provider networks" + providerNetworkNames)
