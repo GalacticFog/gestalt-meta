@@ -305,22 +305,94 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       payload(Some("/prefix/in-two-parts/")).id must beSome("/prefix/in-two-parts/org/wrk/env/name")
     }
 
-    "neglect provider appId prefix in missing from provider" in {
+    "use provider appId prefix if one exists (starting with number)" in {
+      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      payload(Some("123")).id must   beSome("/123/org/wrk/env/name")
+      payload(Some("/123")).id must  beSome("/123/org/wrk/env/name")
+      payload(Some("/123/")).id must beSome("/123/org/wrk/env/name")
+      payload(Some("123/")).id must  beSome("/123/org/wrk/env/name")
+    }
+
+    "use provider appId prefix if one exists (includes dots)" in {
+      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      payload(Some("blah.com")).id must   beSome("/blah.com/org/wrk/env/name")
+      payload(Some("/blah.com")).id must  beSome("/blah.com/org/wrk/env/name")
+      payload(Some("/blah.com/")).id must beSome("/blah.com/org/wrk/env/name")
+      payload(Some("blah.com/")).id must  beSome("/blah.com/org/wrk/env/name")
+
+      payload(Some("test.blah.com")).id must   beSome("/test.blah.com/org/wrk/env/name")
+      payload(Some("/test.blah.com")).id must  beSome("/test.blah.com/org/wrk/env/name")
+      payload(Some("/test.blah.com/")).id must beSome("/test.blah.com/org/wrk/env/name")
+      payload(Some("test.blah.com/")).id must  beSome("/test.blah.com/org/wrk/env/name")
+    }
+
+    "use provider appId prefix if one exists (includes dashes and double-dashes)" in {
+      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      payload(Some("blah-com")).id must   beSome("/blah-com/org/wrk/env/name")
+      payload(Some("/blah-com")).id must  beSome("/blah-com/org/wrk/env/name")
+      payload(Some("/blah-com/")).id must beSome("/blah-com/org/wrk/env/name")
+      payload(Some("blah-com/")).id must  beSome("/blah-com/org/wrk/env/name")
+
+      payload(Some("test-blah-com")).id must   beSome("/test-blah-com/org/wrk/env/name")
+      payload(Some("/test-blah-com")).id must  beSome("/test-blah-com/org/wrk/env/name")
+      payload(Some("/test-blah-com/")).id must beSome("/test-blah-com/org/wrk/env/name")
+      payload(Some("test-blah-com/")).id must  beSome("/test-blah-com/org/wrk/env/name")
+
+      payload(Some("blah--com")).id must   beSome("/blah--com/org/wrk/env/name")
+      payload(Some("/blah--com")).id must  beSome("/blah--com/org/wrk/env/name")
+      payload(Some("/blah--com/")).id must beSome("/blah--com/org/wrk/env/name")
+      payload(Some("blah--com/")).id must  beSome("/blah--com/org/wrk/env/name")
+    }
+
+    "neglect provider appId prefix in missing from provider or empty" in {
       def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
       payload(None).id must beSome("/org/wrk/env/name")
+      payload(Some("")).id must beSome("/org/wrk/env/name")
+      payload(Some(" ")).id must beSome("/org/wrk/env/name")
+      payload(Some("/")).id must beSome("/org/wrk/env/name")
+      payload(Some("//")).id must beSome("/org/wrk/env/name")
+      payload(Some("/ /")).id must beSome("/org/wrk/env/name")
     }
 
     "toMarathonLaunchPayload should validate appId components" in {
       prefixedPayload(Some("Caps")       ,"org","wrk","env","name") must throwA[BadRequestException]
       prefixedPayload(Some("under_score"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "Caps"       ,"wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "under_score","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "org", "Caps"       ,"env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "org", "under_score","env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "Caps"       ,"name") must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "under_score","name") must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "env", "Caps"       ) must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "env", "under_score") must throwA[BadRequestException]
+      prefixedPayload(Some("special^char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special!char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special@char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special#char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special$char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special%char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special^char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special&char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special(char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special)char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special+char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(Some("special=char"),"org","wrk","env","name") must throwA[BadRequestException]
+      prefixedPayload(None, "Caps"       ,"wrk","env","name")       must throwA[BadRequestException]
+      prefixedPayload(None, "under_score","wrk","env","name")       must throwA[BadRequestException]
+      prefixedPayload(None, "org", "Caps"       ,"env","name")      must throwA[BadRequestException]
+      prefixedPayload(None, "org", "under_score","env","name")      must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "Caps"       ,"name")    must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "under_score","name")    must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "env", "Caps"       )    must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "env", "under_score")    must throwA[BadRequestException]
+      //
+      prefixedPayload(Some(".startingdot.com"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("endingdot.com."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("two..dots"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some(".."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("-starting-dash"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("ending-dash-"), "org", "work", "env", "name") must throwA[BadRequestException]
+      //
+      prefixedPayload(Some("/good/.startingdot.com"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/endingdot.com."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/two..dots"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/.."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/."), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/-starting-dash"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/ending-dash-"), "org", "work", "env", "name") must throwA[BadRequestException]
     }
 
     "handle portIndex for health checks" in {

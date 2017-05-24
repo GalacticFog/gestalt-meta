@@ -402,7 +402,7 @@ package object marathon {
    */
   def toMarathonLaunchPayload(uncheckedFQON: String, uncheckedWrkName: String, uncheckedEnvName: String, uncheckedCntrName: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
-    val validMarathonPathComponent = "([a-z]+(-[a-z0-9]+)*[a-z0-9]*)".r
+    val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
     def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
     def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
 
@@ -412,7 +412,7 @@ package object marathon {
     val cntrName = validate(uncheckedCntrName.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'containerName'")}
     val appPrefix = for {
       prefix <- getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
-      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.nonEmpty)
+      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
       validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
     } yield validatedAppPrefix
