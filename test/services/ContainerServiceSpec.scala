@@ -7,6 +7,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
@@ -291,6 +292,52 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       )
 
       there was one(mockCaasService).create(
+        context = argThat(matchesProviderContext(
+          provider = testProvider,
+          workspace = testWork,
+          environment = testEnv
+        )),
+        container = any
+      )(any)
+    }
+
+    "patch containers using CaaSService interface" in new TestApplication {
+      val Success(testContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "1024",
+          "disk" -> "0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default",
+          "external_id" -> s"/${testEnv.id}/test-container"
+        ))
+      )
+
+      val containerService = injector.instanceOf[ContainerService]
+
+      mockCaasService.update(any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val patchDoc = PatchDocument(PatchOp.Replace("/properties/image", "nginx:upgrade"))
+
+      val Success(updatedContainer) = containerService.patchContainer(
+        container = testContainer,
+        patch = patchDoc,
+        user = user
+      )
+
+      there was one(mockCaasService).update(
         context = argThat(matchesProviderContext(
           provider = testProvider,
           workspace = testWork,
