@@ -17,14 +17,18 @@ import java.util.UUID
 import javax.inject.Inject
 
 import play.api.Logger
+import play.api.mvc.RequestHeader
+
+import scala.concurrent.Future
 
 
 class GroupMethods @Inject()( security: Security ) {
 
-  private[controllers] def groupPatch(
-        resource: GestaltResourceInstance, 
-        patch: PatchDocument, 
-        user: AuthAccountWithCreds)(implicit client: GestaltSecurityClient): Try[GestaltResourceInstance] = Try {
+  private[controllers] def groupPatch( resource: GestaltResourceInstance,
+                                       patch: PatchDocument,
+                                       user: AuthAccountWithCreds,
+                                       request: RequestHeader )
+                                     (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry(Try{
 
     /* Patch users if we have any ops for it.
      * patchGroupMembership returns a list of the groups current members (as links)
@@ -37,7 +41,7 @@ class GroupMethods @Inject()( security: Security ) {
     
     // Handle patching other attributes
     PatchInstance.applyPatch(resource, PatchDocument(ops:_*)).get.asInstanceOf[GestaltResourceInstance]
-  }
+  })
   
   private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {
     

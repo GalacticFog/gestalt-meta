@@ -2,6 +2,7 @@ package controllers
 
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
@@ -21,12 +22,13 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.data.ResourceFactory.update
-
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
+
 import com.galacticfog.gestalt.json.Js
+import play.api.mvc.RequestHeader
 
 
 @Singleton
@@ -47,7 +49,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   /* 
    * Function to override the default Patch behavior
    */
-  type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds) => Try[GestaltResourceInstance]
+  type PatchHandler   = (GestaltResourceInstance, PatchDocument, AuthAccountWithCreds, RequestHeader) => Future[GestaltResourceInstance]
   
   private[controllers] val transforms: Map[UUID, PatchTransform] = Map(
     ResourceIds.Environment -> transformEnvironmentPatch)
@@ -67,21 +69,24 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * Implements route `PATCH /{fqon}`
    */
   def patchResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future{
-      orgFqon(fqon).fold(NotFoundResult(fqon))(org => applyPatch(org)) 
-    }
+    orgFqon(fqon).fold(
+      Future.successful(NotFoundResult(fqon))
+    )(
+      org => applyPatch(org)
+    )
   }
   
   /**
    * Patch a Resource by its URI (path)
    */
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
-    Future {
-      val respath = new ResourcePath(fqon, path)
-      lookupResource(respath, request.identity) match {
-        case Failure(e) => HandleExceptions(e)
-        case Success(resource) => applyPatch(resource)
-      }
+    val f = for {
+      respath <- Future(new ResourcePath(fqon, path))
+      r <- Future.fromTry(lookupResource(respath, request.identity))
+      pr <- applyPatch(r)
+    } yield pr
+    f recover {
+      case e: Throwable => HandleExceptions(e)
     }
   }
   
@@ -91,23 +96,22 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * 
    * @param target the Resource to be modified
    */
-  private[controllers] def applyPatch(target: GestaltResourceInstance)(
-      implicit request: SecuredRequest[JsValue]) = {
+  private[controllers] def applyPatch( target: GestaltResourceInstance )
+                                     ( implicit request: SecuredRequest[JsValue] ) = {
     
     val user = request.identity
     val action = actionInfo(target.typeId).prefix + ".update"
     val options = standardRequestOptions(user, target)
     val operations = standardRequestOperations(action)
     
-    SafeRequest(operations, options) Protect { maybeState =>
-      (for {
+    SafeRequest(operations, options) ProtectAsync { maybeState =>
+      val f = for {
         
         r1 <- Patch(target)
-        r2 <- update(r1, user.account.id)
-        
-      } yield r2) match {
-        case Failure(e) => HandleExceptions(e)
-        case Success(r) => Ok(RenderSingle(r))
+        r2 <- Future.fromTry(update(r1, user.account.id))
+      } yield Ok(RenderSingle(r2))
+      f recover {
+        case e: Throwable => HandleExceptions(e)
       }
     }
   }
@@ -162,11 +166,11 @@ class PatchController @Inject()( messagesApi: MessagesApi,
 //      }
 //    }
 //  }
-  
-  private[controllers] def Patch(
-      resource: GestaltResourceInstance,
-      patchJson: JsValue,
-      account: AuthAccountWithCreds): Try[GestaltResourceInstance] = {
+
+private[controllers] def Patch( resource: GestaltResourceInstance,
+                                patchJson: JsValue,
+                                account: AuthAccountWithCreds,
+                                rh: RequestHeader): Future[GestaltResourceInstance] = {
     
     val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJson)
     
@@ -177,7 +181,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     handlers.get(resource.typeId) match {
       case Some(customHandler) =>
         log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
-        customHandler(resource, patch, account)
+        customHandler(resource, patch, account, rh)
       case None =>
         log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
         defaultResourcePatch(resource, patch, account)
@@ -185,8 +189,8 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   }
   
   private[controllers] def Patch(resource: GestaltResourceInstance)(
-      implicit request: SecuredRequest[JsValue]): Try[GestaltResourceInstance] = {
-    Patch(resource, request.body, request.identity)
+      implicit request: SecuredRequest[JsValue]): Future[GestaltResourceInstance] = {
+    Patch(resource, request.body, request.identity, request)
   }
   
   
@@ -203,7 +207,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   private[controllers] def defaultResourcePatch(
     resource: GestaltResourceInstance,
     patch: PatchDocument,
-    user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
+    user: AuthAccountWithCreds): Future[GestaltResourceInstance] = Future {
     log.debug("entered defaultResourcePatch(_,_,_)")
     
     log.debug("Applying patch to resource...")
@@ -226,7 +230,10 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * 
    * TODO: Generalize transformations for properties of type `resource::uuid::link`
    */
-  def entitlementPatch(r: GestaltResourceInstance, patch: PatchDocument, auth: AuthAccountWithCreds): Try[GestaltResourceInstance] = {
+  def entitlementPatch( r: GestaltResourceInstance,
+                        patch: PatchDocument,
+                        auth: AuthAccountWithCreds,
+                        request: RequestHeader ): Future[GestaltResourceInstance] = {
     log.debug("entitlementPatch(...)")
     /*
      * convert r.properties.identities from ResourceLink to UUID - then proceed with Patch.

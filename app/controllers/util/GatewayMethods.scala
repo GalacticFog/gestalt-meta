@@ -23,6 +23,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import play.api.libs.ws.WSClient
+import play.api.mvc.RequestHeader
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -191,7 +192,8 @@ class GatewayMethods @Inject() ( ws: WSClient,
 
   def patchEndpointHandler( r: GestaltResourceInstance,
                             patch: PatchDocument,
-                            user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
+                            user: AuthAccountWithCreds,
+                            request: RequestHeader ): Future[GestaltResourceInstance] = {
 
     // Strip path to last component to get field name.
     val strippedOps = patch.ops collect {
@@ -218,7 +220,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
     val provider = findGatewayProvider(parentApi) getOrElse(throw new RuntimeException(s"Could not locate ApiGateway provider for parent API ${parentApi.id} of ApiEndpoint ${r.id}"))
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
-    val f = for {
+    for {
       // Get api-endpoint from gestalt-api-gateway
       getReq <- client.get(s"/endpoints/${r.id}") flatMap { response => response.status match {
         case 200 => Future.successful(response)
@@ -248,8 +250,6 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }}
       updatedMetaEndpoint = PatchInstance.applyPatch(r, fullOps).get.asInstanceOf[GestaltResourceInstance]
     } yield updatedMetaEndpoint // we don't actually use the result from api-gateway, though we probably should
-
-    Await.result(f, GATEWAY_PROVIDER_TIMEOUT_MS millis)
   }
 
   private[controllers] def unprocessable(message: String) =
