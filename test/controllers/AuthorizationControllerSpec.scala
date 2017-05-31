@@ -15,10 +15,7 @@ import play.api.test.WithApplication
 import controllers.util.DataStore
 import com.galacticfog.gestalt.meta.test._
 
-class AuthorizationControllerSpec
-  extends PlaySpecification 
-    with MetaRepositoryOps
-    with Mockito {
+class AuthorizationControllerSpec extends PlaySpecification with MetaRepositoryOps {
 
   sequential
 
@@ -26,14 +23,14 @@ class AuthorizationControllerSpec
   
   "findOrFail" should {
     
-    "succeed when the resource ID is valid" in new TestApplication { 
+    "succeed when the resource ID is valid" in new TestApplication {
       val resource = createInstance(ResourceIds.Org, uuid().toString)
       resource must beSuccessfulTry
-      
+
       controller.findOrFail(ResourceIds.Org, resource.get.id) must beSuccessfulTry
     }
-    
-    "fail when the resource ID is invalid" in new TestApplication { 
+
+    "fail when the resource ID is invalid" in new TestApplication {
       controller.findOrFail(ResourceIds.Resource, uuid()) must beFailedTry.withThrowable[ResourceNotFoundException]
     }
   }

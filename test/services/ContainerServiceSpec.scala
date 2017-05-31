@@ -16,10 +16,11 @@ import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.specification.{BeforeAll, Scope}
+import play.api.http.HttpVerbs
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.PlaySpecification
+import play.api.test.{FakeRequest, PlaySpecification}
 import play.api.inject.bind
 
 import scala.concurrent.Future
@@ -335,7 +336,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         container = testContainer,
         patch = patchDoc,
         user = user,
-        request = any
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/environments/${testEnv.id}/containers/${testContainer.id}")
       ))
 
       there was one(mockCaasService).update(

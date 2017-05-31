@@ -373,90 +373,14 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     deleteController.deleteResource(container, identity)(request)
   }
 
-  override def patchContainer(container: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[Instance] = {
-
-    ???
-//    for {
-//      containerSpec <- ContainerSpec.fromResourceInstance(container)
-//      provider <- Try(caasProvider(containerSpec.provider.id))
-//      ctx = ProviderContext(new FakeURI(s"/${fqon}/containers/${container.id}"), provider.id, Some(container))
-//      service      <- {
-//        log.debug("Retrieving CaaSService from ProviderManager")
-//        providerManager.getProviderImpl(context.provider.typeId)
-//      }
-//    } yield ???
-//
-//    // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
-//    val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
-//      "name" -> provider.name,
-//      "id" -> provider.id
-//    ).toString)
-//
-//    for {
-//      metaResource <- Future.fromTry{
-//        log.debug("Creating container resource in Meta")
-//        ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
-//      }
-//      _ = log.info("Meta container created: " + metaResource.id)
-//      service      <- Future.fromTry{
-//        log.debug("Retrieving CaaSService from ProviderManager")
-//        providerManager.getProviderImpl(context.provider.typeId)
-//      }
-//      instanceWithUpdates <- {
-//        log.info("Creating container in backend CaaS...")
-//        service.create(context, metaResource)
-//      }
-//      updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
-//    } yield updatedInstance
-//
-//    def replace(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
-//      data.foldLeft[LaserLambda](lm)({
-//        case (l, (fieldName,value)) => updateLambdaData(l, fieldName, value)
-//      })
-//    }
-//
-//    log.debug("Finding lambda in backend system...")
-//    val provider = getLambdaProvider(r)
-//    val client = providerMethods.configureWebClient(provider, Some(ws))
-//
-//    // Strip path to last component to get field name.
-//    val ops: Seq[(String,JsValue)] = patch.ops collect {
-//      case PatchOp("add"|"replace",path,Some(value)) =>
-//        val fieldName = path.drop(path.lastIndexOf("/")+1)
-//        (fieldName -> value)
-//      case PatchOp("remove","/properties/periodic_info",None) =>
-//        ("periodic_info" -> JsNull)
-//    }
-//
-//    val f = for {
-//    // Get lambda from gestalt-lambda
-//      getReq <- client.get(s"/lambdas/${r.id}") flatMap { response => response.status match {
-//        case 200 => Future.successful(response)
-//        case 404 => Future.failed(new ResourceNotFoundException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda"))
-//        case _   => Future.failed(new RuntimeException(s"received $response response from Lambda provider on lambda GET"))
-//      } }
-//      gotLaserLambda <- getReq.json.validate[LaserLambda] match {
-//        case JsSuccess(l, _) => Future.successful(l)
-//        case e: JsError => Future.failed(new RuntimeException(
-//          "could not parse lambda GET response from lambda provider: " + e.toString
-//        ))
-//      }
-//      _ = log.debug("Lambda found in lambda provider.")
-//      patchedLaserLambda = replace(ops, gotLaserLambda)
-//      _ = log.debug("Patched lambda resource before PUT: " + Json.toJson(patchedLaserLambda))
-//      updatedLaserLambdaReq = client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
-//      _ <- updatedLaserLambdaReq flatMap { response => response.status match {
-//        case 200 =>
-//          log.info(s"Successfully PUT Lambda in lambda provider.")
-//          Future.successful(response)
-//        case _   =>
-//          log.error(s"Error PUTting Lambda in lambda provider: ${response}")
-//          Future.failed(new RuntimeException(s"Error updating Lambda in lambda provider: ${response}"))
-//      }}
-//      updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
-//    } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
-//
-//    Await.result(f, CAAS_PROVIDER_TIMEOUT_MS millis)
-
+  override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
+    for {
+      patched <- Future.fromTry(PatchInstance.applyPatch(origContainer, patch)).mapTo[GestaltResourceInstance]
+      containerSpec <- Future.fromTry(ContainerSpec.fromResourceInstance(patched))
+      provider <- Future.fromTry(Try(caasProvider(containerSpec.provider.id)))
+      context <- Future.fromTry(Try(ProviderContext(request, provider.id, Some(patched))))
+      service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
+      updated <- service.update(context, patched)
+    } yield updated
   }
 }
