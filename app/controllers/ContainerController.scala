@@ -141,6 +141,42 @@ class ContainerController @Inject()(
     }
   }
 
+  def promoteContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+    ResourceFactory.findById(ResourceIds.Container, id).fold {
+      NotFoundResult(s"Container with ID '$id' not found.")
+    } { c =>
+      val environment = ResourceFactory.findParent(
+        parentType = ResourceIds.Environment,
+        childId = c.id
+      ) getOrElse {
+        throw new RuntimeException(s"could not find Environment parent for container ${c.id}")
+      }
+
+      if (findPromotionRule(environment.id).isEmpty) {
+        HandleExceptions(new ConflictException("No promotion policy found."))
+      } else {
+        val user = request.identity
+        val container = ResourceFactory.findChildOfType(ResourceIds.Container, environment.id, id).getOrElse {
+          throw new ResourceNotFoundException( notFoundMessage(ResourceIds.Container, id))
+        }
+
+        val (operations, options) = ContainerService.setupPromoteRequest(
+          fqon, environment.id, container, user, META_URL.get, request.queryString
+        )
+
+        SafeRequest(operations, options) Protect { _ =>
+          ResourceFactory.update(
+            ContainerService.upsertProperties(container, "status" -> "MIGRATING"),
+            user.account.id
+          ) match {
+            case Failure(e) => HandleExceptions(e)
+            case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+          }
+        }
+      }
+    }
+  }
+
   def migrateContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       NotFoundResult(s"Container with ID '$id' not found.")
@@ -208,6 +244,11 @@ class ContainerController @Inject()(
 }
 
 object ContainerController {
+  def findPromotionRule(start: UUID) = {
+    object Finder extends EventMethods
+    Finder.findEffectiveEventRules(start, Option("container.promote"))
+  }
+
   def findMigrationRule(start: UUID) = {
     object Finder extends EventMethods
     Finder.findEffectiveEventRules(start, Option("container.migrate"))

@@ -77,6 +77,23 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
   trait TestApplication extends FakeCaaSScope {
   }
 
+  "findPromotionRule" should {
+
+    "find any container.promote.* rules that are within the given scope" in new TestApplication {
+      val org = newOrg(id = dummyRootOrgId)
+      org must beSuccessfulTry
+
+      val data = newDummyEnvironment(dummyRootOrgId)
+
+      ContainerController.findPromotionRule(data("environment")).isEmpty must beTrue
+
+      val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.promote.pre")
+      ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
+
+      ContainerController.findPromotionRule(data("environment")) must beSome
+    }
+  }
+
   "findMigrationRule" should {
 
     "find any container.migrate.* rules that are within the given scope" in new TestApplication {
@@ -90,9 +107,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
 
-      val event = ContainerController.findMigrationRule(data("environment"))
-
-      event.isEmpty must beFalse
+      ContainerController.findMigrationRule(data("environment")) must beSome
     }
   }
 
