@@ -331,11 +331,12 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
       val patchDoc = PatchDocument(PatchOp.Replace("/properties/image", "nginx:upgrade"))
 
-      val Success(updatedContainer) = containerService.patchContainer(
+      val updatedContainer = await(containerService.patchContainer(
         container = testContainer,
         patch = patchDoc,
-        user = user
-      )
+        user = user,
+        request = any
+      ))
 
       there was one(mockCaasService).update(
         context = argThat(matchesProviderContext(

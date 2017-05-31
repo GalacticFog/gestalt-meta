@@ -20,6 +20,7 @@ import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.specification.{BeforeAll, Scope}
+import play.api.http.HttpVerbs
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsValue, Json}
@@ -27,7 +28,7 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.ws.WSResponse
 import play.api.mvc._
 import play.api.mvc.Results._
-import play.api.test.PlaySpecification
+import play.api.test.{FakeRequest, PlaySpecification}
 import play.api.mvc.BodyParsers.parse
 
 import scala.concurrent.Future
@@ -330,7 +331,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       val newPath = "/new/path"
       val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invoke"
 
-      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -338,8 +339,9 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           PatchOp.Replace("/properties/implementation_type", "lambda"),
           PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
         ),
-        user = user
-      )
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
 
       routeGetEndpoint.timeCalled must_== 1
       routePutEndpoint.timeCalled must_== 1
@@ -360,7 +362,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       val newPath = "/new/path"
       val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync"
 
-      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -368,8 +370,9 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           PatchOp.Replace("/properties/implementation_type", "lambda"),
           PatchOp.Replace("/properties/implementation_id", testLambda.id.toString)
         ),
-        user = user
-      )
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
 
       routeGetEndpoint.timeCalled must_== 1
       routePutEndpoint.timeCalled must_== 1
@@ -390,7 +393,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       val expUpstreamUrl = "http://my-nginx.service-address:80"
       val newPath = "/new/path"
 
-      val Success(updatedEndpoint) = gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -398,8 +401,9 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           PatchOp.Replace("/properties/implementation_id", testContainer.id.toString),
           PatchOp.Replace("/properties/container_port_name", "web")
         ),
-        user = user
-      )
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
 
       routeGetEndpoint.timeCalled must_== 1
       routePutEndpoint.timeCalled must_== 1

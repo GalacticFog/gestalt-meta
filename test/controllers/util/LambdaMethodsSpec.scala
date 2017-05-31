@@ -20,13 +20,14 @@ import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsBoolean, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.PlaySpecification
+import play.api.test.{FakeRequest, PlaySpecification}
 import play.api.mvc._
 import play.api.mvc.Results._
 import play.api.http.HttpVerbs._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.ws.WSResponse
 import com.galacticfog.gestalt.laser._
+import play.api.http.HttpVerbs
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -126,7 +127,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         mockResp.status returns 200
       })
 
-      val Success(updatedLambda) = lambdaMethods.patchLambdaHandler(
+      val updatedLambda = await(lambdaMethods.patchLambdaHandler(
         r = testLambda,
         patch = PatchDocument(
           PatchOp.Replace("/properties/public",        true),
@@ -141,8 +142,9 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           PatchOp.Replace("/properties/periodic_info", Json.obj("new" -> "periodicity")),
           PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
         ),
-        user = user
-      )
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
+      ))
 
       updatedLambda.properties.get("public") must_== "true"
       updatedLambda.properties.get("compressed") must_== "true"
@@ -204,7 +206,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         mockResp.status returns 200
       })
 
-      val Success(updatedLambda) = lambdaMethods.patchLambdaHandler(
+      val updatedLambda = await(lambdaMethods.patchLambdaHandler(
         r = testLambda,
         patch = PatchDocument(
           PatchOp.Replace("/properties/public",        true),
@@ -218,8 +220,9 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           PatchOp.Remove("/properties/periodic_info"),
           PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
         ),
-        user = user
-      )
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
+      ))
 
       updatedLambda.properties.get("public") must_== "true"
       updatedLambda.properties.get("code") must_== "ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="

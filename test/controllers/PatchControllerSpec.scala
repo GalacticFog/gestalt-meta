@@ -17,6 +17,7 @@ import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import play.api.inject.bind
 import org.mockito.Matchers.{eq => meq}
+import play.api.http.HttpVerbs
 
 import scala.concurrent.Future
 import scala.util.{Success, Try}
@@ -144,15 +145,12 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         //
         val account = dummyAuthAccountWithCreds(userInfo = Map("id" -> adminUserId))
 
-        val path = new ResourcePath(s"/${orgName}/environments/${envRes.id}")
-
         val rc = app.injector.instanceOf[ResourceController]
         val pc = app.injector.instanceOf[PatchController]
         
-        val updated = pc.Patch(envRes, patchJs, account)
-        updated must beSuccessfulTry
-        
-        val envJs = Output.renderInstance(updated.get)
+        val updated = await(pc.Patch(envRes, patchJs, account, FakeRequest(HttpVerbs.PATCH, s"/${orgName}/environments/${envRes.id}")))
+
+        val envJs = Output.renderInstance(updated)
 
         envJs.toString must /("properties") /("env") /(var1._1 -> var1._2)
         
@@ -196,7 +194,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
     "use LambdaMethods for external lambda patch" in new TestApplication {
 
-      mockLambdaMethods.patchLambdaHandler(any,any,any) returns Try(testLambda)
+      mockLambdaMethods.patchLambdaHandler(any,any,any,any) returns Future.successful(testLambda)
 
       val patchDoc = PatchDocument()
 
@@ -213,13 +211,14 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           (r: GestaltResourceInstance) => r.id == testLambda.id
         ),
         patch = meq(patchDoc),
-        user = any
+        user = any,
+        request = any
       )
     }
 
     "use GatewayMethods for external apiendpoint patch" in new TestApplication {
 
-      mockGatewayMethods.patchEndpointHandler(any, any, any) returns Try(testEndpoint)
+      mockGatewayMethods.patchEndpointHandler(any, any, any, any) returns Future.successful(testEndpoint)
 
       val patchDoc = PatchDocument()
 
@@ -236,17 +235,19 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           (r: GestaltResourceInstance) => r.id == testEndpoint.id
         ),
         patch = meq(patchDoc),
-        user = any)
+        user = any,
+        request = any
+      )
     }
 
     "use ContainerService for external container patch" in new TestApplication {
 
-      mockContainerService.patchContainer(any, any, any) answers {
+      mockContainerService.patchContainer(any, any, any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
           val r = arr(0).asInstanceOf[GestaltResourceInstance]
           val pd = arr(1).asInstanceOf[PatchDocument]
-          PatchInstance.applyPatch(r, pd).map(_.asInstanceOf[GestaltResourceInstance])
+          Future.fromTry(PatchInstance.applyPatch(r, pd).map(_.asInstanceOf[GestaltResourceInstance]))
       }
       mockContainerService.getEnvironmentContainer("root", testEnv.id, testContainer.id) returns Future.successful(Some(testContainer -> Seq.empty))
 
@@ -266,7 +267,8 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           (r: GestaltResourceInstance) => r.id == testContainer.id
         ),
         patch = meq(patchDoc),
-        user = any
+        user = any,
+        request = any
       )
     }
 
