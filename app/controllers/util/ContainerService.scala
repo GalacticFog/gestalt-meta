@@ -64,19 +64,18 @@ object ContainerService {
     data = data
   )
 
-  def setupMigrateRequest(fqon: String,
+  def setupPromoteRequest(fqon: String,
                           env: UUID,
-                          container: GestaltResourceInstance,
+                          container: Instance,
                           user: AuthAccountWithCreds,
                           metaUrl: String,
                           queryString: QueryString) = {
-
-    val action = "container.migrate"
+    val action = "container.promote"
     val operations = List(
       controllers.util.Authorize(action),
       controllers.util.PolicyCheck(action),
-      controllers.util.EventsPre(action))
-
+      controllers.util.EventsPre(action)
+    )
     val options = RequestOptions(
       user,
       authTarget = Option(env),
@@ -86,8 +85,34 @@ object ContainerService {
         "fqon"           -> fqon,
         "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
         "environment_id" -> env.toString,
-        "provider_id"    -> providerQueryParam(queryString).get.toString)))
+        "target_env_id"  -> targetEnvQueryParam(queryString).get.toString
+      ))
+    )
+    (operations,options)
+  }
 
+  def setupMigrateRequest(fqon: String,
+                          env: UUID,
+                          container: GestaltResourceInstance,
+                          user: AuthAccountWithCreds,
+                          metaUrl: String,
+                          queryString: QueryString) = {
+    val action = "container.migrate"
+    val operations = List(
+      controllers.util.Authorize(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action))
+    val options = RequestOptions(
+      user,
+      authTarget = Option(env),
+      policyOwner = Option(env),
+      policyTarget = Option(container),
+      data = Option(Map(
+        "fqon"           -> fqon,
+        "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
+        "environment_id" -> env.toString,
+        "provider_id"    -> providerQueryParam(queryString).get.toString))
+    )
     (operations,options)
   }
 
@@ -126,6 +151,27 @@ object ContainerService {
           throw badRequest(s"Invalid provider UUID. found: '${qs(PROVIDER_KEY)(0)}'")
         case e: Throwable => throw e
       }
+    }
+  }
+
+  /**
+    * Extract and validate the 'targetEnv' querystring parameter.
+    * Used by the {@link #promoteContainer(String,UUID,UUID) migrateContainer} method.
+    *
+    * @param qs the complete, unmodified queryString from the original request.
+    */
+  protected [controllers] def targetEnvQueryParam(qs: Map[String,Seq[String]]): Try[UUID] = {
+    val TGT_KEY = "target"
+    qs.get(TGT_KEY) match {
+      case Some(Seq(tgt)) if tgt.trim.nonEmpty =>
+        for {
+          eid <- Try{UUID.fromString(tgt)}
+          resId <- ResourceFactory.findById(ResourceIds.Environment, eid).fold[Try[UUID]] {
+            Failure(badRequest(s"Environment with ID '$eid' not found."))
+          } { r => Success(r.id) }
+        } yield resId
+      case None => Failure(badRequest(s"'${TGT_KEY}' parameter not found. (i.e. */promote?${TGT_KEY}={UUID})"))
+      case _    => Failure(badRequest(s"Multiple target IDs found. found: [${qs(TGT_KEY).mkString(",")}]"))
     }
   }
 

@@ -13,7 +13,7 @@ package object events {
 
   implicit lazy val eventContextFormat = Json.format[EventContext]
   implicit lazy val eventLambdaArgsFormat = Json.format[EventLambdaArgs]
-  implicit lazy val migrateEventFormat = Json.format[PolicyEvent]      
+  implicit lazy val policyEventFormat = Json.format[PolicyEvent]
   
   lazy val RABBIT_HOST = EnvConfig.rabbitHost
   lazy val RABBIT_PORT = EnvConfig.rabbitPort.toInt
