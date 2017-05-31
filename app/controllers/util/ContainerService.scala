@@ -3,8 +3,8 @@ package controllers.util
 import java.util.UUID
 
 import play.api.libs.json._
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
@@ -16,6 +16,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
 import controllers.DeleteController
 import play.api.mvc.RequestHeader
@@ -35,6 +36,8 @@ trait ContainerService extends JsonInput {
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
                       userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
+
+  def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds): Try[GestaltResourceInstance]
 
 }
 
@@ -363,4 +366,5 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     deleteController.deleteResource(container, identity)(request)
   }
 
+  override def patchContainer(container: Instance, patch: PatchDocument, user: AuthAccountWithCreds): Try[Instance] = ???
 }

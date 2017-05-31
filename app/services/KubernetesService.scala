@@ -352,7 +352,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
 
 
-  def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     
     val provider = containerProvider(container)
     /*
@@ -689,6 +689,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       "num_instances" -> s"${updatedNumInstances}"
     )
   }
+
+  override def update(context: ProviderContext, container: GestaltResourceInstance)
+                     (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
+
 }
 
 object CommandParser {

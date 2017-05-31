@@ -36,7 +36,8 @@ class DefaultMarathonClientFactory extends MarathonClientFactory {
   }
 }
 
-class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory ) extends CaasService with JsonInput with MetaControllerUtils {
+class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
+  extends CaasService with JsonInput with MetaControllerUtils {
 
   import scala.language.implicitConversions
   implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
@@ -131,7 +132,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     } getOrElse Seq.empty
   }
 
-  def destroyContainer(container: GestaltResourceInstance): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
@@ -257,5 +258,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         }
     }
   }
+
+  override def update(context: ProviderContext, container: Instance)
+                     (implicit ec: ExecutionContext): Future[Instance] = ???
 
 }

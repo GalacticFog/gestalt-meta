@@ -35,6 +35,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
                                  groupMethods: GroupMethods,
                                  gatewayMethods: GatewayMethods,
                                  lambdaMethods: LambdaMethods,
+                                 containerService: ContainerService,
                                  resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
@@ -56,7 +57,8 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Group -> groupMethods.groupPatch,
     ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
     ResourceIds.ApiEndpoint -> gatewayMethods.patchEndpointHandler,
-    ResourceIds.Entitlement -> entitlementPatch
+    ResourceIds.Entitlement -> entitlementPatch,
+    ResourceIds.Container -> containerService.patchContainer
   )
   
   

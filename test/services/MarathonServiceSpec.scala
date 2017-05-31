@@ -520,7 +520,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fDeleted = ms.destroyContainer( metaContainer )
+      val fDeleted = ms.destroy( metaContainer )
 
       await(fDeleted)
 
@@ -569,7 +569,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      val fDeleted = ms.destroyContainer( metaContainer )
+      val fDeleted = ms.destroy( metaContainer )
 
       await(fDeleted)
 

@@ -163,7 +163,6 @@ class GatewayMethods @Inject() ( ws: WSClient,
         throw e
       }
     }
-
     Try {
       val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
       log.debug("Response from GatewayManager: " + res.body)
@@ -183,7 +182,6 @@ class GatewayMethods @Inject() ( ws: WSClient,
         throw e
       }
     }
-
     Try {
       val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
       log.debug("Response from GatewayManager: " + res.body)

@@ -572,17 +572,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
-  
-  def getAllResourcesFqon(fqon: String) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    Ok(Output.renderLinks(ResourceFactory.findAllByOrg(fqid(fqon))))
-  }
-  
-  def getResourceByIdFqon(fqon: String, id: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    ResourceFactory.findById(id).fold(NotFoundResult(Errors.RESOURCE_NOT_FOUND(id))) { r =>
-      Ok(Output.renderInstance(r))
-    }
-  }
-  
+
   // --------------------------------------------------------------------------
   // API_ENDPOINTS
   // --------------------------------------------------------------------------
