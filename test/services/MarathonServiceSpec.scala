@@ -618,6 +618,10 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )
     }
 
+    "update support" in new FakeDCOS {
+      ko("write me")
+    }
+
   }
 
 }

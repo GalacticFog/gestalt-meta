@@ -689,6 +689,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "num_instances" -> testScale.toString
       )
     }
+
+    "update support" in new FakeKube {
+      ko("write me")
+    }
+
   }
 
 }
