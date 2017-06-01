@@ -152,6 +152,8 @@ class ContainerController @Inject()(
         throw new RuntimeException(s"could not find Environment parent for container ${c.id}")
       }
 
+      val target_env_id = ContainerService.targetEnvQueryParam(request.queryString).get
+
       if (findPromotionRule(environment.id).isEmpty) {
         HandleExceptions(new ConflictException("No promotion policy found."))
       } else {
@@ -161,7 +163,7 @@ class ContainerController @Inject()(
         }
 
         val (operations, options) = ContainerService.setupPromoteRequest(
-          fqon, environment.id, container, user, META_URL.get, request.queryString
+          fqon, environment.id, container, user, META_URL.get, target_env_id
         )
 
         SafeRequest(operations, options) Protect { _ =>

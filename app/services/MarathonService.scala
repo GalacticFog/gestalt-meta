@@ -6,7 +6,6 @@ import java.util.UUID
 import play.api.libs.ws.WS
 import play.api.Play.current
 
-//import play.api.libs.concurrent.Execution.Implicits._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
@@ -73,31 +72,34 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       mappings match {
         case Nil => acc
         case portmap :: tail => {
-          val entry = Map("HAPROXY_%d_VHOST".format(index) -> portmap.virtual_hosts.get.mkString(","))
+          val entry = Map(
+            "HAPROXY_%d_VHOST".format(index) -> portmap.virtual_hosts.get.mkString(","),
+            "HAPROXY_%d_GROUP".format(index) -> "external"
+          )
           makeVhostLabels(tail, acc ++ entry, index + 1)
         }
       }
     }
     
     val vhosts = getMetaPortMappings(container) filter { usesVirtualHost(_) }    
-    val finalLabels = makeVhostLabels(vhosts, Map.empty, 0) ++ Map("HAPROXY_GROUP" -> "external")
+    val vhostLabels = makeVhostLabels(vhosts, Map.empty, 0)
     
     log.debug("*****FINAL LABELS*****")
-    log.debug(finalLabels.toString)
+    log.debug(vhostLabels.toString)
     
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
         
-        val labels = spec.labels ++ finalLabels
-        val marathonSpec = spec.copy(labels = labels)
+        val allLabels = spec.labels ++ vhostLabels
+        val marathonSpec = spec.copy(labels = allLabels)
         val metaSpecResource = {
           val oldprops = container.properties.get
-          val newprops = oldprops ++ Map("labels" -> Json.toJson(labels).toString)
+          val newprops = oldprops ++ Map("labels" -> Json.toJson(allLabels).toString)
           container.copy(properties = Some(newprops))
         }
         
-        log.debug("Marathon Spec Labels : " + labels)
+        log.debug("Marathon Spec Labels : " + allLabels)
         log.debug("Meta Spec Labels     : " + metaSpecResource.properties.get("labels"))
         
         val marathonApp = toMarathonLaunchPayload(
@@ -110,7 +112,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         )
         
         log.debug("About to launch container...")
-        val marathonAppCreatePayload = Json.toJson(marathonApp).as[JsObject]
+        val marathonAppCreatePayload = Json.toJson(marathonApp)
         
         log.debug("APP-PAYLOAD: ")
         log.debug(Json.prettyPrint(marathonAppCreatePayload))
@@ -260,6 +262,31 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def update(context: ProviderContext, container: Instance)
-                     (implicit ec: ExecutionContext): Future[Instance] = ???
+                     (implicit ec: ExecutionContext): Future[Instance] = {
+    container.properties.flatMap(_.get("external_id")) match {
+      case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
+      case Some(external_id) =>
+        val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
+        val marClient = marathonClientFactory.getClient(provider)
+        ContainerSpec.fromResourceInstance(container) match {
+          case Failure(e) => Future.failed(e)
+          case Success(spec) =>
+            val marathonApp = toMarathonLaunchPayload(
+              uncheckedFQON = context.fqon,
+              uncheckedWrkName = context.workspace.name,
+              uncheckedEnvName = context.environment.name,
+              uncheckedCntrName = container.name,
+              props = spec,
+              provider = context.provider
+            ).copy(
+              id = Some(external_id)
+            )
+            marClient.updateApplication(
+              appId = external_id,
+              marPayload = Json.toJson(marathonApp)
+            ) map { marResp => updateServiceAddresses(marResp, container) }
+        }
+    }
+  }
 
 }

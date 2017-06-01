@@ -76,7 +76,7 @@ object ContainerService {
                           container: Instance,
                           user: AuthAccountWithCreds,
                           metaUrl: String,
-                          queryString: QueryString) = {
+                          target_env_id: UUID) = {
     val action = "container.promote"
     val operations = List(
       controllers.util.Authorize(action),
@@ -92,7 +92,7 @@ object ContainerService {
         "fqon"           -> fqon,
         "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
         "environment_id" -> env.toString,
-        "target_env_id"  -> targetEnvQueryParam(queryString).get.toString
+        "target_env_id"  -> target_env_id.toString
       ))
     )
     (operations,options)
