@@ -418,6 +418,98 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       marApp.healthChecks.get(0).portIndex must beSome(1)
     }
 
+    "neglect haproxy arguments if there are no virtual hosts" in {
+      val userLabels = Map(
+        "VARA" -> "VALA",
+        "VARB" -> "VALB"
+      )
+      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80) , name = Some("http"), expose_endpoint = Some(true), virtual_hosts = None),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"), expose_endpoint = Some(true), virtual_hosts = Some(Seq.empty))
+        ),
+        labels = userLabels,
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "tcp",
+            path = "/",
+            port_index = Some(1)
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.labels must beSome(userLabels)
+    }
+
+    "add haproxy arguments only for specified virtual hosts" in {
+      val userLabels = Map(
+        "VARA" -> "VALA",
+        "VARB" -> "VALB"
+      )
+      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80) , name = Some("http"),  expose_endpoint = Some(true), virtual_hosts = None),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"), expose_endpoint = Some(true), virtual_hosts = Some(Seq("web.test.com")))
+        ),
+        labels = userLabels,
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "tcp",
+            path = "/",
+            port_index = Some(1)
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.labels must beSome(userLabels ++ Map(
+        "HAPROXY_1_VHOST" -> "web.test.com",
+        "HAPROXY_1_GROUP" -> "external"
+      ))
+    }
+
+    "support multiple virtual hosts for a port mapping and multiple port mappings" in {
+      val userLabels = Map(
+        "VARA" -> "VALA",
+        "VARB" -> "VALB"
+      )
+      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(80) , name = Some("http"),  expose_endpoint = Some(true), virtual_hosts = Some(Seq("danger.test.com"))),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"), expose_endpoint = Some(true), virtual_hosts = Some(Seq("web.test.com", "web2.test.com")))
+        ),
+        labels = userLabels,
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "tcp",
+            path = "/",
+            port_index = Some(1)
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.labels must beSome(userLabels ++ Map(
+        "HAPROXY_0_VHOST" -> "danger.test.com",
+        "HAPROXY_0_GROUP" -> "external",
+        "HAPROXY_1_VHOST" -> "web.test.com,web2.test.com",
+        "HAPROXY_1_GROUP" -> "external"
+      ))
+    }
+
     "add default upgradeStrategy for persistent volumes" in {
       val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
         name = "test-container",

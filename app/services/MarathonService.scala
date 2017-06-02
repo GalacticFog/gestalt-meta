@@ -64,74 +64,26 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       new BadRequestException(s"launch failed: ${t.getMessage}")
     }
     
-    def usesVirtualHost(pm: PortMapping) = 
-      pm.virtual_hosts.isDefined && pm.virtual_hosts.get.nonEmpty
-    
-    def makeVhostLabels(mappings: Seq[PortMapping], acc: Map[String,String], index: Int): Map[String,String] = {
-      log.debug(s"***Entered makeVhostLabels(_,_,$index)")
-      mappings match {
-        case Nil => acc
-        case portmap :: tail => {
-          val entry = Map(
-            "HAPROXY_%d_VHOST".format(index) -> portmap.virtual_hosts.get.mkString(","),
-            "HAPROXY_%d_GROUP".format(index) -> "external"
-          )
-          makeVhostLabels(tail, acc ++ entry, index + 1)
-        }
-      }
-    }
-    
-    val vhosts = getMetaPortMappings(container) filter { usesVirtualHost(_) }    
-    val vhostLabels = makeVhostLabels(vhosts, Map.empty, 0)
-    
-    log.debug("*****FINAL LABELS*****")
-    log.debug(vhostLabels.toString)
-    
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
-        
-        val allLabels = spec.labels ++ vhostLabels
-        val marathonSpec = spec.copy(labels = allLabels)
-        val metaSpecResource = {
-          val oldprops = container.properties.get
-          val newprops = oldprops ++ Map("labels" -> Json.toJson(allLabels).toString)
-          container.copy(properties = Some(newprops))
-        }
-        
-        log.debug("Marathon Spec Labels : " + allLabels)
-        log.debug("Meta Spec Labels     : " + metaSpecResource.properties.get("labels"))
-        
         val marathonApp = toMarathonLaunchPayload(
           uncheckedFQON = context.fqon,
           uncheckedWrkName = context.workspace.name,
           uncheckedEnvName = context.environment.name,
           uncheckedCntrName = container.name,
-          props = marathonSpec,
+          props = spec,
           provider = context.provider
         )
-        
-        log.debug("About to launch container...")
         val marathonAppCreatePayload = Json.toJson(marathonApp)
-        
-        log.debug("APP-PAYLOAD: ")
+        log.debug("Marathon v2 application payload: ")
         log.debug(Json.prettyPrint(marathonAppCreatePayload))
-
         val output = marathonClientFactory.getClient(context.provider).launchApp(
           marPayload = marathonAppCreatePayload
-        ).transform( updateSuccessfulLaunch(metaSpecResource), updateFailedLaunch(metaSpecResource) )
+        ).transform( updateSuccessfulLaunch(container), updateFailedLaunch(container) )
         
         output
     }
-  }
-
-  private[services] def getMetaPortMappings(container: GestaltResourceInstance): Seq[PortMapping] = {
-    // This loads Meta PortMappings from the resource
-    container.properties.flatMap(_.get("port_mappings")) map {
-      p => Js.parse[Seq[PortMapping]](Json.parse(p)) getOrElse {
-        throw new RuntimeException("Could not parse portMappings to JSON.")
-      }
-    } getOrElse Seq.empty
   }
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
@@ -284,7 +236,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
             marClient.updateApplication(
               appId = external_id,
               marPayload = Json.toJson(marathonApp)
-            ) map { marResp => updateServiceAddresses(marResp, container) }
+            ) map { updateServiceAddresses(_, container) }
         }
     }
   }

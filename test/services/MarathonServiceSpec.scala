@@ -100,7 +100,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             service_port = None,
             name = Some("http"),
             labels = None,
-            expose_endpoint = Some(true)
+            expose_endpoint = Some(true),
+            virtual_hosts = Some(Seq("web.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -211,7 +212,10 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
           |    "instances": 1,
           |    "ipAddress": null,
-          |    "labels": {},
+          |    "labels": {
+          |       "HAPROXY_0_GROUP": "external",
+          |       "HAPROXY_0_VHOST": "web.test.com"
+          |    },
           |    "maxLaunchDelaySeconds": 3600,
           |    "mem": 128,
           |    "portDefinitions": [
@@ -278,7 +282,12 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
           marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
           marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
-        ) and ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone )
+        ) and
+          ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
+          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be(Map(
+            "HAPROXY_0_GROUP" -> "external",
+            "HAPROXY_0_VHOST" -> "web.test.com"
+          )))
       )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
@@ -291,6 +300,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))
+      val persistedLabels = Json.parse(updatedContainerProps("labels")).as[Map[String,String]]
+      persistedLabels must_== Map.empty[String,String]
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
@@ -619,21 +630,64 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "update supporting using Marathon PUT" in new FakeDCOS {
+      val initProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            host_port = None,
+            service_port = None,
+            name = Some("will_remove_endpoint"),
+            labels = None,
+            expose_endpoint = Some(true)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(81),
+            host_port = None,
+            service_port = None,
+            name = Some("will_add_endpoint"),
+            labels = None,
+            expose_endpoint = Some(false)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(443),
+            host_port = None,
+            service_port = Some(8443),
+            name = Some("will_remove_port"),
+            labels = None,
+            expose_endpoint = Some(true)
+          )
+        ),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE")
+      )
+
+      val extId = "/some/marathon/app"
+
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
-        "test-container",
+        name = initProps.name,
         parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> "DOCKER",
-          "image" -> "nginx",
+        properties = Some(Map[String,String](
+          "container_type" -> initProps.container_type,
+          "image" -> initProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> "1.0",
-          "memory" -> "128",
-          "num_instances" -> "1",
-          "force_pull" -> "true",
-          "port_mappings" -> "[]",
-          "network" -> "BRIDGE",
-          "external_id" -> "/some/marathon/app"
+          "cpus" -> initProps.cpus.toString,
+          "memory" -> initProps.memory.toString,
+          "num_instances" -> initProps.num_instances.toString,
+          "force_pull" -> initProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
+          "network" -> initProps.network.getOrElse(""),
+          "external_id" -> extId
         ))
       )
 
