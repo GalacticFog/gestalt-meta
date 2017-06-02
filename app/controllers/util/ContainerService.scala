@@ -86,7 +86,7 @@ object ContainerService {
     val options = RequestOptions(
       user,
       authTarget = Option(env),
-      policyOwner = Option(env),
+      policyOwner = Option(target_env_id),
       policyTarget = Option(container),
       data = Option(Map(
         "fqon"           -> fqon,
