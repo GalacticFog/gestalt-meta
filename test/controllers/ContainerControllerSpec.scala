@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.{ContainerService, GestaltProviderMocking, GestaltSecurityMocking}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -384,7 +385,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ))
       ).get
 
-      mockCaasService.destroyContainer(
+      mockCaasService.destroy(
         argThat((c: GestaltResourceInstance) => c.id == createdResource.id)
       ) returns Future(())
 
@@ -395,7 +396,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       status(result) must equalTo(NO_CONTENT)
 
-      there was one(mockCaasService).destroyContainer(
+      there was one(mockCaasService).destroy(
         argThat(
           (r: GestaltResourceInstance) => r.id == createdResource.id && r.properties.flatMap(_.get("external_id")).contains(extId)
         )
@@ -445,7 +446,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ))
       ).get
 
-      mockCaasService.destroyContainer(
+      mockCaasService.destroy(
         argThat((c: GestaltResourceInstance) => c.id == createdResource.id)
       ) returns Future(())
 
@@ -456,7 +457,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       status(result) must equalTo(NO_CONTENT)
 
-      there was one(mockCaasService).destroyContainer(
+      there was one(mockCaasService).destroy(
         argThat(
           (r: GestaltResourceInstance) => r.id == createdResource.id && r.properties.flatMap(_.get("external_id")).contains(extId)
         )
@@ -464,7 +465,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       there was atLeastOne(mockProviderManager).getProviderImpl(testProvider.typeId)
     }
 
-    "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController { 
+    "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,

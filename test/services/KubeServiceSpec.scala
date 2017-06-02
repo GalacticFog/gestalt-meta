@@ -597,7 +597,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.delete(mockService.name, 0)(client.serviceKind) returns Future.successful(())
       mockSkuber.delete(mockIngress.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
 
-      await(ks.destroyContainer(metaContainer))
+      await(ks.destroy(metaContainer))
       there was one(mockSkuber).delete(mockDep.name,0)(skuber.ext.deploymentKind)
       there was one(mockSkuber).delete(mockRS.name,0)(skuber.ext.replsetsKind)
       there was one(mockSkuber).delete(mockService.name,0)(client.serviceKind)
@@ -637,7 +637,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
       mockSkuber.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
 
-      await(ks.destroyContainer(metaContainer))
+      await(ks.destroy(metaContainer))
       there were no(mockSkuber).delete(any,any)(meq(client.serviceKind))
     }
 
@@ -689,6 +689,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "num_instances" -> testScale.toString
       )
     }
+
+//    "update support" in new FakeKube {
+//      ko("write me")
+//    }
+
   }
 
 }

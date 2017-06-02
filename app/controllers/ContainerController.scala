@@ -143,25 +143,27 @@ class ContainerController @Inject()(
 
   def promoteContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
-      NotFoundResult(s"Container with ID '$id' not found.")
-    } { c =>
+      NotFoundResult(notFoundMessage(ResourceIds.Container, id))
+    } { container =>
       val environment = ResourceFactory.findParent(
         parentType = ResourceIds.Environment,
-        childId = c.id
+        childId = container.id
       ) getOrElse {
-        throw new RuntimeException(s"could not find Environment parent for container ${c.id}")
+        throw new RuntimeException(s"could not find Environment parent for container ${container.id}")
       }
 
-      if (findPromotionRule(environment.id).isEmpty) {
-        HandleExceptions(new ConflictException("No promotion policy found."))
+      val target_env_id = ContainerService.targetEnvQueryParam(request.queryString).get
+
+      if (findPromotionRule(target_env_id).isEmpty) {
+        HandleExceptions(new ConflictException("No promotion policy found for target environment."))
       } else {
         val user = request.identity
-        val container = ResourceFactory.findChildOfType(ResourceIds.Container, environment.id, id).getOrElse {
-          throw new ResourceNotFoundException( notFoundMessage(ResourceIds.Container, id))
-        }
+//        val container = ResourceFactory.findChildOfType(ResourceIds.Container, environment.id, id).getOrElse {
+//          throw new ResourceNotFoundException( notFoundMessage(ResourceIds.Container, id))
+//        }
 
         val (operations, options) = ContainerService.setupPromoteRequest(
-          fqon, environment.id, container, user, META_URL.get, request.queryString
+          fqon, environment.id, container, user, META_URL.get, target_env_id
         )
 
         SafeRequest(operations, options) Protect { _ =>

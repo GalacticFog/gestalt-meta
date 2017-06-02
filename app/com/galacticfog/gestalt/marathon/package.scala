@@ -406,6 +406,19 @@ package object marathon {
     def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
     def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
 
+    def makeVhostLabels(mappings: Seq[ContainerSpec.PortMapping]): Map[String,String] = {
+      mappings
+        .zipWithIndex
+        .collect({
+          case (port, portIndex) if port.virtual_hosts.exists(_.nonEmpty) =>
+            Map(
+              "HAPROXY_%d_VHOST".format(portIndex) -> port.virtual_hosts.get.mkString(","),
+              "HAPROXY_%d_GROUP".format(portIndex) -> "external"
+            )
+        })
+        .flatten.toMap
+    }
+
     val fqon = validate(uncheckedFQON) getOrElse {invalid("'fqon'")}
     val wrkName = validate(uncheckedWrkName) getOrElse {invalid("'workspaceName'")}
     val envName = validate(uncheckedEnvName) getOrElse {invalid("'environmentName'")}
@@ -451,6 +464,8 @@ package object marathon {
     val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName,cntrName)
     val namedVIP = "/" + nameComponents.reverse.mkString(".")
     val appId = "/" + nameComponents.mkString("/")
+
+    val vhostLabels = makeVhostLabels(props.port_mappings)
 
     def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo], Option[Seq[AppUpdate.PortDefinition]]) = {
       val requestedNetwork = props.network.map(_.trim) getOrElse ""
@@ -537,7 +552,7 @@ package object marathon {
       acceptedResourceRoles = props.accepted_resource_roles flatMap {rs => if (rs.isEmpty) None else Some(rs)},
       args = props.args,
       portDefinitions = portDefs,
-      labels = Some(props.labels),
+      labels = Some(props.labels ++ vhostLabels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),
         path = Some(hc.path),

@@ -3,10 +3,10 @@ package controllers.util
 import java.util.UUID
 
 import play.api.libs.json._
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -14,13 +14,18 @@ import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
 import controllers.DeleteController
+import play.api.http.HttpVerbs
 import play.api.mvc.RequestHeader
+import play.api.test.FakeRequest
 import services.{FakeURI, ProviderContext}
 
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
@@ -35,6 +40,8 @@ trait ContainerService extends JsonInput {
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
                       userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
+
+  def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
 }
 
@@ -69,7 +76,7 @@ object ContainerService {
                           container: Instance,
                           user: AuthAccountWithCreds,
                           metaUrl: String,
-                          queryString: QueryString) = {
+                          target_env_id: UUID) = {
     val action = "container.promote"
     val operations = List(
       controllers.util.Authorize(action),
@@ -79,13 +86,13 @@ object ContainerService {
     val options = RequestOptions(
       user,
       authTarget = Option(env),
-      policyOwner = Option(env),
+      policyOwner = Option(target_env_id),
       policyTarget = Option(container),
       data = Option(Map(
         "fqon"           -> fqon,
         "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
         "environment_id" -> env.toString,
-        "target_env_id"  -> targetEnvQueryParam(queryString).get.toString
+        "target_env_id"  -> target_env_id.toString
       ))
     )
     (operations,options)
@@ -198,6 +205,9 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
   extends ContainerService with MetaControllerUtils {
 
   import ContainerService._
+
+  val CAAS_PROVIDER_TIMEOUT_MS = 5000
+
 
   override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
     log.debug("***Finding container by id...")
@@ -363,4 +373,14 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     deleteController.deleteResource(container, identity)(request)
   }
 
+  override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
+    for {
+      patched <- Future.fromTry(PatchInstance.applyPatch(origContainer, patch)).mapTo[GestaltResourceInstance]
+      containerSpec <- Future.fromTry(ContainerSpec.fromResourceInstance(patched))
+      provider <- Future.fromTry(Try(caasProvider(containerSpec.provider.id)))
+      context <- Future.fromTry(Try(ProviderContext(request, provider.id, Some(patched))))
+      service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
+      updated <- service.update(context, patched)
+    } yield updated
+  }
 }

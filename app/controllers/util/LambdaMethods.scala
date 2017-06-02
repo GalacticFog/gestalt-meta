@@ -24,6 +24,8 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import javax.inject.Inject
 
+import play.api.mvc.RequestHeader
+
 import scala.concurrent.duration._
 
 class LambdaMethods @Inject()( ws: WSClient,
@@ -86,10 +88,10 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
 
-  def patchLambdaHandler(
-      r: GestaltResourceInstance,
-      patch: PatchDocument,
-      user: AuthAccountWithCreds): Try[GestaltResourceInstance] = Try {
+  def patchLambdaHandler( r: GestaltResourceInstance,
+                          patch: PatchDocument,
+                          user: AuthAccountWithCreds,
+                          request: RequestHeader ): Future[GestaltResourceInstance] = {
 
     def replace(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
       data.foldLeft[LaserLambda](lm)({
@@ -110,7 +112,7 @@ class LambdaMethods @Inject()( ws: WSClient,
         ("periodic_info" -> JsNull)
     }
 
-    val f = for {
+    for {
       // Get lambda from gestalt-lambda
       getReq <- client.get(s"/lambdas/${r.id}") flatMap { response => response.status match {
         case 200 => Future.successful(response)
@@ -137,8 +139,6 @@ class LambdaMethods @Inject()( ws: WSClient,
       }}
       updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
     } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
-
-    Await.result(f, LAMBDA_PROVIDER_TIMEOUT_MS millis)
   }
 
 }

@@ -16,7 +16,7 @@ import services.{MarathonClientFactory, SkuberFactory}
 
 trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocking with Mockito with ResourceScope {
 
-  lazy val mockContainerService = mock[ContainerService]//.verbose
+  lazy val mockContainerService = mock[ContainerService]
   lazy val mockProviderManager  = mock[ProviderManager]
   lazy val mockSecureController = mock[SecureController]
   lazy val mockLambdaMethods    = mock[LambdaMethods]

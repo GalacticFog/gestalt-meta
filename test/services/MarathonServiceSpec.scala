@@ -100,7 +100,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             service_port = None,
             name = Some("http"),
             labels = None,
-            expose_endpoint = Some(true)
+            expose_endpoint = Some(true),
+            virtual_hosts = Some(Seq("web.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -141,8 +142,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           "num_instances" -> testProps.num_instances.toString,
           "force_pull" -> testProps.force_pull.toString,
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get)
-        )
+          "network" -> testProps.network.get,
+          "labels" -> Json.obj(
+            "USERVAR" -> "USERVAL"
+          ).toString
+        ))
       )
 
       mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
@@ -211,7 +215,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
           |    "instances": 1,
           |    "ipAddress": null,
-          |    "labels": {},
+          |    "labels": {
+          |       "HAPROXY_0_GROUP": "external",
+          |       "HAPROXY_0_VHOST": "web.test.com",
+          |       "USERVAR": "USERVAL"
+          |    },
           |    "maxLaunchDelaySeconds": 3600,
           |    "mem": 128,
           |    "portDefinitions": [
@@ -278,7 +286,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
           marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
           marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
-        ) and ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone )
+        ) and
+          ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
+          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be_==(Map(
+            "HAPROXY_0_GROUP" -> "external",
+            "HAPROXY_0_VHOST" -> "web.test.com",
+            "USERVAR" -> "USERVAL"
+          )))
       )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
@@ -291,6 +305,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))
+      val persistedLabels = Json.parse(updatedContainerProps("labels")).asOpt[Map[String,String]]
+      persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
@@ -520,7 +536,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fDeleted = ms.destroyContainer( metaContainer )
+      val fDeleted = ms.destroy( metaContainer )
 
       await(fDeleted)
 
@@ -569,7 +585,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      val fDeleted = ms.destroyContainer( metaContainer )
+      val fDeleted = ms.destroy( metaContainer )
 
       await(fDeleted)
 
@@ -616,6 +632,187 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       updatedContainerProps must havePair(
         "num_instances" -> "4"
       )
+    }
+
+    "update supporting using Marathon PUT" in new FakeDCOS {
+      val initProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            host_port = None,
+            service_port = None,
+            name = Some("will_remove_endpoint"),
+            labels = None,
+            expose_endpoint = Some(true)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(81),
+            host_port = None,
+            service_port = None,
+            name = Some("will_add_endpoint"),
+            labels = None,
+            expose_endpoint = Some(false)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(443),
+            host_port = None,
+            service_port = Some(8443),
+            name = Some("will_remove_port"),
+            labels = None,
+            expose_endpoint = Some(true)
+          )
+        ),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE")
+      )
+
+      val origExtId = "/some/marathon/app"
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        name = initProps.name,
+        parent = Some(testEnv.id),
+        properties = Some(Map[String,String](
+          "container_type" -> initProps.container_type,
+          "image" -> initProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> initProps.cpus.toString,
+          "memory" -> initProps.memory.toString,
+          "num_instances" -> initProps.num_instances.toString,
+          "force_pull" -> initProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
+          "network" -> initProps.network.getOrElse(""),
+          "external_id" -> origExtId
+        ))
+      )
+
+      mockMarClient.updateApplication(any,any)(any) returns Future.successful(Json.parse(
+      s"""
+         |{
+         |    "acceptedResourceRoles": null,
+         |    "args": null,
+         |    "backoffFactor": 1.15,
+         |    "backoffSeconds": 1,
+         |    "cmd": null,
+         |    "constraints": [],
+         |    "container": {
+         |        "docker": {
+         |            "forcePullImage": false,
+         |            "image": "nginx:updated",
+         |            "network": "BRIDGE",
+         |            "parameters": [],
+         |            "portMappings": [
+         |            ],
+         |            "privileged": true
+         |        },
+         |        "type": "DOCKER",
+         |        "volumes": []
+         |    },
+         |    "cpus": 1,
+         |    "dependencies": [],
+         |    "deployments": [
+         |        {
+         |            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
+         |        }
+         |    ],
+         |    "disk": 0,
+         |    "env": {},
+         |    "executor": "",
+         |    "fetch": [],
+         |    "gpus": 0,
+         |    "healthChecks": [],
+         |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
+         |    "instances": 1,
+         |    "ipAddress": null,
+         |    "labels": {},
+         |    "maxLaunchDelaySeconds": 3600,
+         |    "mem": 128,
+         |    "portDefinitions": [
+         |        {
+         |            "labels": {},
+         |            "name": "http",
+         |            "port": 0,
+         |            "protocol": "tcp"
+         |        },
+         |        {
+         |            "labels": {
+         |                "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+         |            },
+         |            "name": "https",
+         |            "port": 8443,
+         |            "protocol": "tcp"
+         |        },
+         |        {
+         |            "labels": {},
+         |            "name": "debug",
+         |            "port": 0,
+         |            "protocol": "udp"
+         |        }
+         |    ],
+         |    "ports": [
+         |        0,
+         |        8443,
+         |        0
+         |    ],
+         |    "readinessChecks": [],
+         |    "requirePorts": false,
+         |    "residency": null,
+         |    "secrets": {},
+         |    "storeUrls": [],
+         |    "taskKillGracePeriodSeconds": null,
+         |    "tasks": [],
+         |    "tasksHealthy": 0,
+         |    "tasksRunning": 0,
+         |    "tasksStaged": 0,
+         |    "tasksUnhealthy": 0,
+         |    "upgradeStrategy": {
+         |        "maximumOverCapacity": 1,
+         |        "minimumHealthCapacity": 1
+         |    },
+         |    "uris": [],
+         |    "user": null,
+         |    "version": "2017-03-27T17:07:03.684Z"
+         |}
+        """.stripMargin
+      ))
+
+      val updatedContainer = await(ms.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          name = "updated-name",
+          properties = metaContainer.properties.map(
+            _ ++ Map(
+              "image" -> "nginx:updated"
+            )
+          )
+        )
+      ))
+      val Some(updatedContainerProps) = updatedContainer.properties
+
+      there was one(mockMarClient).updateApplication(
+        meq(origExtId),
+        argThat(
+          (js: JsObject) =>
+            (js \ "container" \ "docker" \ "image").as[String] == "nginx:updated"
+              && (js \ "id").as[String] == origExtId
+        )
+      )(any)
+
+      updatedContainer.name must_== "updated-name"
+      updatedContainerProps must havePair(
+        "image" -> "nginx:updated"
+      )
+      // TODO: some check that networking and labels were updated appropriately
     }
 
   }

@@ -61,8 +61,24 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   def launchApp(marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
-    Logger.info(s"new payload:\n${Json.prettyPrint(marPayload)}")
+    Logger.info(s"new app payload:\n${Json.prettyPrint(marPayload)}")
     client.url(s"${marathonAddress}/v2/apps").post(marPayload) map { marResp =>
+      marResp.status match {
+        case s if (200 to 299).toSeq.contains(s) => marResp.json
+        case b if b == 409 =>
+          throw new ConflictException(
+            Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+        case b if Seq(400, 422).contains(b) =>
+          throw new BadRequestException(
+            Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+        case _ => throw new RuntimeException(marResp.body)
+      }
+    }
+  }
+
+  def updateApplication(appId: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
+    Logger.info(s"update app payload:\n${Json.prettyPrint(marPayload)}")
+    client.url(s"${marathonAddress}/v2/apps/${appId.stripPrefix("/")}").put(marPayload) map { marResp =>
       marResp.status match {
         case s if (200 to 299).toSeq.contains(s) => marResp.json
         case b if b == 409 =>
