@@ -142,8 +142,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           "num_instances" -> testProps.num_instances.toString,
           "force_pull" -> testProps.force_pull.toString,
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get)
-        )
+          "network" -> testProps.network.get,
+          "labels" -> Json.obj(
+            "USERVAR" -> "USERVAL"
+          ).toString
+        ))
       )
 
       mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
@@ -214,7 +217,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |    "ipAddress": null,
           |    "labels": {
           |       "HAPROXY_0_GROUP": "external",
-          |       "HAPROXY_0_VHOST": "web.test.com"
+          |       "HAPROXY_0_VHOST": "web.test.com",
+          |       "USERVAR": "USERVAL"
           |    },
           |    "maxLaunchDelaySeconds": 3600,
           |    "mem": 128,
@@ -284,9 +288,10 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
         ) and
           ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
-          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be(Map(
+          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be_==(Map(
             "HAPROXY_0_GROUP" -> "external",
-            "HAPROXY_0_VHOST" -> "web.test.com"
+            "HAPROXY_0_VHOST" -> "web.test.com",
+            "USERVAR" -> "USERVAL"
           )))
       )(any)
 
@@ -300,8 +305,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
         (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
       ))
-      val persistedLabels = Json.parse(updatedContainerProps("labels")).as[Map[String,String]]
-      persistedLabels must_== Map.empty[String,String]
+      val persistedLabels = Json.parse(updatedContainerProps("labels")).asOpt[Map[String,String]]
+      persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
@@ -671,7 +676,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         network = Some("BRIDGE")
       )
 
-      val extId = "/some/marathon/app"
+      val origExtId = "/some/marathon/app"
 
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
@@ -687,7 +692,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           "force_pull" -> initProps.force_pull.toString,
           "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
           "network" -> initProps.network.getOrElse(""),
-          "external_id" -> extId
+          "external_id" -> origExtId
         ))
       )
 
@@ -786,16 +791,20 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         container = metaContainer.copy(
           name = "updated-name",
           properties = metaContainer.properties.map(
-            _ ++ Map("image" -> "nginx:updated")
+            _ ++ Map(
+              "image" -> "nginx:updated"
+            )
           )
         )
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
 
       there was one(mockMarClient).updateApplication(
-        meq("/some/marathon/app"),
+        meq(origExtId),
         argThat(
-          (js: JsObject) => (js \ "container" \ "docker" \ "image").as[String] == "nginx:updated" && (js \ "id").as[String] == "/some/marathon/app"
+          (js: JsObject) =>
+            (js \ "container" \ "docker" \ "image").as[String] == "nginx:updated"
+              && (js \ "id").as[String] == origExtId
         )
       )(any)
 
@@ -803,8 +812,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
-
-      ko("some check that networking and labels were updated appropriately")
+      // TODO: some check that networking and labels were updated appropriately
     }
 
   }
