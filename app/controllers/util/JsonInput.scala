@@ -97,16 +97,10 @@ trait JsonInput {
           resource_type  = Option(assertValidTypeId(input, typeId))))
   }
   
-  private[this] def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty  
-  
-  private[util] def resolveTypeId(r: GestaltResourceInput, typeId: Option[UUID]): Option[UUID] = {
-    if (r.resource_type.isDefined) r.resource_type
-    else if (typeId.isDefined) typeId
-    else None
-  }
-  
+  private[this] def typeExists(typeId: UUID) = !TypeFactory.findById(typeId).isEmpty
+
   private[util] def assertValidTypeId(r: GestaltResourceInput, typeId: Option[UUID]): UUID = {
-    resolveTypeId(r, typeId).fold {
+    (r.resource_type orElse typeId).fold {
       throw new BadRequestException(Errors.RESOURCE_TYPE_NOT_GIVEN) 
     }{ id => 
       if (typeExists(id)) id 

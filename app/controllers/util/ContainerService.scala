@@ -6,9 +6,9 @@ import play.api.libs.json._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.util.{Failure, Success, Try}
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,9 +20,7 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
 import controllers.DeleteController
-import play.api.http.HttpVerbs
 import play.api.mvc.RequestHeader
-import play.api.test.FakeRequest
 import services.{FakeURI, ProviderContext}
 
 import scala.concurrent.duration._
@@ -42,6 +40,8 @@ trait ContainerService extends JsonInput {
                       userRequestedId : Option[UUID] = None ): Future[GestaltResourceInstance]
 
   def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
+
+  def updateContainer(context: ProviderContext, container: GestaltResourceInstance, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
 }
 
@@ -186,16 +186,26 @@ object ContainerService {
     new BadRequestException(message)
   }
 
-  def containerProviderId(c: GestaltResourceInstance): UUID = {
-    val pid = (Json.parse(c.properties.get("provider")) \ "id").as[String]
-    UUID.fromString(pid)
+  def containerProviderId(c: ResourceLike): UUID = {
+    val pid = for {
+      props <- c.properties
+      provider <- props.get("provider")
+      parsed <- Try(Json.parse(provider)).toOption
+      pid <- (parsed \ "id").asOpt[String]
+      uuid <- Try(UUID.fromString(pid)).toOption
+    } yield uuid
+    pid getOrElse {
+      throw new ResourceNotFoundException(
+        s"Could not parse provider ID from container '${c.id}'"
+      )
+    }
   }
 
   def caasProvider(provider: UUID): GestaltResourceInstance = {
     ResourceFactory.findById(provider) filter {
       Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider) contains _.typeId
     } getOrElse {
-      throw new ResourceNotFoundException(s"CaaS provider with ID '$provider' not found.")
+      throw new ResourceNotFoundException(s"CaaS provider with ID '$provider' not found. Container ' is likely corrupt.")
     }
   }
 
@@ -330,6 +340,28 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     }
   }
 
+  def updateContainer( context: ProviderContext,
+                       container: Instance,
+                       user: AuthAccountWithCreds,
+                       request: RequestHeader ): Future[Instance] = {
+
+    val operations = containerRequestOperations("container.update")
+    val options    = containerRequestOptions(user, context.environmentId, container)
+    SafeRequest (operations, options) ProtectAsync { _ =>
+      for {
+        service      <- Future.fromTry{
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Updating container in backend CaaS...")
+          service.update(context, container)
+        }
+        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstance
+    }
+  }
+
   def createContainer(context: ProviderContext,
                       user: AuthAccountWithCreds,
                       containerSpec: ContainerSpec,
@@ -383,4 +415,5 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
       updated <- service.update(context, patched)
     } yield updated
   }
+
 }

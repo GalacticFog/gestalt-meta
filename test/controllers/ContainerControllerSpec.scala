@@ -120,6 +120,59 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(OK)
     }
 
+    "update a container via the ContainerService interface" in new TestContainerController {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id)
+      )
+      val extId = s"/${testEnv.id}/test-container"
+      val createdResource = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "disk" -> testProps.disk.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "external_id" -> s"${extId}"
+        ))
+      ).get
+
+      mockContainerService.updateContainer(any, any, any, any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          val r = arr(1).asInstanceOf[GestaltResourceInstance]
+          Future.successful(r)
+      }
+
+      val request = fakeAuthRequest(PUT,
+        s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds
+      ).withBody(
+        Output.renderInstance(createdResource)
+      )
+
+      val Some(result) = route(request)
+
+      status(result) must equalTo(OK)
+
+//      there was one(mockContainerService).updateContainer(
+//        container = argThat(
+//          (r: GestaltResourceInstance) => r.id == createdResource.id
+//        ),
+//        context = any,
+//        user = any,
+//        request = any
+//      )
+      there was one(mockContainerService).updateContainer(any,any,any,any)
+
+    }
 
 
     "list containers via the ContainerService interface" in new TestContainerController { 
