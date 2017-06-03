@@ -4,39 +4,37 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-
 import org.specs2.mutable._
 import org.specs2.specification._
 import org.specs2.specification.Step
 import play.api.libs.json._
-
 import java.util.UUID
 
 import com.galacticfog.gestalt.meta.test._
-
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.test._
 import play.api.test.Helpers._
-import controllers.PolicyController
+import controllers.{Meta, PolicyController, SecurityResources}
+import org.specs2.matcher.JsonMatchers
+import play.api.http.HttpVerbs
 
-class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll {
-  
+import scala.util.Success
+
+class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
   sequential
   
   override def beforeAll(): Unit = pristineDatabase
-  
-  abstract class App extends WithDbController[PolicyController](containerApp()) {
-    /*
-     * Using PolicyController here is incidental - I just need something
-     * that extends MetaController in order to access its members.
-     */
-    //val mc = app.injector.instanceOf[PolicyController]         
-  }
-  
+
+  abstract class App extends WithDbController[Meta](containerApp())
+
   "resolveTypeFromPayload" should {
-    
-    "return a valid resource_type UUID when given a valid UUID" in new App { 
+
+    "return a valid resource_type UUID when given a valid UUID" in new App {
       val f = controller.resolveTypeFromPayload _
-      
+
       f(GoodUUIDs.org)         must beSome(ResourceIds.Org)
       f(GoodUUIDs.workspace)   must beSome(ResourceIds.Workspace)
       f(GoodUUIDs.environment) must beSome(ResourceIds.Environment)
@@ -45,28 +43,54 @@ class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking 
       f(GoodUUIDs.api)         must beSome(ResourceIds.Api)
       f(GoodUUIDs.apiendpoint) must beSome(ResourceIds.ApiEndpoint)
     }
-    
-    "return a valid resource_type UUID when given a valid resource type NAME" in new App { 
+
+    "return a valid resource_type UUID when given a valid resource type NAME" in new App {
       val f = controller.resolveTypeFromPayload _
-      
+
       f(GoodNames.org)         must beSome(ResourceIds.Org)
       f(GoodNames.workspace)   must beSome(ResourceIds.Workspace)
       f(GoodNames.environment) must beSome(ResourceIds.Environment)
       f(GoodNames.eventrule)   must beSome(ResourceIds.RuleEvent)
       f(GoodNames.limitrule)   must beSome(ResourceIds.RuleLimit)
       f(GoodNames.api)         must beSome(ResourceIds.Api)
-      f(GoodNames.apiendpoint) must beSome(ResourceIds.ApiEndpoint)      
+      f(GoodNames.apiendpoint) must beSome(ResourceIds.ApiEndpoint)
     }
-    
-    "fail when given invalid UUIDs" in new App { 
+
+    "fail when given invalid UUIDs" in new App {
       controller.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
     }
-    
-    "fail when given invalid type names" in new App { 
+
+    "fail when given invalid type names" in new App {
       controller.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
     }
-    
+
   }
+
+//  "linked_provider creation" should {
+//
+//    "set `type` and `typeId` fields" in new App {
+//      Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+//      val Success(upstream) = createInstance(ResourceIds.LoggingProvider, "upstream-logging-provider",
+//        parent = Option(dummyRootOrgId),
+//        properties = Option(Map("parent" -> "{}"))
+//      )
+//
+//      val fakeRequest = controller.SecuredRequest[JsValue](user, mock[DummyAuthenticator], FakeRequest(HttpVerbs.POST, "/root/providers").withBody[JsValue](Json.obj()))
+//      val downstream = controller.postProviderCommon(dummyRootOrgId, ResourceIds.Org.toString, dummyRootOrgId, Json.obj(
+//        "name" -> "downstream-caas-provider",
+//        "description" -> "",
+//        "resource_type" -> ResourceName(ResourceIds.KubeProvider),
+//        "properties" -> Json.obj(
+//          "config" -> Json.obj()
+//        )
+//      ))(fakeRequest)
+//
+//      contentAsString(downstream) must /("properties") /#(0) /("type" -> ResourceName(ResourceIds.KubeProvider))
+//      contentAsString(downstream) must /("properties") /#(0) /("typeId" -> ResourceIds.KubeProvider.toString)
+//    }
+//
+//  }
+
 }
 
 object GoodUUIDs {

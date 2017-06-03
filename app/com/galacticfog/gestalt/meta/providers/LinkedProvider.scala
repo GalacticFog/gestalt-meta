@@ -6,14 +6,13 @@ import play.api.libs.json.Reads._ // Custom validation helpers
 import play.api.libs.functional.syntax._ // Combinator syntax
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
 
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 
 import com.galacticfog.gestalt.meta.api.errors._
 
-case class LinkedProvider(name: String, id: UUID, location: Option[String], `type`: Option[UUID] = None)
+case class LinkedProvider(name: String, id: UUID, location: Option[String], `type`: Option[String] = None, typeId: Option[UUID] = None)
 
 object LinkedProvider {
   lazy implicit val linkedProviderFormat = Json.format[LinkedProvider]  
