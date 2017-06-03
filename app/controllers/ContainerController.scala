@@ -109,6 +109,32 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
+  def updateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+    val _ = ResourceFactory.findById(envId) getOrElse {
+      throw ResourceNotFoundException(s"Environment with ID '$envId' not found")
+    }
+    val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
+      throw ResourceNotFoundException(s"Container with ID '$cid' not found")
+    }
+    val provider = ContainerService.caasProvider(ContainerService.containerProviderId(prevContainer))
+    val updated = for {
+      input <- Future.fromTry(Try{
+        jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(request.body))
+      })
+      _ = log.debug("parsed input")
+      containerWithUpdates = prevContainer.copy(
+        name = input.name,
+        description = input.description,
+        properties = input.properties
+      )
+      _ = log.debug("created update")
+      context   = ProviderContext(request, provider.id, Some(prevContainer))
+      _ = log.debug("about to perform update")
+      updated <- containerService.updateContainer(context, containerWithUpdates, request.identity, request)
+    } yield Ok(RenderSingle(updated))
+    updated recover { case e => HandleExceptions(e) }
+  }
+
   def scaleContainer(fqon: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       Future.successful(NotFoundResult(s"Container with ID '$id' not found."))

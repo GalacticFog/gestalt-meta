@@ -50,9 +50,6 @@ export GESTALT_SECURITY_PROTOCOL=http
 export GESTALT_SECURITY_KEY="key"
 export GESTALT_SECURITY_SECRET="secret"
 
-export GESTALT_APIGATEWAY=http://apigateway.dev.galacticfog.com
-export GESTALT_LAMBDA=http://lambda.dev.galacticfog.com
-
 export RABBIT_HTTP_PROTOCOL="https"
 export RABBIT_HOST="rabbit.example.com"
 export RABBIT_PORT=5672 

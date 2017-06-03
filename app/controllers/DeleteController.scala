@@ -150,23 +150,14 @@ class DeleteController @Inject()(
 
   import services._
 
-  private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
-    Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
-      UUID.fromString(id.as[String])
-    }
-  }  
-  
   private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerId = providerIdProperty(container.properties.get) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Could not parse provider ID from container '${container.id}'")
-    }
-    
+    val providerId = ContainerService.containerProviderId(container)
+
     ResourceFactory.findById(providerId) getOrElse {
       throw new ResourceNotFoundException(
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }    
-  }  
+    }
+  }
   /* ************** END TEMPORARY **************** */
 
   //  def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
