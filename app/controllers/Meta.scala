@@ -5,6 +5,7 @@ import java.net.URL
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
@@ -37,8 +38,9 @@ import play.api.libs.json._
 import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-
 import javax.inject.Singleton
+
+import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.providers._
 
 @Singleton
@@ -432,7 +434,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
       // Inject the type-id of each provider into the given links.
       links map { k =>
-        k.copy(`type` = Some(providers(k.id).typeId))
+        k.copy(
+          typeId = Some(providers(k.id).typeId),
+          `type` = Some(sdk.ResourceName(providers(k.id).typeId))
+        )
       }
     }
     
