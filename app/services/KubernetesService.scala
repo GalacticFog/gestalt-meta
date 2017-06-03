@@ -199,6 +199,24 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
+  def update(context: ProviderContext, container: GestaltResourceInstance)
+                     (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    log.debug("update(...)")
+    ContainerSpec.fromResourceInstance(container) match {
+      case Failure(e) => Future.failed(e)
+      case Success(spec) => for {
+        kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
+        namespace  <- getNamespace(kube, context.environment.id, create = true)
+        kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
+        updatedContainerSpec <- updateDeploymentEtAl(kube, container.id, spec, namespace.name)
+      } yield upsertProperties(
+        container,
+        "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
+      )
+    }
+  }
+
+
   /**
    * Get the Kubernetes Namespace for the given Environment ID. Namespaces are named after the
    * Environment UUID. If a corresponding namespace is not found, it will be created if create is 'true'
@@ -235,7 +253,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       pm <- spec.port_mappings
       vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
     } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
-
     if (ingressPMs.isEmpty) Future.successful(None)
     else {
       val ingress = ingressPMs.foldLeft[Ingress](
@@ -249,29 +266,25 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           vhost, Map("" -> s"${spec.name}:${port}")
         )
       }
-
       kube.create[Ingress](ingress) map (Some(_))
     }
   }
 
   /**
-   * Create a Deployment with services in Kubernetes
-   */
+    * Create a Deployment with services in Kubernetes
+    */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
     val fDeployment = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
-
     val fUpdatedPMsFromService = createKubeService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
         spec.port_mappings
     }
-
     val fIngress = createIngress(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
         ()
     }
-
     for {
       dep <- fDeployment
       _ <- fIngress
@@ -279,6 +292,31 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield spec.copy(
       port_mappings = updatedPMs
     )
+  }
+
+  /**
+   * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
+   */
+  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
+//    val fDeployment = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
+//    val fUpdatedPMsFromService = createKubeService(kube, namespace, containerId, spec) recover {
+//      case e: Throwable =>
+//        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
+//        spec.port_mappings
+//    }
+//    val fIngress = createIngress(kube, namespace, containerId, spec) recover {
+//      case e: Throwable =>
+//        log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
+//        ()
+//    }
+//    for {
+//      dep <- fDeployment
+//      _ <- fIngress
+//      updatedPMs <- fUpdatedPMsFromService
+//    } yield spec.copy(
+//      port_mappings = updatedPMs
+//    )
+    ???
   }
 
   private[services] def createKubeService(kube: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
@@ -689,9 +727,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       "num_instances" -> s"${updatedNumInstances}"
     )
   }
-
-  override def update(context: ProviderContext, container: GestaltResourceInstance)
-                     (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 
 }
 
