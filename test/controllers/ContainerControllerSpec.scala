@@ -153,7 +153,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       }
 
       val request = fakeAuthRequest(PUT,
-        s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds
+        s"/root/containers/${createdResource.id}", testCreds
       ).withBody(
         Output.renderInstance(createdResource)
       )

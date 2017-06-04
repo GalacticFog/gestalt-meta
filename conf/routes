@@ -202,7 +202,7 @@ POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/environment
 # CONTAINERS
 ############################
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers  		        controllers.ContainerController.postContainer(fqon: String, envId: java.util.UUID)
-PUT     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/containers/:cid           controllers.ContainerController.updateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID)
+PUT     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid                               controllers.ContainerController.updateContainer(fqon: String, cid: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/scale                         controllers.ContainerController.scaleContainer(fqon: String, cid: java.util.UUID, numInstances: Int)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/migrate                       controllers.ContainerController.migrateContainer(fqon: String, cid: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/promote                       controllers.ContainerController.promoteContainer(fqon: String, cid: java.util.UUID)
