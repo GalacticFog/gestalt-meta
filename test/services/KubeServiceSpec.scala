@@ -690,10 +690,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )
     }
 
-//    "update support" in new FakeKube {
-//      ko("write me")
-//    }
-
   }
 
 }

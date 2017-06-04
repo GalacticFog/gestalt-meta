@@ -109,13 +109,14 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
-  def updateContainer(fqon: String, envId: java.util.UUID, cid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    val _ = ResourceFactory.findById(envId) getOrElse {
-      throw ResourceNotFoundException(s"Environment with ID '$envId' not found")
-    }
+  def updateContainer(fqon: String, cid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")
     }
+    val environment = ResourceFactory.findParent(
+      parentType = ResourceIds.Environment,
+      childId = prevContainer.id
+    ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${prevContainer.id}")}
     val provider = ContainerService.caasProvider(ContainerService.containerProviderId(prevContainer))
     val updated = for {
       input <- Future.fromTry(Try{
@@ -128,7 +129,9 @@ class ContainerController @Inject()(
         properties = input.properties
       )
       _ = log.debug("created update")
-      context   = ProviderContext(request, provider.id, Some(prevContainer))
+      context   = ProviderContext(request.copy(
+        uri = s"/${fqon}/environments/${environment.id}/containers/${prevContainer.id}"
+      ), provider.id, Some(prevContainer))
       _ = log.debug("about to perform update")
       updated <- containerService.updateContainer(context, containerWithUpdates, request.identity, request)
     } yield Ok(RenderSingle(updated))
