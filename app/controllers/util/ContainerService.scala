@@ -344,7 +344,6 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
                        container: Instance,
                        user: AuthAccountWithCreds,
                        request: RequestHeader ): Future[Instance] = {
-
     val operations = containerRequestOperations("container.update")
     val options    = containerRequestOptions(user, context.environmentId, container)
     SafeRequest (operations, options) ProtectAsync { _ =>
