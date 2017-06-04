@@ -66,12 +66,8 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }
-  
-  def databaseApp(): play.api.Application = {
-    containerApp(additionalBindings = Seq(bind(classOf[DataStore]).toInstance(injector.instanceOf(classOf[DataStore]))))
-  }
 
-  private[this] def uuid() = UUID.randomUUID()  
+  private[this] def uuid() = UUID.randomUUID()
 
   /*
    * Still playing with this - DO NOT DELETE!

@@ -3,6 +3,7 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.PropertyValidator
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 
@@ -118,16 +119,27 @@ class ContainerController @Inject()(
       childId = prevContainer.id
     ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${prevContainer.id}")}
     val provider = ContainerService.caasProvider(ContainerService.containerProviderId(prevContainer))
+    var prevProps = prevContainer.properties.getOrElse {
+      throw BadRequestException(s"Container with ID '$cid' missing properties field and is likely corrupt.")
+    }
     val updated = for {
-      input <- Future.fromTry(Try{
-        jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(request.body))
-      })
+      input <- Future.fromTry(Try{request.body.as[GestaltResourceInput]})
       _ = log.debug("parsed input")
-      containerWithUpdates = prevContainer.copy(
+      newProperties = stringmap(input.properties).map(
+        _ ++ Map(
+          "external_id" -> prevProps.getOrElse("external_id", throw new RuntimeException(s"Container with ID '$cid' missing 'external_id'")),
+          "provider" -> prevProps.getOrElse("provider", throw new RuntimeException(s"Container with ID '$cid' missing 'external_id'"))
+        )
+      )
+      validatedProperties <- PropertyValidator.validate(ResourceIds.Container, newProperties) match {
+        case (true,_) => Future.successful(newProperties)
+        case (false,msg) => Future.failed(new BadRequestException(msg getOrElse "could not validate Container properties"))
+      }
+      containerWithUpdates <- Future.fromTry(Try{prevContainer.copy(
         name = input.name,
         description = input.description,
-        properties = input.properties
-      )
+        properties = validatedProperties
+      )})
       _ = log.debug("created update")
       context   = ProviderContext(request.copy(
         uri = s"/${fqon}/environments/${environment.id}/containers/${prevContainer.id}"
