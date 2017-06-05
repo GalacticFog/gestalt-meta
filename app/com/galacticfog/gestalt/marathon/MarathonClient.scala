@@ -78,7 +78,9 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
 
   def updateApplication(appId: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     Logger.info(s"update app payload:\n${Json.prettyPrint(marPayload)}")
-    client.url(s"${marathonAddress}/v2/apps/${appId.stripPrefix("/")}").put(marPayload) map { marResp =>
+    client.url(s"${marathonAddress}/v2/apps/${appId.stripPrefix("/")}").withQueryString(
+      "force" -> "true"
+    ).put(marPayload) map { marResp =>
       marResp.status match {
         case s if (200 to 299).toSeq.contains(s) => marResp.json
         case b if b == 409 =>
@@ -93,14 +95,18 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
   }
 
   def deleteApplication(externalId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-    client.url(s"${marathonAddress}/v2/apps${externalId}").delete() map { marResp =>
+    client.url(s"${marathonAddress}/v2/apps${externalId}").withQueryString(
+      "force" -> "true"
+    ).delete() map { marResp =>
       Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
     }    
   }  
 
   def scaleApplication(appId: String, numInstances: Int)(implicit ex: ExecutionContext): Future[JsValue] = {
-    client.url(s"${marathonAddress}/v2/apps/${appId}").put(Json.obj(
+    client.url(s"${marathonAddress}/v2/apps/${appId}").withQueryString(
+      "force" -> "true"
+    ).put(Json.obj(
       "instances" -> numInstances
     )) map { marResp =>
       Logger.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
