@@ -202,7 +202,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def update(context: ProviderContext, container: GestaltResourceInstance)
                      (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("update(...)")
-    ContainerSpec.fromResourceInstance(container) match {
+    val nameGetter = "/namespaces/[^/]*/deployments/(.*)".r
+    val previousName = for {
+      eid <- containerExternalId(container)
+      prev <- eid match {
+        case nameGetter(name) => Some(name)
+        case _ => None
+      }
+    } yield prev
+    ContainerSpec.fromResourceInstance(container).map(
+      c => c.copy(name = previousName getOrElse c.name)
+    ) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
         kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
@@ -248,25 +258,58 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     case _ => unprocessable("port mapping must specify \"TCP\" or \"UDP\" as protocol")
   }
 
-  def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Option[Ingress]] = {
-    val ingressPMs = for {
-      pm <- spec.port_mappings
-      vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
-    } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
-    if (ingressPMs.isEmpty) Future.successful(None)
-    else {
-      val ingress = ingressPMs.foldLeft[Ingress](
-        Ingress(metadata = ObjectMeta(
-          name = spec.name,
-          namespace = namespace,
-          labels = Map(META_CONTAINER_KEY -> containerId.toString)
-        ))
-      ){
-        case (acc, (vhost,port)) => acc.addHttpRule(
-          vhost, Map("" -> s"${spec.name}:${port}")
-        )
+  def updateIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Option[Ingress]] = {
+    // start this async call early, we'll need it later
+    val fExistingIngress = kube.getOption[Ingress](spec.name)
+    /*
+     * create new ingress spec
+     * if empty, delete any existing ingress
+     * if not empty, update or create
+     */
+    val maybeNewIng = mkIngressSpec(containerId, spec, namespace)
+    fExistingIngress flatMap { maybeExistingIng =>
+      (maybeExistingIng,maybeNewIng) match {
+        case (None, None)            => Future.successful(None)
+        case (Some(_), None)         => kube.delete[Ingress](spec.name) map (_ => None)
+        case (None, Some(create))    => kube.create[Ingress](create) map (Some(_))
+        case (Some(_), Some(update)) => kube.update[Ingress](update) map (Some(_))
       }
-      kube.create[Ingress](ingress) map (Some(_))
+    }
+  }
+
+  def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Option[Ingress]] = {
+    mkIngressSpec(containerId, spec, namespace).fold { Future.successful(Option.empty[Ingress]) }
+                                                 { kube.create[Ingress](_) map(Some(_)) }
+  }
+
+  def updateService(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Seq[PortMapping]] = {
+    // start this async call early, we'll need it later
+    val fExistingSvc = kube.getOption[Service](spec.name)
+    /*
+     * create new service spec
+     * if empty, delete any existing service
+     * if not empty, update or create
+     */
+    val (maybeNewSvc, newPMs) = mkServiceSpec(containerId, spec, namespace)
+    fExistingSvc flatMap { maybeExistingSvc =>
+      (maybeExistingSvc, maybeNewSvc) match {
+        case (None, None)            => Future.successful(())
+        case (Some(_), None)         => kube.delete[Service](spec.name)
+        case (None, Some(create))    => kube.create[Service](create)
+        case (Some(_), Some(update)) => kube.update[Service](update)
+      }
+    } map (_ => newPMs)
+  }
+
+  def createService(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Seq[PortMapping]] = {
+    val (maybeService,newPMs) = mkServiceSpec(containerId, spec, namespace)
+    maybeService match {
+      case Some(svc) =>
+        kube.create[Service](svc) map {
+          _ => newPMs
+        }
+      case None =>
+        Future.successful(newPMs)
     }
   }
 
@@ -274,8 +317,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDeployment = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
-    val fUpdatedPMsFromService = createKubeService(kube, namespace, containerId, spec) recover {
+    val fDeployment = kube.create[Deployment](mkDeploymentSpec(containerId, spec, namespace))
+    val fUpdatedPMsFromService = createService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
         spec.port_mappings
@@ -298,70 +341,28 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
    */
   private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-//    val fDeployment = kube.create[Deployment](mkdeployment(containerId, spec, namespace))
-//    val fUpdatedPMsFromService = createKubeService(kube, namespace, containerId, spec) recover {
-//      case e: Throwable =>
-//        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
-//        spec.port_mappings
-//    }
-//    val fIngress = createIngress(kube, namespace, containerId, spec) recover {
-//      case e: Throwable =>
-//        log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
-//        ()
-//    }
-//    for {
-//      dep <- fDeployment
-//      _ <- fIngress
-//      updatedPMs <- fUpdatedPMsFromService
-//    } yield spec.copy(
-//      port_mappings = updatedPMs
-//    )
-    ???
-  }
-
-  private[services] def createKubeService(kube: RequestContext, namespace: String, containerId: UUID, container: ContainerSpec): Future[Seq[PortMapping]] = {
-    val exposedPorts = container.port_mappings.filter(_.expose_endpoint.contains(true))
-    val srvProto = exposedPorts.foldLeft[Service](
-      Service(metadata=ObjectMeta(name=container.name,namespace=namespace))
-        .withType(Service.Type.NodePort)
-        .withSelector(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-        .addLabel(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-    ){
-      case (svc,pm) => svc.exposeOnPort(Service.Port(
-        name = pm.name.getOrElse(""),
-        protocol = pm.protocol,
-        port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
-        targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
-        nodePort = pm.host_port.getOrElse(0)
-      ))
+    val fDepl = kube.update[Deployment](mkDeploymentSpec(containerId, spec, namespace))
+    val fUpdatedPMsFromService = updateService(kube, namespace, containerId, spec) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
+        spec.port_mappings
     }
-    if (srvProto.spec.exists(_.ports.size > 0)) {
-      val svchost = s"${container.name}.${namespace}.svc.cluster.local"
-      kube.create[Service](srvProto) map { srv =>
-        // need to map srv nodePorts back to container ports
-        container.port_mappings.map {
-          case pm if pm.expose_endpoint.contains(true) => pm.copy(
-            service_address = Some(ContainerSpec.ServiceAddress(
-              host = svchost,
-              port = pm.service_port.orElse(pm.container_port).get,
-              protocol = Some(pm.protocol)
-            ))
-          )
-          case pm => pm.copy(service_address = None)
-        }
-      }
-    } else {
-      // return original port_mappings, clear out the service_address fields
-      Future.successful(container.port_mappings.map(_.copy(service_address = None)))
+    val fIngress = updateIngress(kube, namespace, containerId, spec) recover {
+      case e: Throwable =>
+        log.error(s"error updating Kubernetes Ingress for container ${containerId}; assuming that is in an invalid state",e)
+        ()
     }
+    for {
+      dep <- fDepl
+      _ <- fIngress
+      updatedPMs <- fUpdatedPMsFromService
+    } yield spec.copy(
+      port_mappings = updatedPMs
+    )
   }
 
   private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
-    kube.create[Secret](mksecret(secretId, spec, namespace))
+    kube.create[Secret](mkSecret(secretId, spec, namespace))
   }
 
   /**
@@ -372,11 +373,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       throw new ResourceNotFoundException(
         s"Could not parse provider ID from container '${container.id}'")
     }
-    
+
     ResourceFactory.findById(providerId) getOrElse {
       throw new ResourceNotFoundException(
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }    
+    }
+  }
+
+  /**
+    * Lookup and return the external_id property
+    */
+  private def containerExternalId(container: GestaltResourceInstance): Option[String] = {
+    for {
+      props <- container.properties
+      eid <- props.get("external_id")
+    } yield eid
   }
 
   /**
@@ -391,18 +402,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
-    
+
     val provider = containerProvider(container)
     /*
-     * TODO: Change signature of deleteContainer to take a ProviderContext - providers 
+     * TODO: Change signature of deleteContainer to take a ProviderContext - providers
      * must never user ResourceFactory directly.
      */
     val environment: String = {
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
         val namespaceGetter = "/namespaces/([^/]*)/deployments/.*".r
         for {
-          props <- container.properties
-          eid <- props.get("external_id")
+          eid <- containerExternalId(container)
           ns <- eid match {
             case namespaceGetter(namespace) => Some(namespace)
             case _ => None
@@ -416,7 +426,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val fKube = skuberFactory.initializeKube(provider.id, environment)
 
     val targetLabel = META_CONTAINER_KEY -> container.id.toString
-    
+
     val fDplDel = for {
       kube        <- fKube
       deps <- deleteAllWithLabel[Deployment,DeploymentList](kube, targetLabel)
@@ -534,13 +544,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
-  private[services] def mksecret(id: UUID, secret: ContainerSecret, namespace: String = DefaultNamespace) = {
+  private[services] def mkSecret(id: UUID, secret: ContainerSecret, namespace: String = DefaultNamespace) = {
     val metadata = ObjectMeta(name = secret.name, namespace = namespace)
     val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
     Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
   }
 
-  private[services] def mkportmappings(pms: Seq[PortMapping]): Seq[Port] = {
+  private[services] def mkPortMappingsSpec(pms: Seq[PortMapping]): Seq[Port] = {
     pms.map(pm => skuber.Container.Port(
       containerPort = pm.container_port.getOrElse(unprocessable("port mapping must specify container_port")),
       protocol = pm.protocol,
@@ -551,6 +561,65 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     ))
   }
 
+  private[services] def mkIngressSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Option[Ingress] = {
+    val ingressPMs = for {
+      pm <- containerSpec.port_mappings
+      vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
+    } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
+
+    if (ingressPMs.isEmpty) None
+    else Some(ingressPMs.foldLeft[Ingress](
+      Ingress(metadata = ObjectMeta(
+        name = containerSpec.name,
+        namespace = namespace,
+        labels = Map(META_CONTAINER_KEY -> containerId.toString)
+      ))
+    ){
+      case (acc, (vhost,port)) => acc.addHttpRule(
+        vhost, Map("" -> s"${containerSpec.name}:${port}")
+      )
+    })
+  }
+
+  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): (Option[Service],Seq[PortMapping]) = {
+    val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true))
+    val srv = exposedPorts.foldLeft[Service](
+      Service(metadata=ObjectMeta(name=containerSpec.name,namespace=namespace))
+        .withType(Service.Type.NodePort)
+        .withSelector(
+          META_CONTAINER_KEY -> containerId.toString
+        )
+        .addLabel(
+          META_CONTAINER_KEY -> containerId.toString
+        )
+    ){
+      case (svc,pm) => svc.exposeOnPort(Service.Port(
+        name = pm.name.getOrElse(""),
+        protocol = pm.protocol,
+        port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
+        targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
+        nodePort = pm.host_port.getOrElse(0)
+      ))
+    }
+    if (srv.spec.exists(_.ports.size > 0)) {
+      val svchost = s"${containerSpec.name}.${namespace}.svc.cluster.local"
+      val newPMs = containerSpec.port_mappings.map {
+        case pm if pm.expose_endpoint.contains(true) => pm.copy(
+          service_address = Some(ContainerSpec.ServiceAddress(
+            host = svchost,
+            port = pm.service_port.orElse(pm.container_port).get,
+            protocol = Some(pm.protocol)
+          ))
+        )
+        case pm => pm.copy(service_address = None)
+      }
+      (Some(srv),newPMs)
+    } else {
+      // return original port_mappings, clear out the service_address fields
+      (None,containerSpec.port_mappings.map(_.copy(service_address = None)))
+    }
+  }
+
 
   /**
    * Create a Kubernetes Deployment object in memory.
@@ -558,7 +627,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * @param id UUID for the Meta Container. This will be used as a label on all of the created resourced for later indexing.
    * @param containerSpec ContainerSpec with Container data
    */
-  private[services] def mkdeployment(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace) = {
+  private[services] def mkDeploymentSpec(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Deployment = {
 
     val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
 
@@ -574,7 +643,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       image = containerSpec.image,
       resources = Some(requirements),
       env = mkEnvVars(containerSpec.env),
-      ports = mkportmappings(containerSpec.port_mappings).toList,
+      ports = mkPortMappingsSpec(containerSpec.port_mappings).toList,
       imagePullPolicy = if (containerSpec.force_pull) Container.PullPolicy.Always else Container.PullPolicy.IfNotPresent,
       args = containerSpec.args.getOrElse(Seq.empty).toList,
       command = cmdArray.getOrElse(Nil)

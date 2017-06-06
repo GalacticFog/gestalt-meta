@@ -147,7 +147,9 @@ class AuthorizationController @Inject()(
     val target = ResourceFactory.findById(parent) getOrElse {
       throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
     }
-    
+
+    log.debug(s"entitlement ${id} has parent /${ResourceLabel(target.typeId)}/${target.id}")
+
     val options = this.standardRequestOptions(user, id, targetEntitlement)
     val operations = this.standardRequestOperations("entitlement.update")
     
