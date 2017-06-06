@@ -72,7 +72,7 @@ object ContainerService {
   )
 
   def setupPromoteRequest(fqon: String,
-                          env: UUID,
+                          source_env_id: UUID,
                           container: Instance,
                           user: AuthAccountWithCreds,
                           metaUrl: String,
@@ -85,13 +85,13 @@ object ContainerService {
     )
     val options = RequestOptions(
       user,
-      authTarget = Option(env),
+      authTarget = Option(target_env_id),
       policyOwner = Option(target_env_id),
       policyTarget = Option(container),
       data = Option(Map(
         "fqon"           -> fqon,
         "meta_url"       -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL",metaUrl),
-        "environment_id" -> env.toString,
+        "environment_id" -> source_env_id.toString,
         "target_env_id"  -> target_env_id.toString
       ))
     )
