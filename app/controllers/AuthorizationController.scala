@@ -65,10 +65,6 @@ class AuthorizationController @Inject()(
   def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
-  
-  def patchEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
-    ???
-  }
 
   def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
     val merge = booleanParam("effective", qs)
@@ -148,7 +144,9 @@ class AuthorizationController @Inject()(
       throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
     }
 
-    log.debug(s"entitlement ${id} has parent /${ResourceLabel(target.typeId)}/${target.id}")
+    ResourceFactory.findParent(targetEntitlement.id).foreach {
+      p => log.debug(s"entitlement ${id} has parent /${ResourceLabel(p.typeId)}/${p.id}")
+    }
 
     val options = this.standardRequestOptions(user, id, targetEntitlement)
     val operations = this.standardRequestOperations("entitlement.update")
@@ -190,34 +188,22 @@ class AuthorizationController @Inject()(
       case _ => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
     }    
   }
-  
-  def updateEntitlement(parent: UUID, entId: UUID) = {
-    ???
-  }
-  
+
   //private[controllers] def findChildTargets(targetType: UUID
-  
+
   private[controllers] def findOrFail(typeId: UUID, id: UUID): Try[GestaltResourceInstance] = Try {
     ResourceFactory.findById(typeId, id) getOrElse {
       throw new ResourceNotFoundException(s"${ResourceLabel(typeId)} with ID '$id' not found.")
     }
   }
-  
-  /*
-   * Need a custom hook on PATCH that can perform the cascade. 
-   */
-  
-  def addNewEntitlement(targets: Seq[Any], entitlement: JsValue) = ???
-  def addNewIdentities(targets: Seq[Any], ids: Seq[UUID]) = ???
-  
-  
+
   def validateRequest(org: UUID, typeId: UUID, resourceId: UUID, user: AuthAccountWithCreds, json: JsValue) = {
     for {
       target <- findOrFail(typeId, resourceId)
       input  <- validateEntitlementPayload(org, target.id, user, json, "create")
     } yield input
   }  
-  
+
   def gatherTargets(typeId: UUID, parent: UUID) = {
     ResourceFactory.findChildrenOfType(typeId, parent)
   }
