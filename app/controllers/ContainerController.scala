@@ -199,9 +199,6 @@ class ContainerController @Inject()(
         HandleExceptions(new ConflictException("No promotion policy found for target environment."))
       } else {
         val user = request.identity
-//        val container = ResourceFactory.findChildOfType(ResourceIds.Container, environment.id, id).getOrElse {
-//          throw new ResourceNotFoundException( notFoundMessage(ResourceIds.Container, id))
-//        }
 
         val (operations, options) = ContainerService.setupPromoteRequest(
           fqon, environment.id, container, user, META_URL.get, target_env_id
