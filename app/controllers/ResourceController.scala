@@ -21,7 +21,6 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
-
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -35,7 +34,9 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.language.postfixOps
 import javax.inject.Singleton
-import ResourceFactory.{findEndpointsByLambda, findChildrenOfType}
+
+import ResourceFactory.{findChildrenOfType, findEndpointsByLambda}
+import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 
 
 @Singleton
@@ -450,20 +451,29 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
    */
-  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = {
-    
-    security.getGroupAccounts(r.id, user) map { acs =>
-      // String list of all users in current group.
-      val acids = (acs map { _.id.toString }).mkString(",")
-      
-      // Inject users into group properties.
-      val groupProps  = if (r.properties.isDefined) r.properties.get else Map()
-      val outputProps = {
-        if (acids.isEmpty) None
-        else Some(groupProps ++ Map("users" -> acids))
+  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
+
+    // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
+    // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
+    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247https://gitlab.com/galacticfog/gestalt-meta/issues/247
+    security.getGroupAccounts(r.id, user)
+      .recover {
+        case a403: ForbiddenAPIException =>
+          log.warn("user credentials did not have permission to view group membership against gestalt-security, using empty list", a403)
+          Seq.empty
       }
-      r.copy(properties = outputProps)
-    }
+      .map { acs =>
+        // String list of all users in current group.
+        val acids = (acs map { _.id.toString }).mkString(",")
+
+        // Inject users into group properties.
+        val groupProps  = if (r.properties.isDefined) r.properties.get else Map()
+        val outputProps = {
+          if (acids.isEmpty) None
+          else Some(groupProps ++ Map("users" -> acids))
+        }
+        r.copy(properties = outputProps)
+      }
   }
 
   // --------------------------------------------------------------------------
