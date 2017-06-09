@@ -642,7 +642,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       name = containerSpec.name,
       image = containerSpec.image,
       resources = Some(requirements),
-      env = mkEnvVars(containerSpec.env),
+      env = List(
+        skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
+      ) ++ mkEnvVars(containerSpec.env),
       ports = mkPortMappingsSpec(containerSpec.port_mappings).toList,
       imagePullPolicy = if (containerSpec.force_pull) Container.PullPolicy.Always else Container.PullPolicy.IfNotPresent,
       args = containerSpec.args.getOrElse(Seq.empty).toList,
