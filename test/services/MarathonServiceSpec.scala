@@ -31,8 +31,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
   override def beforeAll(): Unit = pristineDatabase()
 
-  sequential
-
   case class FakeDCOSModule(mockMCF: MarathonClientFactory) extends AbstractModule {
     override def configure(): Unit = {
       bind(classOf[MarathonClientFactory]).toInstance(mockMCF)

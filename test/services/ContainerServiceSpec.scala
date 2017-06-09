@@ -32,7 +32,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -42,8 +42,6 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       user.account.description
     )
   }
-
-  sequential
 
   abstract class FakeCaaSScope extends Scope {
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")

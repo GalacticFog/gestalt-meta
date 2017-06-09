@@ -42,8 +42,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
   override def beforeAll(): Unit = pristineDatabase()
 
-  sequential
-
   case class FakeKubeModule(mockSkubeFactory: SkuberFactory) extends AbstractModule {
     override def configure(): Unit = {
       bind(classOf[SkuberFactory]).toInstance(mockSkubeFactory)
