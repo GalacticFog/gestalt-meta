@@ -346,10 +346,49 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(mockSkuber).create(argThat(
         inNamespace(skTestNs.name)
           and
-        hasEnv(
-          "VAR1" -> "VAL1",
-          "VAR2" -> "VAL2"
-        )
+          (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.env) ^^ containAllOf(Seq(
+            skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
+            skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
+          )))
+      ))(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "request magical POD_IP env var for all containers" in new FakeKube {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+      mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+
+      val Some(updatedContainerProps) = await(ks.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(mockSkuber).create(argThat(
+        inNamespace(skTestNs.name) and
+          (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.env) ^^ containTheSameElementsAs(Seq(
+            skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")),
+            skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
+            skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
+          )))
       ))(any,meq(skuber.ext.deploymentKind))
     }
 
