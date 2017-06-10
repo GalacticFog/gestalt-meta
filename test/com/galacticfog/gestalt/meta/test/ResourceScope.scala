@@ -163,6 +163,12 @@ trait ResourceScope extends Scope with Mockito {
    */
 
 
+  def createDockerProvider(parent: UUID, name: String = uuid.toString) = {
+    createInstance(ResourceIds.DockerProvider, name,
+      parent = Option(parent),
+      properties = Option(Map("parent" -> "{}")))
+  }
+
   def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
     createInstance(ResourceIds.DcosProvider, name,
       parent = Option(parent),
