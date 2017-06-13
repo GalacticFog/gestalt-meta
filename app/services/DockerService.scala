@@ -6,11 +6,12 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.spotify.docker.client.DockerClient
-import com.spotify.docker.client.messages.ContainerConfig
-import com.spotify.docker.client.messages.swarm.{ServiceSpec, TaskSpec}
+import com.spotify.docker.client.{messages => docker}
 import org.slf4j.LoggerFactory
 import play.api.libs.json.Json
+import services.util.CommandParser
 
+import collection.JavaConverters._
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
@@ -38,18 +39,31 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = ???
 
-  private[services] def mkServiceSpec(id: UUID, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[ServiceSpec] = {
+  private[services] def mkServiceSpec(id: UUID, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[docker.swarm.ServiceSpec] = {
+    val allLabels = containerSpec.labels ++ Map[String,String](
+      META_CONTAINER_KEY -> id.toString,
+      META_ENVIRONMENT_KEY -> environmentId.toString,
+      META_FQON_KEY -> fqon,
+      META_WORKSPACE_KEY -> workspaceId.toString,
+      META_PROVIDER_KEY -> providerId.toString
+    )
+
+    val maybeCmdArray = containerSpec.cmd map CommandParser.translate map (_.asJava)
+
     Try {
-      ServiceSpec.builder()
+      docker.swarm.ServiceSpec.builder()
         .name(s"${environmentId}-${containerSpec.name}")
-        .taskTemplate(TaskSpec.builder()
+        .taskTemplate(docker.swarm.TaskSpec.builder()
+          .containerSpec(
+            docker.swarm.ContainerSpec.builder()
+              .image(containerSpec.image)
+              .args(containerSpec.args.map(_.asJava).getOrElse(null))
+              .command(maybeCmdArray.getOrElse(null))
+              .build()
+          )
           .build()
         )
-        .addLabel(META_CONTAINER_KEY, id.toString)
-        .addLabel(META_ENVIRONMENT_KEY, environmentId.toString)
-        .addLabel(META_FQON_KEY, fqon)
-        .addLabel(META_WORKSPACE_KEY, workspaceId.toString)
-        .addLabel(META_PROVIDER_KEY, providerId.toString)
+        .labels(allLabels.asJava)
         .build()
     }
   }

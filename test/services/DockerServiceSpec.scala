@@ -62,7 +62,8 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
     val ds = injector.instanceOf[DockerService]
   }
 
-  abstract class FakeDockerCreate( force_pull: Boolean = true,
+  abstract class FakeDockerCreate( image: String = "nginx",
+                                   force_pull: Boolean = true,
                                    env: Option[Map[String,String]] = None,
                                    args: Option[Seq[String]] = None,
                                    cmd: Option[String] = None,
@@ -76,7 +77,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
     val testProps = ContainerSpec(
       name = "",
       container_type = "DOCKER",
-      image = "nginx",
+      image = image,
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
       port_mappings = Seq(
         ContainerSpec.PortMapping(
@@ -156,6 +157,11 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
     val objectMapper = new ObjectMapper()
     mockDocker.inspectContainer(origExtId) returns mock[ContainerInfo] // objectMapper.readValue[ContainerInfo]("", classOf[ContainerInfo])
     mockDocker.createContainer(any) returns mock[ContainerCreation]
+
+    val Some(updatedContainerProps) = await(ds.create(
+      context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+      container = metaContainer
+    )).properties
   }
 
   "DockerService" should {
@@ -165,10 +171,6 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
     }.pendingUntilFixed
 
     "provision with the expected external_id property and meta-specific labels" in new FakeDockerCreate() {
-      val Some(updatedContainerProps) = await(ds.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
       updatedContainerProps must havePair(
         "external_id" -> s"${testEnv.id}-test-container"
       )
@@ -187,10 +189,6 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
       "labela" -> "value a",
       "labelb" -> "value b"
     )) {
-      val Some(updatedContainerProps) = await(ds.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
       there was one(mockDocker).createService(
         ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
           "labela" -> "value a",
@@ -199,105 +197,53 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
       )
     }
 
-    "set PullPolicy Always when force_pull == true" in new FakeDockerCreate(force_pull = true) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
-//          skuber.Container.PullPolicy.Always
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+    "provision the appropriate image" in new FakeDockerCreate(
+      image = "nginx:test"
+    ) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().image()) ^^ be_==("nginx:test")
+      )
+    }
 
-    "set PullPolicy Always when force_pull == false" in new FakeDockerCreate(force_pull = false) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
-//          skuber.Container.PullPolicy.IfNotPresent
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+    "handle force_pull == false" in new FakeDockerCreate(force_pull = true) {
+      ko("fail")
+    }.pendingUntilFixed("force_pull == false is not supported by docker: https://github.com/moby/moby/issues/24066")
 
     "pass args when specified" in new FakeDockerCreate(args = Some(Seq("echo","hello","world"))) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(
-//          containTheSameElementsAs(Seq("echo","hello","world"))
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().args().asScala) ^^ be_==(Seq("echo","hello","world"))
+      )
+    }
 
     "pass no args when unspecified" in new FakeDockerCreate(args = None) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(empty)
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().args()) ^^ beNull
+      )
+    }
 
-    "pass simple cmd when specified" in new FakeDockerCreate(cmd = Some("""/usr/bin/python""")) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
-//          containTheSameElementsAs(Seq("/usr/bin/python"))
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+    "pass simple cmd when specified" in new FakeDockerCreate(cmd = Some("/usr/bin/python")) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("/usr/bin/python"))
+      )
+    }
 
     "pass complicated cmd when specified" in new FakeDockerCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
-//          containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("python","-m","SimpleHTTPServer","$PORT"))
+      )
+    }
+
+    "pass no cmd when not specified" in new FakeDockerCreate(cmd = None) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command()) ^^ beNull
+      )
+    }
 
     "pass complicated cmd with difficult bash-compatible spacing" in new FakeDockerCreate(cmd = Some("echo hello|wc")) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
-//          containTheSameElementsAs(Seq("echo","hello","|","wc"))
-//        )
-//      ))(any,meq(skuber.ext.deploymentKind))
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("echo","hello","|","wc"))
+      )
     }.pendingUntilFixed("this is going to be hard")
-
-    "pass no cmd when unspecified" in new FakeDockerCreate(cmd = None) {
-      ko("write me")
-//      val Some(updatedContainerProps) = await(ds.create(
-//        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-//        container = metaContainer
-//      )).properties
-//      there was one(mockSkuber).create(argThat(
-//        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
-//      ))(any,meq(skuber.ext.deploymentKind))
-    }.pendingUntilFixed
 
   }
 
