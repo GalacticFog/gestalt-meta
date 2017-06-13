@@ -694,9 +694,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     for {
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
-      depls <- safeList[DeploymentList](kube)
-      allPods <- safeList[PodList](kube)
-      allServices <- safeList[ServiceList](kube)
+      fDepls = safeList[DeploymentList](kube)
+      fAllPods = safeList[PodList](kube)
+      fAllServices = safeList[ServiceList](kube)
+      depls <- fDepls
+      allPods <- fAllPods
+      allServices <- fAllServices
       _ = log.debug(s"listInEnvironment returned ${depls.size} deployments and ${allPods.size} pods")
       stats = depls.flatMap (depl =>
         depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
