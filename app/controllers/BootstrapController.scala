@@ -61,6 +61,7 @@ class BootstrapController @Inject()(
       }      
     }    
   }  
+  
   def bootstrap() = Authenticate() { implicit request =>
     trace("bootstrap()")
     

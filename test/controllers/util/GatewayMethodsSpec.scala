@@ -271,6 +271,44 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       )
     }
 
+    "properly create with /properties/methods given" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+      val methods = Seq("PATCH", "PUT")
+      
+      gatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web",
+          "resource" -> "/some-path",
+          "methods" -> Json.toJson(methods)
+        )
+      ), apiId) must beSuccessfulTry(
+        (e: LaserEndpoint) => (e.methods must beSome) and (e.methods.get === methods)
+      )
+    }    
+    
+    "properly create with /properties/rateLimit given" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+      val limit = Json.obj("perMinute" -> 2)
+      
+      gatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web",
+          "resource" -> "/some-path",
+          "rateLimit" -> limit
+        )
+      ), apiId) must beSuccessfulTry(
+        (e: LaserEndpoint) => (e.rateLimit must beSome) and (e.rateLimit.get === limit)
+      )
+    }        
+    
     "BadRequest for container-bound endpoints with un-exposed port mapping" in new TestApplication {
       gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
