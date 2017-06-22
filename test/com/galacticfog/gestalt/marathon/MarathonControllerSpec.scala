@@ -1,35 +1,25 @@
-package controllers
+package com.galacticfog.gestalt.marathon
 
 import java.util.UUID
 
-import scala.concurrent.ExecutionContext
-import scala.concurrent.Future
-import scala.util.Success
-import scala.util.Try
-import org.joda.time.DateTimeZone
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.execute.AsResult
-import org.specs2.execute.Result
-import org.specs2.matcher.JsonMatchers
-import org.specs2.specification.BeforeAll
-import com.galacticfog.gestalt.data.Instance
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.{ContainerService, GestaltProviderMocking}
+import controllers.SecurityResources
+import org.joda.time.DateTimeZone
+import org.mockito.Matchers.{eq => meq}
+import org.specs2.matcher.JsonMatchers
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
-import play.api.test.WithApplication
-import play.api.inject.bind
-import services.{MarathonClientFactory, MarathonService, ProviderContext, SkuberFactory}
+import services.{MarathonClientFactory, MarathonService, ProviderContext}
+
+import scala.concurrent.{ExecutionContext, Future}
+import scala.util.Success
 
 class MarathonControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
