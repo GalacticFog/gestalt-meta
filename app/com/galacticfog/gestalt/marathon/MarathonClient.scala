@@ -1,68 +1,78 @@
 package com.galacticfog.gestalt.marathon
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, InternalErrorException, ResourceNotFoundException}
 import org.joda.time.DateTime
-import play.api.libs.ws.WSClient
+import play.api.libs.ws.{WSClient, WSResponse}
 import play.api.libs.json._
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
+
 import scala.concurrent.{ExecutionContext, Future}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import scala.math.BigDecimal.int2bigDecimal
 
+import scala.math.BigDecimal.int2bigDecimal
 import play.api.Logger
+import play.api.http.HeaderNames
 
 import scala.util.Try
 
-case class MarathonClient(client: WSClient, marathonAddress: String) {
+case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: Option[String] = None) {
 
   private[this] val log = Logger(this.getClass)
 
+  private[this] def otherError(marResp: WSResponse) = new InternalErrorException("error from Marathon REST API: " + Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+
+  private[this] def genRequest(endpoint: String) = {
+    acsToken.foldLeft(
+      client.url(s"${marathonAddress}/${endpoint.stripPrefix("/")}")
+    ) {
+      case (req,token) => req.withHeaders(HeaderNames.AUTHORIZATION -> s"token=${token}")
+    }
+  }
+
   def listApplicationsInEnvironment(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     val groupId = metaContextToMarathonAppGroup(groupPrefix, fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
-    val allApps = client.url(s"${marathonAddress}/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks").get()
+    val allApps = genRequest(s"/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks").get()
     allApps map { marResp =>
       marResp.status match {
         case 404 => Seq.empty
         case 200 => (marResp.json \ "apps").as[Seq[JsObject]]
-        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+        case _ => throw otherError(marResp)
       }
     } map (_.flatMap(MarathonClient.marathon2Container))
   }
 
   def getApplicationByAppId(appId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
-    val url = "%s/v2/apps/%s".format(marathonAddress, appId.stripPrefix("/").stripSuffix("/"))
+    val endpoint = "/v2/apps/%s".format(stripAppId(appId))
     val group = appId.take(appId.lastIndexOf("/"))
-    log.debug("Looking up Marathon application: " + url)
+    log.debug("Looking up Marathon application: " + endpoint)
     log.debug("Group ID: " + group)
-    client.url(url).get map { response =>
+    genRequest(endpoint).get map { response =>
       response.status match {
         case 404 => throw new ResourceNotFoundException(response.body)
         case 200 => (response.json \ "app").asOpt[JsObject].getOrElse(throw new RuntimeException("could not extract/transform app from Marathon REST response"))
-        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+        case _ => throw otherError(response)
       }
     }
   }
 
   def listDeploymentsAffectingEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-    val allDeployments = client.url(s"${marathonAddress}/v2/deployments?embed=group.apps&embed=group.apps.deployments").get()
+    val allDeployments = genRequest("/v2/deployments?embed=group.apps&embed=group.apps.deployments").get()
     allDeployments map { marResp =>
       marResp.status match {
         case 200 =>
           val allApp = (marResp.json \ "apps").asOpt[Seq[JsObject]].getOrElse(Seq.empty)
           val allDeps = allApp flatMap {app => (app \ "deployments").asOpt[Seq[JsObject]].getOrElse(Seq.empty)}
           Json.arr(allDeps)
-        case _ => throw new RuntimeException("unexpected return from Marathon REST API")
+        case _ => throw otherError(marResp)
       }
     }
   }
 
   def launchApp(marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     Logger.info(s"new app payload:\n${Json.prettyPrint(marPayload)}")
-    client.url(s"${marathonAddress}/v2/apps").post(marPayload) map { marResp =>
+    genRequest("/v2/apps").post(marPayload) map { marResp =>
       marResp.status match {
         case s if (200 to 299).toSeq.contains(s) => marResp.json
         case b if b == 409 =>
@@ -71,14 +81,15 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
         case b if Seq(400, 422).contains(b) =>
           throw new BadRequestException(
             Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
-        case _ => throw new RuntimeException(marResp.body)
+        case _ => throw otherError(marResp)
       }
     }
   }
 
   def updateApplication(appId: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
     Logger.info(s"update app payload:\n${Json.prettyPrint(marPayload)}")
-    client.url(s"${marathonAddress}/v2/apps/${appId.stripPrefix("/")}").withQueryString(
+    val endpoint = "/v2/apps/%s".format(stripAppId(appId))
+    genRequest(endpoint).withQueryString(
       "force" -> "true"
     ).put(marPayload) map { marResp =>
       marResp.status match {
@@ -89,36 +100,42 @@ case class MarathonClient(client: WSClient, marathonAddress: String) {
         case b if Seq(400, 422).contains(b) =>
           throw new BadRequestException(
             Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
-        case _ => throw new RuntimeException(marResp.body)
+        case _ => throw otherError(marResp)
       }
     }
   }
 
+  private[this] def stripAppId: String => String = _.stripPrefix("/").stripSuffix("/")
+
   def deleteApplication(externalId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-    client.url(s"${marathonAddress}/v2/apps${externalId}").withQueryString(
+    genRequest("/v2/apps/%s".format(stripAppId(externalId))).withQueryString(
       "force" -> "true"
-    ).delete() map { marResp =>
-      Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
+    ).delete() map { marResp => marResp.status match {
+      case s if (200 to 299).contains(s) =>
+        Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
-    }    
+      case _ => throw otherError(marResp)
+    } }
   }  
 
   def scaleApplication(appId: String, numInstances: Int)(implicit ex: ExecutionContext): Future[JsValue] = {
-    client.url(s"${marathonAddress}/v2/apps/${appId}").withQueryString(
+    genRequest(s"/v2/apps/${appId}").withQueryString(
       "force" -> "true"
     ).put(Json.obj(
       "instances" -> numInstances
-    )) map { marResp =>
-      Logger.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
-      marResp.json
-    }
+    )) map { marResp => marResp.status match {
+      case s if (200 to 299).contains(s) =>
+        Logger.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
+        marResp.json
+      case _ => throw otherError(marResp)
+    } }
   }
 
   def getInfo()(implicit ex: ExecutionContext): Future[JsValue] = {
-    client.url(s"${marathonAddress}/v2/info").get map { marResp =>
+    genRequest("/v2/info").get map { marResp =>
       marResp.status match {
         case 200 => marResp.json
-        case _ => throw new RuntimeException(marResp.statusText)
+        case _ => throw otherError(marResp)
       }
     }
   }
