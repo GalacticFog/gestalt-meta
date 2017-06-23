@@ -13,7 +13,7 @@ import scala.concurrent.{ExecutionContext, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException}
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.google.inject.Inject
@@ -23,7 +23,8 @@ import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
 import com.google.inject.name.Named
-
+import akka.pattern.ask
+import scala.concurrent.duration._
 import scala.language.postfixOps
 
 trait MarathonClientFactory {
@@ -34,9 +35,38 @@ class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuth
   extends MarathonClientFactory {
 
   override def getClient(provider: Instance): Future[MarathonClient] = {
-    val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
+    val providerConfig = (for {
+      props <- provider.properties
+      configProp <- props.get("config")
+      config <- Try{Json.parse(configProp)}.toOption
+    } yield config) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
+
+    val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
     log.debug("Marathon URL: " + providerUrl)
-    Future(MarathonClient(client, providerUrl))
+
+    val auth = (providerConfig \ "auth").asOpt[JsObject] getOrElse(Json.obj())
+    (auth \ "scheme").asOpt[String] match {
+      case Some("acs") =>
+        (for {
+          id <- (auth \ "service_account_id").asOpt[String]
+          key <- (auth \ "private_key").asOpt[String]
+          url <- (auth \ "dcos_base_url").asOpt[String]
+        } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(id, key, url)) match {
+          case None => Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
+          case Some(req) =>
+            val fTokenResp = dcosTokenActor.ask(req)(30 seconds)
+            fTokenResp flatMap {
+              case DCOSAuthTokenActor.DCOSAuthTokenResponse(authToken) =>
+                Future.successful(MarathonClient(client, providerUrl, Some(authToken)))
+              case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
+                Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
+              case _ =>
+                Future.failed(new InternalErrorException("unexpected response from DCOSAuthTokenActor"))
+            }
+        }
+      case _ =>
+        Future.successful(MarathonClient(client, providerUrl, None))
+    }
   }
 
 }

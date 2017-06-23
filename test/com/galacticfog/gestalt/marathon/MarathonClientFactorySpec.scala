@@ -1,7 +1,8 @@
 package com.galacticfog.gestalt.marathon
 
-import akka.actor.ActorSystem
-import akka.testkit.TestKit
+import akka.actor.{ActorRef, ActorSystem}
+import akka.testkit.{TestActor, TestKit, TestProbe}
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import org.junit.runner.RunWith
@@ -11,7 +12,8 @@ import play.api.test.PlaySpecification
 import services.DefaultMarathonClientFactory
 import play.api.libs.json.Json
 import play.api.libs.ws.WSClient
-import services.DCOSAuthTokenActor.DCOSAuthTokenRequest
+import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
+
 import scala.util.Success
 import scala.language.reflectiveCalls
 
@@ -34,7 +36,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
             "scheme" -> "acs",
             "service_account_id" -> testServiceId,
             "private_key" -> testPrivateKey,
-            "dcos-base-url" -> testDcosUrl
+            "dcos_base_url" -> testDcosUrl
           ),
           "url" -> marathonBaseUrl
         ).toString
@@ -49,20 +51,44 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         ).toString
       ))
     )
+    val Success(poorlyConfiguredProvider) = createInstance(ResourceIds.DcosProvider, "test-provider-with-bad-auth-config",
+      parent = Some(testEnv.id),
+      properties = Some(Map(
+        "config" -> Json.obj(
+          "auth" -> Json.obj(
+            "scheme" -> "acs"
+          ),
+          "url" -> marathonBaseUrl
+        ).toString
+      ))
+    )
   }
 
   "DefaultMarathonClientFactory" should {
 
     "request auth token from DCOSAuthTokenActor on getClient for authed provider" in new FakeDCOSTokenActor {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
+      val authToken = "eyJhbGciOiJSUzI1NiIsImtpZCI6InNlY3JldCIsInR5cCI6IkpXVCJ9.eyJ1aWQiOiJkZW1vX2dlc3RhbHRfbWV0YSJ9.RP5MhJPey2mDXOJlu1GFcQ_TlWZzYnr_6N7AwDbB0jqJC3bsLR8QxKZVbzk_JInwO5QN_-BVK5bvxP5zyo4KhVotsugH5eP_iTSDyyx7iKWOK4oPmFlJglaXGRE_KEuySAeZCNTnDIrfUWnB21WwS92MGr6B4rFZ-IzVSmygzO-LgxM-ZU9_b9kyKLOUXcQLgHFLY-qJMWou98dTv36lhjqx65iKQ5PT53KjGtL6OQ-1vqXse5ynCJGsXk3HBXV4P_w42RJBIAWiIbsUfgN85sGTVPvtHO-o-GJMknf7G0FiwfGtsYS3n05kirNIwsZS54RX03TNlxq0Vg48eWGZKQ"
+      val probe = TestProbe()
+      probe.setAutoPilot(new TestActor.AutoPilot {
+        def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = {
+          sender ! DCOSAuthTokenResponse(authToken)
+          TestActor.NoAutoPilot
+        }
+      })
+      val mcf = new DefaultMarathonClientFactory(mock[WSClient], probe.ref)
       val client = await(mcf.getClient(testProviderWithAuth))
-      expectMsg(DCOSAuthTokenRequest(
+      probe.expectMsg(DCOSAuthTokenRequest(
         serviceAccountId = testServiceId,
         privateKey = testPrivateKey,
         dcosUrl = testDcosUrl
       ))
-      client.acsToken must beSome
+      client.acsToken must beSome(authToken)
       client.marathonAddress must_== marathonBaseUrl
+    }
+
+    "throw a helpful exception with bad acs config" in new FakeDCOSTokenActor {
+      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
+      await(mcf.getClient(poorlyConfiguredProvider)) must throwAn[BadRequestException]("provider with 'acs' authentication was missing required fields")
     }
 
     "not request auth token from DCOSAuthTokenActor on getClient for un-authed provider" in new FakeDCOSTokenActor {
