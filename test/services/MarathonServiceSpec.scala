@@ -46,7 +46,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     val mockMarClient = mock[MarathonClient]
     val mockMCF = mock[MarathonClientFactory]
-    mockMCF.getClient(testProvider) returns mockMarClient
+    mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
 
     val injector =
       new GuiceApplicationBuilder()

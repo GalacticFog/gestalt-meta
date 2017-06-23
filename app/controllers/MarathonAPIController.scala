@@ -70,7 +70,11 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
    * GET /{fqon}/environments/{eid}/providers/{pid}/v2/info
    */
   def getInfo(fqon: String, environment: UUID, provider: UUID) = MarAuth(fqon).async { implicit request =>
-    marathonClientFactory.getClient(ContainerService.caasProvider(provider)).getInfo.map { Ok( _ ) } recover {
+    val resp = for {
+      marClient <- marathonClientFactory.getClient(ContainerService.caasProvider(provider))
+      info <- marClient.getInfo
+    } yield Ok(info)
+    resp recover {
       case e: Throwable => HandleExceptions(e)
     }
   }

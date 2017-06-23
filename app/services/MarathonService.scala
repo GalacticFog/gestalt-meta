@@ -3,14 +3,15 @@ package services
 import scala.language.implicitConversions
 import java.util.UUID
 
-import play.api.libs.ws.WS
+import akka.actor.ActorRef
+import play.api.libs.ws.{WS, WSClient}
 import play.api.Play.current
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.marathon._
@@ -21,18 +22,23 @@ import play.api.libs.json._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
+import com.google.inject.name.Named
+
 import scala.language.postfixOps
 
 trait MarathonClientFactory {
-  def getClient(provider: GestaltResourceInstance): MarathonClient
+  def getClient(provider: GestaltResourceInstance): Future[MarathonClient]
 }
 
-class DefaultMarathonClientFactory extends MarathonClientFactory {
-  override def getClient(provider: Instance): MarathonClient = {
+class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuthTokenActor.name) dcosTokenActor: ActorRef )
+  extends MarathonClientFactory {
+
+  override def getClient(provider: Instance): Future[MarathonClient] = {
     val providerUrl = (Json.parse(provider.properties.get("config")) \ "url").as[String]
     log.debug("Marathon URL: " + providerUrl)
-    MarathonClient(WS.client, providerUrl)
+    Future(MarathonClient(client, providerUrl))
   }
+
 }
 
 class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
@@ -63,7 +69,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       )
       new BadRequestException(s"launch failed: ${t.getMessage}")
     }
-    
+
+    val fMarClient = marathonClientFactory.getClient(context.provider)
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
@@ -78,11 +85,12 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         val marathonAppCreatePayload = Json.toJson(marathonApp)
         log.debug("Marathon v2 application payload: ")
         log.debug(Json.prettyPrint(marathonAppCreatePayload))
-        val output = marathonClientFactory.getClient(context.provider).launchApp(
-          marPayload = marathonAppCreatePayload
-        ).transform( updateSuccessfulLaunch(container), updateFailedLaunch(container) )
-        
-        output
+        for {
+          marClient <- fMarClient
+          resp <- marClient.launchApp(
+            marPayload = marathonAppCreatePayload
+          ).transform( updateSuccessfulLaunch(container), updateFailedLaunch(container) )
+        } yield resp
     }
   }
 
@@ -91,6 +99,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
     }
+    val fMarClient = marathonClientFactory.getClient(provider)
     // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
     val maybeExternalId = for {
       props <- container.properties
@@ -98,9 +107,12 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     } yield eid
     
     maybeExternalId match {
-      case Some(eid) => marathonClientFactory.getClient(provider).deleteApplication(eid) map { js =>
-        log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(js)}")
-      }
+      case Some(eid) =>
+        for {
+          marClient <- fMarClient
+          resp <- marClient.deleteApplication(eid)
+          _ = log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(resp)}")
+        } yield ()
       case None =>
         log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
         Future.successful(())
@@ -113,7 +125,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case None => Future.successful(None)
       case Some(eid) =>
         for {
-          client <- Future(marathonClientFactory.getClient(context.provider))
+          client <- marathonClientFactory.getClient(context.provider)
           js <- client.getApplicationByAppId(eid)
           stats <- Future.fromTry(Try {MarathonClient.marathon2Container(js).get})
         } yield Some(stats)
@@ -122,7 +134,10 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     val prefix = getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
-    marathonClientFactory.getClient(context.provider).listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
+    for {
+      marClient <- marathonClientFactory.getClient(context.provider)
+      list <- marClient.listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
+    } yield list
   }
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
@@ -200,28 +215,30 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
-        val marClient = marathonClientFactory.getClient(provider)
-        marClient.scaleApplication(
-          appId = external_id,
-          numInstances = numInstances
-        ) map { _ =>
-          upsertProperties(
-            container,
-            "num_instances" -> numInstances.toString
+        for {
+          marClient <- marathonClientFactory.getClient(provider)
+          _ <- marClient.scaleApplication(
+            appId = external_id,
+            numInstances = numInstances
           )
-        }
+        } yield upsertProperties(
+          container,
+          "num_instances" -> numInstances.toString
+        )
     }
   }
 
   override def update(context: ProviderContext, container: Instance)
                      (implicit ec: ExecutionContext): Future[Instance] = {
     container.properties.flatMap(_.get("external_id")) match {
-      case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
+      case None =>
+        Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
-        val marClient = marathonClientFactory.getClient(provider)
+        val fMarClient = marathonClientFactory.getClient(provider)
         ContainerSpec.fromResourceInstance(container) match {
-          case Failure(e) => Future.failed(e)
+          case Failure(e) =>
+            Future.failed(e)
           case Success(spec) =>
             val marathonApp = toMarathonLaunchPayload(
               uncheckedFQON = context.fqon,
@@ -233,10 +250,13 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
             ).copy(
               id = Some(external_id)
             )
-            marClient.updateApplication(
-              appId = external_id,
-              marPayload = Json.toJson(marathonApp)
-            ) map { updateServiceAddresses(_, container) }
+            for {
+              marClient <- fMarClient
+              resp <- marClient.updateApplication(
+                appId = external_id,
+                marPayload = Json.toJson(marathonApp)
+              )
+            } yield updateServiceAddresses(resp, container)
         }
     }
   }
