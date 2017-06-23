@@ -1,7 +1,7 @@
 package com.galacticfog.gestalt.marathon
 
 import akka.actor.ActorSystem
-import akka.testkit.{TestKit, TestProbe}
+import akka.testkit.TestKit
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import org.junit.runner.RunWith
@@ -12,11 +12,8 @@ import services.DefaultMarathonClientFactory
 import play.api.libs.json.Json
 import play.api.libs.ws.WSClient
 import services.DCOSAuthTokenActor.DCOSAuthTokenRequest
-
 import scala.util.Success
 import scala.language.reflectiveCalls
-// import play.api.libs.concurrent.Execution.Implicits.defaultContext
-// import org.mockito.Matchers.{eq => meq}
 
 @RunWith(classOf[JUnitRunner])
 class MarathonClientFactorySpec extends PlaySpecification with ResourceScope with BeforeAll {
