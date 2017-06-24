@@ -67,7 +67,7 @@ class MarathonControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
     "support Marathon GET /v2/info" in new TestMarathonController {
       val js = Json.obj()
-      mockMCF.getClient(testProvider) returns mockMarathonClient
+      mockMCF.getClient(testProvider) returns Future.successful(mockMarathonClient)
       mockMarathonClient.getInfo()(any[ExecutionContext]) returns Future.successful(js)
 
       val request = fakeAuthRequest(GET, s"/root/environments/${testEID}/providers/${testPID}/v2/info", testCreds)

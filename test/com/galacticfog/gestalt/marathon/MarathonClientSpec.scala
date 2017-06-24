@@ -3,17 +3,13 @@ package com.galacticfog.gestalt.marathon
 import java.util.UUID
 
 import mockws.{MockWS, Route}
-import org.specs2.matcher.{JsonMatchers, JsonType, Matcher}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.mock._
-import org.specs2.mutable._
 import org.specs2.specification.Scope
 import play.api.libs.json._
-import play.api.libs.ws.WSClient
-import play.api.http.HttpVerbs._
 import play.api.mvc._
 import play.api.mvc.Results._
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
-import play.api.mvc.BodyParsers.parse
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 class MarathonClientSpec extends PlaySpecification with Mockito with JsonMatchers with FutureAwaits with DefaultAwaitTimeout {
