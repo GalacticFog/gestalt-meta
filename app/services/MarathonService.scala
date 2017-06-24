@@ -51,7 +51,7 @@ class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuth
           id <- (auth \ "service_account_id").asOpt[String]
           key <- (auth \ "private_key").asOpt[String]
           url <- (auth \ "dcos_base_url").asOpt[String]
-        } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(id, key, url)) match {
+        } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(provider.id, id, key, url)) match {
           case None => Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
           case Some(req) =>
             val fTokenResp = dcosTokenActor.ask(req)(30 seconds)

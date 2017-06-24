@@ -1,5 +1,7 @@
 package com.galacticfog.gestalt.marathon
 
+import java.util.UUID
+
 import akka.actor.{ActorRef, ActorSystem}
 import akka.testkit.{TestActor, TestActorRef, TestKit, TestProbe}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -18,6 +20,7 @@ import play.api.mvc._
 import play.api.mvc.Results._
 import akka.pattern.ask
 import play.api.mvc.BodyParsers.parse
+
 import scala.util.Success
 import scala.language.reflectiveCalls
 
@@ -83,6 +86,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       val mcf = new DefaultMarathonClientFactory(mock[WSClient], probe.ref)
       val client = await(mcf.getClient(testProviderWithAuth))
       probe.expectMsg(DCOSAuthTokenRequest(
+        providerId = testProviderWithAuth.id,
         serviceAccountId = testServiceId,
         privateKey = testPrivateKey,
         dcosUrl = testDcosUrl
@@ -108,12 +112,11 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
 
   "DCOSAuthTokenActor" should {
 
-    "get tokens from dcos" in new FakeDCOSTokenActor {
+    "get tokens from DCOS ACS and persist them" in new FakeDCOSTokenActor {
       val mockAuth = Route {
         case (POST,url) if url == testDcosUrl + "/acs/api/v1/auth/login" => Action(parse.json) {request =>
           val uid = (request.body \ "uid").as[String]
           val jws = io.jsonwebtoken.Jwts.parser().setSigningKey(DCOSAuthTokenActor.strToPublicKey(testPublicKey)).parseClaimsJws((request.body \ "token").as[String])
-          println(jws)
           if ( uid == testServiceId && jws.getBody.get("uid",classOf[String]) == testServiceId )
             Ok(Json.obj("token" -> authToken))
           else
@@ -121,12 +124,16 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         }
       }
       val tokenActor = TestActorRef(new DCOSAuthTokenActor(MockWS(mockAuth)))
+      val providerId = UUID.randomUUID()
       val token = await(tokenActor ? DCOSAuthTokenRequest(
+        providerId = providerId,
         serviceAccountId = testServiceId,
         privateKey = testPrivateKey,
         dcosUrl = testDcosUrl
       ))
       token must_== DCOSAuthTokenResponse(authToken)
+      tokenActor.underlyingActor.providerTokens.get(providerId) must beSome(authToken)
+      mockAuth.timeCalled must_== 1
     }
 
   }
