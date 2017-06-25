@@ -28,11 +28,11 @@ class DCOSAuthTokenActor @Inject() (client: WSClient) extends Actor {
 
   import services.DCOSAuthTokenActor._
 
-  // TODO: once we start using cached tokens, how do we handle that the underlying credentials may change?
+  // TODO: once we start using cached tokens, how do we handle that the underlying credentials may change? need to store enough so that we can check/invalidate
 
   // TODO: if we automatically refresh tokens, we'll need to keep the url and the secret
 
-  // TODO: now start using this
+  // TODO: successfully storing these: now use them
   val providerTokens: mutable.Map[UUID, String] = mutable.Map.empty
 
   val requestChild = context.actorOf(Props(classOf[DCOSAuthTokenRequestActor], client))
@@ -99,13 +99,14 @@ class DCOSAuthTokenRequestActor(client: WSClient) extends Actor with ActorLoggin
     case r: DCOSAuthTokenActor.DCOSAuthTokenRequest =>
       import context.dispatcher
       val s = sender()
+      val claims: Map[String, AnyRef] = Map(
+        "uid" -> r.serviceAccountId,
+        "exp" -> float2Float(System.currentTimeMillis()/1000 + 5*60)
+      )
       val f = for {
         jwt <- Future.fromTry(Try{
           Jwts.builder()
-            .setExpiration(java.util.Date.from(java.time.Instant.now().plusSeconds(60*5)))
-            .setClaims(Map[String,AnyRef](
-              "uid" -> r.serviceAccountId
-            ).asJava)
+            .setClaims(claims.asJava)
             .signWith(SignatureAlgorithm.RS256, DCOSAuthTokenActor.strToPrivateKey(r.privateKey))
             .compact()
         })
