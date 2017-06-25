@@ -4,7 +4,7 @@ import scala.language.implicitConversions
 import java.util.UUID
 
 import akka.actor.ActorRef
-import play.api.libs.ws.{WS, WSClient}
+import play.api.libs.ws.WSClient
 import play.api.Play.current
 
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -17,13 +17,14 @@ import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErr
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.google.inject.Inject
-import skuber.api.client._
 import play.api.libs.json._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
 import com.google.inject.name.Named
 import akka.pattern.ask
+import play.api.Logger
+
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
@@ -31,8 +32,12 @@ trait MarathonClientFactory {
   def getClient(provider: GestaltResourceInstance): Future[MarathonClient]
 }
 
-class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuthTokenActor.name) dcosTokenActor: ActorRef )
+class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
+                                               @Named("permissive-wsclient") permissiveClient: WSClient,
+                                               @Named(DCOSAuthTokenActor.name) dcosTokenActor: ActorRef )
   extends MarathonClientFactory {
+
+  private[this] val log = Logger(this.getClass)
 
   override def getClient(provider: Instance): Future[MarathonClient] = {
     val providerConfig = (for {
@@ -44,20 +49,30 @@ class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuth
     val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
     log.debug("Marathon URL: " + providerUrl)
 
+    val acceptAnyCert = (providerConfig \ "accept_any_cert").asOpt[Boolean].getOrElse(false)
+    val wsclient = if (acceptAnyCert) {
+      permissiveClient
+    } else {
+      defaultClient
+    }
     val auth = (providerConfig \ "auth").asOpt[JsObject] getOrElse(Json.obj())
+
     (auth \ "scheme").asOpt[String] match {
       case Some("acs") =>
-        (for {
+        val tokReq = for {
           id <- (auth \ "service_account_id").asOpt[String]
           key <- (auth \ "private_key").asOpt[String]
           url <- (auth \ "dcos_base_url").asOpt[String]
-        } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(provider.id, id, key, url)) match {
-          case None => Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
+        } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(provider.id, acceptAnyCert, id, key, url)
+        tokReq match {
+          case None =>
+            Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
           case Some(req) =>
             val fTokenResp = dcosTokenActor.ask(req)(30 seconds)
             fTokenResp flatMap {
               case DCOSAuthTokenActor.DCOSAuthTokenResponse(authToken) =>
-                Future.successful(MarathonClient(client, providerUrl, Some(authToken)))
+                log.debug("provisioning MarathonClient with acs auth token")
+                Future.successful(MarathonClient(wsclient, providerUrl, Some(authToken)))
               case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
                 Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
               case _ =>
@@ -65,7 +80,8 @@ class DefaultMarathonClientFactory @Inject() ( client: WSClient, @Named(DCOSAuth
             }
         }
       case _ =>
-        Future.successful(MarathonClient(client, providerUrl, None))
+        log.debug("provisioning MarathonClient without authentication credentials")
+        Future.successful(MarathonClient(wsclient, providerUrl, None))
     }
   }
 
