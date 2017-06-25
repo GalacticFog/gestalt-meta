@@ -13,7 +13,7 @@ import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.test.PlaySpecification
 import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory}
-import play.api.libs.json.{JsNull, JsValue, Json}
+import play.api.libs.json.{JsBoolean, JsNull, JsValue, Json}
 import play.api.libs.ws.WSClient
 import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
 import play.api.mvc._
@@ -36,22 +36,25 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
 
   override def beforeAll(): Unit = pristineDatabase()
 
-  abstract class WithDCOSProviderAuth(providerAuth: JsValue = JsNull) extends TestKit(ActorSystem("MySpec")) with Scope {
+  abstract class WithProviderConfig(providerAuth: JsValue = JsNull, permissiveHttps: JsValue = JsNull) extends TestKit(ActorSystem("MySpec")) with Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     val Success(testProvider) = createInstance(ResourceIds.DcosProvider, "test-provider",
       parent = Some(testEnv.id),
       properties = Some(Map(
         "config" -> Json.obj(
           "auth" -> providerAuth,
-          "url" -> marathonBaseUrl
+          "url" -> marathonBaseUrl,
+          "accept_any_cert" -> permissiveHttps
         ).toString
       ))
     )
+    val strictClient = mock[WSClient]
+    val permissiveClient = mock[WSClient]
   }
 
   "DefaultMarathonClientFactory" should {
 
-    "request auth token from DCOSAuthTokenActor on getClient for authed provider" in new WithDCOSProviderAuth(
+    "request auth token from DCOSAuthTokenActor on getClient for authed provider" in new WithProviderConfig(
       providerAuth = Json.obj(
         "scheme" -> "acs",
         "service_account_id" -> testServiceId,
@@ -66,19 +69,95 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
           TestActor.NoAutoPilot
         }
       })
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], probe.ref)
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, probe.ref)
       val client = await(mcf.getClient(testProvider))
       probe.expectMsg(DCOSAuthTokenRequest(
         providerId = testProvider.id,
+        acceptAnyCert = false,
         serviceAccountId = testServiceId,
         privateKey = testPrivateKey,
         dcosUrl = testDcosUrl
       ))
       client.acsToken must beSome(authToken)
       client.marathonAddress must_== marathonBaseUrl
+      client.client must_== strictClient
     }
 
-    "throw a helpful exception with bad acs config (missing service_account_id)" in new WithDCOSProviderAuth(
+    "not request auth token from DCOSAuthTokenActor on getClient for provider with no auth" in new WithProviderConfig(
+      providerAuth = JsNull
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
+      val client = await(mcf.getClient(testProvider))
+      client.acsToken must beNone
+      client.marathonAddress must_== marathonBaseUrl
+      client.client must_== strictClient
+      expectNoMsg
+    }
+
+    "not request auth token from DCOSAuthTokenActor on getClient for provider with empty auth" in new WithProviderConfig(
+      providerAuth = Json.obj()
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
+      val client = await(mcf.getClient(testProvider))
+      client.acsToken must beNone
+      client.marathonAddress must_== marathonBaseUrl
+      client.client must_== strictClient
+      expectNoMsg
+    }
+
+    "use permissive client for auth'd providers if specified" in new WithProviderConfig(
+      providerAuth = Json.obj(
+        "scheme" -> "acs",
+        "service_account_id" -> testServiceId,
+        "private_key" -> testPrivateKey,
+        "dcos_base_url" -> testDcosUrl
+      ),
+      permissiveHttps = JsBoolean(true)
+    ) {
+      val probe = TestProbe()
+      probe.setAutoPilot(new TestActor.AutoPilot {
+        def run(sender: ActorRef, msg: Any): TestActor.AutoPilot = {
+          sender ! DCOSAuthTokenResponse(authToken)
+          TestActor.NoAutoPilot
+        }
+      })
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, probe.ref)
+      val client = await(mcf.getClient(testProvider))
+      probe.expectMsg(DCOSAuthTokenRequest(
+        providerId = testProvider.id,
+        acceptAnyCert = true,
+        serviceAccountId = testServiceId,
+        privateKey = testPrivateKey,
+        dcosUrl = testDcosUrl
+      ))
+      client.acsToken must beSome(authToken)
+      client.marathonAddress must_== marathonBaseUrl
+      client.client must_== permissiveClient
+    }
+
+    "use permissive client for unauth'd providers if specified" in new WithProviderConfig(
+      permissiveHttps = JsBoolean(true)
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
+      val client = await(mcf.getClient(testProvider))
+      client.acsToken must beNone
+      client.marathonAddress must_== marathonBaseUrl
+      client.client must_== permissiveClient
+      expectNoMsg
+    }
+
+    "not use permissive client for unauth'd providers if specified in the negative" in new WithProviderConfig(
+      permissiveHttps = JsBoolean(false)
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
+      val client = await(mcf.getClient(testProvider))
+      client.acsToken must beNone
+      client.marathonAddress must_== marathonBaseUrl
+      client.client must_== strictClient
+      expectNoMsg
+    }
+
+    "throw a helpful exception with bad acs config (missing service_account_id)" in new WithProviderConfig(
       providerAuth = Json.obj(
         "scheme" -> "acs",
         // "service_account_id" -> testServiceId,
@@ -86,11 +165,11 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         "dcos_base_url" -> testDcosUrl
       )
     ) {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       await(mcf.getClient(testProvider)) must throwAn[BadRequestException]("provider with 'acs' authentication was missing required fields")
     }
 
-    "throw a helpful exception with bad acs config (missing private_key)" in new WithDCOSProviderAuth(
+    "throw a helpful exception with bad acs config (missing private_key)" in new WithProviderConfig(
       providerAuth = Json.obj(
         "scheme" -> "acs",
         "service_account_id" -> testServiceId,
@@ -98,68 +177,91 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         "dcos_base_url" -> testDcosUrl
       )
     ) {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       await(mcf.getClient(testProvider)) must throwAn[BadRequestException]("provider with 'acs' authentication was missing required fields")
     }
 
-    "throw a helpful exception with bad acs config (missing dcos_base_url)" in new WithDCOSProviderAuth(
+    "throw a helpful exception with bad acs config (missing dcos_base_url)" in new WithProviderConfig(
       providerAuth = Json.obj(
         "scheme" -> "acs",
-         "service_account_id" -> testServiceId,
+        "service_account_id" -> testServiceId,
         "private_key" -> testPrivateKey
         // "dcos_base_url" -> testDcosUrl
       )
     ) {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       await(mcf.getClient(testProvider)) must throwAn[BadRequestException]("provider with 'acs' authentication was missing required fields")
     }
 
-    "not request auth token from DCOSAuthTokenActor on getClient for provider with no auth" in new WithDCOSProviderAuth(
-      providerAuth = JsNull
-    ) {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
-      val client = await(mcf.getClient(testProvider))
-      client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
-      expectNoMsg
-    }
-
-    "not request auth token from DCOSAuthTokenActor on getClient for provider with empty auth" in new WithDCOSProviderAuth(
-      providerAuth = Json.obj()
-    ) {
-      val mcf = new DefaultMarathonClientFactory(mock[WSClient], testActor)
-      val client = await(mcf.getClient(testProvider))
-      client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
-      expectNoMsg
-    }
 
   }
 
   "DCOSAuthTokenActor" should {
 
-    "get tokens from DCOS ACS and persist them" in new WithDCOSProviderAuth {
-      val mockAuth = Route {
-        case (POST,url) if url == testDcosUrl + "/acs/api/v1/auth/login" => Action(parse.json) {request =>
-          val uid = (request.body \ "uid").as[String]
-          val jws = io.jsonwebtoken.Jwts.parser().setSigningKey(DCOSAuthTokenActor.strToPublicKey(testPublicKey)).parseClaimsJws((request.body \ "token").as[String])
-          if ( uid == testServiceId && jws.getBody.get("uid",classOf[String]) == testServiceId )
-            Ok(Json.obj("token" -> authToken))
-          else
-            Unauthorized(Json.obj("message" -> "epic failure"))
-        }
+    def mockAuth() = Route {
+      case (POST,url) if url == testDcosUrl + "/acs/api/v1/auth/login" => Action(parse.json) {request =>
+        val uid = (request.body \ "uid").as[String]
+        val jws = io.jsonwebtoken.Jwts.parser().setSigningKey(DCOSAuthTokenActor.strToPublicKey(testPublicKey)).parseClaimsJws((request.body \ "token").as[String])
+        if ( uid == testServiceId && jws.getBody.get("uid",classOf[String]) == testServiceId )
+          Ok(Json.obj("token" -> authToken))
+        else
+          Unauthorized(Json.obj("message" -> "epic failure"))
       }
-      val tokenActor = TestActorRef(new DCOSAuthTokenActor(MockWS(mockAuth)))
+    }
+
+    "get tokens from DCOS ACS and persist them" in new WithProviderConfig {
+      val permissive = mockAuth()
+      val strict = mockAuth()
+      val tokenActor = TestActorRef(new DCOSAuthTokenActor(MockWS{strict}, MockWS{permissive}))
       val providerId = UUID.randomUUID()
+
       val token = await(tokenActor ? DCOSAuthTokenRequest(
         providerId = providerId,
+        acceptAnyCert = false,
         serviceAccountId = testServiceId,
         privateKey = testPrivateKey,
         dcosUrl = testDcosUrl
       ))
       token must_== DCOSAuthTokenResponse(authToken)
       tokenActor.underlyingActor.providerTokens.get(providerId) must beSome(authToken)
-      mockAuth.timeCalled must_== 1
+    }
+
+    "use permissive client for auth call if so instructed" in new WithProviderConfig {
+      val permissive = mockAuth()
+      val strict = mockAuth()
+      val tokenActor = TestActorRef(new DCOSAuthTokenActor(MockWS{strict}, MockWS{permissive}))
+      val providerId = UUID.randomUUID()
+
+      val token = await(tokenActor ? DCOSAuthTokenRequest(
+        providerId = providerId,
+        acceptAnyCert = false,
+        serviceAccountId = testServiceId,
+        privateKey = testPrivateKey,
+        dcosUrl = testDcosUrl
+      ))
+      token must_== DCOSAuthTokenResponse(authToken)
+      tokenActor.underlyingActor.providerTokens.get(providerId) must beSome(authToken)
+      permissive.timeCalled must_== 0
+      strict.timeCalled must_== 1
+    }
+
+    "use strict client for auth call if so instructed" in new WithProviderConfig {
+      val permissive = mockAuth()
+      val strict = mockAuth()
+      val tokenActor = TestActorRef(new DCOSAuthTokenActor(MockWS{strict}, MockWS{permissive}))
+      val providerId = UUID.randomUUID()
+
+      val token = await(tokenActor ? DCOSAuthTokenRequest(
+        providerId = providerId,
+        acceptAnyCert = true,
+        serviceAccountId = testServiceId,
+        privateKey = testPrivateKey,
+        dcosUrl = testDcosUrl
+      ))
+      token must_== DCOSAuthTokenResponse(authToken)
+      tokenActor.underlyingActor.providerTokens.get(providerId) must beSome(authToken)
+      permissive.timeCalled must_== 1
+      strict.timeCalled must_== 0
     }
 
   }
