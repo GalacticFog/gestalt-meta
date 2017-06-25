@@ -15,14 +15,17 @@ import scala.util.{Failure, Success, Try}
 import collection.JavaConverters._
 import scala.collection.mutable
 import akka.pattern.ask
+import com.google.inject.name.Named
+import com.ning.http.client.AsyncHttpClientConfigBean
 import play.api.Logger
+import play.api.libs.ws.ning.NingWSClient
 
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
 
 @Singleton
-class DCOSAuthTokenActor @Inject() (client: WSClient) extends Actor {
+class DCOSAuthTokenActor @Inject() (client: WSClient, @Named("permissive-wsclient") permissiveClient: WSClient) extends Actor {
 
   val log = Logger(this.getClass)
 
@@ -35,7 +38,7 @@ class DCOSAuthTokenActor @Inject() (client: WSClient) extends Actor {
   // TODO: successfully storing these: now use them
   val providerTokens: mutable.Map[UUID, String] = mutable.Map.empty
 
-  val requestChild = context.actorOf(Props(classOf[DCOSAuthTokenRequestActor], client))
+  val requestChild = context.actorOf(Props(classOf[DCOSAuthTokenRequestActor], client, permissiveClient))
 
   // use the error kernel pattern to help protect our state from being wiped...
   // if we fail, it's not the end of the world, because the tokens will be regenerated
@@ -64,6 +67,7 @@ object DCOSAuthTokenActor {
   final val name = "dcos-auth-token-actor"
 
   case class DCOSAuthTokenRequest( providerId: UUID,
+                                   acceptAnyCert: Boolean,
                                    serviceAccountId : String,
                                    privateKey : String,
                                    dcosUrl : String )
@@ -94,10 +98,20 @@ object DCOSAuthTokenActor {
 
 }
 
-class DCOSAuthTokenRequestActor(client: WSClient) extends Actor with ActorLogging {
+class DCOSAuthTokenRequestActor(defaultClient: WSClient, permissiveClient: WSClient) extends Actor {
+  val log = Logger(classOf[DCOSAuthTokenActor])
+
   override def receive: Receive = {
     case r: DCOSAuthTokenActor.DCOSAuthTokenRequest =>
       import context.dispatcher
+
+      val client = if (r.acceptAnyCert) {
+        log.warn("using permissive http client")
+        permissiveClient
+      } else {
+        defaultClient
+      }
+
       val s = sender()
       val claims: Map[String, AnyRef] = Map(
         "uid" -> r.serviceAccountId,
@@ -120,11 +134,13 @@ class DCOSAuthTokenRequestActor(client: WSClient) extends Actor with ActorLoggin
       } yield resp
       f.onComplete(_ match {
         case Success(resp) if resp.status == 200 =>
+          log.trace("response from acs service: " + Json.stringify(resp.json))
           (resp.json \ "token").asOpt[String] match {
             case Some(tok) => s ! DCOSAuthTokenActor.DCOSAuthTokenResponse(tok)
             case None      => s ! DCOSAuthTokenActor.DCOSAuthTokenError("acs responded with 200 but response did not have parsable token")
           }
         case Success(resp) if resp.status != 200 =>
+          log.trace("non-200 response form acs service: " + resp)
           s ! DCOSAuthTokenActor.DCOSAuthTokenError(resp.body)
         case Failure(t) =>
           s ! DCOSAuthTokenActor.DCOSAuthTokenError(t.getMessage)

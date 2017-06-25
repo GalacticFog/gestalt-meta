@@ -71,7 +71,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: O
   }
 
   def launchApp(marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
-    Logger.info(s"new app payload:\n${Json.prettyPrint(marPayload)}")
+    log.info(s"new app payload:\n${Json.prettyPrint(marPayload)}")
     genRequest("/v2/apps").post(marPayload) map { marResp =>
       marResp.status match {
         case s if (200 to 299).toSeq.contains(s) => marResp.json
@@ -87,7 +87,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: O
   }
 
   def updateApplication(appId: String, marPayload: JsObject)(implicit ex: ExecutionContext): Future[JsValue] = {
-    Logger.info(s"update app payload:\n${Json.prettyPrint(marPayload)}")
+    log.info(s"update app payload:\n${Json.prettyPrint(marPayload)}")
     val endpoint = "/v2/apps/%s".format(stripAppId(appId))
     genRequest(endpoint).withQueryString(
       "force" -> "true"
@@ -112,7 +112,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: O
       "force" -> "true"
     ).delete() map { marResp => marResp.status match {
       case s if (200 to 299).contains(s) =>
-        Logger.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
+        log.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
       case _ => throw otherError(marResp)
     } }
@@ -125,7 +125,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: O
       "instances" -> numInstances
     )) map { marResp => marResp.status match {
       case s if (200 to 299).contains(s) =>
-        Logger.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
+        log.info(s"scale app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
       case _ => throw otherError(marResp)
     } }
