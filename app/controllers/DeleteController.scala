@@ -85,18 +85,20 @@ class DeleteController @Inject()(
   def requestOps(
       user: AuthAccountWithCreds, 
       policyOwner: UUID, 
-      target: GestaltResourceInstance): RequestOptions = {
+      target: GestaltResourceInstance,
+      targetParent: GestaltResourceInstance): RequestOptions = {
     
     RequestOptions(user, 
         authTarget = Option(policyOwner), 
         policyOwner = Option(policyOwner), 
-        policyTarget = Option(target))    
+        policyTarget = Option(target),
+        data = Some(Map("parentId" -> targetParent.id.toString)))    
   }
 
   def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
-    val options    = requestOps(identity, resource.id, resource)
+    val options    = requestOps(identity, resource.id, resource, owner)
 
     log.debug(s"Policy Owner : " + owner.id)
 
