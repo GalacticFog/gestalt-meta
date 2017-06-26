@@ -18,6 +18,7 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
+import MarathonService.Properties
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
@@ -493,8 +494,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         properties = Option(Map(
           "parent" -> "{}",
           "config" -> Json.obj(
-            "marathon_framework_name" -> marathonFrameworkName,
-            "dcos_cluster_name" -> dcosClusterName
+            Properties.MARATHON_FRAMEWORK_NAME -> marathonFrameworkName,
+            Properties.DCOS_CLUSTER_NAME -> dcosClusterName
           ).toString
         ))
       )

@@ -12,7 +12,7 @@ import org.junit.runner.RunWith
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.test.PlaySpecification
-import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory}
+import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory, MarathonService}
 import play.api.libs.json.{JsBoolean, JsNull, JsValue, Json}
 import play.api.libs.ws.WSClient
 import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
@@ -23,6 +23,7 @@ import play.api.mvc.BodyParsers.parse
 
 import scala.util.Success
 import scala.language.reflectiveCalls
+import MarathonService.Properties
 
 @RunWith(classOf[JUnitRunner])
 class MarathonClientFactorySpec extends PlaySpecification with ResourceScope with BeforeAll {
@@ -42,9 +43,9 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       parent = Some(testEnv.id),
       properties = Some(Map(
         "config" -> Json.obj(
-          "auth" -> providerAuth,
-          "url" -> marathonBaseUrl,
-          "accept_any_cert" -> permissiveHttps
+          Properties.AUTH_CONFIG -> providerAuth,
+          Properties.MARATHON_BASE_URL -> marathonBaseUrl,
+          Properties.ACCEPT_ANY_CERT -> permissiveHttps
         ).toString
       ))
     )

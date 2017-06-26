@@ -37,25 +37,23 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
                                                @Named(DCOSAuthTokenActor.name) dcosTokenActor: ActorRef )
   extends MarathonClientFactory {
 
+  import MarathonService.Properties
+
   private[this] val log = Logger(this.getClass)
 
   override def getClient(provider: Instance): Future[MarathonClient] = {
-    val providerConfig = (for {
-      props <- provider.properties
-      configProp <- props.get("config")
-      config <- Try{Json.parse(configProp)}.toOption
-    } yield config) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
+    val providerConfig = getProviderConfigOrThrow(provider) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
 
     val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
     log.debug("Marathon URL: " + providerUrl)
 
-    val acceptAnyCert = (providerConfig \ "accept_any_cert").asOpt[Boolean].getOrElse(false)
+    val acceptAnyCert = (providerConfig \ Properties.ACCEPT_ANY_CERT).asOpt[Boolean].getOrElse(false)
     val wsclient = if (acceptAnyCert) {
       permissiveClient
     } else {
       defaultClient
     }
-    val auth = (providerConfig \ "auth").asOpt[JsObject] getOrElse(Json.obj())
+    val auth = (providerConfig \ Properties.AUTH_CONFIG).asOpt[JsObject] getOrElse(Json.obj())
 
     (auth \ "scheme").asOpt[String] match {
       case Some("acs") =>
@@ -90,6 +88,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
 class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   extends CaasService with JsonInput with MetaControllerUtils {
 
+  import MarathonService.Properties
   import scala.language.implicitConversions
   implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
 
@@ -101,13 +100,13 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       log.debug("Entered updateSuccessfulLaunch(...)")
       val marathonAppId = (marathonResponse \ "id").as[String]
       // This parses the marathon VIP labels into meta port_mapping.service_address
-      val updated = updateServiceAddresses(marathonResponse, resource)
+      val updated = updateServiceAddresses( context.provider, marathonResponse, resource)
       upsertProperties(updated,
         "external_id" -> marathonAppId,
         "status" -> "LAUNCHED"
       )
     }
-    
+
     def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
       // TODO: this has no side-effect
       val updatedResource = upsertProperties(resource,
@@ -151,7 +150,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       props <- container.properties
       eid <- props.get("external_id")
     } yield eid
-    
+
     maybeExternalId match {
       case Some(eid) =>
         for {
@@ -203,8 +202,11 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     * @param origResource the resource for the container being updated
     * @return a resource for the container, potentially updated with ServiceAddress info for the port mappings
     */
-  private[services] def updateServiceAddresses(marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
-    val clusterid = ".marathon.l4lb.thisdcos.directory"
+  private[services] def updateServiceAddresses(provider: GestaltResourceInstance, marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
+    val providerConfig = getProviderConfigOrThrow(provider) getOrElse Json.obj()
+    val marathonFrameworkName = (providerConfig \ Properties.MARATHON_FRAMEWORK_NAME).asOpt[String].getOrElse("marathon")
+    val dcosClusterName = (providerConfig \ Properties.DCOS_CLUSTER_NAME).asOpt[String].getOrElse("thisdcos")
+    val clusterid = s".${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
     val VIPLabel = "VIP_([0-9]+)".r
     val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
@@ -217,17 +219,17 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
     }) map {
       /*
-       * port names are required by Meta Container API, but not by Marathon, 
+       * port names are required by Meta Container API, but not by Marathon,
        * therefore we will map service addresses using port index
        */
       _.as[JsArray].value.zipWithIndex flatMap { case (portDef, portIndex) =>
         // 'protocol' is optional in marathon API, default is "tcp"
-        val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp") 
+        val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp")
         for {
           labels   <- Js.find(portDef.as[JsObject], "/labels")
           labelMap <- Try(labels.as[Map[String, String]]).toOption
           serviceAddress <- labelMap.collectFirst {
-            case (VIPLabel(_), VIPValue(address, port)) => 
+            case (VIPLabel(_), VIPValue(address, port)) =>
               ServiceAddress(address + clusterid, port.toInt, protocol)
           }
         } yield (portIndex -> serviceAddress)
@@ -302,9 +304,19 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
                 appId = external_id,
                 marPayload = Json.toJson(marathonApp)
               )
-            } yield updateServiceAddresses(resp, container)
+            } yield updateServiceAddresses(context.provider, resp, container)
         }
     }
   }
 
+}
+
+object MarathonService {
+  object Properties {
+    val MARATHON_FRAMEWORK_NAME = "marathon_framework_name"
+    val DCOS_CLUSTER_NAME = "dcos_cluster_name"
+    val ACCEPT_ANY_CERT = "accept_any_cert"
+    val MARATHON_BASE_URL = "url"
+    val AUTH_CONFIG = "auth"
+  }
 }
