@@ -295,6 +295,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       val apiId = UUID.randomUUID()
       val limit = Json.obj("perMinute" -> 2)
       
+      val pluginJson = Json.obj("rateLimit" -> Json.obj("perMinute" -> 2))
+      
       gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
@@ -302,10 +304,10 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
           "implementation_id" -> testContainer.id.toString,
           "container_port_name" -> "web",
           "resource" -> "/some-path",
-          "rateLimit" -> limit
+          "plugins" -> pluginJson
         )
       ), apiId) must beSuccessfulTry(
-        (e: LaserEndpoint) => (e.rateLimit must beSome) and (e.rateLimit.get === limit)
+        (e: LaserEndpoint) => (e.plugins must beSome) and (e.plugins.get === pluginJson)
       )
     }        
     

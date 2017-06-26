@@ -308,6 +308,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   }
 
   def load(rootProvider: ProviderMap, identity: UUID) = {
+    log.info("Beginning provider initialization...")
     providerManager.loadProviders(Some(rootProvider)) map { seq =>
       
       seq.flatMap { case (provider, services) => 
@@ -353,6 +354,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * Filters the target provider from the result-set obtained when creating a new provider.
    */
   private[controllers] def getCurrentProvider(targetId: UUID, results: Future[Seq[Try[GestaltResourceInstance]]]) = {
+    log.debug("entered getCurrentProvider(_, _)")
     for {
       seq <- results
       out = {
@@ -378,22 +380,29 @@ class Meta @Inject()( messagesApi: MessagesApi,
       parent: GestaltResourceInstance, 
       baseUrl: Option[String]): Try[JsObject] = {
 
+    log.debug("Adding default kube networks...")
     lazy val addKubeDefaultNetworks = (__ \ 'properties \ 'config).json.update(
       __.read[JsObject].map{ _ ++ Json.obj(
         "networks" -> Json.arr(Json.obj("name" -> "default"))
       ) }
     )
 
+    
     for {
       withSpecifics <- providerType match {
         case ResourceIds.KubeProvider => Try {
-          payload.transform(addKubeDefaultNetworks).get
+          val result = payload.transform(addKubeDefaultNetworks)
+          log.debug("RESULT:\n" + result.toString())
+          result.get
         }
         case _ => Success(payload.as[JsObject])
       }
-      withParentProp <- JsonUtil.upsertProperties(withSpecifics,
+      
+      withParentProp <- {
+        log.debug("adding parent prop...")
+        JsonUtil.upsertProperties(withSpecifics,
         "parent" -> Json.toJson(toLink(parent, baseUrl))
-      )
+      )}
       withIdAndType = withParentProp ++ Json.obj(
         "id" -> newId.toString,
         "resource_type" -> providerType.toString
@@ -468,18 +477,23 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
       val user    = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
-
+      
+      
+      log.debug("about to call newResourceResult...")
      newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
        
+       log.debug("about to call CreateResource...")
         val identity = user.account.id
         CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
              */
+            log.error("CreateResource Failed!")
             Future.successful(HandleExceptions(e))
           }
           case Success(newMetaProvider) => {
+            log.debug("CreateResource Success!")
             
             val results = load(ProviderMap(newMetaProvider), identity)
             getCurrentProvider(targetid, results) map { t => 
