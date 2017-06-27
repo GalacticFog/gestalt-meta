@@ -106,11 +106,17 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }
       portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
       upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
+      methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
+      plugins = Js.find(json, "/properties/plugins")
+      security = Js.find(json, "/properties/gestaltSecurity")
     } yield LaserEndpoint(
       id = Some(apiId),
       apiId       = api.toString,
       upstreamUrl = upstreamUrl,
-      path        = path
+      path        = path,
+      methods     = methods,
+      plugins     = plugins,
+      gestaltSecurity = security
     )
   }
 

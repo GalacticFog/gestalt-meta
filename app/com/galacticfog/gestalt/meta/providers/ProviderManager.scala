@@ -58,12 +58,10 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   }
   
   private[providers] def processAllProviders(ps: Seq[ProviderMap]) = {
-    log.debug("Entered procAllProviders(_)...")
     Future.sequence(ps map { p => processProvider(p) })
   }
   
   private[providers] def processProvider(p: ProviderMap): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
-    log.debug("Entered procProvider(_)...")
     val servicelist = processServices(p, p.services.toList, Seq.empty)
     for {
       vars <- mapPorts(servicelist)
@@ -78,7 +76,6 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
    */
   import scala.collection.immutable.ListMap
   private[providers] def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
-    log.debug("Entered updatePublicEnv(_,_)...")
     val penv = p.envConfig map { env =>
       val sorted = env.public map { pub => 
         ListMap((newVars.toMap ++ pub).toSeq.sortBy(_._1):_*)
@@ -89,7 +86,6 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   }
   
   private[providers] def mapPorts(ss: Seq[Future[GestaltResourceInstance]]): Future[Seq[(String, String)]] = {
-    log.debug("Entered mapPorts(_)...")
     Future.sequence(ss) map { services =>
       val t = services map { s =>
         parsePortMappings(s) filter { _.expose_endpoint == Some(true) } flatMap {  
@@ -242,7 +238,10 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
       throw new RuntimeException(s"Failed to lookup Provider Org FQON for ID '${pm.id}'")
     }
     
+    log.debug("Getting merged environment vars...")
     val variables = getMergedEnvironment(pm)
+    
+    log.debug("Normalizing payload...")
     val payload = normalizeContainerPayload(service.container_spec, variables)     
     
     val uri = s"/${fqon}/providers/${pm.id}/environments/${environment.id}"
@@ -275,7 +274,6 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
         for {
           updated   <- service.create(ctx, metaResource)
           container <- {
-            println("***UPDATE LABELS: " + updated.properties.get.get("labels"))
             updateContainer(updated, account.account.id)
           }
         } yield container
