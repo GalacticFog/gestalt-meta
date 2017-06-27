@@ -18,9 +18,9 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
+import MarathonService.Properties
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.Success
 import play.api.inject.bind
@@ -30,8 +30,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
   override def beforeAll(): Unit = pristineDatabase()
-
-  sequential
 
   case class FakeDCOSModule(mockMCF: MarathonClientFactory) extends AbstractModule {
     override def configure(): Unit = {
@@ -46,7 +44,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     val mockMarClient = mock[MarathonClient]
     val mockMCF = mock[MarathonClientFactory]
-    mockMCF.getClient(testProvider) returns mockMarClient
+    mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
 
     val injector =
       new GuiceApplicationBuilder()
@@ -485,6 +483,167 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       ))
     }
 
+    "respect marathon framework and cluster name in service addresses" in new FakeDCOS {
+      val marathonFrameworkName = "user-marathon"
+      val dcosClusterName = "dev-dcos"
+
+      val Success(testProviderLcl) = createInstance(
+        ResourceIds.DcosProvider,
+        "test-provider-with-namespace-override",
+        parent = Some(testEnv.id),
+        properties = Option(Map(
+          "parent" -> "{}",
+          "config" -> Json.obj(
+            Properties.MARATHON_FRAMEWORK_NAME -> marathonFrameworkName,
+            Properties.DCOS_CLUSTER_NAME -> dcosClusterName
+          ).toString
+        ))
+      )
+
+      mockMCF.getClient(testProviderLcl) returns Future.successful(mockMarClient)
+      val testProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProviderLcl.id, name = Some(testProviderLcl.name)),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            host_port = Some(0),
+            service_port = Some(80),
+            name = Some("web"),
+            labels = None,
+            expose_endpoint = Some(true)
+          )
+        ),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("HOST")
+      )
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProviderLcl).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get)
+        )
+      )
+
+      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+        s"""
+           |{
+           |    "acceptedResourceRoles": null,
+           |    "args": null,
+           |    "backoffFactor": 1.15,
+           |    "backoffSeconds": 1,
+           |    "cmd": null,
+           |    "constraints": [],
+           |    "container": {
+           |        "docker": {
+           |            "forcePullImage": false,
+           |            "image": "nginx",
+           |            "network": "HOST",
+           |            "parameters": [],
+           |            "portMappings": null,
+           |            "privileged": false
+           |        },
+           |        "type": "DOCKER",
+           |        "volumes": []
+           |    },
+           |    "cpus": 1,
+           |    "dependencies": [],
+           |    "deployments": [
+           |        {
+           |            "id": "a9d9b165-6d43-4df7-877a-5b53963534fe"
+           |        }
+           |    ],
+           |    "disk": 0,
+           |    "env": {},
+           |    "executor": "",
+           |    "fetch": [],
+           |    "gpus": 0,
+           |    "healthChecks": [],
+           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
+           |    "instances": 1,
+           |    "ipAddress": null,
+           |    "labels": {},
+           |    "maxLaunchDelaySeconds": 3600,
+           |    "mem": 128,
+           |    "portDefinitions": [
+           |        {
+           |            "labels": {
+           |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+           |            },
+           |            "name": "web",
+           |            "port": 10010,
+           |            "protocol": "tcp"
+           |        }
+           |    ],
+           |    "ports": [
+           |        10010
+           |    ],
+           |    "readinessChecks": [],
+           |    "requirePorts": false,
+           |    "residency": null,
+           |    "secrets": {},
+           |    "storeUrls": [],
+           |    "taskKillGracePeriodSeconds": null,
+           |    "tasks": [],
+           |    "tasksHealthy": 0,
+           |    "tasksRunning": 0,
+           |    "tasksStaged": 0,
+           |    "tasksUnhealthy": 0,
+           |    "upgradeStrategy": {
+           |        "maximumOverCapacity": 1,
+           |        "minimumHealthCapacity": 1
+           |    },
+           |    "uris": [],
+           |    "user": null,
+           |    "version": "2017-03-27T17:10:12.005Z"
+           |}
+        """.stripMargin
+      ))
+
+      val fupdatedMetaContainer = ms.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderLcl.id, None),
+        container = metaContainer
+      )
+
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+
+      there was atLeastOne(mockMCF).getClient(testProviderLcl)
+
+      there was one(mockMarClient).launchApp(
+        hasExactlyPortDefs(
+          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("web"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))
+        )
+      )(any)
+
+      import ContainerSpec.{PortMapping, ServiceAddress}
+
+      val svcHost = s"${metaContainer.name}.${testEnv.name}.${testWork.name}.root.${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
+      updatedContainerProps.get("status") must beSome("LAUNCHED")
+      val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+      mappings must containTheSameElementsAs(Seq(
+        PortMapping(
+          protocol = "tcp", container_port = None, host_port = Some(0), service_port = Some(80),
+          name = Some("web"), labels = None, expose_endpoint = Some(true),
+          service_address = Some(ServiceAddress(svcHost, 80, Some("tcp")))
+        )
+      ))
+    }
+
     "delete service on container delete using external_id" in new FakeDCOS {
       val testProps = ContainerSpec(
         name = "",
@@ -625,9 +784,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )).properties
 
       there was one(mockMarClient).scaleApplication(
-        "/some/marathon/app",
-        4
-      )
+        meq("/some/marathon/app"),
+        meq(4)
+      )(any)
 
       updatedContainerProps must havePair(
         "num_instances" -> "4"

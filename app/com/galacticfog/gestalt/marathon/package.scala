@@ -378,6 +378,14 @@ package object marathon {
     ))
   }
 
+  def getProviderConfigOrThrow(provider: GestaltResourceInstance): Option[JsValue] = {
+    for {
+      props <- provider.properties
+      configProp <- props.get("config")
+      config <- Try{Json.parse(configProp)}.toOption
+    } yield config
+  }
+
   def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
     providerProps <- provider.properties
     configStr <- providerProps.get("config")

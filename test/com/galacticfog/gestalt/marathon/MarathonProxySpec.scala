@@ -1,24 +1,14 @@
-package controllers
+package com.galacticfog.gestalt.marathon
 
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import org.bouncycastle.util.IPAddress
-import org.specs2.matcher.{Matcher, JsonType, JsonMatchers, Expectations}
-
+import org.specs2.matcher.{JsonMatchers, JsonType, Matcher}
 import org.specs2.mock._
-import org.specs2.mock.mockito._
 import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Scope
-import play.api.Logger
 import play.api.libs.json._
-
-import scala.util.parsing.json.JSONArray
 
 
 class MarathonProxySpec extends Specification with Mockito with JsonMatchers {

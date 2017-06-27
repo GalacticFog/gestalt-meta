@@ -92,7 +92,8 @@ libraryDependencies ++= Seq(
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
 	"org.postgresql"   % "postgresql" 		% "9.4.1208.jre7",
 	"com.rabbitmq"     % "amqp-client" 		% "3.6.1",
-		
+  "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
+
 	//"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
 	
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.5" withSources(),
