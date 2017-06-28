@@ -152,6 +152,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       properties = Some(Map(
         "resource"     -> "/original/path",
         "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+        "implementation_type" -> "lambda",
+        "implementation_id" -> testLambda.id.toString,
         "provider" -> Json.obj(
           "id" -> testGatewayProvider.id.toString,
           "locations" -> Json.arr(testKongProvider.id.toString).toString
@@ -426,6 +428,49 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       updatedEndpoint.properties.get("synchronous") must_== "true"
       updatedEndpoint.properties.get("implementation_type") must_== "lambda"
       updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
+    }
+
+    "patch against api-gateway provider to modify methods" in new TestApplication {
+      val newMethods = Json.arr(
+        "GET", "POST", "OPTION"
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/methods", newMethods)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "methods").as[JsValue] must_== newMethods
+      Json.parse(updatedEndpoint.properties.get("methods")) must_== newMethods
+    }
+
+    "patch against api-gateway provider to modify plugins" in new TestApplication {
+      val newPlugins = Json.obj(
+        "plugin1" -> Json.obj("do" -> "not care"),
+        "plugin2" -> Json.obj("very" -> "opaque")
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins",    newPlugins)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
     }
 
     "patch against api-gateway provider to a container" in new TestApplication {

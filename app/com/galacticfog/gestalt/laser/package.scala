@@ -54,8 +54,7 @@ package object laser {
       endpointInfo: Option[JsValue] = None, 
       authentication: Option[JsValue] = None,
       methods: Option[Seq[String]] = None,
-      plugins: Option[JsValue] = None,
-      gestaltSecurity: Option[JsValue] = None)
+      plugins: Option[JsValue] = None)
 
   case class LaserArtifactDescription(
       artifactUri: Option[String],
