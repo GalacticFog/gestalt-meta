@@ -108,15 +108,13 @@ class GatewayMethods @Inject() ( ws: WSClient,
       upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
       methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
       plugins = Js.find(json, "/properties/plugins")
-      security = Js.find(json, "/properties/gestaltSecurity")
     } yield LaserEndpoint(
       id = Some(apiId),
       apiId       = api.toString,
       upstreamUrl = upstreamUrl,
       path        = path,
       methods     = methods,
-      plugins     = plugins,
-      gestaltSecurity = security
+      plugins     = plugins
     )
   }
 
@@ -242,6 +240,8 @@ class GatewayMethods @Inject() ( ws: WSClient,
       _ = log.debug("Endpoint found in ApiGateway provider.")
       patchedEndpoint = gotEndpoint.copy(
         path = strippedOps.get("resource").flatMap(_.asOpt[String]) getOrElse gotEndpoint.path,
+        methods = strippedOps.get("methods").flatMap(_.asOpt[Seq[String]]).orElse(gotEndpoint.methods),
+        plugins = strippedOps.get("plugins").orElse(gotEndpoint.plugins),
         upstreamUrl = newUpstreamUrl
       )
       _ = log.debug("Patched endpoint resource before PUT: " + Json.toJson(patchedEndpoint))
