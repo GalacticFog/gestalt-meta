@@ -473,6 +473,54 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
     }
 
+    "deep patch against api-gateway provider to modify gestaltSecurity plugin" in new TestApplication {
+      assert(testEndpoint.properties.get.get("plugins").isEmpty, "test assumes that plugins block is empty")
+      val newPlugins = Json.obj(
+        "gestaltSecurity" -> Json.obj(
+          "enabled" -> true
+        )
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/enabled", true)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
+    }
+
+    "deep patch against api-gateway provider to modify rateLimit plugin" in new TestApplication {
+      assert(testEndpoint.properties.get.get("plugins").isEmpty, "test assumes that plugins block is empty")
+      val newPlugins = Json.obj(
+        "rateLimit" -> Json.obj(
+          "perMinute" -> 100
+        )
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/rateLimit/perMinute", 100)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
+    }
+
     "patch against api-gateway provider to a container" in new TestApplication {
 
       val expUpstreamUrl = "http://my-nginx.service-address:80"
