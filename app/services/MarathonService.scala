@@ -308,7 +308,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
                 marPayload = putPayload
               )
               _ = log.debug("Marathon PUT response:\n" + Json.prettyPrint(resp))
-              updated = updateServiceAddresses(context.provider, resp, container)
+              updated = updateServiceAddresses(context.provider, putPayload, container)
               _ = log.debug("Meta resource with updated service addresses: " + Json.toJson(Output.renderInstance(updated)))
             } yield updated
         }
