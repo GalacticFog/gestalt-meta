@@ -858,96 +858,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       mockMarClient.updateApplication(any,any)(any) returns Future.successful(Json.parse(
       s"""
          |{
-         |    "acceptedResourceRoles": null,
-         |    "args": null,
-         |    "backoffFactor": 1.15,
-         |    "backoffSeconds": 1,
-         |    "cmd": null,
-         |    "constraints": [],
-         |    "container": {
-         |        "docker": {
-         |            "forcePullImage": false,
-         |            "image": "nginx:updated",
-         |            "network": "BRIDGE",
-         |            "parameters": [],
-         |            "portMappings": [
-         |            {
-         |              "containerPort": 80,
-         |              "hostPort": 12345,
-         |              "labels": {
-         |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
-         |              },
-         |              "name": "http",
-         |              "protocol": "tcp",
-         |              "servicePort": 10100
-         |             },
-         |             {
-         |               "containerPort": 443,
-         |               "hostPort": 12346,
-         |               "labels": {
-         |                 "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
-         |               },
-         |               "name": "https",
-         |               "protocol": "tcp",
-         |               "servicePort": 8443
-         |             },
-         |             {
-         |               "containerPort": 9999,
-         |               "hostPort": 12347,
-         |               "labels": {
-         |               },
-         |               "name": "debug",
-         |               "protocol": "tcp",
-         |               "servicePort": 10101
-         |              }
-         |            ],
-         |            "privileged": true
-         |        },
-         |        "type": "DOCKER",
-         |        "volumes": []
-         |    },
-         |    "cpus": 1,
-         |    "dependencies": [],
-         |    "deployments": [
-         |        {
-         |            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
-         |        }
-         |    ],
-         |    "disk": 0,
-         |    "env": {},
-         |    "executor": "",
-         |    "fetch": [],
-         |    "gpus": 0,
-         |    "healthChecks": [],
-         |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-         |    "instances": 1,
-         |    "ipAddress": null,
-         |    "labels": {},
-         |    "maxLaunchDelaySeconds": 3600,
-         |    "mem": 128,
-         |    "ports": [
-         |        0,
-         |        8443,
-         |        0
-         |    ],
-         |    "readinessChecks": [],
-         |    "requirePorts": true,
-         |    "residency": null,
-         |    "secrets": {},
-         |    "storeUrls": [],
-         |    "taskKillGracePeriodSeconds": null,
-         |    "tasks": [],
-         |    "tasksHealthy": 0,
-         |    "tasksRunning": 0,
-         |    "tasksStaged": 0,
-         |    "tasksUnhealthy": 0,
-         |    "upgradeStrategy": {
-         |        "maximumOverCapacity": 1,
-         |        "minimumHealthCapacity": 1
-         |    },
-         |    "uris": [],
-         |    "user": null,
-         |    "version": "2017-03-27T17:07:03.684Z"
+         |  "deploymentId": "5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43",
+         |  "version": "2015-09-29T15:59:51.164Z"
          |}
         """.stripMargin
       ))
@@ -979,8 +891,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "image" -> "nginx:updated"
       )
       Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
-        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
-        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("updated-name.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("updated-name.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
         ContainerSpec.PortMapping("tcp", Some(9999), None,       None, Some("debug"), None, Some(false), None)
       ))
     }
