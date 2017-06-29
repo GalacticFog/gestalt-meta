@@ -205,7 +205,7 @@ object ContainerService {
     ResourceFactory.findById(provider) filter {
       Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider) contains _.typeId
     } getOrElse {
-      throw new ResourceNotFoundException(s"CaaS provider with ID '$provider' not found. Container ' is likely corrupt.")
+      throw new BadRequestException(s"Provider with ID '$provider' is absent or not a recognized CaaS provider. Associated container may be corrupt.")
     }
   }
 

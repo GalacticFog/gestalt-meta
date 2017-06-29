@@ -805,27 +805,27 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             container_port = Some(80),
             host_port = None,
             service_port = None,
-            name = Some("will_remove_endpoint"),
+            name = Some("http"),
             labels = None,
             expose_endpoint = Some(true)
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(81),
-            host_port = None,
-            service_port = None,
-            name = Some("will_add_endpoint"),
-            labels = None,
-            expose_endpoint = Some(false)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
             host_port = None,
             service_port = Some(8443),
-            name = Some("will_remove_port"),
+            name = Some("https"),
             labels = None,
             expose_endpoint = Some(true)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(9999),
+            host_port = None,
+            service_port = None,
+            name = Some("debug"),
+            labels = None,
+            expose_endpoint = Some(false)
           )
         ),
         cpus = 1.0,
@@ -871,6 +871,35 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
          |            "network": "BRIDGE",
          |            "parameters": [],
          |            "portMappings": [
+         |            {
+         |              "containerPort": 80,
+         |              "hostPort": 12345,
+         |              "labels": {
+         |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+         |              },
+         |              "name": "http",
+         |              "protocol": "tcp",
+         |              "servicePort": 10100
+         |             },
+         |             {
+         |               "containerPort": 443,
+         |               "hostPort": 12346,
+         |               "labels": {
+         |                 "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+         |               },
+         |               "name": "https",
+         |               "protocol": "tcp",
+         |               "servicePort": 8443
+         |             },
+         |             {
+         |               "containerPort": 9999,
+         |               "hostPort": 12347,
+         |               "labels": {
+         |               },
+         |               "name": "debug",
+         |               "protocol": "tcp",
+         |               "servicePort": 10101
+         |              }
          |            ],
          |            "privileged": true
          |        },
@@ -896,35 +925,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
          |    "labels": {},
          |    "maxLaunchDelaySeconds": 3600,
          |    "mem": 128,
-         |    "portDefinitions": [
-         |        {
-         |            "labels": {},
-         |            "name": "http",
-         |            "port": 0,
-         |            "protocol": "tcp"
-         |        },
-         |        {
-         |            "labels": {
-         |                "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
-         |            },
-         |            "name": "https",
-         |            "port": 8443,
-         |            "protocol": "tcp"
-         |        },
-         |        {
-         |            "labels": {},
-         |            "name": "debug",
-         |            "port": 0,
-         |            "protocol": "udp"
-         |        }
-         |    ],
          |    "ports": [
          |        0,
          |        8443,
          |        0
          |    ],
          |    "readinessChecks": [],
-         |    "requirePorts": false,
+         |    "requirePorts": true,
          |    "residency": null,
          |    "secrets": {},
          |    "storeUrls": [],
@@ -971,7 +978,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
-      // TODO: some check that networking and labels were updated appropriately
+      Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
+        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(9999), None,       None, Some("debug"), None, Some(false), None)
+      ))
     }
 
   }
