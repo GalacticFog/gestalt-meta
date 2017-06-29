@@ -23,6 +23,7 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec._
 import com.google.inject.name.Named
 import akka.pattern.ask
+import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.Logger
 
 import scala.concurrent.duration._
@@ -222,13 +223,13 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
        * port names are required by Meta Container API, but not by Marathon,
        * therefore we will map service addresses using port index
        */
-      _.as[JsArray].value.zipWithIndex flatMap { case (portDef, portIndex) =>
+      _.as[Seq[JsValue]].zipWithIndex flatMap { case (portDef, portIndex) =>
         // 'protocol' is optional in marathon API, default is "tcp"
         val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp")
         for {
           labels   <- Js.find(portDef.as[JsObject], "/labels")
           labelMap <- Try(labels.as[Map[String, String]]).toOption
-          serviceAddress <- labelMap.collectFirst {
+          serviceAddress <- labelMap.collectFirst { // collectFirst, because one VIP is as good as another
             case (VIPLabel(_), VIPValue(address, port)) =>
               ServiceAddress(address + clusterid, port.toInt, protocol)
           }
@@ -298,13 +299,18 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
             ).copy(
               id = Some(external_id)
             )
+            val putPayload = Json.toJson(marathonApp)
+            log.debug("Marathon PUT payload:\n" + Json.prettyPrint(putPayload))
             for {
               marClient <- fMarClient
               resp <- marClient.updateApplication(
                 appId = external_id,
-                marPayload = Json.toJson(marathonApp)
+                marPayload = putPayload
               )
-            } yield updateServiceAddresses(context.provider, resp, container)
+              _ = log.debug("Marathon PUT response:\n" + Json.prettyPrint(resp))
+              updated = updateServiceAddresses(context.provider, resp, container)
+              _ = log.debug("Meta resource with updated service addresses: " + Json.toJson(Output.renderInstance(updated)))
+            } yield updated
         }
     }
   }
