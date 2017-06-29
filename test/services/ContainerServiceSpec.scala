@@ -1,8 +1,11 @@
 package services
 
+import java.util.UUID
+
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -300,6 +303,26 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         )),
         container = any
       )(any)
+    }
+
+    "throw 400 on bad provider during container creation" in new TestApplication {
+      val badProvider = UUID.randomUUID()
+      val containerService = injector.instanceOf[ContainerService]
+      val testContainerName = "test-container"
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = badProvider),
+        network = Some("BRIDGE")
+      )
+
+      containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), badProvider, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
     }
 
     "patch containers using CaaSService interface" in new TestApplication {
