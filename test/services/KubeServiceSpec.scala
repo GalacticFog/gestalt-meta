@@ -3,11 +3,13 @@ package services
 import java.time.{ZoneOffset, ZonedDateTime}
 
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.google.inject.AbstractModule
+import com.mohiva.play.silhouette.impl.util.SecureRandomIDGenerator
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
 import org.specs2.mock.Mockito
@@ -24,8 +26,7 @@ import skuber.json.format._
 import skuber.json.ext.format._
 
 import scala.concurrent.Future
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.ExecutionContext.Implicits.global
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.Success
 import play.api.inject.bind
 
@@ -51,6 +52,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   }
 
   abstract class FakeKube() extends Scope {
+    val snGen = new SecureRandomIDGenerator(4)
+    val origServiceName =  await(snGen.generate)
+
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     var testProvider = createKubernetesProvider(testEnv.id, "test-provider").get
@@ -61,9 +65,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     skTestNs.name returns testEnv.id.toString
     val mockSkuber = mock[client.RequestContext]
     val mockSkuberFactory = mock[SkuberFactory]
-    mockSkuberFactory.initializeKube(testProvider.id, "default"          ) returns Future.successful(mockSkuber)
+    mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
     mockSkuber.get[skuber.Namespace]("default") returns Future.successful(skDefaultNs)
-    mockSkuberFactory.initializeKube(testProvider.id, testEnv.id.toString) returns Future.successful(mockSkuber)
+    mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
     mockSkuber.get[skuber.Namespace](testEnv.id.toString) returns Future.successful(skTestNs)
 
     val injector =
@@ -108,7 +112,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "memory" -> initProps.memory.toString,
         "num_instances" -> initProps.num_instances.toString,
         "force_pull" -> initProps.force_pull.toString,
-        "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
+        "port_mappings" -> Json.toJson(initProps.port_mappings.map(
+          pm => if ( ! pm.expose_endpoint.contains(true) ) pm else pm.copy(
+            service_address = Some(ServiceAddress(
+              host = origServiceName  + "." + skTestNs.name + ".svc.cluster.local",
+              port = (pm.container_port orElse pm.service_port).get,
+              protocol = Some("tcp"),
+              virtual_hosts = pm.virtual_hosts
+            ))
+          )
+        )).toString,
         "network" -> initProps.network.getOrElse(""),
         "external_id" -> origExtId
       ))
@@ -419,12 +432,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
           and
         hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+          and
+        (((_: skuber.Service).name) ^^ be_!=(metaContainer.name))
       ))(any,meq(client.serviceKind))
 
       import ContainerSpec.PortMapping
       import ContainerSpec.ServiceAddress
 
-      val svcHost = s"${metaContainer.name}.${testEnv.id}.svc.cluster.local"
+      val svcHost = s"${origServiceName}.${testEnv.id}.svc.cluster.local"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
@@ -664,7 +679,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
-      val mockService = skuber.Service("test-container").withSelector( label ).addLabel( label )
+      val mockService = skuber.Service(origServiceName).withSelector( label ).addLabel( label )
       mockSkuber.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
       mockSkuber.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
       mockSkuber.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
@@ -678,7 +693,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       await(ks.destroy(metaContainer))
       there was one(mockSkuber).delete(mockDep.name,0)(skuber.ext.deploymentKind)
       there was one(mockSkuber).delete(mockRS.name,0)(skuber.ext.replsetsKind)
-      there was one(mockSkuber).delete(mockService.name,0)(client.serviceKind)
+      there was one(mockSkuber).delete(origServiceName,0)(client.serviceKind)
       there was one(mockSkuber).delete(mockIngress.name,0)(skuber.ext.ingressKind)
     }
 
@@ -794,7 +809,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       mockSkuber.getOption(meq(initProps.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
       mockSkuber.update(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
-      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
+      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(None)
+      mockSkuber.getOption(meq(origServiceName))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
       mockSkuber.update(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
@@ -841,16 +857,20 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(mockSkuber).update(argThat(
         inNamespace(skTestNs.name)
           and haveName("test-container")
-          and (((_: skuber.ext.Ingress).spec.get.rules.toSeq.map(_.host)) ^^ containTheSameElementsAs(Seq("port81.test.com","port8444.test.com")))
+          and (((_: skuber.ext.Ingress).spec.get.rules.map(_.host)) ^^ containTheSameElementsAs(Seq("port81.test.com","port8444.test.com")))
       ))(any,meq(skuber.ext.ingressKind))
-      there was one(mockSkuber).update(
-        any
-      )( any, meq(client.serviceKind) )
+      there was one(mockSkuber).update(argThat(
+        inNamespace(skTestNs.name)
+          and (((_: skuber.Service).name) ^^ be_==(origServiceName))
+      ))( any, meq(client.serviceKind) )
 
       updatedContainer.name must_== "updated-name"
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
+      updatedContainerProps("port_mapipngs") must /(0) /("service_address" -> null)
+      updatedContainerProps("port_mappings") must /(1) /("service_address") /("host" -> origServiceName + ".svc.cluster.local")
+      updatedContainerProps("port_mappings") must /(2) /("service_address") /("host" -> origServiceName + ".svc.cluster.local")
     }
 
     "delete empty ingress on container PUT" in new FakeKubeWithPrexistingContainer(Seq(
@@ -871,7 +891,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       mockSkuber.getOption(meq(initProps.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
       mockSkuber.delete(initProps.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
-      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
+      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(None)
+      mockSkuber.getOption(meq(origServiceName))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
       mockSkuber.update(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
@@ -929,7 +950,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )) {
 
       mockSkuber.getOption(meq(initProps.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
-      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
+      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(None)
+      mockSkuber.getOption(meq(origServiceName))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
       mockSkuber.delete(meq(initProps.name), any)(meq(client.serviceKind)) returns Future.successful(())
 
       val newPortMappings = Seq(
@@ -959,7 +981,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(mockSkuber).delete( meq("test-container"), any )(meq(client.serviceKind))
+      there was one(mockSkuber).delete( meq(origServiceName), any )(meq(client.serviceKind))
       there was one(mockSkuber).update( any )( any, meq(skuber.ext.deploymentKind) )
     }
 
@@ -975,7 +997,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       mockSkuber.getOption(meq(initProps.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
       mockSkuber.create(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
-      mockSkuber.getOption(meq(initProps.name))(any,meq(client.serviceKind)) returns Future.successful(None)
+      mockSkuber.getOption(any)(any,meq(client.serviceKind)) returns Future.successful(None)
       mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
@@ -1012,7 +1034,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any,meq(skuber.ext.ingressKind))
       there was one(mockSkuber).create(argThat(
         inNamespace(skTestNs.name)
-          and haveName("test-container")
+          and haveName(origServiceName)
           and (((_: skuber.Service).spec.get.ports.map(_.targetPort.get))) ^^ containTheSameElementsAs(Seq(skuber.portNumToNameablePort(80)))
       ))(any,meq(client.serviceKind))
 

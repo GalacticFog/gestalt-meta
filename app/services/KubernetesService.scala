@@ -2,6 +2,7 @@ package services
 
 import java.util.{TimeZone, UUID}
 
+import com.mohiva.play.silhouette.impl.util.SecureRandomIDGenerator
 import org.slf4j.LoggerFactory
 
 import scala.language.implicitConversions
@@ -106,6 +107,8 @@ class DefaultSkuberFactory extends SkuberFactory {
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
+
+  val snGen = new SecureRandomIDGenerator(4)
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
@@ -581,42 +584,44 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     })
   }
 
-  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): (Option[Service],Seq[PortMapping]) = {
+  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Future[(Option[Service],Seq[PortMapping])] = {
+    val fSvcName = snGen.generate
     val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true))
-    val srv = exposedPorts.foldLeft[Service](
-      Service(metadata=ObjectMeta(name=containerSpec.name,namespace=namespace))
-        .withType(Service.Type.NodePort)
-        .withSelector(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-        .addLabel(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-    ){
-      case (svc,pm) => svc.exposeOnPort(Service.Port(
-        name = pm.name.getOrElse(""),
-        protocol = pm.protocol,
-        port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
-        targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
-        nodePort = pm.host_port.getOrElse(0)
-      ))
-    }
-    if (srv.spec.exists(_.ports.size > 0)) {
-      val svchost = s"${containerSpec.name}.${namespace}.svc.cluster.local"
-      val newPMs = containerSpec.port_mappings.map {
-        case pm if pm.expose_endpoint.contains(true) => pm.copy(
-          service_address = Some(ContainerSpec.ServiceAddress(
-            host = svchost,
-            port = pm.service_port.orElse(pm.container_port).get,
-            protocol = Some(pm.protocol)
-          ))
-        )
-        case pm => pm.copy(service_address = None)
-      }
-      (Some(srv),newPMs)
+    if (exposedPorts.isEmpty) {
+      Future.successful(None, containerSpec.port_mappings.map(_.copy(service_address = None)))
     } else {
-      // return original port_mappings, clear out the service_address fields
-      (None,containerSpec.port_mappings.map(_.copy(service_address = None)))
+      fSvcName map { svcName =>
+        val srv = exposedPorts.foldLeft[Service](
+          Service(metadata = ObjectMeta(name = svcName, namespace = namespace))
+            .withType(Service.Type.NodePort)
+            .withSelector(
+              META_CONTAINER_KEY -> containerId.toString
+            )
+            .addLabel(
+              META_CONTAINER_KEY -> containerId.toString
+            )
+        ) {
+          case (svc, pm) => svc.exposeOnPort(Service.Port(
+            name = pm.name.getOrElse(""),
+            protocol = pm.protocol,
+            port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
+            targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
+            nodePort = pm.host_port.getOrElse(0)
+          ))
+        }
+        val svchost = s"${svcName}.${namespace}.svc.cluster.local"
+        val newPMs = containerSpec.port_mappings.map {
+          case pm if pm.expose_endpoint.contains(true) => pm.copy(
+            service_address = Some(ContainerSpec.ServiceAddress(
+              host = svchost,
+              port = pm.service_port.orElse(pm.container_port).get,
+              protocol = Some(pm.protocol)
+            ))
+          )
+          case pm => pm.copy(service_address = None)
+        }
+        (Some(srv),newPMs)
+      }
     }
   }
 
