@@ -19,8 +19,9 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import MarathonService.Properties
-
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Success
 import play.api.inject.bind
@@ -803,28 +804,20 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            host_port = None,
-            service_port = None,
             name = Some("http"),
-            labels = None,
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
-            host_port = None,
             service_port = Some(8443),
             name = Some("https"),
-            labels = None,
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(9999),
-            host_port = None,
-            service_port = None,
             name = Some("debug"),
-            labels = None,
             expose_endpoint = Some(false)
           )
         ),
@@ -835,7 +828,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         network = Some("BRIDGE")
       )
 
-      val origExtId = "/some/marathon/app"
+      val origExtId = s"/root/${testWork.name}/${testEnv.name}/test-container"
 
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
@@ -867,7 +860,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       val updatedContainer = await(ms.update(
         context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer.copy(
-          name = "updated-name",
           properties = metaContainer.properties.map(
             _ ++ Map(
               "image" -> "nginx:updated"
@@ -886,15 +878,50 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )(any)
 
-      updatedContainer.name must_== "updated-name"
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
       Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
-        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("updated-name.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
-        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("updated-name.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
         ContainerSpec.PortMapping("tcp", Some(9999), None,       None, Some("debug"), None, Some(false), None)
       ))
+    }
+
+    "throw a 400 on container rename" in new FakeDCOS {
+      val initProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name))
+      )
+
+      val origExtId = "/some/marathon/app"
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        name = initProps.name,
+        parent = Some(testEnv.id),
+        properties = Some(Map[String,String](
+          "container_type" -> initProps.container_type,
+          "image" -> initProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> initProps.cpus.toString,
+          "memory" -> initProps.memory.toString,
+          "num_instances" -> initProps.num_instances.toString,
+          "force_pull" -> initProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
+          "network" -> initProps.network.getOrElse(""),
+          "external_id" -> origExtId
+        ))
+      )
+
+      await(ms.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          name = "updated-name"
+        )
+      )) must throwAn[BadRequestException]("renaming containers is not supported")
     }
 
   }
