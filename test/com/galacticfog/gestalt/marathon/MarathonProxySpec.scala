@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.marathon
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import org.specs2.matcher.{JsonMatchers, JsonType, Matcher}
@@ -16,6 +16,16 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
   val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"
   val fqon: String = "galacticfog.engineering.test"
+
+  def marPayload(spec: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+    val fqon = "org"
+    val mockW = mock[ResourceLike]
+    mockW.name returns "wrk"
+    val mockE = mock[ResourceLike]
+    mockE.name returns "env"
+    mockE.id returns UUID.randomUUID()
+    toMarathonLaunchPayload(fqon, mockW, mockE, spec, provider)
+  }
 
   def marathonProviderWithNetworks = {
     val p = mock[GestaltResourceInstance]
@@ -232,10 +242,16 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       p.id returns pid
       p
     }
-    def prefixedPayload(prefix: Option[String], org: String, wrk: String, env: String, name: String, network: Option[String] = None) = {
+
+    def prefixedPayload(prefix: Option[String], org: String, wrk: String, env: String, network: Option[String] = None, name: Option[String] = None) = {
+      val mockW = mock[ResourceLike]
+      mockW.name returns wrk
+      val mockE = mock[ResourceLike]
+      mockE.name returns env
+      mockE.id returns UUID.randomUUID()
       val provider = providerWithPrefix(prefix)
-      toMarathonLaunchPayload(org,wrk,env,name,ContainerSpec(
-        name = "test-container",
+      toMarathonLaunchPayload(org,mockW,mockE,ContainerSpec(
+        name = name.getOrElse("name"),
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = provider.id),
@@ -251,36 +267,9 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       ), provider)
     }
 
-    "include provider appId prefix in named VIPs if present" in {
-      def payload: (Option[String],Option[String]) => AppUpdate = prefixedPayload(_,"org","wrk","env","name",_)
-
-      Json.toJson(payload(Some("theprefix")  ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("/theprefix") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("theprefix/") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/"),Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(None               ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org:80")
-
-      Json.toJson(payload(Some("theprefix/more")  ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/more") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("theprefix/more/") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/more/"),Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(None                    ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org:80")
-
-      Json.toJson(payload(Some("theprefix")  ,Some("HOST"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("/theprefix") ,Some("HOST"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("theprefix/") ,Some("HOST"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/"),Some("HOST"))).toString must */("VIP_0" -> "/name.env.wrk.org.theprefix:80")
-      Json.toJson(payload(None               ,Some("HOST"))).toString must */("VIP_0" -> "/name.env.wrk.org:80")
-
-      Json.toJson(payload(Some("theprefix/more")  ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/more") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("theprefix/more/") ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(Some("/theprefix/more/"),Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org.more.theprefix:80")
-      Json.toJson(payload(None                    ,Some("BRIDGE"))).toString must */("VIP_0" -> "/name.env.wrk.org:80")
-    }
-
     "use provider appId prefix if one exists (singleton, with or without slashes)" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(Some("theprefix")).id must   beSome("/theprefix/org/wrk/env/name")
       payload(Some("/theprefix")).id must  beSome("/theprefix/org/wrk/env/name")
       payload(Some("theprefix/")).id must  beSome("/theprefix/org/wrk/env/name")
@@ -288,7 +277,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "use provider appId prefix if one exists (tuple, with or without slashes)" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(Some("prefix/in-two-parts")).id must   beSome("/prefix/in-two-parts/org/wrk/env/name")
       payload(Some("/prefix/in-two-parts")).id must  beSome("/prefix/in-two-parts/org/wrk/env/name")
       payload(Some("prefix/in-two-parts/")).id must  beSome("/prefix/in-two-parts/org/wrk/env/name")
@@ -296,7 +286,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "use provider appId prefix if one exists (starting with number)" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(Some("123")).id must   beSome("/123/org/wrk/env/name")
       payload(Some("/123")).id must  beSome("/123/org/wrk/env/name")
       payload(Some("/123/")).id must beSome("/123/org/wrk/env/name")
@@ -304,7 +295,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "use provider appId prefix if one exists (includes dots)" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(Some("blah.com")).id must   beSome("/blah.com/org/wrk/env/name")
       payload(Some("/blah.com")).id must  beSome("/blah.com/org/wrk/env/name")
       payload(Some("/blah.com/")).id must beSome("/blah.com/org/wrk/env/name")
@@ -317,7 +309,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "use provider appId prefix if one exists (includes dashes and double-dashes)" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(Some("blah-com")).id must   beSome("/blah-com/org/wrk/env/name")
       payload(Some("/blah-com")).id must  beSome("/blah-com/org/wrk/env/name")
       payload(Some("/blah-com/")).id must beSome("/blah-com/org/wrk/env/name")
@@ -335,7 +328,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "neglect provider appId prefix in missing from provider or empty" in {
-      def payload: Option[String] => AppUpdate = prefixedPayload(_,"org","wrk","env","name")
+      def payload: Option[String] => AppUpdate = (prefix: Option[String]) => prefixedPayload(prefix, "org", "wrk", "env")
+
       payload(None).id must beSome("/org/wrk/env/name")
       payload(Some("")).id must beSome("/org/wrk/env/name")
       payload(Some(" ")).id must beSome("/org/wrk/env/name")
@@ -345,48 +339,48 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "toMarathonLaunchPayload should validate appId components" in {
-      prefixedPayload(Some("Caps")       ,"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("under_score"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special^char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special!char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special@char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special#char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special$char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special%char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special^char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special&char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special(char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special)char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special+char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(Some("special=char"),"org","wrk","env","name") must throwA[BadRequestException]
-      prefixedPayload(None, "Caps"       ,"wrk","env","name")       must throwA[BadRequestException]
-      prefixedPayload(None, "under_score","wrk","env","name")       must throwA[BadRequestException]
-      prefixedPayload(None, "org", "Caps"       ,"env","name")      must throwA[BadRequestException]
-      prefixedPayload(None, "org", "under_score","env","name")      must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "Caps"       ,"name")    must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "under_score","name")    must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "env", "Caps"       )    must throwA[BadRequestException]
-      prefixedPayload(None, "org", "work", "env", "under_score")    must throwA[BadRequestException]
+      prefixedPayload(Some("Caps"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("under_score"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special^char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special!char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special@char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special#char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special$char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special%char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special^char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special&char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special(char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special)char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special+char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("special=char"), "org", "wrk", "env") must throwA[BadRequestException]
+      prefixedPayload(None, "Caps", "wrk", "env")       must throwA[BadRequestException]
+      prefixedPayload(None, "under_score", "wrk", "env")       must throwA[BadRequestException]
+      prefixedPayload(None, "org", "Caps", "env")      must throwA[BadRequestException]
+      prefixedPayload(None, "org", "under_score", "env")      must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "Caps")    must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "under_score")    must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "env", None, Some("Caps"))        must throwA[BadRequestException]
+      prefixedPayload(None, "org", "work", "env", None, Some("under_score")) must throwA[BadRequestException]
       //
-      prefixedPayload(Some(".startingdot.com"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("endingdot.com."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("two..dots"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some(".."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("-starting-dash"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("ending-dash-"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some(".startingdot.com"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("endingdot.com."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("two..dots"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some(".."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("-starting-dash"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("ending-dash-"), "org", "work", "env") must throwA[BadRequestException]
       //
-      prefixedPayload(Some("/good/.startingdot.com"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/endingdot.com."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/two..dots"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/.."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/."), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/-starting-dash"), "org", "work", "env", "name") must throwA[BadRequestException]
-      prefixedPayload(Some("/good/ending-dash-"), "org", "work", "env", "name") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/.startingdot.com"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/endingdot.com."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/two..dots"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/.."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/."), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/-starting-dash"), "org", "work", "env") must throwA[BadRequestException]
+      prefixedPayload(Some("/good/ending-dash-"), "org", "work", "env") must throwA[BadRequestException]
     }
 
     "handle portIndex for health checks" in {
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -413,7 +407,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         "VARA" -> "VALA",
         "VARB" -> "VALB"
       )
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -441,7 +435,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         "VARA" -> "VALA",
         "VARB" -> "VALB"
       )
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -472,7 +466,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         "VARA" -> "VALA",
         "VARB" -> "VALB"
       )
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -501,7 +495,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "add default upgradeStrategy for persistent volumes" in {
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -525,7 +519,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "neglect default upgradeStrategy absent persistent volumes" in {
-      val marApp = toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -569,6 +563,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     "transform to Marathon API appropriately (calico-style)" in {
       val provider = marathonProviderWithStdNetworks
       val resourceJson = Json.obj(
+        "name" -> "name",
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -619,12 +614,13 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         user = None
       )
 
-      toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider) must_== marApp
+      marPayload(resourceJson.as[ContainerSpec], provider) must_== marApp
     }
 
     "generate valid payload with cmd and no args" in {
       val providerId = UUID.randomUUID()
       val resourceJson = Json.obj(
+        "name" -> "name",
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -649,14 +645,15 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
       ))
       provider.id returns providerId
 
-      val marPayload = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider)).as[JsObject]
-      marPayload.toString must /("cmd" -> "/usr/bin/someCmd")
-      marPayload.keys.contains("args") must beFalse
+      val payload = Json.toJson(marPayload(resourceJson.as[ContainerSpec], provider)).as[JsObject]
+      payload.toString must /("cmd" -> "/usr/bin/someCmd")
+      payload.keys.contains("args") must beFalse
     }
 
     "transform to Marathon API appropriately (host-style)" in {
       val providerId = UUID.randomUUID()
       val resourceJson = Json.obj(
+        "name" -> "name",
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -715,12 +712,13 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         )),
         user = None
       )
-      toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider) must_== marApp
+      marPayload(resourceJson.as[ContainerSpec], provider) must_== marApp
     }
 
     "do not pass meta service_port through to marathon servicePort in HOST networking mode" in {
       val providerId = UUID.randomUUID()
       val resourceJson = Json.obj(
+        "name" -> "name",
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -751,13 +749,14 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         "config" -> config
       ))
       provider.id returns providerId
-      val Some(Seq(pdef)) = toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider).portDefinitions
+      val Some(Seq(pdef)) = marPayload(resourceJson.as[ContainerSpec], provider).portDefinitions
       pdef.port must_== 0          // we did not pass service port through to Marathon
     }
 
     "do not pass meta service_port through to marathon servicePort in BRIDGE networking mode" in {
       val providerId = UUID.randomUUID()
       val resourceJson = Json.obj(
+        "name" -> "name",
         "container_type" -> "DOCKER",
         "image" -> "some/image:tag",
         "provider" -> Json.obj(
@@ -789,26 +788,26 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         "config" -> config
       ))
       provider.id returns providerId
-      val Some(Seq(pm)) = toMarathonLaunchPayload("org","wrk","env","name",resourceJson.as[ContainerSpec], provider).container.get.docker.get.portMappings
+      val Some(Seq(pm)) = marPayload(resourceJson.as[ContainerSpec], provider).container.get.docker.get.portMappings
       pm.servicePort must beNone or beSome(0)
     }
 
     "throw exception for marathon payload with invalid provider network" in {
-      toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
         network = Some("missing")
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
         provider = ContainerSpec.InputProvider(id = marathonProviderWithNetworks.id),
         network = Some("HOST")
       ), marathonProviderWithNetworks) must throwA[BadRequestException]("invalid network name")
-      toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -818,7 +817,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -841,7 +840,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -860,7 +859,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with empty acceptedResourceRoles" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -874,7 +873,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate valid marathon payload from lower case constraints" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -889,7 +888,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload using provider networks" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -909,7 +908,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard host networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",
@@ -933,7 +932,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
     }
 
     "generate marathon payload with support for standard bridge networking on calico provider" in {
-      val marJson = Json.toJson(toMarathonLaunchPayload("org","wrk","env","name",ContainerSpec(
+      val marJson = Json.toJson(marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
         image = "nginx:latest",

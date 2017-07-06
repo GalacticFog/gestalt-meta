@@ -122,9 +122,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Success(spec) =>
         val marathonApp = toMarathonLaunchPayload(
           uncheckedFQON = context.fqon,
-          uncheckedWrkName = context.workspace.name,
-          uncheckedEnvName = context.environment.name,
-          uncheckedCntrName = container.name,
+          workspace = context.workspace,
+          environment = context.environment,
           props = spec,
           provider = context.provider
         )
@@ -213,10 +212,10 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
     val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
       case Some("BRIDGE") =>
-        log.debug("Detected BRIDGE networking, parsing portMappings...")
+        log.trace("Detected BRIDGE networking, parsing portMappings...")
         Js.find(marApp, "/container/docker/portMappings") filterNot( _ == JsNull )
       case _ =>
-        log.debug("Did not detect BRIDGE networking, parsing portDefinitions...")
+        log.trace("Did not detect BRIDGE networking, parsing portDefinitions...")
         Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
     }) map {
       /*
@@ -283,6 +282,9 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case None =>
         Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
+        val previousName = external_id.split("/").lastOption
+        if (previousName.exists(_ != container.name)) return Future.failed(new BadRequestException("renaming containers is not supported"))
+
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
         val fMarClient = marathonClientFactory.getClient(provider)
         ContainerSpec.fromResourceInstance(container) match {
@@ -291,9 +293,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
           case Success(spec) =>
             val marathonApp = toMarathonLaunchPayload(
               uncheckedFQON = context.fqon,
-              uncheckedWrkName = context.workspace.name,
-              uncheckedEnvName = context.environment.name,
-              uncheckedCntrName = container.name,
+              workspace = context.workspace,
+              environment = context.environment,
               props = spec,
               provider = context.provider
             ).copy(

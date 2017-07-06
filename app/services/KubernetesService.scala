@@ -5,7 +5,6 @@ import java.util.{TimeZone, UUID}
 import org.slf4j.LoggerFactory
 
 import scala.language.implicitConversions
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
@@ -200,9 +199,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
-                     (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("update(...)")
-    val nameGetter = "/namespaces/[^/]*/deployments/(.*)".r
+    val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
     val previousName = for {
       eid <- containerExternalId(container)
       prev <- eid match {
@@ -210,6 +209,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case _ => None
       }
     } yield prev
+    if (previousName.exists(_ != container.name)) return Future.failed(new BadRequestException("renaming containers is not supported"))
     ContainerSpec.fromResourceInstance(container).map(
       c => c.copy(name = previousName getOrElse c.name)
     ) match {
@@ -304,12 +304,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def createService(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec): Future[Seq[PortMapping]] = {
     val (maybeService,newPMs) = mkServiceSpec(containerId, spec, namespace)
     maybeService match {
-      case Some(svc) =>
-        kube.create[Service](svc) map {
-          _ => newPMs
-        }
-      case None =>
-        Future.successful(newPMs)
+      case Some(svc) => kube.create[Service](svc) map { _ => newPMs }
+      case      None => Future.successful(newPMs)
     }
   }
 
@@ -410,7 +406,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      */
     val environment: String = {
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
-        val namespaceGetter = "/namespaces/([^/]*)/deployments/.*".r
+        val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
         for {
           eid <- containerExternalId(container)
           ns <- eid match {
@@ -562,6 +558,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   private[services] def mkIngressSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Option[Ingress] = {
+    val svcName = containerSpec.name
+
     val ingressPMs = for {
       pm <- containerSpec.port_mappings
       vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
@@ -570,39 +568,42 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     if (ingressPMs.isEmpty) None
     else Some(ingressPMs.foldLeft[Ingress](
       Ingress(metadata = ObjectMeta(
-        name = containerSpec.name,
+        name = svcName,
         namespace = namespace,
         labels = Map(META_CONTAINER_KEY -> containerId.toString)
       ))
     ){
       case (acc, (vhost,port)) => acc.addHttpRule(
-        vhost, Map("" -> s"${containerSpec.name}:${port}")
+        vhost, Map("" -> s"$svcName:$port")
       )
     })
   }
 
   private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): (Option[Service],Seq[PortMapping]) = {
+    val svcName = containerSpec.name
     val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true))
-    val srv = exposedPorts.foldLeft[Service](
-      Service(metadata=ObjectMeta(name=containerSpec.name,namespace=namespace))
-        .withType(Service.Type.NodePort)
-        .withSelector(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-        .addLabel(
-          META_CONTAINER_KEY -> containerId.toString
-        )
-    ){
-      case (svc,pm) => svc.exposeOnPort(Service.Port(
-        name = pm.name.getOrElse(""),
-        protocol = pm.protocol,
-        port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
-        targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
-        nodePort = pm.host_port.getOrElse(0)
-      ))
-    }
-    if (srv.spec.exists(_.ports.size > 0)) {
-      val svchost = s"${containerSpec.name}.${namespace}.svc.cluster.local"
+    if (exposedPorts.isEmpty) {
+      (None, containerSpec.port_mappings.map(_.copy(service_address = None)))
+    } else {
+      val srv = exposedPorts.foldLeft[Service](
+        Service(metadata = ObjectMeta(name = svcName, namespace = namespace))
+          .withType(Service.Type.NodePort)
+          .withSelector(
+            META_CONTAINER_KEY -> containerId.toString
+          )
+          .addLabel(
+            META_CONTAINER_KEY -> containerId.toString
+          )
+      ) {
+        case (svc, pm) => svc.exposeOnPort(Service.Port(
+          name = pm.name.getOrElse(""),
+          protocol = pm.protocol,
+          port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
+          targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
+          nodePort = pm.host_port.getOrElse(0)
+        ))
+      }
+      val svchost = s"${svcName}.${namespace}.svc.cluster.local"
       val newPMs = containerSpec.port_mappings.map {
         case pm if pm.expose_endpoint.contains(true) => pm.copy(
           service_address = Some(ContainerSpec.ServiceAddress(
@@ -614,9 +615,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case pm => pm.copy(service_address = None)
       }
       (Some(srv),newPMs)
-    } else {
-      // return original port_mappings, clear out the service_address fields
-      (None,containerSpec.port_mappings.map(_.copy(service_address = None)))
     }
   }
 

@@ -119,11 +119,15 @@ class ContainerController @Inject()(
       childId = prevContainer.id
     ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${prevContainer.id}")}
     val provider = ContainerService.caasProvider(ContainerService.containerProviderId(prevContainer))
-    var prevProps = prevContainer.properties.getOrElse {
+    val prevProps = prevContainer.properties.getOrElse {
       throw BadRequestException(s"Container with ID '$cid' missing properties field and is likely corrupt.")
     }
     val updated = for {
-      input <- Future.fromTry(Try{request.body.as[GestaltResourceInput]})
+      input <- request.body.validate[GestaltResourceInput] match {
+        case JsSuccess(input, _) if input.name == prevContainer.name => Future.successful(input)
+        case JsSuccess(input, _) if input.name != prevContainer.name => Future.failed(new BadRequestException("renaming containers is not supported"))
+        case JsError(errors) => Future.failed(new BadRequestException("could not parse resource input"))
+      }
       _ = log.debug("parsed input")
       newProperties = stringmap(input.properties).map(
         _ ++ Map(
@@ -136,7 +140,6 @@ class ContainerController @Inject()(
         case (false,msg) => Future.failed(new BadRequestException(msg getOrElse "could not validate Container properties"))
       }
       containerWithUpdates <- Future.fromTry(Try{prevContainer.copy(
-        name = input.name,
         description = input.description,
         properties = validatedProperties
       )})
