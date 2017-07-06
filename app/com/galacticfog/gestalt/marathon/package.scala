@@ -378,6 +378,14 @@ package object marathon {
     ))
   }
 
+  def getProviderConfigOrThrow(provider: GestaltResourceInstance): Option[JsValue] = {
+    for {
+      props <- provider.properties
+      configProp <- props.get("config")
+      config <- Try{Json.parse(configProp)}.toOption
+    } yield config
+  }
+
   def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
     providerProps <- provider.properties
     configStr <- providerProps.get("config")
@@ -400,7 +408,7 @@ package object marathon {
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonLaunchPayload(uncheckedFQON: String, uncheckedWrkName: String, uncheckedEnvName: String, uncheckedCntrName: String, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(uncheckedFQON: String, workspace: ResourceLike, environment: ResourceLike, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
     val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
     def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
@@ -420,9 +428,9 @@ package object marathon {
     }
 
     val fqon = validate(uncheckedFQON) getOrElse {invalid("'fqon'")}
-    val wrkName = validate(uncheckedWrkName) getOrElse {invalid("'workspaceName'")}
-    val envName = validate(uncheckedEnvName) getOrElse {invalid("'environmentName'")}
-    val cntrName = validate(uncheckedCntrName.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'containerName'")}
+    val wrkName = validate(workspace.name) getOrElse {invalid("'workspace.name'")}
+    val envName = validate(environment.name) getOrElse {invalid("'environment.name'")}
+    val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
     val appPrefix = for {
       prefix <- getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
@@ -462,7 +470,7 @@ package object marathon {
     )
 
     val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName,cntrName)
-    val namedVIP = "/" + nameComponents.reverse.mkString(".")
+    val namedVIP = "/" + cntrName + "." + environment.id.toString
     val appId = "/" + nameComponents.mkString("/")
 
     val vhostLabels = makeVhostLabels(props.port_mappings)

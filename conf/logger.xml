@@ -27,6 +27,7 @@
   <logger name="controllers.util.MetaController" level="DEBUG"/>
   <logger name="controllers.LaserController" level="DEBUG"/>
   <logger name="gestalt-security-play" level="TRACE"/>
+  <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />

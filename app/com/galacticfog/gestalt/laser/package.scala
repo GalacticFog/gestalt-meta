@@ -21,6 +21,7 @@ package object laser {
   implicit lazy val laserProviderFormat = Json.format[LaserProvider]
   implicit lazy val laserLocationFormat = Json.format[LaserLocation]
   
+  
   case class LaserGatewayInfo(host: String, port: Int, username: String, password: String)
   
   case class LaserGateway(
@@ -39,6 +40,9 @@ package object laser {
   case class LaserProvider(id: Option[String], name: String, href: Option[String] = None, providerInfo: Option[JsValue] = None)
   case class LaserLocation(id: Option[String], name: String, providerId: String)
   
+//  implicit lazy val endpointSecurityFormat = Json.format[EndpointSecurity]  
+//  case class EndpointSecurity(enabled: Boolean, users: Option[Seq[String]], groups: Option[Seq[String]])
+  
   case class LaserEndpoint(
       id: Option[String], 
       apiId: String, 
@@ -48,7 +52,9 @@ package object laser {
       url: Option[String] = None,
       provider: Option[JsValue] = None,
       endpointInfo: Option[JsValue] = None, 
-      authentication: Option[JsValue] = None)
+      authentication: Option[JsValue] = None,
+      methods: Option[Seq[String]] = None,
+      plugins: Option[JsValue] = None)
 
   case class LaserArtifactDescription(
       artifactUri: Option[String],

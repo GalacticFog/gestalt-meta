@@ -353,7 +353,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
       ruleTypeId(expandRuleTypeName(tpe.as[String])).get
     }
   }
-   
+  
   /**
    * Create a fully-qualified Rule type name from it's simple name, i.e.,
    * 'event' becomes 'Gestalt::Resource::Rule::Event'
@@ -421,7 +421,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
   protected [controllers] def parentLink(pid: UUID, baseUri: Option[String]): Option[ResourceLink] = {
     ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
-  }  
+  }
   
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
@@ -435,7 +435,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
       }
     }
   }
-
+  
   private[controllers] def newResourceResult2(
       org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(f: GestaltResourceInstance => Result)(
       implicit request: SecuredRequest[JsValue]) = Future {
@@ -445,7 +445,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     MetaCreate(org, tpe, parent, Some(json)).apply { resource =>
       f(resource)
     }
-  }    
+  }
   
   private[controllers] def newResourceResultAsync(
       org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(f: GestaltResourceInstance => Future[Result])(
@@ -456,7 +456,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     MetaCreateAsync(org, tpe, parent, Some(json)).apply { resource =>
       f(resource)
     }
-  }    
+  }
   
   private[controllers] def resolveTypeFromPayload(json: JsValue): Option[UUID] = {
     Js.find(json.as[JsObject], "/resource_type") flatMap { typeIdentifier =>

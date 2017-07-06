@@ -1,8 +1,11 @@
 package services
 
+import java.util.UUID
+
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -291,6 +294,105 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       )
 
       there was one(mockCaasService).create(
+        context = argThat(matchesProviderContext(
+          provider = testProvider,
+          workspace = testWork,
+          environment = testEnv
+        )),
+        container = any
+      )(any)
+    }
+
+    "throw 400 on bad provider during container creation" in new TestApplication {
+      val badProvider = UUID.randomUUID()
+      val containerService = injector.instanceOf[ContainerService]
+      val testContainerName = "test-container"
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = badProvider),
+        network = Some("BRIDGE")
+      )
+
+      containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), badProvider, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
+    }
+
+    "throw 400 if patching a container with the same name" in new TestApplication {
+      val Success(testContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "1024",
+          "disk" -> "0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default",
+          "external_id" -> s"/${testEnv.id}/test-container"
+        ))
+      )
+
+      val containerService = injector.instanceOf[ContainerService]
+
+      val patchDoc = PatchDocument(PatchOp.Replace("/name", "updated-name"))
+
+      await(containerService.patchContainer(
+        container = testContainer,
+        patch = patchDoc,
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/environments/${testEnv.id}/containers/${testContainer.id}")
+      )) must throwAn[BadRequestException]("renaming containers is not supported")
+    }
+
+    "not throw 400 if patching a container with the same name" in new TestApplication {
+      val Success(testContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "1024",
+          "disk" -> "0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default",
+          "external_id" -> s"/${testEnv.id}/test-container"
+        ))
+      )
+
+      val containerService = injector.instanceOf[ContainerService]
+
+      mockCaasService.update(any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val patchDoc = PatchDocument(PatchOp.Replace("/name", testContainer.name))
+
+      val updatedContainer = await(containerService.patchContainer(
+        container = testContainer,
+        patch = patchDoc,
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/environments/${testEnv.id}/containers/${testContainer.id}")
+      ))
+
+      there was one(mockCaasService).update(
         context = argThat(matchesProviderContext(
           provider = testProvider,
           workspace = testWork,

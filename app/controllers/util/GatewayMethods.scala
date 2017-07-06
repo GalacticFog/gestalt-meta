@@ -106,11 +106,15 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }
       portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
       upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
+      methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
+      plugins = Js.find(json, "/properties/plugins")
     } yield LaserEndpoint(
       id = Some(apiId),
       apiId       = api.toString,
       upstreamUrl = upstreamUrl,
-      path        = path
+      path        = path,
+      methods     = methods,
+      plugins     = plugins
     )
   }
 
@@ -215,6 +219,16 @@ class GatewayMethods @Inject() ( ws: WSClient,
       (patch.ops :+ PatchOp("replace", "/properties/upstream_url", Some(JsString(newUpstreamUrl)))):_*
     )
 
+    val updatedMetaEndpoint = PatchInstance.applyPatch(r, fullOps).get.asInstanceOf[GestaltResourceInstance]
+    val updatedMetaProps = updatedMetaEndpoint.properties.getOrElse(Map.empty)
+    val updatedMetaPlugins = for {
+      pluginsStr <- updatedMetaProps.get("plugins")
+      pluginsJs = Try{Json.parse(pluginsStr)} match {
+        case Success(js) => js
+        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.plugins", t)
+      }
+    } yield pluginsJs
+
     log.debug("Finding endpoint in gateway provider system...")
     val parentApi = ResourceFactory.findParent(ResourceIds.Api, r.id) getOrElse(throw new RuntimeException(s"Could not find API parent of ApiEndpoint ${r.id}"))
     val provider = findGatewayProvider(parentApi) getOrElse(throw new RuntimeException(s"Could not locate ApiGateway provider for parent API ${parentApi.id} of ApiEndpoint ${r.id}"))
@@ -236,6 +250,8 @@ class GatewayMethods @Inject() ( ws: WSClient,
       _ = log.debug("Endpoint found in ApiGateway provider.")
       patchedEndpoint = gotEndpoint.copy(
         path = strippedOps.get("resource").flatMap(_.asOpt[String]) getOrElse gotEndpoint.path,
+        methods = strippedOps.get("methods").flatMap(_.asOpt[Seq[String]]).orElse(gotEndpoint.methods),
+        plugins = updatedMetaPlugins orElse gotEndpoint.plugins,
         upstreamUrl = newUpstreamUrl
       )
       _ = log.debug("Patched endpoint resource before PUT: " + Json.toJson(patchedEndpoint))
@@ -248,7 +264,6 @@ class GatewayMethods @Inject() ( ws: WSClient,
           log.error(s"Error PUTting Lambda in ApiGateway provider: ${response}")
           Future.failed(new RuntimeException(s"Error updating Lambda in ApiGateway provider: ${response}"))
       }}
-      updatedMetaEndpoint = PatchInstance.applyPatch(r, fullOps).get.asInstanceOf[GestaltResourceInstance]
     } yield updatedMetaEndpoint // we don't actually use the result from api-gateway, though we probably should
   }
 

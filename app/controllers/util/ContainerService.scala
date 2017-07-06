@@ -205,7 +205,7 @@ object ContainerService {
     ResourceFactory.findById(provider) filter {
       Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider) contains _.typeId
     } getOrElse {
-      throw new ResourceNotFoundException(s"CaaS provider with ID '$provider' not found. Container ' is likely corrupt.")
+      throw new BadRequestException(s"Provider with ID '$provider' is absent or not a recognized CaaS provider. Associated container may be corrupt.")
     }
   }
 
@@ -406,7 +406,11 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
 
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {
-      patched <- Future.fromTry(PatchInstance.applyPatch(origContainer, patch)).mapTo[GestaltResourceInstance]
+      patched <- PatchInstance.applyPatch(origContainer, patch) match {
+        case Success(r) if r.name == origContainer.name => Future.successful(r.asInstanceOf[GestaltResourceInstance])
+        case Success(r) if r.name != origContainer.name => Future.failed(new BadRequestException("renaming containers is not supported"))
+        case Failure(t) => Future.failed(t)
+      }
       containerSpec <- Future.fromTry(ContainerSpec.fromResourceInstance(patched))
       provider <- Future.fromTry(Try(caasProvider(containerSpec.provider.id)))
       context <- Future.fromTry(Try(ProviderContext(request, provider.id, Some(patched))))

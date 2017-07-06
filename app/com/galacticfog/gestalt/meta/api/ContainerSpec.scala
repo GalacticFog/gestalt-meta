@@ -3,14 +3,15 @@ package com.galacticfog.gestalt.meta.api
 import java.util.UUID
 
 import com.galacticfog.gestalt.data
-import com.galacticfog.gestalt.data.{ResourceState, ResourceFactory}
+import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.api.errors.BadRequestException
 import org.joda.time.DateTime
+import play.api.Logger
 import play.api.libs.json._
-import play.api.libs.json.Reads._        // Custom validation helpers
-import play.api.libs.functional.syntax._ // Combinator syntax
+import play.api.libs.json.Reads._
+import play.api.libs.functional.syntax._
 
 import scala.util.{Failure, Try}
 
@@ -42,6 +43,8 @@ case class ContainerSpec(name: String = "",
 }
 
 case object ContainerSpec extends Spec {
+
+  val log = Logger(this.getClass)
 
   case class ServiceAddress(host: String, port: Int, protocol: Option[String], virtual_hosts: Option[Seq[String]] = None)
   case object ServiceAddress {
@@ -117,7 +120,7 @@ case object ContainerSpec extends Spec {
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-    println("***Loading Container from Resource...")
+    log.debug(s"loading Container from Resource ${metaContainerSpec.id}")
     val created: Option[DateTime] = for {
       c <- metaContainerSpec.created
       ts <- c.get("timestamp")
@@ -174,7 +177,7 @@ case object ContainerSpec extends Spec {
       external_id = external_id,
       created = created
     )
-    println("***Finished conversion.")
+    log.debug("finished conversion")
     attempt.recoverWith {
       case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
     }

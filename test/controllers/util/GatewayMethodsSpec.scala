@@ -152,6 +152,8 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       properties = Some(Map(
         "resource"     -> "/original/path",
         "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+        "implementation_type" -> "lambda",
+        "implementation_id" -> testLambda.id.toString,
         "provider" -> Json.obj(
           "id" -> testGatewayProvider.id.toString,
           "locations" -> Json.arr(testKongProvider.id.toString).toString
@@ -271,6 +273,46 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       )
     }
 
+    "properly create with /properties/methods given" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+      val methods = Seq("PATCH", "PUT")
+      
+      gatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web",
+          "resource" -> "/some-path",
+          "methods" -> Json.toJson(methods)
+        )
+      ), apiId) must beSuccessfulTry(
+        (e: LaserEndpoint) => (e.methods must beSome) and (e.methods.get === methods)
+      )
+    }    
+    
+    "properly create with /properties/rateLimit given" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+      val limit = Json.obj("perMinute" -> 2)
+      
+      val pluginJson = Json.obj("rateLimit" -> Json.obj("perMinute" -> 2))
+      
+      gatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web",
+          "resource" -> "/some-path",
+          "plugins" -> pluginJson
+        )
+      ), apiId) must beSuccessfulTry(
+        (e: LaserEndpoint) => (e.plugins must beSome) and (e.plugins.get === pluginJson)
+      )
+    }        
+    
     "BadRequest for container-bound endpoints with un-exposed port mapping" in new TestApplication {
       gatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
@@ -386,6 +428,97 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       updatedEndpoint.properties.get("synchronous") must_== "true"
       updatedEndpoint.properties.get("implementation_type") must_== "lambda"
       updatedEndpoint.properties.get("implementation_id") must_== testLambda.id.toString
+    }
+
+    "patch against api-gateway provider to modify methods" in new TestApplication {
+      val newMethods = Json.arr(
+        "GET", "POST", "OPTION"
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/methods", newMethods)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "methods").as[JsValue] must_== newMethods
+      Json.parse(updatedEndpoint.properties.get("methods")) must_== newMethods
+    }
+
+    "patch against api-gateway provider to modify plugins" in new TestApplication {
+      val newPlugins = Json.obj(
+        "plugin1" -> Json.obj("do" -> "not care"),
+        "plugin2" -> Json.obj("very" -> "opaque")
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins",    newPlugins)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
+    }
+
+    "deep patch against api-gateway provider to modify gestaltSecurity plugin" in new TestApplication {
+      assert(testEndpoint.properties.get.get("plugins").isEmpty, "test assumes that plugins block is empty")
+      val newPlugins = Json.obj(
+        "gestaltSecurity" -> Json.obj(
+          "enabled" -> true
+        )
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/enabled", true)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
+    }
+
+    "deep patch against api-gateway provider to modify rateLimit plugin" in new TestApplication {
+      assert(testEndpoint.properties.get.get("plugins").isEmpty, "test assumes that plugins block is empty")
+      val newPlugins = Json.obj(
+        "rateLimit" -> Json.obj(
+          "perMinute" -> 100
+        )
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/rateLimit/perMinute", 100)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins").as[JsValue] must_== newPlugins
+      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
     }
 
     "patch against api-gateway provider to a container" in new TestApplication {

@@ -174,10 +174,25 @@ trait EventMethods {
       opts: RequestOptions): Try[OperationResponse[Option[UUID]]] = Try {
     
     val eventName = s"${actionName}.${eventType}"
-    val target = opts.policyOwner.get
-    
+    val target = {
+      val parentId = opts.data.fold(Option.empty[UUID]){ 
+        x => x.get("parentId") map { UUID.fromString(_) }
+      }
+      
+      log.debug("TARGET-PARENT : " + parentId)
+      log.debug("OPTS-DATA : " + opts.data)
+      
+      parentId getOrElse opts.policyOwner.get
+      //opts.policyOwner.get
+    }
+
+    log.debug(s"findEffectiveEventRules($target, $eventName)")
+
     findEffectiveEventRules(target, Option(eventName)) match { 
-      case None => Continue
+      case None => {
+        log.debug("No effective event rules found. Nothing to publish")
+        Continue
+      }
       case Some(rule) => {
         
         val event = EventMessage.make(
@@ -273,7 +288,7 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
     val actionName = args(0)
     val eventName = s"${actionName}.${EventType.Post}"
     
-    log.debug("Publishing post event...")
+    //log.debug("Publishing post event...")
     publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
