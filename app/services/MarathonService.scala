@@ -122,9 +122,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Success(spec) =>
         val marathonApp = toMarathonLaunchPayload(
           uncheckedFQON = context.fqon,
-          uncheckedWrkName = context.workspace.name,
-          uncheckedEnvName = context.environment.name,
-          uncheckedCntrName = container.name,
+          workspace = context.workspace,
+          environment = context.environment,
           props = spec,
           provider = context.provider
         )
@@ -294,9 +293,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
           case Success(spec) =>
             val marathonApp = toMarathonLaunchPayload(
               uncheckedFQON = context.fqon,
-              uncheckedWrkName = context.workspace.name,
-              uncheckedEnvName = context.environment.name,
-              uncheckedCntrName = container.name,
+              workspace = context.workspace,
+              environment = context.environment,
               props = spec,
               provider = context.provider
             ).copy(

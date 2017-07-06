@@ -95,29 +95,22 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            host_port = None,
-            service_port = None,
             name = Some("http"),
-            labels = None,
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("web.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
-            host_port = None,
             service_port = Some(8443),
             name = Some("https"),
-            labels = None,
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "udp",
             container_port = Some(9999),
             host_port = Some(9999),
-            service_port = None,
             name = Some("debug"),
-            labels = None,
             expose_endpoint = None
           )
         ),
@@ -168,7 +161,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |                    "containerPort": 80,
           |                    "hostPort": 0,
           |                    "labels": {
-          |                        "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+          |                        "VIP_0": "/test-container.${testEnv.id}:80"
           |                    },
           |                    "name": "http",
           |                    "protocol": "tcp",
@@ -178,7 +171,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |                    "containerPort": 443,
           |                    "hostPort": 0,
           |                    "labels": {
-          |                        "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+          |                        "VIP_0": "/test-container.${testEnv.id}:8443"
           |                    },
           |                    "name": "https",
           |                    "protocol": "tcp",
@@ -230,7 +223,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |        },
           |        {
           |            "labels": {
-          |                "VIP_0": "/test-container.test-environment.test-workspace.root:8443"
+          |                "VIP_0": "/test-container.${testEnv.id}:8443"
           |            },
           |            "name": "https",
           |            "port": 8443,
@@ -282,8 +275,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       there was one(mockMarClient).launchApp(
         hasExactlyContainerPorts(
-          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))),
-          marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:8443"))),
+          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:80"))),
+          marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:8443"))),
           marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
         ) and
           ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
@@ -296,7 +289,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       import ContainerSpec.{PortMapping, ServiceAddress}
 
-      val svcHost = s"${metaContainer.name}.${testEnv.name}.${testWork.name}.root.marathon.l4lb.thisdcos.directory"
+      val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
@@ -324,21 +317,17 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             host_port = Some(81),    // not used
             service_port = Some(80), // used *only* for VIP
             name = Some("http"),
-            labels = None,
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             service_port = None, // this is necessary for a service address, will result in no service_address
             name = Some("https"),
-            labels = None,
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "udp",
-            service_port = None,
             name = Some("debug"),
-            labels = None,
             expose_endpoint = None
           )
         ),
@@ -409,7 +398,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           |    "portDefinitions": [
           |        {
           |            "labels": {
-          |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+          |                "VIP_0": "/test-container.${testEnv.id}:80"
           |            },
           |            "name": "http",
           |            "port": 1234,
@@ -466,7 +455,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       there was one(mockMarClient).launchApp(
         hasExactlyPortDefs(
-          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")),
+          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
           marathon.AppUpdate.PortDefinition( 0, "udp", Some("debug"), Map.empty)
         ) and ( ((_:JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beNone )
@@ -474,7 +463,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       import ContainerSpec.{PortMapping, ServiceAddress}
 
-      val svcHost = s"${metaContainer.name}.${testEnv.name}.${testWork.name}.root.marathon.l4lb.thisdcos.directory"
+      val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
@@ -584,7 +573,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
            |    "portDefinitions": [
            |        {
            |            "labels": {
-           |                "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+           |                "VIP_0": "/test-container.${testEnv.id}:80"
            |            },
            |            "name": "web",
            |            "port": 10010,
@@ -627,13 +616,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       there was one(mockMarClient).launchApp(
         hasExactlyPortDefs(
-          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("web"),  Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80"))
+          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("web"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80"))
         )
       )(any)
 
       import ContainerSpec.{PortMapping, ServiceAddress}
 
-      val svcHost = s"${metaContainer.name}.${testEnv.name}.${testWork.name}.root.${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
+      val svcHost = s"${metaContainer.name}.${testEnv.id}.${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
@@ -794,7 +783,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )
     }
 
-    "update supporting using Marathon PUT" in new FakeDCOS {
+    "update support using Marathon PUT" in new FakeDCOS {
       val initProps = ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -882,8 +871,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "image" -> "nginx:updated"
       )
       Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
-        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
-        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress("test-container.test-environment.test-workspace.root.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
         ContainerSpec.PortMapping("tcp", Some(9999), None,       None, Some("debug"), None, Some(false), None)
       ))
     }
