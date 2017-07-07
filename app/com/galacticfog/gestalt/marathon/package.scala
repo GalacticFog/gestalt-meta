@@ -14,6 +14,7 @@ import play.api.{Logger => log}
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import com.galacticfog.gestalt.json.Js
+import controllers.util.ContainerService
 
 package object marathon {
 
@@ -378,24 +379,6 @@ package object marathon {
     ))
   }
 
-  def getProviderConfigOrThrow(provider: GestaltResourceInstance): Option[JsValue] = {
-    for {
-      props <- provider.properties
-      configProp <- props.get("config")
-      config <- Try{Json.parse(configProp)}.toOption
-    } yield config
-  }
-
-  def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
-    providerProps <- provider.properties
-    configStr <- providerProps.get("config")
-    config <- Try{Json.parse(configStr)}.toOption
-    prop <- (config \ propName).validate[T] match {
-      case JsSuccess(p,_) => Some(p)
-      case JsError(_) => None
-    }
-  } yield prop
-
   def metaContextToMarathonAppGroup(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String): String = {
     val appPrefix = for {
       prefix <- groupPrefix
@@ -432,7 +415,7 @@ package object marathon {
     val envName = validate(environment.name) getOrElse {invalid("'environment.name'")}
     val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
     val appPrefix = for {
-      prefix <- getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
+      prefix <- ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
       validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
@@ -441,7 +424,7 @@ package object marathon {
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
     val providerNetworkNames = (for {
-      networks <- getProviderProperty[Seq[JsObject]](provider, "networks")
+      networks <- ContainerService.getProviderProperty[Seq[JsObject]](provider, "networks")
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
     log.debug("found provider networks" + providerNetworkNames)

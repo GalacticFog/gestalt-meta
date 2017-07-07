@@ -43,7 +43,8 @@ import com.galacticfog.gestalt.meta.api._
 
 @Singleton
 class ProviderManager @Inject() ( kubernetesService: KubernetesService,
-                                  marathonService: MarathonService ) extends AuthorizationMethods with JsonInput {
+                                  marathonService: MarathonService,
+                                  dockerService: DockerService ) extends AuthorizationMethods with JsonInput {
   
   private[this] val log = Logger(this.getClass)
   
@@ -511,6 +512,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     typeId match {
       case ResourceIds.KubeProvider => kubernetesService
       case ResourceIds.DcosProvider => marathonService
+      case ResourceIds.DockerProvider => dockerService
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }

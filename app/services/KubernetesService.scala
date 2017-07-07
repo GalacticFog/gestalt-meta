@@ -204,7 +204,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     log.debug("update(...)")
     val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
     val previousName = for {
-      eid <- containerExternalId(container)
+      eid <- ContainerService.containerExternalId(container)
       prev <- eid match {
         case nameGetter(name) => Some(name)
         case _ => None
@@ -362,45 +362,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     kube.create[Secret](mkSecret(secretId, spec, namespace))
   }
 
-  /**
-   * Lookup and return the Provider configured for the given Container.
-   */
-  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerId = providerIdProperty(container.properties.get) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Could not parse provider ID from container '${container.id}'")
-    }
-
-    ResourceFactory.findById(providerId) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }
-  }
-
-  /**
-    * Lookup and return the external_id property
-    */
-  private def containerExternalId(container: GestaltResourceInstance): Option[String] = {
-    for {
-      props <- container.properties
-      eid <- props.get("external_id")
-    } yield eid
-  }
-
-  /**
-   * Parse and format the provider.id property from a container.properties map.
-   */
-  private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
-    Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
-      UUID.fromString(id.as[String])
-    }
-  }
-
-
-
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
 
-    val provider = containerProvider(container)
+    val provider = ContainerService.containerProvider(container)
     /*
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers
      * must never user ResourceFactory directly.
@@ -409,7 +373,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
         val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
         for {
-          eid <- containerExternalId(container)
+          eid <- ContainerService.containerExternalId(container)
           ns <- eid match {
             case namespaceGetter(namespace) => Some(namespace)
             case _ => None

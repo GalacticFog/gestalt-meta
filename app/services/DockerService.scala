@@ -2,11 +2,14 @@ package services
 import java.util.UUID
 import javax.inject.Inject
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.spotify.docker.client.DockerClient
-import com.spotify.docker.client.{messages => docker}
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.spotify.docker.client.{DefaultDockerClient, DockerClient, messages => docker}
+import controllers.util.ContainerService
 import org.slf4j.LoggerFactory
 import play.api.libs.json.Json
 import services.util.CommandParser
@@ -29,6 +32,19 @@ trait DockerClientFactory {
   def getDockerClient(providerId: UUID): Try[DockerClient]
 }
 
+class DefaultDockerClientFactory @Inject() () extends DockerClientFactory {
+  override def getDockerClient(providerId: UUID): Try[DockerClient] = {
+    for {
+      provider <- Try{ContainerService.caasProvider(providerId)}
+      url <- ContainerService.getProviderProperty[String](provider, "url") match {
+        case Some(c) => Success(c)
+        case None => Failure(new RuntimeException("provider 'properties.config' missing or not parsable"))
+      }
+      client <- Try{DefaultDockerClient.builder().uri(url).build()}
+    } yield client
+  }
+}
+
 class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) extends CaasService {
 
   import DockerService._
@@ -49,6 +65,9 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     )
 
     val maybeCmdArray = containerSpec.cmd map CommandParser.translate map (_.asJava)
+    val env = containerSpec.env.map({
+      case (k, v) => (k + "=" + v)
+    }).toSeq
 
     Try {
       docker.swarm.ServiceSpec.builder()
@@ -59,6 +78,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
               .image(containerSpec.image)
               .args(containerSpec.args.map(_.asJava).getOrElse(null))
               .command(maybeCmdArray.getOrElse(null))
+              .env(env:_*)
               .build()
           )
           .build()
@@ -100,7 +120,20 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
-  override def destroy(container: GestaltResourceInstance): Future[Unit] = ???
+  override def destroy(container: GestaltResourceInstance): Future[Unit] = {
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+    log.debug("DockerService::create(...)")
+    val provider = ContainerService.containerProvider(container)
+    val externalId = ContainerService.containerExternalId(container) orElse {
+      for {
+        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString)
+      } yield envId + "-" + container.name
+    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
+    for {
+      docker     <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
+      _ <- Future(docker.removeService(externalId))
+    } yield ()
+  }
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 

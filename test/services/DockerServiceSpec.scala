@@ -31,6 +31,8 @@ import scala.util.Success
 class DockerServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
+  sequential
+
   override def beforeAll(): Unit = pristineDatabase()
 
   case class FakeDockerModule(mockDockerClientFactory: DockerClientFactory) extends AbstractModule {
@@ -54,6 +56,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
         .disable[modules.HealthModule]
+        .disable[modules.MetaDefaultDocker]
         .bindings(
           FakeDockerModule(mockDockerFactory),
           bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
@@ -67,50 +70,15 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
                                    env: Option[Map[String,String]] = None,
                                    args: Option[Seq[String]] = None,
                                    cmd: Option[String] = None,
-                                   virtual_hosts: Map[Int,Seq[String]] = Map.empty,
+                                   port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
                                    labels: Map[String,String] = Map.empty ) extends FakeDocker() {
 
-    // three ports:
-    // - two "exposed", one not
-    // - one exposure has default container_port==service_port, the other overrides the service_port
-    // - one port has a required host port
     val testProps = ContainerSpec(
-      name = "",
+      name = "test-container",
       container_type = "DOCKER",
       image = image,
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-      port_mappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          host_port = None,
-          service_port = None,
-          name = Some("http"),
-          labels = None,
-          expose_endpoint = Some(true),
-          virtual_hosts = virtual_hosts.get(0)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(443),
-          host_port = None,
-          service_port = Some(8443),
-          name = Some("https"),
-          labels = None,
-          expose_endpoint = Some(true),
-          virtual_hosts = virtual_hosts.get(1)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "udp",
-          container_port = Some(9999),
-          host_port = Some(9999),
-          service_port = None,
-          name = Some("debug"),
-          labels = None,
-          expose_endpoint = None,
-          virtual_hosts = virtual_hosts.get(2)
-        )
-      ),
+      port_mappings = port_mappings,
       cpus = 1.0,
       memory = 128,
       disk = 0.0,
@@ -129,8 +97,8 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
     )
 
     val Success(metaContainer) = createInstance(
-      ResourceIds.Container,
-      "test-container",
+      typeId = ResourceIds.Container,
+      name = testProps.name,
       parent = Some(testEnv.id),
       properties = Some(Map(
         "container_type" -> testProps.container_type,
@@ -166,9 +134,23 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
 
   "DockerService" should {
 
-    "configure environment variables for containers" in new FakeDocker {
-      ko("write me")
-    }.pendingUntilFixed
+    "configure environment variables for containers" in new FakeDockerCreate(
+      env = Some(Map(
+        "TEST_VAR_1" -> "TEST_VAL_1",
+        "TEST_VAR_2" -> "TEST_VAL_2"
+      ))
+    ) {
+      Json.parse(updatedContainerProps.get("env").get).as[Map[String,String]] must havePairs(
+        "TEST_VAR_1" -> "TEST_VAL_1",
+        "TEST_VAR_2" -> "TEST_VAL_2"
+      )
+      there was one(mockDocker).createService(
+        (((_:swarm.ServiceSpec).taskTemplate().containerSpec().env().asScala) ^^ containTheSameElementsAs(Seq(
+          "TEST_VAR_1=TEST_VAL_1",
+          "TEST_VAR_2=TEST_VAL_2"
+        )))
+      )
+    }
 
     "provision with the expected external_id property and meta-specific labels" in new FakeDockerCreate() {
       updatedContainerProps must havePair(
@@ -244,6 +226,27 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("echo","hello","|","wc"))
       )
     }.pendingUntilFixed("this is going to be hard")
+
+    "delete service" in new FakeDocker() {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
+      )
+      await(ds.destroy(metaContainer))
+      there were one(mockDocker).removeService(s"${testEnv.id}-test-container")
+    }
 
   }
 
