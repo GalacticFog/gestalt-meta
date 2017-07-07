@@ -192,7 +192,7 @@ class DeleteController @Inject()(
    * need to skip the delete from Marathon.
    */
   protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
-    if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider).contains(res.typeId) &&
+    if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider).contains(res.typeId) &&
         !singleParamBoolean(qs, "deleteContainers")) {
       
       log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")

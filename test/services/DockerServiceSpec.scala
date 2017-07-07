@@ -1,26 +1,26 @@
 package services
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.google.inject.AbstractModule
 import com.spotify.docker.client.messages._
-import controllers.util.GestaltSecurityMocking
+import controllers.util.{DataStore, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
-import collection.JavaConverters._
 
-import scala.concurrent.Future
+import collection.JavaConverters._
 import play.api.inject.bind
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import services.DockerService.DockerClient
@@ -28,12 +28,38 @@ import services.DockerService.DockerClient
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
-class DockerServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
+class DockerServiceSpec extends PlaySpecification with ResourceScope
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
   sequential
 
-  override def beforeAll(): Unit = pristineDatabase()
+  val dataStore = {
+    println("creating a datastore in the test")
+    new GuiceApplicationBuilder()
+      .disable[modules.ProdSecurityModule]
+      .disable[modules.MetaDefaultSkuber]
+      .disable[modules.MetaDefaultServices]
+      .disable[modules.HealthModule]
+      .disable[modules.MetaDefaultDocker]
+      .build().injector.instanceOf[DataStore]
+  }
+
+  val owner = ResourceOwnerLink(ResourceIds.User, adminUserId.toString())
+  val db = new Bootstrap(ResourceIds.Org,
+    dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
+
+  for {
+    a <- db.clean
+    b <- db.migrate
+    c <- db.loadReferenceData
+    d <- db.loadSystemTypes
+    e <- db.initialize("root")
+  } yield e
+
+  val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+  Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+
+  val testProvider = createDockerProvider(testEnv.id, "test-provider").get
 
   case class FakeDockerModule(mockDockerClientFactory: DockerClientFactory) extends AbstractModule {
     override def configure(): Unit = {
@@ -42,13 +68,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
   }
 
   abstract class FakeDocker() extends Scope {
-    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-    val testProvider = createDockerProvider(testEnv.id, "test-provider").get
-
-    val mockDocker = mock[DockerClient]
     val mockDockerFactory = mock[DockerClientFactory]
-    mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
 
     val injector =
       new GuiceApplicationBuilder()
@@ -59,15 +79,22 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
         .disable[modules.MetaDefaultDocker]
         .bindings(
           FakeDockerModule(mockDockerFactory),
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
+          bind[GestaltSecurityConfig].toInstance(mock[GestaltSecurityConfig]),
+          bind[DataStore].toInstance(dataStore)
         )
         .injector
     val ds = injector.instanceOf[DockerService]
+
+    val mockDocker = mock[DockerClient]
+    mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
   }
 
   abstract class FakeDockerCreate( image: String = "nginx",
+                                   num_instances: Int = 1,
                                    force_pull: Boolean = true,
                                    env: Option[Map[String,String]] = None,
+                                   cpus: Double = 1.0,
+                                   memory: Double = 128.0,
                                    args: Option[Seq[String]] = None,
                                    cmd: Option[String] = None,
                                    port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
@@ -79,10 +106,10 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
       image = image,
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
       port_mappings = port_mappings,
-      cpus = 1.0,
-      memory = 128,
+      cpus = cpus,
+      memory = memory,
       disk = 0.0,
-      num_instances = 1,
+      num_instances = num_instances,
       network = Some("default"),
       cmd = cmd,
       constraints = Seq(),
@@ -176,6 +203,24 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
           "labela" -> "value a",
           "labelb" -> "value b"
         )
+      )
+    }
+
+    "provision with the appropriate replication" in new FakeDockerCreate(num_instances = 2) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).mode().replicated().replicas()) ^^ be_==(2)
+      )
+    }
+
+    "provision with the appropriate cpu share" in new FakeDockerCreate(cpus = 2.0) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().resources().limits().nanoCpus()) ^^ be_==(2000000000)
+      )
+    }
+
+    "provision with the appropriate memory share" in new FakeDockerCreate(memory = 128.5) {
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().resources().limits().memoryBytes()) ^^ be_==(1024.toLong * 1024 * 128.5)
       )
     }
 

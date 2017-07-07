@@ -8,8 +8,11 @@ import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.spotify.docker.client.exceptions.ServiceNotFoundException
+import com.spotify.docker.client.messages.swarm.{ResourceRequirements, Resources, Service, ServiceMode}
 import com.spotify.docker.client.{DefaultDockerClient, DockerClient, messages => docker}
 import controllers.util.ContainerService
+import org.joda.time.DateTime
 import org.slf4j.LoggerFactory
 import play.api.libs.json.Json
 import services.util.CommandParser
@@ -51,10 +54,6 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   private[this] val log = LoggerFactory.getLogger(this.getClass)
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = ???
-
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = ???
-
   private[services] def mkServiceSpec(id: UUID, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[docker.swarm.ServiceSpec] = {
     val allLabels = containerSpec.labels ++ Map[String,String](
       META_CONTAINER_KEY -> id.toString,
@@ -72,7 +71,13 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     Try {
       docker.swarm.ServiceSpec.builder()
         .name(s"${environmentId}-${containerSpec.name}")
+        .mode(ServiceMode.withReplicas(containerSpec.num_instances))
         .taskTemplate(docker.swarm.TaskSpec.builder()
+          .resources(ResourceRequirements.builder().limits(Resources.builder()
+              .nanoCpus( (containerSpec.cpus * 1e9).toLong )
+              .memoryBytes( (containerSpec.memory * 1024.0 * 1024.0).toLong )
+              .build()
+          ).build())
           .containerSpec(
             docker.swarm.ContainerSpec.builder()
               .image(containerSpec.image)
@@ -130,16 +135,78 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       } yield envId + "-" + container.name
     } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
     for {
-      docker     <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
-      _ <- Future(docker.removeService(externalId))
+      docker <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
+      _      <- Future(docker.removeService(externalId))
     } yield ()
   }
 
+
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = ???
+
+
+  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    val inThisEnvironment: Service.Criteria = Service.Criteria.builder().addLabel(META_ENVIRONMENT_KEY, context.environmentId.toString).build()
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+    log.debug("DockerService::listInEnvironment(...)")
+    for {
+      docker    <- Future.fromTry(dockerClientFactory.getDockerClient(context.providerId))
+      svcs      <- Future{docker.listServices(inThisEnvironment).asScala}
+    } yield svcs.map { svc =>
+      println(svc.toString)
+      ContainerStats(
+        external_id = svc.spec().name(),
+        containerType = "DOCKER",
+        status = "RUNNING",
+        cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse(0),
+        memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse(0),
+        image = svc.spec().taskTemplate().containerSpec().image(),
+        age = new DateTime(svc.createdAt()),
+        numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse(0),
+        tasksStaged = 0,
+        tasksRunning = 0,
+        tasksHealthy = 0,
+        tasksUnhealthy = 0,
+        taskStats = None
+      )
+    }
+  }
+
+
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
+
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
+    ???
+//    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+//    log.debug("DockerService::scale(...)")
+//    val provider = ContainerService.containerProvider(container)
+//    val externalId = ContainerService.containerExternalId(container) orElse {
+//      for {
+//        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString)
+//      } yield envId + "-" + container.name
+//    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
+//    for {
+//      docker    <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
+//      extantSvc <- getServiceOption(docker, externalId) flatMap {
+//        case Some(svc) => Future.successful(svc)
+//        case None => Future.failed(new RuntimeException(
+//          s"could not locate associated Service in Docker Swarm provider for container ${container.id}"
+//        ))
+//      }
+//      updatedSvc <- Future{
+//        val newSvc = extantSvc.spec().mode().replicated().replicas()
+//      }
+//    } yield ()
+  }
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
+
+  private[this] def getServiceOption(client: DockerClient, serviceName: String)(implicit ec: ExecutionContext): Future[Option[docker.swarm.Service]] = {
+    Future{client.inspectService(serviceName)} map (Some(_)) recover {
+      case snf: ServiceNotFoundException => None
+    }
+  }
+
 }

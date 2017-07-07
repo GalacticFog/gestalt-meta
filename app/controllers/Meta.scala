@@ -390,7 +390,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     for {
       withSpecifics <- providerType match {
-        case ResourceIds.KubeProvider => Try {
+        case ResourceIds.KubeProvider | ResourceIds.DockerProvider => Try {
           val result = payload.transform(addKubeDefaultNetworks)
           log.debug("RESULT:\n" + result.toString())
           result.get

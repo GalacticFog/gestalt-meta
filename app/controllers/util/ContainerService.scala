@@ -317,7 +317,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
 
     fStatsFromAllRelevantProviders map { pid2id2stats =>
       val allSpecs = containerSpecsByProvider map {
-        case (pid, cspecs) =>
+        case (_, cspecs) =>
           cspecs map { case (cRes,cSpec) =>
             val maybeUpdate = for {
               eid <- cSpec.external_id
