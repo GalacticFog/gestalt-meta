@@ -9,6 +9,8 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.google.inject.AbstractModule
 import com.spotify.docker.client.messages._
+import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
+import com.spotify.docker.client.messages.swarm.{EndpointSpec, PortConfig}
 import controllers.util.{DataStore, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
@@ -271,6 +273,33 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("echo","hello","|","wc"))
       )
     }.pendingUntilFixed("this is going to be hard")
+
+    "configure port exposures for port mappings" in new FakeDockerCreate(port_mappings = Seq(
+      ContainerSpec.PortMapping("tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true)),
+      ContainerSpec.PortMapping("tcp", container_port = Some(443), name = Some("ssl"), service_port = Some(8443), expose_endpoint = Some(true)),
+      ContainerSpec.PortMapping("udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
+      ContainerSpec.PortMapping("udp", container_port = Some(9999), name = Some("debug2"), expose_endpoint = None)
+    )) {
+      import ContainerSpec.PortMapping
+      import ContainerSpec.ServiceAddress
+
+      there was one(mockDocker).createService(
+        (((_:swarm.ServiceSpec).endpointSpec().mode()) ^^ be_==(EndpointSpec.Mode.RESOLUTION_MODE_VIP))
+          and
+          (((_:swarm.ServiceSpec).endpointSpec().ports().asScala) ^^ containTheSameElementsAs(Seq(
+            PortConfig.builder().name("web").protocol(PortConfig.PROTOCOL_TCP).targetPort(80).publishMode(PortConfigPublishMode.INGRESS).build(),
+            PortConfig.builder().name("ssl").protocol(PortConfig.PROTOCOL_TCP).targetPort(443).publishedPort(8443).publishMode(PortConfigPublishMode.INGRESS).build()
+          )))
+      )
+
+      val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+      mappings must containTheSameElementsAs(Seq(
+        PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true)),
+        PortMapping(protocol = "tcp", container_port = Some(443), name = Some("secure"), expose_endpoint = Some(true)),
+        PortMapping(protocol = "udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
+        PortMapping(protocol = "udp", container_port = Some(9999), name = Some("debug2"), expose_endpoint = None)
+      ))
+    }
 
     "delete service" in new FakeDocker() {
       val Success(metaContainer) = createInstance(

@@ -6,10 +6,11 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.spotify.docker.client.exceptions.ServiceNotFoundException
-import com.spotify.docker.client.messages.swarm.{ResourceRequirements, Resources, Service, ServiceMode}
+import com.spotify.docker.client.messages.swarm._
 import com.spotify.docker.client.{DefaultDockerClient, DockerClient, messages => docker}
 import controllers.util.ContainerService
 import org.joda.time.DateTime
@@ -63,6 +64,19 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       META_PROVIDER_KEY -> providerId.toString
     )
 
+    /** for port mappings, docker has to modes for publishing a service:
+      * vip mode (use the routing mesh): each swarm node will publish the service on the same (service) port
+      *    we will allow use service_port semantics for this, and allow use to optionally specify the service port
+      *    this is equivalent to Kube Service of type NodePort (what we do in the Kube adapter)
+      * host mode: only swarm modes running a container will publish the port
+      *    we will NOT support this right now; later on, we can support it, perhaps according to host_port:
+      *    host_port match {
+      *      case None => use vip mode
+      *      case Some(0) => use host mode with random host port
+      *      case Some(p) => use host mode with user-specified host port
+      *    }
+      */
+
     val maybeCmdArray = containerSpec.cmd map CommandParser.translate map (_.asJava)
     val env = containerSpec.env.map({
       case (k, v) => (k + "=" + v)
@@ -88,6 +102,23 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
           )
           .build()
         )
+        .endpointSpec(
+          EndpointSpec.builder()
+            .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
+            .ports(
+              containerSpec.port_mappings.collect({
+                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(name), _, Some(true), _, _) =>
+                  PortConfig.builder()
+                    .name(name)
+                    .protocol(protocol)
+                    .publishMode(PortConfig.PortConfigPublishMode.INGRESS)
+                    .targetPort(containerPort)
+                    .publishedPort(maybeServicePort.map(int2Integer).getOrElse(null))
+                    .build()
+              }).asJava
+            )
+            .build()
+        )
         .labels(allLabels.asJava)
         .build()
     }
@@ -104,7 +135,21 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     for {
       config <- Future.fromTry(mkServiceSpec(containerId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
-    } yield spec
+      newPortMappings = spec.port_mappings map {
+        case pm @ PortMapping(proto, Some(cp), _, maybeSP, _, _, Some(true), _, maybeVHosts) =>
+          pm.copy(service_address = Some(ServiceAddress(
+            host = "",
+            port = maybeSP getOrElse cp,
+            protocol = Some(proto),
+            virtual_hosts = maybeVHosts
+          )))
+        case pm => pm.copy(
+          service_address = None
+        )
+      }
+    } yield spec.copy(
+      port_mappings = newPortMappings
+    )
   }
 
   override def create(context: ProviderContext,
@@ -171,9 +216,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
-
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
-
 
   override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
     ???
