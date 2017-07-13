@@ -102,6 +102,10 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
           )
           .build()
         )
+        .networks(containerSpec.network
+          .map(name => Seq(NetworkAttachmentConfig.builder().target(name).build()))
+          .getOrElse(Seq.empty):_*
+        )
         .endpointSpec(
           EndpointSpec.builder()
             .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
@@ -136,10 +140,10 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       config <- Future.fromTry(mkServiceSpec(containerId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
       newPortMappings = spec.port_mappings map {
-        case pm @ PortMapping(proto, Some(cp), _, maybeSP, _, _, Some(true), _, maybeVHosts) =>
+        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts) =>
           pm.copy(service_address = Some(ServiceAddress(
-            host = "",
-            port = maybeSP getOrElse cp,
+            host = environmentId + "-" + spec.name,
+            port = cp,
             protocol = Some(proto),
             virtual_hosts = maybeVHosts
           )))

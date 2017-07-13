@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.google.inject.AbstractModule
 import com.spotify.docker.client.messages._
 import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
-import com.spotify.docker.client.messages.swarm.{EndpointSpec, PortConfig}
+import com.spotify.docker.client.messages.swarm.{EndpointSpec, NetworkAttachmentConfig, PortConfig}
 import controllers.util.{DataStore, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
@@ -61,6 +61,8 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
   val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
   Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
+  val testNetworkName = "test-network"
+
   val testProvider = createDockerProvider(testEnv.id, "test-provider").get
 
   case class FakeDockerModule(mockDockerClientFactory: DockerClientFactory) extends AbstractModule {
@@ -96,6 +98,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
                                    force_pull: Boolean = true,
                                    env: Option[Map[String,String]] = None,
                                    cpus: Double = 1.0,
+                                   network: Option[String] = None,
                                    memory: Double = 128.0,
                                    args: Option[Seq[String]] = None,
                                    cmd: Option[String] = None,
@@ -112,7 +115,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
       memory = memory,
       disk = 0.0,
       num_instances = num_instances,
-      network = Some("default"),
+      network = network,
       cmd = cmd,
       constraints = Seq(),
       accepted_resource_roles = None,
@@ -139,11 +142,11 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
         "num_instances" -> testProps.num_instances.toString,
         "force_pull" -> testProps.force_pull.toString,
         "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-        "network" -> testProps.network.get,
         "labels" -> Json.toJson(labels).toString
       ) ++ Seq[Option[(String,String)]](
         args map ("args" -> Json.toJson(_).toString),
-        cmd  map ("cmd" -> _)
+        cmd  map ("cmd" -> _),
+        network map ("network" -> _)
       ).flatten.toMap)
     )
 
@@ -294,11 +297,33 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
 
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
-        PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true)),
-        PortMapping(protocol = "tcp", container_port = Some(443), name = Some("secure"), expose_endpoint = Some(true)),
+        PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true),
+          service_address = Some(ServiceAddress(testEnv.id + "-" + metaContainer.name, 80, Some("tcp")))
+        ),
+        PortMapping(protocol = "tcp", container_port = Some(443), name = Some("ssl"), service_port = Some(8443), expose_endpoint = Some(true),
+          service_address = Some(ServiceAddress(testEnv.id + "-" + metaContainer.name, 443, Some("tcp")))
+        ),
         PortMapping(protocol = "udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
         PortMapping(protocol = "udp", container_port = Some(9999), name = Some("debug2"), expose_endpoint = None)
       ))
+    }
+
+    "configure for the selected network" in new FakeDockerCreate(
+      network = Some("test-network")
+    ) {
+      there was one(mockDocker).createService(
+        (((_:swarm.ServiceSpec).networks().asScala) ^^ containTheSameElementsAs(Seq(
+          NetworkAttachmentConfig.builder().target("test-network").build()
+        )))
+      )
+    }
+
+    "configure for no network if not selected" in new FakeDockerCreate(
+      network = None
+    ) {
+      there was one(mockDocker).createService(
+        (((_:swarm.ServiceSpec).networks().asScala) ^^ beEmpty)
+      )
     }
 
     "delete service" in new FakeDocker() {
