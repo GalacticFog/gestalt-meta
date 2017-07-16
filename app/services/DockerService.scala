@@ -1,4 +1,6 @@
 package services
+import java.nio.ByteBuffer
+import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 
@@ -30,6 +32,23 @@ object DockerService {
   val META_PROVIDER_KEY = "gestalt-meta/provider"
 
   type DockerClient = com.spotify.docker.client.DockerClient
+
+  def containerShortName(envId: UUID, resourceName: String): String = {
+    // docker service/container name must be <= 63 characters
+    // envId is our namespace and container name is unique in that namespace, so we'll use those
+    // 32-chars for the UUID (after removing dashes) leaves 31
+    // one for the dash separator (wasteful, but nice looking) leaves 30
+    // we'll hash the name, then hash the hash down to 8 characters
+    // that allows us 30-8==22 characters of the original name for human readability
+    val shortName = if (resourceName.length <= 30) resourceName else {
+      val chk = ByteBuffer.wrap(MessageDigest.getInstance("MD5").digest(resourceName.getBytes))
+      // keep 8 chars == 4 bytes; MD5 is 128-bits/16-bytes; so, need to halve twice
+      val red = (chk.getInt(0) ^ chk.getInt(1)) ^ (chk.getInt(2) ^ chk.getInt(3))
+      val shortChk = Integer.toHexString(int2Integer(red))
+      resourceName.substring(0,22) + shortChk
+    }
+    envId.toString.replace("-","") + "-" + shortName
+  }
 }
 
 trait DockerClientFactory {
@@ -55,9 +74,9 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   private[this] val log = LoggerFactory.getLogger(this.getClass)
 
-  private[services] def mkServiceSpec(id: UUID, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[docker.swarm.ServiceSpec] = {
+  private[services] def mkServiceSpec(containerResourceId: UUID, externalId: String, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[docker.swarm.ServiceSpec] = {
     val allLabels = containerSpec.labels ++ Map[String,String](
-      META_CONTAINER_KEY -> id.toString,
+      META_CONTAINER_KEY -> containerResourceId.toString,
       META_ENVIRONMENT_KEY -> environmentId.toString,
       META_FQON_KEY -> fqon,
       META_WORKSPACE_KEY -> workspaceId.toString,
@@ -84,7 +103,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
     Try {
       docker.swarm.ServiceSpec.builder()
-        .name(s"${environmentId}-${containerSpec.name}")
+        .name(externalId)
         .mode(ServiceMode.withReplicas(containerSpec.num_instances))
         .taskTemplate(docker.swarm.TaskSpec.builder()
           .resources(ResourceRequirements.builder().limits(Resources.builder()
@@ -111,9 +130,9 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
             .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
             .ports(
               containerSpec.port_mappings.collect({
-                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(name), _, Some(true), _, _) =>
+                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _) =>
                   PortConfig.builder()
-                    .name(name)
+                    .name(portName)
                     .protocol(protocol)
                     .publishMode(PortConfig.PortConfigPublishMode.INGRESS)
                     .targetPort(containerPort)
@@ -130,6 +149,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   private[services] def createService( docker: DockerClient,
                                        containerId: UUID,
+                                       externalId: String,
                                        spec: ContainerSpec,
                                        providerId: UUID,
                                        fqon: String,
@@ -137,12 +157,12 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
                                        environmentId: UUID )
                                      ( implicit ec: ExecutionContext ): Future[ContainerSpec] = {
     for {
-      config <- Future.fromTry(mkServiceSpec(containerId, spec, providerId, fqon, workspaceId, environmentId))
+      config <- Future.fromTry(mkServiceSpec(containerId, externalId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
       newPortMappings = spec.port_mappings map {
         case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts) =>
           pm.copy(service_address = Some(ServiceAddress(
-            host = environmentId + "-" + spec.name,
+            host = externalId,
             port = cp,
             protocol = Some(proto),
             virtual_hosts = maybeVHosts
@@ -164,10 +184,11 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
         docker     <- Future.fromTry(dockerClientFactory.getDockerClient(context.providerId))
-        updatedContainerSpec <- createService(docker, container.id, spec, context.providerId, context.fqon, context.workspace.id, context.environmentId)
+        externalId = containerShortName(context.environmentId, spec.name)
+        updatedContainerSpec <- createService(docker, container.id, externalId, spec, context.providerId, context.fqon, context.workspace.id, context.environmentId)
       } yield upsertProperties(
         container,
-        "external_id" -> s"${context.environmentId}-${container.name}",
+        "external_id" -> externalId,
         "status" -> "LAUNCHED",
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
@@ -180,9 +201,9 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     val provider = ContainerService.containerProvider(container)
     val externalId = ContainerService.containerExternalId(container) orElse {
       for {
-        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString)
-      } yield envId + "-" + container.name
-    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
+        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
+      } yield containerShortName(envId, container.name)
+    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container or find parent to reconstruct the 'external_id'. Container resource may be corrupt."))
     for {
       docker <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
       _      <- Future(docker.removeService(externalId))
@@ -257,3 +278,4 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   }
 
 }
+

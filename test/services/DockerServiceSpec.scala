@@ -93,7 +93,8 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
     mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
   }
 
-  abstract class FakeDockerCreate( image: String = "nginx",
+  abstract class FakeDockerCreate( name: String = "test-container",
+                                   image: String = "nginx",
                                    num_instances: Int = 1,
                                    force_pull: Boolean = true,
                                    env: Option[Map[String,String]] = None,
@@ -106,7 +107,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
                                    labels: Map[String,String] = Map.empty ) extends FakeDocker() {
 
     val testProps = ContainerSpec(
-      name = "test-container",
+      name = name,
       container_type = "DOCKER",
       image = image,
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
@@ -186,7 +187,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
 
     "provision with the expected external_id property and meta-specific labels" in new FakeDockerCreate() {
       updatedContainerProps must havePair(
-        "external_id" -> s"${testEnv.id}-test-container"
+        "external_id" -> s"${testEnv.id.toString.replace("-","")}-test-container"
       )
       there was one(mockDocker).createService(
         ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
@@ -196,6 +197,21 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
           DockerService.META_FQON_KEY -> "root",
           DockerService.META_PROVIDER_KEY -> testProvider.id.toString
         )
+      )
+    }
+
+    "provision with the short external_id for long container names" in new FakeDockerCreate(name = "this-name-is-longer-than-the-allowable-sixty-three-characters") {
+      updatedContainerProps must havePair(
+        "external_id" -> s"${testEnv.id.toString.replace("-","")}-this-name-is-longer-thfc815c7f"
+      )
+      there was one(mockDocker).createService(
+        ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
+          DockerService.META_CONTAINER_KEY -> metaContainer.id.toString,
+          DockerService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          DockerService.META_WORKSPACE_KEY -> testWork.id.toString,
+          DockerService.META_FQON_KEY -> "root",
+          DockerService.META_PROVIDER_KEY -> testProvider.id.toString
+        ) and ((_:swarm.ServiceSpec).name().length) ^^ beLessThanOrEqualTo(63)
       )
     }
 
@@ -298,10 +314,10 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
         PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true),
-          service_address = Some(ServiceAddress(testEnv.id + "-" + metaContainer.name, 80, Some("tcp")))
+          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-","") + "-" + metaContainer.name, 80, Some("tcp")))
         ),
         PortMapping(protocol = "tcp", container_port = Some(443), name = Some("ssl"), service_port = Some(8443), expose_endpoint = Some(true),
-          service_address = Some(ServiceAddress(testEnv.id + "-" + metaContainer.name, 443, Some("tcp")))
+          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-","") + "-" + metaContainer.name, 443, Some("tcp")))
         ),
         PortMapping(protocol = "udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
         PortMapping(protocol = "udp", container_port = Some(9999), name = Some("debug2"), expose_endpoint = None)
@@ -344,7 +360,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
         ))
       )
       await(ds.destroy(metaContainer))
-      there were one(mockDocker).removeService(s"${testEnv.id}-test-container")
+      there were one(mockDocker).removeService(testEnv.id.toString.replace("-","") + "-test-container")
     }
 
   }
