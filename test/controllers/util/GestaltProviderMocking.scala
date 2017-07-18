@@ -27,11 +27,11 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
                    additionalBindings: Seq[GuiceableModule] = Seq.empty ): play.api.Application = {
 
     val defaultDisabled = Seq(
+      classOf[MetaDefaultDocker],
       classOf[MetaDefaultDCOS],
       classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
       classOf[MetaDefaultServices],
-      classOf[MetaDefaultDocker],
       classOf[HealthModule]
     )
 
