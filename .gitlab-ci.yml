@@ -59,6 +59,11 @@ docker-publish:
     - echo building $DOCKER_IMG:$DOCKER_TAG
     - docker build -t $DOCKER_IMG:$DOCKER_TAG .
     - docker push     $DOCKER_IMG:$DOCKER_TAG
+    - |
+      if [ ${CI_COMMIT_REF_NAME} == "master" ]; then 
+         docker tag $DOCKER_IMG:$DOCKER_TAG $DOCKER_IMG:latest 
+         docker push $DOCKER_IMG:latest 
+      fi
     - docker rmi      $DOCKER_IMG:$DOCKER_TAG
 
 github-publish:
