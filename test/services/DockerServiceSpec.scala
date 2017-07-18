@@ -1,6 +1,8 @@
 package services
 
 import com.fasterxml.jackson.databind.ObjectMapper
+import com.galacticfog.gestalt.data
+import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -14,10 +16,12 @@ import com.spotify.docker.client.messages.swarm.{EndpointSpec, NetworkAttachment
 import controllers.util.{DataStore, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
+import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
 import org.specs2.runner.JUnitRunner
-import org.specs2.specification.{BeforeAll, Scope}
+import org.specs2.specification.script.Specification
+import org.specs2.specification.{BeforeAll, ExamplesGroup, ForEach, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
@@ -28,6 +32,98 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import services.DockerService.DockerClient
 
 import scala.util.Success
+
+//abstract class TestApplication2( name: String = "test-container",
+//                                image: String = "nginx",
+//                                num_instances: Int = 1,
+//                                force_pull: Boolean = true,
+//                                env: Option[Map[String,String]] = None,
+//                                cpus: Double = 1.0,
+//                                network: Option[String] = None,
+//                                memory: Double = 128.0,
+//                                args: Option[Seq[String]] = None,
+//                                cmd: Option[String] = None,
+//                                port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
+//                                labels: Map[String,String] = Map.empty ) extends Specification with ForEach[(data.Hstore, DockerClient)] with ResourceScope with GestaltSecurityMocking {
+//  def foreach[R](f: ((Hstore, DockerClient)) => R)(implicit evidence$3: AsResult[R]): Result = {
+//
+//    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+//    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+//
+//    val testNetworkName = "test-network"
+//
+//    val testProvider = createDockerProvider(testEnv.id, "test-provider").get
+//
+//    val testProps = ContainerSpec(
+//      name = name,
+//      container_type = "DOCKER",
+//      image = image,
+//      provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+//      port_mappings = port_mappings,
+//      cpus = cpus,
+//      memory = memory,
+//      disk = 0.0,
+//      num_instances = num_instances,
+//      network = network,
+//      cmd = cmd,
+//      constraints = Seq(),
+//      accepted_resource_roles = None,
+//      args = args,
+//      force_pull = force_pull,
+//      health_checks = Seq(),
+//      volumes = Seq(),
+//      labels = labels,
+//      env = env.getOrElse(Map.empty),
+//      user = None
+//    )
+//
+//    val Success(metaContainer) = createInstance(
+//      typeId = ResourceIds.Container,
+//      name = testProps.name,
+//      parent = Some(testEnv.id),
+//      properties = Some(Map(
+//        "container_type" -> testProps.container_type,
+//        "image" -> testProps.image,
+//        "provider" -> Output.renderInstance(testProvider).toString,
+//        "cpus" -> testProps.cpus.toString,
+//        "memory" -> testProps.memory.toString,
+//        "env" -> Json.toJson(testProps.env).toString,
+//        "num_instances" -> testProps.num_instances.toString,
+//        "force_pull" -> testProps.force_pull.toString,
+//        "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+//        "labels" -> Json.toJson(labels).toString
+//      ) ++ Seq[Option[(String,String)]](
+//        args map ("args" -> Json.toJson(_).toString),
+//        cmd  map ("cmd" -> _),
+//        network map ("network" -> _)
+//      ).flatten.toMap)
+//    )
+//
+//    val origExtId = s"${testEnv.id}-${testProps.name}"
+//
+//    val lbls = Map(DockerService.META_CONTAINER_KEY -> metaContainer.id.toString)
+//
+//    val objectMapper = new ObjectMapper()
+//
+//    val mockDocker = mock[DockerClient]
+//    mockDocker.inspectContainer(origExtId) returns mock[ContainerInfo] // objectMapper.readValue[ContainerInfo]("", classOf[ContainerInfo])
+//    mockDocker.createContainer(any) returns mock[ContainerCreation]
+//
+//    val mockDockerFactory = mock[DockerClientFactory]
+//    mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
+//    val dockerService = new DockerService(mockDockerFactory)
+//
+//    val Some(updatedContainerProps) = await(dockerService.create(
+//      context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+//      container = metaContainer
+//    )).properties
+//
+//    try AsResult(f(updatedContainerProps, mockDocker))
+//
+//    finally scalikejdbc.config.DBs.closeAll()
+//  }
+//}
+
 
 @RunWith(classOf[JUnitRunner])
 class DockerServiceSpec extends PlaySpecification with ResourceScope
@@ -286,12 +382,6 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command()) ^^ beNull
       )
     }
-
-    "pass complicated cmd with difficult bash-compatible spacing" in new FakeDockerCreate(cmd = Some("echo hello|wc")) {
-      there was one(mockDocker).createService(
-        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("echo","hello","|","wc"))
-      )
-    }.pendingUntilFixed("this is going to be hard")
 
     "configure port exposures for port mappings" in new FakeDockerCreate(port_mappings = Seq(
       ContainerSpec.PortMapping("tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true)),
