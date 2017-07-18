@@ -1,7 +1,5 @@
 package controllers.util
 
-import java.util.UUID
-
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
@@ -25,19 +23,18 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
    * Get a Play Application configured with Guice. All Meta and Security modules are
    * disabled by default and the GestaltSecurityEnvironment is bound to a fake.
    */
-  def application(
-      disabled: Seq[Class[_]] = Seq.empty,
-      additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
+  def application( disabled: Seq[Class[_]] = Seq.empty,
+                   additionalBindings: Seq[GuiceableModule] = Seq.empty ): play.api.Application = {
 
     val defaultDisabled = Seq(
       classOf[MetaDefaultDCOS],
       classOf[MetaDefaultSkuber],
       classOf[ProdSecurityModule],
       classOf[MetaDefaultServices],
+      classOf[MetaDefaultDocker],
       classOf[HealthModule]
     )
 
-    //val dataStore = injector.instanceOf(classOf[DataStore])
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
       bind(classOf[SecureController]).toInstance(mockSecureController),
@@ -66,28 +63,4 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }
-
-  private[this] def uuid() = UUID.randomUUID()
-
-  /*
-   * Still playing with this - DO NOT DELETE!
-   */
-//  type FakeFrameworkEnv = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator]
-//  type FrameworkEnvType = GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-//
-//  def injectController[A : ClassTag](
-//      auth: Option[GestaltAuthResponseWithCreds] = None,
-//      env: Option[FakeFrameworkEnv]   = None,
-//      overrides: Seq[GuiceableModule] = Seq.empty) = {
-//
-//    val authResponse = auth getOrElse dummyAuthResponseWithCreds()
-//    val environment  = env getOrElse fakeSecurityEnvironment(authResponse)
-//    val envBinding: GuiceableModule = bind(classOf[FrameworkEnvType]).toInstance(environment)
-//
-//    new GuiceApplicationBuilder().overrides(
-//      (envBinding +: overrides):_*)
-//      .build()
-//      .injector
-//      .instanceOf[A]
-//  }
 }
