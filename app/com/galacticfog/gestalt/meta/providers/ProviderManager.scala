@@ -43,7 +43,8 @@ import com.galacticfog.gestalt.meta.api._
 
 @Singleton
 class ProviderManager @Inject() ( kubernetesService: KubernetesService,
-                                  marathonService: MarathonService ) extends AuthorizationMethods with JsonInput {
+                                  marathonService: MarathonService,
+                                  dockerService: DockerService ) extends AuthorizationMethods with JsonInput {
   
   private[this] val log = Logger(this.getClass)
   
@@ -99,57 +100,40 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   /*
    * create method 'usesVhost' if true, create the vhost provider variables.
    */
-  
+
   /**
    * 
    */
-  private[providers] def portMappingToVariables(
-      mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
-    
-    log.debug("Entered portMappingToVariables(_)...")
-    log.debug("PortMapping => " + mapping)
-    
+  private[providers] def portMappingToVariables(mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
+    log.trace("Entered portMappingToVariables(_)...")
+    log.trace("PortMapping => " + mapping)
+
     /*
      * port_mapping.name becomes the name of the variable. This function
      * should be used to ensure the name is a valid variable name.
      */
-    def trMappingName(mn: String): String = {
-      mn.trim.replaceAll("-","_").toUpperCase
-    }
-    
-    val basename = trMappingName(mapping.name.get)
-    val protocol = mapping.protocol
-    val host = mapping.service_address.get.host
-    val port = mapping.service_address.get.port
-    
+    if (mapping.name.isEmpty) return Seq.empty
+    val basename = mapping.name.get.trim.replaceAll("-","_").toUpperCase
     def varname(s: String) = "%s_%s".format(basename, s)
+    val protocol = mapping.protocol
 
-    val newvars = Seq(
+    val serviceAddressVars = for {
+      serviceAddress <- mapping.service_address.toSeq
+      host = serviceAddress.host
+      port = serviceAddress.port
+    } yield Seq(
       varname("PROTOCOL") -> protocol,
       varname("HOST") -> host,
-      varname("PORT") -> port.toString)
-    
-    val vhostVars = mapping.virtual_hosts.fold(Map[String,String]()) { vs =>
-      getvhostvars(basename, vs, Map.empty, 0)
-    }
-    newvars ++ vhostVars
+      varname("PORT") -> port.toString
+    )
+
+    val vhostVars = mapping.virtual_hosts.getOrElse(Seq.empty).zipWithIndex.map{
+      case (vhost, index) => "%s_VHOST_%d".format(basename,index) -> vhost
+    }.toMap
+
+    serviceAddressVars.flatten ++ vhostVars
   }
-  
-  def mkvhostvar(prefix: String, host: String, index: Int) = {
-    val key = "%s_VHOST_%d".format(prefix, index)
-    Map(key -> host)
-  }
-  
-  def getvhostvars(prefix: String, hosts: Seq[String], acc: Map[String,String], index: Int): Map[String,String] = {
-    val out = hosts match {
-      case Nil => acc
-      case h :: t => {
-        getvhostvars(prefix, t, mkvhostvar(prefix, h, index) ++ acc, index+1)
-      }
-    }
-    out
-  }  
-  
+
   /**
    * Parse the port_mappings from a Meta container resourcce to PortMapping objects.
    * @param r a Meta container resource
@@ -511,6 +495,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     typeId match {
       case ResourceIds.KubeProvider => kubernetesService
       case ResourceIds.DcosProvider => marathonService
+      case ResourceIds.DockerProvider => dockerService
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }

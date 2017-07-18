@@ -3,6 +3,7 @@ package services
 import java.util.{TimeZone, UUID}
 
 import org.slf4j.LoggerFactory
+import services.util.CommandParser
 
 import scala.language.implicitConversions
 import scala.concurrent.ExecutionContext.Implicits.global
@@ -203,7 +204,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     log.debug("update(...)")
     val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
     val previousName = for {
-      eid <- containerExternalId(container)
+      eid <- ContainerService.containerExternalId(container)
       prev <- eid match {
         case nameGetter(name) => Some(name)
         case _ => None
@@ -361,45 +362,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     kube.create[Secret](mkSecret(secretId, spec, namespace))
   }
 
-  /**
-   * Lookup and return the Provider configured for the given Container.
-   */
-  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerId = providerIdProperty(container.properties.get) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Could not parse provider ID from container '${container.id}'")
-    }
-
-    ResourceFactory.findById(providerId) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }
-  }
-
-  /**
-    * Lookup and return the external_id property
-    */
-  private def containerExternalId(container: GestaltResourceInstance): Option[String] = {
-    for {
-      props <- container.properties
-      eid <- props.get("external_id")
-    } yield eid
-  }
-
-  /**
-   * Parse and format the provider.id property from a container.properties map.
-   */
-  private def providerIdProperty(ps: Map[String, String]): Option[UUID] = {
-    Js.find(Json.parse(ps("provider")).as[JsObject], "/id") map { id =>
-      UUID.fromString(id.as[String])
-    }
-  }
-
-
-
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
 
-    val provider = containerProvider(container)
+    val provider = ContainerService.containerProvider(container)
     /*
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers
      * must never user ResourceFactory directly.
@@ -408,7 +373,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
         val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
         for {
-          eid <- containerExternalId(container)
+          eid <- ContainerService.containerExternalId(container)
           ns <- eid match {
             case namespaceGetter(namespace) => Some(namespace)
             case _ => None
@@ -692,9 +657,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     for {
       kube <- skuberFactory.initializeKube(context.providerId, context.environment.id.toString)
-      depls <- safeList[DeploymentList](kube)
-      allPods <- safeList[PodList](kube)
-      allServices <- safeList[ServiceList](kube)
+      fDepls = safeList[DeploymentList](kube)
+      fAllPods = safeList[PodList](kube)
+      fAllServices = safeList[ServiceList](kube)
+      depls <- fDepls
+      allPods <- fAllPods
+      allServices <- fAllServices
       _ = log.debug(s"listInEnvironment returned ${depls.size} deployments and ${allPods.size} pods")
       stats = depls.flatMap (depl =>
         depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
@@ -799,77 +767,4 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
 }
 
-object CommandParser {
 
-  import java.util.StringTokenizer
-  import java.util.Vector
-
-  val NORMAL = 0
-  val IN_QUOTE = 1
-  val IN_DOUBLE_QUOTE = 2
-
-  def translate(toProcess: String) = {
-
-    if (toProcess == null || toProcess.isEmpty) {
-      Array[String]()
-    }
-
-    var state = NORMAL;
-
-    val tok = new StringTokenizer(toProcess, "\"\' ", true)
-    val v = new Vector[String]
-    var current = new StringBuffer()
-
-    var lastTokenHasBeenQuoted = false;
-
-    while (tok.hasMoreTokens()) {
-
-      val nextTok = tok.nextToken();
-
-      state match {
-        case IN_QUOTE => {
-          if ("\'".equals( nextTok )) {
-            lastTokenHasBeenQuoted = true
-            state = NORMAL
-          } else {
-            current.append( nextTok )
-          }
-        }
-        case IN_DOUBLE_QUOTE => {
-          if ("\"".equals( nextTok )) {
-            lastTokenHasBeenQuoted = true
-            state = NORMAL
-          } else {
-            current.append( nextTok )
-          }
-        }
-        case _ => {
-          if ("\'".equals(nextTok))      state = IN_QUOTE;
-          else if ("\"".equals(nextTok)) state = IN_DOUBLE_QUOTE;
-          else if (" ".equals(nextTok)) {
-            if (lastTokenHasBeenQuoted || current.length() != 0) {
-              v.addElement(current.toString());
-              current = new StringBuffer();
-            }
-          }
-          else {
-            current.append(nextTok);
-          }
-          lastTokenHasBeenQuoted = false;
-        }
-      }
-    } // while
-
-    if (lastTokenHasBeenQuoted || current.length() != 0) {
-      v.addElement(current.toString());
-    }
-
-    if (state == IN_QUOTE || state == IN_DOUBLE_QUOTE) {
-      throw new IllegalArgumentException("unbalanced quotes in " + toProcess);
-    }
-
-    val args = new Array[Object]( v.size );
-    v.copyInto(args);
-    args map { a => a.toString } toList;
-  }
-}

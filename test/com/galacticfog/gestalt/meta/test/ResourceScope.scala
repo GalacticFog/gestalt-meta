@@ -25,36 +25,6 @@ import play.api.inject.bind
 //import controllers.util.db.ConnectionManager
 
 trait ResourceScope extends Scope with Mockito {
-//  val dummyRootOrgId = UUID.randomUUID()
-//  val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
-//  val adminUserId = UUID.randomUUID()
-//  
-//  object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-//
-//  lazy val appBuilder = new GuiceApplicationBuilder().disable(
-//    classOf[modules.HealthModule]
-//  )
-//  lazy val injector = appBuilder.injector()
-//  lazy val connectionManager = injector.instanceOf(classOf[ConnectionManager])
-//
-//  def pristineDatabase() = {
-//    println("***************************************************")
-//    println("[USING POSTGRES SERVER] : host=%s, db=%s".format(connectionManager.config.host, connectionManager.config.database))
-//    println("***************************************************")
-//    
-//    val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-//    val db = new Bootstrap(ResourceIds.Org, 
-//        dummyRootOrgId, dummyRootOrgId, owner, 
-//        connectionManager.currentDataSource())
-//
-//    for {
-//      a <- db.clean
-//      b <- db.migrate
-//      c <- db.loadReferenceData
-//      d <- db.loadSystemTypes
-//      e <- db.initialize("root")
-//    } yield e    
-//  } 
   println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
   println("RESOURCE SCOPE INIT")
   println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
@@ -65,14 +35,15 @@ trait ResourceScope extends Scope with Mockito {
   object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
   lazy val appBuilder = new GuiceApplicationBuilder().disable(
-    classOf[modules.HealthModule]
+    classOf[modules.HealthModule],
+    classOf[modules.MetaDefaultServices]
   )
   lazy val injector = appBuilder.injector()
  
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-    val db = new Bootstrap(ResourceIds.Org, 
+    val db = new Bootstrap(ResourceIds.Org,
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
     
     for {
@@ -82,8 +53,7 @@ trait ResourceScope extends Scope with Mockito {
       d <- db.loadSystemTypes
       e <- db.initialize("root")
     } yield e    
-    // scalikejdbc.config.DBs.closeAll()
-  } 
+  }
   
   def newOrg(
       id: UUID = uuid(), 
@@ -162,6 +132,12 @@ trait ResourceScope extends Scope with Mockito {
   parent           : json_object   : [required]
    */
 
+
+  def createDockerProvider(parent: UUID, name: String = uuid.toString) = {
+    createInstance(ResourceIds.DockerProvider, name,
+      parent = Option(parent),
+      properties = Option(Map("parent" -> "{}")))
+  }
 
   def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
     createInstance(ResourceIds.DcosProvider, name,

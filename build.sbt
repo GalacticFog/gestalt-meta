@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.21"
+version := "0.6.22"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -80,7 +80,7 @@ libraryDependencies ++= Seq(
 
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.27" withSources(),
 
-  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.13" withSources(),
+  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.14" withSources(),
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
@@ -92,8 +92,8 @@ libraryDependencies ++= Seq(
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
 	"org.postgresql"   % "postgresql" 		% "9.4.1208.jre7",
 	"com.rabbitmq"     % "amqp-client" 		% "3.6.1",
-  "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
-
+    "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
+    "com.spotify" % "docker-client" % "8.7.1",
 	//"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
 	
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.5" withSources(),

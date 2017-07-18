@@ -11,33 +11,55 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
 import org.joda.time.DateTime
-import org.mockito.Matchers.{eq => meq}
+import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.specification.{BeforeAll, Scope}
+import org.specs2.mutable.Specification
+import org.specs2.specification.{BeforeAll, ForEach}
 import play.api.http.HttpVerbs
-import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.{FakeRequest, PlaySpecification}
-import play.api.inject.bind
+import play.api.test.FakeRequest
 
 import scala.concurrent.Future
 import scala.util.Success
 
-class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+case class TestScope( testWrk: GestaltResourceInstance,
+                      testEnv: GestaltResourceInstance,
+                      testProvider: GestaltResourceInstance,
+                      mockCaasService: CaasService,
+                      containerService: ContainerService )
 
-  skipAll
-  
+trait TestApplication extends Specification with ForEach[TestScope] with ResourceScope with GestaltSecurityMocking {
+  def foreach[R : AsResult](f: TestScope => R): Result = {
+    scalikejdbc.config.DBs.setupAll()
+
+    println("running stuff in testapplication")
+    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    val mockProviderManager  = mock[ProviderManager]
+    var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
+    val mockCaasService = mock[KubernetesService]
+    mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
+    val mockDeleteController = mock[DeleteController]
+    val containerService = new ContainerServiceImpl(mockProviderManager, mockDeleteController)
+
+    try AsResult(f(TestScope(testWork, testEnv, testProvider, mockCaasService, containerService)))
+
+    finally scalikejdbc.config.DBs.closeAll()
+  }
+}
+
+class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatchers {
+
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -50,30 +72,6 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
   sequential
 
-  abstract class FakeCaaSScope extends Scope {
-    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-    val mockProviderManager  = mock[ProviderManager]
-    var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
-    val mockCaasService = mock[KubernetesService]
-    mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
-    val mockDeleteController = mock[DeleteController]
-
-    val injector =
-      new GuiceApplicationBuilder()
-        .disable[modules.ProdSecurityModule]
-        .disable[modules.MetaDefaultSkuber]
-        .disable[modules.MetaDefaultServices]
-        .disable[modules.HealthModule]
-        .bindings(
-          bind(classOf[ProviderManager]).toInstance(mockProviderManager),
-          bind(classOf[ContainerService]).to(classOf[ContainerServiceImpl]),
-          bind(classOf[DeleteController]).toInstance(mockDeleteController),
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
-        )
-        .injector
-  }
-
   def matchesProviderContext(provider: GestaltResourceInstance, workspace: GestaltResourceInstance, environment: GestaltResourceInstance): Matcher[ProviderContext] =
     ((_: ProviderContext).workspace.id == workspace.id, (_: ProviderContext).workspace.id.toString + " does not contain the expected workspace resource " + workspace.id) and
     ((_: ProviderContext).environment.id == environment.id, (_: ProviderContext).environment.id.toString + " does not contain the expected environment resource " + environment.id) and
@@ -81,12 +79,9 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
     ((_: ProviderContext).provider.id == provider.id, (_: ProviderContext).provider.id.toString + " does not contain the expected provider resource " + provider.id) and
     ((_: ProviderContext).providerId == provider.id, (_: ProviderContext).providerId.toString + " does not contain the expected providerId " + provider.id)
 
-  trait TestApplication extends FakeCaaSScope {
-  }
-
   "findPromotionRule" should {
 
-    "find any container.promote.* rules that are within the given scope" in new TestApplication {
+    "find any container.promote.* rules that are within the given scope" >> {
       val org = newOrg(id = dummyRootOrgId)
       org must beSuccessfulTry
 
@@ -103,7 +98,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
   "findMigrationRule" should {
 
-    "find any container.migrate.* rules that are within the given scope" in new TestApplication {
+    "find any container.migrate.* rules that are within the given scope" >> {
       val org = newOrg(id = dummyRootOrgId)
       org must beSuccessfulTry
 
@@ -120,7 +115,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
   "ContainerSpec" should {
 
-    "be convertible to GestaltResourceInput with all fields" in {
+    "be convertible to GestaltResourceInput with all fields" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testProps = ContainerSpec(
         name = "test-container",
         description = Some("container description"),
@@ -170,7 +166,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       protoProps.get("user") must beSome(Json.toJson(testProps.user.get))
     }
 
-    "be convertible to GestaltResourceInput with default fields" in {
+    "be convertible to GestaltResourceInput with default fields" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testProps = ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -199,7 +196,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       protoProps.get("user") must_== testProps.user
     }
 
-    "be convertible from GestaltResourceInstance container representation" in new TestApplication {
+    "be convertible from GestaltResourceInstance container representation" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -240,7 +238,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       ))
     }
 
-    "throw an exception if attempting to create from non-Container resource" in new TestApplication {
+    "throw an exception if attempting to create from non-Container resource" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testResourceName = "some-name"
       val createdResource = createInstance(ResourceIds.Org, testResourceName,
         parent = Some(testEnv.id),
@@ -254,8 +253,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
 
   "ContainerService" should {
 
-    "create containers using CaaSService interface" in new TestApplication {
-      val containerService = injector.instanceOf[ContainerService]
+    "create containers using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testContainerName = "test-container"
       val testSpec = ContainerSpec(
         name = testContainerName,
@@ -300,16 +299,16 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       there was one(mockCaasService).create(
         context = argThat(matchesProviderContext(
           provider = testProvider,
-          workspace = testWork,
+          workspace = testWrk,
           environment = testEnv
         )),
         container = any
       )(any)
     }
 
-    "throw 400 on bad provider during container creation" in new TestApplication {
+    "throw 400 on bad provider during container creation" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val badProvider = UUID.randomUUID()
-      val containerService = injector.instanceOf[ContainerService]
       val testContainerName = "test-container"
       val testSpec = ContainerSpec(
         name = testContainerName,
@@ -327,7 +326,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
     }
 
-    "throw 400 if patching a container with the same name" in new TestApplication {
+    "throw 400 if patching a container with the same name" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val Success(testContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -346,8 +346,6 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
           "external_id" -> s"/${testEnv.id}/test-container"
         ))
       )
-
-      val containerService = injector.instanceOf[ContainerService]
 
       val patchDoc = PatchDocument(PatchOp.Replace("/name", "updated-name"))
 
@@ -359,7 +357,8 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       )) must throwAn[BadRequestException]("renaming containers is not supported")
     }
 
-    "not throw 400 if patching a container with the same name" in new TestApplication {
+    "not throw 400 if patching a container with the same name" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val Success(testContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -378,8 +377,6 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
           "external_id" -> s"/${testEnv.id}/test-container"
         ))
       )
-
-      val containerService = injector.instanceOf[ContainerService]
 
       mockCaasService.update(any,any)(any) answers {
         (a: Any) =>
@@ -399,14 +396,15 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       there was one(mockCaasService).update(
         context = argThat(matchesProviderContext(
           provider = testProvider,
-          workspace = testWork,
+          workspace = testWrk,
           environment = testEnv
         )),
         container = any
       )(any)
     }
 
-    "patch containers using CaaSService interface" in new TestApplication {
+    "patch containers using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val Success(testContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
@@ -426,8 +424,6 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
         ))
       )
 
-      val containerService = injector.instanceOf[ContainerService]
-
       mockCaasService.update(any,any)(any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
@@ -446,7 +442,7 @@ class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking
       there was one(mockCaasService).update(
         context = argThat(matchesProviderContext(
           provider = testProvider,
-          workspace = testWork,
+          workspace = testWrk,
           environment = testEnv
         )),
         container = any

@@ -54,33 +54,16 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
   }
 
   sequential
-  abstract class FakeGatewayScope2 extends WithDb(
-      containerApp(
-      additionalBindings = Seq(
-          bind(classOf[ProviderMethods]).toInstance(mock[ProviderMethods])
-    )))
-  
-//  abstract class FakeGatewayScope extends Scope {
-//    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-//    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-//
-//    val mockProviderMethods = mock[ProviderMethods]
-//    val injector =
-//      new GuiceApplicationBuilder()
-//        .disable[modules.ProdSecurityModule]
-//        .disable[modules.MetaDefaultSkuber]
-//        .disable[modules.MetaDefaultServices]
-//        .disable[modules.HealthModule]
-//        .bindings(
-//          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
-//          bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
-//        )
-//        .injector
-//
-//    val gatewayMethods = injector.instanceOf[GatewayMethods]
-//  }
 
-  trait TestApplication extends FakeGatewayScope2 {
+  abstract class FakeGatewayScope extends WithDb(
+    containerApp(
+      additionalBindings = Seq(
+        bind(classOf[ProviderMethods]).toInstance(mock[ProviderMethods])
+      )
+    )
+  )
+
+  trait TestApplication extends FakeGatewayScope {
     
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))

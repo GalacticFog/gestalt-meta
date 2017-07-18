@@ -19,7 +19,6 @@ abstract class ControllerApplication[A <: Controller : ClassTag](application: Ap
 
 abstract class WithDb(val application: Application) extends WithApplication(application) {
   override def around[T: AsResult](t: => T): Result = super.around {
-    
     scalikejdbc.config.DBs.setupAll()
     try AsResult(t)
     finally {

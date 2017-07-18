@@ -23,7 +23,7 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
   private val log = Logger(this.getClass)
   
   val dataSource = db.dataSource
-  
+
   /**
    * 
    */
