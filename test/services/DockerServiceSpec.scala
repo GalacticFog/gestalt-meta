@@ -129,6 +129,8 @@ import scala.util.Success
 class DockerServiceSpec extends PlaySpecification with ResourceScope
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
+  skipAll
+
   sequential
 
   val dataStore = {
