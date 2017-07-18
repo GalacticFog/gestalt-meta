@@ -96,7 +96,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       *    }
       */
 
-    val maybeCmdArray = containerSpec.cmd map CommandParser.translate map (_.asJava)
+    val maybeCmdArray = containerSpec.cmd map { cmdStr => Seq("/bin/sh", "-c", cmdStr) } map (_.asJava)
     val env = containerSpec.env.map({
       case (k, v) => (k + "=" + v)
     }).toSeq
@@ -106,11 +106,11 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
         .name(externalId)
         .mode(ServiceMode.withReplicas(containerSpec.num_instances))
         .taskTemplate(docker.swarm.TaskSpec.builder()
-          .resources(ResourceRequirements.builder().limits(Resources.builder()
-              .nanoCpus( (containerSpec.cpus * 1e9).toLong )
-              .memoryBytes( (containerSpec.memory * 1024.0 * 1024.0).toLong )
-              .build()
-          ).build())
+//          .resources(ResourceRequirements.builder().reservations(Resources.builder()
+//              .nanoCpus( (containerSpec.cpus * 1e9).toLong )
+//              .memoryBytes( (containerSpec.memory * 1024.0 * 1024.0).toLong )
+//              .build()
+//          ).build())
           .containerSpec(
             docker.swarm.ContainerSpec.builder()
               .image(containerSpec.image)
