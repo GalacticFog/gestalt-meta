@@ -17,19 +17,23 @@ abstract class ControllerApplication[A <: Controller : ClassTag](application: Ap
 }
 
 
-abstract class WithDb(application: Application) extends WithApplication(application) {
+abstract class WithDb(val application: Application) extends WithApplication(application) {
   override def around[T: AsResult](t: => T): Result = super.around {
-    scalikejdbc.config.DBs.closeAll()
+    
     scalikejdbc.config.DBs.setupAll()
-    t
+    try AsResult(t)
+    finally {
+      scalikejdbc.config.DBs.closeAll()
+      application.stop()
+    }
   }  
 }
 
 abstract class WithDbController[A <: Controller : ClassTag](application: Application) extends ControllerApplication[A](application) {
   override def around[T: AsResult](t: => T): Result = super.around {
-    scalikejdbc.config.DBs.closeAll()
     scalikejdbc.config.DBs.setupAll()
-    t
+    try AsResult(t)
+    finally scalikejdbc.config.DBs.closeAll()
   }
 }
 
