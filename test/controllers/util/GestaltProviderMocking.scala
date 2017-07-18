@@ -5,14 +5,13 @@ import java.util.UUID
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
-
 import modules._
 import org.specs2.mock.Mockito
 import play.api.inject._
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
 import play.api.test.PlaySpecification
-import services.{MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocking with Mockito with ResourceScope {
 
@@ -62,6 +61,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind(classOf[ContainerService]).toInstance(mockContainerService),
       bind(classOf[ProviderManager]).toInstance(mockProviderManager),
       bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+      bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
       bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
