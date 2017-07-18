@@ -13,7 +13,7 @@ import play.api.libs.json.{JsObject, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
-import services.{MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
 
@@ -21,7 +21,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -42,6 +42,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       additionalBindings = Seq(
         bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
         bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
+        bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
         bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
       )
     )
@@ -64,7 +65,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
           "parent" -> "{}",
           "config" -> """{"env": "{}", "external_protocol": "https", "another_field": "blah"}"""
         )))
-      val meta = injector.instanceOf[Meta]
+      val meta = app.injector.instanceOf[Meta]
       val Success(updatedProvider) = meta.saveProvider(ProviderMap(testProvider),ProviderEnv(None,None),adminUserId)
       updatedProvider.properties.get("config") must /("external_protocol" -> "https")
       updatedProvider.properties.get("config") must /("another_field" -> "blah")
