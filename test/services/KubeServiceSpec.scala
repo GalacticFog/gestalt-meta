@@ -37,6 +37,8 @@ import play.api.inject.bind
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
+  skipAll
+  
   def haveName(name: => String): Matcher[skuber.ObjectResource] =
     ((_: skuber.ObjectResource).name) ^^ be_==(name)
 

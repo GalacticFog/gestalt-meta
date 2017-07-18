@@ -31,7 +31,7 @@ import scala.util.Success
 
 class ContainerServiceSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
 
-  sequential
+  skipAll
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 

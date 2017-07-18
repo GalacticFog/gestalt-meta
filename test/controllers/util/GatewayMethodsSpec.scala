@@ -10,16 +10,18 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.{ContainerController, DeleteController, SecurityResources}
+
 import mockws.{MockWS, Route}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.specification.{BeforeAll, Scope}
+
 import play.api.http.HttpVerbs
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
@@ -34,7 +36,7 @@ import play.api.mvc.BodyParsers.parse
 import scala.concurrent.Future
 import scala.util.Success
 
-class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers {
+class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -52,28 +54,40 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
   }
 
   sequential
+  abstract class FakeGatewayScope2 extends WithDb(
+      containerApp(
+      additionalBindings = Seq(
+          bind(classOf[ProviderMethods]).toInstance(mock[ProviderMethods])
+    )))
+  
+//  abstract class FakeGatewayScope extends Scope {
+//    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+//    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+//
+//    val mockProviderMethods = mock[ProviderMethods]
+//    val injector =
+//      new GuiceApplicationBuilder()
+//        .disable[modules.ProdSecurityModule]
+//        .disable[modules.MetaDefaultSkuber]
+//        .disable[modules.MetaDefaultServices]
+//        .disable[modules.HealthModule]
+//        .bindings(
+//          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
+//          bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
+//        )
+//        .injector
+//
+//    val gatewayMethods = injector.instanceOf[GatewayMethods]
+//  }
 
-  abstract class FakeGatewayScope extends Scope {
+  trait TestApplication extends FakeGatewayScope2 {
+    
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
-    val mockProviderMethods = mock[ProviderMethods]
-    val injector =
-      new GuiceApplicationBuilder()
-        .disable[modules.ProdSecurityModule]
-        .disable[modules.MetaDefaultSkuber]
-        .disable[modules.MetaDefaultServices]
-        .disable[modules.HealthModule]
-        .bindings(
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
-          bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
-        )
-        .injector
-
-    val gatewayMethods = injector.instanceOf[GatewayMethods]
-  }
-
-  trait TestApplication extends FakeGatewayScope {
+    
+    val gatewayMethods = application.injector.instanceOf[GatewayMethods]
+    val mockProviderMethods = application.injector.instanceOf[ProviderMethods]
+    
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
       "config" ->
         """{
