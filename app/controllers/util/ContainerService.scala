@@ -16,7 +16,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, sdk}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
@@ -415,7 +415,8 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
       val provider = caasProvider(containerSpec.provider.id)
       val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
         "name" -> provider.name,
-        "id" -> provider.id
+        "id" -> provider.id,
+        "resource_type" -> sdk.ResourceName(provider.typeId)
       ).toString)
 
       for {
