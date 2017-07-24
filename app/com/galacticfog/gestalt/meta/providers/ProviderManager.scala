@@ -479,6 +479,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
       }
 
       // Merge in linked provider public variables
+      log.debug(s"in mapLinkedEnvironment, ProviderMap ${provider.name} has env ${provider.envConfig}")
       val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
 
       // Merge in linked provider ID variables and return
