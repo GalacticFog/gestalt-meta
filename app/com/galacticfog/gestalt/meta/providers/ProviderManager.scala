@@ -103,36 +103,34 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
   /**
    * 
    */
-  private[providers] def portMappingToVariables(
-      mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
-    
-    log.debug("Entered portMappingToVariables(_)...")
-    log.debug("PortMapping => " + mapping)
-    
+  private[providers] def portMappingToVariables(mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
+    log.trace("Entered portMappingToVariables(_)...")
+    log.trace("PortMapping => " + mapping)
+
     /*
      * port_mapping.name becomes the name of the variable. This function
      * should be used to ensure the name is a valid variable name.
      */
-    def trMappingName(mn: String): String = {
-      mn.trim.replaceAll("-","_").toUpperCase
-    }
-    
-    val basename = trMappingName(mapping.name.get)
-    val protocol = mapping.protocol
-    val host = mapping.service_address.get.host
-    val port = mapping.service_address.get.port
-    
+    if (mapping.name.isEmpty) return Seq.empty
+    val basename = mapping.name.get.trim.replaceAll("-","_").toUpperCase
     def varname(s: String) = "%s_%s".format(basename, s)
+    val protocol = mapping.protocol
 
-    val newvars = Seq(
+    val serviceAddressVars = for {
+      serviceAddress <- mapping.service_address.toSeq
+      host = serviceAddress.host
+      port = serviceAddress.port
+    } yield Seq(
       varname("PROTOCOL") -> protocol,
       varname("HOST") -> host,
-      varname("PORT") -> port.toString)
-    
-    val vhostVars = mapping.virtual_hosts.fold(Map[String,String]()) { vs =>
-      getvhostvars(basename, vs, Map.empty, 0)
-    }
-    newvars ++ vhostVars
+      varname("PORT") -> port.toString
+    )
+
+    val vhostVars = mapping.virtual_hosts.getOrElse(Seq.empty).zipWithIndex.map{
+      case (vhost, index) => "%s_VHOST_%d".format(basename,index) -> vhost
+    }.toMap
+
+    serviceAddressVars.flatten ++ vhostVars
   }
   
   def mkvhostvar(prefix: String, host: String, index: Int) = {
@@ -495,6 +493,7 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
       }
 
       // Merge in linked provider public variables
+      log.debug(s"in mapLinkedEnvironment, ProviderMap ${provider.name} has env ${provider.envConfig}")
       val merged = ProviderEnv.merge(provider.envConfig.get, newenvironment)
 
       // Merge in linked provider ID variables and return

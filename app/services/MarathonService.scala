@@ -211,11 +211,11 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
     val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
-      case Some("BRIDGE") =>
-        log.debug("Detected BRIDGE networking, parsing portMappings...")
+      case Some("BRIDGE") | Some("USER") =>
+        log.debug("Detected BRIDGE/USER networking, parsing portMappings...")
         Js.find(marApp, "/container/docker/portMappings") filterNot( _ == JsNull )
       case _ =>
-        log.debug("Did not detect BRIDGE networking, parsing portDefinitions...")
+        log.debug("Did not detect BRIDGE/USER networking, parsing portDefinitions...")
         Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
     }) map {
       /*
