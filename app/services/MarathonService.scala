@@ -43,7 +43,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
   private[this] val log = Logger(this.getClass)
 
   override def getClient(provider: Instance): Future[MarathonClient] = {
-    val providerConfig = getProviderConfigOrThrow(provider) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
+    val providerConfig = ContainerService.getProviderConfig(provider) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
 
     val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
     log.debug("Marathon URL: " + providerUrl)
@@ -178,7 +178,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    val prefix = getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
+    val prefix = ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
     for {
       marClient <- marathonClientFactory.getClient(context.provider)
       list <- marClient.listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
@@ -203,7 +203,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     * @return a resource for the container, potentially updated with ServiceAddress info for the port mappings
     */
   private[services] def updateServiceAddresses(provider: GestaltResourceInstance, marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerConfig = getProviderConfigOrThrow(provider) getOrElse Json.obj()
+    val providerConfig = ContainerService.getProviderConfig(provider) getOrElse Json.obj()
     val marathonFrameworkName = (providerConfig \ Properties.MARATHON_FRAMEWORK_NAME).asOpt[String].getOrElse("marathon")
     val dcosClusterName = (providerConfig \ Properties.DCOS_CLUSTER_NAME).asOpt[String].getOrElse("thisdcos")
     val clusterid = s".${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
@@ -211,11 +211,11 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
     val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
-      case Some("BRIDGE") =>
-        log.trace("Detected BRIDGE networking, parsing portMappings...")
+      case Some("BRIDGE") | Some("USER") =>
+        log.debug("Detected BRIDGE/USER networking, parsing portMappings...")
         Js.find(marApp, "/container/docker/portMappings") filterNot( _ == JsNull )
       case _ =>
-        log.trace("Did not detect BRIDGE networking, parsing portDefinitions...")
+        log.debug("Did not detect BRIDGE/USER networking, parsing portDefinitions...")
         Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
     }) map {
       /*

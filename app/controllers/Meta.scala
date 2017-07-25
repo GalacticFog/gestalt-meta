@@ -381,17 +381,18 @@ class Meta @Inject()( messagesApi: MessagesApi,
       baseUrl: Option[String]): Try[JsObject] = {
 
     log.debug("Adding default kube networks...")
-    lazy val addKubeDefaultNetworks = (__ \ 'properties \ 'config).json.update(
-      __.read[JsObject].map{ _ ++ Json.obj(
-        "networks" -> Json.arr(Json.obj("name" -> "default"))
-      ) }
+    lazy val addDefaultNetwork = (__ \ 'properties \ 'config).json.update(
+      __.read[JsObject].map{ c => c ++
+        Json.obj(
+          "networks" -> (c \ "networks").asOpt[Seq[JsObject]].getOrElse[Seq[JsObject]](Seq(Json.obj("name" -> "default")))
+        )
+      }
     )
 
-    
     for {
       withSpecifics <- providerType match {
-        case ResourceIds.KubeProvider => Try {
-          val result = payload.transform(addKubeDefaultNetworks)
+        case ResourceIds.KubeProvider | ResourceIds.DockerProvider => Try {
+          val result = payload.transform(addDefaultNetwork)
           log.debug("RESULT:\n" + result.toString())
           result.get
         }

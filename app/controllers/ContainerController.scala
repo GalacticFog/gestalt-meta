@@ -7,7 +7,6 @@ import com.galacticfog.gestalt.data.PropertyValidator
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.util.Failure
 import scala.util.Success
@@ -21,7 +20,7 @@ import controllers.util._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 
-import scala.concurrent.{Await, Future}
+import scala.concurrent.Future
 import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
@@ -94,7 +93,10 @@ class ContainerController @Inject()(
         case Some(p) => Success(p)
       }
       newprops = jprops.as[JsObject] ++ Json.obj(
-        "provider" -> Json.obj("name" -> provider.name, "id" -> provider.id)
+        "provider" -> Json.obj(
+          "name" -> provider.name,
+          "id" -> provider.id
+        )
       )
     } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
   }

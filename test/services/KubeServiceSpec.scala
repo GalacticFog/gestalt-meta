@@ -48,8 +48,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
   override def beforeAll(): Unit = pristineDatabase()
 
-  sequential
-
   case class FakeKubeModule(mockSkubeFactory: SkuberFactory) extends AbstractModule {
     override def configure(): Unit = {
       bind(classOf[SkuberFactory]).toInstance(mockSkubeFactory)
@@ -57,9 +55,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   }
 
   abstract class FakeKube() extends Scope {
-    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-    var testProvider = createKubernetesProvider(testEnv.id, "test-provider").get
+    val testProvider = createKubernetesProvider(testEnv.id, "test-provider").get
 
     val skDefaultNs = mock[skuber.Namespace]
     skDefaultNs.name returns "default"

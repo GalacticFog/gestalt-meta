@@ -9,13 +9,14 @@ import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, sdk}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
@@ -203,11 +204,48 @@ object ContainerService {
 
   def caasProvider(provider: UUID): GestaltResourceInstance = {
     ResourceFactory.findById(provider) filter {
-      Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider) contains _.typeId
+      // TODO: this should just check that its a sub-type of ::CaaS provider
+      Set(ResourceIds.DcosProvider,ResourceIds.KubeProvider,ResourceIds.DockerProvider) contains _.typeId
     } getOrElse {
       throw new BadRequestException(s"Provider with ID '$provider' is absent or not a recognized CaaS provider. Associated container may be corrupt.")
     }
   }
+
+  /**
+    * Lookup and return the Provider configured for the given Container.
+    */
+  def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+    val providerId = containerProviderId(container)
+    caasProvider(providerId)
+  }
+
+  /**
+    * Lookup and return the external_id property
+    */
+  def containerExternalId(container: GestaltResourceInstance): Option[String] = {
+    for {
+      props <- container.properties
+      eid <- props.get("external_id")
+    } yield eid
+  }
+
+  def getProviderConfig(provider: GestaltResourceInstance): Option[JsValue] = {
+    for {
+      props <- provider.properties
+      configProp <- props.get("config")
+      config <- Try{Json.parse(configProp)}.toOption
+    } yield config
+  }
+
+  def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
+    providerProps <- provider.properties
+    configStr <- providerProps.get("config")
+    config <- Try{Json.parse(configStr)}.toOption
+    prop <- (config \ propName).validate[T] match {
+      case JsSuccess(p,_) => Some(p)
+      case JsError(_) => None
+    }
+  } yield prop
 
 }
 
@@ -279,7 +317,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
 
     fStatsFromAllRelevantProviders map { pid2id2stats =>
       val allSpecs = containerSpecsByProvider map {
-        case (pid, cspecs) =>
+        case (_, cspecs) =>
           cspecs map { case (cRes,cSpec) =>
             val maybeUpdate = for {
               eid <- cSpec.external_id
@@ -377,7 +415,8 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
       val provider = caasProvider(containerSpec.provider.id)
       val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
         "name" -> provider.name,
-        "id" -> provider.id
+        "id" -> provider.id,
+        "resource_type" -> sdk.ResourceName(provider.typeId)
       ).toString)
 
       for {
