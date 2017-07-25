@@ -36,14 +36,14 @@ package object marathon {
     (__ \ "containerPath").read[String] and
       (__ \ "hostPath").readNullable[String] and
       (__ \ "persistent").readNullable[Container.PersistentVolumeInfo] and
-      (__ \ "mode").read[String]
+      (__ \ "mode").readNullable[String]
     )(Container.Volume.apply _)
 
   lazy val marathonVolumeWrites = (
     (__ \ "containerPath").write[String] and
       (__ \ "hostPath").writeNullable[String] and
       (__ \ "persistent").writeNullable[Container.PersistentVolumeInfo] and
-      (__ \ "mode").write[String]
+      (__ \ "mode").writeNullable[String]
     )(unlift(Container.Volume.unapply))
 
   implicit lazy val healthCheckFmt = Json.format[AppUpdate.HealthCheck]

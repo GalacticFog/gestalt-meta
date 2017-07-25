@@ -48,8 +48,8 @@ class KubeController @Inject()( messagesApi: MessagesApi,
 
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
-
-
+  
+  
   private val api = """
     | /*
     |  * Retrieve data as JSON or YAML
@@ -95,6 +95,8 @@ class KubeController @Inject()( messagesApi: MessagesApi,
       case "deployments" => context.list[DeploymentList].map(RenderObject(_, headers))
       case "replicasets" => context.list[ReplicaSetList].map(RenderObject(_, headers))
       case "secrets"     => context.list[SecretList].map(RenderObject(_, headers))
+      case "persistentvolumes" => context.list[PersistentVolumeList].map(RenderObject(_, headers))
+      case "persistentvolumeclaims" => context.list[PersistentVolumeClaimList].map(RenderObject(_, headers))
     }
 
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
@@ -104,6 +106,8 @@ class KubeController @Inject()( messagesApi: MessagesApi,
       case one("deployments", nm) => context.get[Deployment](nm).map(RenderObject(_, headers))
       case one("replicasets", nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers)) 
       case one("secrets", nm)     => context.get[Secret](nm).map(RenderObject(_, headers))
+      case one("persistentvolumes", nm)       => context.get[PersistentVolume](nm).map(RenderObject(_, headers))
+      case one("persistentvolumeclaims", nm)  => context.get[PersistentVolumeClaim](nm).map(RenderObject(_, headers))
     }
     
     val notfound: PartialFunction[String, Future[Result]] = {
@@ -129,6 +133,8 @@ class KubeController @Inject()( messagesApi: MessagesApi,
           case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
           case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
           case "secrets"    => CreateResult(createKubeObject[Secret](body, context), headers)
+          case "persistentvolumes"       => CreateResult(createKubeObject[PersistentVolume](body, context), headers)
+          case "persistentvolumeclaims"  => CreateResult(createKubeObject[PersistentVolumeClaim](body, context), headers)
           case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
         }
       }
