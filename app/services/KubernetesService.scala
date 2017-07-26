@@ -314,7 +314,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDeployment = kube.create[Deployment](mkDeploymentSpec(containerId, spec, namespace))
+
+    val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, namespace))
     val fUpdatedPMsFromService = createService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -338,7 +339,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
    */
   private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDepl = kube.update[Deployment](mkDeploymentSpec(containerId, spec, namespace))
+    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, namespace))
     val fUpdatedPMsFromService = updateService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -584,42 +585,101 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
 
+  def reconcileVolumeClaims(kube: RequestContext, namespace: String, volumes: Seq[ContainerSpec.Volume]) = {
+
+    for {
+      pvcs <- kube.list[PersistentVolumeClaimList]
+      claims   = pvcs.items
+      existing = claims map { pvc => pvc.metadata.name.trim.toLowerCase }
+      out = {
+        
+        volumes map { v =>
+          if (existing.contains(v.name.get.trim.toLowerCase)) {
+            log.debug(s"Found existing volume claim with name '${v.name}'")
+            
+            Future((claims.find { _.metadata.name == v.name }).get)
+          } else {
+            // Create new volume claim
+            log.debug(s"Creating new Persistent Volume Claim '${v.name}'")
+            
+            val pvc = KubeVolume(v).asVolumeClaim(Some(namespace))
+            kube.create[PersistentVolumeClaim](pvc) recoverWith { case e: K8SException =>
+              unprocessable(s"Failed creating PVC for volume '${v.name}': " + e.status.message)
+            }            
+          }
+        }
+      }
+      
+    } yield out
+  }
+  
+  private[services] def mkKubernetesContainer(spec: ContainerSpec): skuber.Container = {
+    val requirements = skuber.Resource.Requirements(requests = Map(
+        skuber.Resource.cpu    -> spec.cpus,
+        skuber.Resource.memory -> spec.memory
+    ))
+
+    val commands = spec.cmd map CommandParser.translate
+
+    val pullPolicy = {
+      if (spec.force_pull) Container.PullPolicy.Always 
+      else Container.PullPolicy.IfNotPresent
+    }
+    
+    val environmentVars = List(
+          skuber.EnvVar("POD_IP", 
+          skuber.EnvVar.FieldRef("status.podIP"))
+      ) ++ mkEnvVars(spec.env)
+      
+    skuber.Container(
+      name      = spec.name,
+      image     = spec.image,
+      resources = Some(requirements),
+      env       = environmentVars,
+      ports     = mkPortMappingsSpec(spec.port_mappings).toList,
+      imagePullPolicy = pullPolicy,
+      args      = spec.args.getOrElse(Seq.empty).toList,
+      command   = commands.getOrElse(Nil))    
+  }
+  
+  
   /**
    * Create a Kubernetes Deployment object in memory.
    *
    * @param id UUID for the Meta Container. This will be used as a label on all of the created resourced for later indexing.
    * @param containerSpec ContainerSpec with Container data
    */
-  private[services] def mkDeploymentSpec(id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Deployment = {
+  private[services] def mkDeploymentSpec(kube: RequestContext, id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Deployment = {
 
     val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
 
-    val requirements = skuber.Resource.Requirements(requests = Map(
-        skuber.Resource.cpu    -> containerSpec.cpus,
-        skuber.Resource.memory -> containerSpec.memory
-    ))
+    val container = mkKubernetesContainer(containerSpec)
+    
+    /*
+     * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
+     */
+    val mounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
 
-    val cmdArray = containerSpec.cmd map CommandParser.translate
+    /*
+     * This creates any volume claims that may not exist and tests each creation
+     * for failure. If a failure is detected, processing stops and an exception is thrown.
+     */
+    reconcileVolumeClaims(kube, namespace, containerSpec.volumes) 
 
-    val container = skuber.Container(
-      name = containerSpec.name,
-      image = containerSpec.image,
-      resources = Some(requirements),
-      env = List(
-        skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
-      ) ++ mkEnvVars(containerSpec.env),
-      ports = mkPortMappingsSpec(containerSpec.port_mappings).toList,
-      imagePullPolicy = if (containerSpec.force_pull) Container.PullPolicy.Always else Container.PullPolicy.IfNotPresent,
-      args = containerSpec.args.getOrElse(Seq.empty).toList,
-      command = cmdArray.getOrElse(Nil)
-    )
-
-    val podTemplate = Pod.Template.Spec(
-      spec = Some(Pod.Spec()
-          .addContainer(container)
-          .withDnsPolicy(skuber.DNSPolicy.ClusterFirst))
-    ).addLabels( labels )
-
+    val podTemplate = {
+      
+      val baseSpec = Pod.Spec()
+            .addContainer(container.copy(volumeMounts = mounts.toList))
+            .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
+      
+      val withVolumes = mounts.foldLeft(baseSpec) { (_, mnt) =>
+        baseSpec.addVolume {
+          Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name))
+        }
+      }
+      Pod.Template.Spec(spec = Some(withVolumes)).addLabels(labels)
+    }
+    
     Deployment(metadata = ObjectMeta(
       name = containerSpec.name,
       namespace = namespace,

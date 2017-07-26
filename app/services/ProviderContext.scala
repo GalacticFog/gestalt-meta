@@ -29,7 +29,6 @@ case class ProviderContext( request: RequestHeader,
   private[this] val log = Logger(this.getClass)
   
   val m = mapUri(request.uri)
-  println("*****MAP : " + m)
   val fqon = m(Resource.Fqon)
   
   /*
