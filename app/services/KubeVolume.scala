@@ -43,9 +43,9 @@ case class KubeVolume(v: ContainerSpec.Volume) {
   }
   
   private def storageQuantity(n: Long): Resource.Quantity = {
-    new Resource.Quantity("%sGi".format(n.toString))
+    new Resource.Quantity("%sMi".format(n.toString))
   }
-
+  
   private def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
     if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mount'")
     else {
