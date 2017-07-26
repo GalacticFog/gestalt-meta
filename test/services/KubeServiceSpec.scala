@@ -37,8 +37,6 @@ import play.api.inject.bind
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   with Mockito with GestaltSecurityMocking with JsonMatchers {
 
-  skipAll
-  
   def haveName(name: => String): Matcher[skuber.ObjectResource] =
     ((_: skuber.ObjectResource).name) ^^ be_==(name)
 
@@ -120,6 +118,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.ext.deploymentKind)) returns Future.successful(Some(mock[skuber.ext.Deployment]))
     mockSkuber.update(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+    mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
   }
 
   abstract class FakeKubeCreate( force_pull: Boolean = true,
@@ -250,6 +249,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
     )
 
+    mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
     mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
     mockSkuber.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
     mockSkuber.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList(items = List(mockPodA,mockPodB)))
@@ -308,6 +308,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
       mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
 
       val Some(updatedContainerProps) = await(ks.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -347,6 +348,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
       mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
 
       val Some(updatedContainerProps) = await(ks.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
