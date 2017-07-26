@@ -64,20 +64,24 @@ case object ContainerSpec extends Spec {
   case class Volume(container_path: String,
                     host_path: Option[String],
                     persistent: Option[Volume.PersistentVolumeInfo],
-                    mode: String) {
+                    mode: Option[String],
+                    
+                    name: Option[String] = None,
+                    access_modes: Option[Seq[String]] = None,
+                    storage_class: Option[String] = None) {
     def isPersistent: Boolean = persistent.isDefined
   }
-
+  
   case object Volume {
-
+  
     case class PersistentVolumeInfo(size: Long)
-
+  
   }
-
+  
   case class InputProvider(id: UUID,
                            name: Option[String] = None,
                            locations: Option[Seq[String]] = None)
-
+                           
   // ours aren't well defined without something similar, like a label
   case class HealthCheck( protocol: String,
                           path: String,
