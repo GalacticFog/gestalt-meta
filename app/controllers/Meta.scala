@@ -277,6 +277,8 @@ class Meta @Inject()( messagesApi: MessagesApi,
       }    
     }
   }
+
+  
   
   def resolveProviderType(json: JsValue): UUID = {
     json \ "resource_type" match {

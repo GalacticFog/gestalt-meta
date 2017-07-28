@@ -89,6 +89,17 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements				co
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements				controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/entitlements					controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", id: java.util.UUID)
 
+
+############################
+# DATA CONTAINERS
+############################
+
+
+
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/datacontainers  		controllers.Meta.postResource(fqon: String, typ: String = "45bc59bf-e6b7-4537-b685-a7aa32f56ddd", parent: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parent/datacontainers  		controllers.Meta.postResource(fqon: String, typ: String = "45bc59bf-e6b7-4537-b685-a7aa32f56ddd", parent: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:parent/datacontainers  		controllers.Meta.postResource(fqon: String, typ: String = "45bc59bf-e6b7-4537-b685-a7aa32f56ddd", parent: java.util.UUID)
+
 ############################
 # POLICIES AND RULES
 ############################
