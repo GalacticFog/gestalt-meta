@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.22"
+version := "0.6.23"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -78,7 +78,7 @@ javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
 libraryDependencies ++= Seq(
 
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.27" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.28" withSources(),
 
   	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.14" withSources(),
 
