@@ -9,19 +9,21 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
 import com.galacticfog.gestalt.meta.test.{ResourceScope, WithDb}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.AbstractModule
 import com.spotify.docker.client.messages._
 import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
 import com.spotify.docker.client.messages.swarm.{EndpointSpec, NetworkAttachmentConfig, PortConfig}
+import controllers.SecurityResources
 import controllers.util.{DataStore, GestaltProviderMocking, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
+import org.specs2.mutable.Specification
 import org.specs2.runner.JUnitRunner
-import org.specs2.specification.script.Specification
-import org.specs2.specification.{BeforeAll, ExamplesGroup, ForEach, Scope}
+import org.specs2.specification._
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
@@ -31,174 +33,64 @@ import play.api.inject.bind
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import services.DockerService.DockerClient
 
+import scala.concurrent.duration._
+import scala.concurrent.Await.result
 import scala.util.Success
+import scala.language.postfixOps
 
+case class TestSetup(dockerService: DockerService,
+                     dockerClient: DockerClient,
+                     createdContainerProperties: Option[Hstore] )
 
-@RunWith(classOf[JUnitRunner])
-class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
+class DockerServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
-      Some(Map(
-        "firstName" -> user.account.firstName,
-        "lastName" -> user.account.lastName,
-        "email" -> user.account.email.getOrElse(""),
-        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
-      )),
-      user.account.description
-    )
+//    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+//      Some(Map(
+//        "firstName" -> user.account.firstName,
+//        "lastName" -> user.account.lastName,
+//        "email" -> user.account.email.getOrElse(""),
+//        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
+//      )),
+//      user.account.description
+//    )
   }
+
+  override def before: Unit = scalikejdbc.config.DBs.setupAll()
+
+  override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
   sequential
 
-  abstract class TestApplication2( name: String = "test-container",
-                                   image: String = "nginx",
-                                   num_instances: Int = 1,
-                                   force_pull: Boolean = true,
-                                   env: Option[Map[String,String]] = None,
-                                   cpus: Double = 1.0,
-                                   network: Option[String] = None,
-                                   memory: Double = 128.0,
-                                   args: Option[Seq[String]] = None,
-                                   cmd: Option[String] = None,
-                                   port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
-                                   labels: Map[String,String] = Map.empty ) extends WithDb(containerApp(additionalBindings = Seq())) {
+  abstract class FakeDockerWithCreate(name: String = "test-container",
+                                      image: String = "nginx",
+                                      num_instances: Int = 1,
+                                      force_pull: Boolean = true,
+                                      env: Option[Map[String,String]] = None,
+                                      cpus: Double = 1.0,
+                                      network: Option[String] = None,
+                                      memory: Double = 128.0,
+                                      args: Option[Seq[String]] = None,
+                                      cmd: Option[String] = None,
+                                      port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
+                                      labels: Map[String,String] = Map.empty ) extends Scope {
 
-    def foreach[R](f: ((Hstore, DockerClient)) => R)(implicit evidence$3: AsResult[R]): Result = {
+    lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
+    lazy val testCreds = testAuthResponse.creds
+    lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
 
-      val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
-      val testNetworkName = "test-network"
-
-      val testProvider = createDockerProvider(testEnv.id, "test-provider").get
-
-      val testProps = ContainerSpec(
-        name = name,
-        container_type = "DOCKER",
-        image = image,
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = port_mappings,
-        cpus = cpus,
-        memory = memory,
-        disk = 0.0,
-        num_instances = num_instances,
-        network = network,
-        cmd = cmd,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = args,
-        force_pull = force_pull,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = labels,
-        env = env.getOrElse(Map.empty),
-        user = None
-      )
-
-      val Success(metaContainer) = createInstance(
-        typeId = ResourceIds.Container,
-        name = testProps.name,
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "env" -> Json.toJson(testProps.env).toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "labels" -> Json.toJson(labels).toString
-        ) ++ Seq[Option[(String,String)]](
-          args map ("args" -> Json.toJson(_).toString),
-          cmd  map ("cmd" -> _),
-          network map ("network" -> _)
-        ).flatten.toMap)
-      )
-
-      val origExtId = s"${testEnv.id}-${testProps.name}"
-
-      val lbls = Map(DockerService.META_CONTAINER_KEY -> metaContainer.id.toString)
-
-      val objectMapper = new ObjectMapper()
-
-      val mockDocker = mock[DockerClient]
-      mockDocker.inspectContainer(origExtId) returns mock[ContainerInfo] // objectMapper.readValue[ContainerInfo]("", classOf[ContainerInfo])
-      mockDocker.createContainer(any) returns mock[ContainerCreation]
-
-      val mockDockerFactory = mock[DockerClientFactory]
-      mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
-      val dockerService = new DockerService(mockDockerFactory)
-
-      val Some(updatedContainerProps) = await(dockerService.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      try AsResult(f(updatedContainerProps, mockDocker))
-
-      finally scalikejdbc.config.DBs.closeAll()
+    lazy val (testWork, testEnv) = {
+      val (w,e) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
+      (w,e)
     }
-  }
 
-//  val dataStore = {
-//    println("creating a datastore in the test")
-//    new GuiceApplicationBuilder()
-//      .disable[modules.ProdSecurityModule]
-//      .disable[modules.MetaDefaultSkuber]
-//      .disable[modules.MetaDefaultServices]
-//      .disable[modules.HealthModule]
-//      .disable[modules.MetaDefaultDocker]
-//      .build().injector.instanceOf[DataStore]
-//  }
+    lazy val testProvider = createDockerProvider(testEnv.id, "test-provider").get
 
-  case class FakeDockerModule(mockDockerClientFactory: DockerClientFactory) extends AbstractModule {
-    override def configure(): Unit = {
-      bind(classOf[DockerClientFactory]).toInstance(mockDockerClientFactory)
-    }
-  }
-
-  abstract class FakeDocker() extends Scope {
-    val mockDockerFactory = mock[DockerClientFactory]
-
-    val injector =
-      new GuiceApplicationBuilder()
-        .disable[modules.ProdSecurityModule]
-        .disable[modules.MetaDefaultSkuber]
-        .disable[modules.MetaDefaultServices]
-        .disable[modules.HealthModule]
-        .disable[modules.MetaDefaultDocker]
-        .bindings(
-          FakeDockerModule(mockDockerFactory),
-          bind[GestaltSecurityConfig].toInstance(mock[GestaltSecurityConfig]),
-          bind[DataStore].toInstance(dataStore)
-        )
-        .injector
-    val ds = injector.instanceOf[DockerService]
-
-    val mockDocker = mock[DockerClient]
-    mockDockerFactory.getDockerClient(testProvider.id) returns Success(mockDocker)
-  }
-
-  abstract class FakeDockerCreate( name: String = "test-container",
-                                   image: String = "nginx",
-                                   num_instances: Int = 1,
-                                   force_pull: Boolean = true,
-                                   env: Option[Map[String,String]] = None,
-                                   cpus: Double = 1.0,
-                                   network: Option[String] = None,
-                                   memory: Double = 128.0,
-                                   args: Option[Seq[String]] = None,
-                                   cmd: Option[String] = None,
-                                   port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
-                                   labels: Map[String,String] = Map.empty ) extends FakeDocker() {
-
-    val testProps = ContainerSpec(
+    lazy val testProps = ContainerSpec(
       name = name,
       container_type = "DOCKER",
       image = image,
@@ -211,7 +103,7 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       network = network,
       cmd = cmd,
       constraints = Seq(),
-      accepted_resource_roles = None,
+
       args = args,
       force_pull = force_pull,
       health_checks = Seq(),
@@ -221,7 +113,7 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       user = None
     )
 
-    val Success(metaContainer) = createInstance(
+    lazy val Success(metaContainer) = createInstance(
       typeId = ResourceIds.Container,
       name = testProps.name,
       parent = Some(testEnv.id),
@@ -243,33 +135,65 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       ).flatten.toMap)
     )
 
-    val origExtId = s"${testEnv.id}-${testProps.name}"
+    lazy val testSetup = {
+      val dockerClient = mock[DockerClient]
+      val origExtId = s"${testEnv.id}-${testProps.name}"
+      dockerClient.inspectContainer(origExtId) returns mock[ContainerInfo] // objectMapper.readValue[ContainerInfo]("", classOf[ContainerInfo])
+      dockerClient.createContainer(any) returns mock[ContainerCreation]
 
-    val lbls = Map(DockerService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val dockerFactory = mock[DockerClientFactory]
+      dockerFactory.getDockerClient(testProvider.id) returns Success(dockerClient)
 
-    val objectMapper = new ObjectMapper()
-    mockDocker.inspectContainer(origExtId) returns mock[ContainerInfo] // objectMapper.readValue[ContainerInfo]("", classOf[ContainerInfo])
-    mockDocker.createContainer(any) returns mock[ContainerCreation]
+      val dockerService = new DockerService(dockerFactory)
 
-    val Some(updatedContainerProps) = await(ds.create(
-      context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-      container = metaContainer
-    )).properties
+      val Some(updatedContainerProps) = result(dockerService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ), 5.seconds).properties
+
+      TestSetup(dockerService, dockerClient, Some(updatedContainerProps))
+    }
+
+  }
+
+  abstract class FakeDocker() extends Scope {
+    lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
+    lazy val testCreds = testAuthResponse.creds
+    lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
+
+    lazy val (testWork, testEnv) = {
+      val (w,e) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
+      (w,e)
+    }
+
+    lazy val testProvider = createDockerProvider(testEnv.id, "test-provider").get
+
+    lazy val testSetup = {
+      val dockerClient = mock[DockerClient]
+      val dockerFactory = {
+        val df = mock[DockerClientFactory]
+        df.getDockerClient(testProvider.id) returns Success(dockerClient)
+        df
+      }
+      val dockerService = new DockerService(dockerFactory)
+      TestSetup(dockerService, dockerClient, None)
+    }
   }
 
   "DockerService" should {
 
-    "configure environment variables for containers" in new FakeDockerCreate(
+    "configure environment variables for containers" in new FakeDockerWithCreate(
       env = Some(Map(
         "TEST_VAR_1" -> "TEST_VAL_1",
         "TEST_VAR_2" -> "TEST_VAL_2"
       ))
     ) {
-      Json.parse(updatedContainerProps.get("env").get).as[Map[String,String]] must havePairs(
+      Json.parse(testSetup.createdContainerProperties.get("env")).as[Map[String,String]] must havePairs(
         "TEST_VAR_1" -> "TEST_VAL_1",
         "TEST_VAR_2" -> "TEST_VAL_2"
       )
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         (((_:swarm.ServiceSpec).taskTemplate().containerSpec().env().asScala) ^^ containTheSameElementsAs(Seq(
           "TEST_VAR_1=TEST_VAL_1",
           "TEST_VAR_2=TEST_VAL_2"
@@ -277,11 +201,11 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       )
     }
 
-    "provision with the expected external_id property and meta-specific labels" in new FakeDockerCreate() {
-      updatedContainerProps must havePair(
+    "provision with the expected external_id property and meta-specific labels" in new FakeDockerWithCreate() {
+      testSetup.createdContainerProperties.get must havePair(
         "external_id" -> s"${testEnv.id.toString.replace("-","")}-test-container"
       )
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
           DockerService.META_CONTAINER_KEY -> metaContainer.id.toString,
           DockerService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
@@ -292,11 +216,11 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       )
     }
 
-    "provision with the short external_id for long container names" in new FakeDockerCreate(name = "this-name-is-longer-than-the-allowable-sixty-three-characters") {
-      updatedContainerProps must havePair(
+    "provision with the short external_id for long container names" in new FakeDockerWithCreate(name = "this-name-is-longer-than-the-allowable-sixty-three-characters") {
+      testSetup.createdContainerProperties.get must havePair(
         "external_id" -> s"${testEnv.id.toString.replace("-","")}-this-name-is-longer-thfc815c7f"
       )
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
           DockerService.META_CONTAINER_KEY -> metaContainer.id.toString,
           DockerService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
@@ -307,11 +231,11 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       )
     }
 
-    "provision with the requested labels" in new FakeDockerCreate(labels = Map(
+    "provision with the requested labels" in new FakeDockerWithCreate(labels = Map(
       "labela" -> "value a",
       "labelb" -> "value b"
     )) {
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).labels().asScala) ^^ havePairs(
           "labela" -> "value a",
           "labelb" -> "value b"
@@ -319,67 +243,67 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       )
     }
 
-    "provision with the appropriate replication" in new FakeDockerCreate(num_instances = 2) {
-      there was one(mockDocker).createService(
+    "provision with the appropriate replication" in new FakeDockerWithCreate(num_instances = 2) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).mode().replicated().replicas()) ^^ be_==(2)
       )
     }
 
-    "provision with the appropriate cpu share" in new FakeDockerCreate(cpus = 2.0) {
-      there was one(mockDocker).createService(
+    "provision with the appropriate cpu share" in new FakeDockerWithCreate(cpus = 2.0) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().resources().limits().nanoCpus()) ^^ be_==(2000000000)
       )
-    }
+    }.pendingUntilFixed("figure out what to do for resource limits/reservations")
 
-    "provision with the appropriate memory share" in new FakeDockerCreate(memory = 128.5) {
-      there was one(mockDocker).createService(
+    "provision with the appropriate memory share" in new FakeDockerWithCreate(memory = 128.5) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().resources().limits().memoryBytes()) ^^ be_==(1024.toLong * 1024 * 128.5)
       )
-    }
+    }.pendingUntilFixed("figure out what to do for resource limits/reservations")
 
-    "provision the appropriate image" in new FakeDockerCreate(
+    "provision the appropriate image" in new FakeDockerWithCreate(
       image = "nginx:test"
     ) {
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().image()) ^^ be_==("nginx:test")
       )
     }
 
-    "handle force_pull == false" in new FakeDockerCreate(force_pull = true) {
+    "handle force_pull == false" in new FakeDockerWithCreate(force_pull = true) {
       ko("fail")
     }.pendingUntilFixed("force_pull == false is not supported by docker: https://github.com/moby/moby/issues/24066")
 
-    "pass args when specified" in new FakeDockerCreate(args = Some(Seq("echo","hello","world"))) {
-      there was one(mockDocker).createService(
+    "pass args when specified" in new FakeDockerWithCreate(args = Some(Seq("echo","hello","world"))) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().args().asScala) ^^ be_==(Seq("echo","hello","world"))
       )
     }
 
-    "pass no args when unspecified" in new FakeDockerCreate(args = None) {
-      there was one(mockDocker).createService(
+    "pass no args when unspecified" in new FakeDockerWithCreate(args = None) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().args()) ^^ beNull
       )
     }
 
-    "pass simple cmd when specified" in new FakeDockerCreate(cmd = Some("/usr/bin/python")) {
-      there was one(mockDocker).createService(
-        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("/usr/bin/python"))
+    "pass simple cmd when specified" in new FakeDockerWithCreate(cmd = Some("/usr/bin/python")) {
+      there was one(testSetup.dockerClient).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("/bin/sh","-c","/usr/bin/python"))
       )
     }
 
-    "pass complicated cmd when specified" in new FakeDockerCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
-      there was one(mockDocker).createService(
-        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("python","-m","SimpleHTTPServer","$PORT"))
+    "pass complicated cmd when specified" in new FakeDockerWithCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
+      there was one(testSetup.dockerClient).createService(
+        ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command().asScala) ^^ be_==(Seq("/bin/sh", "-c", "python -m SimpleHTTPServer $PORT"))
       )
     }
 
-    "pass no cmd when not specified" in new FakeDockerCreate(cmd = None) {
-      there was one(mockDocker).createService(
+    "pass no cmd when not specified" in new FakeDockerWithCreate(cmd = None) {
+      there was one(testSetup.dockerClient).createService(
         ((_:swarm.ServiceSpec).taskTemplate().containerSpec().command()) ^^ beNull
       )
     }
 
-    "configure port exposures for port mappings" in new FakeDockerCreate(port_mappings = Seq(
+    "configure port exposures for port mappings" in new FakeDockerWithCreate(port_mappings = Seq(
       ContainerSpec.PortMapping("tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true)),
       ContainerSpec.PortMapping("tcp", container_port = Some(443), name = Some("ssl"), service_port = Some(8443), expose_endpoint = Some(true)),
       ContainerSpec.PortMapping("udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
@@ -388,42 +312,42 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
       import ContainerSpec.PortMapping
       import ContainerSpec.ServiceAddress
 
-      there was one(mockDocker).createService(
-        (((_:swarm.ServiceSpec).endpointSpec().mode()) ^^ be_==(EndpointSpec.Mode.RESOLUTION_MODE_VIP))
+      there was one(testSetup.dockerClient).createService(
+        (((_: swarm.ServiceSpec).endpointSpec().mode()) ^^ be_==(EndpointSpec.Mode.RESOLUTION_MODE_VIP))
           and
-          (((_:swarm.ServiceSpec).endpointSpec().ports().asScala) ^^ containTheSameElementsAs(Seq(
+          (((_: swarm.ServiceSpec).endpointSpec().ports().asScala) ^^ containTheSameElementsAs(Seq(
             PortConfig.builder().name("web").protocol(PortConfig.PROTOCOL_TCP).targetPort(80).publishMode(PortConfigPublishMode.INGRESS).build(),
             PortConfig.builder().name("ssl").protocol(PortConfig.PROTOCOL_TCP).targetPort(443).publishedPort(8443).publishMode(PortConfigPublishMode.INGRESS).build()
           )))
       )
 
-      val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+      val mappings = Json.parse(testSetup.createdContainerProperties.get("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
         PortMapping(protocol = "tcp", container_port = Some(80), name = Some("web"), expose_endpoint = Some(true),
-          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-","") + "-" + metaContainer.name, 80, Some("tcp")))
+          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-", "") + "-" + metaContainer.name, 80, Some("tcp")))
         ),
         PortMapping(protocol = "tcp", container_port = Some(443), name = Some("ssl"), service_port = Some(8443), expose_endpoint = Some(true),
-          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-","") + "-" + metaContainer.name, 443, Some("tcp")))
+          service_address = Some(ServiceAddress(testEnv.id.toString.replace("-", "") + "-" + metaContainer.name, 443, Some("tcp")))
         ),
         PortMapping(protocol = "udp", container_port = Some(9998), name = Some("debug"), expose_endpoint = Some(false)),
         PortMapping(protocol = "udp", container_port = Some(9999), name = Some("debug2"), expose_endpoint = None)
       ))
     }
 
-    "configure for the selected network" in new FakeDockerCreate(
+    "configure for the selected network" in new FakeDockerWithCreate(
       network = Some("test-network")
     ) {
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         (((_:swarm.ServiceSpec).networks().asScala) ^^ containTheSameElementsAs(Seq(
           NetworkAttachmentConfig.builder().target("test-network").build()
         )))
       )
     }
 
-    "configure for no network if not selected" in new FakeDockerCreate(
+    "configure for no network if not selected" in new FakeDockerWithCreate(
       network = None
     ) {
-      there was one(mockDocker).createService(
+      there was one(testSetup.dockerClient).createService(
         (((_:swarm.ServiceSpec).networks().asScala) ^^ beEmpty)
       )
     }
@@ -445,8 +369,8 @@ class DockerServiceSpec extends GestaltProviderMocking with BeforeAll with JsonM
           "network" -> "default"
         ))
       )
-      await(ds.destroy(metaContainer))
-      there were one(mockDocker).removeService(testEnv.id.toString.replace("-","") + "-test-container")
+      await(testSetup.dockerService.destroy(metaContainer))
+      there were one(testSetup.dockerClient).removeService(testEnv.id.toString.replace("-","") + "-test-container")
     }
 
   }

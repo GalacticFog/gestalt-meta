@@ -25,14 +25,47 @@ import play.api.test.PlaySpecification
 
 trait GestaltSecurityMocking extends PlaySpecification with Mockito with ResourceScope {
 
-  lazy val testAuthResponse = dummyAuthResponseWithCreds()
+  lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
-
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
+
+
+  def dummyAuthResponse(userInfo: Map[String,String] = Map(),
+                        groups: Seq[SecurityLink] = Seq(),
+                        orgId: UUID = uuid()): GestaltAuthResponse =
+    GestaltSecurityMocking.dummyAuthResponse(userInfo, groups, orgId)
+
+  def dummyCreds(authHeader: Option[String] = None): GestaltAPICredentials =
+    GestaltSecurityMocking.dummyCreds(authHeader)
+
+  def dummyAuthResponseWithCreds( groups: Seq[SecurityLink] = Seq(),
+                                  orgId: UUID = uuid(),
+                                  creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds =
+    GestaltSecurityMocking.dummyAuthResponseWithCreds(groups, orgId, creds)
 
   val account2auth = dummyAuthResponseWithCreds()
   val account2creds = account2auth.creds
   val account2 = AuthAccountWithCreds(account2auth.account, Seq.empty, Seq.empty, account2creds, dummyRootOrgId)
+
+  def fakeSecurityEnvironment(
+                               auth: GestaltAuthResponseWithCreds = testAuthResponse,
+                               config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
+                               client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
+
+    FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
+      identities = Seq(auth.creds -> auth),
+      config = config,
+      client = client)
+  }
+
+  def fakeAuthRequest(method: String, path: String, creds: GestaltAPICredentials) =
+    FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
+
+}
+
+object GestaltSecurityMocking {
+
+  private[this] def uuid() = UUID.randomUUID()
 
   def dummyAuthResponse(userInfo: Map[String,String] = Map(), groups: Seq[SecurityLink] = Seq(), orgId: UUID = uuid()): GestaltAuthResponse = {
     val defaultStr = "foo"
@@ -61,10 +94,9 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
     GestaltAPICredentials.getCredentials(header).get
   }
 
-  def dummyAuthResponseWithCreds(
-      groups: Seq[SecurityLink] = Seq(),
-      orgId: UUID = uuid(),
-      creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds = {
+  def dummyAuthResponseWithCreds( groups: Seq[SecurityLink] = Seq(),
+                                  orgId: UUID = uuid(),
+                                  creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds = {
     val directory = GestaltDirectory(uuid(), "test-directory", None, uuid())
     val account = GestaltAccount(
       id = uuid(),
@@ -84,21 +116,5 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
       extraData = None
     )
   }
-
-  def fakeSecurityEnvironment(
-      auth: GestaltAuthResponseWithCreds = testAuthResponse,
-      config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
-      client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
-
-    FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
-      identities = Seq(auth.creds -> auth),
-      config = config,
-      client = client)
-  }
-
-  def fakeAuthRequest(method: String, path: String, creds: GestaltAPICredentials) =
-    FakeRequest(method, path).withHeaders(AUTHORIZATION -> creds.headerValue)
-
-  private[this] def uuid() = UUID.randomUUID()  
 
 }
