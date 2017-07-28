@@ -1,35 +1,24 @@
 package services
 
-import com.fasterxml.jackson.databind.ObjectMapper
-import com.galacticfog.gestalt.data
 import com.galacticfog.gestalt.data.Hstore
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
-import com.galacticfog.gestalt.meta.test.{ResourceScope, WithDb}
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.google.inject.AbstractModule
 import com.spotify.docker.client.messages._
 import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
 import com.spotify.docker.client.messages.swarm.{EndpointSpec, NetworkAttachmentConfig, PortConfig}
 import controllers.SecurityResources
-import controllers.util.{DataStore, GestaltProviderMocking, GestaltSecurityMocking}
+import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
 import org.mockito.Matchers.{eq => meq}
-import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
-import org.specs2.mock.Mockito
-import org.specs2.mutable.Specification
-import org.specs2.runner.JUnitRunner
 import org.specs2.specification._
-import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
 
 import collection.JavaConverters._
-import play.api.inject.bind
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import services.DockerService.DockerClient
 
@@ -38,32 +27,19 @@ import scala.concurrent.Await.result
 import scala.util.Success
 import scala.language.postfixOps
 
-case class TestSetup(dockerService: DockerService,
-                     dockerClient: DockerClient,
-                     createdContainerProperties: Option[Hstore] )
-
 class DockerServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
 
-  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
-
-  override def beforeAll(): Unit = {
-    pristineDatabase()
-//    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
-//      Some(Map(
-//        "firstName" -> user.account.firstName,
-//        "lastName" -> user.account.lastName,
-//        "email" -> user.account.email.getOrElse(""),
-//        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
-//      )),
-//      user.account.description
-//    )
-  }
+  override def beforeAll(): Unit = pristineDatabase()
 
   override def before: Unit = scalikejdbc.config.DBs.setupAll()
 
   override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
   sequential
+
+  case class TestSetup(dockerService: DockerService,
+                       dockerClient: DockerClient,
+                       createdContainerProperties: Option[Hstore] )
 
   abstract class FakeDockerWithCreate(name: String = "test-container",
                                       image: String = "nginx",
