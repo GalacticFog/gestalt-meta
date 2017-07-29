@@ -72,7 +72,6 @@ class LambdaMethods @Inject()( ws: WSClient,
     val provider = getLambdaProvider(r)
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
-    // TODO: fdelete is never used, and this method returns a Try.success(()) even if fdelete (eventually) isFailure
     val fdelete = client.delete(s"/lambdas/${r.id.toString}") map { result =>
       log.info("Deleting API from Lambda backend...")
       log.debug("Response from Lambda backend: " + result.body)
