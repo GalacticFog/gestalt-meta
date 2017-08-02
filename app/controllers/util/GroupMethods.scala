@@ -10,6 +10,9 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
+import com.galacticfog.gestalt.security.api.GestaltAccount
+import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
+import com.galacticfog.gestalt.security.api.GestaltPasswordCredential
 
 import scala.util.Try
 import scala.util.{Either, Left, Right}
@@ -21,15 +24,19 @@ import play.api.mvc.RequestHeader
 
 import scala.concurrent.Future
 
+import com.galacticfog.gestalt.security.api.json.JsonImports._
 
 class GroupMethods @Inject()( security: Security ) {
-
-  private[controllers] def groupPatch( resource: GestaltResourceInstance,
-                                       patch: PatchDocument,
-                                       user: AuthAccountWithCreds,
-                                       request: RequestHeader )
-                                     (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry(Try{
-
+  
+  private[this] val log = Logger(this.getClass)
+  
+  private[controllers] def groupPatch( 
+     resource: GestaltResourceInstance,
+     patch: PatchDocument,
+     user: AuthAccountWithCreds,
+     request: RequestHeader )
+       (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry(Try{
+    
     /* Patch users if we have any ops for it.
      * patchGroupMembership returns a list of the groups current members (as links)
      * we don't use it currently.
@@ -42,7 +49,45 @@ class GroupMethods @Inject()( security: Security ) {
     // Handle patching other attributes
     PatchInstance.applyPatch(resource, PatchDocument(ops:_*)).get.asInstanceOf[GestaltResourceInstance]
   })
+
   
+  private[controllers] def userPatch(
+    metaUser: GestaltResourceInstance,
+    patch: PatchDocument,
+    secAccount: AuthAccountWithCreds,
+    request: RequestHeader)
+      (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry {
+
+    for {
+      u <- {
+        log.debug("Applying PATCH ops to resource...")
+        PatchInstance.applyPatch(metaUser, patch)
+      }      
+      a <- {
+        log.info("Updating user in gestalt-security...")
+        val secUpdate = user2AccountUpdate(u.asInstanceOf[GestaltResourceInstance])
+        security.updateAccount(metaUser.id, secAccount, secUpdate)
+      }
+      o <- Try(u.asInstanceOf[GestaltResourceInstance])
+    } yield o
+  }
+
+  
+  private def user2AccountUpdate(user: GestaltResourceInstance): GestaltAccountUpdate = {
+    
+    val props = user.properties.get.get _
+    val maybePassword = props("password") map { GestaltPasswordCredential(_) }
+    
+    GestaltAccountUpdate(
+      username    = Some(user.name),
+      description = user.description,
+      email       = props("email"),
+      phoneNumber = props("phoneNumber"),
+      credential  = maybePassword,
+      firstName   = props("firstName"),
+      lastName    = props("lastName"))
+  }
+
   private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {
     
     val opmap = opsToMap(patch.ops, allowed = Seq(PatchOps.Add, PatchOps.Remove))
