@@ -79,8 +79,8 @@ class GroupMethods @Inject()( security: Security ) {
     GestaltAccountUpdate(
       username    = Some(user.name),
       description = user.description,
-      email       = props("email").filter(_.trim.nonEmpty),
-      phoneNumber = props("phoneNumber").filter(_.trim.nonEmpty),
+      email       = props("email"),
+      phoneNumber = props("phoneNumber"),
       credential  = maybePassword,
       firstName   = props("firstName"),
       lastName    = props("lastName")

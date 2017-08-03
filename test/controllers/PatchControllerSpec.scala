@@ -221,7 +221,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
     "use GroupMethods for external user patch and" >> { section("security")
 
-      "not submit empty phoneNumber" in new TestApplication {
+      "submit empty phoneNumber on account update" in new TestApplication {
         mockSecurity.getAccountGroups(any, any) returns Try(Seq.empty)
         mockSecurity.updateAccount(any, any, any) returns Try(mock[GestaltAccount]) // return is not used
         val patchDoc = PatchDocument(
@@ -238,12 +238,12 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           accountId = meq(user.account.id),
           auth = any,
           update = argThat(
-            (update: GestaltAccountUpdate) => update.phoneNumber.isEmpty
+            (update: GestaltAccountUpdate) => update.phoneNumber.contains("")
           )
         )
       }
 
-      "not submit empty email" in new TestApplication {
+      "submit empty email on account update" in new TestApplication {
         mockSecurity.getAccountGroups(any, any) returns Try(Seq.empty)
         mockSecurity.updateAccount(any, any, any) returns Try(mock[GestaltAccount]) // return is not used
         val patchDoc = PatchDocument(
@@ -260,7 +260,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           accountId = meq(user.account.id),
           auth = any,
           update = argThat(
-            (update: GestaltAccountUpdate) => update.email.isEmpty
+            (update: GestaltAccountUpdate) => update.email.contains("")
           )
         )
       }
