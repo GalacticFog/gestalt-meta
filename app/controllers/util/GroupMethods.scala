@@ -74,18 +74,17 @@ class GroupMethods @Inject()( security: Security ) {
 
   
   private def user2AccountUpdate(user: GestaltResourceInstance): GestaltAccountUpdate = {
-    
     val props = user.properties.get.get _
     val maybePassword = props("password") map { GestaltPasswordCredential(_) }
-    
     GestaltAccountUpdate(
       username    = Some(user.name),
       description = user.description,
-      email       = props("email"),
-      phoneNumber = props("phoneNumber"),
+      email       = props("email").filter(_.trim.nonEmpty),
+      phoneNumber = props("phoneNumber").filter(_.trim.nonEmpty),
       credential  = maybePassword,
       firstName   = props("firstName"),
-      lastName    = props("lastName"))
+      lastName    = props("lastName")
+    )
   }
 
   private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {
