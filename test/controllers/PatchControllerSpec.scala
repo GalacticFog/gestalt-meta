@@ -1,7 +1,7 @@
 package controllers
 
 
-import controllers.util.{GatewayMethods, GestaltProviderMocking, LambdaMethods}
+import controllers.util._
 import org.specs2.mock.Mockito
 import org.specs2.specification._
 import play.api.libs.json._
@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ResourcePath
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltAccountUpdate}
 import play.api.inject.bind
 import org.mockito.Matchers.{eq => meq}
 import play.api.http.HttpVerbs
@@ -28,7 +29,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(userAccount) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -37,6 +38,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       )),
       user.account.description
     )
+    Entitlements.setNewEntitlements(dummyRootOrgId, userAccount.id, user, None)
   }
 
   sequential
@@ -44,7 +46,8 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
   abstract class FakeSecurity extends WithDb(containerApp(
     additionalBindings = Seq(
       bind(classOf[LambdaMethods]).toInstance(mockLambdaMethods),
-      bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods)
+      bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods),
+      bind(classOf[Security]).toInstance(mockSecurity)
     )
   ))
 
@@ -116,7 +119,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
     "Environment Variables" should {
 
       "add a new env object when it does not exist" in new TestApplication {
-        
+
         val orgName = "patchtest1"
         val org = newOrg(id = dummyRootOrgId, name = orgName)
         org must beSuccessfulTry
@@ -214,6 +217,54 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         user = any,
         request = any
       )
+    }
+
+    "use GroupMethods for external user patch and" >> { section("security")
+
+      "not submit empty phoneNumber" in new TestApplication {
+        mockSecurity.getAccountGroups(any, any) returns Try(Seq.empty)
+        mockSecurity.updateAccount(any, any, any) returns Try(mock[GestaltAccount]) // return is not used
+        val patchDoc = PatchDocument(
+          PatchOp.Replace("/properties/phoneNumber", "")
+        )
+        val request = fakeAuthRequest(PATCH,
+          s"/root/users/${user.account.id}", testCreds
+        ).withBody(patchDoc.toJson)
+
+        val Some(result) = route(request)
+        status(result) must equalTo(OK)
+
+        there was one(mockSecurity).updateAccount(
+          accountId = meq(user.account.id),
+          auth = any,
+          update = argThat(
+            (update: GestaltAccountUpdate) => update.phoneNumber.isEmpty
+          )
+        )
+      }
+
+      "not submit empty email" in new TestApplication {
+        mockSecurity.getAccountGroups(any, any) returns Try(Seq.empty)
+        mockSecurity.updateAccount(any, any, any) returns Try(mock[GestaltAccount]) // return is not used
+        val patchDoc = PatchDocument(
+          PatchOp.Replace("/properties/email", "")
+        )
+        val request = fakeAuthRequest(PATCH,
+          s"/root/users/${user.account.id}", testCreds
+        ).withBody(patchDoc.toJson)
+
+        val Some(result) = route(request)
+        status(result) must equalTo(OK)
+
+        there was one(mockSecurity).updateAccount(
+          accountId = meq(user.account.id),
+          auth = any,
+          update = argThat(
+            (update: GestaltAccountUpdate) => update.email.isEmpty
+          )
+        )
+      }
+
     }
 
     "use GatewayMethods for external apiendpoint patch" in new TestApplication {
