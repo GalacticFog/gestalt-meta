@@ -28,7 +28,7 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.json.Js
-import play.api.mvc.RequestHeader
+import play.api.mvc.{RequestHeader, Result}
 
 
 @Singleton
@@ -98,7 +98,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * @param target the Resource to be modified
    */
   private[controllers] def applyPatch( target: GestaltResourceInstance )
-                                     ( implicit request: SecuredRequest[JsValue] ) = {
+                                     ( implicit request: SecuredRequest[JsValue] ): Future[Result] = {
     
     val user = request.identity
     val action = actionInfo(target.typeId).prefix + ".update"
