@@ -368,7 +368,7 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
       case Some(updater) =>
         Future{ ResourceFactory.update(updatedMetaCon, updater) } onComplete {
           case Success(Success(updatedContainer)) =>
-            log.trace(s"updated container ${updatedContainer.id} with info from CaaS provider")
+            log.debug(s"updated container ${updatedContainer.id} with info from CaaS provider")
           case Success(Failure(e)) =>
             log.warn(s"failure to update container ${updatedMetaCon.id}",e)
           case Failure(e) =>
