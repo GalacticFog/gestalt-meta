@@ -159,10 +159,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   }
 
   abstract class FakeKubeCreate( force_pull: Boolean = true,
+                                 cpu: Double = 1.0,
+                                 memory: Double = 128,
                                  args: Option[Seq[String]] = None,
                                  cmd: Option[String] = None,
                                  port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
-                                 labels: Map[String,String] = Map.empty ) extends Scope {
+                                 labels: Map[String,String] = Map.empty,
+                                 providerConfig: Seq[(String,String)] = Seq.empty
+                               ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
     lazy val testCreds = testAuthResponse.creds
@@ -174,7 +178,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       (tw,te)
     }
 
-    lazy val testProvider = createKubernetesProvider(testEnv.id, "test-provider").get
+    lazy val testProvider = createKubernetesProvider(testEnv.id, "test-provider", providerConfig).get
 
     lazy val initProps = ContainerSpec(
       name = "",
@@ -182,8 +186,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       image = "nginx",
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
       port_mappings = port_mappings,
-      cpus = 1.0,
-      memory = 128,
+      cpus = cpu,
+      memory = memory,
       disk = 0.0,
       num_instances = 1,
       network = Some("default"),
@@ -596,6 +600,57 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
           containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
         )
+      ))(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "provision cpu request and memory limit+request by default (dcos default)" in new FakeKubeCreate(cpu = 1.0, memory = 1024) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
+          limits = Map("memory" -> "1024.000M"),
+          requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
+        ))
+      ))(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "request,limit")) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
+          limits = Map("memory" -> "1024.000M", "cpu" -> "1000m"),
+          requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
+        ))
+      ))(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory-requirement-type" -> "request")) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
+          limits = Map(),
+          requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
+        ))
+      ))(any,meq(skuber.ext.deploymentKind))
+    }
+
+    "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "", "memory-requirement-type" -> "")) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
+          limits = Map(), requests = Map()
+        ))
       ))(any,meq(skuber.ext.deploymentKind))
     }
 

@@ -145,10 +145,16 @@ trait ResourceScope extends Scope with Mockito {
       properties = Option(Map("parent" -> "{}")))
   }
 
-  def createKubernetesProvider(parent: UUID, name: String = uuid.toString) = {
-    createInstance(ResourceIds.KubeProvider, name,
-        parent = Option(parent),
-        properties = Option(Map("parent" -> "{}")))
+  def createKubernetesProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,String)] = Seq.empty) = {
+    createInstance(
+      typeId = ResourceIds.KubeProvider,
+      name = name,
+      parent = Option(parent),
+      properties = Option(Map(
+        "parent" -> "{}",
+        "config" -> Json.toJson(config.toMap).toString
+      ))
+    )
   }
   
   def newDummyLambda(env: UUID, gateway: UUID = uuid()) = {
