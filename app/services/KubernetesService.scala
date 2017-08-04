@@ -106,6 +106,15 @@ class DefaultSkuberFactory extends SkuberFactory {
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
+
+  val CPU_REQ_TYPE = "cpu-requirement-type"
+  val MEM_REQ_TYPE = "memory-requirement-type"
+
+  val REQ_TYPE_LIMIT = "limit"
+  val REQ_TYPE_REQUEST = "request"
+
+  val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
+  val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
@@ -189,7 +198,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
         namespace  <- getNamespace(kube, context.environment.id, create = true)
         kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
-        updatedContainerSpec <- createDeploymentEtAl(kube, container.id, spec, namespace.name)
+        updatedContainerSpec <- createDeploymentEtAl(kube, container.id, spec, namespace.name, context.provider)
       } yield upsertProperties(
         container,
         "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
@@ -219,7 +228,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         kube       <- skuberFactory.initializeKube(context.provider.id, DefaultNamespace)
         namespace  <- getNamespace(kube, context.environment.id, create = true)
         kube       <- skuberFactory.initializeKube(context.provider.id, namespace.name)
-        updatedContainerSpec <- updateDeploymentEtAl(kube, container.id, spec, namespace.name)
+        updatedContainerSpec <- updateDeploymentEtAl(kube, container.id, spec, namespace.name, context.provider)
       } yield upsertProperties(
         container,
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
@@ -313,9 +322,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   /**
     * Create a Deployment with services in Kubernetes
     */
-  private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
+  private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, provider: GestaltResourceInstance): Future[ContainerSpec] = {
 
-    val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, namespace))
+    val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, provider, namespace))
     val fUpdatedPMsFromService = createService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -338,8 +347,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   /**
    * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
    */
-  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String): Future[ContainerSpec] = {
-    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, namespace))
+  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, provider: GestaltResourceInstance): Future[ContainerSpec] = {
+    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, provider, namespace))
     val fUpdatedPMsFromService = updateService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -613,11 +622,22 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield out
   }
   
-  private[services] def mkKubernetesContainer(spec: ContainerSpec): skuber.Container = {
-    val requirements = skuber.Resource.Requirements(requests = Map(
-        skuber.Resource.cpu    -> spec.cpus,
-        skuber.Resource.memory -> spec.memory
-    ))
+  private[services] def mkKubernetesContainer(spec: ContainerSpec, provider: GestaltResourceInstance): skuber.Container = {
+    val cpuRequest = ContainerService.getProviderProperty[String](provider, CPU_REQ_TYPE).getOrElse(DEFAULT_CPU_REQ).split(",")
+    val memRequest = ContainerService.getProviderProperty[String](provider, MEM_REQ_TYPE).getOrElse(DEFAULT_MEM_REQ).split(",")
+
+    val cpu: Resource.ResourceList = Map(skuber.Resource.cpu -> spec.cpus)
+    val mem: Resource.ResourceList = Map(skuber.Resource.memory -> f"${spec.memory}%1.3fM")
+
+    val cpuReq: Resource.ResourceList = if (cpuRequest.contains(REQ_TYPE_REQUEST)) cpu else Map()
+    val cpuLim: Resource.ResourceList = if (cpuRequest.contains(REQ_TYPE_LIMIT))   cpu else Map()
+    val memReq: Resource.ResourceList = if (memRequest.contains(REQ_TYPE_REQUEST)) mem else Map()
+    val memLim: Resource.ResourceList = if (memRequest.contains(REQ_TYPE_LIMIT))   mem else Map()
+
+    val requirements = skuber.Resource.Requirements(
+      requests = cpuReq ++ memReq,
+      limits = cpuLim ++ memLim
+    )
 
     val commands = spec.cmd map CommandParser.translate
 
@@ -649,11 +669,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * @param id UUID for the Meta Container. This will be used as a label on all of the created resourced for later indexing.
    * @param containerSpec ContainerSpec with Container data
    */
-  private[services] def mkDeploymentSpec(kube: RequestContext, id: UUID, containerSpec: ContainerSpec, namespace: String = DefaultNamespace): Deployment = {
+  private[services] def mkDeploymentSpec(kube: RequestContext, id: UUID, containerSpec: ContainerSpec, provider: GestaltResourceInstance, namespace: String = DefaultNamespace): Deployment = {
 
     val labels = containerSpec.labels ++ Map(META_CONTAINER_KEY -> id.toString)
 
-    val container = mkKubernetesContainer(containerSpec)
+    val container = mkKubernetesContainer(containerSpec, provider)
     
     /*
      * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
