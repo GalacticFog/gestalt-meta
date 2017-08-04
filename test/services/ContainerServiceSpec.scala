@@ -37,7 +37,6 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
   def foreach[R : AsResult](f: TestScope => R): Result = {
     scalikejdbc.config.DBs.setupAll()
 
-    println("running stuff in testapplication")
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     val mockProviderManager  = mock[ProviderManager]
@@ -48,8 +47,9 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
     val containerService = new ContainerServiceImpl(mockProviderManager, mockDeleteController)
 
     try AsResult(f(TestScope(testWork, testEnv, testProvider, mockCaasService, containerService)))
-
-    finally scalikejdbc.config.DBs.closeAll()
+    finally {
+      scalikejdbc.config.DBs.closeAll()
+    }
   }
 }
 

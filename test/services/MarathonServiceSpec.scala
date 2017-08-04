@@ -12,7 +12,7 @@ import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mock.Mockito
 import org.specs2.runner.JUnitRunner
-import org.specs2.specification.{BeforeAll, Scope}
+import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
@@ -20,6 +20,7 @@ import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import MarathonService.Properties
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.concurrent.Future
@@ -27,44 +28,19 @@ import scala.util.Success
 import play.api.inject.bind
 
 @RunWith(classOf[JUnitRunner])
-class MarathonServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
-  with Mockito with GestaltSecurityMocking with JsonMatchers {
+class MarathonServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
 
-  
-  skipAll
-  
+  case class TestSetup( mcf: MarathonClientFactory,
+                        client: MarathonClient,
+                        svc : MarathonService )
+
   override def beforeAll(): Unit = pristineDatabase()
 
-  case class FakeDCOSModule(mockMCF: MarathonClientFactory) extends AbstractModule {
-    override def configure(): Unit = {
-      bind(classOf[MarathonClientFactory]).toInstance(mockMCF)
-    }
-  }
+  override def before: Unit = scalikejdbc.config.DBs.setupAll()
 
-  abstract class FakeDCOS extends Scope {
-    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-    var testProvider = createMarathonProvider(testEnv.id, "test-provider").get
+  override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
-    val mockMarClient = mock[MarathonClient]
-    val mockMCF = mock[MarathonClientFactory]
-    mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
-
-    val injector =
-      new GuiceApplicationBuilder()
-        .disable[modules.ProdSecurityModule]
-        .disable[modules.MetaDefaultSkuber]
-        .disable[modules.MetaDefaultServices]
-        .disable[modules.MetaDefaultDCOS]
-        .disable[modules.HealthModule]
-        .bindings(
-          FakeDCOSModule(mockMCF),
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig])
-        )
-        .injector
-
-    val ms = injector.instanceOf[MarathonService]
-  }
+  sequential
 
   def inNamespace[R <: skuber.ObjectResource](name: String): Matcher[R] = { r: R =>
     (r.metadata.namespace == name,  r.name+" in namespace "+name, r.name+" not in namespace "+name)
@@ -83,6 +59,29 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
   def hasPair(p: (String,String)) = ((_: skuber.ObjectResource).metadata.labels) ^^ havePair(p)
 
   def hasSelector(p: (String,String)) = ((_: skuber.Service).spec.map(_.selector).getOrElse(Map.empty)) ^^ havePair(p)
+
+  // this could probably be done with a Fragments.foreach, but it's more in line with the other suites and i think more flexible
+  abstract class FakeDCOS extends Scope {
+    lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
+    lazy val testCreds = testAuthResponse.creds
+    lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
+
+    lazy val (testWork, testEnv) = {
+      val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      (tw,te)
+    }
+
+    lazy val testProvider = createMarathonProvider(testEnv.id, "test-provider").get
+
+    lazy val testSetup = {
+      val mockMarClient = mock[MarathonClient]
+      val mockMCF = mock[MarathonClientFactory]
+      mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
+      val svc = new MarathonService(mockMCF)
+      TestSetup(mockMCF, mockMarClient, svc)
+    }
+  }
 
   "MarathonService" should {
 
@@ -144,7 +143,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
           |{
           |    "acceptedResourceRoles": null,
@@ -267,16 +266,16 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       ))
 
 
-      val fupdatedMetaContainer = ms.create(
+      val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )
 
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
 
-      there was atLeastOne(mockMCF).getClient(testProvider)
+      there was atLeastOne(testSetup.mcf).getClient(testProvider)
 
-      there was one(mockMarClient).launchApp(
+      there was one(testSetup.client).launchApp(
         hasExactlyContainerPorts(
           marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:80"))),
           marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:8443"))),
@@ -358,7 +357,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
           |{
           |    "acceptedResourceRoles": null,
@@ -447,16 +446,16 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fupdatedMetaContainer = ms.create(
+      val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )
 
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
 
-      there was atLeastOne(mockMCF).getClient(testProvider)
+      there was atLeastOne(testSetup.mcf).getClient(testProvider)
 
-      there was one(mockMarClient).launchApp(
+      there was one(testSetup.client).launchApp(
         hasExactlyPortDefs(
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
@@ -493,7 +492,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      mockMCF.getClient(testProviderLcl) returns Future.successful(mockMarClient)
+      testSetup.mcf.getClient(testProviderLcl) returns Future.successful(testSetup.client)
       val testProps = ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -533,7 +532,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
            |{
            |    "acceptedResourceRoles": null,
@@ -608,16 +607,16 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fupdatedMetaContainer = ms.create(
+      val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderLcl.id, None),
         container = metaContainer
       )
 
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
 
-      there was atLeastOne(mockMCF).getClient(testProviderLcl)
+      there was atLeastOne(testSetup.mcf).getClient(testProviderLcl)
 
-      there was one(mockMarClient).launchApp(
+      there was one(testSetup.client).launchApp(
         hasExactlyPortDefs(
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("web"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80"))
         )
@@ -679,7 +678,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      mockMarClient.deleteApplication(any)(any) returns Future.successful(Json.parse(
+      testSetup.client.deleteApplication(any)(any) returns Future.successful(Json.parse(
         """
           |{
           |    "deploymentId": "23a8ddc0-94fa-4190-9c2d-85e2378a7e49",
@@ -688,11 +687,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fDeleted = ms.destroy( metaContainer )
+      val fDeleted = testSetup.svc.destroy( metaContainer )
 
       await(fDeleted)
 
-      there was one(mockMarClient).deleteApplication(meq("/some/marathon/app"))(any)
+      there was one(testSetup.client).deleteApplication(meq("/some/marathon/app"))(any)
     }
 
     "delete service on container delete reconstructing external_id" in new FakeDCOS {
@@ -737,11 +736,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      val fDeleted = ms.destroy( metaContainer )
+      val fDeleted = testSetup.svc.destroy( metaContainer )
 
       await(fDeleted)
 
-      there were no(mockMarClient).deleteApplication(any)(any)
+      there were no(testSetup.client).deleteApplication(any)(any)
     }
 
     "scale appropriately using Marathon PUT" in new FakeDCOS {
@@ -763,20 +762,20 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      mockMarClient.scaleApplication(any, any)(any) returns Future.successful(Json.parse(
+      testSetup.client.scaleApplication(any, any)(any) returns Future.successful(Json.parse(
         """{
   "deploymentId": "5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43",
   "version": "2015-09-29T15:59:51.164Z"
 }"""
       ))
 
-      val Some(updatedContainerProps) = await(ms.scale(
+      val Some(updatedContainerProps) = await(testSetup.svc.scale(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer,
         numInstances = 4
       )).properties
 
-      there was one(mockMarClient).scaleApplication(
+      there was one(testSetup.client).scaleApplication(
         meq("/some/marathon/app"),
         meq(4)
       )(any)
@@ -840,7 +839,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      mockMarClient.updateApplication(any,any)(any) returns Future.successful(Json.parse(
+      testSetup.client.updateApplication(any,any)(any) returns Future.successful(Json.parse(
       s"""
          |{
          |  "deploymentId": "5ed4c0c5-9ff8-4a6f-a0cd-f57f59a34b43",
@@ -849,7 +848,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val updatedContainer = await(ms.update(
+      val updatedContainer = await(testSetup.svc.update(
         context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer.copy(
           properties = metaContainer.properties.map(
@@ -861,7 +860,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
 
-      there was one(mockMarClient).updateApplication(
+      there was one(testSetup.client).updateApplication(
         meq(origExtId),
         argThat(
           (js: JsObject) =>
@@ -908,7 +907,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      await(ms.update(
+      await(testSetup.svc.update(
         context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer.copy(
           name = "updated-name"
