@@ -28,7 +28,7 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.json.Js
-import play.api.mvc.RequestHeader
+import play.api.mvc.{RequestHeader, Result}
 
 
 @Singleton
@@ -57,6 +57,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group -> groupMethods.groupPatch,
+    ResourceIds.User  -> groupMethods.userPatch,
     ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
     ResourceIds.ApiEndpoint -> gatewayMethods.patchEndpointHandler,
     ResourceIds.Entitlement -> entitlementPatch,
@@ -82,8 +83,8 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
     val f = for {
       respath <- Future(new ResourcePath(fqon, path))
-      r <- Future.fromTry(lookupResource(respath, request.identity))
-      pr <- applyPatch(r)
+      r       <- Future.fromTry(lookupResource(respath, request.identity))
+      pr      <- applyPatch(r)
     } yield pr
     f recover {
       case e: Throwable => HandleExceptions(e)
@@ -97,7 +98,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * @param target the Resource to be modified
    */
   private[controllers] def applyPatch( target: GestaltResourceInstance )
-                                     ( implicit request: SecuredRequest[JsValue] ) = {
+                                     ( implicit request: SecuredRequest[JsValue] ): Future[Result] = {
     
     val user = request.identity
     val action = actionInfo(target.typeId).prefix + ".update"
@@ -106,9 +107,11 @@ class PatchController @Inject()( messagesApi: MessagesApi,
     
     SafeRequest(operations, options) ProtectAsync { maybeState =>
       val f = for {
-        
         r1 <- Patch(target)
-        r2 <- Future.fromTry(update(r1, user.account.id))
+        r2 <- Future.fromTry {
+          log.info("Updating resource in Meta...")
+          update(r1, user.account.id)
+        }
       } yield Ok(RenderSingle(r2))
       f recover {
         case e: Throwable => HandleExceptions(e)
@@ -134,46 +137,15 @@ class PatchController @Inject()( messagesApi: MessagesApi,
       controllers.util.EventsPre(action),
       controllers.util.PolicyCheck(action),
       controllers.util.EventsPost(action))
-  }    
-    
-  /**
-   * This function finds and patches the requested resource - it does NOT persist the updated resource.
-   */
-//  private[controllers] def Patch(path: ResourcePath, patchJs: JsValue, account: AuthAccountWithCreds) = {
-//
-//    if (path.isList) {
-//      throw new BadRequestException(s"Path does not identify a resource. found:" + path.path)
-//    } else {
-//      resourceController.findResource(path, account).fold {
-//        throw new ResourceNotFoundException(path.path)
-//      }{ r =>
-//        
-//        val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJs)
-//        val patch = transforms.get(r.typeId).fold(PatchDocument(ops: _*)) {
-//          transform => transform(PatchDocument(ops: _*))
-//        }
-//
-//        val handler = {
-//          if (handlers.get(r.typeId).isDefined) {
-//            log.debug(s"Found custom PATCH handler for type: ${r.typeId}")
-//            handlers(r.typeId)
-//          } else {
-//            log.debug("Using default PATCH handler for type: ${r.typeId")
-//            defaultResourcePatch _
-//          }
-//        }
-//        handler(r, patch, account)
-//      }
-//    }
-//  }
+  }
 
-private[controllers] def Patch( resource: GestaltResourceInstance,
-                                patchJson: JsValue,
-                                account: AuthAccountWithCreds,
-                                rh: RequestHeader): Future[GestaltResourceInstance] = {
-    
-    val ops   = JsonUtil.safeParse[Seq[PatchOp]](patchJson)
-    
+  private[controllers] def Patch(resource: GestaltResourceInstance,
+                                 patchJson: JsValue,
+                                 account: AuthAccountWithCreds,
+                                 rh: RequestHeader): Future[GestaltResourceInstance] = {
+
+    val ops = JsonUtil.safeParse[Seq[PatchOp]](patchJson)
+
     val patch = transforms.get(resource.typeId).fold(PatchDocument(ops: _*)) {
       transform => transform(PatchDocument(ops: _*))
     }
@@ -250,12 +222,8 @@ private[controllers] def Patch( resource: GestaltResourceInstance,
           props.get("identities") match {
             case None => Seq.empty
             case Some(stringids) => {
-//              val jsids = JsonUtil.safeParse[Seq[JsObject]](stringids) 
-//              jsids map { _ \ "id" }
-              
               val jsids = Js.parse[Seq[JsObject]](Json.parse(stringids)).get
               jsids map { x => (x \ "id").get }
-
             }
           }
         }

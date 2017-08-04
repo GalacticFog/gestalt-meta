@@ -9,9 +9,11 @@ import scala.concurrent.duration.DurationInt
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.security.api.GestaltAccount
+import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
 import com.galacticfog.gestalt.security.api.GestaltAccountCreateWithRights
 import com.galacticfog.gestalt.security.api.GestaltGroup
 import com.galacticfog.gestalt.security.api.GestaltGroupCreateWithRights
@@ -26,6 +28,7 @@ import modules.SecurityClientProvider
 import play.api.Logger
 
 import scala.language.postfixOps
+
 
 class Security @Inject()(secClientProvider: SecurityClientProvider) {
   
@@ -113,7 +116,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       lastName = props("lastName"),
       email = props.get("email").filter(!_.isEmpty),
       phoneNumber = props.get("phoneNumber").filter(!_.isEmpty),
-      credential = GestaltPasswordCredential( props("password")) ,
+      credential = GestaltPasswordCredential(props("password")) ,
       groups = None,
       rights = None,
       description = user.description
@@ -122,10 +125,18 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
     Try{Await.result( GestaltOrg.createAccount(org, account)(secClientProvider.client.withCreds(auth.creds)), 5 seconds )}
   }
 
+  def getAccount(org: UUID, accountId: UUID, auth: AuthAccountWithCreds): Try[Option[GestaltAccount]] = {
+    Try(Await.result(GestaltOrg.getAccountById(org, accountId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
+  }
+    
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
     Try{Await.result(GestaltOrg.listAccounts(org.get)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }
   
+  def updateAccount(accountId: UUID, auth: AuthAccountWithCreds, update: GestaltAccountUpdate) = {
+    Try{Await.result(GestaltAccount.updateAccount(accountId, update)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+  }
+
   def deleteAccount(id: UUID, auth: AuthAccountWithCreds): Try[Boolean] = {
     log.debug(s"Attempting to delete Account ${id} from Gestalt Security.")
     Try(Await.result(GestaltAccount.deleteAccount(id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))

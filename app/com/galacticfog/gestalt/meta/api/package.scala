@@ -64,6 +64,7 @@ package object api {
       case "actions"          => Some(ResourceIds.TypeAction)
       case "licenses"         => Some(ResourceIds.License)
       case "integrations"     => Some(ResourceIds.Integration)
+      case "datacontainers"   => Some(ResourceIds.DataContainer)
       case _                  => None
     }
   }
