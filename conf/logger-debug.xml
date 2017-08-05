@@ -17,19 +17,19 @@
   <logger name="sun.rmi" level="WARN"/>
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
-  <logger name="com.galacticfog" level="INFO"/>
-  <logger name="application"  level="INFO" />
+  <logger name="com.galacticfog" level="DEBUG"/>
+  <logger name="application"  level="DEBUG" />
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="scalikejdbc" level="ERROR"/>
   <logger name="com.ning" level="ERROR"/>
   <logger name="javax" level="ERROR"/>
   <logger name="skuber" level="WARN"/>
-  <logger name="controllers.util.MetaController" level="INFO"/>
-  <logger name="controllers.LaserController" level="INFO"/>
-  <logger name="gestalt-security-play" level="INFO"/>
+  <logger name="controllers.util.MetaController" level="DEBUG"/>
+  <logger name="controllers.LaserController" level="DEBUG"/>
+  <logger name="gestalt-security-play" level="TRACE"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   
-  <root level="INFO">
+  <root level="DEBUG">
     <appender-ref ref="STDOUT" />
   </root>
 
