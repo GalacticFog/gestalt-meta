@@ -64,10 +64,9 @@ package object util {
   def GenericErrorResult(code: Int, message: String) = InternalServerError(new GenericApiException(code, message).asJson)
   
   def HandleExceptions(e: Throwable): Result = {
-    log.error(e.getMessage)
     val err = new StringWriter()
-    e.printStackTrace(new PrintWriter(err));
-    log.trace(err.toString)
+    e.printStackTrace(new PrintWriter(err))
+    log.debug(err.toString)
     (metaApiExceptions orElse securityApiExceptions orElse genericApiException)(e)
   }
   
@@ -181,7 +180,7 @@ package object util {
   private def trySuccess(in: JsValue) = Ok(in)
   private def trySuccessNoResult(in: Unit) = Ok("")
   
-  private def tryNotFoundFailure(err: Throwable) = {    
+  private def tryNotFoundFailure(err: Throwable): Result = {
     log.debug("***tryNotFoundFailure : " + err.getMessage)
     err match {
       case rnf: ResourceNotFoundException => {
@@ -189,8 +188,7 @@ package object util {
         NotFound( rnf.asJson )
       }
       case unknown => {
-        log.error( err.getMessage )
-        InternalServerError( err.getMessage )
+        HandleExceptions(unknown)
       }
     }
   }
