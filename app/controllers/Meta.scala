@@ -462,58 +462,152 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  
+  def newResourceId(json: JsObject): UUID = 
+    Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
+      uid => UUID.fromString(uid.as[String])
+    }
+
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
-      implicit request: SecuredRequest[JsValue]) = {
-    
+    implicit request: SecuredRequest[JsValue]) = {
+
     val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
-    
+
     ResourceFactory.findById(parentTypeId, parentId).fold {
       Future(ResourceNotFound(parentTypeId, parentId))
-    }{ parent =>
-      
+    } { parent =>
+
       // This is the ID we create the new provider with.
-      val targetid = Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
-        uid => UUID.fromString(uid.as[String])
-      }
-      
-      val user    = request.identity
+      val targetid = newResourceId(json.as[JsObject])
+
+      val user = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
-      
-      
+
       log.debug("about to call newResourceResult...")
-     newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
-       
-       log.debug("about to call CreateResource...")
+      newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
+
+        log.debug("about to call CreateResource...")
         val identity = user.account.id
         CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
              */
-            log.error("CreateResource Failed!")
             Future.successful(HandleExceptions(e))
           }
           case Success(newMetaProvider) => {
-            log.debug("CreateResource Success!")
-            
+
             val results = load(ProviderMap(newMetaProvider), identity)
-            getCurrentProvider(targetid, results) map { t => 
-              Created(RenderSingle(t)) 
-            } recover { 
+            getCurrentProvider(targetid, results) map { t =>
+              
+              /*
+               * TODO: If current provider is a subtype of ActionProvider - create
+               * ProviderActions if any exist.
+               */
+              
+              
+              if (ResourceFactory.isSubTypeOf(t.typeId, ResourceIds.ActionProvider)) {
+                /*
+                 * The provider instance is created - call out to function that can orchestrate
+                 * the creation of all the other resources that need to be created.
+                 *   
+                 */
+                createProviderActions(t, payload, user)
+              }
+              
+              Created(RenderSingle(t))
+            } recover {
               case e => {
                 /*
                  * TODO: Update Provider as 'FAILED' in Meta
-                 */                
+                 */
                 HandleExceptions(e)
               }
             }
           }
         }
       }
-      
+
     }
+  }
+
+  import com.galacticfog.gestalt.data._
+  
+  import com.galacticfog.gestalt.meta.api.sdk._
+  
+  case class UiLocation(name: String, icon: Option[String])
+  case class ActionInput(kind: String, data: JsValue)
+  case class ActionImplSpec(kind: String, id: String)
+  
+  case class ProviderActionSpec(name: String, implementation: ActionImplSpec, ui_locations: Seq[UiLocation]) {
+ 
+    def toResource(org: UUID, owner: ResourceOwnerLink, id: UUID = uuid()): GestaltResourceInstance = {
+      
+      val props = Map(
+          "implementation" -> Json.stringify(Json.toJson(implementation)),
+          "ui_locations"   -> Json.stringify(Json.toJson(ui_locations)))
+      
+      GestaltResourceInstance(
+        id = id, 
+        typeId = ResourceIds.ProviderAction, 
+        state = ResourceState.id(ResourceStates.Active), 
+        orgId = org, 
+        owner = owner, 
+        name = name, 
+        properties = Some(props)
+      )
+    }
+  }
+  
+  implicit lazy val uiLocationFormat = Json.format[UiLocation]
+  implicit lazy val actionInputFormat = Json.format[ActionInput]
+  implicit lazy val actionImplSpecFormat = Json.format[ActionImplSpec]
+  implicit lazy val providerActionFormat = Json.format[ProviderActionSpec]
+  
+  
+  private def createProviderActions(r: GestaltResourceInstance, payload: JsObject, creator: AuthAccountWithCreds) = {
+    
+    val actionSpecs = for {
+      s <- TypeFactory.findById(r.typeId)
+      p <- s.properties
+      a <- p.get("provider_actions")
+      jsv  = Json.parse(a)
+      acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_) }
+    } yield acts
+    
+    val (failedParse, successfulParse) = (actionSpecs getOrElse Seq.empty) partition { _.isFailure }
+    
+    if (failedParse.nonEmpty) {
+      // TODO: There were errors parsing ProviderActions - DO SOMETHING!
+      throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
+    }
+    
+//    val tsuccess = successfulParse map { _.get }
+//    
+//    val resources = tsuccess map { _.toResource(r.orgId, r.owner) }
+//    
+//  
+    
+    val (failedCreate, successfulCreate) = successfulParse.map { spec =>
+      val action = spec.get.toResource(r.orgId, r.owner)
+      CreateWithEntitlements(r.orgId, creator, action, Some(r.id))
+    }.partition { _.isFailure }
+    
+    if (failedCreate.nonEmpty) {
+      // TODO: At least one failure creating ProviderAction resources - DO SOMETHING!
+      throw new RuntimeException("FAILED CREATING PROVIDER-ACTIONS")
+    }
+    
+    println("SUCCESSFUL-RESULTS:\n" + successfulCreate)
+    
+//    val results = resources map { act =>
+//      CreateWithEntitlements(r.orgId, creator, act, Some(r.id))
+//    }
+//    println("RESULTS:\n" + results)
+//    println("DONE")
+//
+//    println("SPECS:\n" + actionSpecs)
+
   }
   
   // --------------------------------------------------------------------------
