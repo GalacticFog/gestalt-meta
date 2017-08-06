@@ -193,7 +193,19 @@ case object ContainerSpec extends Spec {
 
   implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
 
-  implicit lazy val metaPortMappingSpecFmt = Json.format[ContainerSpec.PortMapping]
+  implicit lazy val metaPortMappingSpecReads: Reads[ContainerSpec.PortMapping] = (
+    (JsPath \ "protocol").read[String] and
+      (JsPath \ "container_port").readNullable[Int] and
+      (JsPath \ "host_port").readNullable[Int] and
+      (JsPath \ "service_port").readNullable[Int] and
+      (JsPath \ "name").readNullable[String](pattern("^[a-z0-9]([a-z0-9-]*[a-z0-9])*$".r, "error.iana_svc_name") andKeep maxLength(15)) and
+      (JsPath \ "labels").readNullable[Map[String,String]] and
+      (JsPath \ "expose_endpoint").readNullable[Boolean] and
+      (JsPath \ "service_address").readNullable[ServiceAddress] and
+      (JsPath \ "virtual_hosts").readNullable[Seq[String]]
+    )(ContainerSpec.PortMapping.apply _)
+
+  implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
 
   implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
 

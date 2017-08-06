@@ -20,7 +20,7 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, ForEach}
 import play.api.http.HttpVerbs
-import play.api.libs.json.Json
+import play.api.libs.json.{JsError, JsSuccess, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.FakeRequest
 
@@ -53,7 +53,7 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
   }
 }
 
-class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatchers {
+class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatchers with org.specs2.specification.Tables {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -111,6 +111,40 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
       ContainerController.findMigrationRule(data("environment")) must beSome
     }
+  }
+
+  "ContainerSpec.PortMapping" should {
+
+    "be optional in ContainerSpec" in {
+      Json.obj(
+        "name" -> "test-container",
+        "container_type" -> "DOCKER",
+        "image" -> "nginx",
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString),
+        "port_mappings" -> Json.arr(Json.obj(
+          "protocol" -> "tcp"
+        ))
+      ).validate[ContainerSpec] must beAnInstanceOf[JsSuccess[ContainerSpec]]
+    }
+
+    "not validate if port mapping name doesn't satisfy IANA_SVC_NAME" in {
+      "reason"                        | "name"             |>
+      "longer than 15 characters"     ! "name-length-gt15" |
+      "has a period"                  ! "port.name"        |
+      "starts with a dash"            ! "-port"            |
+      "ends with a dash"              ! "port-"            |
+      "contains _"                    ! "port_80"          |
+      "contains a space"              ! "port 80"          |
+      "is empty"                      ! ""                 |
+      "is whitespace"                 ! " "                |
+      { (_, name) =>
+        Json.obj(
+          "protocol" -> "tcp",
+          "name" -> name
+        ).validate[ContainerSpec.PortMapping] must beAnInstanceOf[JsError]
+      }
+    }
+
   }
 
   "ContainerSpec" should {
