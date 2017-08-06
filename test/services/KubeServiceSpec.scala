@@ -895,21 +895,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            name = Some("remove_service"),
+            name = Some("remove-service"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port80.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(81),
-            name = Some("add_service"),
+            name = Some("add-service"),
             expose_endpoint = Some(false)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
             service_port = Some(8443),
-            name = Some("remove_port"),
+            name = Some("remove-port"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port8443.test.com"))
           )
@@ -925,13 +925,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("remove_service"),
+          name = Some("remove-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("add_service"),
+          name = Some("add-service"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port81.test.com"))
         ),
@@ -939,7 +939,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           protocol = "tcp",
           container_port = Some(444),
           service_port = Some(8444),
-          name = Some("add_port"),
+          name = Some("add-port"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port8444.test.com"))
         )
@@ -984,14 +984,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            name = Some("remove_service"),
+            name = Some("remove-service"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port80.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(81),
-            name = Some("no_service"),
+            name = Some("no-service"),
             expose_endpoint = Some(false)
           )
         )) {
@@ -1006,19 +1006,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("removed_service"),
+          name = Some("removed-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(8881),
-          name = Some("new_service"),
+          name = Some("new-service"),
           expose_endpoint = Some(true)
         )
       )
@@ -1043,14 +1043,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("remove_service"),
+          name = Some("remove-service"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port80.test.com"))
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         )
       )) {
@@ -1064,13 +1064,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("removed_service"),
+          name = Some("removed-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         )
       )
@@ -1094,7 +1094,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ContainerSpec.PortMapping(
         protocol = "tcp",
         container_port = Some(80),
-        name = Some("update_port"),
+        name = Some("update-port"),
         expose_endpoint = Some(false),
         virtual_hosts = None
       )
@@ -1109,7 +1109,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("update_port"),
+          name = Some("update-port"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port80.test.com"))
         )
