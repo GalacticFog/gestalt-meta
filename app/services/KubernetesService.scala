@@ -624,7 +624,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val cpuRequest = ContainerService.getProviderProperty[String](provider, CPU_REQ_TYPE).getOrElse(DEFAULT_CPU_REQ).split(",")
     val memRequest = ContainerService.getProviderProperty[String](provider, MEM_REQ_TYPE).getOrElse(DEFAULT_MEM_REQ).split(",")
 
-    val cpu: Resource.ResourceList = Map(skuber.Resource.cpu -> spec.cpus)
+    val cpu: Resource.ResourceList = Map(skuber.Resource.cpu    -> f"${spec.cpus}%1.3f")
     val mem: Resource.ResourceList = Map(skuber.Resource.memory -> f"${spec.memory}%1.3fM")
 
     val cpuReq: Resource.ResourceList = if (cpuRequest.contains(REQ_TYPE_REQUEST)) cpu else Map()
@@ -807,8 +807,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       external_id = s"/namespaces/${depl.namespace}/deployments/${depl.name}",
       containerType = "DOCKER",
       status = status,
-      cpus = resources.flatMap(_.limits.get("cpu")).map(_.value).map(_.toDouble).getOrElse(0),
-      memory = resources.flatMap(_.limits.get("memory")).map(_.value).map(_.toDouble).getOrElse(0),
+      cpus = (resources.flatMap(_.limits.get("cpu")) orElse resources.flatMap(_.requests.get("cpu")))
+        .map(_.amount).map(_.toDouble).getOrElse(0),
+      memory = (resources.flatMap(_.limits.get("memory")) orElse resources.flatMap(_.requests.get("memory")))
+        .map(_.amount).map(_.toDouble / 1e6).getOrElse(0),
       image = specImage,
       age = age.getOrElse(DateTime.now()),
       numInstances = numTarget,

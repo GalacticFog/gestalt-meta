@@ -753,6 +753,126 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
+    "prefer to update cpu/mem from limit instead of request" in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(
+                skuber.Resource.cpu -> "1000m",
+                skuber.Resource.memory -> "128000k"
+              ),
+              requests = Map(
+                skuber.Resource.cpu -> "100m",
+                skuber.Resource.memory -> "64000k"
+              )
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 1.0
+      containerStats.memory must_== 128.0
+    }
+
+    "fallback on getting cpu/mem from request" in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map(
+                skuber.Resource.cpu -> "100m",
+                skuber.Resource.memory -> "64000k"
+              )
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 0.1
+      containerStats.memory must_== 64.0
+    }
+
+    "fallback on to 0 cpu/mem if neither request nor limit " in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map()
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 0.0
+      containerStats.memory must_== 0.0
+    }
+
     "delete service and any ingress on container delete" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
