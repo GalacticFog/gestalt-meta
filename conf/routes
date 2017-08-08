@@ -13,8 +13,8 @@ GET  	/path/:fqon/*components  controllers.ResourceController.mapPath(fqon, comp
 
 #->   /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/kube controllers.KubeRouter
 
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.get(fqon: String, pid: java.util.UUID, path: String)
-POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.post(fqon: String, pid: java.util.UUID, path: String)
+#GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.get(fqon: String, pid: java.util.UUID, path: String)
+#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/kube/*path   controllers.KubeController.post(fqon: String, pid: java.util.UUID, path: String)
 
 
 POST   /root/providers/initialize controllers.BootstrapController.initProviders()

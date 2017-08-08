@@ -110,7 +110,8 @@ object OutputDatatypeHandlers {
     val data = lookupFn(typeId)(typeId, instanceId) getOrElse {
       illegal(s"No resource of type '${typeId}' with ID '${instanceId} was found.")
     }
-    
+
+    println(data)
     if (ReferenceFactory.isReferenceType(typeId)) 
       JsString(data.asInstanceOf[GestaltReferenceData].name)
     else JsString(data.asInstanceOf[GestaltResourceInstance].name)
