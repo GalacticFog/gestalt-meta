@@ -9,6 +9,9 @@ import java.net.URL
 import javax.inject.Inject
 
 import play.api.libs.ws._
+import com.galacticfog.gestalt.data.ResourceFactory
+
+import java.util.UUID
 
 class ProviderMethods @Inject() () {
   
@@ -76,4 +79,24 @@ class ProviderMethods @Inject() () {
     new JsonClient(config, wsclient)    
   }
   
+}
+import com.galacticfog.gestalt.meta.api.output.Output
+import play.api.libs.json.Json
+
+object ProviderMethods {
+  private val log = Logger(this.getClass())
+  
+  def isActionProvider(testType: UUID): Boolean = {
+    ResourceFactory.isSubTypeOf(testType, ResourceIds.ActionProvider)
+  }
+ 
+  def injectProviderActions(res: GestaltResourceInstance): GestaltResourceInstance = {
+    log.debug("injectProviderActions(_) : Looking up Provider Actions")
+    val actions = ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, res.id)
+    val actjson = Output.renderLinks(actions, None)
+    val props = res.properties map { ps =>
+      ps ++ Map("provider_actions" -> Json.stringify(actjson))
+    }
+    res.copy(properties = props)    
+  }  
 }

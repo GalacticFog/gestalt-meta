@@ -155,19 +155,11 @@ object Resource {
   
   protected[api] def findSecondLevelList(info: Map[String,String]) = {
     val org = orgOrElse(info(Fqon))
-    
-    val parentId = UUID.fromString(info(ParentId))
-    
+    val parentId = UUID.fromString(info(ParentId))    
     val parentType   = typeOrElse(info(ParentType))
     val targetTypeId = typeOrElse(info(TargetType))
-    
-    //
-    // If the function takes an Account parameter, we can do the Authorization here and
-    // return a filtered list.
-    //
-    
-    //TODO: Make lookup covariant - so we can find sub-types of action-provider for instance.info
-    ResourceFactory.findChildrenOfType(org, parentId, targetTypeId)
+
+    ResourceFactory.findChildrenOfSubType(targetTypeId, parentId)
   }
   
   /**

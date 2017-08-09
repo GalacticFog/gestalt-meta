@@ -480,7 +480,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       // This is the ID we create the new provider with.
       val targetid = newResourceId(json.as[JsObject])
 
-      val user = request.identity
+      val user    = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
 
       log.debug("about to call newResourceResult...")
@@ -498,24 +498,29 @@ class Meta @Inject()( messagesApi: MessagesApi,
           case Success(newMetaProvider) => {
 
             val results = load(ProviderMap(newMetaProvider), identity)
-            getCurrentProvider(targetid, results) map { t =>
-              
-              /*
-               * TODO: If current provider is a subtype of ActionProvider - create
-               * ProviderActions if any exist.
-               */
+            getCurrentProvider(targetid, results) map { newprovider =>
               
               
-              if (ResourceFactory.isSubTypeOf(t.typeId, ResourceIds.ActionProvider)) {
-                /*
-                 * The provider instance is created - call out to function that can orchestrate
-                 * the creation of all the other resources that need to be created.
-                 *   
-                 */
-                createProviderActions(t, payload, user)
+              val output = {
+                if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
+                else {
+                  /*
+                   * TODO: The provider instance is created - call out to function that can orchestrate
+                   * the creation of all the other resources that need to be created.   
+                   */                  
+                  log.debug("Creating Provider Actions...")
+                  
+                  val acts   = createProviderActions(newprovider, payload, user)
+                  val json   = Output.renderLinks(acts, META_URL)
+                  val props  = newprovider.properties map { ps =>
+                    ps ++ Map("provider_actions" -> Json.stringify(json))
+                  }
+                  newprovider.copy(properties = props)
+                  ProviderMethods.injectProviderActions(newprovider)
+                }
+                
               }
-              
-              Created(RenderSingle(t))
+              Created(RenderSingle(output))
             } recover {
               case e => {
                 /*
@@ -532,39 +537,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   }
 
   import com.galacticfog.gestalt.data._
-  
-  import com.galacticfog.gestalt.meta.api.sdk._
-  
-  case class UiLocation(name: String, icon: Option[String])
-  case class ActionInput(kind: String, data: JsValue)
-  case class ActionImplSpec(kind: String, id: String)
-  
-  case class ProviderActionSpec(name: String, implementation: ActionImplSpec, ui_locations: Seq[UiLocation]) {
- 
-    def toResource(org: UUID, owner: ResourceOwnerLink, id: UUID = uuid()): GestaltResourceInstance = {
-      
-      val props = Map(
-          "implementation" -> Json.stringify(Json.toJson(implementation)),
-          "ui_locations"   -> Json.stringify(Json.toJson(ui_locations)))
-      
-      GestaltResourceInstance(
-        id = id, 
-        typeId = ResourceIds.ProviderAction, 
-        state = ResourceState.id(ResourceStates.Active), 
-        orgId = org, 
-        owner = owner, 
-        name = name, 
-        properties = Some(props)
-      )
-    }
-  }
-  
-  implicit lazy val uiLocationFormat = Json.format[UiLocation]
-  implicit lazy val actionInputFormat = Json.format[ActionInput]
-  implicit lazy val actionImplSpecFormat = Json.format[ActionImplSpec]
-  implicit lazy val providerActionFormat = Json.format[ProviderActionSpec]
-  
-  
+
   private def createProviderActions(r: GestaltResourceInstance, payload: JsObject, creator: AuthAccountWithCreds) = {
     
     val actionSpecs = for {
@@ -581,13 +554,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       // TODO: There were errors parsing ProviderActions - DO SOMETHING!
       throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
     }
-    
-//    val tsuccess = successfulParse map { _.get }
-//    
-//    val resources = tsuccess map { _.toResource(r.orgId, r.owner) }
-//    
-//  
-    
+
     val (failedCreate, successfulCreate) = successfulParse.map { spec =>
       val action = spec.get.toResource(r.orgId, r.owner)
       CreateWithEntitlements(r.orgId, creator, action, Some(r.id))
@@ -598,17 +565,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
       throw new RuntimeException("FAILED CREATING PROVIDER-ACTIONS")
     }
     
-    println("SUCCESSFUL-RESULTS:\n" + successfulCreate)
-    
-//    val results = resources map { act =>
-//      CreateWithEntitlements(r.orgId, creator, act, Some(r.id))
-//    }
-//    println("RESULTS:\n" + results)
-//    println("DONE")
-//
-//    println("SPECS:\n" + actionSpecs)
-
+    successfulCreate.map(_.get)
   }
+
   
   // --------------------------------------------------------------------------
   //

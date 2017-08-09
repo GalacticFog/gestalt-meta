@@ -43,7 +43,7 @@ import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 class ResourceController @Inject()( messagesApi: MessagesApi,
                                     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                                     security: Security,
-                                    containerService: ContainerService )
+                                    containerService: ContainerService)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
@@ -62,7 +62,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
     ResourceIds.Container   -> lookupContainer,
-    ResourceIds.Entitlement -> lookupEntitlement
+    ResourceIds.Entitlement -> lookupEntitlement,
+    ResourceIds.Provider    -> lookupProvider
   )
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
@@ -80,11 +81,21 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
   
+  def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+    log.debug("Lookup function : lookupProvider(_,_,_)...")
+    
+    Resource.toInstance(path) map { res =>
+      // Inject actions if this is an ActionProvider
+      if (ProviderMethods.isActionProvider(res.typeId)) 
+        ProviderMethods.injectProviderActions(res) else res 
+    }
+  }
+
   def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
     Resource.toInstance(path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
-      val env = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
+      val env  = ResourceFactory.findParent(r.id) getOrElse throwBadRequest("could not determine environment parent for container")
 
       log.debug("fqon: %s, env: %s[%s]".format(fqon, env.name, env.id.toString))
       log.debug("Calling external CaaS provider...")
@@ -177,6 +188,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
 
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
+    log.debug(s"getResources(_, $path)")
+    log.debug("Action : " + action)
+
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)
   }  
@@ -211,7 +225,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
-    
+
+    log.debug(s"AuthorizedResourceList($path, $action)")
+
     val rss = lookupSeqs.get(path.targetTypeId).fold {
       Resource.listFromPath(path.path)
     }{ f => f(path, request.identity, request.queryString).toList }
@@ -242,6 +258,62 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }  
   
   
+  def getEnvironmentActions(fqon: String, workspaceId: UUID) = Authenticate(fqon) { implicit request =>
+    
+    ResourceFactory.findById(ResourceIds.Workspace, workspaceId).fold {
+      ResourceNotFound(ResourceIds.Workspace, workspaceId)
+    }{ _ => 
+      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ActionProvider, workspaceId) 
+      val allActions = rs flatMap { p => 
+        ResourceFactory.findChildrenOfType(fqid(fqon), p.id, ResourceIds.ProviderAction) 
+      }
+      RenderList(allActions)
+    }
+  }  
+  
+  import com.galacticfog.gestalt.meta.providers._
+
+  
+  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+    
+    log.debug("Looking up applicable actions...")
+    
+    
+    val actions = ResourceFactory.findById(target).fold {
+      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
+    }{ _ => 
+      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ActionProvider, target) 
+      rs flatMap { p => 
+        ResourceFactory.findChildrenOfType(org, p.id, ResourceIds.ProviderAction) 
+      }
+    }
+    
+    log.debug("Checking for prefix-filter...")
+    log.debug("Prefix-Filter : " + prefixFilter)
+    
+    if (prefixFilter.isEmpty) actions
+    else actions filter { act =>
+      val spec = ProviderActionSpec.fromResource(act)
+      //(spec.ui_locations.map(_.name.takeWhile { c => c != '.' }) intersect prefixFilter).nonEmpty
+      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
+    }
+  }
+
+  def getResourceActionsOrg(fqon: String) = Authenticate(fqon) { implicit request =>
+    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
+    val org = fqid(fqon)
+    RenderList {
+      findActionsInScope(org, org, targetPrefix)
+    }
+  }
+  
+  def getResourceActions(fqon: String, target: UUID) = Authenticate(fqon) { implicit request =>
+    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
+    RenderList {
+      findActionsInScope(fqid(fqon), target, targetPrefix)
+    }
+  }
+  
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
@@ -252,7 +324,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       o.properties.get("fqon") != path.fqon  
     }
   }
-
+  
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
@@ -266,7 +338,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
 
     if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
   }
-
+  
   /*
    * Type-Based Lookup Functions
    */ 
@@ -282,16 +354,18 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       throw new ResourceNotFoundException(parentId.toString)
     }{ _ => 
       val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) 
-      filterProvidersByType(rs, qs)
+      filterProvidersByType(rs, qs) map { res =>
+        
+        // Inject actions if this is an ActionProvider
+        if (ProviderMethods.isActionProvider(res.typeId)) 
+          ProviderMethods.injectProviderActions(res) else res
+      }
     }
   }
-  
   
   import com.galacticfog.gestalt.data.{Variance, Invariant, CoVariant}
   import com.galacticfog.gestalt.data.ResourceType
   import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance 
-  
-  
   
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
@@ -332,7 +406,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     val cps = Seq("kubernetes", "dcos")
     
     if (qs.contains("type")) {
-
+      
       /*
        * 1.) Get list of all provider names
        * 2.) remove last component of all provider names
@@ -447,6 +521,14 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
 
+  
+  def transformProvider(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
+    
+    
+
+    ???
+  }
+  
   /**
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.

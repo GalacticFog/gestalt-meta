@@ -113,8 +113,21 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
    */
   private[controllers] def RenderList(rss: Seq[GestaltResourceInstance])(
       implicit request: Request[_]): Result = {
-    handleExpansion(rss, request.queryString, META_URL)  
+    
+    val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
+      Output.renderCompact else Output.renderInstance
+    
+    handleExpansion2(rss, request.queryString, META_URL)(render)    
   }
+  
+//  private[controllers] def RenderListCompact(rss: Seq[GestaltResourceInstance])(
+//      implicit request: Request[_]): Result = {
+//    
+//    val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
+//      Output.renderCompact else Output.renderInstance
+//    
+//    handleExpansion2(rss, request.queryString, META_URL)(render)
+//  }
   
   protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
     NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
@@ -122,13 +135,21 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   /**
    * Handles the 'expand' querystring parameter.
    */
+  private type RenderFunction = (GestaltResourceInstance, Option[String]) => JsValue
+  def handleExpansion2(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None)(
+      render: RenderFunction) = {
+
+    if (getExpandParam(qs)) {
+      Ok(Json.toJson(rs map { r => render(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
+    }
+    else Ok(Output.renderLinks(rs, baseUri))
+  }
   def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
       Ok(Json.toJson(rs map { r => Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
     }
     else Ok(Output.renderLinks(rs, baseUri))
   }
-
   protected[controllers] def CreateResource(
     org: UUID,
     caller: AuthAccountWithCreds,
