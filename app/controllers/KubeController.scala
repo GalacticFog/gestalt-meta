@@ -86,7 +86,7 @@ class KubeController @Inject()( messagesApi: MessagesApi,
         .recover { case t: Throwable => HandleExceptions(t) }
   }
 
-  def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext): Future[Result] = {
+  private[controllers] def getResult[R](path: String, request: SecuredRequest[_], context: RequestContext): Future[Result] = {
     val headers = request.headers.toMap
     val lists: PartialFunction[String, Future[Result]] = {
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))

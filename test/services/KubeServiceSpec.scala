@@ -1,41 +1,27 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
-
-import com.galacticfog.gestalt.data.Hstore
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.google.inject.AbstractModule
-import com.mohiva.play.silhouette.impl.util.SecureRandomIDGenerator
-import controllers.SecurityResources
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
-import org.specs2.mock.Mockito
-import org.specs2.mutable._
+import org.mockito.Matchers.{eq => meq}
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
-import play.api.inject.guice.GuiceApplicationBuilder
+import org.specs2.matcher.{JsonMatchers, Matcher}
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import skuber.api.client
 import skuber.json.format._
-import skuber.json.ext.format._
-
 import scala.concurrent.Future
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
 import scala.util.Success
-import play.api.inject.bind
 
 @RunWith(classOf[JUnitRunner])
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -144,8 +130,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       skTestNs.name returns testEnv.id.toString
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
       mockSkuber.get[skuber.Namespace]("default") returns Future.successful(skDefaultNs)
+      mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")          )(any) returns Future.successful(mockSkuber)
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
       mockSkuber.get[skuber.Namespace](testEnv.id.toString) returns Future.successful(skTestNs)
 
@@ -391,6 +377,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
             skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
           )))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "request magical POD_IP env var for all containers" in new FakeKube {
@@ -431,6 +418,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
             skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
           )))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "deploy service for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
@@ -456,7 +444,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         container = metaContainer
       )).properties
 
-      there was two(testSetup.skuberFactory).initializeKube(meq(testProvider.id), any)(any)
+      there were two(testSetup.skuberFactory).initializeKube(meq(testProvider.id), any)(any)
       there was one(testSetup.kubeClient).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
@@ -490,6 +478,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("tcp", Some(443), None, Some(8443), Some("https"), None, Some(true), Some(ServiceAddress(svcHost, 8443, Some("tcp"), None)), None),
         PortMapping("udp", Some(9999), Some(9999), None, Some("debug"), None, None, None, None)
       ))
+      there were two(testSetup.kubeClient).close
     }
 
     "provision with the expected external_id property" in new FakeKubeCreate() {
@@ -500,6 +489,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps must havePair(
         "external_id" -> s"/namespaces/${testEnv.id}/deployments/test-container"
       )
+      there were two(testSetup.kubeClient).close
     }
 
     "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
@@ -515,6 +505,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val Some(externalId) = updatedContainerProps.get("external_id")
 
       stat.external_id must_== externalId
+      there were three(testSetup.kubeClient).close
     }
 
     "provision with the requested labels" in new FakeKubeCreate(labels = Map(
@@ -531,6 +522,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "labelb" -> "value b"
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
@@ -543,6 +535,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           skuber.Container.PullPolicy.Always
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "set PullPolicy Always when force_pull == false" in new FakeKubeCreate(force_pull = false) {
@@ -555,6 +548,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           skuber.Container.PullPolicy.IfNotPresent
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "pass args when specified" in new FakeKubeCreate(args = Some(Seq("echo","hello","world"))) {
@@ -567,6 +561,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           containTheSameElementsAs(Seq("echo","hello","world"))
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "pass no args when unspecified" in new FakeKubeCreate(args = None) {
@@ -577,6 +572,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).create(argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(empty)
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "pass simple cmd when specified" in new FakeKubeCreate(cmd = Some("""/usr/bin/python""")) {
@@ -589,6 +585,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           containTheSameElementsAs(Seq("/usr/bin/python"))
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "pass complicated cmd when specified" in new FakeKubeCreate(cmd = Some("python -m SimpleHTTPServer $PORT")) {
@@ -601,6 +598,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "provision cpu request and memory limit+request by default (dcos default)" in new FakeKubeCreate(cpu = 1.0, memory = 1024) {
@@ -614,6 +612,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "request,limit")) {
@@ -627,6 +626,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory-requirement-type" -> "request")) {
@@ -640,6 +640,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu-requirement-type" -> "", "memory-requirement-type" -> "")) {
@@ -652,6 +653,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           limits = Map(), requests = Map()
         ))
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "pass complicated cmd with difficult bash-compatible spacing" in new FakeKubeCreate(cmd = Some("echo hello|wc")) {
@@ -664,6 +666,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           containTheSameElementsAs(Seq("echo","hello","|","wc"))
         )
       ))(any,meq(skuber.ext.deploymentKind))
+      there was one(testSetup.kubeClient).close
     }.pendingUntilFixed("this is going to be hard")
 
     "pass no cmd when unspecified" in new FakeKubeCreate(cmd = None) {
@@ -674,6 +677,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).create(argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
       ))(any,meq(skuber.ext.deploymentKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
@@ -706,6 +710,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend(createdService.name, 8443)))))
         ))
       ))(any,meq(skuber.ext.ingressKind))
+      there were two(testSetup.kubeClient).close
     }
 
     "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKubeCreate {
@@ -745,6 +750,127 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )))
 
       containerStats must_== containerStats2
+      there were two(testSetup.kubeClient).close
+    }
+
+    "prefer to update cpu/mem from limit instead of request" in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(
+                skuber.Resource.cpu -> "1000m",
+                skuber.Resource.memory -> "128000k"
+              ),
+              requests = Map(
+                skuber.Resource.cpu -> "100m",
+                skuber.Resource.memory -> "64000k"
+              )
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 1.0
+      containerStats.memory must_== 128.0
+    }
+
+    "fallback on getting cpu/mem from request" in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map(
+                skuber.Resource.cpu -> "100m",
+                skuber.Resource.memory -> "64000k"
+              )
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 0.1
+      containerStats.memory must_== 64.0
+    }
+
+    "fallback on to 0 cpu/mem if neither request nor limit " in new FakeKube {
+      val containerId = uuid()
+      val metaContainer = mock[GestaltResourceInstance]
+      metaContainer.id returns containerId
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      val mockDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map()
+            ))
+          )
+        )
+      )
+      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
+      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
+      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+
+      val Some(containerStats) = await(testSetup.kubeService.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.cpus must_== 0.0
+      containerStats.memory must_== 0.0
     }
 
     "delete service and any ingress on container delete" in new FakeKube {
@@ -794,6 +920,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).delete(mockRS.name,0)(skuber.ext.replsetsKind)
       there was one(testSetup.kubeClient).delete(mockService.name,0)(client.serviceKind)
       there was one(testSetup.kubeClient).delete(mockIngress.name,0)(skuber.ext.ingressKind)
+      there was one(testSetup.kubeClient).close
     }
 
     "not fail if no service or ingress to delete on container delete" in new FakeKube {
@@ -831,6 +958,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       await(testSetup.kubeService.destroy(metaContainer))
       there were no(testSetup.kubeClient).delete(any,any)(meq(client.serviceKind))
+      there was one(testSetup.kubeClient).close
     }
 
     "scale appropriately using skuber PATCH" in new FakeKube {
@@ -880,6 +1008,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps must havePair(
         "num_instances" -> testScale.toString
       )
+      there was one(testSetup.kubeClient).close
     }
 
     "throw a 400 on container rename" in new FakeKubeWithPrexistingContainer(Seq.empty) {
@@ -895,21 +1024,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            name = Some("remove_service"),
+            name = Some("remove-service"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port80.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(81),
-            name = Some("add_service"),
+            name = Some("add-service"),
             expose_endpoint = Some(false)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
             service_port = Some(8443),
-            name = Some("remove_port"),
+            name = Some("remove-port"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port8443.test.com"))
           )
@@ -925,13 +1054,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("remove_service"),
+          name = Some("remove-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("add_service"),
+          name = Some("add-service"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port81.test.com"))
         ),
@@ -939,7 +1068,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           protocol = "tcp",
           container_port = Some(444),
           service_port = Some(8444),
-          name = Some("add_port"),
+          name = Some("add-port"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port8444.test.com"))
         )
@@ -978,20 +1107,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps("port_mappings") must /#(0) and not /#(0) /("service_address")
       updatedContainerProps("port_mappings") must /#(1) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
       updatedContainerProps("port_mappings") must /#(2) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
+      there were two(testSetup.kubeClient).close
     }
 
     "delete empty ingress on container PUT" in new FakeKubeWithPrexistingContainer(Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            name = Some("remove_service"),
+            name = Some("remove-service"),
             expose_endpoint = Some(true),
             virtual_hosts = Some(Seq("port80.test.com"))
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(81),
-            name = Some("no_service"),
+            name = Some("no-service"),
             expose_endpoint = Some(false)
           )
         )) {
@@ -1006,19 +1136,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("removed_service"),
+          name = Some("removed-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(8881),
-          name = Some("new_service"),
+          name = Some("new-service"),
           expose_endpoint = Some(true)
         )
       )
@@ -1037,20 +1167,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).delete( meq("test-container"), any )(meq(skuber.ext.ingressKind))
       there was one(testSetup.kubeClient).update( any )( any, meq(client.serviceKind) )
       there was one(testSetup.kubeClient).update( any )( any, meq(skuber.ext.deploymentKind) )
+      there were two(testSetup.kubeClient).close
     }
 
     "delete empty service on container PUT" in new FakeKubeWithPrexistingContainer(Seq(
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("remove_service"),
+          name = Some("remove-service"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port80.test.com"))
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         )
       )) {
@@ -1064,13 +1195,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("removed_service"),
+          name = Some("removed-service"),
           expose_endpoint = Some(false)
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(81),
-          name = Some("no_service"),
+          name = Some("no-service"),
           expose_endpoint = Some(false)
         )
       )
@@ -1088,13 +1219,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val Some(updatedContainerProps) = updatedContainer.properties
       there was one(testSetup.kubeClient).delete( meq(metaContainer.name), any )(meq(client.serviceKind))
       there was one(testSetup.kubeClient).update( any )( any, meq(skuber.ext.deploymentKind) )
+      there were two(testSetup.kubeClient).close
     }
 
     "create service and ingress on container update" in new FakeKubeWithPrexistingContainer(Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
         container_port = Some(80),
-        name = Some("update_port"),
+        name = Some("update-port"),
         expose_endpoint = Some(false),
         virtual_hosts = None
       )
@@ -1109,7 +1241,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("update_port"),
+          name = Some("update-port"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port80.test.com"))
         )
@@ -1145,6 +1277,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
+      there were two(testSetup.kubeClient).close
     }
 
   }
