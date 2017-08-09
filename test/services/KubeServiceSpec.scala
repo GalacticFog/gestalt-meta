@@ -1045,6 +1045,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.update(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
@@ -1127,6 +1128,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.delete(metaContainer.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
@@ -1187,6 +1189,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
+      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
       testSetup.kubeClient.delete(meq(metaContainer.name), any)(meq(client.serviceKind)) returns Future.successful(())
@@ -1233,6 +1236,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
+      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.create(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
       testSetup.kubeClient.getOption(any)(any,meq(client.serviceKind)) returns Future.successful(None)
       testSetup.kubeClient.create(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])

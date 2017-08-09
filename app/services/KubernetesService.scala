@@ -230,7 +230,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
         namespace  <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context.environment.id, create = true) )
-        updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( updateDeploymentEtAl(_, container.id, spec, namespace.name, context.provider) )
+        updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( kube =>
+          for {
+            maybeExistingDepl <- findByLabel[Deployment,DeploymentList](kube, META_CONTAINER_KEY -> container.id.toString)
+            updates <- maybeExistingDepl match {
+              case None =>
+                Future.failed(new BadRequestException(
+                  s"deployment corresponding to container ${container.id} could not be located and cannot be updated"
+                ))
+              case Some(depl) =>
+                updateDeploymentEtAl(kube, container.id, depl.resourceVersion, spec, namespace.name, context.provider)
+            }
+          } yield updates
+        )
       } yield upsertProperties(
         container,
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
@@ -349,8 +361,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   /**
    * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
    */
-  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, provider: GestaltResourceInstance): Future[ContainerSpec] = {
-    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, provider, namespace))
+  private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, resourceVersion: String, spec: ContainerSpec, namespace: String, provider: GestaltResourceInstance): Future[ContainerSpec] = {
+    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, provider, namespace).withResourceVersion(resourceVersion))
     val fUpdatedPMsFromService = updateService(kube, namespace, containerId, spec) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
