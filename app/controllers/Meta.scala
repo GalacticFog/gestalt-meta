@@ -462,59 +462,112 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  
+  def newResourceId(json: JsObject): UUID = 
+    Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
+      uid => UUID.fromString(uid.as[String])
+    }
+
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
-      implicit request: SecuredRequest[JsValue]) = {
-    
+    implicit request: SecuredRequest[JsValue]) = {
+
     val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
-    
+
     ResourceFactory.findById(parentTypeId, parentId).fold {
       Future(ResourceNotFound(parentTypeId, parentId))
-    }{ parent =>
-      
+    } { parent =>
+
       // This is the ID we create the new provider with.
-      val targetid = Js.find(json.as[JsObject], "/id").fold(UUID.randomUUID) {
-        uid => UUID.fromString(uid.as[String])
-      }
-      
+      val targetid = newResourceId(json.as[JsObject])
+
       val user    = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
-      
-      
+
       log.debug("about to call newResourceResult...")
-     newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
-       
-       log.debug("about to call CreateResource...")
+      newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
+
+        log.debug("about to call CreateResource...")
         val identity = user.account.id
         CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
              */
-            log.error("CreateResource Failed!")
             Future.successful(HandleExceptions(e))
           }
           case Success(newMetaProvider) => {
-            log.debug("CreateResource Success!")
-            
+
             val results = load(ProviderMap(newMetaProvider), identity)
-            getCurrentProvider(targetid, results) map { t => 
-              Created(RenderSingle(t)) 
-            } recover { 
+            getCurrentProvider(targetid, results) map { newprovider =>
+              
+              
+              val output = {
+                if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
+                else {
+                  /*
+                   * TODO: The provider instance is created - call out to function that can orchestrate
+                   * the creation of all the other resources that need to be created.   
+                   */                  
+                  log.debug("Creating Provider Actions...")
+                  
+                  val acts   = createProviderActions(newprovider, payload, user)
+                  val json   = Output.renderLinks(acts, META_URL)
+                  val props  = newprovider.properties map { ps =>
+                    ps ++ Map("provider_actions" -> Json.stringify(json))
+                  }
+                  newprovider.copy(properties = props)
+                  ProviderMethods.injectProviderActions(newprovider)
+                }
+                
+              }
+              Created(RenderSingle(output))
+            } recover {
               case e => {
                 /*
                  * TODO: Update Provider as 'FAILED' in Meta
-                 */                
+                 */
                 HandleExceptions(e)
               }
             }
           }
         }
       }
-      
+
     }
   }
+
+  import com.galacticfog.gestalt.data._
+
+  private def createProviderActions(r: GestaltResourceInstance, payload: JsObject, creator: AuthAccountWithCreds) = {
+    
+    val actionSpecs = for {
+      s <- TypeFactory.findById(r.typeId)
+      p <- s.properties
+      a <- p.get("provider_actions")
+      jsv  = Json.parse(a)
+      acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_) }
+    } yield acts
+    
+    val (failedParse, successfulParse) = (actionSpecs getOrElse Seq.empty) partition { _.isFailure }
+    
+    if (failedParse.nonEmpty) {
+      // TODO: There were errors parsing ProviderActions - DO SOMETHING!
+      throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
+    }
+
+    val (failedCreate, successfulCreate) = successfulParse.map { spec =>
+      val action = spec.get.toResource(r.orgId, r.owner)
+      CreateWithEntitlements(r.orgId, creator, action, Some(r.id))
+    }.partition { _.isFailure }
+    
+    if (failedCreate.nonEmpty) {
+      // TODO: At least one failure creating ProviderAction resources - DO SOMETHING!
+      throw new RuntimeException("FAILED CREATING PROVIDER-ACTIONS")
+    }
+    
+    successfulCreate.map(_.get)
+  }
+
   
   // --------------------------------------------------------------------------
   //

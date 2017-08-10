@@ -29,7 +29,7 @@
   <logger name="gestalt-security-play" level="INFO"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   
-  <root level="INFO">
+  <root level="DEBUG">
     <appender-ref ref="STDOUT" />
   </root>
 

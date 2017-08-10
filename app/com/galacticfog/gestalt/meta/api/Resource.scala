@@ -78,15 +78,6 @@ object Resource {
     findResource(mapPathData(path))
   }
   
-  /**
-   * Determine if a given type is a sub-type of another.
-   */
-  private[api] def isSubTypeOf(superType: UUID, subType: UUID) = {
-    ResourceFactory.findTypesWithVariance(CoVariant(superType)) exists {
-      subType == _.id  
-    }
-  }  
-  
   /*
    * TODO: Generalize this function once type information is cached. We need
    * to find the type corresponding to `typeRestName` and check if it is marked
@@ -119,8 +110,8 @@ object Resource {
   
   private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {
     typeName match {
-      case "providers" => isSubTypeOf(ResourceIds.Provider, typeId)
-      case "rules" => isSubTypeOf(ResourceIds.Rule, typeId)
+      case "providers" => ResourceFactory.isSubTypeOf(typeId, ResourceIds.Provider)
+      case "rules"     => ResourceFactory.isSubTypeOf(typeId, ResourceIds.Rule)
       case _ => {
         log.error("isValidSubType -> MatchError for type: " + typeName)
         throw new RuntimeException(s"Type-test for base-type '${typeName}' not implemented.")
@@ -164,17 +155,11 @@ object Resource {
   
   protected[api] def findSecondLevelList(info: Map[String,String]) = {
     val org = orgOrElse(info(Fqon))
-    
-    val parentId = UUID.fromString(info(ParentId))
-    
+    val parentId = UUID.fromString(info(ParentId))    
     val parentType   = typeOrElse(info(ParentType))
     val targetTypeId = typeOrElse(info(TargetType))
-    
-    //
-    // If the function takes an Account parameter, we can do the Authorization here and
-    // return a filtered list.
-    //
-    ResourceFactory.findChildrenOfType(org, parentId, targetTypeId)
+
+    ResourceFactory.findChildrenOfSubType(targetTypeId, parentId)
   }
   
   /**

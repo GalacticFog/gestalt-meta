@@ -1,4 +1,4 @@
-package controllers.util
+package filters
 
 import play.api.Logger
 import play.api._
@@ -6,13 +6,12 @@ import play.api.mvc._
 import play.api.mvc.Results._
 import scala.concurrent.Future
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
 import play.api.libs.json._
 import play.api.routing.Router.Tags
 
-protected[util] case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long], requestId: Long)
+case class TraceLog(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long], requestId: Long)
 
-protected[util] object LoggingFilter extends Filter {
+class LoggingFilter extends Filter {
   
   private[this] val log = Logger
   private[this] implicit lazy val traceLogFormat = Json.format[TraceLog]

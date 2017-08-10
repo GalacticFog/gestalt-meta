@@ -179,29 +179,29 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
     }
   }
 
-  "isSubTypeOf" should {
-
-    "return TRUE if targetType is a sub-type of baseType" in {
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.DcosProvider) must beTrue
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.GatewayManager) must beTrue
-
-      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleEvent) must beTrue
-      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleLimit) must beTrue
-    }
-
-    "return FALSE if the targetType is NOT a sub-type of baseType" in {
-
-      Resource.isSubTypeOf(ResourceIds.DcosProvider, ResourceIds.Provider) must beFalse
-      Resource.isSubTypeOf(ResourceIds.GatewayManager, ResourceIds.Provider) must beFalse
-      Resource.isSubTypeOf(ResourceIds.RuleLimit, ResourceIds.Rule) must beFalse
-
-      // random false
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.Workspace) must beFalse
-      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.Policy) must beFalse
-      Resource.isSubTypeOf(ResourceIds.Org, ResourceIds.Environment) must beFalse
-      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.Workspace) must beFalse
-    }
-  }
+//  "isSubTypeOf" should {
+//
+//    "return TRUE if targetType is a sub-type of baseType" in {
+//      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.DcosProvider) must beTrue
+//      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.GatewayManager) must beTrue
+//
+//      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleEvent) must beTrue
+//      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.RuleLimit) must beTrue
+//    }
+//
+//    "return FALSE if the targetType is NOT a sub-type of baseType" in {
+//
+//      Resource.isSubTypeOf(ResourceIds.DcosProvider, ResourceIds.Provider) must beFalse
+//      Resource.isSubTypeOf(ResourceIds.GatewayManager, ResourceIds.Provider) must beFalse
+//      Resource.isSubTypeOf(ResourceIds.RuleLimit, ResourceIds.Rule) must beFalse
+//
+//      // random false
+//      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.Workspace) must beFalse
+//      Resource.isSubTypeOf(ResourceIds.Rule, ResourceIds.Policy) must beFalse
+//      Resource.isSubTypeOf(ResourceIds.Org, ResourceIds.Environment) must beFalse
+//      Resource.isSubTypeOf(ResourceIds.Provider, ResourceIds.Workspace) must beFalse
+//    }
+//  }
 
   "fromPath" should {
 
