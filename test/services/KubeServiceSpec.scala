@@ -1090,6 +1090,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.image) ^^ be_==("nginx:updated"))
+          and ((((_:skuber.ext.Deployment).spec.get.selector.get.requirements) ^^ contain(
+            skuber.LabelSelector.IsEqualRequirement( "meta/container", metaContainer.id.toString )
+          )))
       ))(any,meq(skuber.ext.deploymentKind))
       there was one(testSetup.kubeClient).update(argThat(
         inNamespace(testSetup.testNS.name)
