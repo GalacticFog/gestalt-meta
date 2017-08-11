@@ -24,6 +24,8 @@ package object marathon {
   )
 
   val APP_GROUP_PREFIX_PROP = "appGroupPrefix"
+  val HAPROXY_EXP_GROUP_PROP = "haproxyGroup"
+  val DEFAULT_HAPROXY_EXP_GROUP = "external"
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
 
@@ -404,7 +406,7 @@ package object marathon {
           case (port, portIndex) if port.virtual_hosts.exists(_.nonEmpty) =>
             Map(
               "HAPROXY_%d_VHOST".format(portIndex) -> port.virtual_hosts.get.mkString(","),
-              "HAPROXY_%d_GROUP".format(portIndex) -> "external"
+              "HAPROXY_%d_GROUP".format(portIndex) -> ContainerService.getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP).getOrElse(DEFAULT_HAPROXY_EXP_GROUP)
             )
         })
         .flatten.toMap

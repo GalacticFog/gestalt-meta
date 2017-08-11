@@ -58,18 +58,16 @@ class DeleteController @Inject()(
    * external system before the resource is deleted from Meta.
    */
   private[controllers] val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
-      external = Map(
-        ResourceIds.Org -> deleteExternalOrg,
-        ResourceIds.User -> deleteExternalUser,
-        ResourceIds.Group -> deleteExternalGroup,
-        ResourceIds.Container -> deleteExternalContainer,
-        ResourceIds.Api -> gatewayMethods.deleteApiHandler,
-        ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
-        ResourceIds.Lambda -> lambdaMethods.deleteLambdaHandler
-        /*
-        ResourceIds.ApiGatewayProvider -> deleteExternalApiGateway TODO: what's up with this? why is the resource_type ApiGatewayProvider ?
-        */
-      ))
+    external = Map(
+      ResourceIds.Org -> deleteExternalOrg,
+      ResourceIds.User -> deleteExternalUser,
+      ResourceIds.Group -> deleteExternalGroup,
+      ResourceIds.Container -> deleteExternalContainer,
+      ResourceIds.Api -> gatewayMethods.deleteApiHandler,
+      ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
+      ResourceIds.Lambda -> lambdaMethods.deleteLambdaHandler
+    )
+  )
 
   
   private def deleteOps(typeId: UUID) = {

@@ -230,7 +230,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
         namespace  <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context.environment.id, create = true) )
-        updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( updateDeploymentEtAl(_, container.id, spec, namespace.name, context.provider) )
+        updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( kube =>
+            updateDeploymentEtAl(kube, container.id, spec, namespace.name, context.provider)
+        )
       } yield upsertProperties(
         container,
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
@@ -685,11 +687,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     reconcileVolumeClaims(kube, namespace, containerSpec.volumes) 
 
     val podTemplate = {
-      
       val baseSpec = Pod.Spec()
             .addContainer(container.copy(volumeMounts = mounts.toList))
             .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
-      
       val withVolumes = mounts.foldLeft(baseSpec) { (_, mnt) =>
         baseSpec.addVolume {
           Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name))
@@ -704,6 +704,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       labels = labels
     )).withTemplate(podTemplate)
       .withReplicas(containerSpec.num_instances)
+      .withLabelSelector(LabelSelector(LabelSelector.IsEqualRequirement(
+        META_CONTAINER_KEY, id.toString
+      )))
   }
 
   private[services] def mkEnvVars(env: Map[String,String]): List[EnvVar] = {
