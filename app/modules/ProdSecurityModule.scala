@@ -9,7 +9,6 @@ import javax.inject.{Inject, Singleton}
 
 import com.galacticfog.gestalt.security.api._
 import com.google.inject.AbstractModule
-//import controllers.util.db.ConnectionManager
 import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
 import play.api.libs.ws.WSClient
@@ -19,7 +18,6 @@ import scala.util.{Failure, Success, Try}
 import java.util.UUID
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk._
 import controllers.util.JsonInput
 import play.api.libs.json._  
@@ -179,18 +177,19 @@ class GestaltLateInitSecurityEnvironment @Inject() (
 
     if (proceedWithLookup()) {
       logger.info("Meta repository is initialized. Looking up credentials...")
-      
-      ResourceFactory.findById(ResourceIds.SystemConfig).foldLeft {
+
+      ResourceFactory.findById(ResourceIds.SystemConfig).fold {
         logger.info("did not recover security credentials from system config")
         Option.empty[(String, String)]
-      
-      }{ (_, config) =>
+      }{ config =>
         logger.info("recovered security credentials from system config")
-        config.properties.foldLeft(Option.empty[(String,String)]) { (_, ps) =>
-          val k = ps.get(KEY_NAME) 
-          val s = ps.get(KEY_SECRET)
-          if (k.isEmpty || s.isEmpty) None else Some((k.get, s.get))
-        }
+        for {
+          props <- config.properties
+          config <- props.get("config")
+          jsconfig <- Try(Json.parse(config)).toOption
+          k <- (jsconfig \ KEY_NAME).asOpt[String]
+          s <- (jsconfig \ KEY_SECRET).asOpt[String]
+        } yield (k,s)
       }
     } else {
       logger.info("Skipping credential lookup.")
@@ -224,8 +223,8 @@ class GestaltLateInitSecurityEnvironment @Inject() (
       host   <- getEnv(eHOSTNAME)
       port   <- getEnv(ePORT) flatMap {s => Try{s.toInt}.toOption} orElse Some(defaultPort(proto))
       dbCreds = getCredsFromSystem //getCredsFromDB
-      key    = dbCreds.map(_._1) orElse getEnv(eKEY) getOrElse ""
-      secret = dbCreds.map(_._2) orElse getEnv(eSECRET) getOrElse ""
+      key    = dbCreds.map(_._1) orElse getEnv(eKEY)    getOrElse {logger.warn("Could not identity API key for use with gestalt-security; authentication is not functional."); ""}
+      secret = dbCreds.map(_._2) orElse getEnv(eSECRET) getOrElse {logger.warn("Could not identity API secret for use with gestalt-security; authentication is not functional."); ""}
       realm  = getEnv(eREALM)
     } yield GestaltSecurityConfig(
       mode=FRAMEWORK_SECURITY_MODE,
