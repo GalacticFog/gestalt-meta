@@ -306,7 +306,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     "set non-default labels for HAPROXY exposure" in new FakeDCOS {
       val customHaproxyGroup = "custom-haproxy-exposure-group"
       var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider", Some(customHaproxyGroup)).get
-      mockMCF.getClient(testProviderWithCustomExposure) returns Future.successful(mockMarClient)
+      // "register" this provider to the client factory
+      testSetup.mcf.getClient(testProviderWithCustomExposure) returns Future.successful(testSetup.client)
       val testProps = ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -349,7 +350,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ).toString
         ))
       )
-      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
         s"""
            |{
            |    "acceptedResourceRoles": null,
@@ -436,15 +437,15 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
            |}
         """.stripMargin
       ))
-      val fupdatedMetaContainer = ms.create(
+      val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderWithCustomExposure.id, None),
         container = metaContainer
       )
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
-      there was atLeastOne(mockMCF).getClient(testProviderWithCustomExposure)
-      there was one(mockMarClient).launchApp(
+      there was atLeastOne(testSetup.mcf).getClient(testProviderWithCustomExposure)
+      there was one(testSetup.client).launchApp(
         hasExactlyContainerPorts(
-          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")))
+          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:80")))
         ) and
           ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
           ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be_==(Map(

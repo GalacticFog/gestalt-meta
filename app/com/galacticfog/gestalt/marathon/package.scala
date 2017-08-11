@@ -406,7 +406,7 @@ package object marathon {
           case (port, portIndex) if port.virtual_hosts.exists(_.nonEmpty) =>
             Map(
               "HAPROXY_%d_VHOST".format(portIndex) -> port.virtual_hosts.get.mkString(","),
-              "HAPROXY_%d_GROUP".format(portIndex) -> getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP).getOrElse(DEFAULT_HAPROXY_EXP_GROUP)
+              "HAPROXY_%d_GROUP".format(portIndex) -> ContainerService.getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP).getOrElse(DEFAULT_HAPROXY_EXP_GROUP)
             )
         })
         .flatten.toMap
