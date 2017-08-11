@@ -303,6 +303,158 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
     }
 
+    "set non-default labels for HAPROXY exposure" in new FakeDCOS {
+      val customHaproxyGroup = "custom-haproxy-exposure-group"
+      var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider", Some(customHaproxyGroup)).get
+      mockMCF.getClient(testProviderWithCustomExposure) returns Future.successful(mockMarClient)
+      val testProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProviderWithCustomExposure.name)),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            host_port = None,
+            service_port = None,
+            name = Some("http"),
+            labels = None,
+            expose_endpoint = Some(true),
+            virtual_hosts = Some(Seq("web.test.com"))
+          )
+        ),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE")
+      )
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProviderWithCustomExposure).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "labels" -> Json.obj(
+            "USERVAR" -> "USERVAL"
+          ).toString
+        ))
+      )
+      mockMarClient.launchApp(any)(any) returns Future.successful(Json.parse(
+        s"""
+           |{
+           |    "acceptedResourceRoles": null,
+           |    "args": null,
+           |    "backoffFactor": 1.15,
+           |    "backoffSeconds": 1,
+           |    "cmd": null,
+           |    "constraints": [],
+           |    "container": {
+           |        "docker": {
+           |            "forcePullImage": false,
+           |            "image": "nginx",
+           |            "network": "BRIDGE",
+           |            "parameters": [],
+           |            "portMappings": [
+           |                {
+           |                    "containerPort": 80,
+           |                    "hostPort": 0,
+           |                    "labels": {
+           |                        "VIP_0": "/test-container.test-environment.test-workspace.root:80"
+           |                    },
+           |                    "name": "http",
+           |                    "protocol": "tcp",
+           |                    "servicePort": 0
+           |                }
+           |            ],
+           |            "privileged": false
+           |        },
+           |        "type": "DOCKER",
+           |        "volumes": []
+           |    },
+           |    "cpus": 1,
+           |    "dependencies": [],
+           |    "deployments": [
+           |        {
+           |            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
+           |        }
+           |    ],
+           |    "disk": 0,
+           |    "env": {},
+           |    "executor": "",
+           |    "fetch": [],
+           |    "gpus": 0,
+           |    "healthChecks": [],
+           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
+           |    "instances": 1,
+           |    "ipAddress": null,
+           |    "labels": {
+           |       "HAPROXY_0_GROUP": "${customHaproxyGroup}",
+           |       "HAPROXY_0_VHOST": "web.test.com",
+           |       "USERVAR": "USERVAL"
+           |    },
+           |    "maxLaunchDelaySeconds": 3600,
+           |    "mem": 128,
+           |    "portDefinitions": [
+           |        {
+           |            "labels": {},
+           |            "name": "http",
+           |            "port": 0,
+           |            "protocol": "tcp"
+           |        }
+           |    ],
+           |    "ports": [
+           |        0
+           |    ],
+           |    "readinessChecks": [],
+           |    "requirePorts": false,
+           |    "residency": null,
+           |    "secrets": {},
+           |    "storeUrls": [],
+           |    "taskKillGracePeriodSeconds": null,
+           |    "tasks": [],
+           |    "tasksHealthy": 0,
+           |    "tasksRunning": 0,
+           |    "tasksStaged": 0,
+           |    "tasksUnhealthy": 0,
+           |    "upgradeStrategy": {
+           |        "maximumOverCapacity": 1,
+           |        "minimumHealthCapacity": 1
+           |    },
+           |    "uris": [],
+           |    "user": null,
+           |    "version": "2017-03-27T17:07:03.684Z"
+           |}
+        """.stripMargin
+      ))
+      val fupdatedMetaContainer = ms.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderWithCustomExposure.id, None),
+        container = metaContainer
+      )
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+      there was atLeastOne(mockMCF).getClient(testProviderWithCustomExposure)
+      there was one(mockMarClient).launchApp(
+        hasExactlyContainerPorts(
+          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> "/test-container.test-environment.test-workspace.root:80")))
+        ) and
+          ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
+          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be_==(Map(
+            "HAPROXY_0_GROUP" -> customHaproxyGroup,
+            "HAPROXY_0_VHOST" -> "web.test.com",
+            "USERVAR" -> "USERVAL"
+          )))
+      )(any)
+    }
+
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
       // - one exposure has service_port, as required
       // - another exposure is missing service_port, so it won't work

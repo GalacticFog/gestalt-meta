@@ -16,6 +16,7 @@ import play.api.libs.json.Json
 import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import com.galacticfog.gestalt.marathon
 import controllers.util.MetaHealth
 //import controllers.util.db.ConnectionManager
 import controllers.util.DataStore
@@ -139,10 +140,13 @@ trait ResourceScope extends Scope with Mockito {
       properties = Option(Map("parent" -> "{}")))
   }
 
-  def createMarathonProvider(parent: UUID, name: String = uuid.toString) = {
+   def createMarathonProvider(parent: UUID, name: String = uuid.toString, haproxyGroup: Option[String] = None) = {
     createInstance(ResourceIds.DcosProvider, name,
       parent = Option(parent),
-      properties = Option(Map("parent" -> "{}")))
+      properties = Option(Map(
+        "parent" -> "{}",
+        "config" -> haproxyGroup.map(grp => Json.obj(marathon.HAPROXY_EXP_GROUP_PROP -> grp)).getOrElse(Json.obj()).toString
+      )))
   }
 
   def createKubernetesProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,String)] = Seq.empty) = {
