@@ -74,6 +74,18 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   private[this] val log = LoggerFactory.getLogger(this.getClass)
 
+  def cleanly[T](providerId: UUID)(f: DockerClient => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+    dockerClientFactory.getDockerClient(providerId) match {
+      case Failure(e) =>
+        log.warn("failed to instantiate docker client",e)
+        Future.failed(e)
+      case Success(client) =>
+        val fT = f(client)
+        fT.onComplete(_ => client.close())
+        fT
+    }
+  }
+
   private[services] def mkServiceSpec(containerResourceId: UUID, externalId: String, containerSpec: ContainerSpec, providerId: UUID, fqon: String, workspaceId: UUID, environmentId: UUID): Try[docker.swarm.ServiceSpec] = {
     val allLabels = containerSpec.labels ++ Map[String,String](
       META_CONTAINER_KEY -> containerResourceId.toString,
@@ -182,16 +194,18 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     log.debug("DockerService::create(...)")
     ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
-      case Success(spec) => for {
-        docker     <- Future.fromTry(dockerClientFactory.getDockerClient(context.providerId))
-        externalId = containerShortName(context.environmentId, spec.name)
-        updatedContainerSpec <- createService(docker, container.id, externalId, spec, context.providerId, context.fqon, context.workspace.id, context.environmentId)
-      } yield upsertProperties(
-        container,
-        "external_id" -> externalId,
-        "status" -> "LAUNCHED",
-        "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
-      )
+      case Success(spec) =>
+        val externalId = containerShortName(context.environmentId, spec.name)
+        cleanly(context.providerId)(
+          createService(_, container.id, externalId, spec, context.providerId, context.fqon, context.workspace.id, context.environmentId)
+        ) map { updatedContainerSpec =>
+          upsertProperties(
+            container,
+            "external_id" -> externalId,
+            "status" -> "LAUNCHED",
+            "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
+          )
+        }
     }
   }
 
@@ -204,41 +218,66 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
         envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
       } yield containerShortName(envId, container.name)
     } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container or find parent to reconstruct the 'external_id'. Container resource may be corrupt."))
-    for {
-      docker <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
-      _      <- Future(docker.removeService(externalId))
-    } yield ()
+    cleanly(provider.id) ( docker => Future(docker.removeService(externalId)))
   }
 
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = ???
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+    ContainerService.containerExternalId(container) match {
+      case None => Future.successful(None)
+      case Some(extId) =>
+        cleanly(context.providerId) ( docker =>
+          Future(docker.inspectService(extId)) map {
+            svc => Some(ContainerStats(
+              external_id = svc.spec().name(),
+              containerType = "DOCKER",
+              status = "RUNNING",
+              cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
+              memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
+              image = svc.spec().taskTemplate().containerSpec().image(),
+              age = new DateTime(svc.createdAt()),
+              numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
+              tasksStaged = 0,
+              tasksRunning = 0,
+              tasksHealthy = 0,
+              tasksUnhealthy = 0,
+              taskStats = None
+            ))
+          } recover {
+            case _: ServiceNotFoundException => None
+          }
+        )
+    }
+  }
 
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     val inThisEnvironment: Service.Criteria = Service.Criteria.builder().addLabel(META_ENVIRONMENT_KEY, context.environmentId.toString).build()
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::listInEnvironment(...)")
-    for {
-      docker    <- Future.fromTry(dockerClientFactory.getDockerClient(context.providerId))
-      svcs      <- Future{docker.listServices(inThisEnvironment).asScala}
-    } yield svcs.map { svc =>
-      println(svc.toString)
-      ContainerStats(
-        external_id = svc.spec().name(),
-        containerType = "DOCKER",
-        status = "RUNNING",
-        cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
-        memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
-        image = svc.spec().taskTemplate().containerSpec().image(),
-        age = new DateTime(svc.createdAt()),
-        numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
-        tasksStaged = 0,
-        tasksRunning = 0,
-        tasksHealthy = 0,
-        tasksUnhealthy = 0,
-        taskStats = None
-      )
-    }
+
+    cleanly(context.providerId) (
+      docker => Future(docker.listServices(inThisEnvironment).asScala) map {
+        svcs => svcs.map( svc =>
+          ContainerStats(
+            external_id = svc.spec().name(),
+            containerType = "DOCKER",
+            status = "RUNNING",
+            cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
+            memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
+            image = svc.spec().taskTemplate().containerSpec().image(),
+            age = new DateTime(svc.createdAt()),
+            numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
+            tasksStaged = 0,
+            tasksRunning = 0,
+            tasksHealthy = 0,
+            tasksUnhealthy = 0,
+            taskStats = None
+          )
+        )
+      }
+    )
   }
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
