@@ -6,9 +6,10 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.google.common.collect.{ImmutableList, ImmutableMap}
 import com.spotify.docker.client.messages._
 import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
-import com.spotify.docker.client.messages.swarm.{EndpointSpec, NetworkAttachmentConfig, PortConfig}
+import com.spotify.docker.client.messages.swarm._
 import controllers.SecurityResources
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
@@ -347,6 +348,41 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
       )
       await(testSetup.dockerService.destroy(metaContainer))
       there were one(testSetup.dockerClient).removeService(testEnv.id.toString.replace("-","") + "-test-container")
+    }
+
+    "find service successfully" in new FakeDocker() {
+      val extId = s"${testEnv.id.toString.replace("-","")}-test-container"
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default",
+          "external_id" -> extId
+        ))
+      )
+
+      val mockSvcSpec = mock[swarm.ServiceSpec]
+      mockSvcSpec.name() returns extId
+      val mockSvc = mock[swarm.Service]
+      mockSvc.createdAt() returns java.util.Date.from(java.time.Instant.now())
+      mockSvc.spec() returns mockSvcSpec
+      testSetup.dockerClient.inspectService(extId) returns mockSvc
+
+      val stats = await(testSetup.dockerService.find(
+        container = metaContainer,
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      ))
+      stats must beSome
+//      there were one(testSetup.dockerClient).inspectService()
     }
 
   }
