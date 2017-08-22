@@ -31,6 +31,15 @@ object DockerService {
   val META_FQON_KEY = "gestalt-meta/fqon"
   val META_PROVIDER_KEY = "gestalt-meta/provider"
 
+  val stagedStates = Set(
+    TaskStatus.TASK_STATE_ACCEPTED,
+    TaskStatus.TASK_STATE_ALLOCATED,
+    TaskStatus.TASK_STATE_ASSIGNED,
+    TaskStatus.TASK_STATE_PENDING,
+    TaskStatus.TASK_STATE_PREPARING,
+    TaskStatus.TASK_STATE_STARTING
+  )
+
   type DockerClient = com.spotify.docker.client.DockerClient
 
   def containerShortName(envId: UUID, resourceName: String): String = {
@@ -48,6 +57,14 @@ object DockerService {
       resourceName.substring(0,22) + shortChk
     }
     envId.toString.replace("-","") + "-" + shortName
+  }
+
+  def getExternalId(container: GestaltResourceInstance): Option[String] = {
+    ContainerService.containerExternalId(container) orElse {
+      for {
+        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
+      } yield containerShortName(envId, container.name)
+    }
   }
 }
 
@@ -213,69 +230,97 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::create(...)")
     val provider = ContainerService.containerProvider(container)
-    val externalId = ContainerService.containerExternalId(container) orElse {
-      for {
-        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
-      } yield containerShortName(envId, container.name)
-    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container or find parent to reconstruct the 'external_id'. Container resource may be corrupt."))
+    val externalId = getExternalId(container) getOrElse(throw new BadRequestException("Could not determine 'external_id' for container or find parent to reconstruct the 'external_id'. Container resource may be corrupt."))
     cleanly(provider.id) ( docker => Future(docker.removeService(externalId)))
   }
 
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
-    ContainerService.containerExternalId(container) match {
+    getExternalId(container) match {
       case None => Future.successful(None)
       case Some(extId) =>
-        cleanly(context.providerId) ( docker =>
-          Future(docker.inspectService(extId)) map {
-            svc => Some(ContainerStats(
-              external_id = svc.spec().name(),
-              containerType = "DOCKER",
-              status = "RUNNING",
-              cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
-              memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
-              image = svc.spec().taskTemplate().containerSpec().image(),
-              age = new DateTime(svc.createdAt()),
-              numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
-              tasksStaged = 0,
-              tasksRunning = 0,
-              tasksHealthy = 0,
-              tasksUnhealthy = 0,
-              taskStats = None
-            ))
-          } recover {
-            case _: ServiceNotFoundException => None
-          }
-        )
+        cleanly(context.providerId) { docker =>
+          val fSvc = Future(docker.inspectService(extId))
+          // val fTasks = Future(docker.listTasks(Task.Criteria.builder().serviceName(extId).build()))
+          for {
+            maybeSvc <- fSvc.map(Some(_)).recover {case _: ServiceNotFoundException => None}
+            _ = log.info(s"found service: ${maybeSvc}")
+            // javaTasks <- fTasks
+            // tasks = javaTasks.asScala
+            // _ = log.info(s"found ${tasks.size} tasks")
+            stats = maybeSvc map { svc =>
+              ContainerStats(
+                external_id = svc.spec().name(),
+                containerType = "DOCKER",
+                status = "RUNNING",
+                cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
+                memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
+                image = Try{svc.spec().taskTemplate().containerSpec().image()}.getOrElse(""),
+                age = new DateTime(svc.createdAt()),
+                numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
+                tasksStaged = 0, // tasks.count( t => stagedStates.contains(t.status().state()) ),
+                tasksRunning = 0, // tasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
+                tasksHealthy = 0,
+                tasksUnhealthy = 0,
+                taskStats = None /* Some(tasks.map(
+                  t => ContainerStats.TaskStat(
+                    id = t.id(),
+                    host = "",
+                    ipAddresses = Some(t.networkAttachments().asScala.flatMap(_.addresses().asScala).map(
+                      a => ContainerStats.TaskStat.IPAddress(
+                        ipAddress = a,
+                        protocol = "tcp"
+                    ))),
+                    ports = Seq.empty,
+                    startedAt = Some(t.createdAt().toString)
+                  )
+                )) */
+              )
+            }
+          } yield stats
+        }
     }
   }
 
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    val inThisEnvironment: Service.Criteria = Service.Criteria.builder().addLabel(META_ENVIRONMENT_KEY, context.environmentId.toString).build()
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::listInEnvironment(...)")
 
     cleanly(context.providerId) (
-      docker => Future(docker.listServices(inThisEnvironment).asScala) map {
-        svcs => svcs.map( svc =>
-          ContainerStats(
-            external_id = svc.spec().name(),
-            containerType = "DOCKER",
-            status = "RUNNING",
-            cpus = Try{svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9}.getOrElse[Double](0),
-            memory = Try{svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024*1024)}.getOrElse[Double](0),
-            image = svc.spec().taskTemplate().containerSpec().image(),
-            age = new DateTime(svc.createdAt()),
-            numInstances = Try{svc.spec().mode().replicated().replicas().toInt}.getOrElse[Int](0),
-            tasksStaged = 0,
-            tasksRunning = 0,
-            tasksHealthy = 0,
-            tasksUnhealthy = 0,
-            taskStats = None
-          )
-        )
+      docker => {
+        val fSvcs = Future(docker.listServices(Service.Criteria.builder().addLabel(META_ENVIRONMENT_KEY, context.environmentId.toString).build()).asScala)
+        //        val fTasks = Future(docker.listTasks(Task.Criteria.builder().label(META_ENVIRONMENT_KEY + "=" + context.environmentId.toString).build()).asScala)
+        val fTasks = Future(docker.listTasks())
+        for {
+          svcs <- fSvcs
+          _ = log.info(s"found ${svcs.size} services in environment")
+          // tasks <- fTasks
+          // _ = log.info(s"found ${tasks.size} tasks in environment")
+          stats = svcs.map { svc =>
+            // val svcTasks = tasks.asScala.filter(_.serviceId() == svc.id())
+            ContainerStats(
+              external_id = svc.spec().name(),
+              containerType = "DOCKER",
+              status = "RUNNING",
+              cpus = Try {
+                svc.spec().taskTemplate().resources().limits().nanoCpus().toDouble / 1e9
+              }.getOrElse[Double](0),
+              memory = Try {
+                svc.spec().taskTemplate().resources().limits().memoryBytes().toDouble / (1024 * 1024)
+              }.getOrElse[Double](0),
+              image = svc.spec().taskTemplate().containerSpec().image(),
+              age = new DateTime(svc.createdAt()),
+              numInstances = Try { svc.spec().mode().replicated().replicas().toInt }.getOrElse[Int](0),
+              tasksStaged = 0, // svcTasks.count( t => stagedStates.contains(t.status().state()) ),
+              tasksRunning = 0, // svcTasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
+              tasksHealthy = 0,
+              tasksUnhealthy = 0,
+              taskStats = None
+            )
+          }
+        } yield stats
       }
     )
   }
