@@ -510,7 +510,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                    */                  
                   log.debug("Creating Provider Actions...")
                   
-                  val acts   = createProviderActions(newprovider, payload, user)
+                  val acts   = createProviderActions(newprovider, payload, user, ???, parentId)
                   val json   = Output.renderLinks(acts, META_URL)
                   val props  = newprovider.properties map { ps =>
                     ps ++ Map("provider_actions" -> Json.stringify(json))
@@ -538,8 +538,39 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
   import com.galacticfog.gestalt.data._
 
-  private def createProviderActions(r: GestaltResourceInstance, payload: JsObject, creator: AuthAccountWithCreds) = {
+
+  /**
+   * 
+   * @param r the Provider instance to create actions for
+   * @param payload the JSON used to create the Provider
+   * @param creator the user who initiated this call
+   * @param providerEnv the new environment where action lambdas will be created
+   * @param parentId UUID of Provider parent resource
+   */
+  private def createProviderActions(
+        r: GestaltResourceInstance, 
+        payload: JsObject, 
+        creator: AuthAccountWithCreds, 
+        providerEnv: GestaltResourceInstance,
+        parentId: UUID) = {
     
+    /*
+     * 
+     * TODO: VALIDATE - Ensure there is a suitable MessageProvider in Scope
+     * 1.) Get lambda.properties.messageProvider
+     * 2.)
+     * 
+     */
+
+    
+    val messageProvider = ResourceFactory.findAncestorProviders(parentId).filter( p =>
+      p.typeId == ResourceIds.MessageProvider
+    ).headOption getOrElse {
+      ???//throw new BadRequestException(s"")
+    }
+    
+    // Parse the ActionSpec JSON from the Provider type definition.
+
     val actionSpecs = for {
       s <- TypeFactory.findById(r.typeId)
       p <- s.properties

@@ -183,7 +183,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   /**
    * Get a Resource or list of Resources by path.
    */
-  def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+  def getResources(fqon: String, path: String) = Audited(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
 
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
