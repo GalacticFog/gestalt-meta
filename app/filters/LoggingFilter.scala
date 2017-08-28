@@ -25,8 +25,7 @@ class LoggingFilter extends Filter {
     val startTime = System.currentTimeMillis
     
     nextFilter(requestHeader).map { result =>
-  
-//      println("***Defining Action...")
+    
       requestHeader.tags foreach { case (k,v) =>
         println("%-20s : %s".format(k, v))
       }
@@ -35,54 +34,27 @@ class LoggingFilter extends Filter {
           requestHeader.tags(Tags.RouteController),
           requestHeader.tags(Tags.RouteActionMethod))
       } else "ERROR_ROUTE_NOT_FOUND"
-      
-//        println("***Action defined - building URL...")
-        
+
       val requestUrl = "%s://%s%s".format(
         if (requestHeader.secure) "https" else "http",
         requestHeader.host,
         requestHeader.uri)
-      
-//        println("Setting request-time...")
-        
+
       val requestTime = System.currentTimeMillis - startTime
 
-//      Logger.info( Json.prettyPrint ( Json.toJson ( TraceLog(
-//        requestHeader.method,
-//        requestUrl,
-//        fqAction,
-//        result.header.status,
-//        Some(requestTime),
-//        requestHeader.id
-//      ))))
+      Logger.info( Json.prettyPrint ( Json.toJson ( TraceLog(
+        requestHeader.method,
+        requestUrl,
+        fqAction,
+        result.header.status,
+        Some(requestTime),
+        requestHeader.id
+      ))))
   
       result.withHeaders("Request-Time" -> requestTime.toString)
     }
-
-    
-    
-//    println("***TESTING RESULT...")
-//    t match {
-//      case Success(nf) => nf
-//      case Failure(e) => {
-//        println("***failed")
-//        t.get
-//      }
-//    }
-//    nf map { f => println("%%%%%%%%%%%% : " + f.header.status) }
-//    
-//    nf
   }
 
-  /*
-   * method: String, 
-   * route: String, 
-   * action: String, 
-   * status: Int, 
-   * execTimeMs: Option[Long], 
-   * requestId: Long
-   */
-  
   private def msg(method: String, route: String, action: String, status: Int, execTimeMs: Option[Long], requestId: Long): String = {
     Json.prettyPrint { 
       Json.toJson ( TraceLog(

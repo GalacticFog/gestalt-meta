@@ -20,10 +20,11 @@ GET  	/path/:fqon/*components  controllers.ResourceController.mapPath(fqon, comp
 POST   /root/providers/initialize controllers.BootstrapController.initProviders()
 
 
+GET 	/root/check 		controllers.InfoController.serviceCheck()
+
 ############################
 # ACTIONS
 ############################
-
 
 #GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/environments/actions  controllers.ResourceController.getEnvironmentActions(fqon, id: java.util.UUID)
 

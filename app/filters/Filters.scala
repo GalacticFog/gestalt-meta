@@ -7,7 +7,6 @@ import play.api.http.HttpFilters
 import play.filters.cors.CORSFilter
 
 
-class Filters @Inject() (corsFilter: CORSFilter, log: LoggingFilter) extends HttpFilters {
-  println("/////////////////////////// LOADED FILTERS ////////////////////////////////////")
-  def filters = Seq(corsFilter, log)
+class Filters @Inject() (corsFilter: CORSFilter) extends HttpFilters {
+  def filters = Seq(corsFilter)
 }

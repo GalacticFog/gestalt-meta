@@ -6,6 +6,7 @@ import controllers.util.db.EnvConfig
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.mvc.Action
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -74,4 +75,24 @@ class InfoController @Inject()(
 
 
   def options(path: String) = Action {Ok("")}
+  
+  
+  import com.galacticfog.gestalt.meta.api.audit._
+  
+  def serviceCheck() = Authenticate() { implicit request =>
+    request.queryString.get("feature").fold {
+      throw new BadRequestException(s"Must supply value for `?feature` query param")
+    }{ f =>
+      f.headOption.fold {
+        throw new BadRequestException(s"Must supply value for `?feature` query param")
+      }{ f =>
+        f.toLowerCase match {
+          case "audit" => Ok(Audit.check())
+          case _ => throw new BadRequestException(s"Invalid feature query value. found: '$f'")
+        }
+      }
+    }
+  }
+
+  
 }

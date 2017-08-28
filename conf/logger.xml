@@ -6,70 +6,8 @@
     <encoder>
       <!-- <pattern>%coloredLevel: %logger{35} - %message%n%xException</pattern>  -->
       <pattern>%d{HH:mm:ss.SSS} |-%-5level| %logger{0}: %message%n%xException</pattern>
-    </encoder>
-		  <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
-		    <marker>AUDIT</marker>
-		  	<onMatch>DENY</onMatch>		    
-		  </evaluator>       
+    </encoder> 
   </appender>
-
-	<appender name="ELASTIC" class="com.internetitem.logback.elasticsearch.ElasticsearchAppender">
-	
-	  <evaluator class="ch.qos.logback.classic.boolex.OnMarkerEvaluator">
-	    <marker>AUDIT</marker>
-	  	<onMatch>ALLOW</onMatch>
-	  	<onMismatch>DENY</onMismatch>		    
-	  </evaluator>   
-		  	
-        <url>http://127.0.0.1:9200/_bulk</url>
-        <index>audit</index>
-        <type>meta</type>
-        
-        <loggerName>es-logger</loggerName> 					<!-- optional -->
-        <errorLoggerName>es-error-logger</errorLoggerName>  <!-- optional -->
-        <connectTimeout>30000</connectTimeout> 				<!-- optional (in ms, default 30000) -->
-        <errorsToStderr>false</errorsToStderr> 				<!-- optional (default false) -->
-        <includeCallerData>false</includeCallerData> 		<!-- optional (default false) -->
-        <logsToStderr>false</logsToStderr> 					<!-- optional (default false) -->
-        <maxQueueSize>104857600</maxQueueSize> 				<!-- optional (default 104857600) -->
-        <maxRetries>3</maxRetries> 							<!-- optional (default 3) -->
-        <readTimeout>30000</readTimeout> 					<!-- optional (in ms, default 30000) -->
-        <sleepTime>250</sleepTime> 							<!-- optional (in ms, default 250) -->
-        <rawJsonMessage>false</rawJsonMessage> 				<!-- optional (default false) -->
-        <includeMdc>false</includeMdc> 						<!-- optional (default false) -->
-        <maxMessageSize>-1</maxMessageSize> 				<!-- optional (default -1 -->
-        <authentication class="com.internetitem.logback.elasticsearch.config.BasicAuthentication" /> <!-- optional -->
-        <properties>
-            <property>
-                <name>host</name>
-                <value>${HOSTNAME}</value>
-                <allowEmpty>false</allowEmpty>
-            </property>
-            <property>
-                <name>severity</name>
-                <value>%level</value>
-            </property>
-            <property>
-                <name>thread</name>
-                <value>%thread</value>
-            </property>
-            <property>
-                <name>stacktrace</name>
-                <value>%ex</value>
-            </property>
-            <property>
-                <name>logger</name>
-                <value>%logger</value>
-            </property>
-        </properties>
-        <headers>
-            <header>
-                <name>Content-Type</name>
-                <value>text/plain</value>
-            </header>
-        </headers>
- 
-    </appender>
 
   <!--
     The logger name is typically the Java/Scala package name.
@@ -92,9 +30,9 @@
   <logger name="gestalt-security-play" level="INFO"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   
+
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
-    <appender-ref ref="ELASTIC" />
   </root>
 
 </configuration>

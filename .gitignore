@@ -21,4 +21,4 @@ sec-init.sh
 /bin/
 /.worksheet/
 *.cache*
-
+********.log
