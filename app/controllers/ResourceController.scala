@@ -258,20 +258,81 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }  
   
   
-  def getEnvironmentActions(fqon: String, workspaceId: UUID) = Authenticate(fqon) { implicit request =>
-    
-    ResourceFactory.findById(ResourceIds.Workspace, workspaceId).fold {
-      ResourceNotFound(ResourceIds.Workspace, workspaceId)
-    }{ _ => 
-      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ActionProvider, workspaceId) 
-      val allActions = rs flatMap { p => 
-        ResourceFactory.findChildrenOfType(fqid(fqon), p.id, ResourceIds.ProviderAction) 
-      }
-      RenderList(allActions)
-    }
-  }  
+
   
-  import com.galacticfog.gestalt.meta.providers._
+object Ascii {
+  
+    import java.util.Base64
+  import java.nio.charset.Charset
+  import scala.util.matching.Regex
+  
+  val DEFAULT_CHARSET: Charset = Charset.forName("UTF-8")
+  
+  private val base64Match = 
+      """^\s*(([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==))\s*$""".r
+      
+  def encode64(s: String, charset: Charset = DEFAULT_CHARSET): String =
+    Base64.getEncoder.encodeToString(s.getBytes(charset))
+
+  def decode64(s: String): String = if (!isBase64(s))
+    throw new IllegalArgumentException("Argument is not Base64 encoded.")
+  else new String(Base64.getDecoder.decode(s))
+  
+  /**
+   * Determine if a String is Base64 encoded.
+   * 
+   * TODO: The test in the function is very weak. It really checks if the given
+   * String "could be" base64 encoded or not. Any string where str.length % 4 == 0
+   * will pass (accounting for 1 or 2 equal signs padding the string).
+   */
+  def isBase64(s: String): Boolean = 
+    base64Match.pattern.matcher(s).matches
+
+  def asStream(s: String, charset: Charset = DEFAULT_CHARSET) = 
+    new java.io.ByteArrayInputStream(s.getBytes(charset))
+  
+}  
+  
+    import com.galacticfog.gestalt.meta.providers._
+    
+  def getActionUi(fqon: String, actionId: UUID) = Authenticate(fqon) { implicit request =>
+    val qp = {
+      if (request.queryString.contains("resource")) 
+        request.queryString("resource").head
+      else "N/A"
+    }
+    ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
+      this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
+    }{ act =>
+      val spec = ProviderActionSpec.fromResource(act)
+      Ok(Ascii.decode64(spec.implementation.input.get.data.get)).as("text/html")
+    }
+    
+//    val html = 
+//      s"""
+//      |<!DOCTYPE html>
+//      |<html>
+//      |<head>
+//      |  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+//      |  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">  
+//      |</head>
+//      |  <body>  
+//      |    <div id="container">
+//      |      <h2>Hello</h2>
+//      |      <p>Resource-ID : ${qp}</p>
+//      |    </div>
+//      |    <div id="container-root"></div>
+//      |    <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
+//      |    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha256-k2WSCIexGzOj3Euiig+TlR8gA0EmPjuc79OEeY5L45g=" crossorigin="anonymous"></script>
+//      |    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+//      |  </body>
+//      |</html>  
+//      """.stripMargin
+//      
+//    Ok(html).as("text/html")
+  }
+
+
 
   
   def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {

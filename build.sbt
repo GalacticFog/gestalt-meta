@@ -7,11 +7,12 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.26"
+version := "0.6.28"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
 resolvers ++= Seq(
+    "jwtig" at  "https://jcenter.bintray.com/",
     "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
     "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
     "snapshots" at "http://scala-tools.org/repo-snapshots",
@@ -78,15 +79,16 @@ javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
 libraryDependencies ++= Seq(
 
-	"com.galacticfog" %% "gestalt-meta-repository" 	% "0.6.33" withSources(),
-	"org.jtwig" 	   % "jtwig-core" 				% "5.86.0.RELEASE",
-  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 	% "0.6.17" withSources(),
+	"org.jtwig" 	   % "jtwig-core" 					 % "5.86.0.RELEASE",
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.32" withSources(),
+  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.17" withSources(),
 
-	"com.galacticfog" %% "gestalt-play-json" 		% "0.3.0" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 	% "3.0.5" withSources(),
-	"com.galacticfog"  % "gestalt-license-keymgr" 	% "1.2.2-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-caas-kube" 		% "0.1.0" withSources(),
-  	"net.codingwell"  %% "scala-guice" 				% "4.1.0",
+	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
+	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
+	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
+  	"net.codingwell"  %% "scala-guice" 					 % "4.1.0",
+
 	
     "org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.7",
