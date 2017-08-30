@@ -7,11 +7,12 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.26"
+version := "0.6.28"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
 resolvers ++= Seq(
+    "jwtig" at  "https://jcenter.bintray.com/",
     "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
     "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
     "snapshots" at "http://scala-tools.org/repo-snapshots",
@@ -77,7 +78,7 @@ scalacOptions ++= Seq(
 javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
 libraryDependencies ++= Seq(
-
+"org.jtwig" % "jtwig-core" % "5.86.0.RELEASE",
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.32" withSources(),
   	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.17" withSources(),
 
