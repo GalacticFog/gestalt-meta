@@ -33,6 +33,19 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import scala.language.implicitConversions
 
+object OrgCache {
+  val orgs = ResourceFactory.findAll(ResourceIds.Org)
+  val fqons: Map[UUID, String] = orgs.map(o =>
+    (o.id -> o.properties.get("fqon"))).toMap
+    
+  def getFqon(id: UUID): Option[String] = {
+    fqons.get(id)
+  }
+  
+  def getOrg(id: UUID) = {  
+  }
+  
+}
 
 object Output {
 
@@ -42,10 +55,13 @@ object Output {
    */
 
   def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
-  
+    
     val res = GestaltResourceOutput(
       id = r.id,
-      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
+      org = {
+        val props = OrgCache.getFqon(r.orgId) map { f => Map("fqon" -> f) }
+        jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri, props)
+      },
       resource_type = jsonTypeName(Option(r.typeId)).get,
       resource_state = JsString(ResourceState.name(r.state)),
       owner = Json.toJson(r.owner),
@@ -307,8 +323,8 @@ object Output {
   /**
    * Create a ResourceLink converted to a JsValue.
    */
-  protected[output] def jsonLink(typeId: UUID, id: UUID, org: UUID, name: Option[String], baseUri: Option[String] = None): JsValue = {
-    Json.toJson(toLink(typeId, id, name = name, orgId = org, baseUri = baseUri))
+  protected[output] def jsonLink(typeId: UUID, id: UUID, org: UUID, name: Option[String], baseUri: Option[String] = None, props: Option[Map[String,String]] = None): JsValue = {
+    Json.toJson(toLink(typeId, id, name = name, orgId = org, baseUri = baseUri, props = props))
   }  
   
   /**

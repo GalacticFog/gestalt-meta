@@ -24,9 +24,12 @@ package object output {
     ResourceLink(res.typeId, res.id.toString, Some(res.name), Some(toHref(res.typeId, res.id, res.orgId, baseUri )))
   }
   
-  def toLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {
+  def toLink(
+      typeId: UUID, id: UUID, orgId: UUID, name: Option[String], 
+      baseUri: Option[String] = None, props: Option[Map[String,String]] = None) = {
+    
     val href = toHref( typeId, id, orgId, baseUri )
-    ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id, orgId, baseUri )))
+    ResourceLink(typeId, id.toString, name, Some(toHref( typeId, id, orgId, baseUri )), properties = props)
   }
   
   def toOwnerLink(typeId: UUID, id: UUID, orgId: UUID, name: Option[String], baseUri: Option[String] = None) = {

@@ -61,5 +61,7 @@ object ProviderActionSpec {
 }
 
 case class UiLocation(name: String, icon: Option[String])
-case class ActionInput(kind: String, data: JsValue)
-case class ActionImplSpec(kind: String, id: String)
+
+case class ActionInput(kind: String, data: Option[String])
+case class ActionImplSpec(kind: String, id: String, input: Option[ActionInput])
+
