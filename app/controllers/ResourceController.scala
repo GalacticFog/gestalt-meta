@@ -190,7 +190,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     
     log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
-    //throw new RuntimeException("YOU SHALL NOT PASS!!!")
+
     if (rp.isList) AuthorizedResourceList(rp, action) 
     else AuthorizedResourceSingle(rp, action)
   }  

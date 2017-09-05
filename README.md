@@ -53,8 +53,25 @@ Configured with the following Environment Variables:
 | Variable | Default | Description |
 |----------|----------|-------------|
 | META_AUDIT_ENABLED        | false     | Controls audit-logging overall           |
-| META_AUDIT_LOGGER_NAME    | *required*| Name for the logger as it appears in log file.|
+| META_AUDIT_LOGGER_NAME    | *required*| Name for the logger as it appears in log file. NOTE: Default to 'AUDIT'|
 | META_AUDIT_LOG_FILE       | *required*| Name/path to log file
 | META_AUDIT_LOG_EXCLUSIVE  | true      | Log exclusively to named log file when `true`|
 | META_AUDIT_LOG_ROLLOVER   |           | Set value for rolling logs: (month, day, hour, minute, none)|
 | META_AUDIT_EXIT_FAILURE   | false     | [in progress]|
+
+### Check Status of Audit Service
+    GET /root/check?feature=audit
+This will return basic information about the current status and setting for auditing: 
+```{
+    "config_state": "OK",
+    "enabled": "true",
+    "settings": {
+        "META_AUDIT_LOG_FILE": "meta-audit.log",
+        "META_AUDIT_ENABLED": "true",
+        "META_AUDIT_LOG_EXCLUSIVE": "true",
+        "META_AUDIT_LOG_LEVEL": "info",
+        "META_AUDIT_LOG_ROLLOVER": "day",
+        "META_AUDIT_LOGGER_NAME": "AUDIT"
+    }
+}
+```

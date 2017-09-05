@@ -49,7 +49,9 @@ class InfoController @Inject()(
   /**
    * Unauthenticated health-check endpoint. Gives status as simple healthy/unhealthy.
    */
-  def health() = Action { checkHealth(verbose = false) }
+  def health() = Audited() { implicit request =>
+    checkHealth(verbose = false)
+  }
   
   
   /**
