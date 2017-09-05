@@ -5,6 +5,8 @@ import play.api.libs.json._
 import org.slf4j.LoggerFactory
 import scalaz.{Success => VSuccess, Failure => VFailure}
 
+import scala.concurrent.Future
+import scala.concurrent.ExecutionContext.Implicits.global
 
 object Audit {
   
@@ -13,10 +15,9 @@ object Audit {
   lazy val logger: AuditLogger = init()
   
   
-  def log(message: String, level: String = "info", marker: Option[String] = None) = {
+  def log(message: String, level: String = "info", marker: Option[String] = None) = Future {
     logger.log(message, level, marker)  
   }
-  
   
   /**
    * Status/health check for auditing functions. Validates the environment configuration and reports

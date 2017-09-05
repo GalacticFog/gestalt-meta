@@ -101,7 +101,7 @@ class ContainerController @Inject()(
     } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
   }
 
-  def postContainer(fqon: String, environment: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
       payload   <- Future.fromTry(withProviderInfo(request.body))
       proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
@@ -112,7 +112,7 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
-  def updateContainer(fqon: String, cid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def updateContainer(fqon: String, cid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")
     }
@@ -155,7 +155,7 @@ class ContainerController @Inject()(
     updated recover { case e => HandleExceptions(e) }
   }
 
-  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = Authenticate(fqon).async { implicit request =>
+  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = AsyncAudited(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
     }{ c =>
@@ -187,7 +187,7 @@ class ContainerController @Inject()(
     }
   }
 
-  def promoteContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  def promoteContainer(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       NotFoundResult(notFoundMessage(ResourceIds.Container, id))
     } { container =>
@@ -222,7 +222,7 @@ class ContainerController @Inject()(
     }
   }
 
-  def migrateContainer(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  def migrateContainer(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       NotFoundResult(s"Container with ID '$id' not found.")
     } { c =>

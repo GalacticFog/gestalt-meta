@@ -30,7 +30,7 @@ class InfoController @Inject()(
   /*
    * TODO: 
    */
-  def about() = Authenticate() { implicit request =>
+  def about() = Audited() { implicit request =>
     val result = AboutMeta( 
         status     = "OK",
         url        = META_URL.get,
@@ -57,7 +57,7 @@ class InfoController @Inject()(
    * 
    * @param fqon Fully-Qualified Org Name
    */
-  def healthAuthenticated(fqon: String) = Authenticate(fqon) { checkHealth(verbose = true) }  
+  def healthAuthenticated(fqon: String) = Audited(fqon) { _ => checkHealth(verbose = true) }  
   
 //  protected[controllers] def healthStatus() = {
 //    MetaHealth.selfCheck(false) match {
@@ -79,7 +79,7 @@ class InfoController @Inject()(
   
   import com.galacticfog.gestalt.meta.api.audit._
   
-  def serviceCheck() = Authenticate() { implicit request =>
+  def serviceCheck() = Audited() { implicit request =>
     request.queryString.get("feature").fold {
       throw new BadRequestException(s"Must supply value for `?feature` query param")
     }{ f =>

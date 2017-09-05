@@ -94,7 +94,7 @@ class Meta @Inject()(
   // --------------------------------------------------------------------------
   // GROUPS
   // --------------------------------------------------------------------------   
-  def postGroupFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postGroupFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     Future {
       createGroupCommon(fqid(fqon), request.body)  
     }
@@ -144,7 +144,7 @@ class Meta @Inject()(
    * Add one or more users to a group.
    * 
    */
-  def patchGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+  def patchGroupUsers(fqon: String, group: UUID) = Audited(fqon) { implicit request =>
     val qs = request.queryString
     
     val uids = Try {
@@ -185,7 +185,7 @@ class Meta @Inject()(
    * Remove a user from a group - note if a user that is not in the group (or user that doesn't exist)
    * is specified, no error is thrown.
    */
-  def deleteGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+  def deleteGroupUsers(fqon: String, group: UUID) = Audited(fqon) { implicit request =>
     
     val qs = request.queryString
     
@@ -223,7 +223,7 @@ class Meta @Inject()(
    * Create a User Account in Security, then in Meta
    */
 
-  def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postUserFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     createUserCommon(fqid(fqon), request.body)
   }
   

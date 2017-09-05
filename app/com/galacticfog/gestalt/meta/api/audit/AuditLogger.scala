@@ -24,7 +24,7 @@ trait FileBasedAuditLogger extends AuditLogger {
   protected val logger: Logger
   
   private lazy val pattern1 = """%-4relative [%thread] %-5level %logger{35} - %msg %n"""
-  private lazy val pattern2 = """%d{HH:mm:ss.SSS} |-%-5level| %logger{0}: %message%n%xException"""
+  private lazy val pattern2 = """%d{HH:mm:ss.SSS} | %logger{0}%message%n%xException"""
   
   def log(message: String, level: String = "info", marker: Option[String] = None) = {
     f(level)(message)

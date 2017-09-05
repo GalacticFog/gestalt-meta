@@ -41,7 +41,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
   /**
    * POST /{fqon}/licenses
    */
-  def postLicense(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postLicense(fqon: String) = AsyncAudited(fqon) { implicit request =>
     
     val action = "license.create"
     val org = fqid(fqon)
@@ -57,7 +57,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
   /**
    * GET /{fqon}/licenses
    */
-  def getLicenses(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getLicenses(fqon: String) = Audited(fqon) { implicit request =>
     log.info(s"verifying license from meta.")
 
     // Verify license.  If not valid, then check for license resources in META.  If exists, install head and re-verify.
@@ -92,7 +92,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
   /**
    * GET /{fqon}/licenses/{id}
    */
-  def getLicense(fqon: String, license: UUID) = Authenticate(fqon) { implicit request =>
+  def getLicense(fqon: String, license: UUID) = Audited(fqon) { implicit request =>
     
     val action = "license.view"
 
@@ -111,7 +111,7 @@ class LicenseController @Inject()(messagesApi: MessagesApi,
   /**
    * DELETE /{fqon}/licenses/{id}
    */
-  def deleteLicense(fqon: String, license: UUID) = Authenticate(fqon) { implicit request =>
+  def deleteLicense(fqon: String, license: UUID) = Audited(fqon) { implicit request =>
 
     val action = "license.delete"
 

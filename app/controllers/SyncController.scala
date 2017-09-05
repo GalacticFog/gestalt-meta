@@ -50,7 +50,7 @@ class SyncController @Inject()( messagesApi: MessagesApi,
    * method of performing diffs on the resource types, this can't be avoided.
    * 
    */
-  def sync() = Authenticate() { implicit request =>
+  def sync() = Audited() { implicit request =>
   
     Try {
       val sd = security.getOrgSyncTree(None, request.identity) match {

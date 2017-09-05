@@ -77,11 +77,14 @@ scalacOptions ++= Seq(
 
 javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
+
+
+
 libraryDependencies ++= Seq(
 
 	"org.jtwig" 	   % "jtwig-core" 					 % "5.86.0.RELEASE",
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.32" withSources(),
-  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.17" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.34" withSources(),
+  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.18" withSources(),
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
@@ -116,6 +119,10 @@ libraryDependencies ++= Seq(
 	ws,
     filters
 )
+
+libraryDependencies += "org.scala-lang" % "scala-reflect" % "2.11.8"
+
+libraryDependencies += "org.scala-lang" % "scala-compiler" % "2.11.8"
 
 libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.1.12"
 
