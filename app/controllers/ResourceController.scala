@@ -131,7 +131,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
   
-  def getOrgFqon(fqon: String) = Authenticate() { implicit request =>
+  def getOrgFqon(fqon: String) = Audited() { implicit request =>
     val action = "org.view"
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, ${action}")
     Authorize(fqid(fqon), action, request.identity) {   
@@ -143,7 +143,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * Get a top-level resource list. Pulls resources from across all Orgs (no leading FQON).
    * i.e., GET /users
    */
-  def getGlobalResourceList(targetTypeId: String) = Authenticate() { implicit request =>
+  def getGlobalResourceList(targetTypeId: String) = Audited() { implicit request =>
     val typeId = uuid(targetTypeId)
     val action = actionInfo(typeId).prefix + ".view"
     AuthorizeList(action) {
@@ -154,7 +154,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   /**
    * Custom lookup providing a shortcut to Provider containers. 
    */
-  def getProviderContainers(fqon: String, provider: UUID) = Authenticate(fqon) { implicit request =>
+  def getProviderContainers(fqon: String, provider: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(provider).fold {
       ResourceNotFound(ResourceIds.Provider, provider)
     }{ _ =>
@@ -164,7 +164,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Authenticate(fqon) { implicit request =>
+  def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(provider).fold {
       ResourceNotFound(ResourceIds.Provider, provider)
     }{ _ =>
@@ -183,12 +183,12 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   /**
    * Get a Resource or list of Resources by path.
    */
-  def getResources(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+  def getResources(fqon: String, path: String) = Audited(fqon) { implicit request =>
     val rp = new ResourcePath(fqon, path)
 
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
     
-    log.debug(s"getResources(_, $path)")
+    log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
 
     if (rp.isList) AuthorizedResourceList(rp, action) 
@@ -295,7 +295,7 @@ object Ascii {
   
     import com.galacticfog.gestalt.meta.providers._
     
-  def getActionUi(fqon: String, actionId: UUID) = Authenticate(fqon) { implicit request =>
+  def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
     val qp = {
       if (request.queryString.contains("resource")) 
         request.queryString("resource").head
@@ -360,7 +360,7 @@ object Ascii {
     }
   }
 
-  def getResourceActionsOrg(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getResourceActionsOrg(fqon: String) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
     val org = fqid(fqon)
     RenderList {
@@ -368,7 +368,7 @@ object Ascii {
     }
   }
   
-  def getResourceActions(fqon: String, target: UUID) = Authenticate(fqon) { implicit request =>
+  def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
     RenderList {
       findActionsInScope(fqid(fqon), target, targetPrefix)
@@ -623,12 +623,12 @@ object Ascii {
   // ENVIRONMENT VARIABLES
   // --------------------------------------------------------------------------  
   
-  def getEnvVariablesOrgFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getEnvVariablesOrgFqon(fqon: String) = Audited(fqon) { implicit request =>
     val org = fqid(fqon)
     Ok(Json.toJson(EnvironmentVars.get(org, org)))
   }
   
-  def getEnvVariablesFqon(fqon: String, typeId: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  def getEnvVariablesFqon(fqon: String, typeId: String, id: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(UUID.fromString(typeId), id) match {
       case None => NotFoundResult(request.uri)
       case Some(_) => Ok(Json.toJson(EnvironmentVars.get(fqid(fqon), id)))
@@ -668,7 +668,7 @@ object Ascii {
   /**
    * Get the Meta User corresponding with the caller identity.
    */
-  def getUserSelf() = Authenticate() { implicit request =>
+  def getUserSelf() = Audited() { implicit request =>
     val id = request.identity.account.id
     ResourceFactory.findById(ResourceIds.User, id).fold {
       InternalServerError(Errors.USER_SYNCHRONIZATION(id))
@@ -682,7 +682,7 @@ object Ascii {
    * TODO: This does not perform the group-injection on the users. If expand=true, the
    * groups will NOT be displayed in user.properties.
    */
-  def getGroupUsersFqon(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+  def getGroupUsersFqon(fqon: String, group: UUID) = Audited(fqon) { implicit request =>
     security.getGroupAccounts(group, request.identity) match {
       case Failure(er) => HandleExceptions(er)
       case Success(gs) => {
@@ -702,7 +702,7 @@ object Ascii {
    * TODO: This does not perform the user-injection on the groups. If expand=true, the
    * properties collection will NOT display the users in each group.
    */
-  def getUserGroupsFqon(fqon: String, user: UUID) = Authenticate(fqon) { implicit request =>
+  def getUserGroupsFqon(fqon: String, user: UUID) = Audited(fqon) { implicit request =>
     security.getAccountGroups(request.identity) match {
       case Failure(err) => HandleExceptions(err)      
       case Success(gs)  => {
@@ -722,7 +722,7 @@ object Ascii {
    * a list of all resources of the give type in the Org. I guess that's useful for custom-resource
    * Get all Resources by Type ID
    */
-  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
 
@@ -735,7 +735,7 @@ object Ascii {
     * stored as children of Containers, because Endpoints are stored as children of Apis
     * TODO: there is some duplication here with getEndpointsByContainerFqon, not a big deal for now
     */
-  def getEndpointsByContainerFqon(fqon: String, containerId: UUID) = Authenticate(fqon) { implicit request =>
+  def getEndpointsByContainerFqon(fqon: String, containerId: UUID) = Audited(fqon) { implicit request =>
 
     val path = new ResourcePath(fqon, s"containers/$containerId/apiendpoints")
 
@@ -750,7 +750,7 @@ object Ascii {
    * Finding Endpoints by Lambda calls a different factory endpoint, because Endpoints are NOT
    * stored as children of Lambdas, because Endpoints are stored as children of Apis
    */
-  def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Authenticate(fqon) { implicit request =>
+  def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Audited(fqon) { implicit request =>
     
     val path = new ResourcePath(fqon, s"lambdas/$lambda/apiendpoints")
     
@@ -761,7 +761,7 @@ object Ascii {
     request.queryString)
   }  
 
-  def mapPath(fqon: String, path: String) = Authenticate(fqon) { implicit request =>
+  def mapPath(fqon: String, path: String) = Audited(fqon) { implicit request =>
     
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
       "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)

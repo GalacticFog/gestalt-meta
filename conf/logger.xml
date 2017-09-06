@@ -6,7 +6,7 @@
     <encoder>
       <!-- <pattern>%coloredLevel: %logger{35} - %message%n%xException</pattern>  -->
       <pattern>%d{HH:mm:ss.SSS} |-%-5level| %logger{0}: %message%n%xException</pattern>
-    </encoder>
+    </encoder> 
   </appender>
 
   <!--
@@ -14,6 +14,7 @@
     This configures the log level to log at for a package and its children packages.
   -->
   
+  <logger name="sun.net.www" level="WARN"/>
   <logger name="sun.rmi" level="WARN"/>
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
@@ -29,6 +30,7 @@
   <logger name="gestalt-security-play" level="INFO"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   
+
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
   </root>

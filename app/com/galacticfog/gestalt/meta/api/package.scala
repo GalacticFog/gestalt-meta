@@ -41,16 +41,6 @@ package object api {
       case "policies"         => Some(ResourceIds.Policy)
       case "rules"            => Some(ResourceIds.Rule)
       case "providers"        => Some(ResourceIds.Provider)
-      
-      case "clustertemplates" => Some(ResourceIds.ClusterTemplate)
-      case "nodetemplates"    => Some(ResourceIds.NodeTemplate)
-      case "machinespecs"     => Some(ResourceIds.MachineSpec)
-      case "blueprints"       => Some(ResourceIds.Blueprint)
-      case "deployments"      => Some(ResourceIds.Deployment)
-      case "services"         => Some(ResourceIds.Service)
-      case "clusters"         => Some(ResourceIds.Cluster)
-      case "nodes"            => Some(ResourceIds.Node)
-      case "tasks"            => Some(ResourceIds.Task)
 
       case "nodetypes"        => Some(ResourceIds.NodeType)
       
@@ -82,14 +72,7 @@ package object api {
       case ResourceIds.Group           => Some("groups")
       case ResourceIds.Workspace       => Some("workspaces")
       case ResourceIds.Environment     => Some("environments")
-      case ResourceIds.ClusterTemplate => Some("clustertemplates")
-      case ResourceIds.NodeTemplate    => Some("nodetemplates")
-      case ResourceIds.MachineSpec     => Some("machinespecs")
-      case ResourceIds.Blueprint       => Some("blueprints")
-      case ResourceIds.Service         => Some("services")
-      case ResourceIds.Cluster         => Some("clusters")
-      case ResourceIds.Node            => Some("nodes")
-      case ResourceIds.Task            => Some("tasks")
+
       
       case ResourceIds.Lambda          => Some("lambdas")
       case ResourceIds.Api             => Some("apis")

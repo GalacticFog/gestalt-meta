@@ -39,7 +39,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     implicit lazy val schemaEntryFormat = Json.format[SchemaEntry]
   }
   
-  def getAllResourceTypesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getAllResourceTypesFqon(fqon: String) = Audited(fqon) { implicit request =>
     
     orgFqon(fqon).fold(NotFoundResult(Errors.ORG_NOT_FOUND(fqon))) { org =>
       if (!request.queryString.contains("name")) 
@@ -52,13 +52,13 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     }
   }
   
-  def getResourceTypeByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  def getResourceTypeByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     orgFqon(fqon).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id))) { org =>
       OkTypeByIdResult(org.id, id)
     }
   }
   
-  def createResourceTypeFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
 
@@ -155,7 +155,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         auth = r.auth)
   }
   
-  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     getSchemaResult(typeId, request.queryString)
   }
   

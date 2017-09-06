@@ -49,12 +49,12 @@ class LambdaController @Inject()(
    * This is the provider variable containing the provider host address.
    */
   
-  def postLambdaFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postLambdaFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     val org = orgFqon(fqon).get
     createLambdaCommon(org.id, org)
   }
   
-  def postLambda(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postLambda(fqon: String, parentType: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     validateLambdaParent(parentType, parent).fold {
       Future(ResourceNotFound(UUID.fromString(parentType), parent)) 
     }{ p =>

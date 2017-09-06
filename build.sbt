@@ -77,29 +77,34 @@ scalacOptions ++= Seq(
 
 javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
+
+
+
 libraryDependencies ++= Seq(
-"org.jtwig" % "jtwig-core" % "5.86.0.RELEASE",
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.32" withSources(),
-  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.17" withSources(),
+
+	"org.jtwig" 	   % "jtwig-core" 					 % "5.86.0.RELEASE",
+	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.34" withSources(),
+  	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.18" withSources(),
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
 	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
 	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.1.0" withSources(),
   	"net.codingwell"  %% "scala-guice" 					 % "4.1.0",
+
 	
     "org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
-	"ch.qos.logback"   % "logback-classic" 	% "1.1.2",
+	"ch.qos.logback"   % "logback-classic" 	% "1.1.7",
 	"org.postgresql"   % "postgresql" 		% "9.4.1208.jre7",
 	"com.rabbitmq"     % "amqp-client" 		% "3.6.1",
     "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
-    "com.spotify" % "docker-client" % "8.7.1",
+    "com.spotify" 	   % "docker-client" 	% "8.7.1",
 	//"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",
 	
 	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.5" withSources(),
 
-  "org.scalikejdbc" %% "scalikejdbc-config"           % "2.5.1",
-  "org.scalikejdbc" %% "scalikejdbc-play-initializer" % "2.5.1",
+  	"org.scalikejdbc" %% "scalikejdbc-config"           % "2.5.1",
+  	"org.scalikejdbc" %% "scalikejdbc-play-initializer" % "2.5.1",
 
 	Library.Play.specs2          % Test,
 	Library.Specs2.matcherExtra  % Test,
@@ -115,8 +120,15 @@ libraryDependencies ++= Seq(
     filters
 )
 
+libraryDependencies += "org.scala-lang" % "scala-reflect" % "2.11.8"
+
+libraryDependencies += "org.scala-lang" % "scala-compiler" % "2.11.8"
+
 libraryDependencies += "org.scalaz" % "scalaz-core_2.11" % "7.1.12"
 
+//libraryDependencies += "com.internetitem" % "logback-elasticsearch-appender" % "1.6"
+
+//libraryDependencies += "com.mohiva" % "play-silhouette_2.11" % "4.0.0"
 
 scalacOptions in Test ++= Seq("-Yrangepos")
 

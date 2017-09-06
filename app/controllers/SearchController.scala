@@ -27,7 +27,7 @@ class SearchController @Inject()(messagesApi: MessagesApi,
 
   private case class Criterion(name: String, value: String)
   
-  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
+  def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     handleExpansion(ResourceFactory.findAll(typeId, fqid(fqon)),
       request.queryString, META_URL)     
   }
@@ -43,23 +43,23 @@ class SearchController @Inject()(messagesApi: MessagesApi,
   }
 
   // GET /users/search?{name}={value}
-  def getUserByPropertyGlobal() = Authenticate() { implicit request =>
+  def getUserByPropertyGlobal() = Audited() { implicit request =>
     getResourcesByProperty(ResourceIds.User)(validateUserSearchCriteria)
   }
 
   // GET /users/search?{name}={value}
-  def getGroupByPropertyGlobal() = Authenticate() { implicit request =>
+  def getGroupByPropertyGlobal() = Audited() { implicit request =>
     getResourcesByProperty(ResourceIds.Group)(validateGroupSearchCriteria)
   }
 
   // GET /{fqon}/users/search?{name}={value}  
-  def getUserByPropertyFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getUserByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
         ResourceIds.User, Option(fqid(fqon)))(validateUserSearchCriteria)
   }  
 
   // GET /{fqon}/users/search?{name}={value}  
-  def getGroupByPropertyFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getGroupByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
         ResourceIds.Group, Option(fqid(fqon)))(validateGroupSearchCriteria)
   }

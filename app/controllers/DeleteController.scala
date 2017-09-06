@@ -105,7 +105,7 @@ class DeleteController @Inject()(
     }
   }
 
-  def hardDeleteResource(fqon: String, path: String) = Authenticate(fqon).async { implicit request =>
+  def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
     
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
     

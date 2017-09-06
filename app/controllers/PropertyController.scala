@@ -40,15 +40,15 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
 
   import PropertyController._
   
-  def getAllPropertiesFqon(fqon: String) = Authenticate(fqon) { implicit request =>
+  def getAllPropertiesFqon(fqon: String) = Audited(fqon) { implicit request =>
     Ok(Output.renderPropertyLinks(PropertyFactory.findAllByOrg(fqid(fqon)))) 
   }
   
-  def getAllPropertiesByTypeFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+  def getAllPropertiesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     Ok(Output.renderPropertyLinks(PropertyFactory.findAll(typeId, fqid(fqon))))
   }
   
-  def getTypePropertyByIdFqon(fqon: String, id: UUID) = Authenticate(fqon) { implicit request =>
+  def getTypePropertyByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     OkNotFoundProperty(id)
   }
   
@@ -57,7 +57,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
    * property is actually a member of the parent resource_type (as it is, you could get any valid property
    * from this URL, even if it was from another resource_type - this is misleading).
    */
-  def getPropertyByIdFqon(fqon: String, typeId: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+  def getPropertyByIdFqon(fqon: String, typeId: UUID, id: UUID) = Audited(fqon) { implicit request =>
     OkNotFoundProperty(id)
   }
 
@@ -69,7 +69,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
    * TODO: applies_to is an Option in PropertyInput - when the property is created directly
    * (independent of the type it applies to) applies_to MUST be specified.  Enforce that here.
    */
-  def createTypePropertyFqon(fqon: String, typeId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def createTypePropertyFqon(fqon: String, typeId: UUID) = AsyncAudited(fqon) { implicit request =>
     CreateTypePropertyResult(fqid(fqon), typeId, request.body.as[JsObject])
   }
   

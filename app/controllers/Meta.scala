@@ -42,19 +42,22 @@ import javax.inject.Singleton
 
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.providers._
+import com.galacticfog.gestalt.data._
+
 
 @Singleton
-class Meta @Inject()( messagesApi: MessagesApi,
-                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                      security: Security,
-                      providerManager: ProviderManager )
+class Meta @Inject()( 
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    security: Security,
+    providerManager: ProviderManager )
 
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   // --------------------------------------------------------------------------
   // ORGS
   // --------------------------------------------------------------------------
-  def postTopLevelOrg() = Authenticate().async(parse.json) { implicit request =>
+  def postTopLevelOrg() = AsyncAudited() { implicit request =>
     security.getRootOrg(request.identity) match {
       case Failure(err)  => { 
         log.error(s"Failed to create top-level Org.")
@@ -64,7 +67,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }  
   }  
 
-  def postOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postOrgFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     createOrgCommon(fqid(fqon))
   }
   
@@ -91,7 +94,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   // --------------------------------------------------------------------------
   // GROUPS
   // --------------------------------------------------------------------------   
-  def postGroupFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postGroupFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     Future {
       createGroupCommon(fqid(fqon), request.body)  
     }
@@ -141,7 +144,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * Add one or more users to a group.
    * 
    */
-  def patchGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+  def patchGroupUsers(fqon: String, group: UUID) = Audited(fqon) { implicit request =>
     val qs = request.queryString
     
     val uids = Try {
@@ -182,7 +185,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * Remove a user from a group - note if a user that is not in the group (or user that doesn't exist)
    * is specified, no error is thrown.
    */
-  def deleteGroupUsers(fqon: String, group: UUID) = Authenticate(fqon) { implicit request =>
+  def deleteGroupUsers(fqon: String, group: UUID) = Audited(fqon) { implicit request =>
     
     val qs = request.queryString
     
@@ -220,7 +223,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * Create a User Account in Security, then in Meta
    */
 
-  def postUserFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postUserFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     createUserCommon(fqid(fqon), request.body)
   }
   
@@ -250,24 +253,24 @@ class Meta @Inject()( messagesApi: MessagesApi,
         }
     }
   }        
-
+  
   
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel
   
   
-  def postResourceToOrg(fqon: String, typ: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResourceToOrg(fqon: String, typ: String) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newDefaultResourceResult(org, typeid, parent = org, payload = request.body)
   }
   
-  def postResource(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResource(fqon: String, typ: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newDefaultResourceResult(org, typeid, parent, request.body)
   }
   
-  def postResource2(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResource2(fqon: String, typ: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newResourceResult2(org, typeid, parent, request.body) { resource =>
@@ -277,8 +280,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
       }    
     }
   }
-
-  
   
   def resolveProviderType(json: JsValue): UUID = {
     json \ "resource_type" match {
@@ -300,12 +301,12 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }    
   }
   
-  def postProviderConfigOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postProviderConfigOrgFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     val orgId = fqid(fqon)
     postProviderCommon(orgId, ResourceIds.Org.toString, orgId, request.body)
   }
   
-  def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
 
@@ -510,7 +511,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                    */                  
                   log.debug("Creating Provider Actions...")
                   
-                  val acts   = createProviderActions(newprovider, payload, user)
+                  val acts   = createProviderActions(newprovider, payload, user, ???, parentId)
                   val json   = Output.renderLinks(acts, META_URL)
                   val props  = newprovider.properties map { ps =>
                     ps ++ Map("provider_actions" -> Json.stringify(json))
@@ -536,10 +537,39 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
 
-  import com.galacticfog.gestalt.data._
-
-  private def createProviderActions(r: GestaltResourceInstance, payload: JsObject, creator: AuthAccountWithCreds) = {
+  
+  /**
+   * 
+   * @param r the Provider instance to create actions for
+   * @param payload the JSON used to create the Provider
+   * @param creator the user who initiated this call
+   * @param providerEnv the new environment where action lambdas will be created
+   * @param parentId UUID of Provider parent resource
+   */
+  private def createProviderActions(
+        r: GestaltResourceInstance, 
+        payload: JsObject, 
+        creator: AuthAccountWithCreds, 
+        providerEnv: GestaltResourceInstance,
+        parentId: UUID) = {
     
+    /*
+     * 
+     * TODO: VALIDATE - Ensure there is a suitable MessageProvider in Scope
+     * 1.) Get lambda.properties.messageProvider
+     * 2.)
+     * 
+     */
+
+    
+    val messageProvider = ResourceFactory.findAncestorProviders(parentId).filter( p =>
+      p.typeId == ResourceIds.MessageProvider
+    ).headOption getOrElse {
+      ???//throw new BadRequestException(s"")
+    }
+    
+    // Parse the ActionSpec JSON from the Provider type definition.
+
     val actionSpecs = for {
       s <- TypeFactory.findById(r.typeId)
       p <- s.properties

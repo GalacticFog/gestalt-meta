@@ -54,7 +54,7 @@ class AuthorizationController @Inject()(
   /**
    * POST /{fqon}/entitlements
    */
-  def postEntitlementOrgFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postEntitlementOrgFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     postEntitlementCommon(org, ResourceIds.Org, org)
   }
@@ -62,7 +62,7 @@ class AuthorizationController @Inject()(
   /**
    * POST /{fqon}/{resource-type}/entitlements
    */
-  def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postEntitlementFqon(fqon: String, typeId: String, resourceId: UUID) = AsyncAudited(fqon) { implicit request =>
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
 
@@ -93,12 +93,12 @@ class AuthorizationController @Inject()(
      newent.copy(created = old.created)
   }
   
-  def putEntitlementOrgFqon(fqon: String, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def putEntitlementOrgFqon(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     putEntitlementCommon(org, org, id)
   }
   
-  def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = AsyncAudited(fqon) { implicit request =>
     val parentType = UUID.fromString(parentTypeId)
     ResourceFactory.findById(parentTypeId, parentId) match {
       case None => Future(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
