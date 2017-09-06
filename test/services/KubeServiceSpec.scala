@@ -68,9 +68,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
-      mockSkuber.get[skuber.Namespace]("default") returns Future.successful(skDefaultNs)
+      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.get[skuber.Namespace](testEnv.id.toString) returns Future.successful(skTestNs)
+      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, None)
@@ -130,10 +130,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       skTestNs.name returns testEnv.id.toString
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
-      mockSkuber.get[skuber.Namespace]("default") returns Future.successful(skDefaultNs)
+      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")          )(any) returns Future.successful(mockSkuber)
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.get[skuber.Namespace](testEnv.id.toString) returns Future.successful(skTestNs)
+      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
 
       mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.ext.deploymentKind)) returns Future.successful(Some(mock[skuber.ext.Deployment]))
       mockSkuber.update(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
@@ -296,9 +296,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
-      mockSkuber.get[skuber.Namespace]("default") returns Future.successful(skDefaultNs)
+      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.get[skuber.Namespace](testEnv.id.toString) returns Future.successful(skTestNs)
+      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
 
       mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
       mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
@@ -462,10 +462,15 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         hasExactlyServicePorts(
           skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80))),
           skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)))
-        ) and
-        hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
-        hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
+        )  and hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
         (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
+      createdService.metadata.labels must havePairs(
+        KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
+        KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+        KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+        KubernetesService.META_FQON_KEY -> "root",
+        KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+      )
 
       import ContainerSpec.PortMapping
       import ContainerSpec.ServiceAddress
@@ -508,7 +513,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were three(testSetup.kubeClient).close
     }
 
-    "provision with the requested labels" in new FakeKubeCreate(labels = Map(
+    "provision with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
       "labela" -> "value a",
       "labelb" -> "value b"
     )) {
@@ -519,10 +524,39 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).create(argThat(
         ((_:skuber.ext.Deployment).metadata.labels) ^^ havePairs(
           "labela" -> "value a",
-          "labelb" -> "value b"
+          "labelb" -> "value b",
+          KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
+          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesService.META_FQON_KEY -> "root",
+          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
         )
       ))(any,meq(skuber.ext.deploymentKind))
       there were two(testSetup.kubeClient).close
+    }
+
+    "provision namespace with the expected name and labels" in new FakeKube {
+      val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
+      testSetup.kubeClient.getOption[skuber.Namespace](newEnv.id.toString) returns Future.successful(None)
+      testSetup.kubeClient.create[skuber.Namespace](argThat(
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,any) returns Future(mock[skuber.Namespace])
+      val newNamespace = await(testSetup.kubeService.getNamespace(
+        rc = testSetup.kubeClient,
+        pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
+        create = true
+      ))
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
+          KubernetesService.META_ENVIRONMENT_KEY -> newEnv.id.toString,
+          KubernetesService.META_WORKSPACE_KEY -> newWork.id.toString,
+          KubernetesService.META_FQON_KEY -> "root",
+          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+          and
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,any)
     }
 
     "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
@@ -702,7 +736,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
-        hasPair(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+        ((_:Ingress).metadata.labels) ^^ havePairs(
+          KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
+          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesService.META_FQON_KEY -> "root",
+          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+        )
           and
         ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
           Rule("www.galacticfog.com",    HttpRule(List(Path("", Backend(createdService.name, 80))))),
