@@ -6,6 +6,7 @@ import controllers.util.db.EnvConfig
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import play.api.mvc.Action
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -29,7 +30,7 @@ class InfoController @Inject()(
   /*
    * TODO: 
    */
-  def about() = Authenticate() { implicit request =>
+  def about() = Audited() { implicit request =>
     val result = AboutMeta( 
         status     = "OK",
         url        = META_URL.get,
@@ -48,7 +49,9 @@ class InfoController @Inject()(
   /**
    * Unauthenticated health-check endpoint. Gives status as simple healthy/unhealthy.
    */
-  def health() = Action { checkHealth(verbose = false) }
+  def health() = Audited() { implicit request =>
+    checkHealth(verbose = false)
+  }
   
   
   /**
@@ -56,7 +59,7 @@ class InfoController @Inject()(
    * 
    * @param fqon Fully-Qualified Org Name
    */
-  def healthAuthenticated(fqon: String) = Authenticate(fqon) { checkHealth(verbose = true) }  
+  def healthAuthenticated(fqon: String) = Audited(fqon) { _ => checkHealth(verbose = true) }  
   
 //  protected[controllers] def healthStatus() = {
 //    MetaHealth.selfCheck(false) match {
@@ -74,4 +77,24 @@ class InfoController @Inject()(
 
 
   def options(path: String) = Action {Ok("")}
+  
+  
+  import com.galacticfog.gestalt.meta.api.audit._
+  
+  def serviceCheck() = Audited() { implicit request =>
+    request.queryString.get("feature").fold {
+      throw new BadRequestException(s"Must supply value for `?feature` query param")
+    }{ f =>
+      f.headOption.fold {
+        throw new BadRequestException(s"Must supply value for `?feature` query param")
+      }{ f =>
+        f.toLowerCase match {
+          case "audit" => Ok(Audit.check())
+          case _ => throw new BadRequestException(s"Invalid feature query value. found: '$f'")
+        }
+      }
+    }
+  }
+
+  
 }

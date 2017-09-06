@@ -38,7 +38,7 @@ class BootstrapController @Inject()(
        appconfig: play.api.Configuration)
      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  def initProviders() = Authenticate() { implicit request =>
+  def initProviders() = Audited() { implicit request =>
     val results = providerManager.loadProviders()
     Ok("TESTING PROVIDER LOADING...")
   }
@@ -62,7 +62,7 @@ class BootstrapController @Inject()(
     }    
   }  
   
-  def bootstrap() = Authenticate() { implicit request =>
+  def bootstrap() = Audited() { implicit request =>
     trace("bootstrap()")
     
     val clean = (request.queryString.contains("clean") && 

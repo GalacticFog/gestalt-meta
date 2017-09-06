@@ -42,7 +42,7 @@ class ApiController @Inject()(
   
   import gatewayMethods.unprocessable
   
-  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = {
       (typ.map(UUID.fromString(_)) orElse resolveTypeFromPayload(request.body)) getOrElse {
@@ -100,7 +100,7 @@ class ApiController @Inject()(
   }
 
 
-  def postApiEndpoint(fqon: String, api: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postApiEndpoint(fqon: String, api: UUID) = AsyncAudited(fqon) { implicit request =>
 
     ResourceFactory.findById(ResourceIds.Api, api).fold {
       Future(ResourceNotFound(ResourceIds.Api, api))

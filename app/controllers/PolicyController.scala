@@ -39,19 +39,19 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   // POST POLICY
   // --------------------------------------------------------------------------
   
-  def postResourceToOrg(fqon: String, typ: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResourceToOrg(fqon: String, typ: String) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newDefaultResourceResult(org, typeid, parent = org, payload = request.body)
   }
   
-  def postResource(fqon: String, typ: String, parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResource(fqon: String, typ: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newDefaultResourceResult(org, typeid, parent, request.body)
   }
   
-  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
     val typeid = {
       (typ.map(UUID.fromString(_)) orElse resolveTypeFromPayload(request.body)) getOrElse {
@@ -68,7 +68,7 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
   /**
    * Implements http://{host}/rules?type={rule-type}
    */
-  def getRulesGlobal() = Authenticate() { implicit request =>
+  def getRulesGlobal() = Audited() { implicit request =>
     filterRules(ResourceFactory.findSubTypesGlobal(ResourceIds.Rule), request.queryString)
   }
   

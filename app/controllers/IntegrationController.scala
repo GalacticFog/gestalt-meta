@@ -52,7 +52,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
    */
 
   
-  def postIntegration(fqon: String, envid: java.util.UUID) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def postIntegration(fqon: String, envid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     Future {
       
       // Ensure Environment exists and create Integration.
@@ -97,7 +97,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   /**
    * GET /{fqon}/environments/{envid}/integrations
    */
-  def getIntegrations(fqon: String, envid: UUID) = Authenticate(fqon) { implicit request =>
+  def getIntegrations(fqon: String, envid: UUID) = Audited(fqon) { implicit request =>
     val transform = false // request.queryString.getOrElse("transform", "true") != "false"
     try {
       val orgid = fqid(fqon)
@@ -111,7 +111,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   /**
    * GET /{fqon}/environments/{envid}/integration/{id}
    */
-  def getIntegration(fqon: String, envid: UUID, integrationId: UUID) = Authenticate(fqon) { implicit request =>
+  def getIntegration(fqon: String, envid: UUID, integrationId: UUID) = Audited(fqon) { implicit request =>
      val env = findById(ResourceIds.Environment, envid).get
      val integration = findById(ResourceIds.Integration, integrationId).get
      val transform = false // TODO - request.queryString.getOrElse("transform", "true") != "false"
@@ -135,7 +135,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   /**
    * DELETE /{fqon}/environments/{envid}/integrations/{id}
    */
-  def deleteIntegration(fqon: String, envid: UUID, id: UUID) = Authenticate(fqon) { implicit request =>
+  def deleteIntegration(fqon: String, envid: UUID, id: UUID) = Audited(fqon) { implicit request =>
 
     findById(ResourceIds.Integration, id).fold {
       IntegrationNotFound(id)

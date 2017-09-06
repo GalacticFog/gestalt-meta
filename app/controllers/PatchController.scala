@@ -69,7 +69,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
    * Patch an Org by FQON
    * Implements route `PATCH /{fqon}`
    */
-  def patchResourceFqon(fqon: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def patchResourceFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     orgFqon(fqon).fold(
       Future.successful(NotFoundResult(fqon))
     )(
@@ -80,7 +80,7 @@ class PatchController @Inject()( messagesApi: MessagesApi,
   /**
    * Patch a Resource by its URI (path)
    */
-  def patchResource(fqon: String, path: String) = Authenticate(fqon).async(parse.json) { implicit request =>
+  def patchResource(fqon: String, path: String) = AsyncAudited(fqon) { implicit request =>
     val f = for {
       respath <- Future(new ResourcePath(fqon, path))
       r       <- Future.fromTry(lookupResource(respath, request.identity))
