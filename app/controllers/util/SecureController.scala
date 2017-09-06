@@ -32,7 +32,6 @@ abstract class SecureController(
   private def Authenticate(fqon: String) = new GestaltFrameworkAuthActionBuilder(Some({ rh: RequestHeader => Some(fqon) }))
   private def Authenticate(org: UUID) = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => Some(org) }))
   
-
   def AsyncAudited()(block: SecuredRequest[JsValue] => Future[Result]) =
       Authenticate().async(parse.json) { implicit request: SecuredRequest[JsValue] =>
     auditedActionAsync(request, System.currentTimeMillis)(block)
@@ -43,6 +42,11 @@ abstract class SecureController(
     auditedActionAsync(request, System.currentTimeMillis)(block)
   }
 
+  def AsyncAuditedAny(fqon: String)(block: SecuredRequest[AnyContent] => Future[Result]) =
+      Authenticate(fqon).async { implicit request: SecuredRequest[AnyContent] =>
+    auditedActionAsync(request, System.currentTimeMillis)(block)
+  }  
+  
   def Audited(fqon: String)(block: SecuredRequest[AnyContent] => Result) = Authenticate(fqon){ 
       implicit request: SecuredRequest[AnyContent] =>  
     auditedAction(request, System.currentTimeMillis)(block)

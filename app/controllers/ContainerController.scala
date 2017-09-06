@@ -155,7 +155,7 @@ class ContainerController @Inject()(
     updated recover { case e => HandleExceptions(e) }
   }
 
-  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = AsyncAudited(fqon) { implicit request =>
+  def scaleContainer(fqon: String, id: UUID, numInstances: Int) = AsyncAuditedAny(fqon) { implicit request =>
     ResourceFactory.findById(ResourceIds.Container, id).fold {
       Future.successful(NotFoundResult(s"Container with ID '$id' not found."))
     }{ c =>
