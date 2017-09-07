@@ -383,6 +383,18 @@ class Meta @Inject()(
       parent: GestaltResourceInstance, 
       baseUrl: Option[String]): Try[JsObject] = {
 
+    log.debug("Checking for valid environment_types...")
+    val acceptableEnvTypes = Seq("development", "test", "production")
+    
+    Js.find(payload.as[JsObject], "/properties/environment_types").map { types =>
+      val given = types.as[JsArray].value.toSeq.map(_.as[String])
+      val delta = given.diff(acceptableEnvTypes)
+      if (delta.nonEmpty) {
+        val msg = s"Invalid environment_types. expected: one of (${acceptableEnvTypes.mkString(",")}). found: (${delta.mkString(",")})"
+        throw new UnprocessableEntityException(msg)
+      }
+    }
+    
     log.debug("Adding default kube networks...")
     lazy val addDefaultNetwork = (__ \ 'properties \ 'config).json.update(
       __.read[JsObject].map{ c => c ++

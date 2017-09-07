@@ -83,35 +83,129 @@ class ContainerController @Inject()(
    *  - SuccessNoChange
    *  - Failed
    */
+  import com.galacticfog.gestalt.json._
+  import com.galacticfog.gestalt.data.EnvironmentType
   
-  def withProviderInfo(json: JsValue): Try[JsObject] = {
-    val jprops = (json \ "properties")
-    for {
-      pid <- Try((jprops \ "provider" \ "id").as[String])
-      provider <- ResourceFactory.findById(UUID.fromString(pid)) match {
-        case None => Failure(new BadRequestException(s"provider does not exist"))
-        case Some(p) => Success(p)
+  /**
+   * Test that the given Provider is compatible with the given Environment. An
+   * exception is thrown if the given Environment is incompatible.
+   */
+  private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance) {
+    
+    // These are the values tha Meta will accept for 'environment_type'
+    val acceptableTypes = Seq("development", "test", "production")
+    
+    provider.properties.get.get("environment_types").map { types =>
+      
+      // Environment types the provider is compatible with.
+      val allowed = Json.parse(types).as[JsArray].value.toSeq.map(_.as[String])
+      
+      // Environment type of the given environment.
+      val giventype = {
+        val typeId = env.properties.get.get("environment_type") getOrElse {
+          val msg = s"Environment with ID '${env.id}' does not contain 'environment_type' property. Data is corrupt"
+          throw new RuntimeException(msg)
+        }
+        val target = EnvironmentType.name(UUID.fromString(typeId))
+        if (acceptableTypes.contains(target.trim.toLowerCase)) target
+        else {
+          val msg = s"Invalid environment_type. expected: one of (${acceptableTypes.mkString(",")}. found: '$target'"
+          throw new UnprocessableEntityException(msg)
+        }
       }
-      newprops = jprops.as[JsObject] ++ Json.obj(
-        "provider" -> Json.obj(
-          "name" -> provider.name,
-          "id" -> provider.id
-        )
-      )
-    } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
+      
+      // Given MUST be in the allowed list.
+      if (!allowed.contains(giventype)) {
+        val msg = s"Incompatible Environment type. expected one of (${allowed.mkString(",")}). found: '$giventype'"
+        throw new ConflictException(msg)
+      }
+    }    
   }
+  
+  
+  private[controllers] def normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject] = Try {
+
+    val container = containerJson.as[JsObject]
+    
+    val (pid, env, provider) = (for {
+      pid <- Try(Js.find(container, "/properties/provider/id") getOrElse {
+            throw new BadRequestException(s"`/properties/provider/id` not found.")
+          })
+      env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
+            throw new BadRequestException(s"Environment with ID '$environment' not found.")
+          })
+      prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
+            throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
+          })
+    } yield (pid, env, prv)).get
+
+    /*
+     *  This throws an exception if the environment is incompatible with the provider.
+     */
+    assertCompatibleEnvType(provider, env)
+    
+    // Inject `provider` object into container.properties
+    val properties = Js.find(container, "/properties").get.as[JsObject]
+    container ++ (properties ++ Json.obj(
+        "provider" -> Json.obj(
+          "name"   -> provider.name,
+          "id"     -> provider.id
+    )))
+  }
+  
+//  def withProviderInfo(json: JsValue): Try[JsObject] = {
+//    val jprops = (json \ "properties")
+//    for {
+//      pid <- Try((jprops \ "provider" \ "id").as[String])
+//      provider <- ResourceFactory.findById(UUID.fromString(pid)) match {
+//        case None    => Failure(new BadRequestException(s"provider does not exist"))
+//        case Some(p) => Success(p)
+//      }
+//      newprops = jprops.as[JsObject] ++ Json.obj(
+//        "provider" -> Json.obj(
+//          "name" -> provider.name,
+//          "id" -> provider.id
+//        )
+//      )
+//    } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
+//  }
 
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
-      payload   <- Future.fromTry(withProviderInfo(request.body))
+      //payload   <- Future.fromTry(withProviderInfo(request.body))
+      payload   <- Future.fromTry(normalizeContainerPayload(request.body, environment))
       proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
       spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
       context   = ProviderContext(request, spec.provider.id, None)
       container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
     } yield Created(RenderSingle(container))
+    
     created recover { case e => HandleExceptions(e) }
   }
 
+  import com.galacticfog.gestalt.json._
+//  private def validateContainerPayload(container: JsValue, environment: UUID) = {
+//    
+//    for {
+//      p1 <- withProviderInfo(container)
+//      p2 = {
+//        ResourceFactory.findById(ResourceIds.Environment, environment).fold {
+//          throw new UnprocessableEntityException(s"Parent environment with ID '$environment' not found.")
+//        }{ env =>
+//          val envtype = env.properties.get("environment_type")
+//          Js.find(container.as[JsObject], "/properties/environment_types").map { ts =>
+//            if (ts.as[JsArray].value.contains(envtype))
+//              container else {
+//                throw new ConflictException(
+//              }
+//          }          
+//        }
+//
+//      }
+//    }
+//    
+//  }
+  
   def updateContainer(fqon: String, cid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")

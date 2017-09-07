@@ -16,6 +16,8 @@ import play.api.inject.bind
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
+import com.galacticfog.gestalt.data.EnvironmentType
+import com.galacticfog.gestalt.meta.api.errors._
 
 class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
@@ -50,7 +52,6 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
     import org.specs2.execute.{AsResult,Result}
     
     override def around[T: AsResult](t: => T): Result = super.around {
-      println("******************AROUND")
       scalikejdbc.config.DBs.closeAll()
       scalikejdbc.config.DBs.setupAll()
       t
@@ -69,6 +70,64 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       val Success(updatedProvider) = meta.saveProvider(ProviderMap(testProvider),ProviderEnv(None,None),adminUserId)
       updatedProvider.properties.get("config") must /("external_protocol" -> "https")
       updatedProvider.properties.get("config") must /("another_field" -> "blah")
+    }
+    
+    "normalizeProviderPayload" should {
+
+      "accept payloads with valid environment_types" in new TestApplication {        
+        val payload = Json.parse(
+            """
+            |{
+            |  "name": "KubernetesProvider-1",
+            |  "description": "A Kubernetes Cluster.",
+            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
+            |  "properties": {
+            |  	"environment_types": ["development", "test", "production"],
+            |  	"config": {}
+            |  }
+            |}""".trim.stripMargin)
+            
+        val envtype = EnvironmentType.id("test")
+        val parent = createInstance(
+            ResourceIds.Environment, 
+            uuid.toString, 
+            properties = Some(Map("environment_type" -> envtype.toString)))
+        parent must beSuccessfulTry
+        
+        val meta = app.injector.instanceOf[Meta]
+        
+        val result = meta.normalizeProviderPayload(payload, uuid(), ResourceIds.KubeProvider, parent.get, None)
+        result must beSuccessfulTry
+      }
+      
+      "reject payloads with invalid environment_types" in new TestApplication {
+        val payload = Json.parse(
+            """
+            |{
+            |  "name": "KubernetesProvider-1",
+            |  "description": "A Kubernetes Cluster.",
+            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
+            |  "properties": {
+            |  	"environment_types": ["development", "test", "does_not_exist"],
+            |  	"config": {}
+            |  }
+            |}""".trim.stripMargin)
+        
+        val envtype = EnvironmentType.id("test")
+        val parent = createInstance(
+            ResourceIds.Environment, 
+            uuid.toString, 
+            properties = Some(Map("environment_type" -> envtype.toString)))
+        
+        parent must beSuccessfulTry
+        
+        val meta = app.injector.instanceOf[Meta]
+        
+        val result = scala.util.Try {
+          meta.normalizeProviderPayload(payload, uuid(), ResourceIds.KubeProvider, parent.get, None)
+        }
+        result must beFailedTry.withThrowable[UnprocessableEntityException]
+      }
     }
   }
 
