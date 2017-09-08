@@ -57,52 +57,6 @@ object ContainerSecret {
   def unprocessable(message: String) = throw UnprocessableEntityException(message)
 }
 
-trait SkuberFactory {
-  def initializeKube( provider: UUID, namespace: String )
-                    ( implicit ec: ExecutionContext ): Future[RequestContext]
-}
-
-class DefaultSkuberFactory extends SkuberFactory {
-
-  /**
-    *
-    */
-  override def initializeKube( provider: UUID, namespace: String )
-                             ( implicit ec: ExecutionContext ): Future[RequestContext] = for {
-    config  <- loadProviderConfiguration(provider)
-    context <- Future.fromTry(KubeConfig.initializeString(config, namespace = Some(namespace)))
-  } yield context
-
-  /**
-    * Get kube configuration from Provider. Performs lookup and validation of provider type.
-    */
-  private[services] def loadProviderConfiguration(provider: UUID)(
-    implicit ec: ExecutionContext): Future[String] = Future {
-
-    log.debug("loadProviderConfiguration({})", provider.toString)
-    val prv = ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
-    }
-
-    if (prv.typeId != ResourceIds.KubeProvider)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a Kubernetes Provider")
-    else extractKubeConfig(prv.properties) getOrElse {
-      throw new RuntimeException(s"Provider configuration not found. This is a bug")
-    }
-  }
-
-  /**
-    * Get kube configuration from provider.properties. Decode if necessary.
-    */
-  private[services] def extractKubeConfig(props: Option[Map[String, String]]): Option[String] = {
-    props flatMap { ps =>
-      ps.get("data").map { config =>
-        if (Ascii.isBase64(config)) Ascii.decode64(config) else config
-      }
-    }
-  }
-
-}
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
@@ -123,7 +77,7 @@ object KubernetesService {
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   extends CaasService with JsonInput with MetaControllerUtils {
-
+  
   import KubernetesService._
   
   private[this] val log = LoggerFactory.getLogger(this.getClass)
