@@ -36,6 +36,9 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 
 import services.KubernetesService
 import play.api.libs.ws.WSClient
+import com.galacticfog.gestalt.json.Js
+import services._
+
 
 @Singleton
 class DeleteController @Inject()(
@@ -46,11 +49,12 @@ class DeleteController @Inject()(
     providerMethods: ProviderMethods,
     gatewayMethods: GatewayMethods,
     lambdaMethods: LambdaMethods,
-    ws: WSClient
+    ws: WSClient,
+    skuberFactory: SkuberFactory
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-
+ 
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
-
+  
   /*
    * Each of the types named by the keys in this map have representations both in
    * Meta and in some external system. When delete is called on any of these types
@@ -59,19 +63,17 @@ class DeleteController @Inject()(
    */
   private[controllers] val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
     external = Map(
-      ResourceIds.Org -> deleteExternalOrg,
-      ResourceIds.User -> deleteExternalUser,
-      ResourceIds.Group -> deleteExternalGroup,
-      ResourceIds.Container -> deleteExternalContainer,
-      ResourceIds.Api -> gatewayMethods.deleteApiHandler,
+      ResourceIds.Org         -> deleteExternalOrg,
+      ResourceIds.User        -> deleteExternalUser,
+      ResourceIds.Group       -> deleteExternalGroup,
+      ResourceIds.Container   -> deleteExternalContainer,
+      ResourceIds.Api         -> gatewayMethods.deleteApiHandler,
       ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
-      ResourceIds.Lambda -> lambdaMethods.deleteLambdaHandler
+      ResourceIds.Lambda      -> lambdaMethods.deleteLambdaHandler
     )
   )
 
-  
   private def deleteOps(typeId: UUID) = {
-    //val action = Actions.actionName(typeId, "delete")
     val action = actionInfo(typeId).prefix + ".delete"
     List(
       controllers.util.Authorize(action),
@@ -101,7 +103,21 @@ class DeleteController @Inject()(
     log.debug(s"Policy Owner : " + owner.id)
 
     SafeRequest (operations, options) ProtectAsync { _ =>
-      Future.fromTry(DeleteHandler.handle(resource, identity))
+      
+      Future.fromTry {
+        /*
+         * TODO: This is a bit of a hack. The delete manager/handler system
+         * needs an overhaul. The issue with Environment is we need to get
+         * any child kube-providers *before* children are deleted. Currently
+         * the only hook occurs *after*. See:
+         * https://gitlab.com/galacticfog/gestalt-meta/issues/319
+         */
+        if (resource.typeId == ResourceIds.Environment) {
+          deleteEnvironmentSpecial(resource, identity)
+        }
+        DeleteHandler.handle(resource, identity)
+      }
+      
     }
   }
 
@@ -121,11 +137,7 @@ class DeleteController @Inject()(
   }
   
   def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-    //security.deleteAccount(res.id, account) map ( _ => () )
     val result = security.deleteAccount(res.id, account)
-    
-    //log.debug("Security.deleteAccount() result : " + result)
-    
     result map ( _ => () )
   }  
 
@@ -133,13 +145,6 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  /* *************************************************
-   * TEMPORARY
-   * 
-   */
-  
-  import com.galacticfog.gestalt.json.Js
-
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
     
@@ -147,9 +152,27 @@ class DeleteController @Inject()(
       Await.result(service.destroy(res), 5 seconds)
     }
   }
-
-  import services._
-
+  
+  import skuber.Namespace
+  def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
+    log.info("Checking for in-scope Kube providers to clean up namespaces...")
+    
+    val namespace = res.id.toString
+    val kubeProviders = ResourceFactory.findAncestorsOfSubType(ResourceIds.KubeProvider, res.id)
+    log.info(s"Found [${kubeProviders.size}] Kube Providers in Scope...")
+    
+    val deletes = kubeProviders.map { k =>
+      log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
+      skuberFactory.initializeKube(k.id, namespace) flatMap { kube =>
+        val deleted = kube.delete[Namespace](namespace)
+        deleted.onComplete(_ => kube.close)
+        deleted
+      }
+    }
+    Await.result(Future.sequence(deletes), 10.seconds)
+    ()
+  }
+  
   private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
     val providerId = ContainerService.containerProviderId(container)
 
@@ -158,12 +181,7 @@ class DeleteController @Inject()(
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
     }
   }
-  /* ************** END TEMPORARY **************** */
 
-  //  def deleteExternalApiGateway[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
-//    val externalId = res.properties.get("external_id")
-//    laser.deleteGateway(externalId) map ( _ => () )
-//  }
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
