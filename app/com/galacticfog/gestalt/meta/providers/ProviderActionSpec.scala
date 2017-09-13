@@ -12,11 +12,16 @@ import java.util.UUID
 
 case class ProviderActionSpec(name: String, endpoint_url: String, implementation: ActionImplSpec, ui_locations: Seq[UiLocation]) {
 
-  def toResource(org: UUID, owner: ResourceOwnerLink, id: UUID = uuid()): GestaltResourceInstance = {
+  def toResource(org: UUID, owner: ResourceOwnerLink, implId: UUID, id: UUID = uuid()): GestaltResourceInstance = {
 
     val props = Map(
       "endpoint_url"   -> endpoint_url,
-      "implementation" -> Json.stringify(Json.toJson(implementation)),
+      "implementation" -> {
+        // TODO: Here - implementation should be a resource link.
+        //Json.stringify(Json.toJson(implementation))
+        val impl = Json.toJson(implementation).as[JsObject] ++ Json.obj("id" -> implId.toString)
+        Json.stringify(impl)
+      },
       "ui_locations"   -> Json.stringify(Json.toJson(ui_locations)))
 
     GestaltResourceInstance(
@@ -27,6 +32,13 @@ case class ProviderActionSpec(name: String, endpoint_url: String, implementation
       owner = owner,
       name = name,
       properties = Some(props))
+  }
+  
+  /**
+   * Convert an ActionSpec.implementation to an Action Instance implementation.
+   */
+  private[providers] def instanceImplementation(impljson: JsValue) = {
+    
   }
 }
 
@@ -61,7 +73,6 @@ object ProviderActionSpec {
 }
 
 case class UiLocation(name: String, icon: Option[String])
-
 case class ActionInput(kind: String, data: Option[String])
-case class ActionImplSpec(kind: String, id: String, input: Option[ActionInput])
+case class ActionImplSpec(kind: String, spec: Option[JsValue], id: Option[String], input: Option[ActionInput])
 

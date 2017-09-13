@@ -20,6 +20,7 @@ import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.HostConfig
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
@@ -43,14 +44,17 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.data._
-
+import com.galacticfog.gestalt.events._
+import controllers.util.LambdaMethods
+import com.galacticfog.gestalt.meta.actions._
 
 @Singleton
-class Meta @Inject()( 
-    messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-    security: Security,
-    providerManager: ProviderManager )
+class Meta @Inject()( messagesApi: MessagesApi,
+                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                      security: Security,
+                      lambdaMethods: LambdaMethods,
+                      actionMethods: ActionMethods,
+                      providerManager: ProviderManager )
 
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -66,7 +70,7 @@ class Meta @Inject()(
       case Success(root) => createOrgCommon(root.id)
     }  
   }  
-
+  
   def postOrgFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     createOrgCommon(fqid(fqon))
   }
@@ -369,7 +373,7 @@ class Meta @Inject()(
         log.error(s"Could not find Provider ${targetId} in results-list.")
         throw new RuntimeException("An error occurred launching the Provider")
       } else out.head
-    }    
+    }
   }
   
   /**
@@ -403,7 +407,7 @@ class Meta @Inject()(
         )
       }
     )
-
+    
     for {
       withSpecifics <- providerType match {
         case ResourceIds.KubeProvider | ResourceIds.DockerProvider => Try {
@@ -480,6 +484,7 @@ class Meta @Inject()(
       uid => UUID.fromString(uid.as[String])
     }
 
+  
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
     implicit request: SecuredRequest[JsValue]) = {
 
@@ -496,34 +501,34 @@ class Meta @Inject()(
       val user    = request.identity
       val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
 
-      log.debug("about to call newResourceResult...")
       newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
 
-        log.debug("about to call CreateResource...")
         val identity = user.account.id
         CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
              */
+            log.error("CreateResource() FAILED!")
             Future.successful(HandleExceptions(e))
           }
           case Success(newMetaProvider) => {
 
             val results = load(ProviderMap(newMetaProvider), identity)
+
             getCurrentProvider(targetid, results) map { newprovider =>
-              
               
               val output = {
                 if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
                 else {
                   /*
-                   * TODO: The provider instance is created - call out to function that can orchestrate
-                   * the creation of all the other resources that need to be created.   
-                   */                  
+                   * This call will create a new Environment for this Provider. This is where we
+                   * will store the Lambda, Api, and ApiEndpoints for any specified ProviderActions.
+                   */
+                  val providerEnv = providerManager.getOrCreateProviderEnvironment(newprovider, user)
                   log.debug("Creating Provider Actions...")
-                  
-                  val acts   = createProviderActions(newprovider, payload, user, ???, parentId)
+
+                  val acts   = createProviderActions(newprovider, payload, user, providerEnv, parentId)
                   val json   = Output.renderLinks(acts, META_URL)
                   val props  = newprovider.properties map { ps =>
                     ps ++ Map("provider_actions" -> Json.stringify(json))
@@ -531,8 +536,8 @@ class Meta @Inject()(
                   newprovider.copy(properties = props)
                   ProviderMethods.injectProviderActions(newprovider)
                 }
-                
               }
+
               Created(RenderSingle(output))
             } recover {
               case e => {
@@ -545,10 +550,41 @@ class Meta @Inject()(
           }
         }
       }
-
     }
   }
 
+  
+  def invokeAction(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+
+    val maybeEvents = for {
+      action   <- Try { ResourceFactory.findById(ResourceIds.ProviderAction, id) getOrElse {
+        throw new ResourceNotFoundException(s"Action with ID '$id' not found.")
+      }}
+      lambda   <- actionMethods.lambdaFromAction(action.id)
+      endpoint <- actionMethods.buildActionMessageEndpoint(lambda)
+      
+      client  = AmqpClient {
+        AmqpConnection(endpoint.service_host, endpoint.service_port.get, heartbeat = 300)
+      }
+      
+      eventEp = AmqpEndpoint(endpoint.message_exchange, endpoint.message_topic)
+    } yield (lambda, client, eventEp)
+    
+    maybeEvents match {
+      case Failure(e) => throw e
+      case Success((lambda, client, endpoint)) => {
+        
+        val event = ActionInvokeEvent(
+          lambdaId = lambda.id,
+          payload = Some(Json.stringify(request.body)),
+          params = request.queryString)
+
+        client.publish(endpoint, Json.stringify(Json.toJson(event)))
+      }
+    }
+    Future( Ok(Json.obj("status" -> "ok", "message" -> "sent")) )
+  }  
+  
   
   /**
    * 
@@ -558,27 +594,12 @@ class Meta @Inject()(
    * @param providerEnv the new environment where action lambdas will be created
    * @param parentId UUID of Provider parent resource
    */
-  private def createProviderActions(
+  def createProviderActions(
         r: GestaltResourceInstance, 
         payload: JsObject, 
         creator: AuthAccountWithCreds, 
         providerEnv: GestaltResourceInstance,
         parentId: UUID) = {
-    
-    /*
-     * 
-     * TODO: VALIDATE - Ensure there is a suitable MessageProvider in Scope
-     * 1.) Get lambda.properties.messageProvider
-     * 2.)
-     * 
-     */
-
-    
-    val messageProvider = ResourceFactory.findAncestorProviders(parentId).filter( p =>
-      p.typeId == ResourceIds.MessageProvider
-    ).headOption getOrElse {
-      ???//throw new BadRequestException(s"")
-    }
     
     // Parse the ActionSpec JSON from the Provider type definition.
 
@@ -596,20 +617,30 @@ class Meta @Inject()(
       // TODO: There were errors parsing ProviderActions - DO SOMETHING!
       throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
     }
-
-    val (failedCreate, successfulCreate) = successfulParse.map { spec =>
-      val action = spec.get.toResource(r.orgId, r.owner)
-      CreateWithEntitlements(r.orgId, creator, action, Some(r.id))
-    }.partition { _.isFailure }
     
-    if (failedCreate.nonEmpty) {
-      // TODO: At least one failure creating ProviderAction resources - DO SOMETHING!
-      throw new RuntimeException("FAILED CREATING PROVIDER-ACTIONS")
+    val fActions = successfulParse.map { spec =>
+      /*
+       * TODO: Create the Lambda associated with each action.
+       * Idea is that we can use a pre-existing lambda or create a new one
+       * from a provided specification. First-pass we will only consider the
+       * new creation from a spec.
+       */
+      actionMethods.createActionLambda(r.orgId, spec.get, providerEnv, creator) map { lam =>
+        /*
+         * TODO: Create MessageEndpoint.
+         */
+        // Here is where we inject the Lambda ID into `action.properties.implementation.id`
+        val action = spec.get.toResource(r.orgId, r.owner, implId = lam.id)
+        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) getOrElse {
+          throw new RuntimeException("Failed creating ProviderAction.")
+        }
+      }
     }
-    
-    successfulCreate.map(_.get)
-  }
+    import scala.concurrent.Await
+    import scala.concurrent.duration.DurationInt
 
+    Await.result(Future.sequence(fActions), 15.seconds)
+  }
   
   // --------------------------------------------------------------------------
   //

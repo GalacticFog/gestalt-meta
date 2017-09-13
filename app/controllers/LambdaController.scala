@@ -37,6 +37,11 @@ import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import play.api.libs.ws.WSClient
 
+case class LambdaProviderInfo(id: String, locations: Seq[String])
+object LambdaProviderInfo {
+  implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
+}
+
 @Singleton
 class LambdaController @Inject()(
     ws: WSClient,
@@ -59,7 +64,7 @@ class LambdaController @Inject()(
       Future(ResourceNotFound(UUID.fromString(parentType), parent)) 
     }{ p =>
       createLambdaCommon(fqid(fqon), p)
-    }  
+    }
   }
   
   private[controllers] def validateLambdaParent(tpe: String, id: UUID) = {
@@ -70,6 +75,13 @@ class LambdaController @Inject()(
     ResourceFactory.findById(typeId, id)
   }
   
+
+
+
+  
+  /*
+   * TODO: Overload this method - take payload JSON directly instead of from request.body
+   */
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[JsValue]): Future[play.api.mvc.Result] = {
     
@@ -115,7 +127,7 @@ class LambdaController @Inject()(
               }              
             } recover {
               case e: Throwable => {
-                log.error(s"Error creating Lambda in backend system.")
+               log.error(s"Error creating Lambda in backend system.")
                updateFailedBackendCreate(caller, meta, e)
               }
             }
@@ -132,12 +144,7 @@ class LambdaController @Inject()(
     json ++ Json.obj("properties" -> 
       replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }  
-  
-  case class LambdaProviderInfo(id: String, locations: Seq[String])
-  object LambdaProviderInfo {
-    implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
-  }
-  
+
   def getProviderInfo(lambdaJson: JsValue): LambdaProviderInfo = {
     Js.find(lambdaJson.as[JsObject], "/properties/provider/id").fold {
       unprocessable("Could not find value for [lambda.properties.provider.id]")

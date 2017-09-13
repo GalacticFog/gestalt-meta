@@ -32,13 +32,14 @@ import play.api.mvc.{RequestHeader, Result}
 
 
 @Singleton
-class PatchController @Inject()( messagesApi: MessagesApi,
-                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                 groupMethods: GroupMethods,
-                                 gatewayMethods: GatewayMethods,
-                                 lambdaMethods: LambdaMethods,
-                                 containerService: ContainerService,
-                                 resourceController: ResourceController )
+class PatchController @Inject()( 
+     messagesApi: MessagesApi,
+     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+     groupMethods: GroupMethods,
+     gatewayMethods: GatewayMethods,
+     lambdaMethods: LambdaMethods,
+     containerService: ContainerService,
+     resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   /*

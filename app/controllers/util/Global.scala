@@ -27,6 +27,8 @@ object Global extends GlobalSettings  {
 
   override def onError(request: RequestHeader, ex: Throwable) = {
     log.warn("Caught exception at top-level.")
+    ex.printStackTrace()
+
     Future.successful( HandleExceptions(ex) )
   }
 

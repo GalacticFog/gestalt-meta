@@ -17,7 +17,6 @@ import com.galacticfog.gestalt.data.Hstore
 
 package object api {
 
-
   /**
    * Translate resource REST name to Resource Type ID
    */
@@ -30,20 +29,16 @@ package object api {
       case "groups"           => Some(ResourceIds.Group)
       case "workspaces"       => Some(ResourceIds.Workspace)
       case "environments"     => Some(ResourceIds.Environment)
-      case "containers"       => Some(ResourceIds.Container)   
-            
+      case "containers"       => Some(ResourceIds.Container)
       case "lambdas"          => Some(ResourceIds.Lambda)
       case "apis"             => Some(ResourceIds.Api)
       case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
       case "domains"          => Some(ResourceIds.Domain)
-   
       case "entitlements"     => Some(ResourceIds.Entitlement)
       case "policies"         => Some(ResourceIds.Policy)
       case "rules"            => Some(ResourceIds.Rule)
       case "providers"        => Some(ResourceIds.Provider)
-
       case "nodetypes"        => Some(ResourceIds.NodeType)
-      
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
       case "datatypes"        => Some(ResourceIds.DataType)
       case "requirementtypes" => Some(ResourceIds.RequirementType)
@@ -51,11 +46,11 @@ package object api {
       case "resourcestates"   => Some(ResourceIds.ResourceState)
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
       case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
-      case "actions"          => Some(ResourceIds.TypeAction)
       case "licenses"         => Some(ResourceIds.License)
       case "integrations"     => Some(ResourceIds.Integration)
       case "datacontainers"   => Some(ResourceIds.DataContainer)
       case "actionproviders"  => Some(ResourceIds.ActionProvider)
+      case "actions"          => Some(ResourceIds.ProviderAction)
       case _                  => None
     }
   }
@@ -72,8 +67,6 @@ package object api {
       case ResourceIds.Group           => Some("groups")
       case ResourceIds.Workspace       => Some("workspaces")
       case ResourceIds.Environment     => Some("environments")
-
-      
       case ResourceIds.Lambda          => Some("lambdas")
       case ResourceIds.Api             => Some("apis")
       case ResourceIds.ApiEndpoint     => Some("apiendpoints")
@@ -92,6 +85,7 @@ package object api {
       case ResourceIds.Integration     => Some("integrations")
       case ResourceIds.ProviderAction  => Some("provideractions")
       case ResourceIds.ActionProvider  => Some("actionproviders")
+      case ResourceIds.ProviderAction  => Some("actions")
       case _ => None
     }
   }  

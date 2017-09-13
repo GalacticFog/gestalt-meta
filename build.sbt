@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.30"
+version := "0.6.31"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -78,13 +78,12 @@ scalacOptions ++= Seq(
 javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
 
-
-
 libraryDependencies ++= Seq(
 
 	"org.jtwig" 	   % "jtwig-core" 					 % "5.86.0.RELEASE",
 	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.35" withSources(),
   	"com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.18" withSources(),
+
 
 	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
@@ -96,7 +95,7 @@ libraryDependencies ++= Seq(
     "org.slf4j" 	   % "slf4j-api" 		% "1.7.21",
 	"ch.qos.logback"   % "logback-classic" 	% "1.1.7",
 	"org.postgresql"   % "postgresql" 		% "9.4.1208.jre7",
-	"com.rabbitmq"     % "amqp-client" 		% "3.6.1",
+	"com.rabbitmq"     % "amqp-client" 		% "3.6.6",
     "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
     "com.spotify" 	   % "docker-client" 	% "8.7.1",
 	//"org.postgresql"   % "postgresql" 		% "9.3-1102-jdbc4",

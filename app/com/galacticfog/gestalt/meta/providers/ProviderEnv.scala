@@ -15,10 +15,17 @@ import scala.util.{Try,Success,Failure}
 
 case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map[String, String]]) {
   def flatten() = {
-    def getmap(m: Option[Map[String,String]]) = m getOrElse Map.empty
     getmap(this.public) ++ getmap(this.privatev)
   }
   
+  def ++(that: ProviderEnv): ProviderEnv = {
+    val pub = getmap(this.public) ++ getmap(that.public)
+    val prv = getmap(this.privatev) ++ getmap(that.privatev)
+    
+    ProviderEnv(Some(pub), Some(prv))
+  }
+  
+  private def getmap(m: Option[Map[String,String]]): Map[String, String] = m getOrElse Map.empty
 }
 
 object ProviderEnv {
