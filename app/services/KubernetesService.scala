@@ -156,7 +156,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def create(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
-    ContainerSpec.fromResourceInstance(container) match {
+    
+    val t = ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
         namespace  <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
@@ -168,6 +169,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
     }
+    
+  t.onComplete {
+    case Success(value) => println(s"Got the callback, meaning = $value")
+    case Failure(e) => e.printStackTrace
+  }
+    log.debug("***EXITING KubernetesService::create()")
+
+    t
   }
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
@@ -308,7 +317,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
     for {
       dep <- fDeployment
-      _ <- fIngress
+      _   <- fIngress
       updatedPMs <- fUpdatedPMsFromService
     } yield spec.copy(
       port_mappings = updatedPMs
@@ -668,7 +677,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * for failure. If a failure is detected, processing stops and an exception is thrown.
      */
     reconcileVolumeClaims(kube, namespace, containerSpec.volumes) 
-
+    
     val podTemplate = {
       val baseSpec = Pod.Spec()
             .addContainer(container.copy(volumeMounts = mounts.toList))
@@ -680,7 +689,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
       Pod.Template.Spec(spec = Some(withVolumes)).addLabels(labels)
     }
-    
+
     Deployment(metadata = ObjectMeta(
       name = containerSpec.name,
       namespace = namespace,

@@ -34,8 +34,9 @@ import com.galacticfog.gestalt.json.Js
 import play.api.{Logger => log}
 
 @Singleton
-class LicenseController @Inject()(messagesApi: MessagesApi,
-                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class LicenseController @Inject()(
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   /**

@@ -27,13 +27,14 @@ import javax.inject.Inject
 import play.api.mvc.RequestHeader
 
 import scala.concurrent.duration._
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
 class LambdaMethods @Inject()( ws: WSClient,
-                               providerMethods: ProviderMethods ) {
+                               providerMethods: ProviderMethods ) extends AuthorizationMethods {
 
   val LAMBDA_PROVIDER_TIMEOUT_MS = 5000
   
-  private val log = Logger(this.getClass)
+  override val log = Logger(this.getClass)
 
   /**
    * Update a field on a LaserLambda. Currently this is limited to what is modifiable in the UI.
@@ -140,4 +141,151 @@ class LambdaMethods @Inject()( ws: WSClient,
     } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
   }
 
+  import scala.util.{Try, Success, Failure}
+  import com.galacticfog.gestalt.data.ResourceState
+  
+  def createLambdaCommon2(
+    org: UUID, 
+    parent: GestaltResourceInstance,
+    payload: JsValue,
+    caller: AuthAccountWithCreds): Future[GestaltResourceInstance] = {
+    
+    val input    = safeGetInputJson(payload, Some(ResourceIds.Lambda)).get
+    val lambdaId = input.id.getOrElse(UUID.randomUUID)
+    
+    // Set ID for the Lambda.
+    val newjson  = injectParentLink(payload.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
+    val pinfo    = getProviderInfo(newjson)
+    val provider = ResourceFactory.findById(ResourceIds.LambdaProvider, UUID.fromString(pinfo.id)) getOrElse {
+      unprocessable(s"Lambda Provider with ID '${pinfo.id}' not found.")
+    }
+
+    val metaCreate = for {
+      metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
+      laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString)
+    } yield (metalambda, laserlambda)
+    
+    metaCreate match {
+      case Failure(e) => {
+        log.error("Failed to create Lambda in Meta: " + e.getMessage)
+        Future(throw e)
+      }
+      case Success((meta,laser)) => {
+    
+        val client = providerMethods.configureWebClient(provider, Some(ws))
+        
+        log.debug("Creating lambda in Laser...")
+        client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
+
+          if (Seq(200, 201).contains(result.status)) {
+            log.info("Successfully created Lambda in backend system.")
+            setNewEntitlements(org, meta.id, caller, Some(parent.id))
+            meta
+          } else {
+            log.error("Error creating Lambda in backend system.")
+            updateFailedBackendCreateResource(caller, meta, ApiError(result.status, result.body).throwable).get
+          }
+          
+        } recover {
+          case e: Throwable => {
+           log.error(s"Error creating Lambda in backend system.")
+           updateFailedBackendCreateResource(caller, meta, e).get
+          }
+        }
+      }
+    }
+  }
+  
+  import com.galacticfog.gestalt.meta.api.output._
+  import controllers.LambdaProviderInfo
+  import com.galacticfog.gestalt.data.parseUUID
+  
+  def updateFailedBackendCreateResource(caller: AuthAccountWithCreds, metaResource: GestaltResourceInstance, ex: Throwable)
+      : Try[GestaltResourceInstance]= {
+    log.error(s"Setting state of resource '${metaResource.id}' to FAILED")
+    val failstate = ResourceState.id(ResourceStates.Failed)
+    ResourceFactory.update(metaResource.copy(state = failstate), caller.account.id)
+  }
+  
+  def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
+    val parentLink = toLink(parent, None)
+    json ++ Json.obj("properties" -> 
+      JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
+  }
+  
+  def getProviderInfo(lambdaJson: JsValue): LambdaProviderInfo = {
+    Js.find(lambdaJson.as[JsObject], "/properties/provider/id").fold {
+      unprocessable("Could not find value for [lambda.properties.provider.id]")
+    }{ pid =>
+      parseUUID(pid.as[String].trim).fold {
+        unprocessable(s"[lambda.properties.provider.id] is not a valid UUID. found: '$pid'")
+      }{ uid =>
+        ResourceFactory.findById(UUID.fromString(uid)).fold {
+          unprocessable(s"[lambda.properties.provider.id] '$uid' not found.")
+        }{ p =>
+          val pjson = Js.find(lambdaJson.as[JsObject], "/properties/provider").get
+          Js.parse[LambdaProviderInfo](pjson.as[JsObject]) match {
+            case Success(result) => result
+            case Failure(e) =>
+              unprocessable(s"Could not parse [lambda.properties.provider]. found: ${e.getMessage}'")
+          }
+        }
+      }
+    }
+  }
+  
+  /**
+   * Find the LambdaProvider backing the given Lambda
+   */
+  def findLambdaProvider(lambda: GestaltResourceInstance): Option[GestaltResourceInstance] = {
+    val pid = (for {
+      
+      props <- lambda.properties
+      json  <- props.get("provider")
+      id1   <- Js.find(Json.parse(json).as[JsObject], "/id")
+      id2 = UUID.fromString(id1.as[String])
+      
+    } yield id2) getOrElse {
+      throw new RuntimeException("`lambda.properties.provider.id` not found. This is a bug.")
+    }
+    ResourceFactory.findById(ResourceIds.LambdaProvider, pid)
+  }  
+  
+import com.galacticfog.gestalt.meta.providers._  
+  
+  /**
+   * Find the Message (rabbit) provider linked to the given LambdaProvider
+   */
+  def findMessageProvider(lambdaProvider: GestaltResourceInstance): Option[GestaltResourceInstance] = {
+    val messageProvider = {
+      val json = Json.toJson(lambdaProvider).as[JsObject]
+      val lps = Js.find(json, "/properties/linked_providers") map { lp => 
+        LinkedProvider.fromJson(Json.parse(lp.as[String]).as[JsArray]) 
+      }
+      lps flatMap { _ find { _.name == "RABBIT" } }
+    } getOrElse {
+      throw new RuntimeException(s"No MessageProvider configured for LambdaProvider '{lambdaProvider.id}'. Cannot invoke action.")
+    }
+    ResourceFactory.findById(messageProvider.id)
+  }  
+  
+  protected[controllers] def CreateResource(
+    org: UUID,
+    caller: AuthAccountWithCreds,
+    resourceJson: JsValue,
+    typeId: UUID,
+    parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+    
+    safeGetInputJson(resourceJson) flatMap { input =>
+      val tid = assertValidTypeId(input, Option(typeId))
+      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+        withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
+          setNewEntitlements(org, res.id, caller, parentId)
+          res
+        }
+    }
+  }
+    
+  private[this] def unprocessable(message: String) =
+    throw new UnprocessableEntityException(message)    
 }

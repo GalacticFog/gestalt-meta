@@ -258,87 +258,47 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   }  
   
   
+  import com.galacticfog.gestalt.meta.providers._
+  import com.galacticfog.gestalt.meta.providers.ui._
+  import com.galacticfog.gestalt.data.parseUUID  
+  
 
-  
-object Ascii {
-  
-    import java.util.Base64
-  import java.nio.charset.Charset
-  import scala.util.matching.Regex
-  
-  val DEFAULT_CHARSET: Charset = Charset.forName("UTF-8")
-  
-  private val base64Match = 
-      """^\s*(([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==))\s*$""".r
-      
-  def encode64(s: String, charset: Charset = DEFAULT_CHARSET): String =
-    Base64.getEncoder.encodeToString(s.getBytes(charset))
-
-  def decode64(s: String): String = if (!isBase64(s))
-    throw new IllegalArgumentException("Argument is not Base64 encoded.")
-  else new String(Base64.getDecoder.decode(s))
-  
-  /**
-   * Determine if a String is Base64 encoded.
-   * 
-   * TODO: The test in the function is very weak. It really checks if the given
-   * String "could be" base64 encoded or not. Any string where str.length % 4 == 0
-   * will pass (accounting for 1 or 2 equal signs padding the string).
-   */
-  def isBase64(s: String): Boolean = 
-    base64Match.pattern.matcher(s).matches
-
-  def asStream(s: String, charset: Charset = DEFAULT_CHARSET) = 
-    new java.io.ByteArrayInputStream(s.getBytes(charset))
-  
-}  
-  
-    import com.galacticfog.gestalt.meta.providers._
-    
   def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
-    val qp = {
-      if (request.queryString.contains("resource")) 
-        request.queryString("resource").head
-      else "N/A"
-    }
+
+    log.debug("Finding Action...")
+    
     ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
       this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
+      
     }{ act =>
-      val spec = ProviderActionSpec.fromResource(act)
-      Ok(Ascii.decode64(spec.implementation.input.get.data.get)).as("text/html")
+      
+      log.debug("Finding target resource...")
+      
+      val resource = for {
+        a   <- request.queryString.get("resource") orElse {
+          throw new BadRequestException("You must supply a `?resource={id}` query parameter")
+        }
+        b   <- a.headOption
+        id  = parseUUID(b) getOrElse {
+            throw new BadRequestException(s"Invalid resource UUID. found: '$b'")
+        }
+        res = ResourceFactory.findById(id) getOrElse {
+          throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
+        }
+      } yield res
+
+      val output = assembleActionUi(act, resource.get, request.identity)
+      Ok(output).as("text/html")
     }
-    
-//    val html = 
-//      s"""
-//      |<!DOCTYPE html>
-//      |<html>
-//      |<head>
-//      |  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
-//      |  <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">  
-//      |</head>
-//      |  <body>  
-//      |    <div id="container">
-//      |      <h2>Hello</h2>
-//      |      <p>Resource-ID : ${qp}</p>
-//      |    </div>
-//      |    <div id="container-root"></div>
-//      |    <script src="https://cdnjs.cloudflare.com/ajax/libs/mustache.js/2.3.0/mustache.min.js"></script>
-//      |    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha256-k2WSCIexGzOj3Euiig+TlR8gA0EmPjuc79OEeY5L45g=" crossorigin="anonymous"></script>
-//      |    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
-//      |  </body>
-//      |</html>  
-//      """.stripMargin
-//      
-//    Ok(html).as("text/html")
   }
-
-
+  
+  def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
+    Ok(Json.toJson(mkPath2(fqon, path)))
+  }
 
   
   def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
-    
     log.debug("Looking up applicable actions...")
-    
     
     val actions = ResourceFactory.findById(target).fold {
       throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
@@ -761,6 +721,70 @@ object Ascii {
     request.queryString)
   }  
 
+  import com.galacticfog.gestalt.meta.api.output.toLink
+  
+  def mkPath2(fqon: String, path: String) = {
+    
+    val rp = new ResourcePath(fqon, path)
+    
+    println(rp.info)
+    
+    def tname(typeId: UUID): String = resourceRestName(typeId).dropRight(1).mkString
+    
+    val org = {
+      ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", rp.fqon) map { 
+        toLink(_, None) }
+    }
+    val target = {
+      ResourceFactory.findById(rp.targetTypeId, UUID.fromString(rp.targetId.get)) map { toLink(_, None) }
+    }
+    val parent = {
+      if (rp.isSecondLevelResource) {
+        val tid = rp.parentTypeId.get
+        val pid = rp.parentId.get
+        Some((tname(tid) -> ResourceFactory.findById(tid, pid).map { toLink(_, None) }))
+      } else  None
+    }
+    
+    Map("org" -> org, tname(rp.targetTypeId) -> target) ++ parent
+    
+//    Map(ResourceLabel(rp.parentTypeId.get) -> rp.parentId) 
+    
+  }
+  
+  def mkPath(fqon: String, path: String) = {
+    def mkuri(fqon: String, r: GestaltResourceInstance) = {
+      "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)
+    }
+    
+    def mkinfo(r: GestaltResourceInstance) = {
+      ResourceInfo(r.id, r.name, mkuri(fqon, r))
+    }
+    
+    def resolve(parent: UUID, cmps: List[(UUID,String)], dat: Map[String, ResourceInfo]): Try[Map[String,ResourceInfo]] = Try {
+      cmps match {
+        case Nil => dat
+        case h :: t => {
+          ResourceFactory.findChildByName(parent, h._1, h._2).fold {
+            throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
+          }{ res => 
+            resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
+          }
+        }
+      }
+    }
+    
+    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
+    val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
+    val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
+    
+    resolve(org.id, (keys zip values), Map("org" -> mkinfo(org))) match {
+      case Success(m) => Ok(Json.toJson(m))
+      case Failure(e) => HandleRepositoryExceptions(e)
+    }    
+  }
+  
+
   def mapPath(fqon: String, path: String) = Audited(fqon) { implicit request =>
     
     def mkuri(fqon: String, r: GestaltResourceInstance) = {
@@ -793,6 +817,7 @@ object Ascii {
       case Failure(e) => HandleRepositoryExceptions(e)
     }
   }
+  
   
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,

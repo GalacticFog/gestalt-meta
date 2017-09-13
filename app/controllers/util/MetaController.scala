@@ -34,8 +34,8 @@ trait MetaControllerUtils {
   private[this] val log = Logger(this.getClass)
   
   /**
-    * Get an Org by FQON
-    */
+   * Get an Org by FQON
+   */
   protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
     ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
   }
@@ -46,10 +46,10 @@ trait MetaControllerUtils {
   protected[controllers] def resolveResourceState(state: Option[String]) = {
     ResourceState.id(state getOrElse ResourceStates.Active)
   }
-
+  
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)
-
+    
   /**
     * Inspect a GestaltResourceInput, supplying default values where appropriate.
     */
@@ -59,7 +59,7 @@ trait MetaControllerUtils {
     val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
     fromResourceInput(org, input.copy(id = resid, owner = owner, resource_state = state))
   }
-
+  
   /**
     * Convert GestaltResourceInput to GestaltResourceInstance
     */
@@ -227,7 +227,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     val failstate = ResourceState.id(ResourceStates.Failed)
     ResourceFactory.update(metaResource.copy(state = failstate), caller.account.id)
     HandleExceptions(ex)
-  }  
+  }
 
   def newResourceRequestOperations(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
     List(
@@ -236,7 +236,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
       controllers.util.PolicyCheck(action),
       controllers.util.EventsPre(action),
       controllers.util.EventsPost(action))
-  }  
+  }
   
   /**
    * 
@@ -505,4 +505,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
 }
 
-object MetaController {}
+object MetaController {
+  
+}
+

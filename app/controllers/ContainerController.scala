@@ -34,6 +34,9 @@ import scala.language.postfixOps
 import javax.inject.Singleton
 
 import services._
+import com.galacticfog.gestalt.json._
+import com.galacticfog.gestalt.data.EnvironmentType
+
 
 @Singleton
 class ContainerController @Inject()( 
@@ -83,9 +86,7 @@ class ContainerController @Inject()(
    *  - SuccessNoChange
    *  - Failed
    */
-  import com.galacticfog.gestalt.json._
-  import com.galacticfog.gestalt.data.EnvironmentType
-  
+
   /**
    * Test that the given Provider is compatible with the given Environment. An
    * exception is thrown if the given Environment is incompatible.
@@ -122,9 +123,7 @@ class ContainerController @Inject()(
     }    
   }
   
-  
   private[controllers] def normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject] = Try {
-
     val container = containerJson.as[JsObject]
     
     val (pid, env, provider) = (for {
@@ -152,27 +151,9 @@ class ContainerController @Inject()(
           "id"     -> provider.id
     )))
   }
-  
-//  def withProviderInfo(json: JsValue): Try[JsObject] = {
-//    val jprops = (json \ "properties")
-//    for {
-//      pid <- Try((jprops \ "provider" \ "id").as[String])
-//      provider <- ResourceFactory.findById(UUID.fromString(pid)) match {
-//        case None    => Failure(new BadRequestException(s"provider does not exist"))
-//        case Some(p) => Success(p)
-//      }
-//      newprops = jprops.as[JsObject] ++ Json.obj(
-//        "provider" -> Json.obj(
-//          "name" -> provider.name,
-//          "id" -> provider.id
-//        )
-//      )
-//    } yield json.as[JsObject] ++ Json.obj("properties" -> newprops)
-//  }
 
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
-      //payload   <- Future.fromTry(withProviderInfo(request.body))
       payload   <- Future.fromTry(normalizeContainerPayload(request.body, environment))
       proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
       spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
@@ -183,29 +164,6 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
-  import com.galacticfog.gestalt.json._
-//  private def validateContainerPayload(container: JsValue, environment: UUID) = {
-//    
-//    for {
-//      p1 <- withProviderInfo(container)
-//      p2 = {
-//        ResourceFactory.findById(ResourceIds.Environment, environment).fold {
-//          throw new UnprocessableEntityException(s"Parent environment with ID '$environment' not found.")
-//        }{ env =>
-//          val envtype = env.properties.get("environment_type")
-//          Js.find(container.as[JsObject], "/properties/environment_types").map { ts =>
-//            if (ts.as[JsArray].value.contains(envtype))
-//              container else {
-//                throw new ConflictException(
-//              }
-//          }          
-//        }
-//
-//      }
-//    }
-//    
-//  }
-  
   def updateContainer(fqon: String, cid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")

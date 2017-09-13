@@ -61,8 +61,11 @@ Configured with the following Environment Variables:
 
 ### Check Status of Audit Service
     GET /root/check?feature=audit
+
 This will return basic information about the current status and setting for auditing: 
-```{
+
+```
+{
     "config_state": "OK",
     "enabled": "true",
     "settings": {

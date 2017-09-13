@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt
 
+
 import com.rabbitmq.client.{Channel, ConnectionFactory, Connection}
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.output._
@@ -8,6 +9,7 @@ import java.util.UUID
 import scala.util.{Try,Success,Failure}
 import controllers.util.db.EnvConfig
 import play.api.{ Logger => log }
+
 
 package object events {
 
@@ -20,12 +22,7 @@ package object events {
   lazy val RABBIT_EXCHANGE = EnvConfig.rabbitExchange
   lazy val RABBIT_ROUTE = EnvConfig.rabbitRoute
   
-  case class AmqpConnection(
-    host: String = ConnectionFactory.DEFAULT_HOST,
-    port: Int = ConnectionFactory.DEFAULT_AMQP_PORT,
-    username: String = ConnectionFactory.DEFAULT_USER,
-    password: String = ConnectionFactory.DEFAULT_PASS,
-    heartbeat: Int   = ConnectionFactory.DEFAULT_HEARTBEAT)  
+
   
   case class EventContext(
     eventName: String,
@@ -71,46 +68,9 @@ package object events {
     }
   }
   
-  case class AmqpEndpoint(exchange: String, route: String)
-  
-  class AmqpClient(cnn: AmqpConnection) {
-    
-    val factory = new ConnectionFactory()
-    
-    factory.setHost(cnn.host)
-    factory.setPort(cnn.port)
-    factory.setUsername(cnn.username)
-    factory.setPassword(cnn.password)
-    factory.setRequestedHeartbeat(cnn.heartbeat)
-    
-    def publish(ep: AmqpEndpoint, message: JsValue): Try[Unit] = {
-      publish(ep, Json.stringify(message))
-    }
-    
-    def publish(ep: AmqpEndpoint, message: String): Try[Unit] = Try {
-      
-      log.debug(s"AmqpClient.publish(${ep.toString}, [message])")
-      
-      val connection = factory.newConnection
-      val channel = connection.createChannel
-      
-      try {
-        channel.exchangeDeclare(ep.exchange, "direct")
-        channel.basicPublish(ep.exchange, ep.route, null, message.getBytes())
-      } catch {  
-        case e: Throwable => throw e
-      } finally {
-        channel.close()
-        connection.close()
-      }
-    }
-  }
-  
-  object AmqpClient {
-    def apply(cnn: AmqpConnection) = new AmqpClient(cnn)
-  }
-  
+
   case class RabbitUser(name: String, password_hash: String, hashing_algorithm: String, tags: String)
+  
   case class RabbitPermission(user: String, vhost: String, configure: String, write: String, read: String)
   
   case class RabbitInfo(rabbit_version: String, exchanges: Seq[RabbitExchange], bindings: Seq[RabbitBinding]) {
