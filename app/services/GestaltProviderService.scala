@@ -3,18 +3,14 @@ package services
 import java.util.UUID
 
 import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
-
 import play.api.{Logger => log}
-
-import com.galacticfog.gestalt.events.{AmqpEndpoint, PolicyEvent, AmqpClient, AmqpConnection}
-
+import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection, AmqpEndpoint, PolicyEvent}
 import play.api.Logger
-
 import play.api.libs.ws.WS
 import play.api.Play.current
 import play.api.libs.json._
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
@@ -28,8 +24,9 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-
 import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.SecretSpec
+
 import scala.concurrent.ExecutionContext
 
 trait GestaltProviderService
@@ -52,7 +49,12 @@ trait CaasService extends GestaltProviderService {
   def create(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
 
+  def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
+
   def destroy(container: GestaltResourceInstance): Future[Unit]
+
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit]
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance]

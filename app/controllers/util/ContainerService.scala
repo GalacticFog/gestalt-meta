@@ -16,7 +16,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, sdk}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
@@ -28,6 +28,13 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
+
+  def createSecret(context: ProviderContext,
+                   user: AuthAccountWithCreds,
+                   secretSpec: SecretSpec,
+                   userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
+
+  def deleteSecret(secret: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
   def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
@@ -69,6 +76,24 @@ object ContainerService {
     authTarget = Option(environment),
     policyOwner = Option(environment),
     policyTarget = Option(container),
+    data = data
+  )
+
+  def secretRequestOperations(action: String) = List(
+    controllers.util.Authorize(action),
+    controllers.util.EventsPre(action),
+    controllers.util.PolicyCheck(action),
+    controllers.util.EventsPost(action)
+  )
+
+  def secretRequestOptions(user: AuthAccountWithCreds,
+                           environment: UUID,
+                           secret: GestaltResourceInstance,
+                           data: Option[Map[String, String]] = None) = RequestOptions(
+    user = user,
+    authTarget = Option(environment),
+    policyOwner = Option(environment),
+    policyTarget = Option(secret),
     data = data
   )
 
@@ -438,10 +463,53 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     }
   }
 
-  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
+  override def createSecret(context: ProviderContext, user: AuthAccountWithCreds, secretSpec: SecretSpec, userRequestedId: Option[UUID]): Future[Instance] = {
+
+    val input = SecretSpec.toResourcePrototype(secretSpec).copy( id = userRequestedId )
+    val proto = withInputDefaults(context.environment.orgId, input, user, None)
+    val operations = secretRequestOperations("secret.create")
+    val options    = secretRequestOptions(user, context.environmentId, proto)
+
+    SafeRequest (operations, options) ProtectAsync { _ =>
+
+      // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
+      val provider = caasProvider(secretSpec.provider.id)
+      val secretResourcePre = upsertProperties(
+        resource = proto,
+        "provider" -> Json.obj(
+          "name" -> provider.name,
+          "id" -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        ).toString
+      )
+
+      for {
+        metaResource <- Future.fromTry{
+          log.debug("Creating secret resource in Meta")
+          ResourceFactory.create(ResourceIds.User, user.account.id)(secretResourcePre, Some(context.environmentId))
+        }
+        _ = log.info("Meta secret created: " + metaResource.id)
+        service      <- Future.fromTry{
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Creating secret in backend CaaS...")
+          service.createSecret(context, metaResource, secretSpec.items)
+        }
+        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstance
+
+    }
+
+  }
+
+  override def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
     // just a convenient interface for testing... we'll let DeleteController do this for us
     deleteController.deleteResource(container, identity)(request)
   }
+
+  override def deleteSecret(secret: Instance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = ???
 
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {

@@ -4,10 +4,11 @@ import java.security.MessageDigest
 import java.util.UUID
 import javax.inject.Inject
 
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{SecretSpec => MetaSecretSpec}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -21,6 +22,7 @@ import play.api.libs.json.Json
 import services.util.CommandParser
 
 import collection.JavaConverters._
+import scala.annotation.meta
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 
@@ -361,5 +363,11 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
+  override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[MetaSecretSpec.Item])
+                           (implicit ec: ExecutionContext): Future[Instance] = Future.failed(
+    new BadRequestException("Docker Swarm CaaS provider does not support secrets")
+  )
+
+  override def destroySecret(secret: Instance): Future[Unit] = ???
 }
 

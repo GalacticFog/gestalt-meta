@@ -14,9 +14,8 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.google.inject.Inject
-
 import skuber._
 import skuber.api.client._
 import skuber.ext._
@@ -24,7 +23,6 @@ import skuber.json.format._
 import skuber.json.ext.format._
 import skuber.api.client.ObjKind
 import skuber.Container.Port
-
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
@@ -35,7 +33,6 @@ import org.joda.time.{DateTime, DateTimeZone}
 import scala.concurrent.ExecutionContext
 import scala.reflect.runtime.universe._
 import scala.language.postfixOps
-
 import play.api.libs.json._
 import play.api.libs.functional.syntax._
 
@@ -141,7 +138,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
   
-  def createSecret(context: ProviderContext, secret: GestaltResourceInstance)
+  def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     ContainerSecret.fromResource(secret) match {
       case Failure(e) => Future.failed(e)
@@ -839,6 +836,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = ???
 }
 
 

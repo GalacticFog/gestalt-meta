@@ -4,7 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,7 +20,7 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, ForEach}
 import play.api.http.HttpVerbs
-import play.api.libs.json.{JsError, JsSuccess, Json}
+import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.FakeRequest
 
@@ -481,6 +481,68 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         )),
         container = any
       )(any)
+    }
+
+    "create secrets using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testSecretName = "test-container"
+      val testItems = Seq(
+        SecretSpec.Item("item-a", Some("c2hoaGho")),
+        SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
+      )
+      val testSpec = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        items = testItems
+      )
+
+      mockCaasService.createSecret(any,any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val createdSecret = await(containerService.createSecret(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        user = user,
+        secretSpec = testSpec,
+        userRequestedId = None
+      ))
+
+      there was one(mockCaasService).createSecret(
+        context = argThat(matchesProviderContext(
+          provider = testProvider,
+          workspace = testWrk,
+          environment = testEnv
+        )),
+        metaResource = any,
+        items = any
+      )(any)
+
+      ResourceFactory.findParent(createdSecret.id) must beSome(
+        (r: GestaltResourceInstance) => r.typeId == ResourceIds.Environment && r.id == testEnv.id
+      )
+
+      val Some(metaSecret) = ResourceFactory.findById(ResourceIds.Secret, createdSecret.id)
+      Json.parse(metaSecret.properties.get.get("items").get).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(testItems.map(_.copy(value = None)))
+    }
+
+    "throw 400 on bad provider during secret creation" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val badProvider = UUID.randomUUID()
+      val testSecretName = "test-container"
+      val testSpec = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = badProvider),
+        items = Seq.empty
+      )
+
+      containerService.createSecret(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/secrets"), badProvider, None),
+        user = user,
+        secretSpec = testSpec,
+        userRequestedId = None
+      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
     }
 
   }

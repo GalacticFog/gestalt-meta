@@ -67,6 +67,7 @@ class DeleteController @Inject()(
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
       ResourceIds.Container   -> deleteExternalContainer,
+      ResourceIds.Secret      -> deleteExternalSecret,
       ResourceIds.Api         -> gatewayMethods.deleteApiHandler,
       ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
       ResourceIds.Lambda      -> lambdaMethods.deleteLambdaHandler
@@ -144,12 +145,19 @@ class DeleteController @Inject()(
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     security.deleteGroup(res.id, account) map ( _ => () )
   }
-  
+
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
-    
+
     providerManager.getProviderImpl(provider.typeId) map { service =>
       Await.result(service.destroy(res), 5 seconds)
+    }
+  }
+
+  def deleteExternalSecret(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
+    val provider = containerProvider(res)
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroySecret(res), 5 seconds)
     }
   }
   

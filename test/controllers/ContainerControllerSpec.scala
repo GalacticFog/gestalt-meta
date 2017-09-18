@@ -2,15 +2,18 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
+
 import scala.concurrent.Future
 import scala.util.Success
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -19,7 +22,7 @@ import org.specs2.execute.{AsResult, Result}
 import play.api.inject.guice.GuiceableModule
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
 import play.api.inject.bind
@@ -136,7 +139,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
     }
 
     
-    "normalizeContainerPayload" should { //normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject]
+    "normalizeCaasPayload" should { //normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject]
     
       "succeed when give a valid Container payload" in new TestContainerController {
         val env = createInstance(ResourceIds.Environment, uuid.toString, 
@@ -162,7 +165,10 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
             |  }
             |}""".trim.stripMargin)
         val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeContainerPayload(payload, env.get.id) must beSuccessfulTry
+        val Success(normalizedPayload) = cc.normalizeCaasPayload(payload, env.get.id)
+        Js.find(normalizedPayload, "/properties/provider/id") must beSome(JsString(s"${prv.get.id}"))
+        Js.find(normalizedPayload, "/properties/provider/name") must beSome(JsString(s"${prv.get.name}"))
+        Js.find(normalizedPayload, "/properties/provider/resource_type") must beSome(JsString(s"${sdk.ResourceName(prv.get.typeId)}"))
       }
       
       "fail when given an Environment that is incompatible with the Provider (env-type)" in new TestContainerController {
@@ -189,7 +195,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
             |  }
             |}""".trim.stripMargin)
         val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeContainerPayload(payload, env.get.id) must beFailedTry
+        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
       }      
       
       "fail when /properties/provider/id is not found on the container" in new TestContainerController {
@@ -213,7 +219,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
             |  }
             |}""".trim.stripMargin)
         val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeContainerPayload(payload, env.get.id) must beFailedTry
+        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
       }
       
       "fail when the Environment with the given ID is not found" in new TestContainerController {
@@ -233,7 +239,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
             |  }
             |}""".trim.stripMargin)
         val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeContainerPayload(payload, uuid()) must beFailedTry
+        cc.normalizeCaasPayload(payload, uuid()) must beFailedTry
       }
       
       "fail when the CaasProvider with the given ID is not found" in new TestContainerController {
@@ -260,7 +266,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
             |  }
             |}""".trim.stripMargin)
         val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeContainerPayload(payload, env.get.id) must beFailedTry
+        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
       }
       
     }
@@ -743,7 +749,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
     }
 
-    "delete kube containers using the ContainerService interface" in new TestContainerController {
+    "delete containers using the ContainerService interface" in new TestContainerController {
       val testContainerName = "test-container"
       val testProps = ContainerSpec(
         name = testContainerName,
@@ -800,65 +806,6 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         hasId(createdResource.id) and hasProperties("external_id" -> extId)
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
-    }
-
-    "delete dcos containers using the ContainerService interface" in new TestContainerController {
-      val testContainerName = "test-container"
-      val testProps = ContainerSpec(
-        name = testContainerName,
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id),
-        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-      val extId = s"/${testEnv.id}/test-container"
-      val Success(createdResource) = createInstance(ResourceIds.Container, testContainerName,
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "disk" -> testProps.disk.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
-          "external_id" -> s"${extId}"
-        ))
-      )
-
-      mockCaasService.destroy(
-        hasId(createdResource.id)
-      ) returns Future(())
-
-      val request = fakeAuthRequest(DELETE,
-        s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds)
-
-      val Some(result) = route(request)
-
-      status(result) must equalTo(NO_CONTENT)
-
-      there was one(mockCaasService).destroy(
-        hasId(createdResource.id) and hasProperties("external_id" -> extId)
-      )
-      there was atLeastOne(providerManager).getProviderImpl(testProvider.typeId)
     }
 
     "scale containers using the ContainerService and CaaSService interfaces" in new TestContainerController {
@@ -925,6 +872,144 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ),
         container = hasId(createdResource.id),
         numInstances = meq(4)
+      )
+      there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
+    }
+
+    "create secrets with missing provider payload should 400" in new TestContainerController {
+      val newResource = newInstance(
+        typeId = ResourceIds.Secret,
+        name = "test-container",
+        properties = Some(Map(
+          // "provider" -> Json.toJson(testProps.provider).toString
+        ))
+      )
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/secrets", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("/properties/provider/id")
+    }
+
+    "create secrets with non-existent provider should 400" in new TestContainerController {
+      val newResource = newInstance(
+        typeId = ResourceIds.Secret,
+        name = "test-container",
+        properties = Some(Map(
+          "provider" -> Json.toJson(
+            ContainerSpec.InputProvider(id = UUID.randomUUID())
+          ).toString
+        ))
+      )
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/secrets", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("CaasProvider") and contain("not found")
+    }
+
+    "create secrets using CaaSService interface" in new TestContainerController {
+      val testSecretName = "test-secret"
+      val testItems = Seq(
+          SecretSpec.Item("item-a", Some("c2hoaGho")),
+          SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
+        )
+      val testProps = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        items = testItems
+      )
+
+      val newResource = newInstance(
+        typeId = ResourceIds.Secret,
+        name = testSecretName,
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "items" -> Json.toJson(testProps.items).toString
+        ))
+      )
+
+      val createdResource = newResource.copy(
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "items" -> Json.toJson(testProps.items.map(_.copy(value = None))).toString
+        ))
+      )
+
+      containerService.createSecret(any,any,any,any) returns Future.successful(createdResource)
+
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/secrets", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(request)
+      status(result) must equalTo(ACCEPTED)
+
+      there was one(containerService).createSecret(
+        context = matchesProviderContext(
+          provider = testProvider,
+          workspace = testWork,
+          environment = testEnv
+        ),
+        user = any,
+        secretSpec = argThat(
+          ((_: SecretSpec).name) ^^ be_==(testSecretName)
+            and
+            ((_: SecretSpec).items) ^^ containTheSameElementsAs(testItems)
+        ),
+        userRequestedId = any
+      )
+
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testSecretName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Secret")
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "items").as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        testItems.map(_.copy(value = None))
+      )
+    }
+
+    "delete secrets using the ContainerService interface" in new TestContainerController {
+      val testSecretName = "test-secret"
+      val testItems = Seq(
+        SecretSpec.Item("item-a", Some("c2hoaGho")),
+        SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
+      )
+      val testProps = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        items = testItems
+      )
+      val extId = s"/${testEnv.id}/$testSecretName"
+      val Success(createdResource) = createInstance(ResourceIds.Secret, testSecretName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "items" -> Json.toJson(testProps.items).toString,
+          "external_id" -> s"${extId}"
+        ))
+      )
+
+      mockCaasService.destroySecret(
+        hasId(createdResource.id)
+      ) returns Future(())
+
+      val request = fakeAuthRequest(DELETE,
+        s"/root/environments/${testEnv.id}/secrets/${createdResource.id}", testCreds)
+
+      val Some(result) = route(request)
+
+      status(result) must equalTo(NO_CONTENT)
+
+      println(contentAsString(result))
+
+      there was one(mockCaasService).destroySecret(
+        hasId(createdResource.id) and hasProperties("external_id" -> extId)
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
     }
