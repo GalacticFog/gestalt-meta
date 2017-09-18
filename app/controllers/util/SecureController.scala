@@ -20,12 +20,14 @@ import play.api.libs.json._
 
 import scala.util.{Try, Success, Failure}
 
-
+import com.galacticfog.gestalt.meta.api.audit.Audit
 abstract class SecureController(
   messagesApi: MessagesApi,
   env: GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator])
     extends GestaltFrameworkSecuredController[DummyAuthenticator](messagesApi, env) {
 
+  protected val audit = Audit
+  
   implicit def getSecurityClient: GestaltSecurityClient = env.client
 
   private def Authenticate() = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => None: Option[UUID] }))
@@ -86,9 +88,9 @@ abstract class SecureController(
   private def logAction[A](request: SecuredRequest[A], result: Result, startTime: Long) = {
 
     if (FailureRange.contains(result.header.status)) {
-      Audit.log(auditError(request, result.body.toString, result.header.status, startTime))
+      audit.log(auditError(request, result.body.toString, result.header.status, startTime))
     } else {
-      Audit.log(auditPost(request, result, startTime))
+      audit.log(auditPost(request, result, startTime))
     }
   }
 
@@ -96,7 +98,7 @@ abstract class SecureController(
    * Log an "uncaught" request thrown by the audited code block.
    */
   private def logUnknown[A](request: SecuredRequest[A], ex: Throwable, startTime: Long) = {
-    Audit.log(auditError(request, ex, startTime))
+    audit.log(auditError(request, ex, startTime))
     HandleExceptions(ex)    
   }
   

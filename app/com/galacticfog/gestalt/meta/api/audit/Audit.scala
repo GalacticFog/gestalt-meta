@@ -1,18 +1,22 @@
 package com.galacticfog.gestalt.meta.api.audit
 
 
-import play.api.libs.json._
 import org.slf4j.LoggerFactory
+import play.api.libs.json.{Json, JsValue}
+import scala.util.{Try,Success,Failure}
 import scalaz.{Success => VSuccess, Failure => VFailure}
-
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
+
 object Audit {
-  
+
   protected val internalLog = LoggerFactory.getLogger(this.getClass)
   
   lazy val logger: AuditLogger = init()
+  
+  
+  init()
   
   
   def log(message: String, level: String = "info", marker: Option[String] = None) = Future {
@@ -29,7 +33,6 @@ object Audit {
     val auditEnv = envmap getOrElse sys.env filter {  
       case (k, v) => k.startsWith(Keys.VarPrefix) 
     }
-    
     AuditEnv.validate(auditEnv) match {
       case VSuccess(env) => Json.obj(
             "config_state"   -> "OK",
@@ -63,6 +66,9 @@ object Audit {
         
         case VFailure(errs) => {
           internalLog.error(s"Bad Audit Configuration. Errors: [${errs.list.mkString(",")}]")
+          
+          if (shouldExitOnFailure(Some(auditEnv))) exitFailure()
+          
           internalLog.warn(s"Defaulting to no-op Logger. Audit logs will NOT be created for this Meta instance.")
           new NoOpLogger()
           
@@ -89,13 +95,36 @@ object Audit {
     }
   }
   
+  private def exitFailure() {
+    internalLog.error(
+        s"FATAL: ${Keys.ExitOnFailure} is 'true'. You must fix the audit-log configuration, " +
+        s"or set ${Keys.ExitOnFailure} to 'false'. Exiting host process.")
+    System.exit(1)    
+  }
   /**
    * Determine if logging is currently enabled.
    */
-  private def loggingEnabled(map: Option[Map[String,String]] = None) = {
-    val env = envOrDefault(map)
-    env.get(Keys.Enabled).nonEmpty && env(Keys.Enabled).toBoolean
+  def loggingEnabled(map: Option[Map[String,String]] = None) = {
+    isTruthy(Keys.Enabled, map)
   }
+  
+  /**
+   * Determine if host process should exit on configuration failure.
+   */
+  def shouldExitOnFailure(map: Option[Map[String,String]] = None) = {
+    isTruthy(Keys.ExitOnFailure, map)
+  }
+  
+  
+  private def isTruthy(key: String, map: Option[Map[String,String]] = None): Boolean = {
+    val env = envOrDefault(map)
+    env.get(key).nonEmpty && ({
+      Try(env(key).toBoolean) match {
+        case Failure(_) => false
+        case Success(b) => b        
+      }
+    })
+  }  
   
   /**
    * Unpack the given map if Some, filter and return META_AUDIT variables from the
