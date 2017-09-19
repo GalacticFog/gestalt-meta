@@ -21,7 +21,7 @@ resolvers ++= Seq(
     "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
 )
 
-dockerBaseImage := "java:8-jre-alpine"
+dockerBaseImage := "openjdk:8-jre-alpine"
 
 dockerCommands := dockerCommands.value.flatMap {
   case cmd@Cmd("FROM",_) => List(
