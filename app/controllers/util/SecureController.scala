@@ -148,7 +148,6 @@ abstract class SecureController(
       u.name,
       (u.email getOrElse "N/A"))
   }
-
 }
 
 

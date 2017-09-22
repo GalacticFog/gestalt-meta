@@ -62,10 +62,10 @@ GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrati
 
 ### NOTE: These will be taken over by elastic or similar
 GET 	/groups/search  																	  controllers.SearchController.getGroupByPropertyGlobal()
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/search  							  controllers.SearchController.getGroupByPropertyFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/search								  controllers.SearchController.findGroups(fqon)  							  
 
 GET 	/users/search  																		  controllers.SearchController.getUserByPropertyGlobal()
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/search  							  controllers.SearchController.getUserByPropertyFqon(fqon: String)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/search  							  controllers.SearchController.findUsers(fqon) 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources/search 	  controllers.SearchController.getAllResourcesByTypePropertyFqon(fqon: String, typeId: java.util.UUID)
 
 ############################

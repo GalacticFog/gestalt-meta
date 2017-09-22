@@ -26,17 +26,32 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import modules.SecurityClientProvider
 import play.api.Logger
-
+import play.api.libs.json._
 import scala.language.postfixOps
-
+import scala.concurrent.Future
 
 class Security @Inject()(secClientProvider: SecurityClientProvider) {
   
   private[this] val log = Logger(this.getClass)
   
+  def client() = secClientProvider.client
+  
+  def clientUrl(): String = {
+    val c = secClientProvider.client
+    "%s://%s%s".format(c.protocol, c.hostname, c.port)
+  }
+  
+  def searchAccounts(org: UUID, auth: AuthAccountWithCreds, criteria: (String,String)*): Future[Seq[GestaltAccount]] = {
+    GestaltOrg.listAccounts(org, criteria:_*)(secClientProvider.client.withCreds(auth.creds))
+  }
+  
+  def searchGroups(org: UUID, auth: AuthAccountWithCreds, criteria: (String,String)*): Future[Seq[GestaltGroup]] = {
+    GestaltOrg.listGroups(org, criteria:_*)(secClientProvider.client.withCreds(auth.creds))
+  }
+  
   def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds): Try[GestaltOrgSync] = {
     Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
-  } 
+  }
   
   def getRootOrg(auth: AuthAccountWithCreds): Try[GestaltOrg] = {
     def unwrap(os: Seq[GestaltOrg]) = Try {
@@ -59,7 +74,8 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
     Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
-  
+      import com.galacticfog.gestalt.security.api.json.JsonImports._
+    import play.api.libs.json._
   def createGroup(org: UUID, auth: AuthAccountWithCreds, group: GestaltResourceInput): Try[GestaltGroup] = {
     log.debug(s"createGroup(...)")
     Try {
@@ -68,6 +84,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
         rights = None,
         description = group.description
       )
+      println("***NEW-GROUP : " + Json.prettyPrint(Json.toJson(newGroup)))
       Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)
     }
   }
@@ -121,6 +138,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       rights = None,
       description = user.description
     )
+
     log.debug(s"Creating account in gestalt-security (org = $org")
     Try{Await.result( GestaltOrg.createAccount(org, account)(secClientProvider.client.withCreds(auth.creds)), 5 seconds )}
   }
@@ -128,7 +146,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def getAccount(org: UUID, accountId: UUID, auth: AuthAccountWithCreds): Try[Option[GestaltAccount]] = {
     Try(Await.result(GestaltOrg.getAccountById(org, accountId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
-    
+  
   def getAllAccounts(org: Option[UUID], auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
     Try{Await.result(GestaltOrg.listAccounts(org.get)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
   }

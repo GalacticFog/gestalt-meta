@@ -226,9 +226,10 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[_]): Result = {
 
-    log.debug(s"AuthorizedResourceList($path, $action)")
+    log.debug(s"AuthorizedResourceList(${path.path}, $action)")
 
     val rss = lookupSeqs.get(path.targetTypeId).fold {
+      log.debug(s"Executing standard lookup function for resource list: ${path.path}")
       Resource.listFromPath(path.path)
     }{ f => f(path, request.identity, request.queryString).toList }
     
@@ -564,6 +565,10 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         case a403: ForbiddenAPIException =>
           log.warn("user credentials did not have permission to view group membership against gestalt-security, using empty list", a403)
           Seq.empty
+        case a404: com.galacticfog.gestalt.security.api.errors.ResourceNotFoundException => {
+          log.warn(s"Group ${r.id} was found in Meta but no longer exists in gestalt-security.", a404)
+          Seq.empty
+        }
       }
       .map { acs =>
         // String list of all users in current group.
@@ -579,6 +584,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       }
   }
 
+  
   // --------------------------------------------------------------------------
   // ENVIRONMENT VARIABLES
   // --------------------------------------------------------------------------  

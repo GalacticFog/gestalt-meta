@@ -19,11 +19,20 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
 import javax.inject.Singleton
+import controllers.util.Security
+
+import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltGroup}
+import com.galacticfog.gestalt.security.api.json.JsonImports._
+  
+import scala.concurrent.Future
 
 @Singleton
-class SearchController @Inject()(messagesApi: MessagesApi,
-                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+class SearchController @Inject()(
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    security: Security,
+    securitySync: SecuritySync)
+      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   private case class Criterion(name: String, value: String)
   
@@ -57,13 +66,67 @@ class SearchController @Inject()(messagesApi: MessagesApi,
     getResourcesByProperty(
         ResourceIds.User, Option(fqid(fqon)))(validateUserSearchCriteria)
   }  
+  
+  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+  import com.galacticfog.gestalt.security.api.GestaltResource
+  import scala.concurrent.ExecutionContext.Implicits.global
+  import play.api.mvc.Request
+  import play.api.libs.json._
+  
+  
+  def findUsers(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
+    findSecurityPassThrough(
+      fqon, 
+      request.identity, 
+      ResourceIds.User)(
+        ResourceFactory.findAllIn, security.searchAccounts)
+  }
+  
+  def findGroups(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
+    findSecurityPassThrough(
+      fqon, 
+      request.identity, 
+      ResourceIds.Group)(
+        ResourceFactory.findAllIn, security.searchGroups)
+  }  
+  
+  def findSecurityPassThrough(fqon: String, identity: AuthAccountWithCreds, metaTypeId: UUID)(
+      metaLookup: (UUID, Seq[UUID]) => Seq[GestaltResourceInstance],
+      securityLookup: (UUID, AuthAccountWithCreds, (String,String)*) => Future[Seq[GestaltResource]])(implicit request: Request[_]) = {
+    
+    val org = fqid(fqon)
+    val args = request.queryString.map{case (k,v) => (k -> v(0))}.toSeq
 
+    securityLookup(org, identity, args:_*).map { sm =>
+      val securityIds = sm.map(_.id)
+      val metaResources = metaLookup(metaTypeId, securityIds)
+      val metaIds = metaResources.map(_.id)
+
+      val results = {
+        if (securityIds.sorted != metaIds.sorted) {
+          securitySync.synchronize(identity) match {
+            case Failure(e) => {
+              log.error(s"Failed synchronizing with gestalt-security (${security.clientUrl})")
+              throw e
+            }
+            case Success(_) => metaLookup(metaTypeId, securityIds)
+          }
+        } else {
+          // We already had the users returned by security
+          metaResources
+        }
+      }
+      RenderList(results)(request.asInstanceOf[play.api.mvc.Request[_]])
+    }
+  }    
+  
+  
   // GET /{fqon}/users/search?{name}={value}  
   def getGroupByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
         ResourceIds.Group, Option(fqid(fqon)))(validateGroupSearchCriteria)
   }
-
+  
   
   private[controllers] def getResourcesByProperty(typeId: UUID, org: Option[UUID] = None)
       (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: SecuredRequest[_]) = {
