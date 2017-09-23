@@ -144,12 +144,14 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     }
     else Ok(Output.renderLinks(rs, baseUri))
   }
+  
   def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
       Ok(Json.toJson(rs map { r => Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
     }
     else Ok(Output.renderLinks(rs, baseUri))
   }
+  
   protected[controllers] def CreateResource(
     org: UUID,
     caller: AuthAccountWithCreds,

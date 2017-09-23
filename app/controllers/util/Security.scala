@@ -10,7 +10,7 @@ import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
@@ -29,6 +29,9 @@ import play.api.Logger
 import play.api.libs.json._
 import scala.language.postfixOps
 import scala.concurrent.Future
+import com.galacticfog.gestalt.security.api.json.JsonImports._
+import play.api.libs.json._
+
 
 class Security @Inject()(secClientProvider: SecurityClientProvider) {
   
@@ -48,6 +51,29 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def searchGroups(org: UUID, auth: AuthAccountWithCreds, criteria: (String,String)*): Future[Seq[GestaltGroup]] = {
     GestaltOrg.listGroups(org, criteria:_*)(secClientProvider.client.withCreds(auth.creds))
   }
+  
+  def getRootUser(auth: AuthAccountWithCreds): Try[GestaltAccount] = {
+    for {
+      org    <- getRootOrg(auth)
+      tree   <- getOrgSyncTree(Some(org.id), auth)
+      link  = tree.admin getOrElse {
+        throw new ResourceNotFoundException(s"Could not find 'admin' in security sync-tree.")
+      }
+      a1 <- getAccount(org.id, link.id, auth) 
+      a2 = a1 getOrElse {
+        throw new ResourceNotFoundException(s"Could not find root user in gestalt-security.")
+      }
+    } yield a2
+  }
+  
+  def getRootInfo(auth: AuthAccountWithCreds): (GestaltOrg, Option[GestaltAccount]) = {
+    (for {
+      org    <- getRootOrg(auth)
+      tree   <- getOrgSyncTree(Some(org.id), auth)
+      link = tree.admin
+      admin  <- this.getAccount(org.id, link.get.id, auth)
+    } yield (org, admin)).get
+  }  
   
   def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds): Try[GestaltOrgSync] = {
     Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
@@ -74,8 +100,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
     Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
-      import com.galacticfog.gestalt.security.api.json.JsonImports._
-    import play.api.libs.json._
+
   def createGroup(org: UUID, auth: AuthAccountWithCreds, group: GestaltResourceInput): Try[GestaltGroup] = {
     log.debug(s"createGroup(...)")
     Try {
@@ -84,7 +109,6 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
         rights = None,
         description = group.description
       )
-      println("***NEW-GROUP : " + Json.prettyPrint(Json.toJson(newGroup)))
       Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)
     }
   }

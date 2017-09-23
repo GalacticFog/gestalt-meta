@@ -66,7 +66,6 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
           typeId = Option(ResourceIds.Entitlement), 
           parent = /*parent*/ Option(resource))
       }
-
     }
   }
   
