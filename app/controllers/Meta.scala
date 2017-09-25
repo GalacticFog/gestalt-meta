@@ -52,6 +52,7 @@ import com.galacticfog.gestalt.meta.actions._
 class Meta @Inject()( messagesApi: MessagesApi,
                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
                       security: Security,
+                      securitySync: SecuritySync,
                       lambdaMethods: LambdaMethods,
                       actionMethods: ActionMethods,
                       providerManager: ProviderManager )
@@ -237,8 +238,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     Authorize(org, "user.create", request.identity) {
       
-      val root = security.getRootOrg(request.identity).get.fqon
-      val home = Js.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(root)
+      val rootOrg = security.getRootOrg(request.identity).get
+      val rootFqon = rootOrg.fqon
+      val home = Js.find(request.body.as[JsObject], "/properties/gestalt_home") getOrElse JsString(rootOrg.fqon)
       
       log.debug(s"Setting 'gestalt_home' to $home")
       
@@ -251,12 +253,14 @@ class Meta @Inject()( messagesApi: MessagesApi,
             HandleExceptions(err)
           }
           case Success(res) => {
-            setNewEntitlements(org, res.id, request.identity, parent = Option(org))        
+            val callerId = request.identity.account.id
+            setNewEntitlements(org, res.id, request.identity, parent = Option(org))
+            securitySync.grantNewUserPermissions(callerId, res.id, rootOrg.id)
             Created(Output.renderInstance(res, META_URL))
           }
         }
     }
-  }        
+  }
   
   
   implicit def featureToString(feature: GestaltFeature) = feature.getLabel

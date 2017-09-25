@@ -30,6 +30,106 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   //private val log = Logger(this.getClass)
   
+  
+  def normalizeActions(prefix: String, actions: Seq[String]): Seq[String] = {
+    ???
+  }
+  
+  /**
+   * 
+   * @param actions list of actions to grant user on the resource.
+   */
+  def grant(caller: UUID, identity: UUID, resource: UUID, actions: String*): Seq[Try[GestaltResourceInstance]] = {
+    
+    ResourceFactory.findById(resource).fold {
+      throw new ResourceNotFoundException(s"Resource with ID '$resource' not found")
+    }{ res =>
+      
+      val acts = actions // These will be normalized later.
+      val validActions = getNewResourceActionSet(res.typeId).toSeq
+      val existingActions = findEntitlementsByResource(res.id).map { 
+        ent => (ent.properties.get("action"), ent)
+      }.toMap
+      
+      acts.map { a =>
+        
+        if (existingActions.contains(a)) {
+          val eid = existingActions(a)
+          
+          log.debug(s"Found existing entitlement: [$eid.id] - UPDATING")
+          updateEntitlement(caller, eid, Seq(identity)) match {
+            case Failure(e) => {
+              log.error(s"Failed updating Entitlement ${a}${eid.id}': ${e.getMessage}")
+              Failure(e)
+            }
+            case Success(e) => {
+              log.info("Entitlement updated.")
+              Success(e)
+            }
+          }
+        
+        } else {
+        
+          log.debug("No existing entitlement found - CREATING")
+          val ename = "%s.%s".format(res.id.toString, a)
+          val ent = Entitlement(UUID.randomUUID, res.orgId, ename,
+              properties = EntitlementProps(a, None, identities = Some(Seq(identity))))
+              
+          ResourceFactory.create(ResourceIds.User, caller)(
+              Entitlement.toGestalt(caller, ent), 
+              parentId = Some(res.id))
+          
+        }
+      }
+    }
+  }
+  
+  def newEntitlement(action: String, identities: Seq[UUID]) = {
+    //Entitlement(
+    ???
+  }
+  
+  def updateEntitlement(
+      caller: UUID, 
+      ent: GestaltResourceInstance, 
+      identities: Seq[UUID]): Try[GestaltResourceInstance] = {
+    
+    log.debug(s"updateEntitlement($caller, ${ent.id}, $identities")
+    
+    val updated = withIdentities(ent, identities)
+    ResourceFactory.update(updated, caller)
+  }
+  
+  def withIdentities(ent: GestaltResourceInstance, ids: Seq[UUID]): GestaltResourceInstance = {
+    val props = ent.properties.get
+    val currentIds = getIdentities(ent)
+    val newIds = (ids.toSet ++ currentIds.toSet)
+    
+    log.debug("CURRENT-IDS : " + currentIds)
+    log.debug("NEW-IDS     : " + newIds)
+    
+    val t = Option((props ++ Map("identities" -> Json.stringify(Json.toJson(newIds)))))
+    log.debug("T           : " + t)
+    ent.copy(properties = t
+      )
+  }
+  
+  def getIdentities(ent: GestaltResourceInstance): Seq[UUID] = {
+    val ids = ent.properties.get("identities")
+    val idarray = Js.parse[Seq[String]](Json.parse(ids)).getOrElse {
+      throw new RuntimeException(s"Failed parsing identities from entitlement '${ent.id}'")
+    }
+    idarray.map { i => UUID.fromString(i) }    
+  }
+  
+  def findEntitlementsByResource(resource: UUID) = {
+    ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
+  }
+  
+  def findEntitlementByAction(resource: UUID, action: String): Option[GestaltResourceInstance] = {
+    ResourceFactory.findByPropertyValue(ResourceIds.Entitlement, "action", action)  
+  }
+  
   /**
    * 
    * @param parent the parent of the new Resource

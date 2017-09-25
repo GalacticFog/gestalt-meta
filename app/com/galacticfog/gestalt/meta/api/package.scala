@@ -83,7 +83,6 @@ package object api {
       case ResourceIds.TypeProperty    => Some("typeproperties")
       case ResourceIds.TaskStatusType  => Some("taskstatustypes")
       case ResourceIds.Integration     => Some("integrations")
-      case ResourceIds.ProviderAction  => Some("provideractions")
       case ResourceIds.ActionProvider  => Some("actionproviders")
       case ResourceIds.ProviderAction  => Some("actions")
       case _ => None
