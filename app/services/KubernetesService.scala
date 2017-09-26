@@ -25,7 +25,6 @@ import skuber.api.client.ObjKind
 import skuber.Container.Port
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 import org.joda.time.{DateTime, DateTimeZone}
 
@@ -37,6 +36,7 @@ import play.api.libs.functional.syntax._
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
+  val META_SECRET_KEY = "meta/secret"
   val META_ENVIRONMENT_KEY = "meta/environment"
   val META_WORKSPACE_KEY = "meta/workspace"
   val META_FQON_KEY = "meta/fqon"
@@ -116,7 +116,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       fT
     }
   }
-  
+
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     SecretSpec.fromResourceInstance(secret) match {
@@ -124,12 +124,50 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case Success(sec) =>
         for {
           namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-          output    <- cleanly(context.provider.id, namespace.name)( createKubeSecret(_, secret.id, sec, namespace.name) map { _ => secret } )
-        } yield output
+          output    <- cleanly(context.provider.id, namespace.name)( createKubeSecret(_, secret.id, sec, namespace.name, context) )
+        } yield upsertProperties(
+          secret,
+          "external_id" -> s"/namespaces/${namespace.name}/secrets/${secret.name}"
+        )
     }
   }
 
-  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = ???
+  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = {
+    val provider = ContainerService.containerProvider(secret)
+    /*
+     * TODO: Change signature of deleteSecret to take a ProviderContext - providers
+     * must never user ResourceFactory directly.
+     */
+    val environment: String = {
+      ResourceFactory.findParent(ResourceIds.Environment, secret.id).map(_.id.toString) orElse {
+        val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
+        for {
+          eid <- ContainerService.resourceExternalId(secret)
+          ns <- eid match {
+            case namespaceGetter(namespace) => Some(namespace)
+            case _ => None
+          }
+        } yield ns
+      } getOrElse {
+        throw new RuntimeException(s"Could not find Environment for secret '${secret.id}' in Meta.")
+      }
+    }
+
+    val targetLabel = META_SECRET_KEY -> secret.id.toString
+    cleanly(provider.id, environment) { kube =>
+      val fSecretDel = for {
+        deps <- deleteAllWithLabel[Secret,SecretList](kube, targetLabel)
+      } yield deps.headOption.getOrElse({
+        log.debug("deleted no Secrets")
+        ()
+      })
+
+      fSecretDel map {_ =>
+        log.debug(s"finished deleting Secrets for secret ${secret.id}")
+        ()
+      }
+    }
+  }
 
   def create(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
@@ -161,7 +199,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     log.debug("update(...)")
     val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
     val previousName = for {
-      eid <- ContainerService.containerExternalId(container)
+      eid <- ContainerService.resourceExternalId(container)
       prev <- eid match {
         case nameGetter(name) => Some(name)
         case _ => None
@@ -325,8 +363,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String) = {
-    kube.create[Secret](mkSecret(secretId, spec, namespace))
+  private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String, context: ProviderContext): Future[Secret] = {
+    kube.create[Secret](mkSecret(secretId, spec, namespace, context))
   }
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
@@ -340,7 +378,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
         val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
         for {
-          eid <- ContainerService.containerExternalId(container)
+          eid <- ContainerService.resourceExternalId(container)
           ns <- eid match {
             case namespaceGetter(namespace) => Some(namespace)
             case _ => None
@@ -468,10 +506,26 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
-  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String) = {
-    val metadata = ObjectMeta(name = secret.name, namespace = namespace)
-    val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
-    Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
+  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext) = {
+    val metadata = ObjectMeta(
+      name = secret.name,
+      namespace = namespace,
+      labels = Map(
+        META_SECRET_KEY      -> id.toString,
+        META_ENVIRONMENT_KEY -> context.environmentId.toString,
+        META_WORKSPACE_KEY   -> context.workspace.id.toString,
+        META_FQON_KEY        -> context.fqon,
+        META_PROVIDER_KEY    -> context.providerId.toString
+      )
+    )
+    val data = secret.items.map {
+      case SecretSpec.Item(key, Some(value)) => key -> value.getBytes(Ascii.DEFAULT_CHARSET)
+    }.toMap
+    Secret(
+      metadata = metadata,
+      `type` = "Opaque",
+      data = data
+    )
   }
 
   private[services] def mkPortMappingsSpec(pms: Seq[PortMapping]): Seq[Port] = {

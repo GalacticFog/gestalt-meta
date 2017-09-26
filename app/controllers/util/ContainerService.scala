@@ -247,9 +247,9 @@ object ContainerService {
   /**
     * Lookup and return the external_id property
     */
-  def containerExternalId(container: GestaltResourceInstance): Option[String] = {
+  def resourceExternalId(resource: GestaltResourceInstance): Option[String] = {
     for {
-      props <- container.properties
+      props <- resource.properties
       eid <- props.get("external_id")
     } yield eid
   }

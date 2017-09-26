@@ -60,7 +60,7 @@ object DockerService {
   }
 
   def getExternalId(container: GestaltResourceInstance): Option[String] = {
-    ContainerService.containerExternalId(container) orElse {
+    ContainerService.resourceExternalId(container) orElse {
       for {
         envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
       } yield containerShortName(envId, container.name)
