@@ -161,11 +161,32 @@ class SecuritySync @Inject()(
           description = acc.description ) match {
         case Failure(err) => throw err
         case Success(usr) => {
+          
+          log.debug("Setting new user entitlements.")
           setNewEntitlements(org, usr.id, account, parent = Option(org))
+          
+          log.debug("Setting new user entitlements on root Org.")
+          val rootorgid = security.getRootOrg(account).get.id
+          
+          def grantNewUserPermissions(caller: UUID, user: UUID, homeOrg: UUID) = {
+            // Allow users to view their home-org
+            grant(caller, user, homeOrg, "org.view")
+            // Allow users to view themselves
+            grant(caller, user, user, "user.view")
+          }
+          grantNewUserPermissions(creator, usr.id, rootorgid)
         }
       }
     }
   }
+  
+  def grantNewUserPermissions(caller: UUID, user: UUID, homeOrg: UUID) = {
+    // Allow users to view their home-org
+    grant(caller, user, homeOrg, "org.view")
+    
+    // Allow users to view themselves
+    grant(caller, user, user, "user.view")
+  }  
   
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
     for (acc <- rs) {
