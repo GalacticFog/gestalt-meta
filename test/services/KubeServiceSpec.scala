@@ -189,6 +189,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       user = None
     )
 
+    lazy val metaSecret = createInstance(
+      ResourceIds.Secret,
+      "test-secret",
+      parent = Some(testEnv.id),
+      properties = Some(Map(
+        "provider" -> Output.renderInstance(testProvider).toString,
+        "items" -> "[]"
+      ))
+    ).get
+
     lazy val metaContainer = createInstance(
       ResourceIds.Container,
       "test-container",
@@ -210,7 +220,22 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ).flatten.toMap)
     ).get
 
-    lazy val lbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+    lazy val genericLbls   = Map(
+      KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+      KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+      KubernetesService.META_FQON_KEY -> "root",
+      KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+    )
+    lazy val secretLbls    = Map(KubernetesService.META_SECRET_KEY    -> metaSecret.id.toString) ++ genericLbls
+    lazy val containerLbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) ++ genericLbls
+
+    lazy val mockSecret = skuber.Secret(
+      metadata = skuber.ObjectMeta(
+        name = metaSecret.name,
+        namespace = testEnv.id.toString,
+        labels = secretLbls
+      )
+    )
 
     lazy val mockService = skuber.Service(
       name = metaContainer.name,
@@ -222,13 +247,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ),
         _type = skuber.Service.Type.NodePort
       )
-    ).addLabels(lbls)
+    ).addLabels(containerLbls)
 
     lazy val mockDepl = skuber.ext.Deployment(
       metadata = skuber.ObjectMeta(
         name = metaContainer.name,
         namespace = testEnv.id.toString,
-        labels = lbls,
+        labels = containerLbls,
         creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
       )
     ).withTemplate(
@@ -251,7 +276,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       metadata = skuber.ObjectMeta(
         name = s"${metaContainer.name}-hash-a",
         namespace = testEnv.id.toString,
-        labels = lbls
+        labels = containerLbls
       ),
       status = Some(skuber.Pod.Status(
         hostIP = Some("host-a"),
@@ -271,7 +296,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       metadata = skuber.ObjectMeta(
         name = s"${metaContainer.name}-hash-b",
         namespace = testEnv.id.toString,
-        labels = lbls
+        labels = containerLbls
       ),
       status = Some(skuber.Pod.Status(
         hostIP = Some("host-b"),
@@ -304,11 +329,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
       mockSkuber.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
       mockSkuber.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList(items = List(mockPodA,mockPodB)))
+      mockSkuber.list()(any,meq(client.secretListKind)) returns Future.successful(skuber.SecretList(items = List(mockSecret)))
 
       mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
       mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mockService)
+      mockSkuber.create(any)(any,meq(client.secretKind)) returns Future.successful(mockSecret)
 
       mockSkuber.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mockService))
+      mockSkuber.getOption(meq(metaSecret.name))(any,meq(client.secretKind)) returns Future.successful(Some(mockSecret))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, Some(metaContainer))
@@ -486,7 +514,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "provision with the expected external_id property" in new FakeKubeCreate() {
+    "provision containers and secrets with the expected external_id property" in new FakeKubeCreate() {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -494,7 +522,15 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps must havePair(
         "external_id" -> s"/namespaces/${testEnv.id}/deployments/test-container"
       )
-      there were two(testSetup.kubeClient).close
+
+      val Some(updatedSecretProps) = await(testSetup.kubeService.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = Seq.empty
+      )).properties
+      updatedSecretProps must havePair(
+        "external_id" -> s"/namespaces/${testEnv.id}/secrets/test-secret"
+      )
     }
 
     "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
@@ -513,7 +549,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were three(testSetup.kubeClient).close
     }
 
-    "provision with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
+    "provision secrets and containers with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
       "labela" -> "value a",
       "labelb" -> "value b"
     )) {
@@ -532,7 +568,23 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
         )
       ))(any,meq(skuber.ext.deploymentKind))
-      there were two(testSetup.kubeClient).close
+
+      val Some(updatedSecretProps) = await(testSetup.kubeService.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = Seq.empty
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        ((_:skuber.Secret).metadata.labels) ^^ havePairs(
+          // "labela" -> "value a",
+          // "labelb" -> "value b",
+          KubernetesService.META_SECRET_KEY -> metaSecret.id.toString,
+          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesService.META_FQON_KEY -> "root",
+          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+      ))(any,meq(client.secretKind))
     }
 
     "provision namespace with the expected name and labels" in new FakeKube {
@@ -754,7 +806,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
 
     "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKubeCreate {
-      import com.galacticfog.gestalt.marathon.ContainerStats
+
+      import com.galacticfog.gestalt.meta.api.ContainerStats
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1325,6 +1378,32 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "image" -> "nginx:updated"
       )
       there were two(testSetup.kubeClient).close
+    }
+
+    "delete secret" in new FakeKube {
+      val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "test-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> "[]"
+        ))
+      )
+
+      val label = KubernetesService.META_SECRET_KEY -> metaSecret.id.toString
+      val mockSecret = skuber.Secret(metadata = skuber.ObjectMeta(
+        name = metaSecret.name,
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      ))
+
+      testSetup.kubeClient.list()(any, meq(client.secretListKind)) returns Future.successful(skuber.SecretList(items = List(mockSecret)))
+      testSetup.kubeClient.delete(mockSecret.name,0)(client.secretKind) returns Future.successful(())
+
+      await(testSetup.kubeService.destroySecret(metaSecret))
+      there was one(testSetup.kubeClient).delete(mockSecret.name,0)(client.secretKind)
+      there was one(testSetup.kubeClient).close
     }
 
   }

@@ -562,7 +562,7 @@ package object marathon {
     )
   }
 
-  def containerWithDefaults(json: JsValue) = {
+  def containerWithDefaults(json: JsValue): ContainerSpec = {
     val ctype = (json \ "properties" \ "container_type").asOpt[String] match {
       case Some(t) if ! t.trim.isEmpty => t
       case _ => throw new IllegalArgumentException(s"'container_type' is missing or empty.")
@@ -586,7 +586,7 @@ package object marathon {
       provider = prv
     )
   }
-  
+
 //  def requiredJsString(name: String, value: JsValue) = value match {
 //    case u: JsUndefined => throw new IllegalArgumentException(s"'$name' is missing.")
 //    case v => v.as[String]
