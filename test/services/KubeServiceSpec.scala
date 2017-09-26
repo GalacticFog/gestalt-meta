@@ -1,8 +1,11 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
+
+import com.galacticfog.gestalt.caas.kube.Ascii
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,6 +23,7 @@ import play.api.test.PlaySpecification
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import skuber.api.client
 import skuber.json.format._
+
 import scala.concurrent.Future
 import scala.util.Success
 
@@ -189,13 +193,18 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       user = None
     )
 
+    lazy val metaSecretItems = Seq(
+      SecretSpec.Item("part-a", Some("value-a")),
+      SecretSpec.Item("part-b", Some("value-b"))
+    )
+
     lazy val metaSecret = createInstance(
       ResourceIds.Secret,
       "test-secret",
       parent = Some(testEnv.id),
       properties = Some(Map(
         "provider" -> Output.renderInstance(testProvider).toString,
-        "items" -> "[]"
+        "items" -> Json.toJson(metaSecretItems.map(_.copy(value = None))).toString
       ))
     ).get
 
@@ -1378,6 +1387,33 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "image" -> "nginx:updated"
       )
       there were two(testSetup.kubeClient).close
+    }
+
+    "not persist secret values in meta" in new FakeKubeCreate() {
+      val Some(updatedSecretProps) = await(testSetup.kubeService.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = metaSecretItems
+      )).properties
+
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (
+            ((_: skuber.Secret).data.map({
+              case (key, arrayByte) => SecretSpec.Item(key, Some(new String(arrayByte, Ascii.DEFAULT_CHARSET)))
+            }).toSeq) ^^ containTheSameElementsAs(metaSecretItems)
+          )
+      ))(any,meq(client.secretKind))
+
+      Json.parse(updatedSecretProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
+
+      val persistedProps = ResourceFactory.findById(ResourceIds.Secret, metaSecret.id).get.properties.get
+      Json.parse(persistedProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
     }
 
     "delete secret" in new FakeKube {

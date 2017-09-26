@@ -517,7 +517,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
           environment = testEnv
         )),
         metaResource = any,
-        items = any
+        items = meq(testItems)
       )(any)
 
       ResourceFactory.findParent(createdSecret.id) must beSome(
