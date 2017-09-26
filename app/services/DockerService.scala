@@ -6,9 +6,7 @@ import javax.inject.Inject
 
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.marathon.ContainerStats
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.{SecretSpec => MetaSecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec => MetaSecretSpec}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -368,6 +366,8 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     new BadRequestException("Docker Swarm CaaS provider does not support secrets")
   )
 
-  override def destroySecret(secret: Instance): Future[Unit] = ???
+  override def destroySecret(secret: Instance): Future[Unit] = Future.failed(
+    new BadRequestException("DCOS CaaS provider does not support secrets")
+  )
 }
 

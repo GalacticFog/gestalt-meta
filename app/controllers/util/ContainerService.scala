@@ -16,7 +16,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject

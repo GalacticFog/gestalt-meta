@@ -189,6 +189,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       user = None
     )
 
+    lazy val metaSecret = createInstance(
+      ResourceIds.Secret,
+      "test-secret",
+      parent = Some(testEnv.id),
+      properties = Some(Map(
+        "provider" -> Output.renderInstance(testProvider).toString,
+        "items" -> "[]"
+      ))
+    ).get
+
     lazy val metaContainer = createInstance(
       ResourceIds.Container,
       "test-container",
@@ -754,7 +764,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
 
     "set appropriate host port on container tasks from kubernetes Service node port" in new FakeKubeCreate {
-      import com.galacticfog.gestalt.marathon.ContainerStats
+
+      import com.galacticfog.gestalt.meta.api.ContainerStats
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1323,6 +1334,18 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
+      )
+      there were two(testSetup.kubeClient).close
+    }
+
+    "provision secrets with the expected external_id property" in new FakeKubeCreate() {
+      val Some(updatedSecretProps) = await(testSetup.kubeService.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaContainer,
+        items = Seq.empty
+      )).properties
+      updatedSecretProps must havePair(
+        "external_id" -> s"/namespaces/${testEnv.id}/secrets/test-secret"
       )
       there were two(testSetup.kubeClient).close
     }

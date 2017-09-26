@@ -15,7 +15,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException}
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
 import com.google.inject.Inject
 import play.api.libs.json._
 import controllers.util._
@@ -321,7 +321,9 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     new BadRequestException("DCOS CaaS provider does not support secrets")
   )
 
-  override def destroySecret(secret: Instance): Future[Unit] = ???
+  override def destroySecret(secret: Instance): Future[Unit] = Future.failed(
+    new BadRequestException("DCOS CaaS provider does not support secrets")
+  )
 }
 
 object MarathonService {

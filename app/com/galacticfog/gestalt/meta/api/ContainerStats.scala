@@ -1,4 +1,4 @@
-package com.galacticfog.gestalt.marathon
+package com.galacticfog.gestalt.meta.api
 
 import org.joda.time.DateTime
 import play.api.libs.json.Json

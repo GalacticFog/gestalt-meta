@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
 import com.google.inject.Inject
 import skuber._
 import skuber.api.client._
@@ -26,7 +26,6 @@ import skuber.Container.Port
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.marathon.ContainerStats
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 import org.joda.time.{DateTime, DateTimeZone}
 
@@ -35,25 +34,6 @@ import scala.reflect.runtime.universe._
 import scala.language.postfixOps
 import play.api.libs.json._
 import play.api.libs.functional.syntax._
-
-case class ContainerSecret(name: String, secret_type: String, data: Map[String, String])
-object ContainerSecret {
-
-  def fromResource(secret: GestaltResourceInstance) = {
-    val parsed = for {
-      ps <- Try(secret.properties getOrElse unprocessable("Unspecified properties: data, secret_type"))
-      sd <- Try(ps.get("data") getOrElse unprocessable("Unspecified property: 'data'"))
-      jd = Try(Json.parse(sd)) getOrElse unprocessable(s"Failed parsing 'data' property. found: $sd")
-      data <- Js.parse[Map[String,String]](jd)
-      tpe <- Try(ps.get("secret_type") getOrElse unprocessable("Unspecified property: 'secret_type'"))
-    } yield (data, tpe)
-    
-    parsed map { case (data, stype) => ContainerSecret(secret.name, stype, data) }
-  }
-  
-  def unprocessable(message: String) = throw UnprocessableEntityException(message)
-}
-
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
@@ -70,6 +50,8 @@ object KubernetesService {
 
   val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
   val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
+
+  def unprocessable(message: String) = throw UnprocessableEntityException(message)
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
@@ -79,8 +61,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   
   private[this] val log = LoggerFactory.getLogger(this.getClass)
   private[services] val DefaultNamespace = "default"
-
-  import ContainerSecret.unprocessable
 
   // TODO: skuber issue #38 is a formatting error around Ingress rules with empty path
   implicit val ingressBackendFmt: Format[Ingress.Backend] = Json.format[Ingress.Backend]
@@ -129,7 +109,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       (JsPath \ "status").formatNullable[Deployment.Status]
     ) (Deployment.apply _, unlift(Deployment.unapply))
 
-
   def cleanly[T](providerId: UUID, namespace: String)(f: RequestContext => Future[T]): Future[T] = {
     skuberFactory.initializeKube(providerId, namespace) flatMap { kube =>
       val fT = f(kube)
@@ -140,7 +119,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    ContainerSecret.fromResource(secret) match {
+    SecretSpec.fromResourceInstance(secret) match {
       case Failure(e) => Future.failed(e)
       case Success(sec) =>
         for {
@@ -150,10 +129,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
+  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = ???
+
   def create(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
-    
     val t = ContainerSpec.fromResourceInstance(container) match {
       case Failure(e) => Future.failed(e)
       case Success(spec) => for {
@@ -166,11 +146,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
       )
     }
-    
-  t.onComplete {
-    case Success(value) => println(s"Got the callback, meaning = $value")
-    case Failure(e) => e.printStackTrace
-  }
+
+    t.onComplete {
+      case Success(value) => println(s"Got the callback, meaning = $value")
+      case Failure(e) => e.printStackTrace
+    }
     log.debug("***EXITING KubernetesService::create()")
 
     t
@@ -345,7 +325,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: ContainerSecret, namespace: String) = {
+  private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String) = {
     kube.create[Secret](mkSecret(secretId, spec, namespace))
   }
 
@@ -488,7 +468,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
-  private[services] def mkSecret(id: UUID, secret: ContainerSecret, namespace: String) = {
+  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String) = {
     val metadata = ObjectMeta(name = secret.name, namespace = namespace)
     val bytes = secret.data map { case (k,v) => (k, v.getBytes(Ascii.DEFAULT_CHARSET)) }
     Secret(metadata = metadata, data = bytes, `type` = secret.secret_type)
@@ -836,7 +816,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = ???
 }
 
 

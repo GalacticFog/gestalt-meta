@@ -19,6 +19,7 @@ import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, ForEach}
+import org.mockito.Matchers.{eq => meq}
 import play.api.http.HttpVerbs
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper

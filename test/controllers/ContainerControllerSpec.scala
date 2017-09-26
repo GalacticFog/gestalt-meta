@@ -1006,8 +1006,6 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       status(result) must equalTo(NO_CONTENT)
 
-      println(contentAsString(result))
-
       there was one(mockCaasService).destroySecret(
         hasId(createdResource.id) and hasProperties("external_id" -> extId)
       )
