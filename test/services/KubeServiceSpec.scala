@@ -155,7 +155,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
                                  cmd: Option[String] = None,
                                  port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
                                  labels: Map[String,String] = Map.empty,
-                                 providerConfig: Seq[(String,String)] = Seq.empty
+                                 providerConfig: Seq[(String,String)] = Seq.empty,
+                                 secrets: Seq[ContainerSpec.SecretMount] = Seq.empty
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
