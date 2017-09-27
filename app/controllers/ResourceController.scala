@@ -559,7 +559,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
 
     // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
     // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
-    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247https://gitlab.com/galacticfog/gestalt-meta/issues/247
+    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247
     security.getGroupAccounts(r.id, user)
       .recover {
         case a403: ForbiddenAPIException =>
@@ -571,16 +571,16 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         }
       }
       .map { acs =>
-        // String list of all users in current group.
-        val acids = (acs map { _.id.toString }).mkString(",")
+        // String list of all users in current group. Ignore accounts that we don't know
+        val acids = (acs flatMap { acc => ResourceFactory.findById(ResourceIds.User, acc.id).map(_.id.toString) }).mkString(",")
 
         // Inject users into group properties.
-        val groupProps  = if (r.properties.isDefined) r.properties.get else Map()
-        val outputProps = {
-          if (acids.isEmpty) None
-          else Some(groupProps ++ Map("users" -> acids))
+        val groupProps  = r.properties getOrElse Map.empty
+        val outputProps = groupProps ++ {
+          if (acids.isEmpty) Map.empty
+          else Map("users" -> acids )
         }
-        r.copy(properties = outputProps)
+        r.copy(properties = Some(outputProps))
       }
   }
 
