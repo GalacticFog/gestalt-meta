@@ -120,13 +120,18 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     SecretSpec.fromResourceInstance(secret) match {
+      case _ if items.exists(_.value.isEmpty) => Future.failed(new BadRequestException("secret item was missing value"))
       case Failure(e) => Future.failed(e)
-      case Success(sec) =>
+      case Success(spec) =>
+        val specWithItems = spec.copy(
+          items = items
+        )
         for {
           namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-          output    <- cleanly(context.provider.id, namespace.name)( createKubeSecret(_, secret.id, sec, namespace.name, context) )
+          output    <- cleanly(context.provider.id, namespace.name  )( createKubeSecret(_, secret.id, specWithItems, namespace.name, context) )
         } yield upsertProperties(
           secret,
+          "items" -> Json.toJson(items.map(_.copy(value = None))).toString,
           "external_id" -> s"/namespaces/${namespace.name}/secrets/${secret.name}"
         )
     }

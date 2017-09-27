@@ -4,6 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -144,6 +145,71 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
           "name" -> name
         ).validate[ContainerSpec.PortMapping] must beAnInstanceOf[JsError]
       }
+    }
+
+  }
+
+  "ContainerSpec.SecretMount" should {
+
+    "be optional in ContainerSpec" in {
+      val cs = Json.obj(
+        "name" -> "test-container",
+        "container_type" -> "DOCKER",
+        "image" -> "nginx",
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString),
+        "port_mappings" -> Json.arr(Json.obj(
+          "protocol" -> "tcp"
+        ))
+      ).validate[ContainerSpec]
+      cs must beAnInstanceOf[JsSuccess[ContainerSpec]]
+      cs.get.secrets must beEmpty
+    }
+
+    "read/write SecretEnvMount" in {
+      val json = Json.parse(
+        """{
+          |  "mount_type": "env",
+          |  "path": "VAR3",
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886",
+          |  "secret_key": "part-b"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretEnvMount]
+      Json.toJson(sm.get) must_== json
+    }
+
+    "read/write SecretFileMount" in {
+      val json = Json.parse(
+        """{
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886",
+          |  "mount_type": "file",
+          |  "secret_key": "part-a",
+          |  "path": "/mnt/my_secret/my_sub_secret"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretFileMount]
+      Json.toJson(sm.get) must_== json
+    }
+
+    "read/write SecretDirMount" in {
+      val json = Json.parse(
+        """{
+          |  "mount_type": "directory",
+          |  "path": "/mnt/my_secret",
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretDirMount]
+      Json.toJson(sm.get) must_== json
     }
 
   }
@@ -517,7 +583,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
           environment = testEnv
         )),
         metaResource = any,
-        items = any
+        items = meq(testItems)
       )(any)
 
       ResourceFactory.findParent(createdSecret.id) must beSome(

@@ -2,11 +2,8 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.security.api.errors.BadRequestException
 import org.joda.time.DateTime
 import play.api.Logger
 import play.api.libs.json._
@@ -37,7 +34,8 @@ case class ContainerSpec(name: String = "",
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
                          external_id: Option[String] = None,
-                         created: Option[DateTime] = None
+                         created: Option[DateTime] = None,
+                         secrets: Seq[ContainerSpec.SecretMount] = Seq.empty
                         ) extends Spec {
 
 }
@@ -49,8 +47,26 @@ case object ContainerSpec extends Spec {
   case class ServiceAddress(host: String, port: Int, protocol: Option[String], virtual_hosts: Option[Seq[String]] = None)
   case object ServiceAddress {
     implicit val formatServiceAddress = Json.format[ServiceAddress]
-  }  
-  
+  }
+
+  sealed trait SecretMount {
+    def secret_id: UUID
+    def path: String
+    def mount_type: String
+  }
+
+  case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+    override def mount_type: String = "env"
+  }
+
+  case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+    override def mount_type: String = "file"
+  }
+
+  case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount {
+    override def mount_type: String = "directory"
+  }
+
   case class PortMapping(protocol: String,
                          container_port: Option[Int] = None,
                          host_port: Option[Int] = None,
@@ -187,6 +203,31 @@ case object ContainerSpec extends Spec {
     }
   }
 
+  lazy val secretDirMountReads = Json.reads[SecretDirMount]
+  lazy val secretFileMountReads = Json.reads[SecretFileMount]
+  lazy val secretEnvMountReads = Json.reads[SecretEnvMount]
+
+  lazy val secretDirMountWrites = Json.writes[SecretDirMount]
+  lazy val secretFileMountWrites = Json.writes[SecretFileMount]
+  lazy val secretEnvMountWrites = Json.writes[SecretEnvMount]
+
+  implicit lazy val secretMountReads = new Reads[SecretMount] {
+    override def reads(json: JsValue): JsResult[SecretMount] = (json \ "mount_type").asOpt[String] match {
+      case Some("directory") => secretDirMountReads.reads(json)
+      case Some("file")      => secretFileMountReads.reads(json)
+      case Some("env")       => secretEnvMountReads.reads(json)
+      case _                 => JsError(__ \ "mount_type", "must be one of 'directory', 'file' or 'env'")
+    }
+  }
+
+  implicit lazy val secretMountWrites = new Writes[SecretMount] {
+    override def writes(sm: SecretMount): JsValue = (sm match {
+      case env: SecretEnvMount   => secretEnvMountWrites.writes(env)
+      case file: SecretFileMount => secretFileMountWrites.writes(file)
+      case dir: SecretDirMount   => secretDirMountWrites.writes(dir)
+    }).asInstanceOf[JsObject] ++ Json.obj("mount_type" -> sm.mount_type)
+  }
+
   implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
 
   implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
@@ -274,7 +315,7 @@ case object ContainerSpec extends Spec {
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
       (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
+    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,Seq.empty)) // TODO: FINISH
 
   implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 
