@@ -41,7 +41,7 @@ class PatchController @Inject()(
      containerService: ContainerService,
      resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-
+  
   /*
    * Function to transform a PatchDocument
    */
@@ -76,6 +76,46 @@ class PatchController @Inject()(
     )(
       org => applyPatch(org)
     )
+  }
+  
+  import com.galacticfog.gestalt.meta.api.output._
+  
+  def patchType(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+    TypeFactory.findById(id).fold {
+      
+      Future.successful(NotFoundResult(id))
+      
+    }{ tpe =>
+      val ops = JsonUtil.safeParse[Seq[PatchOp]](request.body)
+
+      PatchType.applyPatch(tpe, PatchDocument(ops:_*)) match {
+        case Failure(e) => HandleExceptionsAsync(e)
+        case Success(u) => {
+
+          val p1 = Js.find(u.as[JsObject], "/properties").get.as[JsObject]
+          val p2 = Js.parse[Map[String,JsValue]](p1).get.map { 
+            case (k,v) => (k, v.toString) 
+          }
+//          val updated = Js.parse[GestaltResourceType] {
+//            u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
+//          }.get
+          
+          val updated = for {
+            a <- Js.parse[Map[String,JsValue]](p1)
+            b  = a.map { case (k,v) => (k, v.toString) }
+            c <- Js.parse[GestaltResourceType] {
+              u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
+            }
+            d <- TypeFactory.update(c, request.identity.account.id)
+          } yield d
+          
+          updated match {
+            case Failure(e) => HandleExceptionsAsync(e)
+            case Success(up) => Future.successful(Accepted(Output.renderResourceTypeOutput(up)))
+          }
+        }
+      }
+    }
   }
   
   /**
