@@ -34,8 +34,6 @@ trait ContainerService extends JsonInput {
                    secretSpec: SecretSpec,
                    userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
 
-  def deleteSecret(secret: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
-
   def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance,Seq[ContainerInstance])]]
@@ -508,8 +506,6 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
     // just a convenient interface for testing... we'll let DeleteController do this for us
     deleteController.deleteResource(container, identity)(request)
   }
-
-  override def deleteSecret(secret: Instance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = ???
 
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {

@@ -1,6 +1,6 @@
 package services
 
-import java.util.{TimeZone, UUID}
+import java.util.{Base64, TimeZone, UUID}
 
 import org.slf4j.LoggerFactory
 import services.util.CommandParser
@@ -145,7 +145,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      */
     val environment: String = {
       ResourceFactory.findParent(ResourceIds.Environment, secret.id).map(_.id.toString) orElse {
-        val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
+        val namespaceGetter = "/namespaces/([^/]+)/secrets/.*".r
         for {
           eid <- ContainerService.resourceExternalId(secret)
           ns <- eid match {
@@ -369,7 +369,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String, context: ProviderContext): Future[Secret] = {
-    kube.create[Secret](mkSecret(secretId, spec, namespace, context))
+    kube.create[Secret](mkSecret(secretId, spec, namespace, context)) recoverWith { case e: K8SException =>
+      Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+    }
   }
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
@@ -511,7 +513,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
-  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext) = {
+  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext): Secret = {
     val metadata = ObjectMeta(
       name = secret.name,
       namespace = namespace,
@@ -524,7 +526,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       )
     )
     val data = secret.items.map {
-      case SecretSpec.Item(key, Some(value)) => key -> value.getBytes(Ascii.DEFAULT_CHARSET)
+      case SecretSpec.Item(key, Some(value)) => key -> Base64.getDecoder.decode(value)
     }.toMap
     Secret(
       metadata = metadata,
