@@ -154,17 +154,23 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       //if (log.isDebugEnabled) debugLogActions(res, actions)
       
       val ents = entitlements(creator.account.id, org, resource, actions)
-      
+      import com.galacticfog.gestalt.patch._
       {
         if (parent.isEmpty) ents 
         else mergeParentEntitlements(ents, res.typeId, parent.get)
         
       } map { ent =>
         //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        
+        val payload = {
+          Js.transform(Json.toJson(ent).as[JsObject],
+            PatchOp.Add("/properties", 
+                Json.obj("parent" -> Json.obj("id" -> res.id, "name" -> res.name)))).get
+        }
         CreateNewResource(org, creator, 
-          json   = Json.toJson(ent), 
+          json   = payload,  
           typeId = Option(ResourceIds.Entitlement), 
-          parent = /*parent*/ Option(resource))
+          parent = Option(resource))
       }
     }
   }

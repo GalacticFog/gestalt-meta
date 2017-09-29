@@ -71,9 +71,20 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
-    /*ResourceIds.ApiEndpoint -> lookupApiEndpoints,*/
-    ResourceIds.Rule        -> lookupPolicyRules
+    ResourceIds.Rule        -> lookupPolicyRules,
+    ResourceIds.ProviderAction -> lookupProviderActions
   )
+  
+  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+    val mapPathData = Resource.mapListPathData(path.path)
+    val parent = mapPathData(Resource.ParentId)
+    
+    if (qs.contains("q") && (qs("q")(0).toLowerCase == "entitlements")) {
+      ResourceFactory.rollupActionEntitlements(parent)
+    } else {
+      ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, UUID.fromString(parent))
+    }
+  }
   
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
