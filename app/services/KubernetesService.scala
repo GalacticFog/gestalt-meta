@@ -1,6 +1,6 @@
 package services
 
-import java.util.{TimeZone, UUID}
+import java.util.{Base64, TimeZone, UUID}
 
 import org.slf4j.LoggerFactory
 import services.util.CommandParser
@@ -513,7 +513,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     withInputDefaults(org, containerResourceInput, user, None)
   }
 
-  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext) = {
+  private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext): Secret = {
     val metadata = ObjectMeta(
       name = secret.name,
       namespace = namespace,
@@ -526,7 +526,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       )
     )
     val data = secret.items.map {
-      case SecretSpec.Item(key, Some(value)) => key -> value.getBytes(Ascii.DEFAULT_CHARSET)
+      case SecretSpec.Item(key, Some(value)) => key -> Base64.getDecoder.decode(value)
     }.toMap
     Secret(
       metadata = metadata,
