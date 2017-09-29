@@ -156,13 +156,27 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         "name" -> "test-container",
         "container_type" -> "DOCKER",
         "image" -> "nginx",
-        "provider" -> Json.obj("id" -> UUID.randomUUID().toString),
-        "port_mappings" -> Json.arr(Json.obj(
-          "protocol" -> "tcp"
-        ))
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString)
       ).validate[ContainerSpec]
       cs must beAnInstanceOf[JsSuccess[ContainerSpec]]
       cs.get.secrets must beEmpty
+    }
+
+    "be parsed when present in ContainerSpec" in {
+      val secretMounts = Seq(
+        SecretDirMount(UUID.randomUUID(), "/mnt/dir"),
+        SecretFileMount(UUID.randomUUID(), "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(UUID.randomUUID(), "ENV_VAR", "secret_key")
+      )
+      val cs = Json.obj(
+        "name" -> "test-container",
+        "container_type" -> "DOCKER",
+        "image" -> "nginx",
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString),
+        "secrets" -> Json.toJson(secretMounts)
+      ).validate[ContainerSpec]
+      cs must beAnInstanceOf[JsSuccess[ContainerSpec]]
+      cs.get.secrets must containTheSameElementsAs(secretMounts)
     }
 
     "read/write SecretEnvMount" in {

@@ -299,23 +299,24 @@ case object ContainerSpec extends Spec {
       (__ \ "container_type").read[String] and
       (__ \ "image").read[String] and
       (__ \ "provider").read[ContainerSpec.InputProvider] and
-      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
+      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
       ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
       ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
       ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
       (__ \ "network").readNullable[String] and
       (__ \ "cmd").readNullable[String] and
-      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
+      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq.empty)) and
       (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
       (__ \ "args").readNullable[Seq[String]] and
       ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
-      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq())) and
-      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq())) and
+      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq.empty)) and
+      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
-      (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,Seq.empty)) // TODO: FINISH
+      (__ \ "user").readNullable[String] and
+      ((__ \ "secrets").read[Seq[SecretMount]] orElse Reads.pure(Seq.empty))
+    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,_))
 
   implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 
