@@ -1,6 +1,7 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
+import java.util.Base64
 
 import com.galacticfog.gestalt.caas.kube.Ascii
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -196,8 +197,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     )
 
     lazy val metaSecretItems = Seq(
-      SecretSpec.Item("part-a", Some("value-a")),
-      SecretSpec.Item("part-b", Some("value-b"))
+      SecretSpec.Item("part-a", Some("dmFsdWUtYQ==")),   // "value-a"
+      SecretSpec.Item("part-b", Some("dmFsdWUtYg=="))    // "value-b"
     )
 
     lazy val metaSecret = createInstance(
@@ -1398,12 +1399,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         items = metaSecretItems
       )).properties
 
+      // this also checks that "base64-decode secrets before sending to skuber"
       there was one(testSetup.kubeClient).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
           (
             ((_: skuber.Secret).data.map({
-              case (key, arrayByte) => SecretSpec.Item(key, Some(new String(arrayByte, Ascii.DEFAULT_CHARSET)))
+              case (key, bytes) => SecretSpec.Item(key, Some(Base64.getEncoder.encodeToString(bytes)))
             }).toSeq) ^^ containTheSameElementsAs(metaSecretItems)
           )
       ))(any,meq(client.secretKind))
