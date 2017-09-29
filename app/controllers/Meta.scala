@@ -624,17 +624,18 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     val fActions = successfulParse.map { spec =>
       /*
-       * TODO: Create the Lambda associated with each action.
-       * Idea is that we can use a pre-existing lambda or create a new one
+       * TODO: Idea is that we can use a pre-existing lambda or create a new one
        * from a provided specification. First-pass we will only consider the
        * new creation from a spec.
        */
+      log.debug("Creating Action Lambda...")
+      log.debug(Json.prettyPrint(Json.toJson(spec.get)))
       actionMethods.createActionLambda(r.orgId, spec.get, providerEnv, creator) map { lam =>
         /*
          * TODO: Create MessageEndpoint.
          */
         // Here is where we inject the Lambda ID into `action.properties.implementation.id`
-        val action = spec.get.toResource(r.orgId, r.owner, implId = lam.id)
+        val action = spec.get.toResource(r.orgId, r.id, r.owner, implId = lam.id)
         CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) getOrElse {
           throw new RuntimeException("Failed creating ProviderAction.")
         }
