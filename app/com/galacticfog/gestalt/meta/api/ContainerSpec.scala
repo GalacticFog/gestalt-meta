@@ -81,10 +81,7 @@ case object ContainerSpec extends Spec {
                     host_path: Option[String],
                     persistent: Option[Volume.PersistentVolumeInfo],
                     mode: Option[String],
-                    
-                    name: Option[String] = None,
-                    access_modes: Option[Seq[String]] = None,
-                    storage_class: Option[String] = None) {
+                    name: Option[String] = None) {
     def isPersistent: Boolean = persistent.isDefined
   }
   

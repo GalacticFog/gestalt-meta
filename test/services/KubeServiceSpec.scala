@@ -158,7 +158,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
                                  port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
                                  labels: Map[String,String] = Map.empty,
                                  providerConfig: Seq[(String,String)] = Seq.empty,
-                                 secrets: Seq[ContainerSpec.SecretMount] = Seq.empty
+                                 secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
+                                 volumes: Seq[ContainerSpec.Volume] = Seq.empty
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
@@ -190,7 +191,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       args = args,
       force_pull = force_pull,
       health_checks = Seq(),
-      volumes = Seq(),
+      volumes = volumes,
       labels = labels,
       env = Map(),
       user = None
@@ -225,7 +226,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "force_pull" -> initProps.force_pull.toString,
         "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
         "network" -> initProps.network.get,
-        "labels" -> Json.toJson(labels).toString
+        "labels" -> Json.toJson(labels).toString,
+        "volumes" -> Json.toJson(initProps.volumes).toString
       ) ++ Seq[Option[(String,String)]](
         args map ("args" -> Json.toJson(_).toString),
         cmd  map ("cmd" -> _)
@@ -524,6 +526,30 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("udp", Some(9999), Some(9999), None, Some("debug"), None, None, None, None)
       ))
       there were two(testSetup.kubeClient).close
+    }
+
+    "create and mount persistent volume claims into container" in new FakeKubeCreate(
+      volumes = Seq(
+        ContainerSpec.Volume("/mnt/path1", None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadWriteOnce"), Some("my-volume"))
+      )
+    ) {
+
+      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(
+        items = List(skuber.PersistentVolumeClaim())
+      ))
+
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
+            skuber.Volume("my-volume", skuber.Volume.PersistentVolumeClaimRef("my-volume", true))
+          )))
+      ))(any,meq(skuber.ext.deploymentKind))
     }
 
     "provision containers and secrets with the expected external_id property" in new FakeKubeCreate() {
@@ -1507,7 +1533,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("udp", Some(9999), Some(9999), None, Some("debug"), None, None, None, None)
       ))
       there were two(testSetup.kubeClient).close
-    }.pendingUntilFixed("needs implementation")
+    }
 
   }
 
