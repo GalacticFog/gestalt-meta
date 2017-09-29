@@ -145,7 +145,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      */
     val environment: String = {
       ResourceFactory.findParent(ResourceIds.Environment, secret.id).map(_.id.toString) orElse {
-        val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
+        val namespaceGetter = "/namespaces/([^/]+)/secrets/.*".r
         for {
           eid <- ContainerService.resourceExternalId(secret)
           ns <- eid match {
@@ -369,7 +369,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   private[services] def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String, context: ProviderContext): Future[Secret] = {
-    kube.create[Secret](mkSecret(secretId, spec, namespace, context))
+    kube.create[Secret](mkSecret(secretId, spec, namespace, context)) recoverWith { case e: K8SException =>
+      Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+    }
   }
 
   def destroy(container: GestaltResourceInstance): Future[Unit] = {
