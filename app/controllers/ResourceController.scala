@@ -532,8 +532,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         throw new RuntimeException(Errors.USER_GROUP_LOOKUP_FAILED(res.id, er.getMessage))
       }
       case Success(gs) => {
-        val gids  = gs map { _.id.toString } mkString(",")
-        val props = res.properties.getOrElse(Map.empty) + ( "users" -> gids )
+        val grpIds = gs flatMap { grp => ResourceFactory.findById(ResourceIds.Group, grp.id).map(_.id.toString) } mkString(",")
+        val props = res.properties.getOrElse(Map.empty) + ( "users" -> grpIds )
         res.copy(properties = Some(props))
       }
     }
@@ -566,8 +566,8 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         }
       }
       .map { acs =>
-        val acids = acs map { _.id.toString } mkString(",")
-        val outputProps = r.properties.getOrElse(Map.empty) + ( "users" -> acids )
+        val accIds = acs flatMap { acc => ResourceFactory.findById(ResourceIds.User, acc.id).map(_.id.toString) } mkString(",")
+        val outputProps = r.properties.getOrElse(Map.empty) + ( "users" -> accIds )
         r.copy(properties = Some(outputProps))
       }
   }
