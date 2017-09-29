@@ -4,7 +4,8 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -19,8 +20,9 @@ import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, ForEach}
+import org.mockito.Matchers.{eq => meq}
 import play.api.http.HttpVerbs
-import play.api.libs.json.{JsError, JsSuccess, Json}
+import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.FakeRequest
 
@@ -143,6 +145,85 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
           "name" -> name
         ).validate[ContainerSpec.PortMapping] must beAnInstanceOf[JsError]
       }
+    }
+
+  }
+
+  "ContainerSpec.SecretMount" should {
+
+    "be optional in ContainerSpec" in {
+      val cs = Json.obj(
+        "name" -> "test-container",
+        "container_type" -> "DOCKER",
+        "image" -> "nginx",
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString)
+      ).validate[ContainerSpec]
+      cs must beAnInstanceOf[JsSuccess[ContainerSpec]]
+      cs.get.secrets must beEmpty
+    }
+
+    "be parsed when present in ContainerSpec" in {
+      val secretMounts = Seq(
+        SecretDirMount(UUID.randomUUID(), "/mnt/dir"),
+        SecretFileMount(UUID.randomUUID(), "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(UUID.randomUUID(), "ENV_VAR", "secret_key")
+      )
+      val cs = Json.obj(
+        "name" -> "test-container",
+        "container_type" -> "DOCKER",
+        "image" -> "nginx",
+        "provider" -> Json.obj("id" -> UUID.randomUUID().toString),
+        "secrets" -> Json.toJson(secretMounts)
+      ).validate[ContainerSpec]
+      cs must beAnInstanceOf[JsSuccess[ContainerSpec]]
+      cs.get.secrets must containTheSameElementsAs(secretMounts)
+    }
+
+    "read/write SecretEnvMount" in {
+      val json = Json.parse(
+        """{
+          |  "mount_type": "env",
+          |  "path": "VAR3",
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886",
+          |  "secret_key": "part-b"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretEnvMount]
+      Json.toJson(sm.get) must_== json
+    }
+
+    "read/write SecretFileMount" in {
+      val json = Json.parse(
+        """{
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886",
+          |  "mount_type": "file",
+          |  "secret_key": "part-a",
+          |  "path": "/mnt/my_secret/my_sub_secret"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretFileMount]
+      Json.toJson(sm.get) must_== json
+    }
+
+    "read/write SecretDirMount" in {
+      val json = Json.parse(
+        """{
+          |  "mount_type": "directory",
+          |  "path": "/mnt/my_secret",
+          |  "secret_id": "c6726f35-1e25-4239-9b20-f7a608ae6886"
+          |}
+        """.stripMargin
+      )
+      val sm = json.validate[SecretMount]
+      sm must beAnInstanceOf[JsSuccess[SecretMount]]
+      sm.get must beAnInstanceOf[SecretDirMount]
+      Json.toJson(sm.get) must_== json
     }
 
   }
@@ -481,6 +562,68 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         )),
         container = any
       )(any)
+    }
+
+    "create secrets using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testSecretName = "test-container"
+      val testItems = Seq(
+        SecretSpec.Item("item-a", Some("c2hoaGho")),
+        SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
+      )
+      val testSpec = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        items = testItems
+      )
+
+      mockCaasService.createSecret(any,any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val createdSecret = await(containerService.createSecret(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        user = user,
+        secretSpec = testSpec,
+        userRequestedId = None
+      ))
+
+      there was one(mockCaasService).createSecret(
+        context = argThat(matchesProviderContext(
+          provider = testProvider,
+          workspace = testWrk,
+          environment = testEnv
+        )),
+        metaResource = any,
+        items = meq(testItems)
+      )(any)
+
+      ResourceFactory.findParent(createdSecret.id) must beSome(
+        (r: GestaltResourceInstance) => r.typeId == ResourceIds.Environment && r.id == testEnv.id
+      )
+
+      val Some(metaSecret) = ResourceFactory.findById(ResourceIds.Secret, createdSecret.id)
+      Json.parse(metaSecret.properties.get.get("items").get).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(testItems.map(_.copy(value = None)))
+    }
+
+    "throw 400 on bad provider during secret creation" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val badProvider = UUID.randomUUID()
+      val testSecretName = "test-container"
+      val testSpec = SecretSpec(
+        name = testSecretName,
+        provider = ContainerSpec.InputProvider(id = badProvider),
+        items = Seq.empty
+      )
+
+      containerService.createSecret(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/secrets"), badProvider, None),
+        user = user,
+        secretSpec = testSpec,
+        userRequestedId = None
+      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
     }
 
   }

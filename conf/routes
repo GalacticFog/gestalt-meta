@@ -21,6 +21,10 @@ POST   /root/providers/initialize controllers.BootstrapController.initProviders(
 
 GET 	/root/check 		controllers.InfoController.serviceCheck()
 
+
+PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
+
+
 ############################
 # ACTIONS
 ############################
@@ -235,6 +239,10 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/scale            
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/migrate                       controllers.ContainerController.migrateContainer(fqon: String, cid: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/promote                       controllers.ContainerController.promoteContainer(fqon: String, cid: java.util.UUID)
 
+############################
+# SECRETS
+############################
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/secrets  		            controllers.ContainerController.postSecret(fqon: String, envId: java.util.UUID)
 
 ############################
 # APIS

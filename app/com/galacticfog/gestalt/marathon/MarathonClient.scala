@@ -1,6 +1,7 @@
 package com.galacticfog.gestalt.marathon
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.ContainerStats
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, InternalErrorException, ResourceNotFoundException}
 import org.joda.time.DateTime
 import play.api.libs.ws.{WSClient, WSResponse}

@@ -554,7 +554,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
     // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
     // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
-    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247https://gitlab.com/galacticfog/gestalt-meta/issues/247
+    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247
     security.getGroupAccounts(r.id, user)
       .recover {
         case a403: ForbiddenAPIException =>

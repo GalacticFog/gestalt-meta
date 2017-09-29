@@ -2,11 +2,8 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.security.api.errors.BadRequestException
 import org.joda.time.DateTime
 import play.api.Logger
 import play.api.libs.json._
@@ -37,7 +34,8 @@ case class ContainerSpec(name: String = "",
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
                          external_id: Option[String] = None,
-                         created: Option[DateTime] = None
+                         created: Option[DateTime] = None,
+                         secrets: Seq[ContainerSpec.SecretMount] = Seq.empty
                         ) extends Spec {
 
 }
@@ -49,8 +47,26 @@ case object ContainerSpec extends Spec {
   case class ServiceAddress(host: String, port: Int, protocol: Option[String], virtual_hosts: Option[Seq[String]] = None)
   case object ServiceAddress {
     implicit val formatServiceAddress = Json.format[ServiceAddress]
-  }  
-  
+  }
+
+  sealed trait SecretMount {
+    def secret_id: UUID
+    def path: String
+    def mount_type: String
+  }
+
+  case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+    override def mount_type: String = "env"
+  }
+
+  case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+    override def mount_type: String = "file"
+  }
+
+  case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount {
+    override def mount_type: String = "directory"
+  }
+
   case class PortMapping(protocol: String,
                          container_port: Option[Int] = None,
                          host_port: Option[Int] = None,
@@ -187,6 +203,31 @@ case object ContainerSpec extends Spec {
     }
   }
 
+  lazy val secretDirMountReads = Json.reads[SecretDirMount]
+  lazy val secretFileMountReads = Json.reads[SecretFileMount]
+  lazy val secretEnvMountReads = Json.reads[SecretEnvMount]
+
+  lazy val secretDirMountWrites = Json.writes[SecretDirMount]
+  lazy val secretFileMountWrites = Json.writes[SecretFileMount]
+  lazy val secretEnvMountWrites = Json.writes[SecretEnvMount]
+
+  implicit lazy val secretMountReads = new Reads[SecretMount] {
+    override def reads(json: JsValue): JsResult[SecretMount] = (json \ "mount_type").asOpt[String] match {
+      case Some("directory") => secretDirMountReads.reads(json)
+      case Some("file")      => secretFileMountReads.reads(json)
+      case Some("env")       => secretEnvMountReads.reads(json)
+      case _                 => JsError(__ \ "mount_type", "must be one of 'directory', 'file' or 'env'")
+    }
+  }
+
+  implicit lazy val secretMountWrites = new Writes[SecretMount] {
+    override def writes(sm: SecretMount): JsValue = (sm match {
+      case env: SecretEnvMount   => secretEnvMountWrites.writes(env)
+      case file: SecretFileMount => secretFileMountWrites.writes(file)
+      case dir: SecretDirMount   => secretDirMountWrites.writes(dir)
+    }).asInstanceOf[JsObject] ++ Json.obj("mount_type" -> sm.mount_type)
+  }
+
   implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
 
   implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
@@ -258,24 +299,91 @@ case object ContainerSpec extends Spec {
       (__ \ "container_type").read[String] and
       (__ \ "image").read[String] and
       (__ \ "provider").read[ContainerSpec.InputProvider] and
-      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq())) and
+      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
       ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
       ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
       ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
       (__ \ "network").readNullable[String] and
       (__ \ "cmd").readNullable[String] and
-      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq())) and
+      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq.empty)) and
       (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
       (__ \ "args").readNullable[Seq[String]] and
       ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
-      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq())) and
-      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq())) and
+      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq.empty)) and
+      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
-      (__ \ "user").readNullable[String]
-    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_))
+      (__ \ "user").readNullable[String] and
+      ((__ \ "secrets").read[Seq[SecretMount]] orElse Reads.pure(Seq.empty))
+    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,_))
 
   implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
+
+}
+
+case class SecretSpec( name: String,
+                       description: Option[String] = None,
+                       provider: ContainerSpec.InputProvider,
+                       items: Seq[SecretSpec.Item] = Seq.empty )
+
+case object SecretSpec {
+
+  case class Item(key: String, value: Option[String])
+
+  val log = Logger(this.getClass)
+
+  def toResourcePrototype(spec: SecretSpec): GestaltResourceInput = GestaltResourceInput(
+    name = spec.name,
+    resource_type = Some(ResourceIds.Secret),
+    description = spec.description,
+    resource_state = None,
+    properties = Some(Map[String,JsValue](
+      "provider" -> Json.toJson(spec.provider),
+      "items" -> Json.toJson(spec.items.map(_.copy(value = None))) // values do not get persisted to meta
+    ))
+  )
+
+  def fromResourceInstance(metaSecretSpec: GestaltResourceInstance): Try[SecretSpec] = {
+    if (metaSecretSpec.typeId != ResourceIds.Secret) return Failure(new RuntimeException("cannot convert non-Secret resource into SecretSpec"))
+    val attempt = for {
+      props <- Try{metaSecretSpec.properties.get}
+      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
+      items = props.get("items") map {json => Json.parse(json).as[Seq[SecretSpec.Item]]}
+    } yield SecretSpec(
+      name = metaSecretSpec.name,
+      description = metaSecretSpec.description,
+      provider = provider,
+      items = items.getOrElse(Seq.empty)
+    )
+    attempt.recoverWith {
+      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into SecretSpec: ${e.getMessage}"))
+    }
+  }
+
+
+  lazy val secretNameRegex = "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*".r
+
+  lazy val secretItemKeyRegex = "[-._a-zA-Z0-9]+".r
+
+  lazy val secretItemReads: Reads[SecretSpec.Item] = (
+    (__ \ "key").read[String](Reads.pattern(secretItemKeyRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
+      (__ \ "value").readNullable[String]
+  )(SecretSpec.Item.apply _)
+
+  lazy val secretItemWrites = Json.writes[SecretSpec.Item]
+
+  implicit lazy val secretItemFmt = Format(secretItemReads, secretItemWrites)
+
+  lazy val secretSpecReads: Reads[SecretSpec] = (
+    (__ \ "name").read[String](Reads.pattern(secretNameRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
+      (__ \ "description").readNullable[String] and
+      (__ \ "provider").read[ContainerSpec.InputProvider] and
+      (__ \ "items").read[Seq[SecretSpec.Item]]
+    )(SecretSpec.apply(_,_,_,_))
+
+  lazy val secretSpecWrites = Json.writes[SecretSpec]
+
+  implicit lazy val metaContainerSpec = Format(secretSpecReads, secretSpecWrites)
 
 }

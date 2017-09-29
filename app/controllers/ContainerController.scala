@@ -4,7 +4,7 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.PropertyValidator
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -25,7 +25,6 @@ import scala.concurrent.duration._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -94,12 +93,12 @@ class ContainerController @Inject()(
   private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance) {
     
     // These are the values tha Meta will accept for 'environment_type'
-    val acceptableTypes = Seq("development", "test", "production")
+    val acceptableTypes = Set("development", "test", "production")
     
     provider.properties.get.get("environment_types").map { types =>
       
       // Environment types the provider is compatible with.
-      val allowed = Json.parse(types).as[JsArray].value.toSeq.map(_.as[String])
+      val allowed = Json.parse(types).as[JsArray].value.map(_.as[String])
       
       // Environment type of the given environment.
       val giventype = {
@@ -110,24 +109,26 @@ class ContainerController @Inject()(
         val target = EnvironmentType.name(UUID.fromString(typeId))
         if (acceptableTypes.contains(target.trim.toLowerCase)) target
         else {
-          val msg = s"Invalid environment_type. expected: one of (${acceptableTypes.mkString(",")}. found: '$target'"
+          val msg = s"Invalid environment_type. Expected: one of (${acceptableTypes.mkString(",")}. found: '$target'"
           throw new UnprocessableEntityException(msg)
         }
       }
       
       // Given MUST be in the allowed list.
       if (!allowed.contains(giventype)) {
-        val msg = s"Incompatible Environment type. expected one of (${allowed.mkString(",")}). found: '$giventype'"
+        val msg = s"Incompatible Environment type. Expected one of (${allowed.mkString(",")}). found: '$giventype'"
         throw new ConflictException(msg)
       }
     }    
   }
   
-  private[controllers] def normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject] = Try {
-    val container = containerJson.as[JsObject]
-    
-    val (pid, env, provider) = (for {
-      pid <- Try(Js.find(container, "/properties/provider/id") getOrElse {
+  
+  private[controllers] def normalizeCaasPayload(payloadJson: JsValue, environment: UUID): Try[JsObject] = Try {
+
+    val payload = payloadJson.as[JsObject]
+
+    val (env, provider) = (for {
+      pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
             throw new BadRequestException(s"`/properties/provider/id` not found.")
           })
       env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
@@ -136,31 +137,46 @@ class ContainerController @Inject()(
       prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
             throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
           })
-    } yield (pid, env, prv)).get
+    } yield (env, prv)).get
 
     /*
      *  This throws an exception if the environment is incompatible with the provider.
      */
     assertCompatibleEnvType(provider, env)
-    
+
     // Inject `provider` object into container.properties
-    val properties = Js.find(container, "/properties").get.as[JsObject]
-    container ++ (properties ++ Json.obj(
-        "provider" -> Json.obj(
-          "name"   -> provider.name,
-          "id"     -> provider.id
-    )))
+    val properties = Js.find(payload, "/properties").get.as[JsObject]
+    payload ++ Json.obj(
+      "properties" -> (properties ++ Json.obj(
+          "provider" -> Json.obj(
+            "name"          -> provider.name,
+            "id"            -> provider.id,
+            "resource_type" -> sdk.ResourceName(provider.typeId)
+          )
+        ))
+    )
   }
 
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
-      payload   <- Future.fromTry(normalizeContainerPayload(request.body, environment))
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
       proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
       spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
       context   = ProviderContext(request, spec.provider.id, None)
       container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
     } yield Created(RenderSingle(container))
     
+    created recover { case e => HandleExceptions(e) }
+  }
+
+  def postSecret(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    val created = for {
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputSecret(payload))
+      spec      <- Future.fromTry(SecretSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      secret <- containerService.createSecret(context, request.identity, spec, Some(proto.id))
+    } yield Accepted(RenderSingle(secret))
     created recover { case e => HandleExceptions(e) }
   }
 
@@ -332,8 +348,18 @@ class ContainerController @Inject()(
    */
   private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
     val defaults = containerWithDefaults(inputJson)
-    val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
+    val newprops = Json.toJson(defaults).as[JsObject] ++ (inputJson \ "properties").as[JsObject]
     (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
+  }
+
+  /**
+    * Ensure Secret input JSON is well-formed and valid. Ensures that required properties
+    * are given and fills in default values where appropriate.
+    */
+  private [this] def normalizeInputSecret(inputJson: JsValue): JsObject = {
+    inputJson.as[JsObject] ++ Json.obj(
+      "resource_type" -> ResourceIds.Secret.toString
+    )
   }
 
   private def notFoundMessage(typeId: UUID, id: UUID) = s"${ResourceLabel(typeId)} with ID '$id' not found."

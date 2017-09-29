@@ -31,6 +31,7 @@ package object api {
       case "environments"     => Some(ResourceIds.Environment)
       case "containers"       => Some(ResourceIds.Container)
       case "lambdas"          => Some(ResourceIds.Lambda)
+      case "secrets"          => Some(ResourceIds.Secret)
       case "apis"             => Some(ResourceIds.Api)
       case "apiendpoints"     => Some(ResourceIds.ApiEndpoint)
       case "domains"          => Some(ResourceIds.Domain)
@@ -83,7 +84,6 @@ package object api {
       case ResourceIds.TypeProperty    => Some("typeproperties")
       case ResourceIds.TaskStatusType  => Some("taskstatustypes")
       case ResourceIds.Integration     => Some("integrations")
-      case ResourceIds.ProviderAction  => Some("provideractions")
       case ResourceIds.ActionProvider  => Some("actionproviders")
       case ResourceIds.ProviderAction  => Some("actions")
       case _ => None

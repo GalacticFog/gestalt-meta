@@ -28,14 +28,10 @@ import javax.inject.Singleton
 import controllers.util.HandleExceptions
 
 @Singleton
-class SyncController @Inject()( messagesApi: MessagesApi,
-                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                /*
-                                security: Security,
-                                deleteController: DeleteController 
-                                */
-                                securitySync: SecuritySync
-                                )
+class SyncController @Inject()( 
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    securitySync: SecuritySync)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   private[this] val log = Logger(this.getClass)
