@@ -58,7 +58,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   extends CaasService with JsonInput with MetaControllerUtils {
   
   import KubernetesService._
-  
+
   private[this] val log = LoggerFactory.getLogger(this.getClass)
   private[services] val DefaultNamespace = "default"
 

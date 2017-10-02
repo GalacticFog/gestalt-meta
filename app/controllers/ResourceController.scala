@@ -36,6 +36,7 @@ import scala.language.postfixOps
 import javax.inject.Singleton
 
 import ResourceFactory.{findChildrenOfType, findEndpointsByLambda}
+import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 
 
@@ -68,6 +69,7 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
   
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
+    ResourceIds.Secret      -> lookupSeqSecrets,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
@@ -395,7 +397,29 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       }
     }
   }
-  
+
+  def lookupSeqSecrets(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+    log.debug(s"lookupSeqSecrets(${path.path}, user = ${account.account.id}")
+
+    val parentEnvId = if ( !path.parentTypeId.contains(ResourceIds.Environment) ) {
+      throw new BadRequestException("Secret listing must have parent type Environment")
+    } else {
+      path.parentId.getOrElse(throw new BadRequestException("Secret listing missing environment UUID"))
+    }
+
+    ResourceFactory.findById(ResourceIds.Environment, parentEnvId).fold {
+      throw new ResourceNotFoundException(parentEnvId.toString)
+    }{ _ =>
+      val rs = ResourceFactory.findChildrenOfType(ResourceIds.Secret, parentEnvId)
+      qs.get("providerId").flatMap(_.headOption).map( UUID.fromString(_) ).fold[Seq[GestaltResourceInstance]](rs) {
+        queryProviderId => rs.filter { secret =>
+          val maybeProviderId = secret.properties.getOrElse(Map.empty).get("provider") map ( Json.parse ) flatMap ( prv => (prv \ "id").asOpt[UUID] )
+          maybeProviderId.contains( queryProviderId )
+        }
+      } toList
+    }
+  }
+
   import com.galacticfog.gestalt.data.{Variance, Invariant, CoVariant}
   import com.galacticfog.gestalt.data.ResourceType
   import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance 
@@ -429,62 +453,10 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
       rs filter { r => 
         ids.contains(r.typeId) }
     }
-  }    
-  
-  /* 
-   * TODO: Need to 're-implement' this. Generalize filtering into resource lookups 
-   */
-  def filterProvidersByType2(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
-    
-    val cps = Seq("kubernetes", "dcos")
-    
-    if (qs.contains("type")) {
-      
-      /*
-       * 1.) Get list of all provider names
-       * 2.) remove last component of all provider names
-       * 3.) if all.contains()
-       */
-      
-      /*
-       * TODO: This is a hack to produce the correct type name when filtering
-       * for sub-types of ::CaaS. Need something more generic, but ideally not
-       * expensive.
-       */
-      val typeName = {
-        val base = "Gestalt::Configuration::Provider::" 
-        val given = qs("type")(0).trim
-        if (cps.contains(given.toLowerCase)) base + "CaaS::" + qs("type")(0)
-        else base + given
-      }
-      
-      log.debug("Filtering providers for type : " + typeName)
+  }
 
-      val typeIds: List[UUID] = Try(ResourceType.id(typeName)) match {
-        case Failure(err) => 
-          throw new BadRequestException(s"Unknown provider type : '$typeName'")
-        case Success(tid) => {
-          // Given type ID is valid resource type.          
-          if (tid == ResourceIds.CaasProvider) {
-            findTypesWithVariance(CoVariant(ResourceIds.CaasProvider)) map { _.id }
-          } else {
-            val validTypes = findTypesWithVariance(CoVariant(ResourceIds.Provider)) map { _.id }
-            if (validTypes.contains(tid)) List(tid)
-            else {
-              throw new BadRequestException(s"Type '$typeName' is not a provider.")
-            }        
-          }
-        }
-      }
-      
-      log.debug(s"Filtering for types : $typeIds")
-      rs filter { r => typeIds.contains(r.typeId) }
-    } else rs
-  }  
-  
   import com.galacticfog.gestalt.meta.auth._
-  
-  
+
   private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val props  = EntitlementProps.make(res)
     val output = props.identities map { ids =>
