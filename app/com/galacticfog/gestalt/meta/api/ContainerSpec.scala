@@ -55,15 +55,19 @@ case object ContainerSpec extends Spec {
     def mount_type: String
   }
 
+  sealed trait VolumeSecretMount {
+    def path: String
+  }
+
   case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
     override def mount_type: String = "env"
   }
 
-  case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+  case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "file"
   }
 
-  case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount {
+  case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "directory"
   }
 
@@ -123,6 +127,7 @@ case object ContainerSpec extends Spec {
       "force_pull" -> Json.toJson(spec.force_pull),
       "health_checks" -> Json.toJson(spec.health_checks),
       "volumes" -> Json.toJson(spec.volumes),
+      "secrets" -> Json.toJson(spec.secrets),
       "labels" -> Json.toJson(spec.labels),
       "env" -> Json.toJson(spec.env)
     ) ++ Seq[Option[(String,JsValue)]](
@@ -159,6 +164,7 @@ case object ContainerSpec extends Spec {
       args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
       volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
+      secrets = props.get("secrets") map {json => Json.parse(json).as[Seq[ContainerSpec.SecretMount]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
       
@@ -190,6 +196,7 @@ case object ContainerSpec extends Spec {
       volumes = volumes getOrElse Seq(),
       labels = labels getOrElse Map(),
       env = env getOrElse Map(),
+      secrets = secrets getOrElse Seq(),
       user = user,
       external_id = external_id,
       created = created
@@ -264,6 +271,7 @@ case object ContainerSpec extends Spec {
       (__ \ "force_pull").write[Boolean] and
       (__ \ "health_checks").write[Seq[ContainerSpec.HealthCheck]] and
       (__ \ "volumes").write[Seq[ContainerSpec.Volume]] and
+      (__ \ "secrets").write[Seq[ContainerSpec.SecretMount]] and
       (__ \ "labels").write[Map[String,String]] and
       (__ \ "env").write[Map[String,String]] and
       (__ \ "user").writeNullable[String]
@@ -284,6 +292,7 @@ case object ContainerSpec extends Spec {
     c.force_pull,
     c.health_checks,
     c.volumes,
+    c.secrets,
     c.labels,
     c.env,
     c.user

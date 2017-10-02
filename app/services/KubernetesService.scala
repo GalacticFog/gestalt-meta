@@ -25,7 +25,7 @@ import skuber.api.client.ObjKind
 import skuber.Container.Port
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
-import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount, VolumeSecretMount}
 import org.joda.time.{DateTime, DateTimeZone}
 
 import scala.concurrent.ExecutionContext
@@ -709,23 +709,62 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val container = mkKubernetesContainer(containerSpec, context.provider)
 
-    /*
-     * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
-     */
-    val mounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
-
     val podTemplate = {
-      val baseSpec = Pod.Spec()
-            .addContainer(container.copy(volumeMounts = mounts.toList))
-            .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
-      // val peristentVolumes = mounts map TODO FINISH CGB
+      /*
+       * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
+       */
+      val volMounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
 
-      val specWithVols = mounts.foldLeft[Pod.Spec](baseSpec) { (_, mnt) =>
-        baseSpec.addVolume {
-          Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name))
-        }
+      /*
+       * each kube volume needs a name, used for reference internal to the deployment, generate a uuid to use
+       */
+
+      /*
+       * make sure the secrets all exist
+       */
+      val allEnvSecrets: Map[UUID, String] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
+        res => res.id -> res.name
+      } toMap
+
+      containerSpec.secrets.foreach {
+        secret => if (!allEnvSecrets.contains(secret.secret_id))
+          throw new BadRequestException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
       }
+
+      /*
+       * each kube volume needs a name, used for reference internal to the deployment, generate a uuid to use
+       */
+      val secrets = containerSpec.secrets.map {
+        s => UUID.randomUUID().toString -> s
+      }
+
+      val envSecrets = containerSpec.secrets.collect {
+        case env: SecretEnvMount => env
+      }
+
+      val volSecrets: Seq[(String, VolumeSecretMount)] = containerSpec.secrets.collect {
+        case vol: VolumeSecretMount  => UUID.randomUUID.toString -> vol
+      }
+      val secMounts: Seq[Volume.Mount] = volSecrets.map { case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true) }
+
+      val baseSpec = Pod.Spec()
+        .addContainer(container.copy(
+          volumeMounts = (volMounts ++ secMounts).toList,
+          env = container.env ++ envSecrets.map { sem => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecrets(sem.secret_id)))}
+        ))
+        .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
+
+      val pvcVolumes = volMounts.map {
+        mnt => Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name, mnt.readOnly))
+      }
+
+      val secretVolumes = volSecrets.collect {
+        case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).toString))
+        // case ContainerSpec.SecretFileMount(secret_id, path, secret_key) =>
+      }
+
+      val specWithVols = (pvcVolumes ++ secretVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
     }
 

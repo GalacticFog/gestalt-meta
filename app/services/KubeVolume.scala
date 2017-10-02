@@ -18,7 +18,11 @@ case class KubeVolume(v: ContainerSpec.Volume) {
   val mount_path = v.container_path
   val access_mode = v.mode
 
-  def asVolumeMount(): Volume.Mount = Volume.Mount(name, mount_path)
+  def asVolumeMount(): Volume.Mount = Volume.Mount(
+    name = name,
+    mountPath = mount_path,
+    readOnly = resolveAccessMode(access_mode) == PersistentVolume.AccessMode.ReadOnlyMany
+  )
   
   def asVolumeClaim(namespace: Option[String] = None): PersistentVolumeClaim = {
 
