@@ -11,18 +11,18 @@ import skuber._
 
 
 case class KubeVolume(v: ContainerSpec.Volume) {
-  
-  val isPersistent = v.persistent.isDefined
-  val isClaim = isPersistent
+
   val name = v.name getOrElse {
     unprocessable("Malformed volume specification. Must supply 'name'")        
   }
   val mount_path = v.container_path
   val access_mode = v.mode
-  val storage_class = v.storage_class
-  
-  
-  def asVolumeMount(): Volume.Mount = Volume.Mount(name, mount_path)
+
+  def asVolumeMount(): Volume.Mount = Volume.Mount(
+    name = name,
+    mountPath = mount_path,
+    readOnly = resolveAccessMode(access_mode) == PersistentVolume.AccessMode.ReadOnlyMany
+  )
   
   def asVolumeClaim(namespace: Option[String] = None): PersistentVolumeClaim = {
 
@@ -50,7 +50,7 @@ case class KubeVolume(v: ContainerSpec.Volume) {
     if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mount'")
     else {
       val m = mode flatMap { s =>
-        PersistentVolume.AccessMode.values find { _.toString.toLowerCase == s.toLowerCase }
+        PersistentVolume.AccessMode.values find { _.toString.equalsIgnoreCase(s) }
       }
       m getOrElse {
         unprocessable(s"Invalid 'volume.mode'. found : '${mode.get}'")
