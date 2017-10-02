@@ -12,7 +12,7 @@ import java.util.UUID
 
 case class ProviderActionSpec(name: String, endpoint_url: String, implementation: ActionImplSpec, ui_locations: Seq[UiLocation]) {
 
-  def toResource(org: UUID, owner: ResourceOwnerLink, implId: UUID, id: UUID = uuid()): GestaltResourceInstance = {
+  def toResource(org: UUID, parent: UUID, owner: ResourceOwnerLink, implId: UUID, id: UUID = uuid()): GestaltResourceInstance = {
 
     val props = Map(
       "endpoint_url"   -> endpoint_url,
@@ -22,6 +22,7 @@ case class ProviderActionSpec(name: String, endpoint_url: String, implementation
         val impl = Json.toJson(implementation).as[JsObject] ++ Json.obj("id" -> implId.toString)
         Json.stringify(impl)
       },
+      "parent" -> Json.stringify(Json.obj("id" -> parent.toString)),
       "ui_locations"   -> Json.stringify(Json.toJson(ui_locations)))
 
     GestaltResourceInstance(

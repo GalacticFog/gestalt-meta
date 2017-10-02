@@ -21,6 +21,10 @@ POST   /root/providers/initialize controllers.BootstrapController.initProviders(
 
 GET 	/root/check 		controllers.InfoController.serviceCheck()
 
+
+PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
+
+
 ############################
 # ACTIONS
 ############################

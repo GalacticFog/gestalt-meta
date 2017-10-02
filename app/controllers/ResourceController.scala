@@ -71,9 +71,20 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
-    /*ResourceIds.ApiEndpoint -> lookupApiEndpoints,*/
-    ResourceIds.Rule        -> lookupPolicyRules
+    ResourceIds.Rule        -> lookupPolicyRules,
+    ResourceIds.ProviderAction -> lookupProviderActions
   )
+  
+  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+    val mapPathData = Resource.mapListPathData(path.path)
+    val parent = mapPathData(Resource.ParentId)
+    
+    if (qs.contains("q") && (qs("q")(0).toLowerCase == "entitlements")) {
+      ResourceFactory.rollupActionEntitlements(parent)
+    } else {
+      ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, UUID.fromString(parent))
+    }
+  }
   
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
@@ -527,18 +538,14 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * Build the dynamic 'groups' property on a User instance.
    */
   private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
-    
     security.getAccountGroups(res.id, user) match {
       case Failure(er) => {
         throw new RuntimeException(Errors.USER_GROUP_LOOKUP_FAILED(res.id, er.getMessage))
       }
       case Success(gs) => {
-        val gids  = gs map { _.id.toString }
-        val props = {
-          if (gids.isEmpty) res.properties
-          else Option(res.properties.get ++ Map("groups" -> gids.mkString(",")))
-        }
-        res.copy(properties = props)
+        val grpIds = gs flatMap { grp => ResourceFactory.findById(ResourceIds.Group, grp.id).map(_.id.toString) } mkString(",")
+        val props = res.properties.getOrElse(Map.empty) + ( "users" -> grpIds )
+        res.copy(properties = Some(props))
       }
     }
   }
@@ -556,10 +563,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
    * in gestalt-security.
    */
   def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
-
     // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
     // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
-    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247https://gitlab.com/galacticfog/gestalt-meta/issues/247
+    // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247
     security.getGroupAccounts(r.id, user)
       .recover {
         case a403: ForbiddenAPIException =>
@@ -571,16 +577,9 @@ class ResourceController @Inject()( messagesApi: MessagesApi,
         }
       }
       .map { acs =>
-        // String list of all users in current group.
-        val acids = (acs map { _.id.toString }).mkString(",")
-
-        // Inject users into group properties.
-        val groupProps  = if (r.properties.isDefined) r.properties.get else Map()
-        val outputProps = {
-          if (acids.isEmpty) None
-          else Some(groupProps ++ Map("users" -> acids))
-        }
-        r.copy(properties = outputProps)
+        val accIds = acs flatMap { acc => ResourceFactory.findById(ResourceIds.User, acc.id).map(_.id.toString) } mkString(",")
+        val outputProps = r.properties.getOrElse(Map.empty) + ( "users" -> accIds )
+        r.copy(properties = Some(outputProps))
       }
   }
 

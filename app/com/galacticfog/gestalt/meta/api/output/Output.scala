@@ -113,10 +113,11 @@ object Output {
   }  
   
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
-    val res = mkTypeOutput(r)
-    
+    val res = mkTypeOutput(r)    
+    val props = res.properties.get.validate[Map[String,String]].get
+
     // this renders the properties
-    val renderedProps = renderInstanceProperties(r.id, r.id, r.properties)
+    val renderedProps = renderTypeProperties(r.id, r.id, Some(props))
     Json.toJson(res.copy(properties = renderedProps))
   }
   
@@ -209,11 +210,14 @@ object Output {
     
     val templateProps = Properties.getTypePropertyMap(typeId)
     
+    println("***TEMPLATE-PROPS : " + templateProps.keySet)
+    
     @tailrec
     def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
       propKeys match {
         case Nil    => Option(acc)
         case property :: tail => {
+
           /*
            * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
            * That shouldn't happen as this is output (resource should been validated at create/update).
@@ -235,7 +239,41 @@ object Output {
       Json.toJson(_)
     }
   }
+  def renderTypeProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
+    /* Get a Map of the properties defined for the current ResourceType. */
+    println("***renderTypeProperties(...)")
+    val templateProps = Properties.getTypePropertyMap(ResourceIds.ResourceType)
+    
+    println("***TEMPLATE-PROPS : " + templateProps.keySet)
+    
+    @tailrec
+    def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
+      propKeys match {
+        case Nil    => Option(acc)
+        case property :: tail => {
+          println("***HEAD: " + property)
+          /*
+           * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
+           * That shouldn't happen as this is output (resource should been validated at create/update).
+           * just a note to look here if you see that error pop up.
+           */
+          if (skipRender(templateProps(property), given)) loop(tail, given, acc)
+          else {
+            val renderedValue = renderDataType(templateProps( property ), given( property ))
+            loop( tail, given, acc + (property -> renderedValue) )
+          }
+        }
+      }
+    }
 
+    val givenProperties = properties //collectInstanceProperties(typeId, instanceId, properties)
+    givenProperties map {
+      println("***going in...")
+      loop(templateProps.keys.toList, _, Map[String, JsValue]())
+    } map {
+      Json.toJson(_)
+    }
+  }
   /*
    * TODO: This is a hack just to get something out the door.
    * Once the PropertyManager architecture is done, special cases
