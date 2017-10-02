@@ -1536,8 +1536,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     "mount specified secrets on container create" in new FakeKubeCreate(
       secrets = Seq(
         SecretEnvMount(null, "SOME_ENV_VAR", "part-a"),
-//        SecretFileMount(null, "/dir/file-part-a", "part-a", true),
-//        SecretFileMount(null, "/dir/file-part-b", "part-b", true),
+        // SecretFileMount(null, "/dir/file-part-a", "part-a", true),
+        // SecretFileMount(null, "/dir/file-part-b", "part-b", true),
         SecretDirMount(null, "/dir")
       )
     ) {
@@ -1546,38 +1546,24 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         container = metaContainer
       )).properties
 
-      there was one(testSetup.kubeClient).create(argThat(
-        inNamespace(testSetup.testNS.name)
-          and
-          (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.volumes.map(_.source)) ^^ containAllOf(Seq(
-            skuber.Volume.Secret(metaSecret.name)
-          )))
-          and
-          (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.volumeMounts.map(vm => vm.mountPath -> vm.readOnly)) ^^ containAllOf(Seq(
-            "/dir" -> true
-          )))
-          and
-          (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.env) ^^ containAllOf(Seq(
-            skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
-          )))
-      ))(any,meq(skuber.ext.deploymentKind))
-
-//      val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-//      there was one(testSetup.kubeClient).create(serviceCaptor.capture())(any, meq(client.serviceKind))
-//      val createdService = serviceCaptor.getValue
-//      createdService must inNamespace(testSetup.testNS.name) and
-//        hasExactlyServicePorts(
-//          skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(skuber.portNumToNameablePort(80))),
-//          skuber.Service.Port("https", skuber.Protocol.TCP, 8443, Some(skuber.portNumToNameablePort(443)))
-//        )  and hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
-//        (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
-//      createdService.metadata.labels must havePairs(
-//        KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
-//        KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-//        KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-//        KubernetesService.META_FQON_KEY -> "root",
-//        KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
-//      )
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any, meq(skuber.ext.deploymentKind))
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName = deplVolumes.find(_.source.isInstanceOf[skuber.Volume.Secret]).map(_.name).getOrElse("")
+      // val partsVolName = deplVolumes.find(_.source.isInstanceOf[skuber.Volume.Se])
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(dirVolName, skuber.Volume.Secret(metaSecret.name))
+        // skuber.Volume()
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containAllOf(Seq(
+        skuber.Volume.Mount(dirVolName, "/dir", true)
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
+        skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
+      ))
     }
 
   }
