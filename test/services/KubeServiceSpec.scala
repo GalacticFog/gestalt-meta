@@ -22,9 +22,11 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import skuber.PersistentVolumeClaim
+import skuber.{PersistentVolumeClaim, Pod, PodList, Secret, Service, ServiceList}
 import skuber.api.client
+import skuber.ext.{Deployment, DeploymentList, Ingress, IngressList, ReplicaSet, ReplicaSetList}
 import skuber.json.format._
+import skuber.json.ext.format._
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -74,9 +76,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
-      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
+      mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
+      mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skTestNs))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, None)
@@ -136,14 +138,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       skTestNs.name returns testEnv.id.toString
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
-      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
+      mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")          )(any) returns Future.successful(mockSkuber)
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
+      mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skTestNs))
 
-      mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.ext.deploymentKind)) returns Future.successful(Some(mock[skuber.ext.Deployment]))
-      mockSkuber.update(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
+      mockSkuber.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef)) returns Future.successful(Some(mock[skuber.ext.Deployment]))
+      mockSkuber.update(any)(any,meq(Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, Some(metaContainer))
@@ -343,22 +345,26 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
-      mockSkuber.getOption[skuber.Namespace]("default") returns Future.successful(Some(skDefaultNs))
+      mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
-      mockSkuber.getOption[skuber.Namespace](testEnv.id.toString) returns Future.successful(Some(skTestNs))
+      mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(Some(skTestNs))
 
-      mockSkuber.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
-      mockSkuber.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
-      mockSkuber.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
-      mockSkuber.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList(items = List(mockPodA,mockPodB)))
-      mockSkuber.list()(any,meq(client.secretListKind)) returns Future.successful(skuber.SecretList(items = List(mockSecret)))
+      mockSkuber.list()(any,meq(skuber.PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+      mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      mockSkuber.list(any)(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      mockSkuber.list()(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockService)))
+      mockSkuber.list(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockService)))
+      mockSkuber.list()(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
+      mockSkuber.list(any)(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
+      mockSkuber.list()(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
+      mockSkuber.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
-      mockSkuber.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      mockSkuber.create(any)(any,meq(client.serviceKind)) returns Future.successful(mockService)
-      mockSkuber.create(any)(any,meq(client.secretKind)) returns Future.successful(mockSecret)
+      mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
+      mockSkuber.create(any)(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService)
+      mockSkuber.create(any)(any,meq(skuber.Secret.secDef)) returns Future.successful(mockSecret)
 
-      mockSkuber.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mockService))
-      mockSkuber.getOption(meq(metaSecret.name))(any,meq(client.secretKind)) returns Future.successful(Some(mockSecret))
+      mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.Service.svcDef)) returns Future.successful(Some(mockService))
+      mockSkuber.getOption(meq(metaSecret.name))(any,meq(skuber.Secret.secDef)) returns Future.successful(Some(mockSecret))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, Some(metaContainer))
@@ -412,21 +418,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "network" -> ""
         ))
       )
-      testSetup.kubeClient.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
+      testSetup.kubeClient.create[Deployment](any)(any,any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.env) ^^ containAllOf(Seq(
             skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
             skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
           )))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -453,21 +459,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "network" -> ""
         ))
       )
-      testSetup.kubeClient.create(any)(any,meq(skuber.ext.deploymentKind)) returns Future.successful(mock[skuber.ext.Deployment])
-      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(items = Nil))
+      testSetup.kubeClient.create[Deployment](any)(any,any) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
 
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         inNamespace(testSetup.testNS.name) and
           (((_: skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.env) ^^ containTheSameElementsAs(Seq(
             skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")),
             skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
             skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
           )))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -503,10 +509,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           skuber.Container.Port(443,  skuber.Protocol.TCP, "https"),
           skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,meq(skuber.ext.Deployment.deployDef))
 
       val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-      there was one(testSetup.kubeClient).create(serviceCaptor.capture())(any, meq(client.serviceKind))
+      there was one(testSetup.kubeClient).create[Service](serviceCaptor.capture())(any,any)
       val createdService = serviceCaptor.getValue
       createdService must inNamespace(testSetup.testNS.name) and
         hasExactlyServicePorts(
@@ -541,27 +547,27 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.Volume("/mnt/path1", None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
       )
     ) {
-      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList( items = List() ))
-      testSetup.kubeClient.create(any)(any,meq(client.persistentVolumeClaimsKind)) returns Future.successful(mock[skuber.PersistentVolumeClaim])
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+      testSetup.kubeClient.create[PersistentVolumeClaim](any)(any,any) returns Future.successful(mock[skuber.PersistentVolumeClaim])
 
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
 
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
             skuber.Volume("my-volume-1", skuber.Volume.PersistentVolumeClaimRef("my-volume-1", true))
           )))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
 
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[PersistentVolumeClaim](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.PersistentVolumeClaim).name) ^^ beEqualTo("my-volume-1"))
-      ))(any,meq(client.persistentVolumeClaimsKind))
+      ))(any,any)
     }
 
     "fail to create container if persistent volume claim creation fails" in new FakeKubeCreate(
@@ -569,19 +575,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ContainerSpec.Volume("/mnt/path1", None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
       )
     ) {
-      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList( items = List() ))
-      testSetup.kubeClient.create(any)(any,meq(client.persistentVolumeClaimsKind)) returns Future.failed(new skuber.K8SException(mock[client.Status]))
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+      testSetup.kubeClient.create[PersistentVolumeClaim](any)(any,any) returns Future.failed(new skuber.K8SException(mock[client.Status]))
 
       await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )) must throwAn[UnprocessableEntityException]("Failed creating PVC for volume")
 
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[PersistentVolumeClaim](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.PersistentVolumeClaim).name) ^^ beEqualTo("my-volume-1"))
-      ))(any,meq(client.persistentVolumeClaimsKind))
+      ))(any,any)
     }
 
     "using existing persistent volume claims when mounting into container" in new FakeKubeCreate(
@@ -591,8 +597,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )
     ) {
 
-      testSetup.kubeClient.list()(any,meq(client.persistentVolumeClaimListKind)) returns Future.successful(skuber.PersistentVolumeClaimList(
-        items = List(
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList(
+        "","",None,List(
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta("my-volume-1")),
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta("my-volume-2"))
         )
@@ -603,14 +609,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         container = metaContainer
       )).properties
 
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
             skuber.Volume("my-volume-1", skuber.Volume.PersistentVolumeClaimRef("my-volume-1", true)),
             skuber.Volume("my-volume-2", skuber.Volume.PersistentVolumeClaimRef("my-volume-2", false))
           )))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
     }
 
     "provision containers and secrets with the expected external_id property" in new FakeKubeCreate() {
@@ -656,7 +662,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).metadata.labels) ^^ havePairs(
           "labela" -> "value a",
           "labelb" -> "value b",
@@ -666,14 +672,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           KubernetesService.META_FQON_KEY -> "root",
           KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
 
       val Some(updatedSecretProps) = await(testSetup.kubeService.createSecret(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
         secret = metaSecret,
         items = Seq.empty
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Secret](argThat(
         ((_:skuber.Secret).metadata.labels) ^^ havePairs(
           // "labela" -> "value a",
           // "labelb" -> "value b",
@@ -683,13 +689,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           KubernetesService.META_FQON_KEY -> "root",
           KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
         )
-      ))(any,meq(client.secretKind))
+      ))(any,any)
     }
 
     "provision namespace with the expected name and labels" in new FakeKube {
       val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
       Entitlements.setNewEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
-      testSetup.kubeClient.getOption[skuber.Namespace](newEnv.id.toString) returns Future.successful(None)
+      testSetup.kubeClient.getOption(newEnv.id.toString)(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(None)
       testSetup.kubeClient.create[skuber.Namespace](argThat(
         ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
       ))(any,any) returns Future(mock[skuber.Namespace])
@@ -698,7 +704,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
         create = true
       ))
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[skuber.Namespace](argThat(
         ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
           KubernetesService.META_ENVIRONMENT_KEY -> newEnv.id.toString,
           KubernetesService.META_WORKSPACE_KEY -> newWork.id.toString,
@@ -715,11 +721,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
           skuber.Container.PullPolicy.Always
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -728,11 +734,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.imagePullPolicy)) ^^ beSome(
           skuber.Container.PullPolicy.IfNotPresent
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -741,11 +747,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(
           containTheSameElementsAs(Seq("echo","hello","world"))
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -754,9 +760,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.args)) ^^ beSome(empty)
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -765,11 +771,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
           containTheSameElementsAs(Seq("/usr/bin/python"))
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -778,11 +784,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
           containTheSameElementsAs(Seq("python","-m","SimpleHTTPServer","$PORT"))
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -791,12 +797,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
           limits = Map("memory" -> "1024.000M"),
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -805,12 +811,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
           limits = Map("memory" -> "1024.000M", "cpu" -> "1000m"),
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -819,12 +825,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
           limits = Map(),
           requests = Map("memory" -> "1024.000M", "cpu" -> "1000m")
         ))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -833,11 +839,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)) ^^ beSome(skuber.Resource.Requirements(
           limits = Map(), requests = Map()
         ))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -846,11 +852,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(
           containTheSameElementsAs(Seq("echo","hello","|","wc"))
         )
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there was one(testSetup.kubeClient).close
     }.pendingUntilFixed("this is going to be hard")
 
@@ -859,9 +865,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Deployment](argThat(
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -870,21 +876,20 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),  service_port = Some(8443), expose_endpoint = Some(true), name = Some("https"), virtual_hosts = Some(Seq("secure.galacticfog.com")) ),
       ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(10000), expose_endpoint = Some(false), name = Some("not-exposed"), virtual_hosts = Some(Seq("no-exposure-no-vhost.galacticfog.com")) )
     )) {
-      testSetup.kubeClient.create(any)(any,meq(skuber.ext.ingressKind)) returns Future(mock[skuber.ext.Ingress])
+      testSetup.kubeClient.create[Ingress](any)(any,any) returns Future(mock[Ingress])
 
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
 
-      import skuber.ext.Ingress
-      import skuber.ext.Ingress._
+      import Ingress._
 
       val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-      there was one(testSetup.kubeClient).create(serviceCaptor.capture())(any, meq(client.serviceKind))
+      there was one(testSetup.kubeClient).create[Service](serviceCaptor.capture())(any,any)
       val createdService = serviceCaptor.getValue
 
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Ingress](argThat(
         inNamespace(testSetup.testNS.name)
           and
         ((_:Ingress).metadata.labels) ^^ havePairs(
@@ -900,7 +905,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           Rule("galacticfog.com",        HttpRule(List(Path("", Backend(createdService.name, 80))))),
           Rule("secure.galacticfog.com", HttpRule(List(Path("", Backend(createdService.name, 8443)))))
         ))
-      ))(any,meq(skuber.ext.ingressKind))
+      ))(any,any)
       there were two(testSetup.kubeClient).close
     }
 
@@ -975,9 +980,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
-      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
-      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1015,9 +1020,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
-      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
-      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1052,9 +1057,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list()(any,meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDepl)))
-      testSetup.kubeClient.list()(any,meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList())
-      testSetup.kubeClient.list()(any,meq(client.podListKind)) returns Future.successful(skuber.PodList())
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1097,21 +1102,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
 
       val mockService = skuber.Service(metaContainer.name).withSelector( label ).addLabel( label )
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
-      testSetup.kubeClient.list()(any, meq(client.podListKind)) returns Future.successful(skuber.PodList())
-      testSetup.kubeClient.list()(any, meq(client.serviceListKind)) returns Future.successful(skuber.ServiceList(items = List(mockService)))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.ingressListKind)) returns Future.successful(skuber.ext.IngressList(items = List(mockIngress)))
-      testSetup.kubeClient.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
-      testSetup.kubeClient.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
-      testSetup.kubeClient.delete(mockService.name, 0)(client.serviceKind) returns Future.successful(())
-      testSetup.kubeClient.delete(mockIngress.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,items = List(mockDep)))
+      testSetup.kubeClient.list(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,items = List(mockRS)))
+      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,items = List(mockService)))
+      testSetup.kubeClient.list(any)(any,meq(Ingress.ingListDef)) returns Future.successful(new skuber.ext.IngressList("","",None,items = List(mockIngress)))
+      testSetup.kubeClient.delete(mockDep.name)(Deployment.deployDef) returns Future.successful(())
+      testSetup.kubeClient.delete(mockRS.name)(ReplicaSet.rsDef) returns Future.successful(())
+      testSetup.kubeClient.delete(mockService.name)(Service.svcDef) returns Future.successful(())
+      testSetup.kubeClient.delete(mockIngress.name)(Ingress.ingDef) returns Future.successful(())
 
       await(testSetup.kubeService.destroy(metaContainer))
-      there was one(testSetup.kubeClient).delete(mockDep.name,0)(skuber.ext.deploymentKind)
-      there was one(testSetup.kubeClient).delete(mockRS.name,0)(skuber.ext.replsetsKind)
-      there was one(testSetup.kubeClient).delete(mockService.name,0)(client.serviceKind)
-      there was one(testSetup.kubeClient).delete(mockIngress.name,0)(skuber.ext.ingressKind)
+      there was one(testSetup.kubeClient).delete(mockDep.name)(Deployment.deployDef)
+      there was one(testSetup.kubeClient).delete(mockRS.name)(ReplicaSet.rsDef)
+      there was one(testSetup.kubeClient).delete(mockService.name)(Service.svcDef)
+      there was one(testSetup.kubeClient).delete(mockIngress.name)(Ingress.ingDef)
       there was one(testSetup.kubeClient).close
     }
 
@@ -1140,16 +1145,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mockDep)))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.replsetListKind)) returns Future.successful(skuber.ext.ReplicaSetList(items = List(mockRS)))
-      testSetup.kubeClient.list()(any, meq(client.podListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.kubeClient.list()(any, meq(client.serviceListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.ingressListKind)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.kubeClient.delete(mockDep.name,0)(skuber.ext.deploymentKind) returns Future.successful(())
-      testSetup.kubeClient.delete(mockRS.name, 0)(skuber.ext.replsetsKind) returns Future.successful(())
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
+      testSetup.kubeClient.list(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))
+      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.list(any)(any,meq(Ingress.ingListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.delete(mockDep.name)(Deployment.deployDef) returns Future.successful(())
+      testSetup.kubeClient.delete(mockRS.name)(ReplicaSet.rsDef) returns Future.successful(())
 
       await(testSetup.kubeService.destroy(metaContainer))
-      there were no(testSetup.kubeClient).delete(any,any)(meq(client.serviceKind))
+      there were no(testSetup.kubeClient).delete(any)(Deployment.deployDef)
       there was one(testSetup.kubeClient).close
     }
 
@@ -1179,8 +1184,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any, meq(skuber.ext.deploymentKind)) returns Future.successful(Some(testDepl))
-      testSetup.kubeClient.update(any)(any, meq(skuber.ext.deploymentKind)) answers {
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.Deployment.deployDef)) returns Future.successful(Some(testDepl))
+      testSetup.kubeClient.update(any)(any,meq(Deployment.deployDef)) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
           val depl = arr(0).asInstanceOf[skuber.ext.Deployment]
@@ -1194,8 +1199,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )).properties
 
       there was one(testSetup.kubeClient).update(argThat(
-        ((depl: skuber.ext.Deployment) => (depl.spec.map(_.replicas).getOrElse(-1) must_== testScale)) and haveName("test-container")
-      ))(any,meq(skuber.ext.deploymentKind))
+        ((depl: skuber.ext.Deployment) => (depl.spec.flatMap(_.replicas).getOrElse(-1) must_== testScale)) and haveName("test-container")
+      ))(any,any)
 
       updatedContainerProps must havePair(
         "num_instances" -> testScale.toString
@@ -1236,12 +1241,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )) {
 
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.update(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
-      testSetup.kubeClient.update(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
+      testSetup.kubeClient.update(any)(any,meq(Ingress.ingDef)) returns Future.successful(mock[skuber.ext.Ingress])
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Service.svcDef)) returns Future.successful(Some(mock[skuber.Service]))
+      testSetup.kubeClient.update(any)(any,meq(Service.svcDef)) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1285,17 +1289,17 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           and ((((_:skuber.ext.Deployment).spec.get.selector.get.requirements) ^^ contain(
             skuber.LabelSelector.IsEqualRequirement( "meta/container", metaContainer.id.toString )
           )))
-      ))(any,meq(skuber.ext.deploymentKind))
+      ))(any,meq(Deployment.deployDef))
       there was one(testSetup.kubeClient).update(argThat(
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_: skuber.ext.Ingress).spec.get.rules.map(_.host)) ^^ containTheSameElementsAs(Seq("port81.test.com","port8444.test.com")))
           and (((_: skuber.ext.Ingress).spec.get.rules.flatMap(_.http.paths).map(_.backend.serviceName).distinct) ^^ containTheSameElementsAs(Seq(metaContainer.name)))
-      ))(any,meq(skuber.ext.ingressKind))
+      ))(any,meq(Ingress.ingDef))
       there was one(testSetup.kubeClient).update(argThat(
         inNamespace(testSetup.testNS.name)
           and (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
-      ))( any, meq(client.serviceKind) )
+      ))(any,meq(Service.svcDef))
 
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
@@ -1322,12 +1326,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )) {
 
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.delete(metaContainer.name, 0)(skuber.ext.ingressKind) returns Future.successful(())
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
-      testSetup.kubeClient.update(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
+      testSetup.kubeClient.delete(metaContainer.name)(Ingress.ingDef) returns Future.successful(())
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Service.svcDef)) returns Future.successful(Some(mock[skuber.Service]))
+      testSetup.kubeClient.update(any)(any,meq(Service.svcDef)) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1361,9 +1364,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.kubeClient).delete( meq("test-container"), any )(meq(skuber.ext.ingressKind))
-      there was one(testSetup.kubeClient).update( any )( any, meq(client.serviceKind) )
-      there was one(testSetup.kubeClient).update( any )( any, meq(skuber.ext.deploymentKind) )
+      there was one(testSetup.kubeClient).delete("test-container")(Ingress.ingDef)
+      there was one(testSetup.kubeClient).update(any)(any,meq(Service.svcDef))
+      there was one(testSetup.kubeClient).update(any)(any,meq(Deployment.deployDef))
       there were two(testSetup.kubeClient).close
     }
 
@@ -1383,11 +1386,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )) {
 
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(None)
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(client.serviceKind)) returns Future.successful(Some(mock[skuber.Service]))
-      testSetup.kubeClient.delete(meq(metaContainer.name), any)(meq(client.serviceKind)) returns Future.successful(())
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(None)
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Service.svcDef)) returns Future.successful(Some(mock[skuber.Service]))
+      testSetup.kubeClient.delete(metaContainer.name)(Service.svcDef) returns Future.successful(())
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1415,8 +1417,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.kubeClient).delete( meq(metaContainer.name), any )(meq(client.serviceKind))
-      there was one(testSetup.kubeClient).update( any )( any, meq(skuber.ext.deploymentKind) )
+      there was one(testSetup.kubeClient).delete(metaContainer.name)(Service.svcDef)
+      there was one(testSetup.kubeClient).update(any)(any,meq(Deployment.deployDef))
       there were two(testSetup.kubeClient).close
     }
 
@@ -1430,11 +1432,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )
     )) {
 
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.ingressKind)) returns Future.successful(None)
-      testSetup.kubeClient.list()(any, meq(skuber.ext.deplListKind)) returns Future.successful(skuber.ext.DeploymentList(items = List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.create(any)(any,meq(skuber.ext.ingressKind)) returns Future.successful(mock[skuber.ext.Ingress])
-      testSetup.kubeClient.getOption(any)(any,meq(client.serviceKind)) returns Future.successful(None)
-      testSetup.kubeClient.create(any)(any,meq(client.serviceKind)) returns Future.successful(mock[skuber.Service])
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(None)
+      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
+      testSetup.kubeClient.create[Ingress](any)(any,any) returns Future.successful(mock[skuber.ext.Ingress])
+      testSetup.kubeClient.getOption(any)(any,meq(Service.svcDef)) returns Future.successful(None)
+      testSetup.kubeClient.create[Service](any)(any,any) returns Future.successful(mock[skuber.Service])
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1461,17 +1463,17 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.image) ^^ be_==("nginx:updated"))
-      ))(any,meq(skuber.ext.deploymentKind))
-      there was one(testSetup.kubeClient).create(argThat(
+      ))(any,meq(Deployment.deployDef))
+      there was one(testSetup.kubeClient).create[Ingress](argThat(
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_: skuber.ext.Ingress).spec.get.rules.toSeq.map(_.host)) ^^ containTheSameElementsAs(Seq("port80.test.com")))
-      ))(any,meq(skuber.ext.ingressKind))
-      there was one(testSetup.kubeClient).create(argThat(
+      ))(any,any)
+      there was one(testSetup.kubeClient).create[Service](argThat(
         inNamespace(testSetup.testNS.name)
           and haveName(metaContainer.name)
           and (((_: skuber.Service).spec.get.ports.map(_.targetPort.get))) ^^ containTheSameElementsAs(Seq(skuber.portNumToNameablePort(80)))
-      ))(any,meq(client.serviceKind))
+      ))(any,any)
 
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
@@ -1487,7 +1489,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )).properties
 
       // this also checks that "base64-decode secrets before sending to skuber"
-      there was one(testSetup.kubeClient).create(argThat(
+      there was one(testSetup.kubeClient).create[Secret](argThat(
         inNamespace(testSetup.testNS.name)
           and
           (
@@ -1495,7 +1497,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
               case (key, bytes) => SecretSpec.Item(key, Some(Base64.getEncoder.encodeToString(bytes)))
             }).toSeq) ^^ containTheSameElementsAs(metaSecretItems)
           )
-      ))(any,meq(client.secretKind))
+      ))(any,any)
 
       Json.parse(updatedSecretProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
         metaSecretItems.map(_.copy(value = None))
@@ -1525,19 +1527,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
 
-      testSetup.kubeClient.list()(any, meq(client.secretListKind)) returns Future.successful(skuber.SecretList(items = List(mockSecret)))
-      testSetup.kubeClient.delete(mockSecret.name,0)(client.secretKind) returns Future.successful(())
+      testSetup.kubeClient.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
+      testSetup.kubeClient.delete(mockSecret.name)(skuber.Secret.secDef) returns Future.successful(())
 
       await(testSetup.kubeService.destroySecret(metaSecret))
-      there was one(testSetup.kubeClient).delete(mockSecret.name,0)(client.secretKind)
+      there was one(testSetup.kubeClient).delete(mockSecret.name)(skuber.Secret.secDef)
       there was one(testSetup.kubeClient).close
     }
 
     "mount specified secrets on container create" in new FakeKubeCreate(
       secrets = Seq(
         SecretEnvMount(null, "SOME_ENV_VAR", "part-a"),
-        // SecretFileMount(null, "/dir/file-part-a", "part-a", true),
-        // SecretFileMount(null, "/dir/file-part-b", "part-b", true),
+        SecretFileMount(null, "/dir/files/part-a", "part-a"),
+        SecretFileMount(null, "/dir/files/part-b", "part-b"),
         SecretDirMount(null, "/dir")
       )
     ) {
@@ -1547,19 +1549,20 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )).properties
 
       val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
-      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any, meq(skuber.ext.deploymentKind))
+      there was one(testSetup.kubeClient).create[Deployment](deploymentCaptor.capture())(any,any)
       val createdDeployment = deploymentCaptor.getValue
       createdDeployment must inNamespace(testSetup.testNS.name)
       // deployment internal volume names are created on-demand, need to figure out what these were
       val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
-      val dirVolName = deplVolumes.find(_.source.isInstanceOf[skuber.Volume.Secret]).map(_.name).getOrElse("")
-      // val partsVolName = deplVolumes.find(_.source.isInstanceOf[skuber.Volume.Se])
+      val dirVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret]   && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
       deplVolumes must containAllOf(Seq(
-        skuber.Volume(dirVolName, skuber.Volume.Secret(metaSecret.name))
-        // skuber.Volume()
+        skuber.Volume(dirVolName, skuber.Volume.Secret(secretName = metaSecret.name)),
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(skuber.Volume.KeyToPath("part-a", "files/part-a"), skuber.Volume.KeyToPath("part-b", "files/part-b")))))
       ))
       createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containAllOf(Seq(
-        skuber.Volume.Mount(dirVolName, "/dir", true)
+        skuber.Volume.Mount(dirVolName, "/dir", true),
+        skuber.Volume.Mount(partsVolName, "/dir", true)
       ))
       createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
         skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
