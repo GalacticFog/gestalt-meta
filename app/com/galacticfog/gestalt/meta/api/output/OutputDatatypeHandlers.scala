@@ -90,14 +90,16 @@ object OutputDatatypeHandlers {
    * Render resource::uuid::link::list
    */
   def resourceUUIDLinkList(property: GestaltTypeProperty, value: String) = {
-    val baseUri = None
-    val typeId = safeGetTypeId( property )
-    
-    val ids = normalArray(unquote(value)).split(",") map { v => v.trim }
-    val links = ids map { id => 
-      Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
+    if (value.isEmpty) Json.arr()
+    else {
+      val baseUri = None
+      val typeId = safeGetTypeId(property)
+      val ids = normalArray(unquote(value)).split(",") map { v => v.trim }
+      val links = ids map { id =>
+        Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
+      }
+      JsArray( links )
     }
-    JsArray( links )
   }
   
   /**
