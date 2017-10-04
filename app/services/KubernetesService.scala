@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory
 import services.util.CommandParser
 
 import scala.language.implicitConversions
+import scala.language.reflectiveCalls
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
@@ -21,8 +22,8 @@ import skuber.api.client._
 import skuber.ext._
 import skuber.json.format._
 import skuber.json.ext.format._
-import skuber.api.client.ObjKind
 import skuber.Container.Port
+import skuber.LabelSelector.dsl._
 import com.galacticfog.gestalt.caas.kube._
 import controllers.util._
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount, VolumeSecretMount}
@@ -61,53 +62,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   private[this] val log = LoggerFactory.getLogger(this.getClass)
   private[services] val DefaultNamespace = "default"
-
-  // TODO: skuber issue #38 is a formatting error around Ingress rules with empty path
-  implicit val ingressBackendFmt: Format[Ingress.Backend] = Json.format[Ingress.Backend]
-  // we'll override that formatter until then
-  implicit val ingressPathFmt: Format[Ingress.Path] = (
-    (JsPath \ "path").formatMaybeEmptyString() and
-      (JsPath \ "backend").format[Ingress.Backend]
-    ) (Ingress.Path.apply _, unlift(Ingress.Path.unapply))
-  implicit val ingressHttpRuledFmt: Format[Ingress.HttpRule] = Json.format[Ingress.HttpRule]
-  implicit val ingressRuleFmt: Format[Ingress.Rule] = Json.format[Ingress.Rule]
-  implicit val ingressTLSFmt: Format[Ingress.TLS] = Json.format[Ingress.TLS]
-
-  implicit val ingressSpecFormat: Format[Ingress.Spec] = (
-    (JsPath \ "backend").formatNullable[Ingress.Backend] and
-      (JsPath \ "rules").formatMaybeEmptyList[Ingress.Rule] and
-      (JsPath \ "tls").formatMaybeEmptyList[Ingress.TLS]
-    )(Ingress.Spec.apply _, unlift(Ingress.Spec.unapply))
-
-  implicit val ingrlbingFormat: Format[Ingress.Status.LoadBalancer.Ingress] =
-    Json.format[Ingress.Status.LoadBalancer.Ingress]
-
-  implicit val ingrlbFormat: Format[Ingress.Status.LoadBalancer] =
-    Json.format[Ingress.Status.LoadBalancer]
-
-  implicit val ingressStatusFormat = Json.format[Ingress.Status]
-
-  implicit lazy val ingressFormat: Format[Ingress] = (
-    objFormat and
-      (JsPath \ "spec").formatNullable[Ingress.Spec] and
-      (JsPath \ "status").formatNullable[Ingress.Status]
-    ) (Ingress.apply _, unlift(Ingress.unapply))
-
-  implicit val ingressListFmt: Format[IngressList] = KListFormat[Ingress].apply(IngressList.apply _,unlift(IngressList.unapply))
-
-  implicit val depSpecFmt: Format[Deployment.Spec] = (
-    (JsPath \ "replicas").format[Int] and
-      (JsPath \ "selector").formatNullableLabelSelector and
-      (JsPath \ "template").formatNullable[Pod.Template.Spec] and
-      (JsPath \ "strategy").formatNullable[Deployment.Strategy] and
-      (JsPath \ "minReadySeconds").formatMaybeEmptyInt()
-    )(Deployment.Spec.apply _, unlift(Deployment.Spec.unapply))
-
-  implicit lazy val depFormat: Format[Deployment] = (
-    objFormat and
-      (JsPath \ "spec").formatNullable[Deployment.Spec] and
-      (JsPath \ "status").formatNullable[Deployment.Status]
-    ) (Deployment.apply _, unlift(Deployment.unapply))
 
   def cleanly[T](providerId: UUID, namespace: String)(f: RequestContext => Future[T]): Future[T] = {
     skuberFactory.initializeKube(providerId, namespace) flatMap { kube =>
@@ -161,7 +115,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val targetLabel = META_SECRET_KEY -> secret.id.toString
     cleanly(provider.id, environment) { kube =>
       val fSecretDel = for {
-        deps <- deleteAllWithLabel[Secret,SecretList](kube, targetLabel)
+        deps <- deleteAllWithLabel[Secret](kube, targetLabel)
       } yield deps.headOption.getOrElse({
         log.debug("deleted no Secrets")
         ()
@@ -323,7 +277,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
-
     for {
     /*
      * This creates any volume claims that may not exist and tests each creation
@@ -411,27 +364,39 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val targetLabel = META_CONTAINER_KEY -> container.id.toString
     cleanly(provider.id, environment) { kube =>
       val fDplDel = for {
-        deps <- deleteAllWithLabel[Deployment,DeploymentList](kube, targetLabel)
-        rses <- deleteAllWithLabel[ReplicaSet,ReplicaSetList](kube, targetLabel)
-        pods <- deleteAllWithLabel[Pod,PodList](kube, targetLabel)
+        deps <- deleteAllWithLabel[Deployment](kube, targetLabel)
+        rses <- deleteAllWithLabel[ReplicaSet](kube, targetLabel)
+        pods <- deleteAllWithLabel[Pod](kube, targetLabel) recover {
+          case e: K8SException =>
+            log.warn(s"K8S error listing/deleting Pods associated with container ${container.id}", e)
+            List(())
+        }
       } yield pods.headOption.getOrElse({
         log.debug("deleted no Pods")
         ()
       })
 
-      val fSrvDel = for {
-        svcs <- deleteAllWithLabel[Service,ServiceList](kube, targetLabel)
+      val fSrvDel = (for {
+        svcs <- deleteAllWithLabel[Service](kube, targetLabel)
       } yield svcs.headOption.getOrElse({
         log.debug("deleted no Services")
         ()
-      })
+      })) recover {
+        case e: K8SException =>
+          log.warn(s"K8S error listing/deleting Services associated with container ${container.id}", e)
+          ()
+      }
 
-      val fIngDel = for {
-        ings <- deleteAllWithLabel[Ingress,IngressList](kube, targetLabel)
+      val fIngDel = (for {
+        ings <- deleteAllWithLabel[Ingress](kube, targetLabel)
       } yield ings.headOption.getOrElse({
         log.debug("deleted no Ingresses")
         ()
-      })
+      })) recover {
+        case e: K8SException =>
+          log.warn(s"K8S error listing/deleting Ingresses associated with container ${container.id}", e)
+          ()
+      }
 
       Future.sequence(Seq(fDplDel,fSrvDel,fIngDel)) map {_ =>
         log.debug(s"finished deleting Deployments, ReplicaSets, Pods, Services and Ingresses for container ${container.id}")
@@ -440,65 +405,18 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def listByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): List[O] = {
-    objs filter { _.name.startsWith(prefix) }
-  }
-
-  def listByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): List[O] = {
+  def listByLabel[O <: ObjectResource, L <: ListResource[O]](objs: L, label: (String, String)): List[O] =
     objs filter { _.metadata.labels.get(label._1).contains(label._2) }
-  }
 
-  def getByLabel[O <: ObjectResource, L <: KList[O]](objs: L, label: (String, String)): Option[O] = {
-    objs find { _.metadata.labels.get(label._1).contains(label._2) }
-  }
-
-  def getByName[O <: ObjectResource, L <: KList[O]](objs: L, prefix: String): Option[O] = {
-    val found = listByName[O, L](objs, prefix)
-    if (found.size > 1) throw new IllegalArgumentException(s"Too many matches.")
-    else found.headOption
-  }
-
-  def safeList[L <: KList[_]: TypeTag]( kube: RequestContext )(implicit fmt: Format[L], kind: ListKind[L]) : Future[L] = {
-    // handle https://github.com/doriordan/skuber/issues/26
-    kube.list[L]() recover {
-      case e: Throwable =>
-        log.debug(s"error listing Kubernetes resources: ${e.toString}, will assume empty list")
-        // TODO: (cgbaker) this instantiation code did not work:
-        //   typeTag[L].mirror.runtimeClass(typeOf[L]).newInstance().asInstanceOf[L]
-        // I don't feel like investigating it right now, so hack for now
-        typeOf[L] match {
-          case t if t =:= typeOf[PodList] => PodList().asInstanceOf[L]
-          case t if t =:= typeOf[DeploymentList] => DeploymentList().asInstanceOf[L]
-          case t if t =:= typeOf[ServiceList] => ServiceList().asInstanceOf[L]
-          case t if t =:= typeOf[IngressList] => IngressList().asInstanceOf[L]
-        }
-
-    }
-  }
-
-  def findByLabel[O <: ObjectResource : TypeTag, L <: KList[O] : TypeTag](kube: RequestContext, lbl: (String,String) )(implicit fmt: Format[L], kind: ListKind[L]) : Future[Option[O]] = {
-    val otype = typeOf[O]
-    safeList[L](kube) map {
-      listByLabel[O,L](_, lbl) match {
-        case Nil          => None
-        case head :: tail =>
-          if (tail.nonEmpty) log.warn(s"found multiple ${otype} resources tagged, will use the first one")
-          Some(head)
-      }
-    }
-  }
-
-  // TODO (cgbaker): this is pretty unsavory... gotta be a way to get O out of L without having to explicitly template on it
-  def deleteAllWithLabel[O <: ObjectResource : TypeTag, L <: skuber.KList[O] : TypeTag]( kube: RequestContext, label: (String, String) )
-                                                                   ( implicit fmtL: Format[L], kindL: ListKind[L],
-                                                                     fmtO: Format[O], kindO: ObjKind[O] ) : Future[List[Unit]] = {
+  def deleteAllWithLabel[O <: ObjectResource : TypeTag]( kube: RequestContext, label: (String, String) )
+                                                       ( implicit fmtL: Format[ListResource[O]], fmtO: Format[O],
+                                                                  rdo: skuber.ResourceDefinition[O],
+                                                                  rd: skuber.ResourceDefinition[ListResource[O]] ) : Future[List[Unit]] = {
     val otype = typeOf[O]
     for {
-      allResources <- safeList[L](kube)
-      _ = log.debug(s"found ${allResources.size} ${otype}")
-      selectedResources = listByLabel[O,L](allResources, label)
-      _ = log.debug(s"identified ${selectedResources.size} ${otype} to delete")
-      deletes <- Future.traverse(selectedResources){
+      foundResources <- kube.list[ListResource[O]](label._1 is label._2) map (_.items)
+      _ = log.debug(s"found ${foundResources.size} ${otype} resources")
+      deletes <- Future.traverse(foundResources){
         d =>
           log.info(s"deleting ${typeOf[O]} ${d.name} labeled with ${label}")
           kube.delete[O](d.name)
@@ -639,7 +557,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             log.debug(s"Found existing volume claim with name '${matchingPvc.name}'")
             Future.successful(matchingPvc)
           case None =>
-            log.debug(s"Creating new Persistent Volume Claim '${v.name}'")
+            log.info(s"Creating new Persistent Volume Claim '${v.name}'")
             val pvc = KubeVolume(v).asVolumeClaim(Some(namespace))
             kube.create[PersistentVolumeClaim](pvc) recoverWith {
               case e: K8SException =>
@@ -748,6 +666,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
       val secMounts: Seq[Volume.Mount] = volSecrets.map { case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true) }
 
+      /*
+       * SecretFileMount mountings have one path that has to be split into:
+       *  - the Container's volumeMount.mountPath
+       *  - the Pod Volume item path
+       *
+       * for a given container, all of the .volumeMounts[].mountPath must be unique
+       * the uniqueness requirement means that we have to consider other SecretFileMount objects together
+       * for example, mounting the secret parts part-a and part-b into /mnt/secrets/files/part-[a,b] requires either:
+       * - combining them into one volume (and one mount) with both items, or
+       * - keeping them as two volumes and two mounts with distinct mountPaths
+       * the latter approach is possible in this case (e.g., mountPaths /mnt/secrets and /mnt/secrets/files), but will not be in general
+       * for example, if the secret path had been /file-a and /file-b, there are no unique mount paths
+       *
+       * this is complicated by the fact that
+       */
       val baseSpec = Pod.Spec()
         .addContainer(container.copy(
           volumeMounts = (volMounts ++ secMounts).toList,
@@ -761,7 +694,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
       val secretVolumes = volSecrets.collect {
         case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).toString))
-        // case ContainerSpec.SecretFileMount(secret_id, path, secret_key) =>
+//        case (secretVolumeName, ContainerSpec.SecretFileMount(secret_id, path, secret_key) => Volume(secretVolumeName, )
       }
 
       val specWithVols = (pvcVolumes ++ secretVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
@@ -791,25 +724,24 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val lbl = META_CONTAINER_KEY -> container.id.toString
     cleanly(context.providerId, context.environment.id.toString)( kube =>
       for {
-        maybeDepl <- findByLabel[Deployment,DeploymentList](kube, lbl)
+        maybeDepl <- kube.list[DeploymentList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items.headOption)
         pods <- maybeDepl match {
-          case None    => Future.successful(PodList())
-          case Some(_) => safeList[PodList](kube)
+          case None    => Future.successful(Nil)
+          case Some(_) => kube.list[PodList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items)
         }
         maybeSvc <- maybeDepl match {
           case None    => Future.successful(None)
-          case Some(_) => findByLabel[Service,ServiceList](kube, lbl)
+          case Some(_) => kube.list[ServiceList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items.headOption)
         }
-        thesePods = listByLabel[Pod,PodList](pods, lbl)
-        update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, thesePods, maybeSvc))
+        update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeSvc))
       } yield update
     )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = cleanly(context.providerId, context.environment.id.toString) { kube =>
-    val fDepls = safeList[DeploymentList](kube)
-    val fAllPods = safeList[PodList](kube)
-    val fAllServices = safeList[ServiceList](kube)
+    val fDepls = kube.list[DeploymentList]
+    val fAllPods = kube.list[PodList]()
+    val fAllServices = kube.list[ServiceList]
     for {
       depls <- fDepls
       allPods <- fAllPods
@@ -837,7 +769,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     // kube provides: waiting, running, terminated
     val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses.headOption).flatMap(_.state)
     val numRunning = containerStates.count(_.isInstanceOf[skuber.Container.Running])
-    val numTarget  = depl.spec.map(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
+    val numTarget  = depl.spec.flatMap(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
     val status = if (numRunning != numTarget) "SCALING"
     else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
     else if (numRunning == numTarget) "RUNNING"
@@ -908,7 +840,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         log.debug("updating deployment to scale:\n" + Json.prettyPrint(Json.toJson(newDepl)))
         kube.update(newDepl)
       }
-      updatedNumInstances = updatedDepl.spec.map(_.replicas).getOrElse(
+      updatedNumInstances = updatedDepl.spec.flatMap(_.replicas).getOrElse(
         throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
       )
     } yield upsertProperties(
