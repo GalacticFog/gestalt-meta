@@ -666,6 +666,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
       val secMounts: Seq[Volume.Mount] = volSecrets.map { case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true) }
 
+      /*
+       * SecretFileMount mountings have one path that has to be split into:
+       *  - the Container's volumeMount.mountPath
+       *  - the Pod Volume item path
+       *
+       * for a given container, all of the .volumeMounts[].mountPath must be unique
+       * the uniqueness requirement means that we have to consider other SecretFileMount objects together
+       * for example, mounting the secret parts part-a and part-b into /mnt/secrets/files/part-[a,b] requires either:
+       * - combining them into one volume (and one mount) with both items, or
+       * - keeping them as two volumes and two mounts with distinct mountPaths
+       * the latter approach is possible in this case (e.g., mountPaths /mnt/secrets and /mnt/secrets/files), but will not be in general
+       * for example, if the secret path had been /file-a and /file-b, there are no unique mount paths
+       *
+       * this is complicated by the fact that
+       */
       val baseSpec = Pod.Spec()
         .addContainer(container.copy(
           volumeMounts = (volMounts ++ secMounts).toList,
@@ -825,7 +840,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         log.debug("updating deployment to scale:\n" + Json.prettyPrint(Json.toJson(newDepl)))
         kube.update(newDepl)
       }
-      updatedNumInstances = updatedDepl.spec.map(_.replicas).getOrElse(
+      updatedNumInstances = updatedDepl.spec.flatMap(_.replicas).getOrElse(
         throw new RuntimeException(s"updated Deployment for container ${container.id} did not have a spec, so that replica size could not be determined")
       )
     } yield upsertProperties(
