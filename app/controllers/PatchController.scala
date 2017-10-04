@@ -57,12 +57,12 @@ class PatchController @Inject()(
   
   
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
-    ResourceIds.Group -> groupMethods.groupPatch,
-    ResourceIds.User  -> groupMethods.userPatch,
-    ResourceIds.Lambda -> lambdaMethods.patchLambdaHandler,
+    ResourceIds.Group       -> groupMethods.groupPatch,
+    ResourceIds.User        -> groupMethods.userPatch,
+    ResourceIds.Lambda      -> lambdaMethods.patchLambdaHandler,
     ResourceIds.ApiEndpoint -> gatewayMethods.patchEndpointHandler,
     ResourceIds.Entitlement -> entitlementPatch,
-    ResourceIds.Container -> containerService.patchContainer
+    ResourceIds.Container   -> containerService.patchContainer
   )
   
   
