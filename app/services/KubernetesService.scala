@@ -35,6 +35,8 @@ import scala.language.postfixOps
 import play.api.libs.json._
 import play.api.libs.functional.syntax._
 
+import scala.annotation.tailrec
+
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
   val META_SECRET_KEY = "meta/secret"
@@ -641,30 +643,30 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       /*
        * make sure the secrets all exist
        */
-      val allEnvSecrets: Map[UUID, String] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
+      val allEnvSecretNames: Map[UUID, String] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
         res => res.id -> res.name
       } toMap
 
       containerSpec.secrets.foreach {
-        secret => if (!allEnvSecrets.contains(secret.secret_id))
+        secret => if (!allEnvSecretNames.contains(secret.secret_id))
           throw new BadRequestException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
       }
 
-      /*
-       * each kube volume needs a name, used for reference internal to the deployment, generate a uuid to use
-       */
-      val secrets = containerSpec.secrets.map {
-        s => UUID.randomUUID().toString -> s
-      }
-
+      // Environment variable secrets
       val envSecrets = containerSpec.secrets.collect {
-        case env: SecretEnvMount => env
+        case sem: SecretEnvMount => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecretNames(sem.secret_id)))
       }
 
-      val volSecrets: Seq[(String, VolumeSecretMount)] = containerSpec.secrets.collect {
-        case vol: VolumeSecretMount  => UUID.randomUUID.toString -> vol
+      // Directory-mounted secrets: each needs a unique volume name
+      val dirSecrets: Seq[(String, SecretDirMount)] = containerSpec.secrets.collect {
+        case dir: SecretDirMount  => UUID.randomUUID.toString -> dir
       }
-      val secMounts: Seq[Volume.Mount] = volSecrets.map { case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true) }
+      val secDirMounts: Seq[Volume.Mount] = dirSecrets.map {
+        case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true)
+      }
+      val secretDirVolumes: Seq[Volume] = dirSecrets.collect {
+        case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecretNames(secret_id)))
+      }
 
       /*
        * SecretFileMount mountings have one path that has to be split into:
@@ -674,17 +676,64 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
        * for a given container, all of the .volumeMounts[].mountPath must be unique
        * the uniqueness requirement means that we have to consider other SecretFileMount objects together
        * for example, mounting the secret parts part-a and part-b into /mnt/secrets/files/part-[a,b] requires either:
-       * - combining them into one volume (and one mount) with both items, or
+       * - combining them into one secret volume (and one mount at '/mnt/secrets/files') with both items, or
        * - keeping them as two volumes and two mounts with distinct mountPaths
        * the latter approach is possible in this case (e.g., mountPaths /mnt/secrets and /mnt/secrets/files), but will not be in general
        * for example, if the secret path had been /file-a and /file-b, there are no unique mount paths
        *
-       * this is complicated by the fact that
+       * therefore, the approach here is to combine all sub-secret file mounts of a particular secret into one Volume, where
+       * the mountPath for the Volume is calculated as the deepest merge path
        */
+      def maxSharedRoot(pathParts: Seq[Seq[String]]): String = {
+        @tailrec
+        def _msr(pathParts: Seq[Seq[String]], accum: String): String = {
+          val heads = pathParts.map(_.headOption)
+          heads.head match {
+            case Some(part) if (heads.forall(_.contains(part))) =>
+              _msr(pathParts.map(_.tail), accum + "/" + part)
+            case _ =>
+              accum
+          }
+        }
+        _msr(pathParts, "")
+      }
+      val fileSecretsBySecretId = containerSpec.secrets.collect {
+        case file: SecretFileMount => file
+      } groupBy {_.secret_id}
+      val fileSecretVolumeNames: Map[UUID, String] = fileSecretsBySecretId.map{case (sid, _) => sid -> UUID.randomUUID().toString}
+      // each secret becomes a Volume
+      val fileSecretMountPaths = fileSecretsBySecretId mapValues {
+        fileMounts =>
+          val pathParts = fileMounts.map( _.path.stripPrefix("/").split("/").toSeq )
+          maxSharedRoot(pathParts)
+      }
+      val secretFileMounts = fileSecretsBySecretId.keys.map {
+        secretId => Volume.Mount(
+          name = fileSecretVolumeNames(secretId),
+          mountPath = fileSecretMountPaths(secretId),
+          readOnly = true
+        )
+      }
+      // each volume must be mounted
+      val secretFileVolumes = fileSecretsBySecretId map {
+        case (secretId, fileMounts) => Volume(
+          name = fileSecretVolumeNames(secretId),
+          source = Volume.Secret(
+            secretName = allEnvSecretNames(secretId),
+            items = Some(fileMounts map {
+              sfm => Volume.KeyToPath(
+                key = sfm.secret_key,
+                path = sfm.path.stripPrefix(fileSecretMountPaths(secretId)).stripPrefix("/")
+              )
+            } toList)
+          )
+        )
+      }
+
       val baseSpec = Pod.Spec()
         .addContainer(container.copy(
-          volumeMounts = (volMounts ++ secMounts).toList,
-          env = container.env ++ envSecrets.map { sem => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecrets(sem.secret_id)))}
+          volumeMounts = (volMounts ++ secDirMounts ++ secretFileMounts).toList,
+          env = container.env ++ envSecrets
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
@@ -692,12 +741,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         mnt => Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name, mnt.readOnly))
       }
 
-      val secretVolumes = volSecrets.collect {
-        case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).toString))
-//        case (secretVolumeName, ContainerSpec.SecretFileMount(secret_id, path, secret_key) => Volume(secretVolumeName, )
-      }
 
-      val specWithVols = (pvcVolumes ++ secretVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
+      val specWithVols = (pvcVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
     }
 
