@@ -1540,8 +1540,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     "mount specified secrets on container create" in new FakeKubeCreate(
       secrets = Seq(
         SecretEnvMount(null, "SOME_ENV_VAR", "part-a"),
-        // SecretFileMount(null, "/mnt/secrets/files/part-a", "part-a"),
-        // SecretFileMount(null, "/mnt/secrets/files/part-b", "part-b"),
+        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a"),
+        SecretFileMount(null, "/mnt/secrets/files/file-b", "part-b"),
+        SecretFileMount(null, "/mnt/secrets/files/sub/file-c", "part-b"),
         SecretDirMount(null, "/mnt/secrets/dir")
       )
     ) {
@@ -1556,15 +1557,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       createdDeployment must inNamespace(testSetup.testNS.name)
       // deployment internal volume names are created on-demand, need to figure out what these were
       val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
-      val dirVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret]   && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
       val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
       deplVolumes must containAllOf(Seq(
-        // skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(skuber.Volume.KeyToPath("part-a", "files/part-a"), skuber.Volume.KeyToPath("part-b", "files/part-b"))))),
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a"),
+          skuber.Volume.KeyToPath(key = "part-b", path = "file-b"),
+          skuber.Volume.KeyToPath(key = "part-b", path = "sub/file-c")
+        )))),
         skuber.Volume(dirVolName, skuber.Volume.Secret(secretName = metaSecret.name))
       ))
       createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containAllOf(Seq(
-        // skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true),
-          skuber.Volume.Mount(dirVolName, "/mnt/secrets/dir", true)
+        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true),
+        skuber.Volume.Mount(dirVolName, "/mnt/secrets/dir", true)
       ))
       createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
         skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
