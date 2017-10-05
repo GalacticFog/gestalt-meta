@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
+import com.galacticfog.gestalt.security.api.GestaltGroupUpdate
 import com.galacticfog.gestalt.security.api.GestaltPasswordCredential
 
 import scala.util.Try
@@ -35,20 +36,30 @@ class GroupMethods @Inject()( security: Security ) {
      patch: PatchDocument,
      user: AuthAccountWithCreds,
      request: RequestHeader )
-       (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry(Try{
+       (implicit client: GestaltSecurityClient): Future[GestaltResourceInstance] = Future.fromTry {
     
     /* Patch users if we have any ops for it.
      * patchGroupMembership returns a list of the groups current members (as links)
      * we don't use it currently.
      */
     val (userops, ops) = patch.ops partition { _.path.trim.endsWith("/users") }
+
+    for {
+      _       <- patchGroupMembership(resource.id, PatchDocument(userops:_*))
+      updated <- {
+                   log.info("Applying patch to Group in Meta.")
+                   PatchInstance.applyPatch(resource, PatchDocument(ops:_*))
+                 }
+      secGroup = asSecurityGroup(updated.asInstanceOf[GestaltResourceInstance])
+      _       <- {
+                   log.info("Updating Group in gestalt-security")
+                   val result = security.updateGroup(updated.id, user, secGroup)
+                   log.info("gestalt-security result: " + result)
+                   result
+                 }
+    } yield updated.asInstanceOf[GestaltResourceInstance]
     
-    if (userops.nonEmpty) patchGroupMembership(
-        resource.id, PatchDocument(userops:_*)).get
-    
-    // Handle patching other attributes
-    PatchInstance.applyPatch(resource, PatchDocument(ops:_*)).get.asInstanceOf[GestaltResourceInstance]
-  })
+}
 
   
   private[controllers] def userPatch(
@@ -73,6 +84,10 @@ class GroupMethods @Inject()( security: Security ) {
   }
 
   
+  private def asSecurityGroup(group: GestaltResourceInstance) = {
+    GestaltGroupUpdate(Some(group.name), group.description)
+  }
+  
   private def user2AccountUpdate(user: GestaltResourceInstance): GestaltAccountUpdate = {
     val props = user.properties.get.get _
     val maybePassword = props("password") map { GestaltPasswordCredential(_) }
@@ -87,9 +102,10 @@ class GroupMethods @Inject()( security: Security ) {
     )
   }
 
-  private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {
+  private[controllers] def patchGroupMembership(group: UUID, patch: PatchDocument)(
+      implicit client: GestaltSecurityClient) :Try[Seq[SecurityLink]] = {
     
-    val opmap = opsToMap(patch.ops, allowed = Seq(PatchOps.Add, PatchOps.Remove))
+    val opmap = opsToMap(patch.ops, allowed = Seq(PatchOps.Add, PatchOps.Remove, PatchOps.Replace))
     val ids   = patch.ops map { i => UUID.fromString(i.value.get.as[String]) }
     
     // Make sure all the users given in the patch exist in Meta
