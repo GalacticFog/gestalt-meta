@@ -16,6 +16,7 @@ import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
 import com.galacticfog.gestalt.security.api.GestaltAccountCreateWithRights
 import com.galacticfog.gestalt.security.api.GestaltGroup
+import com.galacticfog.gestalt.security.api.GestaltGroupUpdate
 import com.galacticfog.gestalt.security.api.GestaltGroupCreateWithRights
 import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.GestaltOrgCreate
@@ -111,6 +112,14 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       )
       Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)
     }
+  }
+  
+//  def updateAccount(accountId: UUID, auth: AuthAccountWithCreds, update: GestaltAccountUpdate) = {
+//    Try{Await.result(GestaltAccount.updateAccount(accountId, update)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+//  }
+  
+  def updateGroup(groupId: UUID, auth: AuthAccountWithCreds, update: GestaltGroupUpdate) = {
+    Try {Await.result(GestaltGroup.updateGroup(groupId, update)(secClientProvider.client.withCreds(auth.creds)), 5.seconds)}  
   }
   
   def getAccountGroups(auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
