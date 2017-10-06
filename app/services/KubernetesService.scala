@@ -651,6 +651,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           throw new BadRequestException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
       }
 
+      if ( containerSpec.secrets.nonEmpty && containerSpec.secrets.map(_.path).distinct.size != containerSpec.secrets.size ) {
+        throw new BadRequestException(s"secrets must have unique paths")
+      }
+
       // Environment variable secrets
       val envSecrets = containerSpec.secrets.collect {
         case sem: SecretEnvMount => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecretNames(sem.secret_id)))
@@ -704,7 +708,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val fileSecretMountPaths = fileSecretsBySecretId mapValues {
         fileMounts =>
           val pathParts = fileMounts.map( _.path.stripPrefix("/").split("/").toSeq )
-          maxSharedRoot(pathParts)
+          pathParts match {
+            case Seq(singleItem) =>
+              "/" + singleItem.take(singleItem.size-1).mkString("/")
+            case _ =>
+              maxSharedRoot(pathParts)
+          }
+
       }
       val secretFileMounts = fileSecretsBySecretId.keys.map {
         secretId => Volume.Mount(

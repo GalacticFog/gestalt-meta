@@ -1568,13 +1568,84 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )))),
         skuber.Volume(dirVolName, skuber.Volume.Secret(secretName = metaSecret.name))
       ))
-      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containAllOf(Seq(
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
         skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true),
         skuber.Volume.Mount(dirVolName, "/mnt/secrets/dir", true)
       ))
       createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
         skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
       ))
+    }
+
+    "mount a single secret file during container create (#338)" in new FakeKubeCreate(
+      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
+      secrets = Seq(
+        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a")
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef))
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
+        ))))
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true)
+      ))
+    }
+
+
+    "mount a single secret file during container create (#338) in root" in new FakeKubeCreate(
+      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
+      secrets = Seq(
+        SecretFileMount(null, "/file-a", "part-a")
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef))
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
+        ))))
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(partsVolName, "/", true)
+      ))
+    }
+
+    "secret mounts must be unique" in new FakeKubeCreate(
+      secrets = Seq(
+        SecretFileMount(null, "/mnt/secrets/files/file", "part-a"),
+        SecretFileMount(null, "/mnt/secrets/files/file", "part-b")
+      )
+    ) {
+      await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwA[BadRequestException]("secrets must have unique paths")
     }
 
     "deployment should not have affinity if not configured in the provider" in new FakeKube() {
