@@ -245,14 +245,14 @@ object ContainerService {
   /**
     * Lookup and return the external_id property
     */
-  def resourceExternalId(resource: GestaltResourceInstance): Option[String] = {
+  def resourceExternalId(resource: ResourceLike): Option[String] = {
     for {
       props <- resource.properties
       eid <- props.get("external_id")
     } yield eid
   }
 
-  def getProviderConfig(provider: GestaltResourceInstance): Option[JsValue] = {
+  def getProviderConfig(provider: ResourceLike): Option[JsValue] = {
     for {
       props <- provider.properties
       configProp <- props.get("config")
@@ -261,9 +261,7 @@ object ContainerService {
   }
 
   def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
-    providerProps <- provider.properties
-    configStr <- providerProps.get("config")
-    config <- Try{Json.parse(configStr)}.toOption
+    config <- getProviderConfig(provider)
     prop <- (config \ propName).validate[T] match {
       case JsSuccess(p,_) => Some(p)
       case JsError(_) => None

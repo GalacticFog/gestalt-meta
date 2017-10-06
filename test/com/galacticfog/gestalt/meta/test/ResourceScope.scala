@@ -12,12 +12,13 @@ import org.specs2.specification.Scope
 import java.util.UUID
 
 import scala.util.Try
-import play.api.libs.json.Json
+import play.api.libs.json.{JsValue, Json}
 import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.marathon
 import controllers.util.MetaHealth
+import play.api.libs.json.Json.JsValueWrapper
 //import controllers.util.db.ConnectionManager
 import controllers.util.DataStore
 import org.specs2.mock.Mockito
@@ -149,14 +150,14 @@ trait ResourceScope extends Scope with Mockito {
       )))
   }
 
-  def createKubernetesProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,String)] = Seq.empty) = {
+  def createKubernetesProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(
       typeId = ResourceIds.KubeProvider,
       name = name,
       parent = Option(parent),
       properties = Option(Map(
         "parent" -> "{}",
-        "config" -> Json.toJson(config.toMap).toString
+        "config" -> Json.obj(config:_*).toString
       ))
     )
   }

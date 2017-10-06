@@ -12,16 +12,17 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.GestaltSecurityMocking
+import controllers.util.{ContainerService, GestaltSecurityMocking}
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
 import org.specs2.matcher.{JsonMatchers, Matcher}
-import play.api.libs.json.Json
+import play.api.libs.json.{JsObject, Json}
 import play.api.test.PlaySpecification
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json.JsValueWrapper
 import skuber.{PersistentVolumeClaim, Pod, PodList, Secret, Service, ServiceList}
 import skuber.api.client
 import skuber.ext.{Deployment, DeploymentList, Ingress, IngressList, ReplicaSet, ReplicaSetList}
@@ -159,7 +160,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
                                  cmd: Option[String] = None,
                                  port_mappings: Seq[ContainerSpec.PortMapping] = Seq.empty,
                                  labels: Map[String,String] = Map.empty,
-                                 providerConfig: Seq[(String,String)] = Seq.empty,
+                                 providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty,
                                  secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
                                  volumes: Seq[ContainerSpec.Volume] = Seq.empty
                                ) extends Scope {
@@ -371,7 +372,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
   }
 
-  def hasExactlyContainerPorts(ps: skuber.Container.Port*) = ((_: skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).map(_.containers.flatMap(_.ports)).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
+  def hasExactlyContainerPorts(ps: skuber.Container.Port*) = ((_: skuber.ext.Deployment).getPodSpec.map(_.containers.flatMap(_.ports)).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
 
   def hasExactlyServicePorts(ps: skuber.Service.Port*) = ((_: skuber.Service).spec.map(_.ports).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
 
@@ -1574,6 +1575,127 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
         skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
       ))
+    }
+
+    "deployment should not have affinity if not configured in the provider" in new FakeKube() {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> ""
+        ))
+      )
+      testSetup.kubeClient.create(any)(any,meq(Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_: skuber.ext.Deployment).getPodSpec.get.affinity) ^^ beNone)
+      ))(any,meq(Deployment.deployDef))
+      there were two(testSetup.kubeClient).close
+    }
+
+    "deployment should have affinity if configured in the provider" in new FakeKube() {
+      val affinityCfg =
+        Json.parse("""{
+          |  "nodeAffinity": {
+          |    "preferredDuringSchedulingIgnoredDuringExecution": [
+          |      {
+          |        "preference": {
+          |          "matchExpressions": [
+          |            {
+          |              "key": "another-node-label-key",
+          |              "operator": "In",
+          |              "values": [
+          |                "another-node-label-value"
+          |              ]
+          |            }
+          |          ]
+          |        },
+          |        "weight": 1
+          |      }
+          |    ],
+          |    "requiredDuringSchedulingIgnoredDuringExecution": {
+          |      "nodeSelectorTerms": [
+          |        {
+          |          "matchExpressions": [
+          |            {
+          |              "key": "kubernetes.io/e2e-az-name",
+          |              "operator": "In",
+          |              "values": [
+          |                "e2e-az1",
+          |                "e2e-az2"
+          |              ]
+          |            }
+          |          ]
+          |        }
+          |      ]
+          |    }
+          |  }
+          |}
+        """.stripMargin)
+
+      val providerWithAffinity = createKubernetesProvider(
+        parent = testEnv.id,
+        name = "test-provider-with-affinity",
+        config = Seq(
+          "affinity" -> affinityCfg
+        )
+      ).get
+      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity.id), meq("default")          )(any)  returns Future.successful(testSetup.kubeClient)
+      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity.id), meq(testEnv.id.toString))(any) returns Future.successful(testSetup.kubeClient)
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> providerWithAffinity.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> ""
+        ))
+      )
+      testSetup.kubeClient.create(any)(any,meq(Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val affinity = affinityCfg.as[skuber.Pod.Affinity]
+
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), providerWithAffinity.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_: skuber.ext.Deployment).getPodSpec.get.affinity) ^^ beSome(affinity))
+      ))(any,meq(Deployment.deployDef))
+      there were two(testSetup.kubeClient).close
     }
 
   }

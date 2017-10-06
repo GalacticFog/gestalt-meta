@@ -627,7 +627,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       META_PROVIDER_KEY -> context.providerId.toString
     )
 
-    val container = mkKubernetesContainer(containerSpec, context.provider)
 
     val podTemplate = {
 
@@ -730,7 +729,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
       }
 
-      val baseSpec = Pod.Spec()
+      val container = mkKubernetesContainer(containerSpec, context.provider)
+      val affinity = ContainerService.getProviderProperty[Pod.Affinity](context.provider, "affinity")
+
+      val baseSpec = Pod.Spec(
+        affinity = affinity
+      )
         .addContainer(container.copy(
           volumeMounts = (volMounts ++ secDirMounts ++ secretFileMounts).toList,
           env = container.env ++ envSecrets
