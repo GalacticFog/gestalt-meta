@@ -9,12 +9,10 @@ import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -24,7 +22,6 @@ import controllers.DeleteController
 import play.api.mvc.RequestHeader
 import services.{FakeURI, ProviderContext}
 
-import scala.concurrent.duration._
 import scala.language.postfixOps
 
 trait ContainerService extends JsonInput {
@@ -279,26 +276,29 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
 
 
   override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
-    log.debug("***Finding container by id...")
-    // Find container resource in Meta, convert to ContainerSpec
-    log.debug(s"***ENVIRONMENT: $environment, id: $containerId")
-    val maybeContainerSpec = for {
+    log.debug("*** Finding container by id...")
+    log.debug(s"*** ENVIRONMENT: $environment, id: $containerId")
+    val maybeMetaContainer = for {
       r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find {_.id == containerId}
       s <- ContainerSpec.fromResourceInstance(r).toOption
     } yield (r -> s)
 
-    log.debug("***Getting stats...")
+    log.debug("*** Getting stats...")
     val fMaybeUpdate = (for {
-      metaContainerSpec <- maybeContainerSpec
-      provider <- Try { caasProvider(metaContainerSpec._2.provider.id) }.toOption
+      (metaContainer,metaContainerSpec) <- maybeMetaContainer
+      provider <- Try { caasProvider(metaContainerSpec.provider.id) }.toOption
       saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
-      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainerSpec._1))
-      stats = saasProvider.find(ctx, metaContainerSpec._1)
-    } yield stats) getOrElse Future.successful(None) recover { case e: Throwable => None }
+      ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
+      stats = saasProvider.find(ctx, metaContainer)
+    } yield stats).getOrElse(Future.successful(None)) recover {
+      case e: Throwable =>
+        log.warn(s"error fetching stats for container ${containerId} from provider", e)
+        None
+    }
 
     fMaybeUpdate map {
-      maybeUpdate => maybeContainerSpec map {
-        case (containerResource,containerSpec) => updateMetaContainerWithStats(containerResource, maybeUpdate) -> Seq.empty
+      maybeUpdate => maybeMetaContainer map {
+        case (containerResource,_) => updateMetaContainerWithStats(containerResource, maybeUpdate) -> Seq.empty
       }
     }
   }
@@ -355,6 +355,17 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
   protected [controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
     val newStats = stats match {
+      case None if metaCon.state == ResourceStates.Failed =>
+        Seq(
+          "status" -> "FAILED",
+          "num_instances" -> "0",
+          "tasks_running" -> "0",
+          "tasks_healthy" -> "0",
+          "tasks_unhealthy" -> "0",
+          "tasks_staged" -> "0",
+          "instances"       -> "[]",
+          "service_addresses" -> "[]"
+        )
       case Some(stats) => Seq(
         "age" -> stats.age.toString,
         "status" -> stats.status,
@@ -376,27 +387,9 @@ class ContainerServiceImpl @Inject() ( providerManager: ProviderManager, deleteC
         "service_addresses" -> "[]"
       )
     }
-    val updatedMetaCon = metaCon.copy(
-      properties = metaCon.properties map {
-        _ ++ newStats
-      } orElse {
-        Some(newStats toMap)
-      }
+    metaCon.copy(
+      properties = Some(metaCon.properties.getOrElse(Map.empty) ++ newStats.toMap)
     )
-    // this update is passive... mark the "modifier" as the last person to have actively modified the container, or the creator...
-    (metaCon.modified.flatMap(_.get("id")) orElse metaCon.created.flatMap(_.get("id"))) flatMap {s => Try(UUID.fromString(s)).toOption} match {
-      case None => metaCon // TODO: not sure what else to do here
-      case Some(updater) =>
-        Future{ ResourceFactory.update(updatedMetaCon, updater) } onComplete {
-          case Success(Success(updatedContainer)) =>
-            log.debug(s"updated container ${updatedContainer.id} with info from CaaS provider")
-          case Success(Failure(e)) =>
-            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-          case Failure(e) =>
-            log.warn(s"failure to update container ${updatedMetaCon.id}",e)
-        }
-        updatedMetaCon
-    }
   }
 
   def updateContainer( context: ProviderContext,

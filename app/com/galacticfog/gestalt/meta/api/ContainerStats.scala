@@ -28,7 +28,6 @@ case object ContainerStats {
     case class IPAddress(ipAddress: String, protocol: String)
   }
 
-
   implicit val formatIPAddress = Json.format[TaskStat.IPAddress]
   implicit val formatTaskStat = Json.format[TaskStat]
 }
