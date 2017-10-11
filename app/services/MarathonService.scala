@@ -45,8 +45,21 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
   override def getClient(provider: Instance): Future[MarathonClient] = {
     val providerConfig = ContainerService.getProviderConfig(provider) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
 
-    val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
-    log.debug("Marathon URL: " + providerUrl)
+    val dcosUrl = (providerConfig \ Properties.DCOS_BASE_URL).asOpt[String]
+
+    val marathonBaseUrl = (providerConfig \ Properties.MARATHON_BASE_URL).asOpt[String]
+      .orElse(dcosUrl.map(_.stripSuffix("/") + "/service/marathon"))
+      .getOrElse {throw new RuntimeException("DCOS provider must have one of 'properties.config.dcos_url' or 'properties.config.url'")}
+
+    val secretSupport = (providerConfig \ Properties.SECRET_SUPPORT).asOpt[Boolean] getOrElse false
+    log.debug("Secret support: " + secretSupport)
+
+    val secretBaseUrl = (providerConfig \ Properties.SECRET_BASE_URL).asOpt[String]
+      .orElse(dcosUrl.map(_.stripSuffix("/") + "/secrets/v1"))
+      .filter(_ => secretSupport)
+
+    log.debug("Marathon URL: " + marathonBaseUrl)
+    log.debug("Secret URL: " + secretBaseUrl)
 
     val acceptAnyCert = (providerConfig \ Properties.ACCEPT_ANY_CERT).asOpt[Boolean].getOrElse(false)
     val wsclient = if (acceptAnyCert) {
@@ -71,7 +84,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
             fTokenResp flatMap {
               case DCOSAuthTokenActor.DCOSAuthTokenResponse(authToken) =>
                 log.debug("provisioning MarathonClient with acs auth token")
-                Future.successful(MarathonClient(wsclient, providerUrl, Some(authToken)))
+                Future.successful(MarathonClient(wsclient, marathonBaseUrl, Some(authToken), secretBaseUrl))
               case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
                 Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
               case _ =>
@@ -80,7 +93,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
         }
       case _ =>
         log.debug("provisioning MarathonClient without authentication credentials")
-        Future.successful(MarathonClient(wsclient, providerUrl, None))
+        Future.successful(MarathonClient(wsclient, marathonBaseUrl, None, secretBaseUrl))
     }
   }
 
@@ -332,6 +345,9 @@ object MarathonService {
     val DCOS_CLUSTER_NAME = "dcos_cluster_name"
     val ACCEPT_ANY_CERT = "accept_any_cert"
     val MARATHON_BASE_URL = "url"
+    val DCOS_BASE_URL = "dcosUrl"
+    val SECRET_BASE_URL = "secretUrl"
+    val SECRET_SUPPORT = "secretSupport"
     val AUTH_CONFIG = "auth"
   }
 }

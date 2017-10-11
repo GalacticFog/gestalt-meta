@@ -18,7 +18,7 @@ import play.api.http.HeaderNames
 
 import scala.util.Try
 
-case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: Option[String] = None) {
+case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: Option[String] = None, secretBaseUrl: Option[String] = None) {
 
   private[this] val log = Logger(this.getClass)
 
@@ -26,7 +26,7 @@ case class MarathonClient(client: WSClient, marathonAddress: String, acsToken: O
 
   private[this] def genRequest(endpoint: String) = {
     acsToken.foldLeft(
-      client.url(s"${marathonAddress}/${endpoint.stripPrefix("/")}")
+      client.url(s"${marathonBaseUrl}/${endpoint.stripPrefix("/")}")
     ) {
       case (req,token) => req.withHeaders(HeaderNames.AUTHORIZATION -> s"token=${token}")
     }
