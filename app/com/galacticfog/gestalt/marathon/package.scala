@@ -1,7 +1,9 @@
 package com.galacticfog.gestalt
  
+import java.util.Base64
+
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec}
 import org.joda.time.DateTimeZone
 import play.api.data.validation.ValidationError
 
@@ -15,6 +17,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import com.galacticfog.gestalt.json.Js
 import controllers.util.ContainerService
+import services.ProviderContext
 
 package object marathon {
 
@@ -390,14 +393,30 @@ package object marathon {
     "/" + nameComponents.mkString("/")
   }
 
+  private val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
+  private def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
+  private def invalid(lbl: String) = throw new BadRequestException(s"invalid marathon path component: '${lbl}'")
+
+  def toDcosSecretPayload(context: ProviderContext, spec: SecretSpec, items: Seq[SecretSpec.Item]): (String, JsObject) = {
+    if (items.size > 1) throw new BadRequestException("DCOS does not support multi-part secrets. Combine all secret parts into a single structured part.")
+    val secretEncodedValue = items.headOption.flatMap(_.value).getOrElse(throw new BadRequestException("Secret was empty"))
+    val secretValue = new String(Base64.getDecoder.decode(secretEncodedValue))
+
+    val fqon = validate(context.fqon) getOrElse {invalid("'fqon'")}
+    val wrkName = validate(context.workspace.name) getOrElse {invalid("'workspace.name'")}
+    val envName = validate(context.environment.name) getOrElse {invalid("'environment.name'")}
+    val secretName = validate(spec.name) getOrElse {invalid("'secret.name'")}
+    val secretId = (fqon.split('.') ++ Array(wrkName,envName,secretName)).mkString("/")
+    secretId -> Json.obj(
+      "value" -> secretValue
+    )
+  }
+
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
   def toMarathonLaunchPayload(uncheckedFQON: String, workspace: ResourceLike, environment: ResourceLike, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
 
-    val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
-    def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
-    def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
 
     def makeVhostLabels(mappings: Seq[ContainerSpec.PortMapping]): Map[String,String] = {
       mappings

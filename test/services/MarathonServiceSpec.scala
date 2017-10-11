@@ -1,7 +1,7 @@
 package services
 
 import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
@@ -19,6 +19,7 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import MarathonService.Properties
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -1066,6 +1067,92 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           name = "updated-name"
         )
       )) must throwAn[BadRequestException]("renaming containers is not supported")
+    }
+
+    "throw 400 on multi-part secret" in new FakeDCOS {
+      lazy val metaSecretItems = Seq(
+        SecretSpec.Item("part-a", Some("dmFsdWUtYQ==")),   // "value-a"
+        SecretSpec.Item("part-b", Some("dmFsdWUtYg=="))    // "value-b"
+      )
+
+      lazy val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "test-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> Json.toJson(metaSecretItems.map(_.copy(value = None))).toString
+        ))
+      )
+
+      await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        metaResource = metaSecret,
+        items = metaSecretItems
+      )) must throwA[BadRequestException]("does not support multi-part secrets")
+    }
+
+    "create secret with external_id property without persisting secret values" in new FakeDCOS {
+      lazy val metaSecretItems = Seq(
+        SecretSpec.Item("part-a", Some("dmFsdWUtYQ=="))    // "value-a"
+      )
+
+      lazy val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "test-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> Json.toJson(metaSecretItems.map(_.copy(value = None))).toString
+        ))
+      )
+
+      testSetup.client.createSecret(
+        secretId = meq(s"root/${testWork.name}/${testEnv.name}/${metaSecret.name}"),
+        marPayload = meq(Json.obj("value" -> "value-a"))
+      )(any) returns Future.successful(Json.obj(
+        "value" -> "dmFsdWUtYQ=="
+      ))
+
+      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        metaResource = metaSecret,
+        items = metaSecretItems
+      )).properties
+      updatedSecretProps must havePair(
+        "external_id" -> s"root/${testWork.name}/${testEnv.name}/${metaSecret.name}"
+      )
+
+      Json.parse(updatedSecretProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
+
+      val persistedProps = ResourceFactory.findById(ResourceIds.Secret, metaSecret.id).get.properties.get
+      Json.parse(persistedProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
+    }
+
+    "delete secret" in new FakeDCOS {
+      lazy val metaSecretItems = Seq(
+        SecretSpec.Item("part-a", Some("dmFsdWUtYQ=="))    // "value-a"
+      )
+
+      lazy val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "test-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> Json.toJson(metaSecretItems.map(_.copy(value = None))).toString,
+          "external_id" -> s"root/${testWork.name}/${testEnv.name}/test-secret"
+        ))
+      )
+
+      testSetup.client.deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/test-secret"))(any) returns Future.successful(Json.obj())
+
+      await(testSetup.svc.destroySecret(metaSecret))
+      there was one(testSetup.client).deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/${metaSecret.name}"))(any)
     }
 
   }
