@@ -1,7 +1,10 @@
 package com.galacticfog.gestalt
  
+import java.util.{Base64, UUID}
+
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec}
 import org.joda.time.DateTimeZone
 import play.api.data.validation.ValidationError
 
@@ -14,7 +17,12 @@ import play.api.{Logger => log}
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.marathon.AppInfo.{EnvVarSecretRef, EnvVarString}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import controllers.util.ContainerService
+import services.{MarathonService, ProviderContext}
+
+import scala.language.postfixOps
 
 package object marathon {
 
@@ -49,6 +57,16 @@ package object marathon {
       (__ \ "mode").writeNullable[String]
     )(unlift(Container.Volume.unapply))
 
+  lazy val envVarSecretRefFmt = Json.format[EnvVarSecretRef]
+
+  implicit lazy val envVarValueFmt: Format[AppInfo.EnvVarValue] = new Format[AppInfo.EnvVarValue] {
+    override def writes(evv: AppInfo.EnvVarValue): JsValue = evv match {
+      case sec: EnvVarSecretRef => Json.toJson(sec)(envVarSecretRefFmt)
+      case str: EnvVarString    => JsString(str.value)
+    }
+    override def reads(js: JsValue): JsResult[AppInfo.EnvVarValue] = js.validate[EnvVarSecretRef](envVarSecretRefFmt) | js.validate[String].map(EnvVarString(_))
+  }
+
   implicit lazy val healthCheckFmt = Json.format[AppUpdate.HealthCheck]
 
   implicit lazy val marathonPortDefintionFmt = Json.format[AppUpdate.PortDefinition]
@@ -58,6 +76,8 @@ package object marathon {
   implicit lazy val discoveryInfoFmt = Json.format[AppUpdate.IPPerTaskInfo.DiscoveryInfo]
 
   implicit lazy val ipPerTaskInfoFmt = Json.format[AppUpdate.IPPerTaskInfo]
+
+  implicit lazy val marathonSecretSourceFmt = Json.format[AppUpdate.SecretSource]
 
   implicit lazy val marathonAppUpdateFmt = Json.format[AppUpdate]
 
@@ -213,6 +233,8 @@ package object marathon {
     )
   }
 
+  implicit lazy val appInfoSecretSourceFormat = Json.format[SecretSource]
+
   implicit lazy val ExtendedAppInfoWrites: Writes[AppInfo] = Writes { info =>
     val appJson = appDefinitionWrites.writes(info.app).as[JsObject]
 
@@ -231,7 +253,7 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta ContainerSpec
    */
-  def marathonToMetaContainerSpec(app: AppUpdate, provider: GestaltResourceInstance): Try[(Option[String],ContainerSpec)] = Try {
+  def marathonToMetaContainerSpec(app: AppUpdate, provider: GestaltResourceInstance): Try[ContainerSpec] = Try {
     log.debug("Entered marathonToMetaContainerSpec...")
     log.debug("Received:\n" + app)
 
@@ -243,6 +265,9 @@ package object marathon {
       host_port = pm.hostPort,
       service_port = pm.servicePort
     )
+
+
+    // TODO: CGBAKER: FINISH: get secrets in here
 
     val name = app.id
     val props = ContainerSpec(
@@ -277,9 +302,11 @@ package object marathon {
         )
       )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
-      env = app.env getOrElse Map()
+      env = app.env.getOrElse(Map.empty).collect({
+        case (name, AppInfo.EnvVarString(value)) => name -> value
+      })
     )
-    (name,props)
+    props
   }
 
   /**
@@ -348,7 +375,7 @@ package object marathon {
         cmd = spec.cmd,
         args = spec.args,
         user = spec.user,
-        env = spec.env,
+        env = AppInfo.EnvVarValue(spec.env),
         instances = spec.num_instances,
         container = Some(container),
         cpus = spec.cpus,
@@ -390,14 +417,29 @@ package object marathon {
     "/" + nameComponents.mkString("/")
   }
 
+  private val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
+  private def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
+  private def invalid(lbl: String) = throw new BadRequestException(s"invalid marathon path component: '${lbl}'")
+
+  def toDcosSecretPayload(context: ProviderContext, spec: SecretSpec, items: Seq[SecretSpec.Item]): (String, JsObject) = {
+    if (items.size > 1) throw new BadRequestException("DCOS does not support multi-part secrets. Combine all secret parts into a single structured part.")
+    val secretEncodedValue = items.headOption.flatMap(_.value).getOrElse(throw new BadRequestException("Secret was empty"))
+    val secretValue = new String(Base64.getDecoder.decode(secretEncodedValue))
+
+    val fqon = validate(context.fqon) getOrElse {invalid("'fqon'")}
+    val wrkName = validate(context.workspace.name) getOrElse {invalid("'workspace.name'")}
+    val envName = validate(context.environment.name) getOrElse {invalid("'environment.name'")}
+    val secretName = validate(spec.name) getOrElse {invalid("'secret.name'")}
+    val secretId = (fqon.split('.') ++ Array(wrkName,envName,secretName)).mkString("/")
+    secretId -> Json.obj(
+      "value" -> secretValue
+    )
+  }
+
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
   def toMarathonLaunchPayload(uncheckedFQON: String, workspace: ResourceLike, environment: ResourceLike, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
-
-    val validMarathonPathComponent = "((([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])\\.)*([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9]))".r
-    def validate(str: String) = validMarathonPathComponent.unapplySeq(str).flatMap(_.headOption)
-    def invalid(lbl: String) = throw new BadRequestException(s"toMarathonLaunchPayload: invalid format for ${lbl}")
 
     def makeVhostLabels(mappings: Seq[ContainerSpec.PortMapping]): Map[String,String] = {
       mappings
@@ -525,6 +567,56 @@ package object marathon {
 
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
+    val secretSupport =  ContainerService.getProviderProperty[Boolean](provider, MarathonService.Properties.SECRET_SUPPORT) getOrElse false
+
+    if (!secretSupport && props.secrets.nonEmpty) throw new UnprocessableEntityException(s"provider ${provider.id} is not configured with support for secrets")
+
+    /*
+     * make sure the secrets all exist
+     */
+    val allEnvSecrets: Map[UUID, GestaltResourceInstance] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, environment.id) map {
+      res => res.id -> res
+    } toMap
+
+    props.secrets.foreach {
+      secret =>
+        allEnvSecrets.get(secret.secret_id) match {
+          case None =>
+            throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' does not exist in environment ${environment.id}'")
+          case Some(sec) if ContainerService.containerProviderId(sec) != provider.id =>
+            throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' belongs to a different provider")
+          case _ => ()
+        }
+    }
+
+    // TODO: we do not support these for 1.9, will add support for 1.10 later
+    val envSecrets = props.secrets collect {
+      case sem: SecretEnvMount => sem
+      case _: SecretDirMount => throw new BadRequestException("does not support directory-mounted secrets")
+      case _: SecretFileMount => throw new BadRequestException("does not support file-mounted secrets")
+  //      case fileMount: SecretFileMount =>
+  //        fileMount
+  //      case SecretDirMount(secret_id, base_dir)  =>
+  //        val secret = allEnvSecrets(secret_id)
+  //        val items = Json.parse(secret.properties.getOrElse(Map.empty).getOrElse("items", "[]")).as[Seq[SecretSpec.Item]]
+  //        if ( items.size != 1 )  throw new ConflictException("Secret is invalid: DCOS secrets must have exactly one item")
+  //        SecretFileMount(secret_id, base_dir.stripPrefix("/") + "/" + items.head.key, items.head.key)
+    }
+
+    val stringEnv = AppInfo.EnvVarValue(props.env)
+
+    val secretEnv = envSecrets map {
+      case SecretEnvMount(secret_id, env_key, _) =>
+        env_key -> AppInfo.EnvVarSecretRef(secret_id.toString)
+    } toMap
+
+    val secrets = envSecrets map {
+      case SecretEnvMount(secret_id, env_key, _) =>
+        secret_id.toString -> AppUpdate.SecretSource(ContainerService.resourceExternalId(allEnvSecrets(secret_id)).getOrElse(
+          throw new UnprocessableEntityException(s"could not located property 'external_id' in secret '${secret_id}' for use in environment variable '${env_key}'")
+        ))
+    } toMap
+
     AppUpdate(
       id = Some(appId),
       container = Some(container),
@@ -555,10 +647,11 @@ package object marathon {
         timeoutSeconds = Some(hc.timeout_seconds),
         maxConsecutiveFailures = Some(hc.max_consecutive_failures)
       )}),
-      env = Some(props.env),
+      env = Some(stringEnv ++ secretEnv),
       ipAddress = ipPerTask,
       upgradeStrategy = upgradeStrategy,
-      user = None
+      user = None,
+      secrets = if (secretSupport) Some(secrets) else None
     )
   }
 

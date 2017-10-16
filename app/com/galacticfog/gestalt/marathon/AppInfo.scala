@@ -24,6 +24,22 @@ object AppInfo {
     case object LastTaskFailure extends Embed
     case object TaskStats extends Embed
   }
+
+  sealed trait EnvVarValue
+
+  case class EnvVarString(value: String) extends EnvVarValue
+
+  case class EnvVarSecretRef(secret: String) extends EnvVarValue
+
+  object EnvVarValue {
+    def apply(m: Map[String, String]): Map[String, EnvVarValue] =
+      m.map { case (k, v) => k -> v.toEnvVar }
+
+    implicit class FromString(val string: String) {
+      def toEnvVar: EnvVarValue = EnvVarString(string)
+    }
+  }
+
 }
 
 
@@ -36,7 +52,7 @@ case class AppDefinition(
 
                           user: Option[String] = AppDefinition.DefaultUser,
 
-                          env: Map[String, String] = AppDefinition.DefaultEnv,
+                          env: Map[String, AppInfo.EnvVarValue] = AppDefinition.DefaultEnv,
 
                           instances: Int = AppDefinition.DefaultInstances,
 
@@ -90,7 +106,7 @@ case class AppDefinition(
 
                           residency: Option[Residency] = AppDefinition.DefaultResidency,
 
-                          secrets: Map[String, String] = AppDefinition.DefaultSecrets
+                          secrets: Map[String, SecretSource] = AppDefinition.DefaultSecrets
                         ) {
 
   val portNumbers: Seq[Int] = portDefinitions.map(_.port)
@@ -122,7 +138,7 @@ object AppDefinition {
 
   val DefaultUser: Option[String] = None
 
-  val DefaultEnv: Map[String, String] = Map.empty
+  val DefaultEnv: Map[String, AppInfo.EnvVarValue] = Map.empty
 
   val DefaultInstances: Int = 1
 
@@ -167,7 +183,7 @@ object AppDefinition {
 
   val DefaultUpgradeStrategy: UpgradeStrategy = UpgradeStrategy.empty
 
-  val DefaultSecrets: Map[String, String] = Map.empty
+  val DefaultSecrets: Map[String, SecretSource] = Map.empty
 
   val DefaultResidency: Option[Residency] = None
 
@@ -257,3 +273,5 @@ object PortAssignment {
     */
   val PortNamePattern = """^[a-z0-9-]+$""".r
 }
+
+case class SecretSource(source: String)

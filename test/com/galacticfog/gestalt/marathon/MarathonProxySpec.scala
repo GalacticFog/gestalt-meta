@@ -5,13 +5,21 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.test.ResourceScope
 import org.specs2.matcher.{JsonMatchers, JsonType, Matcher}
 import org.specs2.mock._
 import org.specs2.mutable._
+import org.specs2.specification.{BeforeAfterEach, BeforeAll}
 import play.api.libs.json._
 
 
-class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
+class MarathonProxySpec extends Specification with Mockito with JsonMatchers with ResourceScope with BeforeAll with BeforeAfterEach {
+
+  override def beforeAll(): Unit = pristineDatabase()
+
+  override def before: Unit = scalikejdbc.config.DBs.setupAll()
+
+  override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
   val wrkName: String = "Meta Workspace"
   val envName: String = "Test Environment"
@@ -609,7 +617,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         portDefinitions = None,
         healthChecks = Some(Seq()),
         env = Some(Map(
-          "env_var_1" -> "env_val_1"
+          "env_var_1" -> AppInfo.EnvVarString("env_val_1")
         )),
         user = None
       )
@@ -708,7 +716,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         portDefinitions = Some(Seq()),
         healthChecks = Some(Seq()),
         env = Some(Map(
-          "env_var_1" -> "env_val_1"
+          "env_var_1" -> AppInfo.EnvVarString("env_val_1")
         )),
         user = None
       )

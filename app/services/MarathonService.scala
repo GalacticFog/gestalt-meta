@@ -45,8 +45,21 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
   override def getClient(provider: Instance): Future[MarathonClient] = {
     val providerConfig = ContainerService.getProviderConfig(provider) getOrElse {throw new RuntimeException("provider 'properties.config' missing or not parsable")}
 
-    val providerUrl = (providerConfig \ "url").asOpt[String] getOrElse {throw new RuntimeException("provider 'properties.config.url' missing")}
-    log.debug("Marathon URL: " + providerUrl)
+    val dcosUrl = (providerConfig \ Properties.DCOS_BASE_URL).asOpt[String]
+
+    val marathonBaseUrl = (providerConfig \ Properties.MARATHON_BASE_URL).asOpt[String]
+      .orElse(dcosUrl.map(_.stripSuffix("/") + "/service/marathon"))
+      .getOrElse {throw new RuntimeException("DCOS provider must have one of 'properties.config.dcos_url' or 'properties.config.url'")}
+
+    val secretSupport = (providerConfig \ Properties.SECRET_SUPPORT).asOpt[Boolean] getOrElse false
+    log.debug("Secret support: " + secretSupport)
+
+    val secretBaseUrl = (providerConfig \ Properties.SECRET_BASE_URL).asOpt[String]
+      .orElse(dcosUrl.map(_.stripSuffix("/") + "/secrets/v1"))
+      .filter(_ => secretSupport)
+
+    log.debug("Marathon URL: " + marathonBaseUrl)
+    log.debug("Secret URL: " + secretBaseUrl)
 
     val acceptAnyCert = (providerConfig \ Properties.ACCEPT_ANY_CERT).asOpt[Boolean].getOrElse(false)
     val wsclient = if (acceptAnyCert) {
@@ -71,7 +84,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
             fTokenResp flatMap {
               case DCOSAuthTokenActor.DCOSAuthTokenResponse(authToken) =>
                 log.debug("provisioning MarathonClient with acs auth token")
-                Future.successful(MarathonClient(wsclient, providerUrl, Some(authToken)))
+                Future.successful(MarathonClient(wsclient, marathonBaseUrl, Some(authToken), secretBaseUrl))
               case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
                 Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
               case _ =>
@@ -80,7 +93,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
         }
       case _ =>
         log.debug("provisioning MarathonClient without authentication credentials")
-        Future.successful(MarathonClient(wsclient, providerUrl, None))
+        Future.successful(MarathonClient(wsclient, marathonBaseUrl, None, secretBaseUrl))
     }
   }
 
@@ -146,10 +159,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
     val fMarClient = marathonClientFactory.getClient(provider)
     // TODO: what to do if there is no external_id ? delete the resource? attempt to reconstruct external_id from resource?
-    val maybeExternalId = for {
-      props <- container.properties
-      eid <- props.get("external_id")
-    } yield eid
+    val maybeExternalId = ContainerService.resourceExternalId(container)
 
     maybeExternalId match {
       case Some(eid) =>
@@ -166,7 +176,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     // Lookup container in marathon, convert to ContainerStats
-    container.properties.flatMap(_.get("external_id")) match {
+    ContainerService.resourceExternalId(container) match {
       case None => Future.successful(None)
       case Some(eid) =>
         for {
@@ -259,7 +269,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def scale(context: ProviderContext, container: Instance, numInstances: Int): Future[Instance] = {
-    container.properties.flatMap(_.get("external_id")) match {
+    ContainerService.resourceExternalId(container) match {
       case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
@@ -278,7 +288,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
   override def update(context: ProviderContext, container: Instance)
                      (implicit ec: ExecutionContext): Future[Instance] = {
-    container.properties.flatMap(_.get("external_id")) match {
+    ContainerService.resourceExternalId(container) match {
       case None =>
         Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
@@ -317,13 +327,54 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
-                           (implicit ec: ExecutionContext): Future[Instance] = Future.failed(
-    new BadRequestException("DCOS CaaS provider does not support secrets")
-  )
+                           (implicit ec: ExecutionContext): Future[Instance] = {
+    log.debug("Entered createSecret(...)")
 
-  override def destroySecret(secret: Instance): Future[Unit] = Future.failed(
-    new BadRequestException("DCOS CaaS provider does not support secrets")
-  )
+    def updateSuccessfulLaunch(id: String, resource: GestaltResourceInstance)(marathonResponse: JsValue): GestaltResourceInstance = {
+      upsertProperties(resource, "external_id" -> id)
+    }
+
+    def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
+      new BadRequestException(s"launch failed: ${t.getMessage}")
+    }
+
+    val fMarClient = marathonClientFactory.getClient(context.provider)
+    SecretSpec.fromResourceInstance(metaResource) match {
+      case Failure(e) => Future.failed(e)
+      case Success(spec) =>
+        val (secretId, secretPayload) = toDcosSecretPayload( context, spec, items )
+        log.debug("DCOS v1 secret payload: ")
+        log.debug(Json.prettyPrint(secretPayload))
+        for {
+          marClient <- fMarClient
+          resp <- marClient.createSecret(
+            secretId, secretPayload
+          ).transform( updateSuccessfulLaunch(secretId, metaResource), updateFailedLaunch(metaResource) )
+        } yield resp
+    }
+  }
+
+  override def destroySecret(secret: Instance): Future[Unit] = {
+    val providerId = Json.parse(secret.properties.get("provider")) \ "id"
+    val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
+      throw new RuntimeException("Could not find Provider : " + providerId)
+    }
+    val fMarClient = marathonClientFactory.getClient(provider)
+    val maybeExternalId = ContainerService.resourceExternalId(secret)
+
+    maybeExternalId match {
+      case Some(eid) =>
+        for {
+          marClient <- fMarClient
+          resp <- marClient.deleteSecret(eid)
+          _ = log.debug(s"response from MarathonClient.deleteSecret:\n${Json.prettyPrint(resp)}")
+        } yield ()
+      case None =>
+        log.debug(s"no external_id property in container ${secret.id}, will not attempt delete against provider")
+        Future.successful(())
+    }
+  }
+
 }
 
 object MarathonService {
@@ -332,6 +383,9 @@ object MarathonService {
     val DCOS_CLUSTER_NAME = "dcos_cluster_name"
     val ACCEPT_ANY_CERT = "accept_any_cert"
     val MARATHON_BASE_URL = "url"
+    val DCOS_BASE_URL = "dcosUrl"
+    val SECRET_BASE_URL = "secretUrl"
+    val SECRET_SUPPORT = "secretSupport"
     val AUTH_CONFIG = "auth"
   }
 }

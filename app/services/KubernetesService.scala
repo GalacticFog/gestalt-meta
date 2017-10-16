@@ -642,13 +642,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       /*
        * make sure the secrets all exist
        */
-      val allEnvSecretNames: Map[UUID, String] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
-        res => res.id -> res.name
+      val allEnvSecrets: Map[UUID, GestaltResourceInstance] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
+        res => res.id -> res
       } toMap
 
       containerSpec.secrets.foreach {
-        secret => if (!allEnvSecretNames.contains(secret.secret_id))
-          throw new BadRequestException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
+        secret =>
+          allEnvSecrets.get(secret.secret_id) match {
+            case None =>
+              throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
+            case Some(sec) if ContainerService.containerProviderId(sec) != context.providerId =>
+              throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' belongs to a different provider")
+            case _ => ()
+          }
       }
 
       if ( containerSpec.secrets.nonEmpty && containerSpec.secrets.map(_.path).distinct.size != containerSpec.secrets.size ) {
@@ -657,7 +663,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
       // Environment variable secrets
       val envSecrets = containerSpec.secrets.collect {
-        case sem: SecretEnvMount => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecretNames(sem.secret_id)))
+        case sem: SecretEnvMount => skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, allEnvSecrets(sem.secret_id).name))
       }
 
       // Directory-mounted secrets: each needs a unique volume name
@@ -668,7 +674,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case (secVolName,vsm) => Volume.Mount(secVolName,vsm.path, true)
       }
       val secretDirVolumes: Seq[Volume] = dirSecrets.collect {
-        case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecretNames(secret_id)))
+        case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).name))
       }
 
       /*
@@ -728,7 +734,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case (secretId, fileMounts) => Volume(
           name = fileSecretVolumeNames(secretId),
           source = Volume.Secret(
-            secretName = allEnvSecretNames(secretId),
+            secretName = allEnvSecrets(secretId).name,
             items = Some(fileMounts map {
               sfm => Volume.KeyToPath(
                 key = sfm.secret_key,

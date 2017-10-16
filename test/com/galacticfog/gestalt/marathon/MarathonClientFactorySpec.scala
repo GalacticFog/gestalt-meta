@@ -13,7 +13,7 @@ import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.test.PlaySpecification
 import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory, MarathonService}
-import play.api.libs.json.{JsBoolean, JsNull, JsValue, Json}
+import play.api.libs.json._
 import play.api.libs.ws.WSClient
 import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
 import play.api.mvc._
@@ -37,15 +37,24 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
 
   override def beforeAll(): Unit = pristineDatabase()
 
-  abstract class WithProviderConfig(providerAuth: JsValue = JsNull, permissiveHttps: JsValue = JsNull) extends TestKit(ActorSystem("MySpec")) with Scope {
+  abstract class WithProviderConfig( providerAuth: JsValue = JsNull,
+                                     permissiveHttps: JsValue = JsNull,
+                                     marathonUrl: Option[String] = Some(marathonBaseUrl),
+                                     dcosUrl: Option[String] = None,
+                                     secretUrl: Option[String] = None,
+                                     secretSupport: Option[Boolean] = None
+                                   ) extends TestKit(ActorSystem("MySpec")) with Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     val Success(testProvider) = createInstance(ResourceIds.DcosProvider, "test-provider",
       parent = Some(testEnv.id),
       properties = Some(Map(
         "config" -> Json.obj(
           Properties.AUTH_CONFIG -> providerAuth,
-          Properties.MARATHON_BASE_URL -> marathonBaseUrl,
-          Properties.ACCEPT_ANY_CERT -> permissiveHttps
+          Properties.MARATHON_BASE_URL -> marathonUrl.map(JsString(_)).getOrElse[JsValue](JsNull),
+          Properties.DCOS_BASE_URL -> dcosUrl.map(JsString(_)).getOrElse[JsValue](JsNull),
+          Properties.SECRET_BASE_URL -> secretUrl.map(JsString(_)).getOrElse[JsValue](JsNull),
+          Properties.ACCEPT_ANY_CERT -> permissiveHttps,
+          Properties.SECRET_SUPPORT  -> secretSupport.map(JsBoolean(_)).getOrElse[JsValue](JsNull)
         ).toString
       ))
     )
@@ -54,6 +63,77 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
   }
 
   "DefaultMarathonClientFactory" should {
+
+    "not support secrets by default" in new WithProviderConfig(
+      secretSupport = None
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beNone
+    }
+
+    "not support secrets if explicitly disabled" in new WithProviderConfig(
+      secretSupport = Some(false)
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beNone
+    }
+
+    "provider default marathon URL if not explicitly configured" in new WithProviderConfig(
+      marathonUrl = None,
+      dcosUrl = Some("https://dcos-cluster.mycompany.com:443")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.marathonBaseUrl must_== "https://dcos-cluster.mycompany.com:443/service/marathon"
+    }
+
+    "provider default marathon URL if not explicitly configured (with slash prefix)" in new WithProviderConfig(
+      marathonUrl = None,
+      dcosUrl = Some("https://dcos-cluster.mycompany.com/")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.marathonBaseUrl must_== "https://dcos-cluster.mycompany.com/service/marathon"
+    }
+
+    "provide default secret URL if secrets are enabled" in new WithProviderConfig(
+      secretSupport = Some(true),
+      dcosUrl = Some("https://dcos-cluster.mycompany.com:443")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beSome("https://dcos-cluster.mycompany.com:443/secrets/v1")
+    }
+
+    "provide default secret URL if secrets are enabled" in new WithProviderConfig(
+      secretSupport = Some(true),
+      dcosUrl = Some("https://dcos-cluster.mycompany.com/")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beSome("https://dcos-cluster.mycompany.com/secrets/v1")
+    }
+
+    "provide explicit secret URL if secrets are enabled" in new WithProviderConfig(
+      secretSupport = Some(true),
+      secretUrl = Some("https://master.mesos:1111")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beSome("https://master.mesos:1111")
+    }
+
+    "not provide secret URL if missing secretUrl or dcosUrl" in new WithProviderConfig(
+      secretSupport = Some(true),
+      secretUrl = None,
+      dcosUrl = None
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beNone
+    }
 
     "request auth token from DCOSAuthTokenActor on getClient for authed provider" in new WithProviderConfig(
       providerAuth = Json.obj(
@@ -80,7 +160,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         dcosUrl = testDcosUrl
       ))
       client.acsToken must beSome(authToken)
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== strictClient
     }
 
@@ -90,7 +170,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       val client = await(mcf.getClient(testProvider))
       client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== strictClient
       expectNoMsg
     }
@@ -101,7 +181,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       val client = await(mcf.getClient(testProvider))
       client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== strictClient
       expectNoMsg
     }
@@ -132,7 +212,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
         dcosUrl = testDcosUrl
       ))
       client.acsToken must beSome(authToken)
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== permissiveClient
     }
 
@@ -142,7 +222,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       val client = await(mcf.getClient(testProvider))
       client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== permissiveClient
       expectNoMsg
     }
@@ -153,7 +233,7 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, testActor)
       val client = await(mcf.getClient(testProvider))
       client.acsToken must beNone
-      client.marathonAddress must_== marathonBaseUrl
+      client.marathonBaseUrl must_== marathonBaseUrl
       client.client must_== strictClient
       expectNoMsg
     }
