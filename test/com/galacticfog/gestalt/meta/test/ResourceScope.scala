@@ -141,12 +141,14 @@ trait ResourceScope extends Scope with Mockito {
       properties = Option(Map("parent" -> "{}")))
   }
 
-   def createMarathonProvider(parent: UUID, name: String = uuid.toString, haproxyGroup: Option[String] = None) = {
+   def createMarathonProvider(parent: UUID,
+                              name: String = uuid.toString,
+                              config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(ResourceIds.DcosProvider, name,
       parent = Option(parent),
       properties = Option(Map(
         "parent" -> "{}",
-        "config" -> haproxyGroup.map(grp => Json.obj(marathon.HAPROXY_EXP_GROUP_PROP -> grp)).getOrElse(Json.obj()).toString
+        "config" -> Json.obj(config:_*).toString
       )))
   }
 

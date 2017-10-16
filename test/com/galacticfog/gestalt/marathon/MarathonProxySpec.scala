@@ -609,7 +609,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         portDefinitions = None,
         healthChecks = Some(Seq()),
         env = Some(Map(
-          "env_var_1" -> "env_val_1"
+          "env_var_1" -> AppInfo.EnvVarString("env_val_1")
         )),
         user = None
       )
@@ -708,7 +708,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers {
         portDefinitions = Some(Seq()),
         healthChecks = Some(Seq()),
         env = Some(Map(
-          "env_var_1" -> "env_val_1"
+          "env_var_1" -> AppInfo.EnvVarString("env_val_1")
         )),
         user = None
       )

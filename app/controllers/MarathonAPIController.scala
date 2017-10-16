@@ -171,12 +171,7 @@ class MarathonAPIController @Inject()( messagesApi: MessagesApi,
             case JsSuccess(app,_) => Success(app)
             case JsError(_) => Failure(new BadRequestException("Invalid JSON"))
           }}
-          (name,props) <- Future.fromTry(marathonToMetaContainerSpec(app, provider) flatMap {
-            case (maybeName,cspec) => maybeName match {
-              case None => Failure(BadRequestException("payload did not include app name"))
-              case Some(name) => Success((name,cspec))
-            }
-          })
+          props <- Future.fromTry(marathonToMetaContainerSpec(app, provider))
           metaContainer <- containerService.createContainer(
             context = ProviderContext(FakeURI(s"/${fqon}/environments/${environment}/containers"), providerId, None),
             user = request.identity,

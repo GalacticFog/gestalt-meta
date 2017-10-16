@@ -15,10 +15,11 @@ case class AppUpdate(id: Option[String] = None,
                      portDefinitions: Option[Seq[AppUpdate.PortDefinition]] = None,
                      labels: Option[Map[String, String]] = None,
                      healthChecks: Option[Seq[AppUpdate.HealthCheck]] = None,
-                     env: Option[Map[String, String]] = None,
+                     env: Option[Map[String, AppInfo.EnvVarValue]] = None,
                      ipAddress: Option[AppUpdate.IPPerTaskInfo] = None,
                      upgradeStrategy: Option[UpgradeStrategy] = None,
-                     user: Option[String] = None)
+                     user: Option[String] = None,
+                     secrets: Option[Map[String,AppUpdate.SecretSource]] = None)
 
 case object AppUpdate {
 
@@ -53,5 +54,7 @@ case object AppUpdate {
       case class PortDiscovery(number: Int, name: String, protocol: String)
     }
   }
+
+  case class SecretSource(source: String)
 
 }
