@@ -383,9 +383,9 @@ object MarathonService {
     val DCOS_CLUSTER_NAME = "dcos_cluster_name"
     val ACCEPT_ANY_CERT = "accept_any_cert"
     val MARATHON_BASE_URL = "url"
-    val DCOS_BASE_URL = "dcosUrl"
-    val SECRET_BASE_URL = "secretUrl"
-    val SECRET_SUPPORT = "secretSupport"
+    val DCOS_BASE_URL = "dcos_url"
+    val SECRET_BASE_URL = "secret_url"
+    val SECRET_SUPPORT = "secret_support"
     val AUTH_CONFIG = "auth"
   }
 }
