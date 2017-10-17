@@ -38,7 +38,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
                                                @Named(DCOSAuthTokenActor.name) dcosTokenActor: ActorRef )
   extends MarathonClientFactory {
 
-  import MarathonService.Properties
+  import MarathonService._
 
   private[this] val log = Logger(this.getClass)
 
@@ -53,6 +53,8 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
 
     val secretSupport = (providerConfig \ Properties.SECRET_SUPPORT).asOpt[Boolean] getOrElse false
     log.debug("Secret support: " + secretSupport)
+
+    val secretStore = (providerConfig \ Properties.SECRET_STORE).asOpt[String] getOrElse MarathonClient.DEFAULT_SECRET_STORE
 
     val secretBaseUrl = (providerConfig \ Properties.SECRET_BASE_URL).asOpt[String]
       .orElse(dcosUrl.map(_.stripSuffix("/") + "/secrets/v1"))
@@ -69,6 +71,14 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
     }
     val auth = (providerConfig \ Properties.AUTH_CONFIG).asOpt[JsObject] getOrElse(Json.obj())
 
+    val baseClient = MarathonClient(wsclient, marathonBaseUrl, None, secretBaseUrl, secretStore)
+
+    val acsTokenRequestTimeout = (providerConfig \ Properties.ACS_TOKEN_REQUEST_TIMEOUT)
+      .asOpt[String]
+      .flatMap(s => Try(Duration(s)).toOption)
+      .collect({case fd: FiniteDuration => fd})
+      .getOrElse(DEFAULT_ACS_TOKEN_REQUEST_TIMEOUT)
+
     (auth \ "scheme").asOpt[String] match {
       case Some("acs") =>
         val tokReq = for {
@@ -76,15 +86,17 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
           key <- (auth \ "private_key").asOpt[String]
           url <- (auth \ "dcos_base_url").asOpt[String]
         } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(provider.id, acceptAnyCert, id, key, url)
-        tokReq match {
-          case None =>
-            Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
-          case Some(req) =>
-            val fTokenResp = dcosTokenActor.ask(req)(30 seconds)
+        tokReq.fold[Future[MarathonClient]] {
+          Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
+        } {
+          req =>
+            val fTokenResp = dcosTokenActor.ask(req)(acsTokenRequestTimeout)
             fTokenResp flatMap {
               case DCOSAuthTokenActor.DCOSAuthTokenResponse(authToken) =>
                 log.debug("provisioning MarathonClient with acs auth token")
-                Future.successful(MarathonClient(wsclient, marathonBaseUrl, Some(authToken), secretBaseUrl))
+                Future.successful(baseClient.copy(
+                  acsToken = Some(authToken)
+                ))
               case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
                 Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
               case _ =>
@@ -93,7 +105,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
         }
       case _ =>
         log.debug("provisioning MarathonClient without authentication credentials")
-        Future.successful(MarathonClient(wsclient, marathonBaseUrl, None, secretBaseUrl))
+        Future.successful(baseClient)
     }
   }
 
@@ -378,14 +390,18 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 }
 
 object MarathonService {
+
+  val DEFAULT_ACS_TOKEN_REQUEST_TIMEOUT = 10 seconds
   object Properties {
     val MARATHON_FRAMEWORK_NAME = "marathon_framework_name"
     val DCOS_CLUSTER_NAME = "dcos_cluster_name"
     val ACCEPT_ANY_CERT = "accept_any_cert"
     val MARATHON_BASE_URL = "url"
-    val DCOS_BASE_URL = "dcosUrl"
-    val SECRET_BASE_URL = "secretUrl"
-    val SECRET_SUPPORT = "secretSupport"
+    val DCOS_BASE_URL = "dcos_url"
+    val SECRET_BASE_URL = "secret_url"
+    val SECRET_SUPPORT = "secret_support"
+    val SECRET_STORE = "secret_store"
     val AUTH_CONFIG = "auth"
+    val ACS_TOKEN_REQUEST_TIMEOUT = "acs_token_request_timeout"
   }
 }
