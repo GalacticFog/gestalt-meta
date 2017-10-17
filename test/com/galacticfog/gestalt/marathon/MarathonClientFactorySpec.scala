@@ -42,7 +42,8 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
                                      marathonUrl: Option[String] = Some(marathonBaseUrl),
                                      dcosUrl: Option[String] = None,
                                      secretUrl: Option[String] = None,
-                                     secretSupport: Option[Boolean] = None
+                                     secretSupport: Option[Boolean] = None,
+                                     secretStore: Option[String] = None
                                    ) extends TestKit(ActorSystem("MySpec")) with Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     val Success(testProvider) = createInstance(ResourceIds.DcosProvider, "test-provider",
@@ -54,7 +55,8 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
           Properties.DCOS_BASE_URL -> dcosUrl.map(JsString(_)).getOrElse[JsValue](JsNull),
           Properties.SECRET_BASE_URL -> secretUrl.map(JsString(_)).getOrElse[JsValue](JsNull),
           Properties.ACCEPT_ANY_CERT -> permissiveHttps,
-          Properties.SECRET_SUPPORT  -> secretSupport.map(JsBoolean(_)).getOrElse[JsValue](JsNull)
+          Properties.SECRET_SUPPORT  -> secretSupport.map(JsBoolean(_)).getOrElse[JsValue](JsNull),
+          Properties.SECRET_STORE     -> secretStore.map(JsString(_)).getOrElse[JsValue](JsNull)
         ).toString
       ))
     )
@@ -98,13 +100,25 @@ class MarathonClientFactorySpec extends PlaySpecification with ResourceScope wit
       client.marathonBaseUrl must_== "https://dcos-cluster.mycompany.com/service/marathon"
     }
 
-    "provide default secret URL if secrets are enabled" in new WithProviderConfig(
+    "provide default secret URL and store if secrets are enabled" in new WithProviderConfig(
       secretSupport = Some(true),
       dcosUrl = Some("https://dcos-cluster.mycompany.com:443")
     ) {
       val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
       val client= await(mcf.getClient(testProvider))
       client.secretBaseUrl must beSome("https://dcos-cluster.mycompany.com:443/secrets/v1")
+      client.secretStore must_== MarathonClient.DEFAULT_SECRET_STORE
+    }
+
+    "support overriding secret store" in new WithProviderConfig(
+      secretSupport = Some(true),
+      dcosUrl = Some("https://dcos-cluster.mycompany.com:443"),
+      secretStore = Some("another-store")
+    ) {
+      val mcf = new DefaultMarathonClientFactory(strictClient, permissiveClient, mock[ActorRef])
+      val client= await(mcf.getClient(testProvider))
+      client.secretBaseUrl must beSome("https://dcos-cluster.mycompany.com:443/secrets/v1")
+      client.secretStore must_== "another-store"
     }
 
     "provide default secret URL if secrets are enabled" in new WithProviderConfig(

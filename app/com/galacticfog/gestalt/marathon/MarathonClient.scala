@@ -18,7 +18,7 @@ import play.api.http.HeaderNames
 
 import scala.util.Try
 
-case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: Option[String] = None, secretBaseUrl: Option[String] = None) {
+case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: Option[String] = None, secretBaseUrl: Option[String] = None, secretStore: String = MarathonClient.DEFAULT_SECRET_STORE) {
 
   private[this] val log = Logger(this.getClass)
 
@@ -113,13 +113,13 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
   def createSecret(secretId: String, marPayload: JsValue)(implicit ex: ExecutionContext): Future[JsValue] = {
     log.info(s"new secret payload:\n${Json.prettyPrint(marPayload)}")
     withSecretUrl(
-      genRequest(s"/secret/default/${secretId.stripPrefix("/")}", _).put(marPayload).flatMap(standardResponseHandler)
+      genRequest(s"/secret/${secretStore}/${secretId.stripPrefix("/")}", _).put(marPayload).flatMap(standardResponseHandler)
     )
   }
 
   def deleteSecret(secretId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
     withSecretUrl(
-      genRequest(s"/secret/default/${secretId.stripPrefix("/")}", _).withQueryString(
+      genRequest(s"/secret/${secretStore}/${secretId.stripPrefix("/")}", _).withQueryString(
         "force" -> "true"
       ).delete() map { marResp => marResp.status match {
         case s if (200 to 299).contains(s) =>
@@ -176,6 +176,8 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
 }
 
 case object MarathonClient {
+
+  val DEFAULT_SECRET_STORE: String = "default"
 
   def marathon2Container(marApp: JsObject): Option[ContainerStats] = {
     for {
