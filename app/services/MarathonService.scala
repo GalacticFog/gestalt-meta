@@ -10,10 +10,10 @@ import play.api.Play.current
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
-import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException}
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, UnprocessableEntityException}
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
 import com.google.inject.Inject
@@ -24,6 +24,7 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec._
 import com.google.inject.name.Named
 import akka.pattern.ask
 import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
 import play.api.Logger
 
 import scala.concurrent.duration._
@@ -342,12 +343,15 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
                            (implicit ec: ExecutionContext): Future[Instance] = {
     log.debug("Entered createSecret(...)")
 
-    def updateSuccessfulLaunch(id: String, resource: GestaltResourceInstance)(marathonResponse: JsValue): GestaltResourceInstance = {
-      upsertProperties(resource, "external_id" -> id)
+    def updateSuccessfulLaunch(id: String, resource: GestaltResourceInstance)(marathonResponse: Unit): GestaltResourceInstance = {
+      upsertProperties(resource.copy(
+        state = ResourceState.id(ResourceStates.Active)
+      ), "external_id" -> id)
     }
 
-    def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
-      new BadRequestException(s"launch failed: ${t.getMessage}")
+    def createFailed(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
+      ResourceFactory.hardDeleteResource(resource.id)
+      new UnprocessableEntityException(s"secret creation failed: ${t.getMessage}")
     }
 
     val fMarClient = marathonClientFactory.getClient(context.provider)
@@ -355,13 +359,14 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
         val (secretId, secretPayload) = toDcosSecretPayload( context, spec, items )
-        log.debug("DCOS v1 secret payload: ")
-        log.debug(Json.prettyPrint(secretPayload))
+        log.debug(
+          s"DCOS v1 secret payload: ${secretId}\n" ++ Json.prettyPrint(secretPayload)
+        )
         for {
           marClient <- fMarClient
           resp <- marClient.createSecret(
             secretId, secretPayload
-          ).transform( updateSuccessfulLaunch(secretId, metaResource), updateFailedLaunch(metaResource) )
+          ).transform( updateSuccessfulLaunch(secretId, metaResource), createFailed(metaResource) )
         } yield resp
     }
   }
@@ -379,7 +384,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         for {
           marClient <- fMarClient
           resp <- marClient.deleteSecret(eid)
-          _ = log.debug(s"response from MarathonClient.deleteSecret:\n${Json.prettyPrint(resp)}")
         } yield ()
       case None =>
         log.debug(s"no external_id property in container ${secret.id}, will not attempt delete against provider")

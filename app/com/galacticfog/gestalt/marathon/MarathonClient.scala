@@ -22,11 +22,19 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
 
   private[this] val log = Logger(this.getClass)
 
-  private[this] def otherError(marResp: WSResponse) = new InternalErrorException("error from Marathon REST API: " + Json.stringify(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)))
+  private[this] def otherError(marResp: WSResponse) = new InternalErrorException({
+    val resp = Try(marResp.json.as[JsObject] ++ Json.obj("status" -> marResp.status)).map(_.toString).getOrElse(
+      s"code ${marResp.status}: ${marResp.statusText}"
+    )
+    log.warn(marResp.toString)
+    log.warn(marResp.body)
+    "error from Marathon REST API: " + resp
+  })
 
   private[this] def genRequest(endpoint: String, baseUrl: String = marathonBaseUrl) = {
+    val url = s"${baseUrl}/${endpoint.stripPrefix("/")}"
     acsToken.foldLeft(
-      client.url(s"${marathonBaseUrl}/${endpoint.stripPrefix("/")}")
+      client.url(url)
     ) {
       case (req,token) => req.withHeaders(HeaderNames.AUTHORIZATION -> s"token=${token}")
     }
@@ -74,13 +82,16 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
   def standardResponseHandler(resp: WSResponse): Future[JsValue] = {
     resp.status match {
       case s if (200 to 299).contains(s) => Future.successful(resp.json)
-      case b if b == 409 =>
+      case 409 =>
         Future.failed(new ConflictException(
-          Json.stringify(resp.json.as[JsObject] ++ Json.obj("status" -> resp.status))
+          (resp.json.as[JsObject] ++ Json.obj("status" -> resp.status)).toString
         ))
+      case 403 | 401 => Future.failed(new UnprocessableEntityException(
+        s"DC/OS backend returned ${resp.status}: ${resp.statusText}"
+      ))
       case b if Seq(400, 422).contains(b) =>
         Future.failed(new BadRequestException(
-          Json.stringify(resp.json.as[JsObject] ++ Json.obj("status" -> resp.status))
+          (resp.json.as[JsObject] ++ Json.obj("status" -> resp.status)).toString
         ))
       case _ => Future.failed(otherError(resp))
     }
@@ -110,22 +121,40 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
     )
   }
 
-  def createSecret(secretId: String, marPayload: JsValue)(implicit ex: ExecutionContext): Future[JsValue] = {
+  def createSecret(secretId: String, marPayload: JsValue)(implicit ex: ExecutionContext): Future[Unit] = {
     log.info(s"new secret payload:\n${Json.prettyPrint(marPayload)}")
     withSecretUrl(
-      genRequest(s"/secret/${secretStore}/${secretId.stripPrefix("/")}", _).put(marPayload).flatMap(standardResponseHandler)
+      genRequest(s"/secret/${secretStore}/${secretId.stripPrefix("/")}", _)
+        .put(marPayload)
+        .flatMap({ resp =>
+          resp.status match {
+            case 201 => Future.successful(())
+            case 409 =>
+              Future.failed(new ConflictException(
+                (resp.json.as[JsObject] ++ Json.obj("status" -> resp.status)).toString
+              ))
+            case 403 | 401 => Future.failed(new UnprocessableEntityException(
+              s"DC/OS backend returned ${resp.status}: ${resp.statusText}"
+            ))
+            case b if Seq(400, 422).contains(b) =>
+              Future.failed(new BadRequestException(
+                (resp.json.as[JsObject] ++ Json.obj("status" -> resp.status)).toString
+              ))
+            case _ => Future.failed(otherError(resp))
+          }
+        })
     )
   }
 
-  def deleteSecret(secretId: String)(implicit ex: ExecutionContext): Future[JsValue] = {
+  def deleteSecret(secretId: String)(implicit ex: ExecutionContext): Future[Unit] = {
     withSecretUrl(
       genRequest(s"/secret/${secretStore}/${secretId.stripPrefix("/")}", _).withQueryString(
         "force" -> "true"
-      ).delete() map { marResp => marResp.status match {
+      ).delete() flatMap { marResp => marResp.status match {
         case s if (200 to 299).contains(s) =>
-          log.info(s"delete secret: marathon response:\n" + Json.prettyPrint(marResp.json))
-          marResp.json
-        case _ => throw otherError(marResp)
+          Future.successful(())
+        case _ =>
+          Future.failed(otherError(marResp))
       } }
     )
   }

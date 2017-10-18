@@ -31,8 +31,10 @@ package object marathon {
     maximumOverCapacity = 0.0
   )
 
-  val APP_GROUP_PREFIX_PROP = "appGroupPrefix"
-  val HAPROXY_EXP_GROUP_PROP = "haproxyGroup"
+  val APP_GROUP_PREFIX_PROP = "service_group"
+  val APP_GROUP_PREFIX_PROP_LEGACY = "appGroupPrefix"
+  val HAPROXY_EXP_GROUP_PROP = "haproxy_group"
+  val HAPROXY_EXP_GROUP_PROP_LEGACY = "haproxyGroup"
   val DEFAULT_HAPROXY_EXP_GROUP = "external"
 
   implicit lazy val marathonVolumePersistenceFmt = Json.format[Container.PersistentVolumeInfo]
@@ -426,11 +428,18 @@ package object marathon {
     val secretEncodedValue = items.headOption.flatMap(_.value).getOrElse(throw new BadRequestException("Secret was empty"))
     val secretValue = new String(Base64.getDecoder.decode(secretEncodedValue))
 
+    val service_group_parts = (for {
+      prefix <- ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP_LEGACY) orElse ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
+      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
+      splitPrefix = cleanPrefix.split("/")
+      validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
+      parts = validatedAppPrefix.stripPrefix("/").stripSuffix("/").split("/")
+    } yield parts) getOrElse Array()
     val fqon = validate(context.fqon) getOrElse {invalid("'fqon'")}
     val wrkName = validate(context.workspace.name) getOrElse {invalid("'workspace.name'")}
     val envName = validate(context.environment.name) getOrElse {invalid("'environment.name'")}
     val secretName = validate(spec.name) getOrElse {invalid("'secret.name'")}
-    val secretId = (fqon.split('.') ++ Array(wrkName,envName,secretName)).mkString("/")
+    val secretId = (service_group_parts ++ fqon.split('.') ++ Array(wrkName,envName,secretName)).mkString("/")
     secretId -> Json.obj(
       "value" -> secretValue
     )
@@ -448,7 +457,9 @@ package object marathon {
           case (port, portIndex) if port.virtual_hosts.exists(_.nonEmpty) =>
             Map(
               "HAPROXY_%d_VHOST".format(portIndex) -> port.virtual_hosts.get.mkString(","),
-              "HAPROXY_%d_GROUP".format(portIndex) -> ContainerService.getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP).getOrElse(DEFAULT_HAPROXY_EXP_GROUP)
+              "HAPROXY_%d_GROUP".format(portIndex) -> ContainerService.getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP_LEGACY)
+                .orElse(ContainerService.getProviderProperty[String](provider, HAPROXY_EXP_GROUP_PROP))
+                .getOrElse(DEFAULT_HAPROXY_EXP_GROUP)
             )
         })
         .flatten.toMap
@@ -459,7 +470,7 @@ package object marathon {
     val envName = validate(environment.name) getOrElse {invalid("'environment.name'")}
     val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
     val appPrefix = for {
-      prefix <- ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
+      prefix <- ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY) orElse ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
       validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
