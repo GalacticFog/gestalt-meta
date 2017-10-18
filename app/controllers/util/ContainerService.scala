@@ -7,7 +7,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
-import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
