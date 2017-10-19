@@ -11,7 +11,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, UnprocessableEntityException}
 import com.galacticfog.gestalt.marathon._
@@ -201,7 +201,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    val prefix = ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
+    val prefix = MarathonService.getAppGroupPrefix(context.provider)
     for {
       marClient <- marathonClientFactory.getClient(context.provider)
       list <- marClient.listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
@@ -394,6 +394,16 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 }
 
 object MarathonService {
+
+  def getAppGroupPrefix(provider: ResourceLike): Option[String] = {
+    ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP) orElse
+      ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY)
+  }
+
+  def getHaproxyGroup(provider: ResourceLike): Option[String] = {
+    ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP) orElse
+      ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY)
+  }
 
   val DEFAULT_ACS_TOKEN_REQUEST_TIMEOUT = 10 seconds
   object Properties {
