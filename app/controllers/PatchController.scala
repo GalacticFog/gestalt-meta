@@ -55,7 +55,10 @@ class PatchController @Inject()(
   private[controllers] val transforms: Map[UUID, PatchTransform] = Map(
     ResourceIds.Environment -> transformEnvironmentPatch)
   
-  
+  /*
+   * These functions will be called instead of the default patch handler
+   * for the corresponding resource-types.
+   */
   private[controllers] val handlers: Map[UUID, PatchHandler] = Map(
     ResourceIds.Group       -> groupMethods.groupPatch,
     ResourceIds.User        -> groupMethods.userPatch,

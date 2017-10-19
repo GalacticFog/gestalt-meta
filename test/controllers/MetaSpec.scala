@@ -9,7 +9,7 @@ import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, Json}
+import play.api.libs.json.{JsObject, Json, JsValue}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
@@ -18,6 +18,8 @@ import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 import scala.util.Success
 import com.galacticfog.gestalt.data.EnvironmentType
 import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.json.Js
+
 
 class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
@@ -130,7 +132,103 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       }
     }
   }
-
+  
+  "updateLinkedProviders" should {
+    "add empty linked_providers to Provider JSON if not given" in new TestApplication {
+      val payload = Json.parse {
+      s"""
+      |{
+      |  "name": "${uuid.toString}",
+      |  "description": "Test security provider",
+      |  "resource_type": "Gestalt::Configuration::Provider::Security",
+      |  "properties": {
+      |    "config": {
+      |      "env": {
+      |        "public": {
+      |           "KEY": "123-456-789",
+      |		        "SECRET": "thequickbrownfox",
+      |		        "HOSTNAME": "10.10.10.10",
+      |		        "PORT": "6543",
+      |		        "PROTOCOL": "http"
+      |        },
+      |        "private": {
+      |        }
+      |      }
+      |    },
+      |    "services": []
+      |  }
+      |}
+      """.trim.stripMargin        
+      }
+      
+      val meta = app.injector.instanceOf[Meta]
+      val result = meta.updateLinkedProviders(payload.as[JsObject])
+      result must beSuccessfulTry
+      
+      val lps1 = Js.find(result.get, "/properties/linked_providers")
+      lps1 must beSome
+    }    
+  }
+  
+  "defaultLinkedProviders" should {
+    
+    "leave Provider.properties.linked_providers untouched when given in the payload" in new TestApplication {
+      val payload = Json.parse {
+        s"""
+        |{
+        |  "name":"gateway-manager-1",
+        |  "description":"gateway provider",
+        |  "resource_type":"Gestalt::Configuration::Provider::GatewayManager",
+        |  "properties":{
+        |    "config":{
+        |      "env":{
+        |        "public":{
+        | 
+        |         },
+        |         "private":{
+        |           "GATEWAY_DATABASE_NAME":"brad-gateway-provider2"
+        |        }
+        |      }
+        |    },
+        |    "linked_providers":[
+        |      {
+        |        "name":"KONG_0",
+        |        "id":"1"
+        |      },
+        |      {
+        |        "name":"GATEWAY_DATABASE",
+        |        "id":"2"
+        |      },
+        |      {
+        |        "name":"GESTALT_SECURITY",
+        |        "id":"3"
+        |      }
+        |    ]
+        |  }
+        |}  
+        """.trim.stripMargin
+      }.as[JsObject]
+      
+      val meta = app.injector.instanceOf[Meta]      
+      
+      /* get array from original payload */
+      val before1 = Js.find(payload, "/properties/linked_providers")
+      before1 must beSome
+      val before2 = Js.parse[Seq[JsValue]](before1.get)
+      before2 must beSuccessfulTry
+      
+      /* get array from 'updated' payload */
+      val updated = meta.defaultLinkedProviders(payload)
+      val after1 = Js.find(payload, "/properties/linked_providers")
+      after1 must beSome
+      val after2 = Js.parse[Seq[JsValue]](after1.get)
+      after2 must beSuccessfulTry
+      
+      before2.get.equals(after2.get) === true
+    }
+    
+  }
+  
   "Kubernetes providers" should {
 
     "be created with a \"default\" network" in new TestApplication {
