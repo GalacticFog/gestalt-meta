@@ -19,6 +19,9 @@ GET  	/path/:fqon/*components  controllers.ResourceController.mapPath(fqon, comp
 
 POST   /root/providers/initialize controllers.BootstrapController.initProviders()
 
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id/redeploy  controllers.Meta.redeployProvider(fqon: String, id: java.util.UUID)
+
+
 GET 	/root/check 		controllers.InfoController.serviceCheck()
 
 

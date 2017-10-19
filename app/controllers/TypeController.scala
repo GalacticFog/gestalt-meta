@@ -38,19 +38,27 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   object SchemaEntry {
     implicit lazy val schemaEntryFormat = Json.format[SchemaEntry]
   }
+
   
   def getAllResourceTypesFqon(fqon: String) = Audited(fqon) { implicit request =>
     
     orgFqon(fqon).fold(NotFoundResult(Errors.ORG_NOT_FOUND(fqon))) { org =>
-      if (!request.queryString.contains("name")) 
-        OkTypeLinksResult(org.id)
-      else {
-        val names = request.queryString("name").toSeq
-        val tpes = names flatMap (TypeFactory.findByName(org.id, _))
+      val qs = request.queryString
+      val tpes = {
+        if (qs.contains("name")) { 
+          val names = qs("name").toSeq
+          names flatMap (TypeFactory.findByName(org.id, _))        
+        } else {
+          TypeFactory.findAll(ResourceIds.ResourceType, org.id)
+        }
+      }
+      if (getExpandParam(qs)) {
+        expandOutput(tpes, qs, META_URL)(Output.renderResourceTypeOutput)
+      } else {
         Ok(Output.renderLinks(tpes))
       }
     }
-  }
+  }  
   
   def getResourceTypeByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     orgFqon(fqon).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id))) { org =>

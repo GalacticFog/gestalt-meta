@@ -317,7 +317,33 @@ class Meta @Inject()( messagesApi: MessagesApi,
   def postProviderConfigFqon(fqon: String, parentType: String, parent: UUID) = AsyncAudited(fqon) { implicit request =>
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
-
+  
+  def redeployProvider(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+    ResourceFactory.findById(id).fold {
+      Future.successful(NotFound(s"Provider with ID '$id' not found."))
+    }{ p =>
+      /*
+       * TODO: This is currently returning a 202 due to an issue with the method
+       * that should return the provider after redeploy. See Meta Issue #353.
+       */
+//      for {
+//        (_, ps) <- providerManager.processProvider(ProviderMap(p), forceLaunch = true)
+//        out = getCurrentProvider(id, ps)
+//      } yield Ok(RenderSingle(out))
+      
+      providerManager.processProvider(ProviderMap(p), forceLaunch = true) map { _ =>
+        Accepted
+      } recover {
+        case e => {
+          /*
+           * TODO: Update Provider as 'FAILED' in Meta
+           */
+          HandleExceptions(e)
+        }
+      }
+    }
+  }
+  
   def load(rootProvider: ProviderMap, identity: UUID) = {
     log.info("Beginning provider initialization...")
     providerManager.loadProviders(Some(rootProvider)) map { seq =>
@@ -379,6 +405,15 @@ class Meta @Inject()( messagesApi: MessagesApi,
       } else out.head
     }
   }
+
+  private[controllers] def getCurrentProvider(targetId: UUID, results: Seq[GestaltResourceInstance]) = {
+    log.debug("entered getCurrentProvider(_, _)")
+    val out = results.filter(_.id == targetId)
+    if (out.size > 1) {
+      log.error(s"Could not find Provider ${targetId} in results-list.")
+      throw new RuntimeException("An error occurred launching the Provider")
+    } else out.head
+  }    
   
   /**
    * Currently just injects the given UUID and resource_type UUID
@@ -444,6 +479,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       data = Option(Map("host" -> baseUrl)))    
   }
   
+  import com.galacticfog.gestalt.patch._
   def updateLinkedProviders(json: JsObject): Try[JsObject] = {
 
     val lps = Js.find(json, "/properties/linked_providers") map { lp =>
@@ -473,13 +509,31 @@ class Meta @Inject()( messagesApi: MessagesApi,
         )
       }
     }
-    
-    if (updatedLinks.isEmpty) Success(json) 
+
+    if (updatedLinks.isEmpty) {
+      val patch = PatchDocument(PatchOp.Add("/properties/linked_providers", Json.obj()))
+       
+      //Success(json)
+      defaultLinkedProviders(json)
+    }
     else {
       val jsonLinks = Json.toJson(updatedLinks)
-      import com.galacticfog.gestalt.patch._
+      
       val patch = PatchDocument(PatchOp.Replace("/properties/linked_providers", jsonLinks))
       patch.applyPatch(json)
+    }
+  }
+  
+  /**
+   * Inject empty properties.linked_providers if not found in given payload.
+   * 
+   * @param json JsObject representation of a Provider resource
+   */
+  def defaultLinkedProviders(json: JsObject): Try[JsObject] = {
+    Js.find(json, "/properties/linked_providers").fold {
+      PatchDocument(PatchOp.Add("/properties/linked_providers", Json.arr())).applyPatch(json)
+    }{ _ =>
+      Try(json)
     }
   }
   

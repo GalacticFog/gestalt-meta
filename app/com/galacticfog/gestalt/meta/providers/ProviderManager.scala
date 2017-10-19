@@ -39,12 +39,13 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 
 import com.galacticfog.gestalt.meta.api._
-
+import controllers.DeleteController
 
 @Singleton
-class ProviderManager @Inject() ( kubernetesService: KubernetesService,
-                                  marathonService: MarathonService,
-                                  dockerService: DockerService ) extends AuthorizationMethods with JsonInput {
+class ProviderManager @Inject() (
+    kubernetesService: KubernetesService,
+    marathonService: MarathonService,
+    dockerService: DockerService) extends AuthorizationMethods with JsonInput {
   
   private[this] val log = Logger(this.getClass)
   
@@ -62,8 +63,8 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     Future.sequence(ps map { p => processProvider(p) })
   }
   
-  private[providers] def processProvider(p: ProviderMap): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
-    val servicelist = processServices(p, p.services.toList, Seq.empty)
+  def processProvider(p: ProviderMap, forceLaunch: Boolean = false): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
+    val servicelist = processServices(p, p.services.toList, Seq.empty, forceLaunch)
     for {
       vars <- mapPorts(servicelist)
       env = vars.toMap ++ getMergedEnvironment(p)
@@ -76,12 +77,13 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
    * Add the values in newVars to the given ProviderMap's envConfig.public
    */
   import scala.collection.immutable.ListMap
+  
   private[providers] def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
     val penv = p.envConfig map { env =>
       val sorted = env.public map { pub => 
         ListMap((newVars.toMap ++ pub).toSeq.sortBy(_._1):_*)
       }
-      env.copy(public = sorted /*env.public map { pub => newVars.toMap ++ pub }*/)
+      env.copy(public = sorted)
     }
     p.copy(env = penv)
   }
@@ -151,36 +153,98 @@ class ProviderManager @Inject() ( kubernetesService: KubernetesService,
     } getOrElse Seq.empty
   }
   
+  import controllers.util.ContainerService
+  
+  /**
+   * Parse provider ID from container.properties and return corresponding provider.
+   */
+  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+    val providerId = ContainerService.containerProviderId(container)
+
+    ResourceFactory.findById(providerId) getOrElse {
+      throw new ResourceNotFoundException(
+        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
+    }
+  }
+  
+  import scala.concurrent.Await
+  import scala.concurrent.duration._
+  
+  /*
+   * This is essentially a duplicate of the code found in DeleteController::deleteExternalContainer
+   * Reproduced here due to circular dependency created when attempting to inject DeleteController
+   * into this class.
+   */
+  def deleteContainer(container: GestaltResourceInstance): Try[Unit] = {
+    val providerId = ContainerService.containerProviderId(container)
+    val provider   = ResourceFactory.findById(providerId) getOrElse {
+      throw new ResourceNotFoundException(
+        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
+    }
+    
+    getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroy(container), 5.seconds)
+    }    
+  }
+  
   private[providers] def processServices(
       parent: ProviderMap, 
       ss: Seq[ProviderService], 
-      acc: Seq[Future[GestaltResourceInstance]]): Seq[Future[GestaltResourceInstance]] = {
-    
+      acc: Seq[Future[GestaltResourceInstance]],
+      forceLaunch: Boolean = false): Seq[Future[GestaltResourceInstance]] = {
+
     ss match {
       case Nil => acc
       case service :: tail => {
         
         val caas = loadCaasProvider(service)
-
+        
         val account = getUserAccount(parent)
         val environment = getOrCreateProviderEnvironment(parent.resource, account)
         val containers = ResourceFactory.findChildrenOfType(ResourceIds.Container, environment.id)
         val label = "%s, %s".format(parent.id, parent.name)
         
+        log.debug(s"Provider Environment: [${environment.id}, ${environment.name}]")
+        log.debug(s"Running Containers: ${containers.size}")
+        
         val fcontainer = {
-          if (containers.isEmpty) {
+                    
+          if (containers.nonEmpty) {
+            
+            if (forceLaunch) {
+              val cids = containers.map(_.id).mkString(",")
+              log.info(s"Found running container(s), forceLaunch: $forceLaunch...deleting: $cids")
+              
+              /* Attempt to delete existing containers - collect error messages if any */
+              val deleteFailures = containers.map(deleteContainer(_)).collect { 
+                case Failure(f) => f.getMessage 
+              }
+              
+              if (deleteFailures.isEmpty) {
+                log.info("Provider Containers deleted...Re-Launching...")
+                launchContainer(parent, service, environment, caas)                
+
+              } else {
+                log.error("FAILED deleting provider container.")
+                Future(throw new RuntimeException(deleteFailures.mkString(",")))
+              }
+              
+            } else {
+              /* Found a container and `forceLaunch` is false */
+              log.info(s"Found running containers for Provider ${label}. Nothing to do.")
+              Future.successful(containers(0))
+            }
+            
+          } else {
             log.info(s"No containers found for Provider [${label}]...launching...")
             launchContainer(parent, service, environment, caas)
-          }
-          else {
-            log.info(s"Found running containers for Provider ${label}. Nothing to do.")
-            Future(containers(0))
           }
         }
         processServices(parent, tail, fcontainer +: acc)
       }
     }
   }
+  
   
   private[providers] def mergeContainerVars(spec: JsValue, vars: Map[String,String]): Try[JsValue] = {
     val cvars = Js.find(spec.as[JsObject], "/properties/env") map { env =>

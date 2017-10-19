@@ -41,10 +41,12 @@ import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 
 
 @Singleton
-class ResourceController @Inject()( messagesApi: MessagesApi,
-                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-                                    security: Security,
-                                    containerService: ContainerService)
+class ResourceController @Inject()( 
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    security: Security,
+    containerService: ContainerService)
+    
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
