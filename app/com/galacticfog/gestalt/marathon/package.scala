@@ -429,7 +429,7 @@ package object marathon {
     val secretValue = new String(Base64.getDecoder.decode(secretEncodedValue))
 
     val service_group_parts = (for {
-      prefix <- ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP_LEGACY) orElse ContainerService.getProviderProperty[String](context.provider, APP_GROUP_PREFIX_PROP)
+      prefix <- MarathonService.getAppGroupPrefix(context.provider)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
       validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
@@ -470,7 +470,7 @@ package object marathon {
     val envName = validate(environment.name) getOrElse {invalid("'environment.name'")}
     val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
     val appPrefix = for {
-      prefix <- ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY) orElse ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP)
+      prefix <- MarathonService.getAppGroupPrefix(provider)
       cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
       splitPrefix = cleanPrefix.split("/")
       validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")

@@ -42,14 +42,24 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
 
   def listApplicationsInEnvironment(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
     val groupId = metaContextToMarathonAppGroup(groupPrefix, fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
-    val allApps = genRequest(s"/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks").get()
+    val url = s"/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks"
+    log.debug(s"GETing $url from Marathon")
+    val allApps = genRequest(url).get()
     allApps map { marResp =>
       marResp.status match {
-        case 404 => Seq.empty
-        case 200 => (marResp.json \ "apps").as[Seq[JsObject]]
+        case 404 =>
+          log.debug(s"received 404 from Marathon $url, group does not exist, returning empty list")
+          Seq.empty
+        case 200 =>
+          log.trace(s"received 200 from Marathon $url: ${Json.prettyPrint(marResp.json)}")
+          (marResp.json \ "apps").as[Seq[JsObject]]
         case _ => throw otherError(marResp)
       }
-    } map (_.flatMap(MarathonClient.marathon2Container))
+    } map (_.flatMap{js =>
+      val cs = MarathonClient.marathon2Container(js)
+      log.trace(s"parsed ${js} to ${cs}")
+      cs
+    } )
   }
 
   def getApplicationByAppId(appId: String)(implicit ex: ExecutionContext): Future[JsObject] = {
