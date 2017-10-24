@@ -318,7 +318,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     postProviderCommon(fqid(fqon), parentType, parent, request.body)
   }
   
-  def redeployProvider(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+  def redeployProvider(fqon: String, id: UUID) = AsyncAuditedAny(fqon) { implicit request =>
     ResourceFactory.findById(id).fold {
       Future.successful(NotFound(s"Provider with ID '$id' not found."))
     }{ p =>
@@ -430,7 +430,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     val acceptableEnvTypes = Seq("development", "test", "production")
     
     Js.find(payload.as[JsObject], "/properties/environment_types").map { types =>
-      val given = types.as[JsArray].value.toSeq.map(_.as[String])
+      val given = types.as[Seq[String]]
       val delta = given.diff(acceptableEnvTypes)
       if (delta.nonEmpty) {
         val msg = s"Invalid environment_types. expected: one of (${acceptableEnvTypes.mkString(",")}). found: (${delta.mkString(",")})"
