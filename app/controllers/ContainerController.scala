@@ -98,10 +98,10 @@ class ContainerController @Inject()(
     provider.properties.get.get("environment_types").map { types =>
       
       // Environment types the provider is compatible with.
-      val allowed = Json.parse(types).as[JsArray].value.map(_.as[String])
+      val allowedByProvider = Json.parse(types).as[Seq[String]]
       
       // Environment type of the given environment.
-      val giventype = {
+      val envType = {
         val typeId = env.properties.get.get("environment_type") getOrElse {
           val msg = s"Environment with ID '${env.id}' does not contain 'environment_type' property. Data is corrupt"
           throw new RuntimeException(msg)
@@ -115,8 +115,8 @@ class ContainerController @Inject()(
       }
       
       // Given MUST be in the allowed list.
-      if (!allowed.contains(giventype)) {
-        val msg = s"Incompatible Environment type. Expected one of (${allowed.mkString(",")}). found: '$giventype'"
+      if (allowedByProvider.nonEmpty && !allowedByProvider.contains(envType)) {
+        val msg = s"Incompatible Environment type. Expected one of (${allowedByProvider.mkString(",")}). found: '$envType'"
         throw new ConflictException(msg)
       }
     }    

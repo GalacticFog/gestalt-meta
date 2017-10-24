@@ -44,8 +44,8 @@ object JsonUtil {
   def replaceJsonPropValue(obj: JsObject, name: String, value: JsValue) = {
     val newprop = Json.obj(name -> value)
     (obj \ "properties") match {
-      case u: JsUndefined => newprop
-      case v => v.as[JsObject] ++ newprop
+      case JsDefined(v: JsObject) => v ++ newprop
+      case _ => newprop
     }
   }
   
@@ -60,7 +60,6 @@ object JsonUtil {
   def withJsonPropValue(obj: JsObject, prop: (String, JsValue)): JsObject = withJsonPropValue(obj, prop._1, prop._2)
 
   def withJsonPropValue(obj: JsObject, propName: String, propValue: JsValue): JsObject = {
-    val newprops = replaceJsonPropValue(obj, propName, propValue)
     replaceJsonProps(obj, replaceJsonPropValue(obj, propName, propValue))
   }
   

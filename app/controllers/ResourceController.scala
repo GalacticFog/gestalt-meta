@@ -60,7 +60,8 @@ class ResourceController @Inject()(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
       ResourceIds.Lambda -> transformLambda,
-      ResourceIds.Policy -> transformPolicy
+      ResourceIds.Policy -> transformPolicy,
+      ResourceIds.Provider -> transformProvider
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -492,20 +493,35 @@ class ResourceController @Inject()(
     }
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
   }
-  
+
   /**
-   * Builds lambda.properties.function_mappings object.
-   */
+    * Builds lambda.properties.function_mappings object.
+    */
   private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
     val resJson = Json.toJson(res).as[JsObject]
-    
+
     val newjson = if (lmap.isEmpty) resJson else {
-        val smap = JsString(Json.toJson(lmap).toString)
-        val m2 = replaceJsonPropValue(resJson, "function_mappings", smap)
-        replaceJsonProps(resJson, m2)
+      val smap = JsString(Json.toJson(lmap).toString)
+      val m2 = replaceJsonPropValue(resJson, "function_mappings", smap)
+      replaceJsonProps(resJson, m2)
     }
     newjson.validate[GestaltResourceInstance].get
+  }
+
+  private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
+    val resJson = Json.toJson(res).as[JsObject]
+    val renderedLinks: Seq[JsObject] = (resJson \ "properties" \ "linked_providers").asOpt[Seq[JsObject]].map { _.flatMap {
+      js => for {
+        id <- (js \ "id").asOpt[UUID]
+        lp <- ResourceFactory.findById(id)
+      } yield (js ++ Json.obj(
+        "typeId" -> lp.typeId,
+        "type" -> sdk.ResourceName(lp.typeId)
+      ))
+    } } getOrElse Seq.empty
+    val newResJson = replaceJsonProps(resJson, replaceJsonPropValue(resJson, "linked_providers", Json.toJson(renderedLinks)))
+    newResJson.validate[GestaltResourceInstance].get
   }
   
   /**
@@ -524,14 +540,6 @@ class ResourceController @Inject()(
     }
   }
 
-  
-  def transformProvider(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
-    
-    
-
-    ???
-  }
-  
   /**
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
