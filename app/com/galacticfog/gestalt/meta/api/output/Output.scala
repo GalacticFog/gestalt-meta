@@ -55,7 +55,7 @@ object Output {
    */
 
   def renderInstance(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
-    
+
     val res = GestaltResourceOutput(
       id = r.id,
       org = {
@@ -80,8 +80,9 @@ object Output {
       properties = renderedProps orElse Some(Json.obj())
     ))
   }
+
   def renderCompact(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
-  
+
     val res = GestaltResourceOutput(
       id = r.id,
       org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),

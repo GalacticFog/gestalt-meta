@@ -35,8 +35,6 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.language.postfixOps
 import javax.inject.Singleton
 
-import ResourceFactory.{findChildrenOfType, findEndpointsByLambda}
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 
 
@@ -60,8 +58,8 @@ class ResourceController @Inject()(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
       ResourceIds.Lambda -> transformLambda,
-      ResourceIds.Policy -> transformPolicy,
-      ResourceIds.Provider -> transformProvider
+      ResourceIds.Policy -> transformPolicy /*,
+      ResourceIds.Provider -> transformProvider */
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(

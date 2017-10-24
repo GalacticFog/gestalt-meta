@@ -396,7 +396,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
       seq <- results
       out = {
         log.debug(s"Finding provider in result-set. Seeking: ${targetId}")
-        seq filter { t => t.isSuccess && t.get.id == targetId } map { _.get }
+        seq collect {
+          case Success(t) if t.id == targetId => t
+        }
       }
     } yield {
       if (out.size > 1) {
@@ -438,7 +440,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
       }
     }
     
-    log.debug("Adding default kube networks...")
     lazy val addDefaultNetwork = (__ \ 'properties \ 'config).json.update(
       __.read[JsObject].map{ c => c ++
         Json.obj(
@@ -450,6 +451,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     for {
       withSpecifics <- providerType match {
         case ResourceIds.KubeProvider | ResourceIds.DockerProvider => Try {
+          log.debug("Adding default kube networks...")
           val result = payload.transform(addDefaultNetwork)
           log.debug("RESULT:\n" + result.toString())
           result.get
@@ -462,10 +464,12 @@ class Meta @Inject()( messagesApi: MessagesApi,
         JsonUtil.upsertProperties(withSpecifics,
         "parent" -> Json.toJson(toLink(parent, baseUrl))
       )}
+
       withIdAndType = withParentProp ++ Json.obj(
         "id" -> newId.toString,
         "resource_type" -> providerType.toString
       )
+
       output <- updateLinkedProviders(withIdAndType)
     } yield output
     
@@ -484,10 +488,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
     val lps = Js.find(json, "/properties/linked_providers") map { lp =>
       LinkedProvider.fromJson(lp)
-    }
+    } getOrElse Seq.empty
     
-    val updatedLinks = lps.fold(Seq[LinkedProvider]()) { links =>
-      val linkids = links map { _.id }
+    val updatedLinks = {
+      val linkids = lps map { _.id }
       
       // Lookup all given linked_providers by their ID - load into a map keyed by ID
       val providers = ResourceFactory.findAllIn(linkids).map { 
@@ -495,14 +499,14 @@ class Meta @Inject()( messagesApi: MessagesApi,
       }.toMap 
       
 			// If we found fewer providers than we asked for the request is invalid.
-      if (providers.size < linkids.size) {
-        val missing = linkids.diff( (providers.keys.toSeq) )
+      val missing = linkids.diff( (providers.keys.toSeq) )
+      if (missing.nonEmpty) {
         throw new UnprocessableEntityException(
-            s"Invalid linked_providers. The following were not found: [${missing.mkString(",")}]")
+            s"Invalid linked_providers. The following were not found: [${missing.mkString(", ")}]")
       }
       
       // Inject the type-id of each provider into the given links.
-      links map { k =>
+      lps map { k =>
         k.copy(
           typeId = Some(providers(k.id).typeId),
           `type` = Some(sdk.ResourceName(providers(k.id).typeId))
@@ -511,14 +515,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
 
     if (updatedLinks.isEmpty) {
-      val patch = PatchDocument(PatchOp.Add("/properties/linked_providers", Json.obj()))
-       
-      //Success(json)
       defaultLinkedProviders(json)
     }
     else {
       val jsonLinks = Json.toJson(updatedLinks)
-      
       val patch = PatchDocument(PatchOp.Replace("/properties/linked_providers", jsonLinks))
       patch.applyPatch(json)
     }
@@ -530,11 +530,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
    * @param json JsObject representation of a Provider resource
    */
   def defaultLinkedProviders(json: JsObject): Try[JsObject] = {
-    Js.find(json, "/properties/linked_providers").fold {
-      PatchDocument(PatchOp.Add("/properties/linked_providers", Json.arr())).applyPatch(json)
-    }{ _ =>
+    if ( Js.find(json, "/properties/linked_providers").isDefined )
       Try(json)
-    }
+    else
+      PatchDocument(PatchOp.Add("/properties/linked_providers", Json.arr())).applyPatch(json)
   }
   
   def newResourceId(json: JsObject): UUID = 
@@ -575,7 +574,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             val results = load(ProviderMap(newMetaProvider), identity)
 
             getCurrentProvider(targetid, results) map { newprovider =>
-              
+
               val output = {
                 if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
                 else {
