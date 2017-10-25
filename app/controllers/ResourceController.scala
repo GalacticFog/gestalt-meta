@@ -58,8 +58,7 @@ class ResourceController @Inject()(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
       ResourceIds.Lambda -> transformLambda,
-      ResourceIds.Policy -> transformPolicy /*,
-      ResourceIds.Provider -> transformProvider */
+      ResourceIds.Policy -> transformPolicy
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -222,7 +221,7 @@ class ResourceController @Inject()(
         log.debug(s"Found custom lookup function for Resource. Executing...")
         f(path, request.identity, Option(request.queryString))
       }
-      
+
       resource.fold(NotFoundResult(request.uri)) { res =>
         transforms.get(res.typeId).fold {
           Ok( RenderSingle(res) )

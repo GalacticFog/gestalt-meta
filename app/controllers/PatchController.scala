@@ -198,6 +198,7 @@ class PatchController @Inject()(
       case Some(customHandler) =>
         log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
         customHandler(resource, patch, account, rh)
+      // case None if isSomeSortOfProvider => patchProviderSpecial(resource, patch, account)
       case None =>
         log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
         defaultResourcePatch(resource, patch, account)
@@ -219,7 +220,7 @@ class PatchController @Inject()(
       }
     }
   }
-  
+
   private[controllers] def defaultResourcePatch(
     resource: GestaltResourceInstance,
     patch: PatchDocument,

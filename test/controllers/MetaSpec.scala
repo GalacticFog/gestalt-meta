@@ -272,9 +272,9 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       lps must haveSize(1)
       lps.head must_== Json.obj(
         "name" -> "SELF_LINK",
-        "id" -> providerId.toString,
+        "id" -> providerId.toString /*,
         "typeId" -> ResourceIds.KubeProvider.toString,
-        "type" -> sdk.ResourceName(ResourceIds.KubeProvider)
+        "type" -> sdk.ResourceName(ResourceIds.KubeProvider) */
       )
     }
 
@@ -285,7 +285,12 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
            |    "name": "test-kube-1",
            |    "description": "",
            |    "properties": {
-           |        "config": {},
+           |        "config": {
+           |          "env": {
+           |            "public": {},
+           |            "private": {}
+           |          }
+           |        },
            |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
            |        "environments": [],
            |        "locations": []
@@ -307,7 +312,12 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
            |    "name": "test-kube-2",
            |    "description": "",
            |    "properties": {
-           |        "config": {},
+           |        "config": {
+           |          "env": {
+           |            "public": {},
+           |            "private": {}
+           |          }
+           |        },
            |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
            |        "environments": [],
            |        "linked_providers": [
