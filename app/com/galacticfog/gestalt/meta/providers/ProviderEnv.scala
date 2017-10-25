@@ -17,7 +17,7 @@ case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map
   def flatten() = {
     getmap(this.public) ++ getmap(this.privatev)
   }
-  
+
   def ++(that: ProviderEnv): ProviderEnv = {
     val pub = getmap(this.public) ++ getmap(that.public)
     val prv = getmap(this.privatev) ++ getmap(that.privatev)
@@ -29,6 +29,8 @@ case class ProviderEnv(public: Option[Map[String, String]], privatev: Option[Map
 }
 
 object ProviderEnv {
+
+  def empty: ProviderEnv = ProviderEnv(Some(Map.empty),Some(Map.empty))
   
   def fromResource(r: GestaltResourceInstance): Option[ProviderEnv] = for {
     ps  <- r.properties

@@ -1,5 +1,7 @@
 package controllers
 
+import java.util.UUID
+
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.{ProviderEnv, ProviderMap}
@@ -9,7 +11,7 @@ import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, Json, JsValue}
+import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
@@ -19,6 +21,7 @@ import scala.util.Success
 import com.galacticfog.gestalt.data.EnvironmentType
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 
 
 class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
@@ -166,12 +169,12 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       result must beSuccessfulTry
       
       val lps1 = Js.find(result.get, "/properties/linked_providers")
-      lps1 must beSome
-    }    
+      lps1 must beSome(Json.arr())
+    }
   }
-  
+
   "defaultLinkedProviders" should {
-    
+
     "leave Provider.properties.linked_providers untouched when given in the payload" in new TestApplication {
       val payload = Json.parse {
         s"""
@@ -183,7 +186,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         |    "config":{
         |      "env":{
         |        "public":{
-        | 
+        |
         |         },
         |         "private":{
         |           "GATEWAY_DATABASE_NAME":"brad-gateway-provider2"
@@ -205,30 +208,145 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         |      }
         |    ]
         |  }
-        |}  
+        |}
         """.trim.stripMargin
       }.as[JsObject]
-      
-      val meta = app.injector.instanceOf[Meta]      
-      
+
+      val meta = app.injector.instanceOf[Meta]
+
       /* get array from original payload */
       val before1 = Js.find(payload, "/properties/linked_providers")
       before1 must beSome
       val before2 = Js.parse[Seq[JsValue]](before1.get)
       before2 must beSuccessfulTry
-      
+
       /* get array from 'updated' payload */
       val updated = meta.defaultLinkedProviders(payload)
       val after1 = Js.find(payload, "/properties/linked_providers")
       after1 must beSome
       val after2 = Js.parse[Seq[JsValue]](after1.get)
       after2 must beSuccessfulTry
-      
+
       before2.get.equals(after2.get) === true
     }
-    
+
   }
-  
+
+  "Generic providers" should {
+
+    "be linkable to self" in new TestApplication {
+      val kubeProviderPayload1 = Json.parse(
+        s"""
+           |{
+           |    "name": "test-kube-3",
+           |    "description": "",
+           |    "properties": {
+           |        "config": {},
+           |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
+           |        "environments": [],
+           |        "locations": []
+           |    },
+           |    "resource_state": "Gestalt::Resource::State::Active",
+           |    "resource_type": "${sdk.ResourceName(ResourceIds.KubeProvider)}"
+           |}
+        """.stripMargin
+      )
+
+      val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload1)
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val providerId = (contentAsJson(result) \ "id").as[UUID]
+
+      val request2 = fakeAuthRequest(PATCH, s"/root/providers/${providerId}", testCreds).withBody(
+        PatchDocument(PatchOp.Replace("/properties/linked_providers", Json.arr(
+          Json.obj(
+            "name" -> "SELF_LINK",
+            "id" -> providerId.toString
+          )
+        ))).toJson
+      )
+
+      val Some(result2) = route(request2)
+      status(result2) must equalTo(OK)
+      val lps = (contentAsJson(result2) \ "properties" \ "linked_providers").as[Seq[JsObject]]
+      lps must haveSize(1)
+      lps.head must_== Json.obj(
+        "name" -> "SELF_LINK",
+        "id" -> providerId.toString /*,
+        "typeId" -> ResourceIds.KubeProvider.toString,
+        "type" -> sdk.ResourceName(ResourceIds.KubeProvider) */
+      )
+    }
+
+    "have linked_providers be rendered type info" in new TestApplication {
+      val kubeProviderPayload1 = Json.parse(
+        s"""
+           |{
+           |    "name": "test-kube-1",
+           |    "description": "",
+           |    "properties": {
+           |        "config": {
+           |          "env": {
+           |            "public": {},
+           |            "private": {}
+           |          }
+           |        },
+           |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
+           |        "environments": [],
+           |        "locations": []
+           |    },
+           |    "resource_state": "Gestalt::Resource::State::Active",
+           |    "resource_type": "${sdk.ResourceName(ResourceIds.KubeProvider)}"
+           |}
+        """.stripMargin
+      )
+
+      val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload1)
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val providerId = (contentAsJson(result) \ "id").as[UUID]
+
+      val kubeProviderPayload2 = Json.parse(
+        s"""
+           |{
+           |    "name": "test-kube-2",
+           |    "description": "",
+           |    "properties": {
+           |        "config": {
+           |          "env": {
+           |            "public": {},
+           |            "private": {}
+           |          }
+           |        },
+           |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
+           |        "environments": [],
+           |        "linked_providers": [
+           |          {"id": "${providerId}", "name": "LINK"}
+           |        ],
+           |        "locations": []
+           |    },
+           |    "resource_state": "Gestalt::Resource::State::Active",
+           |    "resource_type": "${sdk.ResourceName(ResourceIds.KubeProvider)}"
+           |}
+        """.stripMargin
+      )
+
+
+      val request2 = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload2)
+      val Some(result2) = route(request2)
+      status(result2) must equalTo(CREATED)
+      val lps = (contentAsJson(result2) \ "properties" \ "linked_providers").as[Seq[JsObject]]
+      lps must haveSize(1)
+      lps.head must_== Json.obj(
+        "name" -> "LINK",
+        "id" -> providerId.toString,
+        "typeId" -> ResourceIds.KubeProvider.toString,
+        "type" -> sdk.ResourceName(ResourceIds.KubeProvider)
+      )
+    }
+
+  }
+
   "Kubernetes providers" should {
 
     "be created with a \"default\" network" in new TestApplication {
