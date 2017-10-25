@@ -54,7 +54,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                       security: Security,
                       securitySync: SecuritySync,
                       lambdaMethods: LambdaMethods,
-                      actionMethods: ActionMethods,
+                      actionMethods: ProviderActionMethods,
                       providerManager: ProviderManager )
 
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
@@ -683,7 +683,8 @@ class Meta @Inject()( messagesApi: MessagesApi,
        */
       log.debug("Creating Action Lambda...")
       log.debug(Json.prettyPrint(Json.toJson(spec.get)))
-      actionMethods.createActionLambda(r.orgId, spec.get, providerEnv, creator) map { lam =>
+      actionMethods.resolveActionImplementation(r.orgId, spec.get, providerEnv, creator) map { lam =>
+
         /*
          * TODO: Create MessageEndpoint.
          */

@@ -23,7 +23,7 @@ import play.api.libs.json.Json
 
 
 @Singleton
-class ActionMethods @Inject()(lambdaMethods: LambdaMethods) {
+class ProviderActionMethods @Inject()(lambdaMethods: LambdaMethods) {
   
   private[this] val log = Logger(this.getClass)
   
@@ -32,35 +32,76 @@ class ActionMethods @Inject()(lambdaMethods: LambdaMethods) {
   
   
   /**
-   * Create a Lambda from a Provider Action Spec
+   * Create or retrieve the implementation resource from a Provider Action Spec.
+   * 
+   * Currently only Lambda implementations are supported, but this will extend to other types
+   * in the near future (i.e. Container-based implementation)
    */
-  def createActionLambda(
+  def resolveActionImplementation(
       org: UUID, 
       spec: ProviderActionSpec, 
       env: GestaltResourceInstance, 
       user: AuthAccountWithCreds): Future[GestaltResourceInstance] = {
     
+    log.info("Attempting to resolve action-implementation...")
+    
     val impl = spec.implementation
+    val implTypeId = typeId(impl.kind.trim) getOrElse {
+      throw new BadRequestException(s"Invalid implementation.kind. Type with name '${impl.kind}' not found.")
+    }
+    
+    log.info(s"Implementation Type: ${impl.kind} - looking up implementation-resource...")
     
     if (impl.id.nonEmpty && impl.spec.nonEmpty) {
       throw new BadRequestException("You must provide only one of 'implementation.id' or 'implementation.spec'")
     } else if (impl.id.isEmpty && impl.spec.isEmpty) {
       throw new BadRequestException("You must provide either 'implementation.id' or 'implementation.spec'")
     } else if (impl.id.nonEmpty) {
-      throw new BadRequestException("Use of pre-existing implementation not currently supported.  Please supply 'implementation.spec'")
-    } else {
-      val lambdaSpec = impl.spec.get
+      /*
+       * Payload contains an implementation ID, meaning there's an existing implementation-resource.
+       * All we do here is look it up and return it if found.
+       */
+      log.info(s"Found existing implementation resource-ID (${impl.id.get}) - resolving implementation-type...")
+
+      val implId = Try(UUID.fromString(impl.id.get.trim)).getOrElse {
+        throw new BadRequestException(s"Invalid implementation.id. Not a valid UUID. Found: ${impl.id.get}")
+      }
       
-      lambdaMethods.createLambdaCommon2(org, env, lambdaSpec, user) map { lam =>
-        log.debug("Successfully created Lambda.")
+      val target = ResourceFactory.findById(implTypeId, implId) getOrElse {
+        throw new BadRequestException(s"Invalid implementation.id. ${impl.kind} with ID '$implId' not found.")
+      }
+      
+      log.info("Implementation resource found. Returning.")
+      
+      Future(target)
+      
+    } else {
+      /*
+       * Payload contains a 'spec' definition, meaning we need to create a new implementation-resource.
+       */
+      val implSpec = impl.spec.get
+      
+      /*
+       * TODO: Use implementation type ID to map a function for creating a new implementation-resource.
+       * This just assumes Lambda for now.
+       */
+      lambdaMethods.createLambdaCommon2(org, env, implSpec, user) map { lam =>
+        log.debug(s"Successfully created new ${impl.kind}.")
         lam
       } recover {
         case scala.util.control.NonFatal(e) => {
-          log.error("Call to create Lambda failed.")
+          log.error(s"Call to create action-resource of type '${impl.kind}' failed.")
           throw e
         }
       }
+      
     }
+  }
+  
+
+  import com.galacticfog.gestalt.data.TypeFactory
+  def typeId(name: String): Option[UUID] = {
+    TypeFactory.findByName(name) map { _.id }
   }
   
   def buildActionMessageEndpoint(lambda: GestaltResourceInstance) = {
