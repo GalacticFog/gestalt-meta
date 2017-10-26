@@ -447,8 +447,17 @@ class Meta @Inject()( messagesApi: MessagesApi,
         )
       }
     )
+
+    val validName = "([a-z0-9]|[a-z0-9][a-z0-9\\-]*[a-z0-9])".r
+
     
     for {
+      withValidatedName <- (payload \ "name").asOpt[String] match {
+        case Some(validName(name)) => Success(payload)
+        case Some(invalidName) => Failure(new BadRequestException(s"provider name is not valid, must conform to '${validName.regex}'"))
+        case None => Failure(new BadRequestException("provider name is missing"))
+      }
+
       withSpecifics <- providerType match {
         case ResourceIds.KubeProvider | ResourceIds.DockerProvider => Try {
           log.debug("Adding default kube networks...")
