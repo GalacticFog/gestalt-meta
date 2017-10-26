@@ -18,10 +18,11 @@ import play.api.inject.bind
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 import scala.util.Success
-import com.galacticfog.gestalt.data.EnvironmentType
+import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
+import org.specs2.execute.Result
 
 
 class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
@@ -79,11 +80,11 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
     
     "normalizeProviderPayload" should {
 
-      "accept payloads with valid environment_types" in new TestApplication {        
+      "accept payloads with valid environment_types" in new TestApplication {
         val payload = Json.parse(
             """
             |{
-            |  "name": "KubernetesProvider-1",
+            |  "name": "kubernetes-provider-1",
             |  "description": "A Kubernetes Cluster.",
             |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
             |  "properties": {
@@ -104,12 +105,12 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         val result = meta.normalizeProviderPayload(payload, uuid(), ResourceIds.KubeProvider, parent.get, None)
         result must beSuccessfulTry
       }
-      
+
       "reject payloads with invalid environment_types" in new TestApplication {
         val payload = Json.parse(
             """
             |{
-            |  "name": "KubernetesProvider-1",
+            |  "name": "kubernetes-provider-1",
             |  "description": "A Kubernetes Cluster.",
             |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
             |  "properties": {
@@ -131,7 +132,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         val result = scala.util.Try {
           meta.normalizeProviderPayload(payload, uuid(), ResourceIds.KubeProvider, parent.get, None)
         }
-        result must beFailedTry.withThrowable[UnprocessableEntityException]
+        result must beFailedTry.withThrowable[UnprocessableEntityException](".*Invalid environment_types.*")
       }
     }
   }
@@ -276,6 +277,37 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         "typeId" -> ResourceIds.KubeProvider.toString,
         "type" -> sdk.ResourceName(ResourceIds.KubeProvider) */
       )
+    }
+
+    "enforce valid provider name" in new TestApplication {
+      val meta = app.injector.instanceOf[Meta]
+
+      val basePayload = Json.parse(s"""
+         |{
+         |    "description": "",
+         |    "properties": {
+         |        "config": {
+         |          "env": {
+         |            "public": {},
+         |            "private": {}
+         |          }
+         |        },
+         |        "data": "RG9uJ3QgcHJvdmlkZXIgbWUsIGJyb1wh",
+         |        "environments": [],
+         |        "locations": []
+         |    },
+         |    "resource_state": "Gestalt::Resource::State::Active",
+         |    "resource_type": "${sdk.ResourceName(ResourceIds.KubeProvider)}"
+         |}""".stripMargin
+      ).as[JsObject]
+
+      val Some(rootOrg) = ResourceFactory.findById(dummyRootOrgId)
+
+      // (cgbaker) something is keeping Fragments.foreach and Result.foreach from working here, I don't know what
+      meta.normalizeProviderPayload(basePayload, uuid, ResourceIds.KubeProvider, rootOrg, None) must beFailedTry.withThrowable[BadRequestException](".*provider name is missing.*")
+      meta.normalizeProviderPayload(basePayload ++ Json.obj("name" -> "hasCaps"), uuid, ResourceIds.KubeProvider, rootOrg, None) must beFailedTry.withThrowable[BadRequestException](".*provider name is not valid.*")
+      meta.normalizeProviderPayload(basePayload ++ Json.obj("name" -> "-starts-with-dash"), uuid, ResourceIds.KubeProvider, rootOrg, None) must beFailedTry.withThrowable[BadRequestException](".*provider name is not valid.*")
+      meta.normalizeProviderPayload(basePayload ++ Json.obj("name" -> "contains.period"), uuid, ResourceIds.KubeProvider, rootOrg, None) must beFailedTry.withThrowable[BadRequestException](".*provider name is not valid.*")
     }
 
     "have linked_providers be rendered type info" in new TestApplication {
