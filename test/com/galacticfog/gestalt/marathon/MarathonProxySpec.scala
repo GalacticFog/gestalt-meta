@@ -402,7 +402,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         health_checks = Seq(
           ContainerSpec.HealthCheck(
             protocol = "tcp",
-            path = "/",
+            path = Some("/"),
             port_index = Some(1)
           )
         )
@@ -430,7 +430,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         health_checks = Seq(
           ContainerSpec.HealthCheck(
             protocol = "tcp",
-            path = "/",
+            path = Some("/"),
             port_index = Some(1)
           )
         )
@@ -458,7 +458,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         health_checks = Seq(
           ContainerSpec.HealthCheck(
             protocol = "tcp",
-            path = "/",
+            path = Some("/"),
             port_index = Some(1)
           )
         )
@@ -489,7 +489,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         health_checks = Seq(
           ContainerSpec.HealthCheck(
             protocol = "tcp",
-            path = "/",
+            path = Some("/"),
             port_index = Some(1)
           )
         )
