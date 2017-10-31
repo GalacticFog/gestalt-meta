@@ -677,6 +677,40 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).name))
       }
 
+      import ContainerSpec.HealthCheck._
+      val livenessProbe = containerSpec.health_checks match {
+        case Nil => None
+        case Seq(hc) => Some(hc match {
+          case ContainerSpec.HealthCheck(protocol, maybePath, _, gracePeriod, _, timeoutSeconds, _, maybePort) if protocol.equalsIgnoreCase(HTTP) | protocol.equalsIgnoreCase(HTTPS) =>
+            skuber.Probe(
+              action = skuber.HTTPGetAction(
+                port = Left(maybePort.orElse[Int](containerSpec.port_mappings.headOption.flatMap(_.container_port)).getOrElse[Int](throw new UnprocessableEntityException(""))),
+                host = "",
+                path = maybePath getOrElse "",
+                schema = protocol.toString.toUpperCase()
+              ),
+              initialDelaySeconds = gracePeriod,
+              timeoutSeconds = timeoutSeconds
+            )
+          case ContainerSpec.HealthCheck(protocol, _, Some(cmd), gracePeriod, _, timeoutSeconds, _, None) if protocol.equalsIgnoreCase(COMMAND) =>
+            skuber.Probe(
+              action = skuber.ExecAction(List("/bin/sh") ++ cmd.split(" ").toList),
+              initialDelaySeconds = gracePeriod,
+              timeoutSeconds = timeoutSeconds
+            )
+          case ContainerSpec.HealthCheck(protocol, _, _, gracePeriod, _, timeoutSeconds, _, maybePort) if protocol.equalsIgnoreCase(TCP) =>
+            skuber.Probe(
+              action = skuber.TCPSocketAction(
+                port = Left(maybePort.orElse[Int](containerSpec.port_mappings.headOption.flatMap(_.container_port)).getOrElse[Int](throw new UnprocessableEntityException("")))
+              ),
+              initialDelaySeconds = gracePeriod,
+              timeoutSeconds = timeoutSeconds
+            )
+          case _ => throw new UnprocessableEntityException("Container health check was not well-formed")
+        })
+        case _ => throw new UnprocessableEntityException("Kubernetes supports at most one health check/liveness probe.")
+      }
+
       /*
        * SecretFileMount mountings have one path that has to be split into:
        *  - the Container's volumeMount.mountPath
@@ -745,7 +779,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
       }
 
-      val container = mkKubernetesContainer(containerSpec, context.provider)
+      val container = mkKubernetesContainer(containerSpec, context.provider).copy(
+        livenessProbe = livenessProbe
+      )
       val affinity = ContainerService.getProviderProperty[Pod.Affinity](context.provider, "affinity")
 
       val baseSpec = Pod.Spec(

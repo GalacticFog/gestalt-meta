@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.api
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
 import play.api.Logger
@@ -10,7 +11,7 @@ import play.api.libs.json._
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 case class ContainerSpec(name: String = "",
                          description: Option[String] = None,
@@ -101,12 +102,36 @@ case object ContainerSpec extends Spec {
                            
   // ours aren't well defined without something similar, like a label
   case class HealthCheck( protocol: String,
-                          path: String,
+                          path: Option[String] = None,
+                          command: Option[String] = None,
                           grace_period_seconds: Int = 300,
                           interval_seconds: Int = 60,
                           timeout_seconds: Int = 10,
                           max_consecutive_failures: Int = 3,
                           port_index: Option[Int] = None )
+
+  case object HealthCheck {
+    sealed trait Protocol
+    case object HTTP      extends Protocol
+    case object HTTPS     extends Protocol
+    case object TCP       extends Protocol
+    case object COMMAND   extends Protocol
+
+    case object Protocol {
+      def all: Seq[Protocol] = Seq(HTTP, HTTPS, TCP, COMMAND)
+      implicit def parse(proto: String): Try[Protocol] = all.find(_.toString.equalsIgnoreCase(proto)) match {
+        case Some(p) =>
+          Success(p)
+        case err =>
+          Failure(new BadRequestException(s"HealthCheck protocol '${err}' invalid, must be one of 'HTTP', 'HTTPS', 'TCP' or 'COMMAND'"))
+      }
+
+      implicit def fromString(proto: String): Protocol = parse(proto).get
+
+      implicit def toString(proto: Protocol): String = proto.toString
+
+    }
+  }
   
   def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
@@ -139,6 +164,7 @@ case object ContainerSpec extends Spec {
         spec.user map ("user" -> Json.toJson(_))
     ).flatten.toMap)
   )
+
 
   def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))

@@ -28,9 +28,11 @@ import skuber.api.client
 import skuber.ext.{Deployment, DeploymentList, Ingress, IngressList, ReplicaSet, ReplicaSetList}
 import skuber.json.format._
 import skuber.json.ext.format._
+import ContainerSpec.HealthCheck._
 
 import scala.concurrent.Future
 import scala.util.Success
+import scala.language.implicitConversions
 
 @RunWith(classOf[JUnitRunner])
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -162,7 +164,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
                                  labels: Map[String,String] = Map.empty,
                                  providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty,
                                  secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
-                                 volumes: Seq[ContainerSpec.Volume] = Seq.empty
+                                 volumes: Seq[ContainerSpec.Volume] = Seq.empty,
+                                 health_checks: Seq[ContainerSpec.HealthCheck] = Seq.empty
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
@@ -214,7 +217,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       accepted_resource_roles = None,
       args = args,
       force_pull = force_pull,
-      health_checks = Seq(),
+      health_checks = health_checks,
       volumes = volumes,
       labels = labels,
       env = Map(),
@@ -238,7 +241,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "network" -> initProps.network.get,
         "labels" -> Json.toJson(labels).toString,
         "volumes" -> Json.toJson(initProps.volumes).toString,
-        "secrets" -> Json.toJson(initProps.secrets).toString
+        "secrets" -> Json.toJson(initProps.secrets).toString,
+        "health_checks" -> Json.toJson(initProps.health_checks).toString
       ) ++ Seq[Option[(String,String)]](
         args map ("args" -> Json.toJson(_).toString),
         cmd  map ("cmd" -> _)
@@ -541,6 +545,90 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("udp", Some(9999), Some(9999), None, Some("debug"), None, None, None, None)
       ))
       there were two(testSetup.kubeClient).close
+    }
+
+    "create containers with HTTP health checks" in new FakeKubeCreate(
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, Some(8080))
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.HTTPGetAction(Left(8080), "", "/youGood", "HTTP"), 30, 5)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "create containers with HTTPS health checks" in new FakeKubeCreate(
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(HTTPS,   path = Some("/youGoodAndSecure"), command = None, 31, 16, 6, 2, Some(8443))
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.HTTPGetAction(Left(8443), "", "/youGoodAndSecure", "HTTPS"), 31, 6)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "throw exception if there are multiple health checks" in new FakeKubeCreate(
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(8888)),
+        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, Some(8080))
+      )
+    ) {
+      await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwAn[UnprocessableEntityException]("Kubernetes supports at most one health check/liveness probe")
+    }
+
+    "create containers with TCP health checks" in new FakeKubeCreate(
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(8888))
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.TCPSocketAction(Left(8888)), 32, 7)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "create containers with COMMAND health checks" in new FakeKubeCreate(
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(COMMAND, path = None,                      command = Some("curl localhost:8888"), 33, 18, 8, 4)
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.ExecAction(List("/bin/sh", "curl", "localhost:8888")), 33, 8)
+          ))
+      ))(any,meq(Deployment.deployDef))
     }
 
     "create and mount persistent volume claims when mounting into container" in new FakeKubeCreate(

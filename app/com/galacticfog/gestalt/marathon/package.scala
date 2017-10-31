@@ -289,7 +289,7 @@ package object marathon {
       force_pull = app.container flatMap (_.docker flatMap (_.forcePullImage)) getOrElse false,
       health_checks = app.healthChecks.map(_.map { check => ContainerSpec.HealthCheck(
         protocol = check.protocol getOrElse AppUpdate.HealthCheck.DefaultProtocol,
-        path = check.path getOrElse AppUpdate.HealthCheck.DefaultPath,
+        path = check.path orElse Some(AppUpdate.HealthCheck.DefaultPath),
         grace_period_seconds = check.gracePeriodSeconds getOrElse AppUpdate.HealthCheck.DefaultGracePeriod.toSeconds.toInt,
         interval_seconds = check.intervalSeconds getOrElse AppUpdate.HealthCheck.DefaultInterval.toSeconds.toInt,
         timeout_seconds = check.timeoutSeconds getOrElse AppUpdate.HealthCheck.DefaultTimeout.toSeconds.toInt,
@@ -396,7 +396,7 @@ package object marathon {
         labels = spec.labels,
         healthChecks = spec.health_checks map { hc => AppUpdate.HealthCheck(
           protocol = Some(hc.protocol),
-          path = Some(hc.path),
+          path = hc.path,
           portIndex = None, // TODO: figure out how to define this
           gracePeriodSeconds = Some(hc.grace_period_seconds),
           intervalSeconds = Some(hc.interval_seconds),
@@ -651,7 +651,7 @@ package object marathon {
       labels = Some(props.labels ++ vhostLabels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
         protocol = Some(hc.protocol),
-        path = Some(hc.path),
+        path = hc.path,
         portIndex = hc.port_index,
         gracePeriodSeconds = Some(hc.grace_period_seconds),
         intervalSeconds = Some(hc.interval_seconds),
