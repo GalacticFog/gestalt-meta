@@ -26,7 +26,11 @@ import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
-  
+import com.galacticfog.gestalt.data.ResourceSelector
+
+
+
+
 @Singleton
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -39,24 +43,22 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     implicit lazy val schemaEntryFormat = Json.format[SchemaEntry]
   }
 
-  
+
   def getAllResourceTypesFqon(fqon: String) = Audited(fqon) { implicit request =>
     
     orgFqon(fqon).fold(NotFoundResult(Errors.ORG_NOT_FOUND(fqon))) { org =>
       val qs = request.queryString
+      
       val tpes = {
-        if (qs.contains("name")) { 
-          val names = qs("name").toSeq
-          names flatMap (TypeFactory.findByName(org.id, _))        
-        } else {
-          TypeFactory.findAll(ResourceIds.ResourceType, org.id)
+        if (qs.contains("name") && qs.contains("type")) {
+          throw new BadRequestException(
+              "'name' and 'type' query params are not supported simultaneously. Supply one or the other")
         }
+        else if (qs.contains("name")) findNamedTypes(qs)
+        else if (qs.contains("type")) findCovariantTypes(qs)
+        else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
       }
-      if (getExpandParam(qs)) {
-        expandOutput(tpes, qs, META_URL)(Output.renderResourceTypeOutput)
-      } else {
-        Ok(Output.renderLinks(tpes))
-      }
+      handleExpansion(tpes, qs, META_URL)
     }
   }  
   
@@ -69,7 +71,31 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
-
+  
+  override def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
+    if (getExpandParam(qs)) {
+      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
+    }
+    else Ok(Output.renderLinks(rs, baseUri))
+  }  
+  
+  private[controllers] def findCovariantTypes(qs: QueryString): Seq[GestaltResourceType] = {
+    if (qs.get("type").isEmpty) List.empty
+    else if (qs("type").size > 1) {
+      throw new BadRequestException("Query parameter 'type' may only be given once. Found multiple.")
+    } else {
+      typeId(qs("type").head).fold {
+        throw new ResourceNotFoundException(s"Type with ID '${qs("type")}' not found.")
+      } { tid =>
+        ResourceSelector.findTypesWithVariance(CoVariant(tid))
+      }    
+    }
+  }
+  
+  private[controllers] def findNamedTypes(qs: QueryString): Seq[GestaltResourceType] = {
+    qs("name").toSeq.flatMap(TypeFactory.findByName(_))     
+  }  
+  
   private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Future {
       createTypeWithProperties(org, typeJson) match {
