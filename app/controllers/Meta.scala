@@ -48,6 +48,7 @@ import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
 
+
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
                       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
@@ -550,6 +551,43 @@ class Meta @Inject()( messagesApi: MessagesApi,
       uid => UUID.fromString(uid.as[String])
     }
 
+//  import com.galacticfog.gestalt.meta.api.sdk.{ResourceStates,ResourceOwnerLink}  
+//  implicit lazy val resourceConfigFormat = Json.format[ResourceConfig]
+//  
+//  case class ResourceConfig(`private`: Option[Boolean], data: JsValue) {
+//    def isPrivate() = `private`.isDefined && `private`.get == true
+//  }
+//
+//  
+//  def handleConfiguration(org: UUID, owner: AuthAccountWithCreds, parentJson: JsValue, parentId: UUID, configPath: String) = {
+//    extractConfig(parentJson).map { c =>
+//      val cfg = newConfigResource(org, owner.account.id, parentId, c)
+//      if (c.isPrivate) {
+//        log.debug("Creating PRIVATE configuration")
+//      } else {
+//        log.debug("Creating Configuration with standard permissions.")
+//      }
+//      CreateWithEntitlements(org, owner, cfg, Some(parentId))
+//    }    
+//  }
+//  
+//  def extractConfig(resourceJson: JsValue): Option[ResourceConfig] = {
+//    Js.find(resourceJson.as[JsObject], "/properties/configuration").map { c =>
+//      Js.parse[ResourceConfig](c).get
+//    }
+//  }
+//  
+//  def newConfigResource(org: UUID, owner: UUID, parent: UUID, config: ResourceConfig) = {
+//    GestaltResourceInstance(
+//        id     = UUID.randomUUID,
+//        typeId = ResourceIds.Configuration,
+//        state  = ResourceState.id(ResourceStates.Active),
+//        orgId  = org,
+//        owner  = ResourceOwnerLink(ResourceIds.User, owner),
+//        name   = "%s.%s".format(parent, "config"),
+//        description = None,
+//      properties = Some(Map("data" -> Json.stringify(config.data))))    
+//  }  
   
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
     implicit request: SecuredRequest[JsValue]) = {
@@ -570,6 +608,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
 
         val identity = user.account.id
+                
         CreateResource(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
@@ -584,7 +623,9 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
             getCurrentProvider(targetid, results) map { newprovider =>
 
-              val output = {
+
+              val output: GestaltResourceInstance = {
+
                 if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
                 else {
                   /*
@@ -603,8 +644,24 @@ class Meta @Inject()( messagesApi: MessagesApi,
                   ProviderMethods.injectProviderActions(newprovider)
                 }
               }
+              
 
+              implicit lazy val griFormat = Json.format[GestaltResourceInstance]
+//              val cm = new controllers.util.ConfigurationMethods()
+//              
+//              val config = cm.extractConfig(payload).map { c =>
+//                val cfg = cm.toResource(org, identity, output.id, c)
+//                if (c.isPrivate) {
+//                  log.debug("Creating PRIVATE configuration")
+//                  CreateWithEntitlements(org, user, cfg, Some(output.id))
+//                } else {
+//                  log.debug("Creating Configuration with standard permissions.")
+//                  CreateWithEntitlements(org, user, cfg, Some(output.id))
+//                }
+//              }
+              
               Created(RenderSingle(output))
+              
             } recover {
               case e => {
                 /*
@@ -699,8 +756,13 @@ class Meta @Inject()( messagesApi: MessagesApi,
          */
         // Here is where we inject the Lambda ID into `action.properties.implementation.id`
         val action = spec.get.toResource(r.orgId, r.id, r.owner, implId = lam.id)
-        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) getOrElse {
-          throw new RuntimeException("Failed creating ProviderAction.")
+//        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) getOrElse {
+//          throw new RuntimeException("Failed creating ProviderAction.")
+//        }
+        log.debug("***ACTION:\n" + action)
+        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) match {
+          case Success(res) => res
+          case Failure(err) => throw new RuntimeException("Failed creating ProviderAction: " + err.getMessage)
         }
       }
     }
