@@ -27,7 +27,8 @@ import java.time.ZonedDateTime
 
 @Singleton
 class SecuritySync @Inject()(
-    security: Security, deleteController: DeleteController) 
+    security: Security, 
+    deleteController: DeleteController) 
       extends SecurityResources with AuthorizationMethods {
   
   private[this] val log = Logger(this.getClass)
@@ -118,7 +119,8 @@ class SecuritySync @Inject()(
       
       // TODO: ignore it if it doesn't exist, for now
       ResourceFactory.findById(org.id) foreach { o =>
-        ResourceFactory.update(o.copy(name = org.name), creator) match {
+        ResourceFactory.update(o.copy(name = org.name), creator, 
+            updateTimestamp = false) match {
           case Failure(err) => throw err
           case Success(org) => {
             log.info(s"Successfully updated Org[${o.id}]")
@@ -145,7 +147,8 @@ class SecuritySync @Inject()(
     for (group <- rs) {
       log.debug(s"Updating Group : ${group.name}")
       ResourceFactory.findById(group.id) foreach { g =>
-        ResourceFactory.update(g.copy(name = group.name, description = group.description), creator)  
+        ResourceFactory.update(g.copy(name = group.name, description = group.description), creator,
+            updateTimestamp = false)  
       }
     }
   }
@@ -204,7 +207,8 @@ class SecuritySync @Inject()(
               Some(userProps(acc).toMap)
             }
           ),
-          creator
+          creator,
+          updateTimestamp = false
         )
       }
     }
