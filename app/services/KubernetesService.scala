@@ -483,7 +483,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val ingressPMs = for {
       pm <- containerSpec.port_mappings
-      vhost <- pm.virtual_hosts.getOrElse(Seq.empty) if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
+      vhost <- pm.virtual_hosts.getOrElse(Seq.empty)
+      if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
     } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
 
     if (ingressPMs.isEmpty) None
@@ -677,14 +678,36 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).name))
       }
 
+      // verify it's a single health check and also resolve port_index
+      val health_check = containerSpec.health_checks match {
+        case Nil     => None
+        case Seq(hc) => hc match {
+          case checkWithPortIndex @ ContainerSpec.HealthCheck(_,_,_,_,_,_,_,Some(portIndex),None) if portIndex < 0 || portIndex >= containerSpec.port_mappings.size =>
+            throw new UnprocessableEntityException(s"HealthCheck port_index '${portIndex}' was out of bounds for the provided port mappings array")
+          case checkWithPortIndex @ ContainerSpec.HealthCheck(_,_,_,_,_,_,_,Some(portIndex),None) =>
+            val pm = containerSpec.port_mappings(portIndex)
+            pm.service_port orElse pm.container_port match {
+              case None =>
+                throw new UnprocessableEntityException(s"HealthCheck port_index '${portIndex}' referred to port mapping without either container_port or service_port.")
+              case Some(indexedPort) =>
+                Some(hc.copy(
+                  port_index = None,
+                  port = Some(indexedPort)
+                ))
+            }
+          case otherCheck =>
+            Some(otherCheck)
+        }
+        case _ => throw new UnprocessableEntityException("Kubernetes supports at most one health check/liveness probe.")
+      }
+
       import ContainerSpec.HealthCheck._
-      val livenessProbe = containerSpec.health_checks match {
-        case Nil => None
-        case Seq(hc) => Some(hc match {
-          case ContainerSpec.HealthCheck(protocol, maybePath, _, gracePeriod, _, timeoutSeconds, _, maybePort) if protocol.equalsIgnoreCase(HTTP) | protocol.equalsIgnoreCase(HTTPS) =>
+      val livenessProbe = health_check map { hc =>
+         hc match {
+          case ContainerSpec.HealthCheck(protocol, maybePath, _, gracePeriod, _, timeoutSeconds, _, None, Some(portNumber)) if protocol.equalsIgnoreCase(HTTP) | protocol.equalsIgnoreCase(HTTPS) =>
             skuber.Probe(
               action = skuber.HTTPGetAction(
-                port = Left(maybePort.orElse[Int](containerSpec.port_mappings.headOption.flatMap(_.container_port)).getOrElse[Int](throw new UnprocessableEntityException(""))),
+                port = Left(portNumber),
                 host = "",
                 path = maybePath getOrElse "",
                 schema = protocol.toString.toUpperCase()
@@ -692,23 +715,22 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               initialDelaySeconds = gracePeriod,
               timeoutSeconds = timeoutSeconds
             )
-          case ContainerSpec.HealthCheck(protocol, _, Some(cmd), gracePeriod, _, timeoutSeconds, _, None) if protocol.equalsIgnoreCase(COMMAND) =>
+          case ContainerSpec.HealthCheck(protocol, _, _, gracePeriod, _, timeoutSeconds, _, None, Some(portNumber)) if protocol.equalsIgnoreCase(TCP) =>
+            skuber.Probe(
+              action = skuber.TCPSocketAction(
+                port = Left(portNumber)
+              ),
+              initialDelaySeconds = gracePeriod,
+              timeoutSeconds = timeoutSeconds
+            )
+          case ContainerSpec.HealthCheck(protocol, _, Some(cmd), gracePeriod, _, timeoutSeconds, _, _, _) if protocol.equalsIgnoreCase(COMMAND) =>
             skuber.Probe(
               action = skuber.ExecAction(List("/bin/sh") ++ cmd.split(" ").toList),
               initialDelaySeconds = gracePeriod,
               timeoutSeconds = timeoutSeconds
             )
-          case ContainerSpec.HealthCheck(protocol, _, _, gracePeriod, _, timeoutSeconds, _, maybePort) if protocol.equalsIgnoreCase(TCP) =>
-            skuber.Probe(
-              action = skuber.TCPSocketAction(
-                port = Left(maybePort.orElse[Int](containerSpec.port_mappings.headOption.flatMap(_.container_port)).getOrElse[Int](throw new UnprocessableEntityException("")))
-              ),
-              initialDelaySeconds = gracePeriod,
-              timeoutSeconds = timeoutSeconds
-            )
           case _ => throw new UnprocessableEntityException("Container health check was not well-formed")
-        })
-        case _ => throw new UnprocessableEntityException("Kubernetes supports at most one health check/liveness probe.")
+        }
       }
 
       /*

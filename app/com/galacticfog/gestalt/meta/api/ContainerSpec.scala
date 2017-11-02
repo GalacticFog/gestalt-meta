@@ -12,6 +12,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 
 import scala.util.{Failure, Success, Try}
+import scala.language.implicitConversions
 
 case class ContainerSpec(name: String = "",
                          description: Option[String] = None,
@@ -108,7 +109,9 @@ case object ContainerSpec extends Spec {
                           interval_seconds: Int = 60,
                           timeout_seconds: Int = 10,
                           max_consecutive_failures: Int = 3,
-                          port_index: Option[Int] = None )
+                          port_index: Option[Int] = None,
+                          port: Option[Int] = None
+                        )
 
   case object HealthCheck {
     sealed trait Protocol

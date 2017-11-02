@@ -547,9 +547,24 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "create containers with HTTP health checks" in new FakeKubeCreate(
+    "throw exception if there are multiple health checks" in new FakeKubeCreate(
       health_checks = Seq(
-        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, Some(8080))
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, None, Some(8888)),
+        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, None, Some(8080))
+      )
+    ) {
+      await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwAn[UnprocessableEntityException]("Kubernetes supports at most one health check/liveness probe")
+    }
+
+    "create containers with HTTP health checks" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(8080), None, None, Some("service"))
+      ),
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, None, Some(8080))
       )
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -566,8 +581,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
 
     "create containers with HTTPS health checks" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(8443), None, None, Some("service"))
+      ),
       health_checks = Seq(
-        ContainerSpec.HealthCheck(HTTPS,   path = Some("/youGoodAndSecure"), command = None, 31, 16, 6, 2, Some(8443))
+        ContainerSpec.HealthCheck(HTTPS,   path = Some("/youGoodAndSecure"), command = None, 31, 16, 6, 2, None, Some(8443))
       )
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -583,21 +601,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any,meq(Deployment.deployDef))
     }
 
-    "throw exception if there are multiple health checks" in new FakeKubeCreate(
-      health_checks = Seq(
-        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(8888)),
-        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, Some(8080))
-      )
-    ) {
-      await(testSetup.kubeService.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )) must throwAn[UnprocessableEntityException]("Kubernetes supports at most one health check/liveness probe")
-    }
-
     "create containers with TCP health checks" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(8888), None, None, Some("service"))
+      ),
       health_checks = Seq(
-        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(8888))
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, None, Some(8888))
       )
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -627,6 +636,86 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           and
           (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
             skuber.Probe(skuber.ExecAction(List("/bin/sh", "curl", "localhost:8888")), 33, 8)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "create containers with HTTP health checks (port_index)" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug")),
+        ContainerSpec.PortMapping("tcp", Some(8080), None, None, Some("web"))
+      ),
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(HTTP,    path = Some("/youGood"),          command = None, 30, 15, 5, 1, Some(1), None)
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.HTTPGetAction(Left(8080), "", "/youGood", "HTTP"), 30, 5)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "create containers with HTTPS health checks (port_index)" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug")),
+        ContainerSpec.PortMapping("tcp", Some(8443), None, None, Some("secureweb"))
+      ),
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(HTTPS,   path = Some("/youGoodAndSecure"), command = None, 31, 16, 6, 2, Some(1), None)
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.HTTPGetAction(Left(8443), "", "/youGoodAndSecure", "HTTPS"), 31, 6)
+          ))
+      ))(any,meq(Deployment.deployDef))
+    }
+
+    "throw exception for invalid port_index in health checks" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(8888), None, None, Some("svc"))
+      ),
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(1), None)
+      )
+    ) {
+      await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwA[UnprocessableEntityException]("index '.*' was out of bounds")
+    }
+
+    "create containers with TCP health checks (port_index)" in new FakeKubeCreate(
+      port_mappings = Seq(
+        ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug")),
+        ContainerSpec.PortMapping("tcp", Some(8888), None, None, Some("svc"))
+      ),
+      health_checks = Seq(
+        ContainerSpec.HealthCheck(TCP,     path = None,                      command = None, 32, 17, 7, 3, Some(1), None)
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
+            skuber.Probe(skuber.TCPSocketAction(Left(8888)), 32, 7)
           ))
       ))(any,meq(Deployment.deployDef))
     }
