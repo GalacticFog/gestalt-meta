@@ -138,6 +138,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         healthChecks = Some(Seq(AppUpdate.HealthCheck(
           protocol = Some("HTTP"),
           path = Some("/"),
+          port = None,
           portIndex = Some(0),
           gracePeriodSeconds = Some(30),
           intervalSeconds = Some(3),
@@ -402,12 +403,78 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         health_checks = Seq(
           ContainerSpec.HealthCheck(
             protocol = "tcp",
-            path = Some("/"),
-            port_index = Some(1)
+            port_index = Some(1),
+            grace_period_seconds = 1,
+            interval_seconds = 2,
+            timeout_seconds = 3,
+            max_consecutive_failures = 4
           )
         )
       ), marathonProviderWithoutNetworks)
-      marApp.healthChecks.get(0).portIndex must beSome(1)
+      marApp.healthChecks.get(0) must_== AppUpdate.HealthCheck(
+        protocol = Some("tcp"),
+        path = None,
+        port = None,
+        portIndex = Some(1),
+        gracePeriodSeconds = Some(1),
+        intervalSeconds = Some(2),
+        timeoutSeconds = Some(3),
+        maxConsecutiveFailures = Some(4)
+      )
+    }
+
+    "handle port for health checks" in {
+      val marApp = marPayload(ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(9999) , name = Some("debug")),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443), name = Some("https"))
+        ),
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "tcp",
+            port = Some(9999),
+            grace_period_seconds = 1,
+            interval_seconds = 2,
+            timeout_seconds = 3,
+            max_consecutive_failures = 4
+          ),
+          ContainerSpec.HealthCheck(
+            protocol = "https",
+            path = Some("/health"),
+            port = Some(443),
+            grace_period_seconds = 5,
+            interval_seconds = 6,
+            timeout_seconds = 7,
+            max_consecutive_failures = 8
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.healthChecks.get(0) must_== AppUpdate.HealthCheck(
+        protocol = Some("tcp"),
+        path = None,
+        portIndex = None,
+        port = Some(9999),
+        gracePeriodSeconds = Some(1),
+        intervalSeconds = Some(2),
+        timeoutSeconds = Some(3),
+        maxConsecutiveFailures = Some(4)
+      )
+      marApp.healthChecks.get(1) must_== AppUpdate.HealthCheck(
+        protocol = Some("https"),
+        path = Some("/health"),
+        port = Some(443),
+        portIndex = None,
+        gracePeriodSeconds = Some(5),
+        intervalSeconds = Some(6),
+        timeoutSeconds = Some(7),
+        maxConsecutiveFailures = Some(8)
+      )
     }
 
     "neglect haproxy arguments if there are no virtual hosts" in {
