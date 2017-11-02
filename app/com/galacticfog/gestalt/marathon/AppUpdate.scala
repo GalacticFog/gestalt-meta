@@ -26,6 +26,7 @@ case object AppUpdate {
   case class HealthCheck(protocol: Option[String],
                          path: Option[String],
                          portIndex: Option[Int],
+                         port: Option[Int],
                          gracePeriodSeconds: Option[Int],
                          intervalSeconds: Option[Int],
                          timeoutSeconds: Option[Int],
