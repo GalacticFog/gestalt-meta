@@ -412,7 +412,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         )
       ), marathonProviderWithoutNetworks)
       marApp.healthChecks.get(0) must_== AppUpdate.HealthCheck(
-        protocol = Some("tcp"),
+        protocol = Some("TCP"),
         path = None,
         port = None,
         portIndex = Some(1),
@@ -456,7 +456,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         )
       ), marathonProviderWithoutNetworks)
       marApp.healthChecks.get(0) must_== AppUpdate.HealthCheck(
-        protocol = Some("tcp"),
+        protocol = Some("TCP"),
         path = None,
         portIndex = None,
         port = Some(9999),
@@ -466,7 +466,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         maxConsecutiveFailures = Some(4)
       )
       marApp.healthChecks.get(1) must_== AppUpdate.HealthCheck(
-        protocol = Some("https"),
+        protocol = Some("HTTPS"),
         path = Some("/health"),
         port = Some(443),
         portIndex = None,
@@ -474,6 +474,41 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         intervalSeconds = Some(6),
         timeoutSeconds = Some(7),
         maxConsecutiveFailures = Some(8)
+      )
+    }
+
+    "handle command-style health checks" in {
+      val marApp = marPayload(ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(),
+        network = Some("HOST"),
+        num_instances = 1,
+        health_checks = Seq(
+          ContainerSpec.HealthCheck(
+            protocol = "command",
+            command = Some("curl -f -X GET http://$HOST:$PORT0/health"),
+            grace_period_seconds = 1,
+            interval_seconds = 2,
+            timeout_seconds = 3,
+            max_consecutive_failures = 4
+          )
+        )
+      ), marathonProviderWithoutNetworks)
+      marApp.healthChecks.get(0) must_== AppUpdate.HealthCheck(
+        protocol = Some("COMMAND"),
+        path = None,
+        command = Some(Json.obj(
+          "value" -> "curl -f -X GET http://$HOST:$PORT0/health"
+        )),
+        portIndex = None,
+        port = None,
+        gracePeriodSeconds = Some(1),
+        intervalSeconds = Some(2),
+        timeoutSeconds = Some(3),
+        maxConsecutiveFailures = Some(4)
       )
     }
 
@@ -496,7 +531,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         num_instances = 1,
         health_checks = Seq(
           ContainerSpec.HealthCheck(
-            protocol = "tcp",
+            protocol = "TCP",
             path = Some("/"),
             port_index = Some(1)
           )
