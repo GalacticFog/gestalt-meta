@@ -47,7 +47,7 @@ case class KubeVolume(v: ContainerSpec.Volume) {
   }
   
   private def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
-    if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mount'")
+    if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mode'")
     else {
       val m = mode flatMap { s =>
         PersistentVolume.AccessMode.values find { _.toString.equalsIgnoreCase(s) }
