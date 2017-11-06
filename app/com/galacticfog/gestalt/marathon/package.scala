@@ -651,10 +651,11 @@ package object marathon {
       portDefinitions = portDefs,
       labels = Some(props.labels ++ vhostLabels),
       healthChecks = Some(props.health_checks map { hc => AppUpdate.HealthCheck(
-        protocol = Some(hc.protocol),
+        protocol = Some(hc.protocol.toUpperCase),
         path = hc.path,
         port = hc.port,
         portIndex = hc.port_index,
+        command = hc.command map {c => Json.obj("value" -> c) },
         gracePeriodSeconds = Some(hc.grace_period_seconds),
         intervalSeconds = Some(hc.interval_seconds),
         timeoutSeconds = Some(hc.timeout_seconds),
