@@ -720,6 +720,44 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any,meq(Deployment.deployDef))
     }
 
+    "create and mount hostPath volumes" in new FakeKubeCreate(
+      volumes= Seq(
+        ContainerSpec.Volume("/mnt/someContainerPath1", Some("/mnt/containers/someHostPath1"), None, Some("ReadOnly"),  Some("my-volume-1")),
+        ContainerSpec.Volume("/mnt/someContainerPath2", Some("/mnt/containers/someHostPath2"), None, Some("ReadWrite"), Some("my-volume-2"))
+      )
+    ) {
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+      testSetup.kubeClient.create(any)(any,meq(PersistentVolumeClaim.pvcDef)) returns Future.successful(mock[skuber.PersistentVolumeClaim])
+
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef))
+      val createdDepl = deploymentCaptor.getValue
+
+      val Seq(vol1,vol2) = createdDepl.getPodSpec.get.volumes
+      vol1.name   must_== "my-volume-1"
+      vol1.source must_== skuber.Volume.HostPath("/mnt/containers/someHostPath1")
+      vol2.name   must_== "my-volume-2"
+      vol2.source must_== skuber.Volume.HostPath("/mnt/containers/someHostPath2")
+
+      createdDepl.getPodSpec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(
+          vol1.name,
+          mountPath = "/mnt/someContainerPath1",
+          readOnly = true
+        ),
+        skuber.Volume.Mount(
+          vol2.name,
+          mountPath = "/mnt/someContainerPath2",
+          readOnly = false
+        )
+      ))
+    }
+
     "create and mount persistent volume claims when mounting into container" in new FakeKubeCreate(
       volumes = Seq(
         ContainerSpec.Volume("/mnt/path1", None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))

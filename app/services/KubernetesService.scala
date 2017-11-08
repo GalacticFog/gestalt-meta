@@ -554,17 +554,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def reconcileVolumeClaims(kube: RequestContext, namespace: String, volumes: Seq[ContainerSpec.Volume]): Future[Seq[PersistentVolumeClaim]] = {
     for {
       pvcs <- kube.list[PersistentVolumeClaimList]
-      out <- Future.sequence(volumes map { v =>
-        pvcs.items.find(_.name.equalsIgnoreCase(v.name.getOrElse(""))) match {
+      volumeClaims = volumes flatMap {v => KubeVolume(v).asVolumeClaim(namespace)}
+      out <- Future.sequence(volumeClaims map { pvc =>
+        pvcs.items.find(_.name.equalsIgnoreCase(pvc.name)) match {
           case Some(matchingPvc) =>
             log.debug(s"Found existing volume claim with name '${matchingPvc.name}'")
             Future.successful(matchingPvc)
           case None =>
-            log.info(s"Creating new Persistent Volume Claim '${v.name}'")
-            val pvc = KubeVolume(v).asVolumeClaim(Some(namespace))
+            log.info(s"Creating new Persistent Volume Claim '${pvc.name}'")
             kube.create[PersistentVolumeClaim](pvc) recoverWith {
               case e: K8SException =>
-                unprocessable(s"Failed creating PVC for volume '${v.name}': " + e.status.message)
+                unprocessable(s"Failed creating PVC for volume '${pvc.name}': " + e.status.message)
             }
         }
       })
@@ -815,12 +815,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
-      val pvcVolumes = volMounts.map {
-        mnt => Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name, mnt.readOnly))
-      }
+      val storageVolumes = containerSpec.volumes map {v => KubeVolume(v).asVolume()}
 
-
-      val specWithVols = (pvcVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
+      val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
     }
 
