@@ -149,6 +149,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       properties = Some(Map(
         "resource"     -> "/original/path",
         "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+        "methods" -> Json.toJson(Seq("GET")).toString,
         "implementation_type" -> "lambda",
         "implementation_id" -> testLambda.id.toString,
         "provider" -> Json.obj(
@@ -445,6 +446,27 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       routePutEndpoint.timeCalled must_== 1
       (putBody \ "apiId").as[String] must_== testApi.id.toString
       (putBody \ "methods").as[JsValue] must_== newMethods
+      Json.parse(updatedEndpoint.properties.get("methods")) must_== newMethods
+    }
+
+    "deep patch against api-gateway provider to modify methods" in new TestApplication {
+      val newMethods = Json.arr(
+        "GET", "PUT"
+      )
+
+      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Add("/properties/methods/1","PUT")
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "methods").asOpt[JsValue] must beSome(newMethods)
       Json.parse(updatedEndpoint.properties.get("methods")) must_== newMethods
     }
 
