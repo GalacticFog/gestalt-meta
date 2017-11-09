@@ -90,6 +90,9 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       "code_type" -> "inline",
       "timeout" -> "30",
       "handler" -> "blah;blah",
+      "headers" -> Json.obj(
+        "Existing-Header" -> "ExistingHeaderValue"
+      ).toString,
       "runtime" -> "custom",
       "periodic_info" -> "{}",
       "provider" -> Json.obj(
@@ -108,6 +111,56 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
   }
 
   "LambdaMethods" should {
+
+    "deep patch against headers should propagate to laser" in new TestApplication {
+      mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
+        val mockResp = mock[WSResponse]
+        mockResp.status returns 200
+        mockResp.json returns Json.toJson(LaserLambda(
+          Some(testLambda.id.toString),
+          None,
+          false,
+          None,
+          LaserArtifactDescription(None,"runtime","handler",0,0.0)
+        ))
+        mockResp
+      })
+      mockJsonClient.put(meq(s"/lambdas/${testLambda.id}"), any, any, any)(any) returns Future.successful({
+        // LambdaMethods doesn't actually care about the response as long as it is a 200
+        val mockResp = mock[WSResponse]
+        mockResp.status returns 200
+      })
+
+      val updatedLambda = await(lambdaMethods.patchLambdaHandler(
+        r = testLambda,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/headers/Accept","text/plain"),
+          PatchOp.Add("/properties/headers/NewHeader","NewHeaderValue"),
+          PatchOp.Remove("/properties/headers/RemoveHeader")
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
+      ))
+
+      Json.parse(updatedLambda.properties.get("headers")) must_== Json.obj(
+        "Accept" -> "text/plain",
+        "ExistingHeader" -> "ExistingHeaderValue",
+        "NewHeader" -> "NewHeaderValue"
+      )
+
+      there was one(mockJsonClient).put(
+        uri = meq(s"/lambdas/${testLambda.id}"),
+        payload = argThat((js: Option[JsValue]) => {
+          js.get.as[LaserLambda].artifactDescription.headers must_== Map(
+            "Accept" -> "text/plain",
+            "ExistingHeader" -> "ExistingHeaderValue",
+            "NewHeader" -> "NewHeaderValue"
+          )
+        }),
+        hdrs = any,
+        timeout = any
+      )(any)
+    }
 
     "patch against url lambda provider" in new TestApplication {
       mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
