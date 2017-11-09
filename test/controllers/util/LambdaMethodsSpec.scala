@@ -91,7 +91,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       "timeout" -> "30",
       "handler" -> "blah;blah",
       "headers" -> Json.obj(
-        "Existing-Header" -> "ExistingHeaderValue"
+        "Existing-Header" -> "ExistingHeaderValue",
+        "Remove-Header" -> "Nobody Cares What's Here"
       ).toString,
       "runtime" -> "custom",
       "periodic_info" -> "{}",
@@ -135,8 +136,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         r = testLambda,
         patch = PatchDocument(
           PatchOp.Replace("/properties/headers/Accept","text/plain"),
-          PatchOp.Add("/properties/headers/NewHeader","NewHeaderValue"),
-          PatchOp.Remove("/properties/headers/RemoveHeader")
+          PatchOp.Add("/properties/headers/New-Header","NewHeaderValue"),
+          PatchOp.Remove("/properties/headers/Remove-Header")
         ),
         user = user,
         request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
@@ -144,8 +145,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
       Json.parse(updatedLambda.properties.get("headers")) must_== Json.obj(
         "Accept" -> "text/plain",
-        "ExistingHeader" -> "ExistingHeaderValue",
-        "NewHeader" -> "NewHeaderValue"
+        "Existing-Header" -> "ExistingHeaderValue",
+        "New-Header" -> "NewHeaderValue"
       )
 
       there was one(mockJsonClient).put(
@@ -153,8 +154,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         payload = argThat((js: Option[JsValue]) => {
           js.get.as[LaserLambda].artifactDescription.headers must_== Map(
             "Accept" -> "text/plain",
-            "ExistingHeader" -> "ExistingHeaderValue",
-            "NewHeader" -> "NewHeaderValue"
+            "Existing-Header" -> "ExistingHeaderValue",
+            "New-Header" -> "NewHeaderValue"
           )
         }),
         hdrs = any,
@@ -213,29 +214,32 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
       there was one(mockJsonClient).put(
         uri = meq(s"/lambdas/${testLambda.id}"),
-        payload = argThat((js: Option[JsValue]) => {
-          js.get.as[LaserLambda] must_== LaserLambda(
-            id = Some(testLambda.id.toString),
-            eventFilter = None,
-            public = true,
-            provider = None,
-            artifactDescription = LaserArtifactDescription(
-              cpus = 2.0,
-              memorySize = 2048,
-              timeoutSecs = 300,
-              artifactUri = Some("http://code.com/hello.js"),
-              code = None,
-              runtime = "newruntime",
-              handler = "hello.js;hello",
-              description = None,
-              compressed = true,
-              publish = false,
-              role = "none",
-              periodicInfo = Some(Json.obj("new" -> "periodicity")),
-              headers = Map.empty
+        payload = argThat((((_:Option[JsValue]).get.as[LaserLambda]) ^^ (
+            (((_:LaserLambda).id) ^^ beSome(testLambda.id.toString))
+              and
+              (((_:LaserLambda).public) ^^ beTrue)
+              and
+              (((_:LaserLambda).artifactDescription) ^^ be_==(LaserArtifactDescription(
+                cpus = 2.0,
+                memorySize = 2048,
+                timeoutSecs = 300,
+                artifactUri = Some("http://code.com/hello.js"),
+                code = None,
+                runtime = "newruntime",
+                handler = "hello.js;hello",
+                description = None,
+                compressed = true,
+                publish = false,
+                role = "none",
+                periodicInfo = Some(Json.obj("new" -> "periodicity")),
+                headers = Map(
+                  "Existing-Header" -> "ExistingHeaderValue",
+                  "Remove-Header" -> "Nobody Cares What's Here"
+                )
+              )))
             )
           )
-        }),
+        ),
         hdrs = any,
         timeout = any
       )(any)
@@ -262,57 +266,17 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       val updatedLambda = await(lambdaMethods.patchLambdaHandler(
         r = testLambda,
         patch = PatchDocument(
-          PatchOp.Replace("/properties/public",        true),
-          PatchOp.Replace("/properties/code",          "ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="),
-          PatchOp.Replace("/properties/handler",       "hello"),
-          PatchOp.Replace("/properties/timeout",       300),
-          PatchOp.Replace("/properties/runtime",       "newruntime"),
-          PatchOp.Replace("/properties/cpus",          2.0),
-          PatchOp.Replace("/properties/memory",        2048),
-          PatchOp.Replace("/properties/code_type",     "inline"),
-          PatchOp.Remove("/properties/periodic_info"),
-          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
+          PatchOp.Remove("/properties/periodic_info")
         ),
         user = user,
         request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
       ))
 
-      updatedLambda.properties.get("public") must_== "true"
-      updatedLambda.properties.get("code") must_== "ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="
-      updatedLambda.properties.get("handler") must_== "hello"
-      updatedLambda.properties.get("timeout") must_== "300"
-      updatedLambda.properties.get("runtime") must_== "newruntime"
-      updatedLambda.properties.get("cpus").toDouble must_== 2.0
-      updatedLambda.properties.get("memory") must_== "2048"
-      updatedLambda.properties.get("code_type") must_== "inline"
       updatedLambda.properties.get.get("periodic_info") must beNone
-      updatedLambda.properties.get("env") must_== Json.obj("new" -> "env").toString
 
       there was one(mockJsonClient).put(
         uri = meq(s"/lambdas/${testLambda.id}"),
-        payload = argThat((js: Option[JsValue]) => {
-          js.get.as[LaserLambda] must_== LaserLambda(
-            id = Some(testLambda.id.toString),
-            eventFilter = None,
-            public = true,
-            provider = None,
-            artifactDescription = LaserArtifactDescription(
-              cpus = 2.0,
-              memorySize = 2048,
-              timeoutSecs = 300,
-              artifactUri = None,
-              code = Some("ZnVuY3Rpb24gaGVsbG8oKSB7cmV0dXJuICJoZWxsbyI7fQ=="),
-              runtime = "newruntime",
-              handler = "hello",
-              description = None,
-              compressed = false,
-              publish = false,
-              role = "none",
-              periodicInfo = None,
-              headers = Map.empty
-            )
-          )
-        }),
+        payload = (((_:Option[JsValue]).get.as[LaserLambda].artifactDescription.periodicInfo) ^^ beNone),
         hdrs = any,
         timeout = any
       )(any)
