@@ -738,20 +738,19 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef))
       val createdDepl = deploymentCaptor.getValue
 
-      val Seq(vol1,vol2) = createdDepl.getPodSpec.get.volumes
-      vol1.name   must_== "my-volume-1"
-      vol1.source must_== skuber.Volume.HostPath("/mnt/containers/someHostPath1")
-      vol2.name   must_== "my-volume-2"
-      vol2.source must_== skuber.Volume.HostPath("/mnt/containers/someHostPath2")
+      createdDepl.getPodSpec.get.volumes must containTheSameElementsAs(Seq(
+        skuber.Volume("my-volume-1", skuber.Volume.HostPath("/mnt/containers/someHostPath1")),
+        skuber.Volume("my-volume-2", skuber.Volume.HostPath("/mnt/containers/someHostPath2"))
+      ))
 
       createdDepl.getPodSpec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
         skuber.Volume.Mount(
-          vol1.name,
+          "my-volume-1",
           mountPath = "/mnt/someContainerPath1",
           readOnly = true
         ),
         skuber.Volume.Mount(
-          vol2.name,
+          "my-volume-2",
           mountPath = "/mnt/someContainerPath2",
           readOnly = false
         )
