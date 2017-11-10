@@ -268,8 +268,13 @@ class ProviderManager @Inject() (
     log.info(s"Updating container resource for provider '${pm.id}' in Meta...")
     val metaUpdate = for {
       new_props   <- Try(CaasTransform(pm.org, account, payload).resource.properties.get)
+      external_id <- Try(existing.properties.flatMap(_.get("external_id")).getOrElse {
+        throw new RuntimeException("could not determine external_id property for container resource")
+      })
       tgt         =  existing.copy(
-        properties = Some(new_props)
+        properties = Some(new_props ++ Map(
+          "external_id" -> external_id
+        ))
       )
       resource    <- ResourceFactory.update(tgt, account.account.id)
       serviceImpl <- getProviderImpl(caas.typeId)
