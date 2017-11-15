@@ -256,23 +256,32 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * if empty, delete any existing service
      * if not empty, update or create
      */
-    val (maybeNewSvc, newPMs) = mkServiceSpec(containerId, spec, namespace, context)
-    fExistingSvc flatMap { maybeExistingSvc =>
-      (maybeExistingSvc, maybeNewSvc) match {
-        case (None, None)            => Future.successful(())
-        case (Some(_), None)         => kube.delete[Service](spec.name)
-        case (None, Some(create))    => kube.create[Service](create)
-        case (Some(_), Some(update)) => kube.update[Service](update)
+    val maybeNewSvc = mkServiceSpec(containerId, spec, namespace, context)
+    for {
+      maybeExistingSvc <- fExistingSvc
+      maybeUpdatedSvc <- (maybeExistingSvc, maybeNewSvc) match {
+        case (None, None)            => Future.successful(None)
+        case (Some(_), None)         => kube.delete[Service](spec.name).map(_ => None)
+        case (None, Some(create))    => kube.create[Service](create) map Some.apply
+        case (Some(cur), Some(upd8)) => kube.update[Service](
+          cur.spec.map(_.clusterIP).foldLeft[skuber.Service] (
+            upd8.withResourceVersion(cur.resourceVersion)
+          ) { (svc,clusterIP) => svc.withClusterIP(clusterIP) }
+        ) map Some.apply
       }
-    } map (_ => newPMs)
+      updatedPMs = updateContainerSpecPortMappings(spec, namespace, maybeUpdatedSvc)
+    } yield updatedPMs
   }
 
   def createService(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
-    val (maybeService,newPMs) = mkServiceSpec(containerId, spec, namespace, context)
-    maybeService match {
-      case Some(svc) => kube.create[Service](svc) map { _ => newPMs }
-      case      None => Future.successful(newPMs)
-    }
+    val maybeService = mkServiceSpec(containerId, spec, namespace, context)
+    for {
+      maybeCreatedSvc <- maybeService match {
+        case Some(svc) => kube.create[Service](svc) map Some.apply
+        case      None => Future.successful(None)
+      }
+      updatedPMs = updateContainerSpecPortMappings(spec, namespace, maybeCreatedSvc)
+    } yield updatedPMs
   }
 
   /**
@@ -507,11 +516,32 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     })
   }
 
-  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): (Option[Service],Seq[PortMapping]) = {
+  private[services] def updateContainerSpecPortMappings(containerSpec: ContainerSpec, namespace: String, maybeSvc: Option[skuber.Service]): Seq[PortMapping] = {
+    maybeSvc match {
+      case None =>
+        containerSpec.port_mappings.map(_.copy( service_address = None ))
+      case Some(svc) =>
+        val svchost = s"${svc.name}.${namespace}.svc.cluster.local"
+        val svcPorts = svc.spec.map(_.ports) getOrElse List.empty
+        containerSpec.port_mappings.map {
+          case pm if pm.expose_endpoint.contains(true) => pm.copy(
+            service_port = svcPorts.find(p => pm.name.contains(p.name) || pm.container_port.contains(p.port)).map(_.nodePort),
+            service_address = Some(ContainerSpec.ServiceAddress(
+              host = svchost,
+              port = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")),
+              protocol = Some(pm.protocol)
+            ))
+          )
+          case pm => pm.copy(service_address = None)
+        }
+    }
+  }
+
+  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): Option[Service] = {
     val svcName = containerSpec.name
     val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true))
     if (exposedPorts.isEmpty) {
-      (None, containerSpec.port_mappings.map(_.copy(service_address = None)))
+      None
     } else {
       val srv = exposedPorts.foldLeft[Service](
         Service(metadata = ObjectMeta(name = svcName, namespace = namespace))
@@ -530,23 +560,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         case (svc, pm) => svc.exposeOnPort(Service.Port(
           name = pm.name.getOrElse(""),
           protocol = pm.protocol,
-          port = pm.service_port.orElse(pm.container_port).getOrElse(unprocessable("port mapping must contain container_port ")),
-          targetPort = Some(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))),
-          nodePort = pm.host_port.getOrElse(0)
+          port = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")),
+          targetPort = Some(Left(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")))),
+          nodePort = pm.service_port.getOrElse(0)
         ))
       }
-      val svchost = s"${svcName}.${namespace}.svc.cluster.local"
-      val newPMs = containerSpec.port_mappings.map {
-        case pm if pm.expose_endpoint.contains(true) => pm.copy(
-          service_address = Some(ContainerSpec.ServiceAddress(
-            host = svchost,
-            port = pm.service_port.orElse(pm.container_port).get,
-            protocol = Some(pm.protocol)
-          ))
-        )
-        case pm => pm.copy(service_address = None)
-      }
-      (Some(srv),newPMs)
+      Some(srv)
     }
   }
 
@@ -897,25 +916,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
     else if (numRunning == numTarget) "RUNNING"
     else "UNKNOWN"
-    val specImage = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.image).getOrElse("")
+    val specImage = depl.getPodSpec.flatMap(_.containers.headOption).map(_.image).getOrElse("")
     val age = depl.metadata.creationTimestamp.map(
       zdt => new DateTime(
         zdt.toInstant().toEpochMilli(),
         DateTimeZone.forTimeZone(TimeZone.getTimeZone(zdt.getZone())))
     )
     val hostPorts = (for {
-      svc <- service
-      svcSpec <- svc.spec
-      svcPorts = svcSpec.ports
-      dspec <- depl.spec
-      dtemp <- dspec.template
-      pspec <- dtemp.spec
-      cspec <- pspec.containers.headOption
-      hostPorts = cspec.ports map {
-        cp => svcPorts.find {
-          sp => sp.name == cp.name || sp.targetPort.flatMap(_.left.toOption).contains(cp.containerPort)
-        } map {_.nodePort} getOrElse 0
-      }
+      podspec <- depl.getPodSpec
+      container <- podspec.containers.headOption
+      hostPorts = container.ports.flatMap(_.hostPort)
     } yield hostPorts) getOrElse Seq.empty
     val resources = depl.spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).flatMap(_.resources)
     val taskStats = pods.map {
