@@ -5,8 +5,11 @@ import com.galacticfog.gestalt.data.models._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
+
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import play.api.Logger
+
+import scala.util.Try
 
 package object laser {
 
@@ -78,21 +81,25 @@ package object laser {
 
   /*
    * TODO: This may translate into multiple LaserLambdas
+   *       What does that mean? ^^^^
    */
-  def toLaserLambda(lambda: GestaltResourceInput, providerId: String): LaserLambda = {
+  def toLaserLambda(lambda: ResourceLike, providerId: String): LaserLambda = {
+
+    def maybeToBool(s: String): Option[Boolean] = Try{s.toBoolean}.toOption
+    def maybeToJson(s: String): Option[JsValue] = Try{Json.parse(s)}.toOption
 
     log.debug("toLaserLambda(...)")
 
     val props = lambda.properties.get
 
-    val handler = props("handler").as[String]
-    val isPublic = if (props.contains("public")) props("public").as[Boolean] else false
-    val compressed = if (props.contains("compressed")) props("compressed").as[Boolean] else false
-    val artifactUri = if (props.contains("package_url")) Some(props("package_url").as[String]) else None
-    val periodic = if( props.contains("periodic_info" )) props("periodic_info").asOpt[JsValue] else None
+    val handler = props("handler")
+    val isPublic = props.get("public").flatMap(maybeToBool) getOrElse false
+    val compressed = props.get("compressed").flatMap(maybeToBool) getOrElse false
+    val artifactUri = props.get("package_url")
+    val periodic = props.get("periodic_info").flatMap(maybeToJson)
 
     LaserLambda(
-      id          = Some(lambda.id.get.toString),
+      id          = Some(lambda.id.toString),
       eventFilter = Some(UUID.randomUUID.toString),
       public      = isPublic,
       provider    = Some(Json.obj(
@@ -102,18 +109,18 @@ package object laser {
       )),
       LaserArtifactDescription(
         artifactUri = artifactUri,
-        description = if (props.contains("description")) props("description").asOpt[String] else None,
+        description = props.get("description"),
         handler     = handler,
-        memorySize  = props("memory").as[Int],
-        cpus        = props("cpus").as[Double],
+        memorySize  = props("memory").toInt,
+        cpus        = props("cpus").toDouble,
         publish     = false,     // <- currently not used
         role        = "none",    // <- currently not used
-        runtime     = props("runtime").as[String],
-        timeoutSecs = props("timeout").as[Int],
+        runtime     = props("runtime"),
+        timeoutSecs = props("timeout").toInt,
         compressed  = compressed,
         periodicInfo= periodic,
-        code        = if (props.contains("code")) props("code").asOpt[String] else None,
-        headers     = if( props.contains("headers")) props("headers").as[Map[String,String]] else Map.empty
+        code        = props.get("code"),
+        headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty
       ))
   }
 

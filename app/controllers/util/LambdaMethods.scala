@@ -36,27 +36,6 @@ class LambdaMethods @Inject()( ws: WSClient,
   
   override val log = Logger(this.getClass)
 
-  /**
-   * Update a field on a LaserLambda. Currently this is limited to what is modifiable in the UI.
-   */
-  private[controllers] def updateLambdaData(lambda: LaserLambda, fieldName: String, value: JsValue) = {
-    val artifact = lambda.artifactDescription
-    
-    fieldName match {
-      case "public"   => lambda.copy(public = value.as[Boolean])
-      case "cpus"     => lambda.copy(artifactDescription = artifact.copy(cpus = value.as[Double]))
-      case "memory"   => lambda.copy(artifactDescription = artifact.copy(memorySize = value.as[Int]))
-      case "timeout"  => lambda.copy(artifactDescription = artifact.copy(timeoutSecs = value.as[Int]))
-      case "package_url"  => lambda.copy(artifactDescription = artifact.copy(artifactUri = Option(value.as[String])))
-      case "code" => lambda.copy(artifactDescription = artifact.copy(code = Option(value.as[String])))
-      case "runtime" => lambda.copy(artifactDescription = artifact.copy(runtime = value.as[String]))
-      case "compressed" => lambda.copy(artifactDescription = artifact.copy(compressed = value.as[Boolean]))
-      case "handler" => lambda.copy(artifactDescription = artifact.copy(handler = value.as[String]))
-      case "periodic_info" => lambda.copy(artifactDescription = artifact.copy(periodicInfo = value.asOpt[JsObject]))
-      case _ => lambda
-    }
-  }
-
   private[controllers] def getLambdaProvider(res: ResourceLike): GestaltResourceInstance = {
     (for {
       ps  <- res.properties
@@ -93,27 +72,14 @@ class LambdaMethods @Inject()( ws: WSClient,
                           user: AuthAccountWithCreds,
                           request: RequestHeader ): Future[GestaltResourceInstance] = {
 
-    def replace(data: Seq[(String,JsValue)], lm: LaserLambda): LaserLambda = {
-      data.foldLeft[LaserLambda](lm)({
-        case (l, (fieldName,value)) => updateLambdaData(l, fieldName, value)
-      })
-    }
 
     log.debug("Finding lambda in backend system...")
     val provider = getLambdaProvider(r)
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
-    // Strip path to last component to get field name.
-    val ops: Seq[(String,JsValue)] = patch.ops collect {
-      case PatchOp("add"|"replace",path,Some(value)) =>
-        val fieldName = path.drop(path.lastIndexOf("/")+1)
-        (fieldName -> value)
-      case PatchOp("remove","/properties/periodic_info",None) =>
-        ("periodic_info" -> JsNull)
-    }
-
     for {
       // Get lambda from gestalt-lambda
+      updatedLambda <- Future.fromTry{PatchInstance.applyPatch(r, patch).map(_.asInstanceOf[GestaltResourceInstance])}
       getReq <- client.get(s"/lambdas/${r.id}") flatMap { response => response.status match {
         case 200 => Future.successful(response)
         case 404 => Future.failed(new ResourceNotFoundException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda"))
@@ -126,8 +92,7 @@ class LambdaMethods @Inject()( ws: WSClient,
         ))
       }
       _ = log.debug("Lambda found in lambda provider.")
-      patchedLaserLambda = replace(ops, gotLaserLambda)
-      _ = log.debug("Patched lambda resource before PUT: " + Json.toJson(patchedLaserLambda))
+      patchedLaserLambda = toLaserLambda(updatedLambda, provider.id.toString)
       updatedLaserLambdaReq = client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
       _ <- updatedLaserLambdaReq flatMap { response => response.status match {
         case 200 =>
@@ -162,7 +127,7 @@ class LambdaMethods @Inject()( ws: WSClient,
 
     val metaCreate = for {
       metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-      laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString)
+      laserlambda = toLaserLambda(metalambda, provider.id.toString)
     } yield (metalambda, laserlambda)
     
     metaCreate match {

@@ -105,7 +105,7 @@ class LambdaController @Inject()(
   
         val metaCreate = for {
           metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-          laserlambda = toLaserLambda(input.copy(id = Some(lambdaId)), provider.id.toString)
+          laserlambda = toLaserLambda(metalambda, provider.id.toString)
         } yield (metalambda, laserlambda)
         
         metaCreate match {

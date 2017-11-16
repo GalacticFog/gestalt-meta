@@ -199,35 +199,41 @@ class GatewayMethods @Inject() ( ws: WSClient,
                             user: AuthAccountWithCreds,
                             request: RequestHeader ): Future[GestaltResourceInstance] = {
 
-    // Strip path to last component to get field name.
-    val strippedOps = patch.ops collect {
-      case PatchOp("replace" | "add",path,Some(value)) =>
-        val fieldName = path.stripPrefix("/properties/")
-        (fieldName -> value)
-    } toMap
+    val (patchedEndpoint,updatedUrl) = {
+      val partiallyPatchedEP = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
+      val newProps = partiallyPatchedEP.properties getOrElse Map.empty
+      val implementation_type: String   =   newProps.get("implementation_type") getOrElse(throw new RuntimeException(s"could not locate current 'implementation_type' for ApiEndpoint ${r.id}"))
+      val implementation_id_str: String = newProps.get("implementation_id")   getOrElse(throw new RuntimeException(s"could not locate current 'implementation_id' for ApiEndpoint ${r.id}"))
+      val port_name: Option[String]     = newProps.get("container_port_name")
+      val synchronous: Boolean          = newProps.get("synchronous").flatMap(s => Try{s.toBoolean}.toOption) getOrElse true
+      val implementation_id             = Try{UUID.fromString(implementation_id_str)} getOrElse(throw new RuntimeException(s"'implementation_id' == '${implementation_id_str}' for ApiEndpoint ${r.id} could not be parsed as a UUID"))
+      val newUpstreamUrl = mkUpstreamUrl(implementation_type, implementation_id, port_name, synchronous).get
+      (
+        partiallyPatchedEP.copy(
+          properties = Some(newProps ++ Map(
+            "upstream_url" -> newUpstreamUrl
+          ))
+        ),
+        newUpstreamUrl
+      )
+    }
 
-    // extra components necessary for upstream_url
-    val curProps = r.properties getOrElse Map.empty
-    val implementation_type: String = strippedOps.get("implementation_type").flatMap(_.asOpt[String]) orElse curProps.get("implementation_type") getOrElse(throw new RuntimeException(s"could not locate current 'implementation_type' for ApiEndpoint ${r.id}"))
-    val implementation_id_str: String = strippedOps.get("implementation_id").flatMap(_.asOpt[String]) orElse curProps.get("implementation_id")   getOrElse(throw new RuntimeException(s"could not locate current 'implementation_id' for ApiEndpoint ${r.id}"))
-    val port_name: Option[String]   = strippedOps.get("container_port_name").flatMap(_.asOpt[String]) orElse curProps.get("container_port_name")
-    val synchronous: Boolean        = strippedOps.get("synchronous").flatMap(_.asOpt[Boolean])        orElse curProps.get("synchronous").flatMap(s => Try{s.toBoolean}.toOption) getOrElse true
-    val implementation_id     = Try{UUID.fromString(implementation_id_str)} getOrElse(throw new RuntimeException(s"'implementation_id' == '${implementation_id_str}' for ApiEndpoint ${r.id} could not be parsed as a UUID"))
-    val newUpstreamUrl = mkUpstreamUrl(implementation_type, implementation_id, port_name, synchronous).get
-
-    val fullOps = PatchDocument(
-      (patch.ops :+ PatchOp("replace", "/properties/upstream_url", Some(JsString(newUpstreamUrl)))):_*
-    )
-
-    val updatedMetaEndpoint = PatchInstance.applyPatch(r, fullOps).get.asInstanceOf[GestaltResourceInstance]
-    val updatedMetaProps = updatedMetaEndpoint.properties.getOrElse(Map.empty)
-    val updatedMetaPlugins = for {
-      pluginsStr <- updatedMetaProps.get("plugins")
-      pluginsJs = Try{Json.parse(pluginsStr)} match {
+    val updatedProps = patchedEndpoint.properties.getOrElse(Map.empty)
+    val updatedPlugins = for {
+      str <- updatedProps.get("plugins")
+      js = Try{Json.parse(str)} match {
         case Success(js) => js
         case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.plugins", t)
       }
-    } yield pluginsJs
+    } yield js
+    val updatedMethods = for {
+      str <- updatedProps.get("methods")
+      js = Try{Json.parse(str)} match {
+        case Success(js) => js
+        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.methods", t)
+      }
+      methods <- js.asOpt[Seq[String]]
+    } yield methods
 
     log.debug("Finding endpoint in gateway provider system...")
     val parentApi = ResourceFactory.findParent(ResourceIds.Api, r.id) getOrElse(throw new RuntimeException(s"Could not find API parent of ApiEndpoint ${r.id}"))
@@ -248,14 +254,14 @@ class GatewayMethods @Inject() ( ws: WSClient,
         ))
       }
       _ = log.debug("Endpoint found in ApiGateway provider.")
-      patchedEndpoint = gotEndpoint.copy(
-        path = strippedOps.get("resource").flatMap(_.asOpt[String]) getOrElse gotEndpoint.path,
-        methods = strippedOps.get("methods").flatMap(_.asOpt[Seq[String]]).orElse(gotEndpoint.methods),
-        plugins = updatedMetaPlugins orElse gotEndpoint.plugins,
-        upstreamUrl = newUpstreamUrl
+      patchedEP = gotEndpoint.copy(
+        path = updatedProps.get("resource") getOrElse gotEndpoint.path,
+        methods = updatedMethods orElse gotEndpoint.methods,
+        plugins = updatedPlugins orElse gotEndpoint.plugins,
+        upstreamUrl = updatedUrl
       )
-      _ = log.debug("Patched endpoint resource before PUT: " + Json.toJson(patchedEndpoint))
-      updatedEndpointReq = client.put(s"/endpoints/${r.id}", Some(Json.toJson(patchedEndpoint)))
+      _ = log.debug("Patched endpoint resource before PUT: " + Json.toJson(patchedEP))
+      updatedEndpointReq = client.put(s"/endpoints/${r.id}", Some(Json.toJson(patchedEP)))
       _ <- updatedEndpointReq flatMap { response => response.status match {
         case 200 =>
           log.info(s"Successfully PUT ApiEndpoint to ApiGateway provider.")
@@ -264,7 +270,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
           log.error(s"Error PUTting Lambda in ApiGateway provider: ${response}")
           Future.failed(new RuntimeException(s"Error updating Lambda in ApiGateway provider: ${response}"))
       }}
-    } yield updatedMetaEndpoint // we don't actually use the result from api-gateway, though we probably should
+    } yield patchedEndpoint // we don't actually use the result from api-gateway, though we probably should
   }
 
   private[controllers] def unprocessable(message: String) =
