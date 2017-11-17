@@ -43,9 +43,6 @@ package object laser {
   case class LaserProvider(id: Option[String], name: String, href: Option[String] = None, providerInfo: Option[JsValue] = None)
   case class LaserLocation(id: Option[String], name: String, providerId: String)
   
-//  implicit lazy val endpointSecurityFormat = Json.format[EndpointSecurity]  
-//  case class EndpointSecurity(enabled: Boolean, users: Option[Seq[String]], groups: Option[Seq[String]])
-  
   case class LaserEndpoint(
       id: Option[String], 
       apiId: String, 

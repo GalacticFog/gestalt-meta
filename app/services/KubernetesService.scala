@@ -573,17 +573,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def reconcileVolumeClaims(kube: RequestContext, namespace: String, volumes: Seq[ContainerSpec.Volume]): Future[Seq[PersistentVolumeClaim]] = {
     for {
       pvcs <- kube.list[PersistentVolumeClaimList]
-      out <- Future.sequence(volumes map { v =>
-        pvcs.items.find(_.name.equalsIgnoreCase(v.name.getOrElse(""))) match {
+      volumeClaims = volumes flatMap {v => KubeVolume(v).asVolumeClaim(namespace)}
+      out <- Future.sequence(volumeClaims map { pvc =>
+        pvcs.items.find(_.name.equalsIgnoreCase(pvc.name)) match {
           case Some(matchingPvc) =>
             log.debug(s"Found existing volume claim with name '${matchingPvc.name}'")
             Future.successful(matchingPvc)
           case None =>
-            log.info(s"Creating new Persistent Volume Claim '${v.name}'")
-            val pvc = KubeVolume(v).asVolumeClaim(Some(namespace))
+            log.info(s"Creating new Persistent Volume Claim '${pvc.name}'")
             kube.create[PersistentVolumeClaim](pvc) recoverWith {
               case e: K8SException =>
-                unprocessable(s"Failed creating PVC for volume '${v.name}': " + e.status.message)
+                unprocessable(s"Failed creating PVC for volume '${pvc.name}': " + e.status.message)
             }
         }
       })
@@ -834,12 +834,37 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
-      val pvcVolumes = volMounts.map {
-        mnt => Volume(mnt.name, Volume.PersistentVolumeClaimRef(mnt.name, mnt.readOnly))
+      val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](context.provider, "host_volume_whitelist").getOrElse(Seq.empty)
+
+      val storageVolumes = containerSpec.volumes map { v =>
+        val name = v.name getOrElse {
+          unprocessable("Malformed volume specification. Must supply 'name'")
+        }
+        v match {
+          case ContainerSpec.Volume(containerPath, Some(hostPath), None, maybeMode, Some(name)) =>
+            val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
+            if (hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))) {
+              Volume(
+                name = name,
+                source = Volume.HostPath(hostPath)
+              )
+            } else {
+              unprocessable("host_path is not in provider's white-list")
+            }
+          case ContainerSpec.Volume(containerPath, None, Some(persistentVolumeInfo), maybeMode, Some(name)) =>
+            Volume(
+              name = name,
+              source = Volume.PersistentVolumeClaimRef(
+                claimName = name,
+                readOnly = KubeVolume.resolveAccessMode(maybeMode) == PersistentVolume.AccessMode.ReadOnlyMany
+              )
+            )
+          case _ =>
+            unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
+        }
       }
 
-
-      val specWithVols = (pvcVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
+      val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
     }
 

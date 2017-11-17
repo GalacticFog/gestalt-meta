@@ -12,42 +12,80 @@ import skuber._
 
 case class KubeVolume(v: ContainerSpec.Volume) {
 
+  import KubeVolume._
+
   val name = v.name getOrElse {
-    unprocessable("Malformed volume specification. Must supply 'name'")        
+    unprocessable("Malformed volume specification. Must supply 'name'")
   }
-  val mount_path = v.container_path
-  val access_mode = v.mode
 
-  def asVolumeMount(): Volume.Mount = Volume.Mount(
-    name = name,
-    mountPath = mount_path,
-    readOnly = resolveAccessMode(access_mode) == PersistentVolume.AccessMode.ReadOnlyMany
-  )
-  
-  def asVolumeClaim(namespace: Option[String] = None): PersistentVolumeClaim = {
+  def asVolume(): Volume = v match {
+    case ContainerSpec.Volume(containerPath, Some(hostPath), None, maybeMode, Some(name)) =>
+      Volume(
+        name = name,
+        source = Volume.HostPath(hostPath)
+      )
+    case ContainerSpec.Volume(containerPath, None, Some(persistentVolumeInfo), maybeMode, Some(name)) =>
+      Volume(
+        name = name,
+        source = Volume.PersistentVolumeClaimRef(
+          claimName = name,
+          readOnly = resolveAccessMode(maybeMode) == PersistentVolume.AccessMode.ReadOnlyMany
+        )
+      )
+    case _ =>
+      unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
+  }
 
-    val accessModes = resolveAccessMode(access_mode)
-    val capacity    = storageQuantity(v.persistent.get.size)
-    val annot       = Map("volume.beta.kubernetes.io/storage-class" -> name)
-    
+  def asVolumeMount(): Volume.Mount = v match {
+    case ContainerSpec.Volume(containerPath, Some(_), None, maybeMode, Some(name)) =>
+      Volume.Mount(
+        name = name,
+        mountPath = containerPath,
+        readOnly = !maybeMode.contains("RW")
+      )
+    case ContainerSpec.Volume(containerPath, None, Some(persistentVolumeInfo), maybeMode, Some(name)) =>
+      Volume.Mount(
+        name = name,
+        mountPath = containerPath,
+        readOnly = resolveAccessMode(maybeMode) == PersistentVolume.AccessMode.ReadOnlyMany
+      )
+    case _ =>
+      unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
+  }
+
+  def asVolumeClaim(namespace: String): Option[PersistentVolumeClaim] = {
     val metaData = {
-      val nm = namespace getOrElse "default"
-      ObjectMeta(name = name, namespace = nm, annotations = annot) 
+      ObjectMeta(
+        name = name,
+        namespace = namespace,
+        annotations = Map(
+          "volume.beta.kubernetes.io/storage-class" -> name
+        )
+      )
     }
-    
-    PersistentVolumeClaim(
-        metadata = metaData,
-        spec = Some(PersistentVolumeClaim.Spec(
-            accessModes = List(accessModes),
-            resources = Some(Resource.Requirements(requests = Map("storage" -> capacity))))))
+
+    for {
+      p <- v.persistent
+      accessModes = resolveAccessMode(v.mode)
+      capacity    = storageQuantity(p.size)
+    } yield PersistentVolumeClaim(
+      metadata = metaData,
+      spec = Some(PersistentVolumeClaim.Spec(
+        accessModes = List(accessModes),
+        resources = Some(Resource.Requirements(requests = Map("storage" -> capacity))))
+      )
+    )
   }
-  
+
   private def storageQuantity(n: Long): Resource.Quantity = {
     new Resource.Quantity("%sMi".format(n.toString))
   }
-  
-  private def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
-    if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mount'")
+
+}
+
+object KubeVolume {
+  def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
+    if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mode'")
     else {
       val m = mode flatMap { s =>
         PersistentVolume.AccessMode.values find { _.toString.equalsIgnoreCase(s) }
@@ -56,7 +94,7 @@ case class KubeVolume(v: ContainerSpec.Volume) {
         unprocessable(s"Invalid 'volume.mode'. found : '${mode.get}'")
       }
     }
-  }    
+  }
 
-  def unprocessable(message: String) = throw UnprocessableEntityException(message)    
+  def unprocessable(message: String) = throw UnprocessableEntityException(message)
 }
