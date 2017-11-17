@@ -834,7 +834,35 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
-      val storageVolumes = containerSpec.volumes map {v => KubeVolume(v).asVolume()}
+      val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](context.provider, "host_volume_whitelist").getOrElse(Seq.empty)
+
+      val storageVolumes = containerSpec.volumes map { v =>
+        val name = v.name getOrElse {
+          unprocessable("Malformed volume specification. Must supply 'name'")
+        }
+        v match {
+          case ContainerSpec.Volume(containerPath, Some(hostPath), None, maybeMode, Some(name)) =>
+            val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
+            if (hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))) {
+              Volume(
+                name = name,
+                source = Volume.HostPath(hostPath)
+              )
+            } else {
+              unprocessable("host_path is not in provider's white-list")
+            }
+          case ContainerSpec.Volume(containerPath, None, Some(persistentVolumeInfo), maybeMode, Some(name)) =>
+            Volume(
+              name = name,
+              source = Volume.PersistentVolumeClaimRef(
+                claimName = name,
+                readOnly = KubeVolume.resolveAccessMode(maybeMode) == PersistentVolume.AccessMode.ReadOnlyMany
+              )
+            )
+          case _ =>
+            unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
+        }
+      }
 
       val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)

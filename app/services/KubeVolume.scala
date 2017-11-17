@@ -12,6 +12,8 @@ import skuber._
 
 case class KubeVolume(v: ContainerSpec.Volume) {
 
+  import KubeVolume._
+
   val name = v.name getOrElse {
     unprocessable("Malformed volume specification. Must supply 'name'")
   }
@@ -79,7 +81,10 @@ case class KubeVolume(v: ContainerSpec.Volume) {
     new Resource.Quantity("%sMi".format(n.toString))
   }
 
-  private def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
+}
+
+object KubeVolume {
+  def resolveAccessMode(mode: Option[String]): PersistentVolume.AccessMode.AccessMode = {
     if (mode.isEmpty) unprocessable("You must supply a value for 'volume.mode'")
     else {
       val m = mode flatMap { s =>
@@ -89,7 +94,7 @@ case class KubeVolume(v: ContainerSpec.Volume) {
         unprocessable(s"Invalid 'volume.mode'. found : '${mode.get}'")
       }
     }
-  }    
+  }
 
-  def unprocessable(message: String) = throw UnprocessableEntityException(message)    
+  def unprocessable(message: String) = throw UnprocessableEntityException(message)
 }

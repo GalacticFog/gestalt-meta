@@ -730,10 +730,29 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any,meq(Deployment.deployDef))
     }
 
-    "create and mount hostPath volumes" in new FakeKubeCreate(
+    "422 on non-white-listed hostPath volumes" in new FakeKubeCreate(
       volumes= Seq(
-        ContainerSpec.Volume("/mnt/someContainerPath1", Some("/mnt/containers/someHostPath1"), None, Some("ReadOnly"),  Some("my-volume-1")),
-        ContainerSpec.Volume("/mnt/someContainerPath2", Some("/mnt/containers/someHostPath2"), None, Some("ReadWrite"), Some("my-volume-2"))
+        ContainerSpec.Volume("/mnt/someContainerPath1", Some("/mnt/not-allowed/someHostPath1"), None, Some("RO"), Some("my-volume"))
+      )
+    ) {
+      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+      testSetup.kubeClient.create(any)(any,meq(PersistentVolumeClaim.pvcDef)) returns Future.successful(mock[skuber.PersistentVolumeClaim])
+
+      await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwAn[UnprocessableEntityException]("host_path is not in provider's white-list")
+
+      there were no(testSetup.kubeClient).create(any)(any,meq(Deployment.deployDef))
+    }
+
+    "create and mount white-listed hostPath volumes" in new FakeKubeCreate(
+      volumes= Seq(
+        ContainerSpec.Volume("/mnt/someContainerPath1", Some("/mnt/for_containers/someHostPath"), None, Some("RO"), Some("my-volume-1")),
+        ContainerSpec.Volume("/mnt/someContainerPath2", Some("/mnt/also_for_containers/wow/someReallyDeepHostPath"), None, Some("RW"), Some("my-volume-2"))
+      ),
+      providerConfig = Seq(
+        "host_volume_whitelist" -> Json.arr("/mnt/for_containers", "/mnt/also_for_containers")
       )
     ) {
       testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
@@ -749,8 +768,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val createdDepl = deploymentCaptor.getValue
 
       createdDepl.getPodSpec.get.volumes must containTheSameElementsAs(Seq(
-        skuber.Volume("my-volume-1", skuber.Volume.HostPath("/mnt/containers/someHostPath1")),
-        skuber.Volume("my-volume-2", skuber.Volume.HostPath("/mnt/containers/someHostPath2"))
+        skuber.Volume("my-volume-1", skuber.Volume.HostPath("/mnt/for_containers/someHostPath")),
+        skuber.Volume("my-volume-2", skuber.Volume.HostPath("/mnt/also_for_containers/wow/someReallyDeepHostPath"))
       ))
 
       createdDepl.getPodSpec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
