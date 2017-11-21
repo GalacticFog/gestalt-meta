@@ -100,9 +100,9 @@ class DeleteController @Inject()(
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
     val options    = requestOps(identity, resource.id, resource, owner)
-
+    
     log.debug(s"Policy Owner : " + owner.id)
-
+    
     SafeRequest (operations, options) ProtectAsync { _ =>
       
       Future.fromTry {
@@ -122,6 +122,10 @@ class DeleteController @Inject()(
     }
   }
 
+  def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
+    ???
+  }
+  
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
     
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
@@ -256,7 +260,7 @@ class DeleteController @Inject()(
     }
   }
   
-  def hardDeleteResourceType(typeId: UUID) = {
+  def hardDeleteResourceType2(typeId: UUID) = {
     TypeFactory.hardDeleteType(typeId) match {
       case Success(_) => NoContent
       case Failure(e) => HandleExceptions(e)

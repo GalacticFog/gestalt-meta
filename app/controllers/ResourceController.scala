@@ -300,8 +300,12 @@ class ResourceController @Inject()(
           throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
         }
       } yield res
+      import com.galacticfog.gestalt.meta.providers.ui._
 
-      val output = assembleActionUi(act, resource.get, request.identity)
+      val output = Assembler.assemble(
+          fqon,
+          META_URL.get,
+          act, resource.get, request.identity)
       Ok(output).as("text/html")
     }
   }
@@ -710,8 +714,6 @@ class ResourceController @Inject()(
   def mkPath2(fqon: String, path: String) = {
     
     val rp = new ResourcePath(fqon, path)
-    
-    println(rp.info)
     
     def tname(typeId: UUID): String = resourceRestName(typeId).dropRight(1).mkString
     
