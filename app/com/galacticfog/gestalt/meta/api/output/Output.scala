@@ -117,6 +117,7 @@ object Output {
     val res = mkTypeOutput(r)    
     val props = res.properties.get.validate[Map[String,String]].get
 
+    
     // this renders the properties
     val renderedProps = renderTypeProperties(r.id, r.id, Some(props))
     Json.toJson(res.copy(properties = renderedProps))
@@ -160,6 +161,10 @@ object Output {
     // TODO: .copy rendered properties!!!
     //
     Json.toJson(res)
+  }
+  
+  def renderLink(rs: ResourceLike, baseUri: Option[String] = None): JsValue = {
+    Json.toJson(toLink(rs.typeId, rs.id, rs.orgId, Some(rs.name), baseUri))
   }
   
   def renderLinks(rs: Seq[ResourceLike], baseUri: Option[String] = None): JsValue = {
@@ -243,7 +248,7 @@ object Output {
   def renderTypeProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
     /* Get a Map of the properties defined for the current ResourceType. */
     println("***renderTypeProperties(...)")
-    val templateProps = Properties.getTypePropertyMap(ResourceIds.ResourceType)
+    val templateProps = Properties.getTypePropertyMap(/*ResourceIds.ResourceType*/typeId)
     
     println("***TEMPLATE-PROPS : " + templateProps.keySet)
     

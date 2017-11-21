@@ -10,7 +10,11 @@ import scala.util.{Try,Success,Failure}
 import java.util.UUID
 
 
-case class ProviderActionSpec(name: String, endpoint_url: String, implementation: ActionImplSpec, ui_locations: Seq[UiLocation]) {
+case class ProviderActionSpec(
+    name: String, 
+    endpoint_url: String, 
+    implementation: ActionImplSpec, 
+    ui_locations: Seq[UiLocation]) {
 
   def toResource(org: UUID, parent: UUID, owner: ResourceOwnerLink, implId: UUID, id: UUID = uuid()): GestaltResourceInstance = {
 
@@ -64,7 +68,7 @@ object ProviderActionSpec {
         case Success(a) => a
       }
     }
-
+    
     val endpoint = props.get("endpoint_url") getOrElse {
       throw new RuntimeException("Could not find 'endpoint_url' in properties.")
     }
@@ -73,7 +77,22 @@ object ProviderActionSpec {
   
 }
 
+//private lazy val THEME_COLOR_DARK_BLUE = "blue darken-2"
+//private lazy val THEME_COLOR_DEFAULT = THEME_COLOR_DARK_BLUE
+//private lazy val THEME_COLOR_ORANGE = "orange accent-3"
+
 case class UiLocation(name: String, icon: Option[String])
-case class ActionInput(kind: String, data: Option[String])
-case class ActionImplSpec(kind: String, spec: Option[JsValue], id: Option[String], input: Option[ActionInput])
+case class ActionInput(
+    kind: String, 
+    data: Option[String],
+    style: Option[String] = None,
+    script: Option[String] = None,
+    theme: Option[String] = None,
+    withHeader: Option[Boolean] = Some(true))
+    
+case class ActionImplSpec(
+    kind: String, 
+    spec: Option[JsValue], 
+    id: Option[String], 
+    input: Option[ActionInput])
 

@@ -7,7 +7,7 @@ name := """gestalt-meta"""
 organization := "com.galacticfog"
 
 
-version := "0.6.51"
+version := "0.6.52"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -77,6 +77,7 @@ scalacOptions ++= Seq(
 
 javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
 
+libraryDependencies += "com.lihaoyi" %% "scalatags" % "0.6.7"
 
 libraryDependencies ++= Seq(
 

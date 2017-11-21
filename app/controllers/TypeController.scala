@@ -62,10 +62,58 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     }
   }  
   
-  def getResourceTypeByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
-    orgFqon(fqon).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id))) { org =>
-      OkTypeByIdResult(org.id, id)
+  import controllers.util.booleanParam
+  import com.galacticfog.gestalt.meta.providers.ui.Assembler
+  import com.galacticfog.gestalt.meta.providers._
+  import scala.util.{Try,Success,Failure}
+  
+
+  /**
+   * Get a Provider Action specification from the Provider. This is a convenience method that can be used to get
+   * an Action spec before an Action instance is created. The intended use is to test rendering of the Action UI.
+   */
+  def getProviderActionByIndex(fqon: String, typeId: UUID, actionIndex: Int) = Audited(fqon){ implicit request =>
+    TypeFactory.findById(typeId).fold {
+      HandleExceptions {
+        throw new ResourceNotFoundException(
+          s"Resource-Type with ID '$typeId' not found.")
+      }
+    }{ r =>
+      val jtype = Json.toJson(Output.renderResourceTypeOutput(r)).as[JsObject]
+      Js.find(jtype, s"/properties/provider_actions/$actionIndex").fold {
+        HandleExceptions {
+          throw new ResourceNotFoundException(
+            s"/properties/provider_actions/$actionIndex not found in Resource Type $typeId")
+        }
+      }{ action =>
+        if (booleanParam("render", request.queryString)) {
+          log.debug("Found 'render' query param.")
+          
+          if (booleanParam("envelope", request.queryString)) {
+            val out = Assembler.envelope(fqon, META_URL.get, None, request.identity)
+            Ok(out).as("text/html")
+          } else {
+            Js.parse[ProviderActionSpec](action) match {
+              case Failure(e) => HandleExceptions {
+                throw new RuntimeException(s"Could not parse action JSON from provider. Error: $e.getMessage")
+              }
+              case Success(spec) => {
+                log.debug("Found 'envelope' query param.")
+                val output = Assembler.assemble(fqon, META_URL.get, spec, None, None, request.identity)
+                Ok(output).as("text/html")              
+              }
+            }
+          }
+
+        } else {
+          Ok(action)
+        }
+      }
     }
+  }
+  
+  def getResourceTypeByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
+    OkTypeByIdResult(fqid(fqon), id)
   }
   
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>

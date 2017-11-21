@@ -1,134 +1,121 @@
 package com.galacticfog.gestalt.meta.providers
 
-
-import scala.collection.JavaConverters._ 
-   import play.api.libs.json._
+import scala.collection.JavaConverters._
+import play.api.libs.json._
 
 import org.jtwig.JtwigModel;
 import org.jtwig.JtwigTemplate;
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.data._
+import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.meta.api.output.Output
 
-  
 package object ui {
-  
+
   private[this] lazy val log = play.api.Logger(this.getClass)
-  
+
   object Ascii {
-    
+
     import java.util.Base64
     import java.nio.charset.Charset
     import scala.util.matching.Regex
-    
+
     val DEFAULT_CHARSET: Charset = Charset.forName("UTF-8")
-    
-    private val base64Match = 
-        """^\s*(([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==))\s*$""".r
-        
+
+    private val base64Match =
+      """^\s*(([A-Za-z0-9+/]{4})*([A-Za-z0-9+/]{4}|[A-Za-z0-9+/]{3}=|[A-Za-z0-9+/]{2}==))\s*$""".r
+
     def encode64(s: String, charset: Charset = DEFAULT_CHARSET): String =
       Base64.getEncoder.encodeToString(s.getBytes(charset))
-  
+
     def decode64(s: String): String = if (!isBase64(s))
       throw new IllegalArgumentException("Argument is not Base64 encoded.")
     else new String(Base64.getDecoder.decode(s))
-    
+
+    def decode64Opt(opt: Option[String]): Option[String] = {
+      opt.map(decode64(_))
+    }
+
     /**
      * Determine if a String is Base64 encoded.
-     * 
+     *
      * TODO: The test in the function is very weak. It really checks if the given
      * String "could be" base64 encoded or not. Any string where str.length % 4 == 0
      * will pass (accounting for 1 or 2 equal signs padding the string).
      */
-    def isBase64(s: String): Boolean = 
+    def isBase64(s: String): Boolean =
       base64Match.pattern.matcher(s).matches
-  
-    def asStream(s: String, charset: Charset = DEFAULT_CHARSET) = 
+
+    def asStream(s: String, charset: Charset = DEFAULT_CHARSET) =
       new java.io.ByteArrayInputStream(s.getBytes(charset))
   }
-  
+
   object SimpleProcessor {
-    
+
     def render(template: String, vars: (String, String)*): String = {
       render(template, vars.toMap)
     }
-    
-    def render(template: String, vars: Map[String,String]): String = {
+
+    def render(template: String, vars: Map[String, String]): String = {
       val templ = mkTemplate(template)
-      
+
       val jvars = (vars map { case (k, v) => (k -> v.asInstanceOf[Object]) }).asJava
       val model = JtwigModel.newModel(jvars)
       templ.render(model)
     }
-    
+
     private def mkTemplate(s: String): JtwigTemplate = {
-      JtwigTemplate.inlineTemplate(s)  
-    }    
+      JtwigTemplate.inlineTemplate(s)
+    }
   }
   
-  object TemplateKeys {
-    val GESTALT_ACTION_CONTEXT = "GESTALT_ACTION_CONTEXT"
-    val GESTALT_USER_CONTENT = "GESTALT_USER_CONTENT"
-  }
-  
-  import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-  import com.galacticfog.gestalt.data._
-  import com.galacticfog.gestalt.data.models._
-  
+  /*
+   * TODO: The structure and content of this context-block are still in flux. For the
+   * current case where the UI calls a specific action-invoke endpoint it isn't needed
+   * at all.  For future scenarios it will be (and it will need to contain a link to
+   * the target action at least).
+   */
   def buildActionContext(
-      r: GestaltResourceInstance, 
-      user: AuthAccountWithCreds, 
-      action: GestaltResourceInstance): JsObject = {
-    
+    r: GestaltResourceInstance,
+    user: AuthAccountWithCreds,
+    action: GestaltResourceInstance,
+    metaUrl: String): JsObject = {
+
     //get token replacer from caas-kube
-    
+
     /*
      * TODO: Temporary - this needs to come from the TypeCache
      */
     val tpe = TypeFactory.findById(r.typeId).get
+
     val jsonUser = Json.obj(
       "id" -> user.account.id,
       "name" -> user.account.name,
       "email" -> user.account.email,
       "phone" -> user.account.phoneNumber)
-    
-    val jsonRes = Json.obj(
-      "id" -> r.id,
-      "typeName" -> tpe.name,
-      "name" -> r.name)
-    
-    Json.obj("user" -> jsonUser, "resource" -> jsonRes)
-  }
-  
 
-  def buildUiTemplate(content: String, context: String): String = {
-     SimpleProcessor.render(
-         Templates.UI_MATERIALIZE_1, 
-         TemplateKeys.GESTALT_USER_CONTENT -> content,
-         TemplateKeys.GESTALT_ACTION_CONTEXT -> context)
-  }  
-  
-  
-  
-  def assembleActionUi(
-        action: GestaltResourceInstance, 
-        target: GestaltResourceInstance, 
-        user: AuthAccountWithCreds): String = {
-    log.debug("assembleActionUi(_,_,_)")
-    log.debug("Loading Action Spec...")
-    val spec = ProviderActionSpec.fromResource(action)
+    val jsonAction = Output.renderLink(action)
     
-    log.debug("Decoding user-content...")
-    val userContent = Ascii.decode64(spec.implementation.input.get.data.get)
-    
-    log.debug("Building Action Context...")
-    val actionContext = buildActionContext(target, user, action)
-    
-    log.debug("Constructing UI Template...")
-    buildUiTemplate(userContent, Json.prettyPrint(actionContext))    
+    val jsonRes = Output.renderInstance(r)     
+    Json.obj(
+        "action" -> jsonAction, 
+        "user" -> jsonUser, 
+        "resource" -> jsonRes)
   }
-  
-  
+
+
+  object TemplateKeys {
+    val GESTALT_ACTION_CONTEXT = "GESTALT_ACTION_CONTEXT"
+    val GESTALT_USER_CONTENT = "GESTALT_USER_CONTENT"
+    val GESTALT_INVOKE_URL = "GESTALT_INVOKE_URL"
+    val GESTALT_USER_CSS = "GESTALT_USER_CSS"
+    val GESTALT_USER_SCRIPT = "GESTALT_USER_SCRIPT"
+    val GESTALT_ACTION_URL = "GESTALT_ACTION_URL"
+  }
+
   object Templates {
-  
-  val UI_MATERIALIZE_1 = s"""
+    
+    val UI_MATERIALIZE_1 = s"""
   |<!DOCTYPE html>
   |<html>
     <head>
@@ -181,7 +168,8 @@ package object ui {
           bottom: 0;
           right: 0;
           height: 35px;
-        }      
+        }
+        {{ ${TemplateKeys.GESTALT_USER_CSS} }}
       </style>
       <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
     </head>
@@ -215,6 +203,6 @@ package object ui {
       </script>    
     </body>
   |</html>""".stripMargin
-  
+
   }
 }

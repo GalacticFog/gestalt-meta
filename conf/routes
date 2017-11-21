@@ -2,6 +2,8 @@
 ###
 ###
 
+GET  /assets/*file        controllers.Assets.at(path="/public", file)
+
 POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
 POST	/sync					 controllers.SyncController.sync()
 
@@ -144,6 +146,8 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
 
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:index  	controllers.TypeController.getProviderActionByIndex(fqon: String, typeId: java.util.UUID, index: Int)
+
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/resources 	controllers.ResourceController.getAllResourcesByTypeFqon(fqon: String, typeId: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/schema  	controllers.TypeController.getPropertySchemaFqon(fqon: String, typeId: java.util.UUID)
 
@@ -193,6 +197,10 @@ DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController
 
 ### Delete any system resource
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.DeleteController.hardDeleteResource(fqon: String, path)
+
+###
+#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId
+
 
 ############################
 # ORGS

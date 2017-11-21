@@ -678,7 +678,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
   
   def invokeAction(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
-
+    log.info(s"invokeAction($fqon, $id)")
     val maybeEvents = for {
       action   <- Try { ResourceFactory.findById(ResourceIds.ProviderAction, id) getOrElse {
         throw new ResourceNotFoundException(s"Action with ID '$id' not found.")
@@ -705,7 +705,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
         client.publish(endpoint, Json.stringify(Json.toJson(event)))
       }
     }
-    Future( Ok(Json.obj("status" -> "ok", "message" -> "sent")) )
+    Future( Ok(Json.obj("status" -> "ok", "message" -> "sent")))
   }  
   
   
