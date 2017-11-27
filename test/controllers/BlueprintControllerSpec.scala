@@ -43,7 +43,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
     bind(classOf[ActionProviderManager]).toInstance(mock[ActionProviderManager])
   ))
 
-  abstract class TestContainerController extends WithApplication(appWithMocks()) {
+  abstract class TestActionProvider extends WithApplication(appWithMocks()) {
     var testWork: GestaltResourceInstance = null
     var testEnv: GestaltResourceInstance = null
     var providerManager: ActionProviderManager = null
@@ -92,7 +92,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
     import com.galacticfog.gestalt.meta.api.errors._
 
-    "create containers with non-existent provider should 400" in new TestContainerController {
+    "create containers with non-existent provider should 400" in new TestActionProvider {
       val testBlueprintName = "test-blueprint"
 
       val newResource = newInstance(
@@ -116,9 +116,8 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       contentAsString(result) must contain("not found")
     }
 
-    "create blueprints using the ActionProvider interface" in new TestContainerController {
+    "create blueprints using the ActionProvider interface" in new TestActionProvider {
       val testBlueprintName = "test-blueprint"
-
       val newResource = newInstance(
         typeId = ResourceIds.Blueprint,
         name = testBlueprintName,
@@ -128,23 +127,18 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "native_form" -> "blueprint data goes here"
         ))
       )
-
       val returnedResource = newResource.copy(
         properties = Some(newResource.properties.get ++ Map(
           "canonical_form" -> "meta canonical form"
         ))
       )
-
       mockActionProvider.invokeAction(any) returns Future.successful(returnedResource)
 
       val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/blueprints", testCreds).withBody(
         Output.renderInstance(newResource)
       )
-
       val Some(result) = route(request)
-
       status(result) must equalTo(CREATED)
-
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(newResource.id)
       (json \ "name").asOpt[String] must beSome(testBlueprintName)
@@ -159,140 +153,80 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         context = ActionContext(
           org = ResourceFactory.findById(dummyRootOrgId).get,
           workspace = Some(testWork),
-          environment = Some(testEnv),
-          originalResource = None
+          environment = Some(testEnv)
         ),
         provider = testProvider,
         resource = Some(newResource)
       )))
+      there was atLeastOne(providerManager).getProvider(testProvider)
     }
 
-//    "delete containers using the ContainerService interface" in new TestContainerController {
-//      val testContainerName = "test-container"
-//      val testProps = ContainerSpec(
-//        name = testContainerName,
-//        container_type = "DOCKER",
-//        image = "nginx",
-//        provider = ContainerSpec.InputProvider(id = testProvider.id),
-//        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
-//        cpus = 1.0,
-//        memory = 128,
-//        disk = 0.0,
-//        num_instances = 1,
-//        network = Some("BRIDGE"),
-//        cmd = None,
-//        constraints = Seq(),
-//        accepted_resource_roles = None,
-//        args = None,
-//        force_pull = false,
-//        health_checks = Seq(),
-//        volumes = Seq(),
-//        labels = Map(),
-//        env = Map(),
-//        user = None
-//      )
-//      val extId = s"/${testEnv.id}/test-container"
-//      val createdResource = createInstance(ResourceIds.Container, testContainerName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "container_type" -> testProps.container_type,
-//          "image" -> testProps.image,
-//          "provider" -> Output.renderInstance(testProvider).toString,
-//          "cpus" -> testProps.cpus.toString,
-//          "memory" -> testProps.memory.toString,
-//          "disk" -> testProps.disk.toString,
-//          "num_instances" -> testProps.num_instances.toString,
-//          "force_pull" -> testProps.force_pull.toString,
-//          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-//          "network" -> testProps.network.get,
-//          "external_id" -> s"${extId}"
-//        ))
-//      ).get
-//
-//      mockActionProvider.destroy(
-//        hasId(createdResource.id)
-//      ) returns Future(())
-//
-//      val request = fakeAuthRequest(DELETE,
-//        s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds)
-//
-//      val Some(result) = route(request)
-//
-//      status(result) must equalTo(NO_CONTENT)
-//
-//      there was one(mockActionProvider).destroy(
-//        hasId(createdResource.id) and hasProperties("external_id" -> extId)
-//      )
-//      there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
-//    }
+    "delete containers using the ContainerService interface" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint"
+      val createdResource = createInstance(ResourceIds.Container, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "blueprint data goes here",
+          "canonincal_form" -> "canonical form is here"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.successful(createdResource)
 
-//    "deploy blueprints using the ActionProvider interfaces" in new TestContainerController {
-//      val testContainerName = "test-container"
-//      val testProps = ContainerSpec(
-//        name = testContainerName,
-//        container_type = "DOCKER",
-//        image = "nginx",
-//        provider = ContainerSpec.InputProvider(id = testProvider.id),
-//        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
-//        cpus = 1.0,
-//        memory = 128,
-//        disk = 0.0,
-//        num_instances = 1,
-//        network = Some("BRIDGE"),
-//        cmd = None,
-//        constraints = Seq(),
-//        accepted_resource_roles = None,
-//        args = None,
-//        force_pull = false,
-//        health_checks = Seq(),
-//        volumes = Seq(),
-//        labels = Map(),
-//        env = Map(),
-//        user = None
-//      )
-//      val extId = s"/${testEnv.id}/test-container"
-//      val createdResource = createInstance(ResourceIds.Container, testContainerName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "container_type" -> testProps.container_type,
-//          "image" -> testProps.image,
-//          "provider" -> Output.renderInstance(testProvider).toString,
-//          "cpus" -> testProps.cpus.toString,
-//          "memory" -> testProps.memory.toString,
-//          "disk" -> testProps.disk.toString,
-//          "num_instances" -> testProps.num_instances.toString,
-//          "force_pull" -> testProps.force_pull.toString,
-//          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-//          "network" -> testProps.network.get,
-//          "external_id" -> s"${extId}"
-//        ))
-//      ).get
-//
-//      mockActionProvider.scale(
-//        any, any, any
-//      ) returns Future(createdResource.copy(
-//        properties = Some(createdResource.properties.get ++ Map("num_instances" -> "4"))
-//      ))
-//
-//      val request = fakeAuthRequest(POST,
-//        s"/root/containers/${createdResource.id}/scale?numInstances=4", testCreds
-//      )
-//
-//      val Some(result) = route(request)
-//
-//      status(result) must equalTo(ACCEPTED)
-//
-//      there was one(mockActionProvider).scale(
-//        context = matchesProviderContext(
-//          provider = testProvider,
-//          workspace = testWork,
-//          environment = testEnv
-//        ),
-//        container = hasId(createdResource.id),
-//        numInstances = meq(4)
-//      )
-//      there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
-//    }
+      val request = fakeAuthRequest(DELETE,
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds)
+      val Some(result) = route(request)
+      status(result) must equalTo(NO_CONTENT)
+
+      there was one(mockActionProvider).invokeAction(meq(ActionInvocation(
+        action = "blueprint.delete",
+        context = ActionContext(
+          org = ResourceFactory.findById(dummyRootOrgId).get,
+          workspace = Some(testWork),
+          environment = Some(testEnv)
+        ),
+        provider = testProvider,
+        resource = Some(createdResource)
+      )))
+      there was atLeastOne(providerManager).getProvider(testProvider)
+    }
+
+    "deploy blueprints using the ActionProvider interfaces" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint"
+      val createdResource = createInstance(ResourceIds.Container, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "blueprint data goes here",
+          "canonincal_form" -> "canonical form is here"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.successful(createdResource)
+
+      val payload = Json.obj(
+        "some" -> "payload"
+      )
+      val request = fakeAuthRequest(POST,
+        s"/root/containers/${createdResource.id}/deploy", testCreds
+      ).withBody(payload)
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+
+      there was one(mockActionProvider).invokeAction(meq(ActionInvocation(
+        action = "blueprint.deploy",
+        context = ActionContext(
+          org = ResourceFactory.findById(dummyRootOrgId).get,
+          workspace = Some(testWork),
+          environment = Some(testEnv)
+        ),
+        provider = testProvider,
+        resource = Some(createdResource),
+        payload = Some(payload.toString)
+      )))
+      there was atLeastOne(providerManager).getProvider(testProvider)
+    }
 
   }
 

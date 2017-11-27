@@ -10,8 +10,7 @@ import scala.util.Try
 
 case class ActionContext( org: GestaltResourceInstance,
                           workspace: Option[GestaltResourceInstance],
-                          environment: Option[GestaltResourceInstance],
-                          originalResource: Option[GestaltResourceInstance] )
+                          environment: Option[GestaltResourceInstance] )
 
 case object ActionContext {
 //  implicit val actionContextFmt: Writes[ActionContext] = new Writes[ActionContext] {
@@ -24,7 +23,8 @@ case object ActionContext {
 case class ActionInvocation( action: String,
                              context: ActionContext,
                              provider: GestaltResourceInstance,
-                             resource: Option[GestaltResourceInstance] )
+                             resource: Option[GestaltResourceInstance] = None,
+                             payload: Option[String] = None )
 
 case object ActionInvocation {
 //  implicit val actionInvocationFmt = Json.format[ActionInvocation]
