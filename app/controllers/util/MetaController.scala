@@ -284,13 +284,13 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   } 
   
   def requestArgs(meta: MetaRequest): 
-      Tuple3[List[Operation[Seq[String]]], RequestOptions, GestaltResourceInstance] = {
+      Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
     val (operations, options) = newResourceRequestSetup(
         meta.caller, 
         meta.resource, 
         meta.resourceParent, 
         meta.action, meta.baseUri)
-    (operations, options, meta.resource)
+    (operations, options)
   }
   
   case class MetaRequest(
@@ -324,7 +324,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
   def MetaCreate(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Result) => Result = {
-    val (operations, options, resource) = requestArgs {
+    val (operations, options) = requestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
     SafeRequest(operations, options).Execute _    
@@ -332,7 +332,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
   def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
-    val (operations, options, resource) = requestArgs {
+    val (operations, options) = requestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
     SafeRequest(operations, options).ExecuteAsync _    
