@@ -39,7 +39,7 @@ case class ActionInvocation( action: String,
                              context: ActionContext,
                              provider: GestaltResourceInstance,
                              resource: Option[GestaltResourceInstance] = None,
-                             payload: Option[String] = None )
+                             payload: Option[JsValue] = None )
 
 case object ActionInvocation {
 //  implicit val actionInvocationFmt = Json.format[ActionInvocation]

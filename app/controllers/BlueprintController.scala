@@ -16,8 +16,8 @@ import controllers.util._
 import play.api.i18n.MessagesApi
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.iteratee.Enumerator
-import play.api.libs.json.JsValue
-import play.api.mvc.{ResponseHeader, Result}
+import play.api.libs.json.{JsString, JsValue}
+import play.api.mvc.{AnyContent, ResponseHeader, Result}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -83,81 +83,17 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
     } yield result
   }
 
-  def deployBlueprint(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    // FINISH: BLUEPRINT-SPECIFIC/NON-GENERIC, SHOULD BE COMPUTED FROM URI/ROUTING AND META SCHEMA
-    val resourceType = sdk.ResourceIds.Blueprint
-    val providerType = sdk.ResourceIds.BlueprintProvider
-    val actionVerb = "deploy"
-    val resourcePrefix = "blueprint"
-
-    object actions extends ActionMethods
-
-    val response = for {
+  def blueprintAction(fqon: String, id: UUID, action: String) = AsyncAuditedAny(fqon) { implicit request =>
+    for {
       org <- findOrgOrFail(fqon)
-      resource <- getOrFail(
-        ResourceFactory.findById(resourceType, id),
-        s"resource of type ${sdk.ResourceLabel(resourceType)} with id '${id}' does not exist"
+      result <- performGenericProviderBackedAction(
+        org = org,
+        resourceType = sdk.ResourceIds.Blueprint,
+        resourceId = id,
+        providerType = sdk.ResourceIds.BlueprintProvider,
+        actionVerb = action
       )
-      providerId <- getOrFail(
-        resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${id}'"
-      )
-      providerResource <- getOrFail(
-        ResourceFactory.findById(providerType, providerId),
-        s"provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
-      )
-      provider <- Future.fromTry(
-        actionProviderManager.getProvider(providerResource)
-      )
-      parent <- getOrFail(
-        ResourceFactory.findParent(resource.id),
-        s"could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
-      )
-      action <- getOrFail (
-        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
-        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
-      )
-      operations = List(
-        controllers.util.Authorize(action),
-        controllers.util.PolicyCheck(action),
-        controllers.util.EventsPre(action),
-        controllers.util.EventsPost(action)
-      )
-      options = RequestOptions(request.identity,
-        authTarget   = Option(parent.id),
-        policyOwner  = Option(parent.id),
-        policyTarget = Option(resource),
-        data = Option(Map(
-          "host"     -> META_URL,
-          "parentId" -> parent.id.toString,
-          "typeId"   -> resource.typeId.toString))
-      )
-      response <- SafeRequest(operations, options).ExecuteAsync {
-        input => for {
-          invocation <- fTry(ActionInvocation(
-            action = action,
-            context = ActionContext.fromParent(org, parent),
-            provider = providerResource,
-            resource = Some(input)
-          ))
-          output <- provider.invokeAction(invocation)
-          response = output.fold(
-            { resourceResponse =>
-              ResourceFactory.update(resourceResponse, request.identity.account.id, updateTimestamp = true) match {
-                case Success(r) => Ok(RenderSingle(r))
-                case Failure(ex) => HandleExceptions(ex)
-              }
-            }, {
-              case (status,contentType,contentBody) => Result(
-                ResponseHeader(status.getOrElse(200), contentType.map(ct => Map(CONTENT_TYPE -> ct)).getOrElse(Map.empty)),
-                Enumerator(contentBody.getOrElse("").getBytes)
-              )
-            }
-          )
-        } yield response
-      }
-    } yield response
-    response recover { case e => HandleExceptions(e) }
+    } yield result
   }
 
 
@@ -203,6 +139,83 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
             org.id, request.identity, persisted, Some(parent.id)
           ))
         } yield Created(RenderSingle(created))
+      }
+    } yield response
+    response recover { case e => HandleExceptions(e) }
+  }
+
+  def performGenericProviderBackedAction ( org: GestaltResourceInstance,
+                                           resourceType: UUID,
+                                           resourceId: UUID,
+                                           providerType: UUID,
+                                           actionVerb: String )
+                                         ( implicit request: SecuredRequest[AnyContent] ) : Future[Result] = {
+
+    object actions extends ActionMethods
+
+    val response = for {
+      resource <- getOrFail(
+        ResourceFactory.findById(resourceType, resourceId),
+        s"resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
+      )
+      providerId <- getOrFail(
+        resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
+        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
+      )
+      providerResource <- getOrFail(
+        ResourceFactory.findById(providerType, providerId),
+        s"provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
+      )
+      provider <- Future.fromTry(
+        actionProviderManager.getProvider(providerResource)
+      )
+      parent <- getOrFail(
+        ResourceFactory.findParent(resource.id),
+        s"could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
+      )
+      action <- getOrFail (
+        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
+        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
+      )
+      operations = List(
+        controllers.util.Authorize(action),
+        controllers.util.PolicyCheck(action),
+        controllers.util.EventsPre(action),
+        controllers.util.EventsPost(action)
+      )
+      options = RequestOptions(request.identity,
+        authTarget   = Option(parent.id),
+        policyOwner  = Option(parent.id),
+        policyTarget = Option(resource),
+        data = Option(Map(
+          "host"     -> META_URL,
+          "parentId" -> parent.id.toString,
+          "typeId"   -> resource.typeId.toString))
+      )
+      response <- SafeRequest(operations, options).ExecuteAsync {
+        input => for {
+          invocation <- fTry(ActionInvocation(
+            action = action,
+            context = ActionContext.fromParent(org, parent),
+            provider = providerResource,
+            resource = Some(input),
+            payload = request.body.asText.map(JsString(_)) orElse request.body.asJson
+          ))
+          output <- provider.invokeAction(invocation)
+          response = output.fold(
+            { resourceResponse =>
+              ResourceFactory.update(resourceResponse, request.identity.account.id, updateTimestamp = true) match {
+                case Success(r) => Ok(RenderSingle(r))
+                case Failure(ex) => HandleExceptions(ex)
+              }
+            }, {
+              case (status,contentType,contentBody) => Result(
+                ResponseHeader(status.getOrElse(200), contentType.map(ct => Map(CONTENT_TYPE -> ct)).getOrElse(Map.empty)),
+                Enumerator(contentBody.getOrElse("").getBytes)
+              )
+            }
+          )
+        } yield response
       }
     } yield response
     response recover { case e => HandleExceptions(e) }

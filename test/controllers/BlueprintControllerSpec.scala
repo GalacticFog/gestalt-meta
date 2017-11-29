@@ -291,7 +291,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
     }
 
-    "deploy blueprints using the ActionProvider interface without update semantics" in new TestActionProvider {
+    "deploy blueprints using the ActionProvider interface with Json payload without update semantics" in new TestActionProvider {
       val testBlueprintName = "test-blueprint-deploy"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
         parent = Some(testEnv.id),
@@ -305,9 +305,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
           val invocation = a.asInstanceOf[ActionInvocation]
-          val name = invocation.payload.flatMap(s => Try(Json.parse(s)).toOption).flatMap(j => (j \ "name").asOpt[String])
+          val name = invocation.payload.flatMap(j => (j \ "name").asOpt[String])
           Future.successful(Right(
-            (Some(202),Some("text/plain"), Some(s"hello, ${name.getOrElse("world")}"))
+            (Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
           ))
       }
 
@@ -315,54 +315,56 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         "name" -> "Chris"
       )
       val request = fakeAuthRequest(POST,
-        s"/root/blueprints/${createdResource.id}/deploy", testCreds
+        s"/root/blueprints/${createdResource.id}?action=deploy", testCreds
       ).withBody(payload)
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(202)
-      there was one(mockActionProvider).invokeAction(meq(ActionInvocation(
-        action = "blueprint.deploy",
-        context = ActionContext(
-          org = ResourceFactory.findById(dummyRootOrgId).get,
-          workspace = Some(testWork),
-          environment = Some(testEnv)
-        ),
-        provider = testProvider,
-        resource = Some(createdResource),
-        payload = Some(payload.toString)
-      )))
+      contentAsString(result) must_== "Hello, Chris"
+      contentType(result) must beSome("text/plain")
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.deploy"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
+      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.payload must beSome(payload)
     }
 
     "delete blueprints using the ActionProvider interface" in new TestActionProvider {
-      val testBlueprintName = "test-blueprint"
+      val testBlueprintName = "test-blueprint-delete"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
         parent = Some(testEnv.id),
         properties = Some(Map(
           "provider" -> testProvider.id.toString,
           "blueprint_type" -> "docker-compose",
-          "native_form" -> "blueprint data goes here",
-          "canonical_form" -> "canonical form is here"
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
         ))
       ).get
       mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
 
       val request = fakeAuthRequest(DELETE,
-        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
+        s"/root/blueprints/${createdResource.id}", testCreds
       )
       val Some(result) = route(request)
-      status(result) must equalTo(NO_CONTENT)
-      there was one(mockActionProvider).invokeAction(meq(ActionInvocation(
-        action = "blueprint.delete",
-        context = ActionContext(
-          org = ResourceFactory.findById(dummyRootOrgId).get,
-          workspace = Some(testWork),
-          environment = Some(testEnv)
-        ),
-        provider = testProvider,
-        resource = Some(createdResource)
-      )))
+      status(result) must equalTo(204)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.delete"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
+      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.payload must beNone
     }
 
 
