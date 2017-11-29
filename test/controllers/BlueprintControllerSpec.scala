@@ -2,10 +2,9 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.actions.{ActionContext, ActionInvocation, ActionProvider, ActionProviderManager}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import controllers.util.ContainerService
@@ -23,6 +22,14 @@ import services.{MarathonClientFactory, SkuberFactory}
 import scala.concurrent.Future
 import scala.util.{Success, Try}
 
+/*
+    FINISH: this test is currently built around Blueprint resoruces, but it could easily be modified to be a test of generic provider-backed resource capability
+    1) create new provider type
+    2) create new resource type, backed by provider type from 1
+    3) test just like below using that instead of Blueprint/BlueprintProvider
+
+    this should be done as part of the work to remove the hard-coded route entries in favor of generic routing
+ */
 class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
@@ -53,16 +60,16 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
     bind(classOf[ProviderManager]).toInstance(mock[ProviderManager]),
     bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),
     bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
-    bind(classOf[ActionProviderManager]).toInstance(mock[ActionProviderManager])
+    bind(classOf[GenericProviderManager]).toInstance(mock[GenericProviderManager])
   ))
 
   abstract class TestActionProvider extends WithApplication(appWithMocks()) {
     var testWork: GestaltResourceInstance = null
     var testEnv: GestaltResourceInstance = null
-    var providerManager: ActionProviderManager = null
+    var providerManager: GenericProviderManager = null
 
     var testProvider: GestaltResourceInstance = null
-    var mockActionProvider: ActionProvider = null
+    var mockActionProvider: GenericProvider = null
 
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
@@ -76,7 +83,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
 
       val injector = app.injector
-      providerManager = injector.instanceOf[ActionProviderManager]
+      providerManager = injector.instanceOf[GenericProviderManager]
 
       testProvider = createInstance(
         typeId = ResourceIds.BlueprintProvider,
@@ -87,7 +94,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "config" -> "{}"
         ))
       ).get
-      mockActionProvider = mock[ActionProvider]
+      mockActionProvider = mock[GenericProvider]
       providerManager.getProvider(testProvider) returns Success(mockActionProvider)
       t
     }
@@ -136,7 +143,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val testBlueprintName = "test-blueprint"
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
-          val invocation = a.asInstanceOf[ActionInvocation]
+          val invocation = a.asInstanceOf[GenericActionInvocation]
           Future.successful(Left(invocation.resource.get.copy(
             properties = Some(invocation.resource.get.properties.get ++ Map(
               "canonical_form" -> "meta canonical form"
@@ -165,7 +172,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
@@ -189,7 +196,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val testBlueprintName = "test-blueprint"
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
-          val invocation = a.asInstanceOf[ActionInvocation]
+          val invocation = a.asInstanceOf[GenericActionInvocation]
           Future.successful(Left(invocation.resource.get.copy(
             properties = Some(invocation.resource.get.properties.get ++ Map(
               "canonical_form" -> "meta canonical form"
@@ -218,7 +225,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
@@ -242,7 +249,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val testBlueprintName = "test-blueprint"
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
-          val invocation = a.asInstanceOf[ActionInvocation]
+          val invocation = a.asInstanceOf[GenericActionInvocation]
           Future.successful(Left(invocation.resource.get.copy(
             properties = Some(invocation.resource.get.properties.get ++ Map(
               "canonical_form" -> "meta canonical form"
@@ -271,7 +278,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
@@ -304,7 +311,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       ).get
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
-          val invocation = a.asInstanceOf[ActionInvocation]
+          val invocation = a.asInstanceOf[GenericActionInvocation]
           val name = invocation.payload.flatMap(j => (j \ "name").asOpt[String])
           Future.successful(Right(
             (Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
@@ -322,7 +329,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       contentAsString(result) must_== "Hello, Chris"
       contentType(result) must beSome("text/plain")
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
@@ -349,12 +356,13 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
 
       val request = fakeAuthRequest(DELETE,
-        s"/root/blueprints/${createdResource.id}", testCreds
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
       )
       val Some(result) = route(request)
+      println(contentAsString(result))
       status(result) must equalTo(204)
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[ActionInvocation])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
       there was atLeastOne(providerManager).getProvider(testProvider)
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue

@@ -1,6 +1,6 @@
 package controllers.util
 
-import com.galacticfog.gestalt.meta.actions.ActionProviderManager
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
@@ -63,7 +63,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-      bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
+      bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }

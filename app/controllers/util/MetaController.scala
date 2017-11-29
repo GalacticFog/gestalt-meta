@@ -3,7 +3,6 @@ package controllers.util
 
 import play.api.http.HeaderNames
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import controllers.util.db._
@@ -27,12 +26,18 @@ import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.patch._
 import controllers.util.JsonUtil._
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
+trait MetaControllerUtils extends AuthorizationMethods {
 
-trait MetaControllerUtils {
-  
+  case class MetaRequest( caller: AuthAccountWithCreds,
+                          resource: GestaltResourceInstance,
+                          resourceParent: UUID,
+                          action: String,
+                          baseUri: Option[String] = None)
+
   private[this] val log = Logger(this.getClass)
-  
+
   /**
    * Get an Org by FQON
    */
@@ -49,7 +54,63 @@ trait MetaControllerUtils {
   
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)
-    
+
+  private[controllers] def CreateWithEntitlements(
+                                                   owningOrgId: UUID,
+                                                   creator: AuthAccountWithCreds,
+                                                   resource: ResourceLike,
+                                                   parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+
+    ResourceFactory.create(ResourceIds.User, creator.account.id)(
+      resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
+      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+      r
+    }
+  }
+
+
+  /**
+    *
+    * @param baseUri if given this will be used to construct a URL pointing to resource in the EventMessage.
+    */
+  def newResourceRequestOptions(
+                                 caller: AuthAccountWithCreds,
+                                 resource: GestaltResourceInstance,
+                                 parentId: UUID,
+                                 baseUri: Option[String] = None) = {
+
+    RequestOptions(caller,
+      authTarget   = Option(parentId),
+      policyOwner  = Option(parentId),
+      policyTarget = Option(resource),
+      data = Option(Map(
+        "host"     -> baseUri.get,
+        "parentId" -> parentId.toString,
+        "typeId"   -> resource.typeId.toString)))
+  }
+
+  def newResourceRequestSetup(
+                               caller: AuthAccountWithCreds,
+                               resource: GestaltResourceInstance,
+                               resourceParent: UUID,
+                               action: String, baseUri: Option[String] = None):
+  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+    (
+      newResourceRequestOperations(resource.typeId, action),
+      newResourceRequestOptions(caller, resource, resourceParent, baseUri)
+    )
+  }
+
+  def newResourceRequestArgs(meta: MetaRequest):
+  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+    val (operations, options) = newResourceRequestSetup(
+      meta.caller,
+      meta.resource,
+      meta.resourceParent,
+      meta.action, meta.baseUri)
+    (operations, options)
+  }
+
   /**
     * Inspect a GestaltResourceInput, supplying default values where appropriate.
     */
@@ -77,15 +138,15 @@ trait MetaControllerUtils {
       tags = in.tags,
       auth = in.auth)
   }
-}
 
-
-
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-
-trait MetaController extends AuthorizationMethods with SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
-  
-  private[this] val log = Logger(this.getClass)
+  def newResourceRequestOperations(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.Validate(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action),
+      controllers.util.EventsPost(action))
+  }
 
   /**
     * Get the base URL for this Meta instance
@@ -97,7 +158,25 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
     "%s://%s".format(protocol, host)
   }
+
+  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
+    (obj \ "resource_type" match {
+      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
+      case t => {
+        if (!(t.as[UUID] == expectedType))
+          throw new BadRequestException(
+            s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
+        else obj
+      }
+    }).as[JsObject]
+  }
+
+}
+
+trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
+  private[this] val log = Logger(this.getClass)
+
   /**
    * Render a single GestaltResourceInstance to JSON
    */
@@ -180,19 +259,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
   private[controllers] def CreateWithEntitlements(
       owningOrgId: UUID,
-      creator: AuthAccountWithCreds,
-      resource: ResourceLike,
-      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-
-    ResourceFactory.create(ResourceIds.User, creator.account.id)(
-      resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
-      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
-      r
-    }
-  }
-  
-  private[controllers] def CreateWithEntitlements(
-      owningOrgId: UUID,
       resource: ResourceLike,
       parentId: Option[UUID])(
           implicit request: SecuredRequest[_]): Try[GestaltResourceInstance] = {
@@ -239,64 +305,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     ResourceFactory.update(metaResource.copy(state = failstate), caller.account.id)
     HandleExceptions(ex)
   }
-
-  def newResourceRequestOperations(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
-    List(
-      controllers.util.Authorize(action),
-      controllers.util.Validate(action),
-      controllers.util.PolicyCheck(action),
-      controllers.util.EventsPre(action),
-      controllers.util.EventsPost(action))
-  }
-  
-  /**
-   * 
-   * @param baseUri if given this will be used to construct a URL pointing to resource in the EventMessage.
-   */
-  def newResourceRequestOptions(
-      caller: AuthAccountWithCreds, 
-      resource: GestaltResourceInstance, 
-      parentId: UUID, 
-      baseUri: Option[String] = None) = {
-    
-    RequestOptions(caller, 
-      authTarget   = Option(parentId), 
-      policyOwner  = Option(parentId), 
-      policyTarget = Option(resource),
-      data = Option(Map(
-          "host"     -> baseUri.get,
-          "parentId" -> parentId.toString,
-          "typeId"   -> resource.typeId.toString)))
-  }
-  
-  def newResourceRequestSetup(
-      caller: AuthAccountWithCreds, 
-      resource: GestaltResourceInstance,
-      resourceParent: UUID,
-      action: String, baseUri: Option[String] = None): 
-        Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
-    (
-      newResourceRequestOperations(resource.typeId, action),
-      newResourceRequestOptions(caller, resource, resourceParent, baseUri)
-    )
-  } 
-  
-  def newResourceRequestArgs(meta: MetaRequest):
-      Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
-    val (operations, options) = newResourceRequestSetup(
-        meta.caller,
-        meta.resource,
-        meta.resourceParent,
-        meta.action, meta.baseUri)
-    (operations, options)
-  }
-
-  case class MetaRequest(
-    caller: AuthAccountWithCreds,
-    resource: GestaltResourceInstance,
-    resourceParent: UUID,
-    action: String,
-    baseUri: Option[String] = None)
 
   import com.galacticfog.gestalt.meta.auth.ActionMethods
   import play.api.mvc.Result
@@ -420,18 +428,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
         "properties" -> 
         replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
   }
-  
-  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
-    (obj \ "resource_type" match {
-      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
-      case t => {
-        if (!(t.as[UUID] == expectedType))
-          throw new BadRequestException(
-              s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
-        else obj
-      }
-    }).as[JsObject]    
-  }  
   
   def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue): Try[JsValue] = {
     payloadTransforms.get(tpe).fold(Try(payload)) { f =>

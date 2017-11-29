@@ -11,10 +11,10 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.actions.ActionProviderManager
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -52,7 +52,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
     bind[ProviderManager].toInstance(mock[ProviderManager]),
     bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
     bind[SkuberFactory].toInstance(mock[SkuberFactory]),
-    bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
+    bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
   ))
 
   abstract class TestContainerController extends WithApplication(appWithMocks()) {

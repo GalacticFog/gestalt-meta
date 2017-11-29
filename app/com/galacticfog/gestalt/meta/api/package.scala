@@ -18,11 +18,13 @@ import com.galacticfog.gestalt.data.Hstore
 package object api {
 
   /**
-   * Translate resource REST name to Resource Type ID
-   */
+    * Translate resource REST name to Resource Type ID
+    *
+    * This list really has to die.
+    */
   def resourceUUID(resource: String): Option[UUID] = {
     resource match {
-      
+
       case "resources"        => Some(ResourceIds.Resource)
       case "orgs"             => Some(ResourceIds.Org)
       case "users"            => Some(ResourceIds.User)
@@ -52,17 +54,18 @@ package object api {
       case "datacontainers"   => Some(ResourceIds.DataContainer)
       case "actionproviders"  => Some(ResourceIds.ActionProvider)
       case "actions"          => Some(ResourceIds.ProviderAction)
+      case "blueprints"       => Some(ResourceIds.Blueprint)
       case _                  => None
     }
   }
-  
-  
+
+
   /**
-   * Translate Resource Type ID to REST name
-   */
+    * Translate Resource Type ID to REST name
+    */
   def resourceRestName(typeId: UUID): Option[String] = {
     typeId match {
-      
+
       case ResourceIds.Org             => Some("orgs")
       case ResourceIds.User            => Some("users")
       case ResourceIds.Group           => Some("groups")
@@ -72,7 +75,7 @@ package object api {
       case ResourceIds.Api             => Some("apis")
       case ResourceIds.ApiEndpoint     => Some("apiendpoints")
       case ResourceIds.Domain          => Some("domains")
-      case ResourceIds.Container       => Some("containers")      
+      case ResourceIds.Container       => Some("containers")
       case ResourceIds.Entitlement     => Some("entitlements")
       case ResourceIds.NodeType        => Some("nodetypes")
       case ResourceIds.EnvironmentType => Some("environmenttypes")
@@ -86,9 +89,10 @@ package object api {
       case ResourceIds.Integration     => Some("integrations")
       case ResourceIds.ActionProvider  => Some("actionproviders")
       case ResourceIds.ProviderAction  => Some("actions")
+      case ResourceIds.Blueprint       => Some("blueprints")
       case _ => None
     }
-  }  
-  
-  
+  }
+
+
 }

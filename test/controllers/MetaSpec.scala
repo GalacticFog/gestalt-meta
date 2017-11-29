@@ -21,7 +21,7 @@ import scala.util.Success
 import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.actions.ActionProviderManager
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import org.specs2.execute.Result
 
@@ -53,7 +53,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         bind[SkuberFactory].toInstance(mock[SkuberFactory]),
         bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
         bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-        bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
+        bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
       )
     )
   ) {
