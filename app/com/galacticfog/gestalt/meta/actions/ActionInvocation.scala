@@ -52,3 +52,7 @@ trait ActionProvider {
 trait ActionProviderManager {
   def getProvider(provider: GestaltResourceInstance): Try[ActionProvider]
 }
+
+class DefaultActionProviderManager extends ActionProviderManager {
+  override def getProvider(provider: GestaltResourceInstance) = Try{???}
+}
