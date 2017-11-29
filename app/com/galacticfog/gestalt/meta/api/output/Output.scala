@@ -43,12 +43,11 @@ object OrgCache {
   }
   
   def getOrg(id: UUID) = {  
-  }
-  
+  } 
 }
 
-object Output {
 
+object Output {
 
   /*
    * TODO: Refactor renderLinks* to take ResourceLike args.
@@ -116,10 +115,8 @@ object Output {
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
     val res = mkTypeOutput(r)    
     val props = res.properties.get.validate[Map[String,String]].get
-
-    
-    // this renders the properties
     val renderedProps = renderTypeProperties(r.id, r.id, Some(props))
+    
     Json.toJson(res.copy(properties = renderedProps))
   }
   
@@ -157,9 +154,6 @@ object Output {
   
   def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None): JsValue = {  
     val res = toPropertyOutput( p, baseUri )
-    //
-    // TODO: .copy rendered properties!!!
-    //
     Json.toJson(res)
   }
   
@@ -215,9 +209,7 @@ object Output {
     /* Get a Map of the properties defined for the current ResourceType. */
     
     val templateProps = Properties.getTypePropertyMap(typeId)
-    
-    println("***TEMPLATE-PROPS : " + templateProps.keySet)
-    
+
     @tailrec
     def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
       propKeys match {
@@ -245,41 +237,42 @@ object Output {
       Json.toJson(_)
     }
   }
+  
   def renderTypeProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
     /* Get a Map of the properties defined for the current ResourceType. */
-    println("***renderTypeProperties(...)")
-    val templateProps = Properties.getTypePropertyMap(/*ResourceIds.ResourceType*/typeId)
+
+    val givenProps = properties getOrElse Map()
     
-    println("***TEMPLATE-PROPS : " + templateProps.keySet)
-    
+    val templateProps = {
+      val ps = Properties.getTypePropertyMap(typeId)
+      val remove = ps.keySet.diff(givenProps.keySet)
+      ps -- remove
+    }
+
     @tailrec
     def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
       propKeys match {
         case Nil    => Option(acc)
         case property :: tail => {
-          println("***HEAD: " + property)
-          /*
-           * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
-           * That shouldn't happen as this is output (resource should been validated at create/update).
-           * just a note to look here if you see that error pop up.
-           */
-          if (skipRender(templateProps(property), given)) loop(tail, given, acc)
-          else {
+
+          if (skipRender(templateProps(property), given)) {
+            loop(tail, given, acc)
+          }
+          else if (templateProps.contains(property) && given.contains(property)) {
             val renderedValue = renderDataType(templateProps( property ), given( property ))
-            loop( tail, given, acc + (property -> renderedValue) )
+            loop( tail, given, acc + (property -> renderedValue) )            
+          }
+          else {
+            loop(tail, given, acc)
           }
         }
       }
     }
-
-    val givenProperties = properties //collectInstanceProperties(typeId, instanceId, properties)
-    givenProperties map {
-      println("***going in...")
-      loop(templateProps.keys.toList, _, Map[String, JsValue]())
-    } map {
+    loop(templateProps.keys.toList, givenProps, Map[String, JsValue]()) map {
       Json.toJson(_)
     }
   }
+  
   /*
    * TODO: This is a hack just to get something out the door.
    * Once the PropertyManager architecture is done, special cases
