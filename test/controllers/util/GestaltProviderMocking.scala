@@ -44,8 +44,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
       bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
       bind[MetaHealth].toInstance(mock[MetaHealth]),
-      bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
-      bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
+      bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus])
     )
 
     new GuiceApplicationBuilder()
@@ -63,7 +62,8 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[ProviderManager].toInstance(mockProviderManager),
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
-      bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory])
+      bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
+      bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }

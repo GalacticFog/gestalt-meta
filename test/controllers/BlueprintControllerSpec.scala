@@ -13,7 +13,7 @@ import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.matcher.JsonMatchers
+import org.specs2.matcher.{JsonMatchers, Matcher}
 import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.Json
@@ -26,6 +26,12 @@ import scala.util.{Success, Try}
 class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
+  def hasName(name: => String): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).name) ^^ be_==(name)
+
+  def hasProperties(props: (String,String)*): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).properties.get) ^^ havePairs(props:_*)
 
   override def beforeAll(): Unit = {
     pristineDatabase()
@@ -149,7 +155,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -169,7 +174,15 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.workspace must beNone
       invocation.context.environment must beNone
       invocation.provider must_== testProvider
-      invocation.resource must beSome
+      invocation.resource must beSome(
+        hasName(testBlueprintName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "blueprint_type" -> "docker-compose",
+            "native_form" -> "blueprint data goes here"
+          )
+      )
     }
 
     "create workspace blueprints using the ActionProvider interface" in new TestActionProvider {
@@ -195,7 +208,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -215,7 +227,15 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
       invocation.context.environment must beNone
       invocation.provider must_== testProvider
-      invocation.resource must beSome
+      invocation.resource must beSome(
+        hasName(testBlueprintName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "blueprint_type" -> "docker-compose",
+            "native_form" -> "blueprint data goes here"
+          )
+      )
     }
 
     "create environment blueprints using the ActionProvider interface" in new TestActionProvider {
@@ -241,7 +261,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -261,18 +280,26 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
       invocation.provider must_== testProvider
-      invocation.resource must beSome
+      invocation.resource must beSome(
+        hasName(testBlueprintName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "blueprint_type" -> "docker-compose",
+            "native_form" -> "blueprint data goes here"
+          )
+      )
     }
 
     "deploy blueprints using the ActionProvider interface without update semantics" in new TestActionProvider {
-      val testBlueprintName = "test-blueprint"
+      val testBlueprintName = "test-blueprint-deploy"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
         parent = Some(testEnv.id),
         properties = Some(Map(
           "provider" -> testProvider.id.toString,
           "blueprint_type" -> "docker-compose",
-          "native_form" -> "blueprint data goes here",
-          "canonical_form" -> "canonical form is here"
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
         ))
       ).get
       mockActionProvider.invokeAction(any) answers {
@@ -280,7 +307,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           val invocation = a.asInstanceOf[ActionInvocation]
           val name = invocation.payload.flatMap(s => Try(Json.parse(s)).toOption).flatMap(j => (j \ "name").asOpt[String])
           Future.successful(Right(
-            (Some(200),Some("text/plain"), Some(s"hello, ${name.getOrElse("world")}"))
+            (Some(202),Some("text/plain"), Some(s"hello, ${name.getOrElse("world")}"))
           ))
       }
 
@@ -291,7 +318,8 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         s"/root/blueprints/${createdResource.id}/deploy", testCreds
       ).withBody(payload)
       val Some(result) = route(request)
-      status(result) must equalTo(OK)
+      println(contentAsString(result))
+      status(result) must equalTo(202)
       there was one(mockActionProvider).invokeAction(meq(ActionInvocation(
         action = "blueprint.deploy",
         context = ActionContext(

@@ -274,7 +274,7 @@ class ContainerController @Inject()(
         val user = request.identity
 
         val (operations, options) = ContainerService.setupPromoteRequest(
-          fqon, environment.id, container, user, META_URL.get, target_env_id
+          fqon, environment.id, container, user, META_URL, target_env_id
         )
 
         SafeRequest(operations, options) Protect { _ =>
@@ -283,7 +283,7 @@ class ContainerController @Inject()(
             user.account.id
           ) match {
             case Failure(e) => HandleExceptions(e)
-            case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+            case Success(c) => Accepted(Output.renderInstance(c, Some(META_URL)))
           }
         }
       }
@@ -307,7 +307,7 @@ class ContainerController @Inject()(
         val user = request.identity
         val container = getMigrationContainer(environment.id, id)
         val (operations, options) = ContainerService.setupMigrateRequest(
-          fqon, environment.id, container, user, META_URL.get, request.queryString
+          fqon, environment.id, container, user, META_URL, request.queryString
         )
 
         SafeRequest(operations, options) Protect { _ =>
@@ -316,7 +316,7 @@ class ContainerController @Inject()(
             user.account.id
           ) match {
             case Failure(e) => HandleExceptions(e)
-            case Success(c) => Accepted(Output.renderInstance(c, META_URL))
+            case Success(c) => Accepted(Output.renderInstance(c, Some(META_URL)))
           }
         }
       }

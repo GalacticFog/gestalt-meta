@@ -304,7 +304,7 @@ class ResourceController @Inject()(
 
       val output = Assembler.assemble(
           fqon,
-          META_URL.get,
+          META_URL,
           act, resource.get, request.identity)
       Ok(output).as("text/html")
     }
@@ -637,7 +637,7 @@ class ResourceController @Inject()(
         val userids = gs map { _.id }
         if (userids.isEmpty) Ok(Json.parse("[]")) else {
         handleExpansion(ResourceFactory.findAllIn(ResourceIds.User, userids),
-            request.queryString, META_URL)
+            request.queryString, Some(META_URL))
         }
       }
     }  
@@ -657,7 +657,7 @@ class ResourceController @Inject()(
         val groupids = gs map { _.id }
         if (groupids.isEmpty) Ok(Json.parse("[]")) else {
           handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.Group, groupids),
-              request.queryString, META_URL)
+              request.queryString, Some(META_URL))
         }
       }
     }

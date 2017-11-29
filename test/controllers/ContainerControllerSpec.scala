@@ -11,6 +11,7 @@ import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.actions.ActionProviderManager
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
@@ -47,10 +48,11 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
   sequential
 
   def appWithMocks() = application(additionalBindings = Seq(
-    bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
-    bind(classOf[ProviderManager]).toInstance(mock[ProviderManager]),
-    bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),
-    bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory])
+    bind[ContainerService].toInstance(mock[ContainerService]),
+    bind[ProviderManager].toInstance(mock[ProviderManager]),
+    bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
+    bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+    bind[ActionProviderManager].toInstance(mock[ActionProviderManager])
   ))
 
   abstract class TestContainerController extends WithApplication(appWithMocks()) {

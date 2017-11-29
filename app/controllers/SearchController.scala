@@ -38,7 +38,7 @@ class SearchController @Inject()(
   
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     handleExpansion(ResourceFactory.findAll(typeId, fqid(fqon)),
-      request.queryString, META_URL)     
+      request.queryString, Some(META_URL))
   }
 
   // GET /{fqon}/resourcetypes/{typeId}/resources/search?... 
@@ -47,7 +47,7 @@ class SearchController @Inject()(
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => handleExpansion(
         getByProperty(ResourceIds.User, Criterion(name,value)),
-        request.queryString, META_URL)
+        request.queryString, Some(META_URL))
     }
   }
 
@@ -134,7 +134,7 @@ class SearchController @Inject()(
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => {
         handleExpansion(getByProperty(typeId, Criterion(name,value), org), 
-         request.queryString, META_URL)
+         request.queryString, Some(META_URL))
       }
     }    
   }

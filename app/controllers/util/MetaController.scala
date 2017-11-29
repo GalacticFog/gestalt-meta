@@ -90,14 +90,12 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   /**
     * Get the base URL for this Meta instance
     */
-  def META_URL(implicit requestHeader: RequestHeader) = {
+  def META_URL(implicit requestHeader: RequestHeader): String = {
     val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
       if (requestHeader.secure) "https" else "http"
     }).toLowerCase
     val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
-    Some(
-      "%s://%s".format(protocol, host)
-    )
+    "%s://%s".format(protocol, host)
   }
   
   /**
@@ -105,7 +103,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
    */
   private[controllers] def RenderSingle(res: GestaltResourceInstance)(
       implicit rh: RequestHeader): JsValue = {
-    Output.renderInstance(res, META_URL)
+    Output.renderInstance(res, Some(META_URL))
   }
   
   /**
@@ -117,7 +115,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
       Output.renderCompact else Output.renderInstance
     
-    handleExpansion2(rss, request.queryString, META_URL)(render)    
+    handleExpansion2(rss, request.queryString, Some(META_URL))(render)
   }
   
 //  private[controllers] def RenderListCompact(rss: Seq[GestaltResourceInstance])(
@@ -312,7 +310,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
       throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
     }{ prefix =>
       val fqaction = "%s.%s".format(prefix, action)
-      MetaRequest(request.identity, resource, resourceParent, fqaction, META_URL)
+      MetaRequest(request.identity, resource, resourceParent, fqaction, Some(META_URL))
     }
   }
 
@@ -449,7 +447,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   }
   
   protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
-    val link = Json.toJson(parentLink(parent, META_URL).get)
+    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
     JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
   }
   

@@ -169,7 +169,7 @@ class AuthorizationController @Inject()(
           }
           log.debug(s"${persisted.size} entitlements modified in cascade.")
           val root = getUpdatedRoot(id, persisted).get
-          Ok(transformEntitlement(root, org, META_URL))
+          Ok(transformEntitlement(root, org, Some(META_URL)))
         }
       }  
     }
@@ -231,7 +231,7 @@ class AuthorizationController @Inject()(
     entitlement match {
       case Failure(e) => HandleExceptions(e)
       case Success(resource) => {
-        val transformed = transformEntitlement(resource, org, META_URL)
+        val transformed = transformEntitlement(resource, org, Some(META_URL))
         Created(transformed)
       }
     }
@@ -250,7 +250,7 @@ class AuthorizationController @Inject()(
       implicit request: SecuredRequest[_]) = {
 
     ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
-      case Some(res) => Ok(transformEntitlement(res, org, META_URL))
+      case Some(res) => Ok(transformEntitlement(res, org, Some(META_URL)))
       case None      => NotFoundResult(s"Entitlement with ID '$id' not found.")
     }
   }
@@ -317,7 +317,7 @@ class AuthorizationController @Inject()(
    * (either a User or a Group), and the type system has no way to indicate this fact for reference properties.
    */
   private[this] def transformEntitlements(org: UUID)(entitlements: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
-    entitlements map { transformEntitlement(_, org, META_URL) }    
+    entitlements map { transformEntitlement(_, org, Some(META_URL)) }
   }
   
   private[this] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {

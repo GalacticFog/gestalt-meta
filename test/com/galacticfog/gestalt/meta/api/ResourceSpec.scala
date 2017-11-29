@@ -443,32 +443,32 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
 
     "abide header.secure in the absence of proxy headers" in new TestApplication {
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co")) must beSome("http://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co")) must_==("http://meta.company.co")
       testController.META_URL(
-        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co")) must beSome("https://meta.company.co")
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co")) must_==("https://meta.company.co")
     }
 
     "abide X-FORWARDED-PROTO regardless of header.secure" in new TestApplication {
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")) must beSome("https://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")) must_==("https://meta.company.co")
       testController.META_URL(
-        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")) must beSome("https://meta.company.co")
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "https")) must_==("https://meta.company.co")
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")) must beSome("http://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")) must_==("http://meta.company.co")
       testController.META_URL(
-        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")) must beSome("http://meta.company.co")
+        fakeRequest(secure = true).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "http")) must_==("http://meta.company.co")
     }
 
     "lower case X-FORWARDED-PROTO" in new TestApplication {
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTPS")) must beSome("https://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTPS")) must_==("https://meta.company.co")
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTP")) must beSome("http://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "meta.company.co", X_FORWARDED_PROTO -> "HTTP")) must_==("http://meta.company.co")
     }
 
     "prefer X-FORWARDED-HOST over request.host" in new TestApplication {
       testController.META_URL(
-        fakeRequest(secure = false).withHeaders(HOST -> "some-node.company.co", X_FORWARDED_HOST -> "meta.company.co")) must beSome("http://meta.company.co")
+        fakeRequest(secure = false).withHeaders(HOST -> "some-node.company.co", X_FORWARDED_HOST -> "meta.company.co")) must_==("http://meta.company.co")
     }
 
   }

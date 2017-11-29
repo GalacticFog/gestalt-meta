@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.actions.{ActionContext, ActionInvocation, ActionProviderManager}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException}
 import com.galacticfog.gestalt.meta.api.sdk
-import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.auth.{ActionMethods, Authorization}
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
@@ -88,6 +88,9 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
     val resourceType = sdk.ResourceIds.Blueprint
     val providerType = sdk.ResourceIds.BlueprintProvider
     val actionVerb = "deploy"
+    val resourcePrefix = "blueprint"
+
+    object actions extends ActionMethods
 
     val response = for {
       org <- findOrgOrFail(fqon)
@@ -96,8 +99,8 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         s"resource of type ${sdk.ResourceLabel(resourceType)} with id '${id}' does not exist"
       )
       providerId <- getOrFail(
-        (request.body \ "properties" \ "provider").asOpt[UUID],
-        s"${sdk.ResourceLabel(resourceType)} creation requires a provider to be specified in 'obj.properties.provider'"
+        resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
+        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${id}'"
       )
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
@@ -110,12 +113,29 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         ResourceFactory.findParent(resource.id),
         s"could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
       )
-      metaReq = metaRequest(org.id, request.body, resourceType, parent.id, actionVerb)
-      (operations, options) = requestArgs(metaReq)
+      action <- getOrFail (
+        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
+        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
+      )
+      operations = List(
+        controllers.util.Authorize(action),
+        controllers.util.PolicyCheck(action),
+        controllers.util.EventsPre(action),
+        controllers.util.EventsPost(action)
+      )
+      options = RequestOptions(request.identity,
+        authTarget   = Option(parent.id),
+        policyOwner  = Option(parent.id),
+        policyTarget = Option(resource),
+        data = Option(Map(
+          "host"     -> META_URL,
+          "parentId" -> parent.id.toString,
+          "typeId"   -> resource.typeId.toString))
+      )
       response <- SafeRequest(operations, options).ExecuteAsync {
         input => for {
           invocation <- fTry(ActionInvocation(
-            action = metaReq.action,
+            action = action,
             context = ActionContext.fromParent(org, parent),
             provider = providerResource,
             resource = Some(input)
@@ -168,7 +188,7 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         actionProviderManager.getProvider(providerResource)
       )
       metaRequest = newResourceRequest(org.id, resourceType, resourceParent = parent.id, payload = Some(json))
-      (operations, options) = requestArgs(metaRequest)
+      (operations, options) = newResourceRequestArgs(metaRequest)
       response <- SafeRequest(operations, options).ExecuteAsync {
         input => for {
           invocation <- fTry(ActionInvocation(
