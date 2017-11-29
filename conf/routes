@@ -69,9 +69,9 @@ GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrati
 # BLUEPRINTS
 ############################
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints     					    controllers.BlueprintController.createBlueprintFqon(fqon: String)
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:pid/blueprints     	    controllers.BlueprintController.createBlueprint(fqon: String, parentType: String = "workspace", pid: java.util.UUID)
-POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:pid/blueprints          controllers.BlueprintController.createBlueprint(fqon: String, parentType: String = "environment", pid: java.util.UUID)
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints/:id/deploy                 controllers.BlueprintController.deployBlueprint(fqon: String, envid: java.util.UUID, id: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:pid/blueprints     	    controllers.BlueprintController.createWorkspaceBlueprint(fqon: String, pid: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:pid/blueprints          controllers.BlueprintController.createEnvironmentBlueprint(fqon: String, pid: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints/:id/deploy                 controllers.BlueprintController.deployBlueprint(fqon: String, id: java.util.UUID)
 
 ############################
 # SEARCH ENDPOINTS

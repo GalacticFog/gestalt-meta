@@ -22,9 +22,9 @@ case object ActionContext {
 //    )
 //  }
 
-  def fromParent(parent: GestaltResourceInstance): ActionContext = {
+  def fromParent(org: GestaltResourceInstance, parent: GestaltResourceInstance): ActionContext = {
     ActionContext(
-      org = ResourceFactory.findById(ResourceIds.Org, parent.orgId) getOrElse(throw new InternalErrorException(s"could not locate parent org with id '${parent.orgId}' for resource with id '${parent.id}'")),
+      org = org,
       workspace = parent.typeId match {
         case ResourceIds.Workspace => Some(parent)
         case ResourceIds.Environment => ResourceFactory.findParent(ResourceIds.Workspace, parent.id)
@@ -46,7 +46,7 @@ case object ActionInvocation {
 }
 
 trait ActionProvider {
-  def invokeAction(context: ActionInvocation): Future[GestaltResourceInstance]
+  def invokeAction(context: ActionInvocation): Future[Either[GestaltResourceInstance,(Option[Int],Option[String],Option[String])]]
 }
 
 trait ActionProviderManager {
