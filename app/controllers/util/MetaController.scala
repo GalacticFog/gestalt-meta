@@ -283,18 +283,18 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     )
   } 
   
-  def requestArgs(meta: MetaRequest): 
+  def newResourceRequestArgs(meta: MetaRequest):
       Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
     val (operations, options) = newResourceRequestSetup(
-        meta.caller, 
-        meta.resource, 
-        meta.resourceParent, 
+        meta.caller,
+        meta.resource,
+        meta.resourceParent,
         meta.action, meta.baseUri)
     (operations, options)
   }
-  
+
   case class MetaRequest(
-    caller: AuthAccountWithCreds, 
+    caller: AuthAccountWithCreds,
     resource: GestaltResourceInstance,
     resourceParent: UUID,
     action: String,
@@ -302,10 +302,10 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
 
   import com.galacticfog.gestalt.meta.auth.ActionMethods
   import play.api.mvc.Result
-  
+
   def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
       implicit request: SecuredRequest[_]): MetaRequest = {
-    
+
     object actions extends ActionMethods
     val resource = j2r(org, request.identity, json, Some(resourceType))
     actions.prefixFromResource(resource).fold {
@@ -315,24 +315,24 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
       MetaRequest(request.identity, resource, resourceParent, fqaction, META_URL)
     }
   }
-  
+
   def newResourceRequest(org: UUID, resourceType: UUID, resourceParent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]): MetaRequest = {
     val json = payload getOrElse request.body
     metaRequest(org, json, resourceType, resourceParent, "create")
   }
-  
+
   def MetaCreate(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Result) => Result = {
-    val (operations, options) = requestArgs {
+    val (operations, options) = newResourceRequestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
-    SafeRequest(operations, options).Execute _    
+    SafeRequest(operations, options).Execute _
   }
-  
+
   def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
-    val (operations, options) = requestArgs {
+    val (operations, options) = newResourceRequestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
     SafeRequest(operations, options).ExecuteAsync _    
