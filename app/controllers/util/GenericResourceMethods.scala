@@ -83,18 +83,18 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     for {
       providerId <- getOrFail(
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resource.typeId)} '${resource.id}'"
+        s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resource.typeId)} '${resource.id}'"
       )
       providerResource <- getOrFail(
         ResourceFactory.findById(providerId),
-        s"provider '${providerId}' not found"
+        s"Provider '${providerId}' not found"
       )
       provider <- Future.fromTry(
         genericProviderManager.getProvider(providerResource)
       )
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
-        s"could not locate parent for ${sdk.ResourceLabel(resource.typeId)} with id '${resource.id}'"
+        s"Could not locate parent for ${sdk.ResourceLabel(resource.typeId)} with id '${resource.id}'"
       )
       action <- getOrFail (
         actions.prefixFromResource(resource).map { prefix => "%s.delete".format(prefix) },
@@ -138,22 +138,22 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     val response = for {
       resource <- getOrFail(
         ResourceFactory.findById(resourceType, resourceId),
-        s"resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
+        s"Resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
       )
       providerId <- getOrFail(
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
+        s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
       )
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
-        s"provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
+        s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
       )
       provider <- Future.fromTry(
         genericProviderManager.getProvider(providerResource)
       )
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
-        s"could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
+        s"Could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
       )
       action <- getOrFail (
         actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
@@ -217,7 +217,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       )
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
-        s"provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
+        s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
       )
       json <- Future.fromTry({
         normalizeResourceType(body, resourceType)
