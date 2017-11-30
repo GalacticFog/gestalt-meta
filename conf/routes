@@ -28,7 +28,7 @@ GET    /root/check 		controllers.InfoController.serviceCheck()
 
 
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
-
+PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
 
 ############################
 # ACTIONS

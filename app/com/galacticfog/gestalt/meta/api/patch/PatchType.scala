@@ -13,7 +13,9 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.patch._
 
-
+/**
+ * PatchDocument 'wrapper' for PATCH operations against GestaltResourceType objects.
+ */
 object PatchType {
 
   def applyPatch(r: GestaltResourceType, patch: PatchDocument): Try[JsValue] = {
