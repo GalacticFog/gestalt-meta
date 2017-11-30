@@ -7,14 +7,11 @@ import play.api.libs.json._
 
 case class GenericActionContext(org: GestaltResourceInstance,
                                 workspace: Option[GestaltResourceInstance],
-                                environment: Option[GestaltResourceInstance] )
+                                environment: Option[GestaltResourceInstance] ) {
+  def toJson(): JsObject = ???
+}
 
 case object GenericActionContext {
-//  implicit val actionContextFmt: Writes[ActionContext] = new Writes[ActionContext] {
-//    override def writes(o: ActionContext) = Json.obj(
-//
-//    )
-//  }
 
   /* TODO: make a structure for getting other query parameters into the invocation
    *
@@ -39,9 +36,8 @@ case class GenericActionInvocation(action: String,
                                    context: GenericActionContext,
                                    provider: GestaltResourceInstance,
                                    resource: Option[GestaltResourceInstance] = None,
-                                   actionPayload: Option[JsValue] = None )
-
-case object GenericActionInvocation {
-//  implicit val actionInvocationFmt = Json.format[ActionInvocation]
+                                   actionPayload: Option[JsValue] = None ) {
+  def toJson(): JsObject = ???
 }
+
 

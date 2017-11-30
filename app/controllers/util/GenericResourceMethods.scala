@@ -245,7 +245,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         genericProviderManager.getProvider(providerResource)
       )
       metaRequest = {
-//        metaRequest(org.id, body, resourceType, parent.id, "create")
         val resource = j2r(org.id, identity, body, Some(resourceType))
         actions.prefixFromResource(resource).fold {
           throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")

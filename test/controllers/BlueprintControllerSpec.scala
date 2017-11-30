@@ -539,23 +539,4 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
   }
 
-
-  "ActionProviderManager" should {
-
-    "return the right class or something" in {
-      ko("write me")
-    }
-
-  }
-
-
-  "ActionProviderImpl" in {
-
-    "post to lambdas appropriately" in {
-      ko("write me")
-    }
-
-  }
-
-
 }
