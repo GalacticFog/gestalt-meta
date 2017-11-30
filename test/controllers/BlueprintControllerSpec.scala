@@ -16,7 +16,7 @@ import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.Json
+import play.api.libs.json.{JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{MarathonClientFactory, SkuberFactory}
 
@@ -341,6 +341,61 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
       invocation.payload must beSome(payload)
+    }
+
+    "deploy blueprints using the ActionProvider interface with text payload with update semantics" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-deploy"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val updatedCF = invocation.payload.flatMap(_.asOpt[String]) getOrElse ""
+          val resource = invocation.resource.get
+          Future.successful(Left(
+            resource.copy(
+              properties = Some(resource.properties.get ++ Map(
+                "canonical_form" -> updatedCF
+              ))
+            )
+          ))
+      }
+
+      val payload = "updated canonical form during blueprint"
+
+      val request = fakeAuthRequest(POST,
+        s"/root/blueprints/${createdResource.id}?action=deploy", testCreds
+      ).withBody(payload)
+      val Some(result) = route(request)
+      status(result) must equalTo(200)
+      contentAsJson(result).toString must /("properties") /("canonical_form" -> payload)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.deploy"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
+      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.payload must beSome(JsString(payload))
+
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "docker-compose",
+        "native_form" -> "native",
+        "canonical_form" -> payload
+      )
     }
 
     "delete blueprints using the ActionProvider interface" in new TestActionProvider {
