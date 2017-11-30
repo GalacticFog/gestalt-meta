@@ -2,32 +2,27 @@ package controllers.util
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserLambda, _}
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
 import mockws.{MockWS, Route}
-import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.{BeforeAll, Scope}
-import play.api.http.HttpVerbs
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.json.{JsObject, JsValue, Json}
-import play.api.libs.ws.{WSClient, WSResponse}
+import play.api.libs.ws.WSClient
 import play.api.mvc.Action
 import play.api.mvc.Results.Ok
-import play.api.test.{DefaultAwaitTimeout, FakeRequest, FutureAwaits, PlaySpecification}
+import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
 import play.api.mvc.BodyParsers.parse
 import play.api.libs.json._
 import play.api.libs.json.Reads._
 
-import scala.concurrent.Future
 import scala.util.Success
 
 class GenericResourceMethodsSpec extends PlaySpecification
@@ -154,7 +149,9 @@ class GenericResourceMethodsSpec extends PlaySpecification
           putBody = request.body
           val resource = (request.body \ "resource").as[JsObject]
           val updated = resource.transform(
-            (__ \ 'properties \ 'foo).json.put(JsString("new-bar"))
+            (__ \ 'properties).json.update(
+              __.read[JsObject].map(o => o ++  Json.obj("foo" -> "new-bar"))
+            )
           ).get
           Ok(updated)
         }

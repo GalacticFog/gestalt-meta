@@ -2,13 +2,18 @@ package com.galacticfog.gestalt.meta.genericactions
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import play.api.libs.json._
 
 case class GenericActionContext(org: GestaltResourceInstance,
                                 workspace: Option[GestaltResourceInstance],
                                 environment: Option[GestaltResourceInstance] ) {
-  def toJson(): JsObject = ???
+  def toJson(): JsObject = Json.obj(
+    "org" -> Output.renderInstance(org),
+    "workspace" -> workspace.map(Output.renderInstance(_)),
+    "environment" -> environment.map(Output.renderInstance(_))
+  )
 }
 
 case object GenericActionContext {
@@ -37,7 +42,13 @@ case class GenericActionInvocation(action: String,
                                    provider: GestaltResourceInstance,
                                    resource: Option[GestaltResourceInstance] = None,
                                    actionPayload: Option[JsValue] = None ) {
-  def toJson(): JsObject = ???
+  def toJson(): JsObject = Json.obj(
+    "action" -> action,
+    "context" -> context.toJson(),
+    "provider" -> Output.renderInstance(provider),
+    "resource" -> resource.map(Output.renderInstance(_)),
+    "actionPayload" -> actionPayload
+  )
 }
 
 
