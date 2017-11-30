@@ -82,7 +82,39 @@ class PatchController @Inject()(
   }
   
   import com.galacticfog.gestalt.meta.api.output._
-  
+  def patchProperty(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+    log.debug(s"patchProperty($fqon, $id)")
+    PropertyFactory.findById(id).fold {
+      Future.successful(NotFoundResult(s"Property with ID $id not found"))
+    }{ prop =>
+      val ops = JsonUtil.safeParse[Seq[PatchOp]](request.body)
+      PatchProperty.applyPatch(prop, PatchDocument(ops:_*)) match {
+        case Failure(e) => HandleExceptionsAsync(e)
+        case Success(u) => {
+
+          val p1 = Js.find(u.as[JsObject], "/properties").get.as[JsObject]
+          val p2 = Js.parse[Map[String,JsValue]](p1).get.map { 
+            case (k,v) => (k, v.toString) 
+          }
+
+          val updated = for {
+            a <- Js.parse[Map[String,JsValue]](p1)
+            b  = a.map { case (k,v) => (k, v.toString) }
+            c <- Js.parse[GestaltTypeProperty] {
+              u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
+            }
+            d <- PropertyFactory.update(c, request.identity.account.id)
+          } yield d
+          
+          updated match {
+            case Failure(e) => HandleExceptionsAsync(e)
+            case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, META_URL)))
+          }
+        }
+      }
+    }
+  }
+    
   def patchType(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
     TypeFactory.findById(id).fold {
       
@@ -99,10 +131,7 @@ class PatchController @Inject()(
           val p2 = Js.parse[Map[String,JsValue]](p1).get.map { 
             case (k,v) => (k, v.toString) 
           }
-//          val updated = Js.parse[GestaltResourceType] {
-//            u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
-//          }.get
-          
+
           val updated = for {
             a <- Js.parse[Map[String,JsValue]](p1)
             b  = a.map { case (k,v) => (k, v.toString) }

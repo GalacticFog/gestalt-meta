@@ -156,12 +156,9 @@ trait EventMethods {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfType(ResourceIds.RuleEvent, p.id)
     } yield r
-    
-//    log.debug(s"Found ${rs.size} Event Rules:")
-//    rs foreach { r => log.debug(r.name) }
-    
+
     val fs = if (event.isEmpty) rs else {
-      rs filter { _.properties.get("actions").contains(event.get) }
+      rs filter { _.properties.get("match_actions").contains(event.get) }
     }
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))
