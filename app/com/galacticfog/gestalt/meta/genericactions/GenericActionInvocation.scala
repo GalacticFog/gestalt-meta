@@ -16,6 +16,12 @@ case object GenericActionContext {
 //    )
 //  }
 
+  /* TODO: make a structure for getting other query parameters into the invocation
+   *
+   * this is useful for query parameter on non-CRUD actions, like:
+   *   POST .../containers/7?action=scale&numInstances=10
+   */
+
   def fromParent(org: GestaltResourceInstance, parent: GestaltResourceInstance): GenericActionContext = {
     GenericActionContext(
       org = org,
@@ -33,7 +39,7 @@ case class GenericActionInvocation(action: String,
                                    context: GenericActionContext,
                                    provider: GestaltResourceInstance,
                                    resource: Option[GestaltResourceInstance] = None,
-                                   payload: Option[JsValue] = None )
+                                   actionPayload: Option[JsValue] = None )
 
 case object GenericActionInvocation {
 //  implicit val actionInvocationFmt = Json.format[ActionInvocation]

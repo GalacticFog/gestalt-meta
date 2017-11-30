@@ -29,28 +29,30 @@ import scala.util.{Failure, Success, Try}
 ////////////////////////////////////////////////////////////////////////////////////////////////////
 trait GenericResourceMethods {
 
-  def deleteGenericProviderBackedResource( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           resource: GestaltResourceInstance )
-                                         ( implicit request: RequestHeader ): Future[Unit]
+  def deleteProviderBackedResource( org: GestaltResourceInstance,
+                                    identity: AuthAccountWithCreds,
+                                    resource: GestaltResourceInstance ) : Future[Unit]
 
-  def performGenericProviderBackedAction ( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           body: AnyContent,
-                                           resourceType: UUID,
-                                           resourceId: UUID,
-                                           providerType: UUID,
-                                           actionVerb: String )
-                                         ( implicit request: RequestHeader ) : Future[Result]
+  def performProviderBackedAction( org: GestaltResourceInstance,
+                                   identity: AuthAccountWithCreds,
+                                   body: AnyContent,
+                                   resourceType: UUID,
+                                   resourceId: UUID,
+                                   providerType: UUID,
+                                   actionVerb: String )
+                                 ( implicit request: RequestHeader ) : Future[Result]
 
-  def createGenericProviderBackedResource( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           body: JsValue,
-                                           parent: GestaltResourceInstance,
-                                           resourceType: UUID,
-                                           providerType: UUID )
-                                         ( implicit request: RequestHeader ) : Future[Result]
+  def createProviderBackedResource( org: GestaltResourceInstance,
+                                    identity: AuthAccountWithCreds,
+                                    body: JsValue,
+                                    parent: GestaltResourceInstance,
+                                    resourceType: UUID,
+                                    providerType: UUID )
+                                  ( implicit request: RequestHeader ) : Future[Result]
 
+  def updateProviderBackedResource( org: GestaltResourceInstance,
+                                    identity: AuthAccountWithCreds,
+                                    updatedResource: GestaltResourceInstance ) : Future[GestaltResourceInstance]
 }
 
 @Singleton
@@ -75,10 +77,9 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
   object actions extends ActionMethods
 
-  def deleteGenericProviderBackedResource( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           resource: GestaltResourceInstance )
-                                         ( implicit request: RequestHeader ) : Future[Unit] = {
+  def deleteProviderBackedResource(org: GestaltResourceInstance,
+                                   identity: AuthAccountWithCreds,
+                                   resource: GestaltResourceInstance ) : Future[Unit] = {
 
     for {
       providerId <- getOrFail(
@@ -100,40 +101,58 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         actions.prefixFromResource(resource).map { prefix => "%s.delete".format(prefix) },
         s"Could not find action prefix for type '${sdk.ResourceLabel(resource.typeId)}'"
       )
-      operations = List(
-        controllers.util.Authorize(action),
-        controllers.util.PolicyCheck(action),
-        controllers.util.EventsPre(action),
-        controllers.util.EventsPost(action)
-      )
-      options = RequestOptions(identity,
-        authTarget   = Option(parent.id),
-        policyOwner  = Option(parent.id),
-        policyTarget = Option(resource),
-        data = Option(Map(
-          "host"     -> META_URL,
-          "parentId" -> parent.id.toString,
-          "typeId"   -> resource.typeId.toString))
-      )
       invocation <- fTry(GenericActionInvocation(
         action = action,
         context = GenericActionContext.fromParent(org, parent),
         provider = providerResource,
-        resource = Some(resource),
-        payload = None
+        resource = Some(resource)
       ))
       output <- provider.invokeAction(invocation) map (_ => ())
     } yield output
   }
 
-  def performGenericProviderBackedAction ( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           body: AnyContent,
-                                           resourceType: UUID,
-                                           resourceId: UUID,
-                                           providerType: UUID,
-                                           actionVerb: String )
-                                         ( implicit request: RequestHeader ) : Future[Result] = {
+  def updateProviderBackedResource( org: GestaltResourceInstance,
+                                    identity: AuthAccountWithCreds,
+                                    updatedResource: GestaltResourceInstance ) : Future[GestaltResourceInstance] = {
+    for {
+      providerId <- getOrFail(
+        updatedResource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
+        s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(updatedResource.typeId)} '${updatedResource.id}'"
+      )
+      providerResource <- getOrFail(
+        ResourceFactory.findById(providerId),
+        s"Provider '${providerId}' not found"
+      )
+      provider <- Future.fromTry(
+        genericProviderManager.getProvider(providerResource)
+      )
+      parent <- getOrFail(
+        ResourceFactory.findParent(updatedResource.id),
+        s"Could not locate parent for ${sdk.ResourceLabel(updatedResource.typeId)} with id '${updatedResource.id}'"
+      )
+      action <- getOrFail (
+        actions.prefixFromResource(updatedResource).map { prefix => "%s.update".format(prefix) },
+        s"Could not find action prefix for type '${sdk.ResourceLabel(updatedResource.typeId)}'"
+      )
+      invocation <- fTry(GenericActionInvocation(
+        action = action,
+        context = GenericActionContext.fromParent(org, parent),
+        provider = providerResource,
+        resource = Some(updatedResource)
+      ))
+      output <- provider.invokeAction(invocation)
+      providerUpdates = output.left.toOption getOrElse updatedResource
+    } yield providerUpdates
+  }
+
+  def performProviderBackedAction(org: GestaltResourceInstance,
+                                  identity: AuthAccountWithCreds,
+                                  body: AnyContent,
+                                  resourceType: UUID,
+                                  resourceId: UUID,
+                                  providerType: UUID,
+                                  actionVerb: String )
+                                 ( implicit request: RequestHeader ) : Future[Result] = {
 
     val response = for {
       resource <- getOrFail(
@@ -181,7 +200,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
             context = GenericActionContext.fromParent(org, parent),
             provider = providerResource,
             resource = Some(input),
-            payload = body.asText.map(JsString(_)) orElse body.asJson
+            actionPayload = body.asText.map(JsString(_)) orElse body.asJson
           ))
           output <- provider.invokeAction(invocation)
           response = output.fold(
@@ -203,13 +222,13 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     response recover { case e => HandleExceptions(e) }
   }
 
-  def createGenericProviderBackedResource( org: GestaltResourceInstance,
-                                           identity: AuthAccountWithCreds,
-                                           body: JsValue,
-                                           parent: GestaltResourceInstance,
-                                           resourceType: UUID,
-                                           providerType: UUID )
-                                         ( implicit request: RequestHeader ) : Future[Result] = {
+  def createProviderBackedResource(org: GestaltResourceInstance,
+                                   identity: AuthAccountWithCreds,
+                                   body: JsValue,
+                                   parent: GestaltResourceInstance,
+                                   resourceType: UUID,
+                                   providerType: UUID )
+                                  ( implicit request: RequestHeader ) : Future[Result] = {
     val response = for {
       providerId <- getOrFail(
         (body \ "properties" \ "provider").asOpt[UUID],

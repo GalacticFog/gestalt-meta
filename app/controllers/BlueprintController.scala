@@ -43,7 +43,7 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
   def createBlueprintFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     for {
       org <- findOrgOrFail(fqon)
-      result <- genericResourceMethods.createGenericProviderBackedResource(
+      result <- genericResourceMethods.createProviderBackedResource(
         org = org,
         identity = request.identity,
         body = request.body,
@@ -58,7 +58,7 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
     for {
       org <- findOrgOrFail(fqon)
       workspace <- findParentOrFail(sdk.ResourceIds.Workspace, workspaceId)
-      result <- genericResourceMethods.createGenericProviderBackedResource(
+      result <- genericResourceMethods.createProviderBackedResource(
         org = org,
         identity = request.identity,
         body = request.body,
@@ -73,7 +73,7 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
     for {
       org <- findOrgOrFail(fqon)
       environment <- findParentOrFail(sdk.ResourceIds.Environment, environmentId)
-      result <- genericResourceMethods.createGenericProviderBackedResource(
+      result <- genericResourceMethods.createProviderBackedResource(
         org = org,
         identity = request.identity,
         body = request.body,
@@ -87,7 +87,7 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
   def blueprintAction(fqon: String, id: UUID, action: String) = AsyncAuditedAny(fqon) { implicit request =>
     for {
       org <- findOrgOrFail(fqon)
-      result <- genericResourceMethods.performGenericProviderBackedAction(
+      result <- genericResourceMethods.performProviderBackedAction(
         org = org,
         identity = request.identity,
         body = request.body,

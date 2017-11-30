@@ -91,7 +91,7 @@ class DeleteController @Inject()(
 
     SafeRequest (operations, options) ProtectAsync { _ =>
       for {
-        invokedDelete <- genericResourceMethods.deleteGenericProviderBackedResource(
+        invokedDelete <- genericResourceMethods.deleteProviderBackedResource(
           org = orgFqon(fqon).get,
           identity = identity,
           resource = resource
