@@ -90,11 +90,16 @@ class DeleteController @Inject()(
     log.debug(s"Policy Owner : " + owner.id)
 
     SafeRequest (operations, options) ProtectAsync { _ =>
-      genericResourceMethods.deleteGenericProviderBackedResource(
-        org = orgFqon(fqon).get,
-        identity = identity,
-        resource = resource
-      )
+      for {
+        invokedDelete <- genericResourceMethods.deleteGenericProviderBackedResource(
+          org = orgFqon(fqon).get,
+          identity = identity,
+          resource = resource
+        )
+        metaDelete <-  Future.fromTry{
+          DeleteHandler.handle(resource, identity)
+        }
+      } yield metaDelete
     }
   }
 
@@ -134,14 +139,10 @@ class DeleteController @Inject()(
 
     Resource.fromPath( p ) map {
       resource =>
-        // FINISH: in the long-term, metadata on the resourcetype would indicate that it is provider-backed and call the appropriate method
-        // in the short-term, the only provider-backed resource is Blueprint
-        val resp = resource.typeId match {
-          case sdk.ResourceIds.Blueprint =>
-            deleteGenericProviderBackedResource(fqon, resource, request.identity)
-          case _ =>
+        val resp = if (isProviderBackedResource(resource.typeId)) {
+          deleteGenericProviderBackedResource(fqon, resource, request.identity)
+        } else {
             deleteResource(resource, request.identity)
-
         }
         resp.map (_ => NoContent)
             .recover {case e => HandleExceptions(e)}
