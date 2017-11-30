@@ -72,12 +72,12 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
   def createEnvironmentBlueprint(fqon: String, environmentId: UUID) = AsyncAudited(fqon) { implicit request =>
     for {
       org <- findOrgOrFail(fqon)
-      workspace <- findParentOrFail(sdk.ResourceIds.Environment, environmentId)
+      environment <- findParentOrFail(sdk.ResourceIds.Environment, environmentId)
       result <- genericResourceMethods.createGenericProviderBackedResource(
         org = org,
         identity = request.identity,
         body = request.body,
-        parent = workspace,
+        parent = environment,
         resourceType = sdk.ResourceIds.Blueprint,
         providerType = sdk.ResourceIds.BlueprintProvider
       )
