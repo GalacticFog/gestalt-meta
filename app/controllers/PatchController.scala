@@ -108,7 +108,7 @@ class PatchController @Inject()(
           
           updated match {
             case Failure(e) => HandleExceptionsAsync(e)
-            case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, META_URL)))
+            case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, Some(META_URL))))
           }
         }
       }
