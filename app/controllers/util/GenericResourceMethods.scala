@@ -31,10 +31,8 @@ trait GenericResourceMethods {
 
   def deleteGenericProviderBackedResource( org: GestaltResourceInstance,
                                            identity: AuthAccountWithCreds,
-                                           resourceType: UUID,
-                                           resourceId: UUID,
-                                           providerType: UUID )
-                                         ( implicit request: RequestHeader ): Future[Result]
+                                           resource: GestaltResourceInstance )
+                                         ( implicit request: RequestHeader ): Future[Unit]
 
   def performGenericProviderBackedAction ( org: GestaltResourceInstance,
                                            identity: AuthAccountWithCreds,
@@ -79,34 +77,28 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
   def deleteGenericProviderBackedResource( org: GestaltResourceInstance,
                                            identity: AuthAccountWithCreds,
-                                           resourceType: UUID,
-                                           resourceId: UUID,
-                                           providerType: UUID )
-                                         ( implicit request: RequestHeader ) : Future[Result] = {
+                                           resource: GestaltResourceInstance )
+                                         ( implicit request: RequestHeader ) : Future[Unit] = {
 
-    val response = for {
-      resource <- getOrFail(
-        ResourceFactory.findById(resourceType, resourceId),
-        s"resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
-      )
+    for {
       providerId <- getOrFail(
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
+        s"could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resource.typeId)} '${resource.id}'"
       )
       providerResource <- getOrFail(
-        ResourceFactory.findById(providerType, providerId),
-        s"provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
+        ResourceFactory.findById(providerId),
+        s"provider '${providerId}' not found"
       )
       provider <- Future.fromTry(
         genericProviderManager.getProvider(providerResource)
       )
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
-        s"could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
+        s"could not locate parent for ${sdk.ResourceLabel(resource.typeId)} with id '${resource.id}'"
       )
       action <- getOrFail (
         actions.prefixFromResource(resource).map { prefix => "%s.delete".format(prefix) },
-        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
+        s"Could not find action prefix for type '${sdk.ResourceLabel(resource.typeId)}'"
       )
       operations = List(
         controllers.util.Authorize(action),
@@ -123,33 +115,15 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           "parentId" -> parent.id.toString,
           "typeId"   -> resource.typeId.toString))
       )
-      response <- SafeRequest(operations, options).ExecuteAsync {
-        input => for {
-          invocation <- fTry(GenericActionInvocation(
-            action = action,
-            context = GenericActionContext.fromParent(org, parent),
-            provider = providerResource,
-            resource = Some(input),
-            payload = None
-          ))
-          output <- provider.invokeAction(invocation)
-          response = output.fold(
-            { resourceResponse =>
-              ResourceFactory.update(resourceResponse, identity.account.id, updateTimestamp = true) match {
-                case Success(r) => Ok(Output.renderInstance(r, Some(META_URL)))
-                case Failure(ex) => HandleExceptions(ex)
-              }
-            }, {
-              case (status,contentType,contentBody) => Result(
-                ResponseHeader(status.getOrElse(200), contentType.map(ct => Map(CONTENT_TYPE -> ct)).getOrElse(Map.empty)),
-                Enumerator(contentBody.getOrElse("").getBytes)
-              )
-            }
-          )
-        } yield response
-      }
-    } yield response
-    response recover { case e => HandleExceptions(e) }
+      invocation <- fTry(GenericActionInvocation(
+        action = action,
+        context = GenericActionContext.fromParent(org, parent),
+        provider = providerResource,
+        resource = Some(resource),
+        payload = None
+      ))
+      output <- provider.invokeAction(invocation) map (_ => ())
+    } yield output
   }
 
   def performGenericProviderBackedAction ( org: GestaltResourceInstance,

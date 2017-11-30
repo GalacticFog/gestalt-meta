@@ -2,6 +2,7 @@ package controllers
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
@@ -373,6 +374,8 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
       invocation.payload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beNone
     }
 
 
