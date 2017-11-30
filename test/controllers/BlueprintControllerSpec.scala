@@ -8,6 +8,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import controllers.util.ContainerService
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
@@ -37,6 +38,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
   def hasName(name: => String): Matcher[GestaltResourceInstance] =
     ((_: GestaltResourceInstance).name) ^^ be_==(name)
+
+  def hasId(id: => UUID): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).id) ^^ be_==(id)
 
   def hasProperties(props: (String,String)*): Matcher[GestaltResourceInstance] =
     ((_: GestaltResourceInstance).properties.get) ^^ havePairs(props:_*)
@@ -191,6 +195,15 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
             "native_form" -> "blueprint data goes here"
           )
       )
+
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
+      persisted.properties.get must havePairs(
+         "provider" -> testProvider.id.toString,
+         "blueprint_type" -> "docker-compose",
+         "native_form" -> "blueprint data goes here",
+         "canonical_form" -> "meta canonical form"
+      )
     }
 
     "create workspace blueprints using the ActionProvider interface" in new TestActionProvider {
@@ -243,6 +256,15 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
             "blueprint_type" -> "docker-compose",
             "native_form" -> "blueprint data goes here"
           )
+      )
+
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "docker-compose",
+        "native_form" -> "blueprint data goes here",
+        "canonical_form" -> "meta canonical form"
       )
     }
 
@@ -297,6 +319,15 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
             "native_form" -> "blueprint data goes here"
           )
       )
+
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "docker-compose",
+        "native_form" -> "blueprint data goes here",
+        "canonical_form" -> "meta canonical form"
+      )
     }
 
     "deploy blueprints using the ActionProvider interface with Json payload without update semantics" in new TestActionProvider {
@@ -313,7 +344,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
           val invocation = a.asInstanceOf[GenericActionInvocation]
-          val name = invocation.payload.flatMap(j => (j \ "name").asOpt[String])
+          val name = invocation.actionPayload.flatMap(j => (j \ "name").asOpt[String])
           Future.successful(Right(
             (Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
           ))
@@ -340,7 +371,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
-      invocation.payload must beSome(payload)
+      invocation.actionPayload must beSome(payload)
     }
 
     "deploy blueprints using the ActionProvider interface with text payload with update semantics" in new TestActionProvider {
@@ -357,7 +388,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
           val invocation = a.asInstanceOf[GenericActionInvocation]
-          val updatedCF = invocation.payload.flatMap(_.asOpt[String]) getOrElse ""
+          val updatedCF = invocation.actionPayload.flatMap(_.asOpt[String]) getOrElse ""
           val resource = invocation.resource.get
           Future.successful(Left(
             resource.copy(
@@ -387,7 +418,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
-      invocation.payload must beSome(JsString(payload))
+      invocation.actionPayload must beSome(JsString(payload))
 
       val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
       updatedResource.properties.get must havePairs(
@@ -415,7 +446,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(204)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
@@ -428,9 +458,82 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
-      invocation.payload must beNone
+      invocation.actionPayload must beNone
 
       ResourceFactory.findById(createdResource.id) must beNone
+    }
+
+    "patch blueprints using the ActionProvider interface" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-patch"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "original blueprint",
+          "canonical_form" -> "ORIGINAL BLUEPRINT"
+        ))
+      ).get
+
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val resource = invocation.resource.get
+          Future.successful(Left(resource.copy(
+            properties = Some(resource.properties.get ++ Map(
+              "canonical_form" -> resource.properties.get("native_form").toUpperCase()
+            ))
+          )))
+      }
+
+      val request = fakeAuthRequest(PATCH,
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
+      ).withBody(
+        PatchDocument(
+          PatchOp.Replace("/properties/native_form", "updated blueprint")
+        ).toJson
+      )
+      val Some(result) = route(request)
+      println(contentAsString(result))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testBlueprintName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
+      (json \ "properties" \ "native_form").asOpt[String] must beSome("updated blueprint")
+      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("UPDATED BLUEPRINT")
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.update"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
+      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasId(createdResource.id)
+          and
+          hasName(createdResource.name)
+          and
+          hasProperties(
+            "native_form"    -> "updated blueprint",  // updated in the patch op
+            "canonical_form" -> "ORIGINAL BLUEPRINT"  // not updated in the patch op, updated by the invocation
+          )
+      )
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beSome
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "docker-compose",
+        "native_form" -> "updated blueprint",
+        "canonical_form" -> "UPDATED BLUEPRINT"
+      )
     }
 
 
