@@ -500,6 +500,228 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
     }
 
+    "set labels for exposed port mappings and set service addresses (marathon 1.5 networking)" in new FakeDCOS {
+      // - one exposure has default container_port==service_port, the other overrides the service_port
+      // - one port has a required host port
+      val testProps = ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            name = Some("http"),
+            expose_endpoint = Some(true),
+            virtual_hosts = Some(Seq("web.test.com"))
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(443),
+            service_port = Some(8443),
+            name = Some("https"),
+            expose_endpoint = Some(true)
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "udp",
+            container_port = Some(9999),
+            host_port = Some(9999),
+            name = Some("debug"),
+            expose_endpoint = None
+          )
+        ),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE")
+      )
+
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "labels" -> Json.obj(
+            "USERVAR" -> "USERVAL"
+          ).toString
+        ))
+      )
+
+      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
+        s"""
+           |{
+           |  "acceptedResourceRoles": null,
+           |  "args": null,
+           |  "backoffFactor": 1.15,
+           |  "backoffSeconds": 1,
+           |  "cmd": null,
+           |  "constraints": [],
+           |  "container": {
+           |    "docker": {
+           |      "forcePullImage": false,
+           |      "image": "nginx",
+           |      "parameters": [],
+           |      "privileged": false
+           |    },
+           |    "portMappings": [
+           |      {
+           |        "containerPort": 80,
+           |        "hostPort": 0,
+           |        "labels": {
+           |          "VIP_0": "/test-container.${testEnv.id}:80"
+           |        },
+           |        "name": "http",
+           |        "protocol": "tcp",
+           |        "servicePort": 0
+           |      },
+           |      {
+           |        "containerPort": 443,
+           |        "hostPort": 0,
+           |        "labels": {
+           |          "VIP_0": "/test-container.${testEnv.id}:8443"
+           |        },
+           |        "name": "https",
+           |        "protocol": "tcp",
+           |        "servicePort": 0
+           |      },
+           |      {
+           |        "containerPort": 9999,
+           |        "hostPort": 9999,
+           |        "labels": {},
+           |        "name": "debug",
+           |        "protocol": "udp",
+           |        "servicePort": 0
+           |      }
+           |    ],
+           |    "type": "DOCKER",
+           |    "volumes": []
+           |  },
+           |  "cpus": 1,
+           |  "dependencies": [],
+           |  "deployments": [
+           |    {
+           |      "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
+           |    }
+           |  ],
+           |  "disk": 0,
+           |  "env": {},
+           |  "executor": "",
+           |  "fetch": [],
+           |  "gpus": 0,
+           |  "healthChecks": [],
+           |  "id": "/root/${testWork.name}/${testEnv.name}/test-container",
+           |  "instances": 1,
+           |  "ipAddress": null,
+           |  "labels": {
+           |    "HAPROXY_0_GROUP": "external",
+           |    "HAPROXY_0_VHOST": "web.test.com",
+           |    "USERVAR": "USERVAL"
+           |  },
+           |  "maxLaunchDelaySeconds": 3600,
+           |  "mem": 128,
+           |  "networks": [
+           |    {
+           |      "mode": "container/bridge"
+           |    }
+           |  ],
+           |  "portDefinitions": [
+           |    {
+           |      "labels": {},
+           |      "name": "http",
+           |      "port": 0,
+           |      "protocol": "tcp"
+           |    },
+           |    {
+           |      "labels": {
+           |        "VIP_0": "/test-container.${testEnv.id}:8443"
+           |      },
+           |      "name": "https",
+           |      "port": 8443,
+           |      "protocol": "tcp"
+           |    },
+           |    {
+           |      "labels": {},
+           |      "name": "debug",
+           |      "port": 0,
+           |      "protocol": "udp"
+           |    }
+           |  ],
+           |  "ports": [
+           |    0,
+           |    8443,
+           |    0
+           |  ],
+           |  "readinessChecks": [],
+           |  "requirePorts": false,
+           |  "residency": null,
+           |  "secrets": {},
+           |  "storeUrls": [],
+           |  "taskKillGracePeriodSeconds": null,
+           |  "tasks": [],
+           |  "tasksHealthy": 0,
+           |  "tasksRunning": 0,
+           |  "tasksStaged": 0,
+           |  "tasksUnhealthy": 0,
+           |  "upgradeStrategy": {
+           |    "maximumOverCapacity": 1,
+           |    "minimumHealthCapacity": 1
+           |  },
+           |  "uris": [],
+           |  "user": null,
+           |  "version": "2017-03-27T17:07:03.684Z"
+           |}
+        """.stripMargin
+      ))
+
+
+      val fupdatedMetaContainer = testSetup.svc.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )
+
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+
+      there was atLeastOne(testSetup.mcf).getClient(testProvider)
+
+      there was one(testSetup.client).launchApp(
+        hasExactlyContainerPorts(
+          marathon.Container.Docker.PortMapping(Some(80),         None, None, Some("tcp"), Some("http"),  Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:80"))),
+          marathon.Container.Docker.PortMapping(Some(443),        None, None, Some("tcp"), Some("https"), Some(Map("VIP_0" -> s"/test-container.${testEnv.id}:8443"))),
+          marathon.Container.Docker.PortMapping(Some(9999), Some(9999), None, Some("udp"), Some("debug"), None)
+        ) and
+          ( ((_:JsObject).\("portDefinitions").toOption) ^^ beNone ) and
+          ( ((_:JsObject).\("labels").as[Map[String,String]]) ^^ be_==(Map(
+            "HAPROXY_0_GROUP" -> "external",
+            "HAPROXY_0_VHOST" -> "web.test.com",
+            "USERVAR" -> "USERVAL"
+          )))
+      )(any)
+
+      import ContainerSpec.{PortMapping, ServiceAddress}
+
+      val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
+      updatedContainerProps.get("status") must beSome("LAUNCHED")
+      val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+      mappings must contain(exactly(
+        (pm: PortMapping) => pm.name == Some("http")  && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
+        (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
+        (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
+      ))
+      val persistedLabels = Json.parse(updatedContainerProps("labels")).asOpt[Map[String,String]]
+      persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
+    }
+
     "set non-default labels for HAPROXY exposure" in new FakeDCOS {
       val customHaproxyGroup = "custom-haproxy-exposure-group"
       var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider", Seq(marathon.HAPROXY_EXP_GROUP_PROP -> customHaproxyGroup)).get
