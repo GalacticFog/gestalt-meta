@@ -330,6 +330,70 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
     }
 
+    "create org blueprints using the import verb" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-import"
+      val metaRep = "a representation of the import target"
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          Future.successful(Left(invocation.resource.get.copy(
+            properties = Some(invocation.resource.get.properties.get ++ Map(
+              "canonical_form" -> metaRep
+            ))
+          )))
+      }
+
+      val importTarget = UUID.randomUUID()
+      val request = fakeAuthRequest(POST, s"/root/blueprints?action=import", testCreds).withBody(
+        Json.obj(
+          "name" -> testBlueprintName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "blueprint_type" -> "meta-import",
+            "native_form" -> importTarget.toString
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome
+      (json \ "name").asOpt[String] must beSome(testBlueprintName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("meta-import")
+      (json \ "properties" \ "canonical_form").asOpt[String] must beSome(metaRep)
+      (json \ "properties" \ "native_form").asOpt[UUID] must beSome(importTarget)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.import"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beNone
+      invocation.context.environment must beNone
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasName(testBlueprintName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "blueprint_type" -> "meta-import",
+            "native_form" -> importTarget.toString
+          )
+      )
+
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "meta-import",
+        "native_form" -> importTarget.toString,
+        "canonical_form" -> metaRep
+      )
+    }
+
     "deploy blueprints using the ActionProvider interface with Json payload without update semantics" in new TestActionProvider {
       val testBlueprintName = "test-blueprint-deploy"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,

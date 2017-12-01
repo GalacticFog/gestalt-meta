@@ -31,14 +31,17 @@ case class HttpGenericProvider(client: WSClient, url: String) extends GenericPro
   private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): InvocationResponse = {
     val maybeResource = for {
       json <- Try{response.json}.toOption
+      // mandatory
       name <- (json \ "name").asOpt[String]
+      properties <- (json \ "properties").asOpt[Map[String,JsValue]]
+      // optional
       description = (json \ "description").asOpt[String] orElse resource.flatMap(_.description)
       stateId <- (json \ "resource_state").asOpt[String].map(state => ResourceState.id(state)) orElse resource.map(_.state)
-      properties <- (json \ "properties").asOpt[Map[String,JsValue]]
-      orgId <- resource.map(_.orgId)
-      id <- resource.map(_.id)
+      // from original
+      orgId  <- resource.map(_.orgId)
+      id     <- resource.map(_.id)
       typeId <- resource.map(_.typeId)
-      owner <- resource.map(_.owner)
+      owner  <- resource.map(_.owner)
     } yield GestaltResourceInstance(
       id = id,
       typeId = typeId,
