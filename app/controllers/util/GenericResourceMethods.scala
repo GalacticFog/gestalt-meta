@@ -55,7 +55,8 @@ trait GenericResourceMethods {
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
-                                    updatedResource: GestaltResourceInstance )
+                                    updatedResource: GestaltResourceInstance,
+                                    actionVerb: String = "update" )
                                   ( implicit request: RequestHeader ): Future[GestaltResourceInstance]
 }
 
@@ -120,7 +121,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
-                                    updatedResource: GestaltResourceInstance )
+                                    updatedResource: GestaltResourceInstance,
+                                    actionVerb: String = "update" )
                                   ( implicit request: RequestHeader ): Future[GestaltResourceInstance] = {
     for {
       providerId <- getOrFail(
@@ -139,7 +141,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"Could not locate parent for ${sdk.ResourceLabel(updatedResource.typeId)} with id '${updatedResource.id}'"
       )
       action <- getOrFail (
-        actions.prefixFromResource(updatedResource).map { prefix => "%s.update".format(prefix) },
+        actions.prefixFromResource(updatedResource).map { prefix => "%s.%s".format(prefix,actionVerb) },
         s"Could not find action prefix for type '${sdk.ResourceLabel(updatedResource.typeId)}'"
       )
       invocation <- fTry(GenericActionInvocation(
@@ -236,8 +238,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                    parent: GestaltResourceInstance,
                                    resourceType: UUID,
                                    providerType: UUID,
-                                   actionVerb: String = "create"
-                                  )
+                                   actionVerb: String = "create")
                                   ( implicit request: RequestHeader ) : Future[Result] = {
     val response = for {
       providerId <- getOrFail(

@@ -275,7 +275,8 @@ class PatchController @Inject()(
         genericResourceMethods.updateProviderBackedResource(
           org = org,
           identity = user,
-          updatedResource = patched
+          updatedResource = patched,
+          actionVerb = rh.getQueryString("action").getOrElse("update")
         )(rh)
       }
       _ = {
