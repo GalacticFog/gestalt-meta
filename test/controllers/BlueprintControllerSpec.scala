@@ -344,7 +344,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       }
 
       val importTarget = UUID.randomUUID()
-      val request = fakeAuthRequest(POST, s"/root/blueprints?action=import", testCreds).withBody(
+      val request = fakeAuthRequest(POST, s"/root/blueprints?action=import&p1=v1&p1=v1again&p2=v2", testCreds).withBody(
         Json.obj(
           "name" -> testBlueprintName,
           "properties" -> Json.obj(
@@ -373,6 +373,10 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.org.id must_== dummyRootOrgId
       invocation.context.workspace must beNone
       invocation.context.environment must beNone
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1", "v1again"),
+        "p2" -> Seq("v2")
+      ))
       invocation.provider must_== testProvider
       invocation.resource must beSome(
         hasName(testBlueprintName)
@@ -418,7 +422,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         "name" -> "Chris"
       )
       val request = fakeAuthRequest(POST,
-        s"/root/blueprints/${createdResource.id}?action=deploy", testCreds
+        s"/root/blueprints/${createdResource.id}?action=deploy&p1=v1", testCreds
       ).withBody(payload)
       val Some(result) = route(request)
       status(result) must equalTo(202)
@@ -433,6 +437,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.org.id must_== dummyRootOrgId
       invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
       invocation.actionPayload must beSome(payload)
@@ -466,7 +473,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val payload = "updated canonical form during blueprint"
 
       val request = fakeAuthRequest(POST,
-        s"/root/blueprints/${createdResource.id}?action=deploy", testCreds
+        s"/root/blueprints/${createdResource.id}?action=deploy&p1=v1", testCreds
       ).withBody(payload)
       val Some(result) = route(request)
       status(result) must equalTo(200)
@@ -480,6 +487,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.org.id must_== dummyRootOrgId
       invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
       invocation.actionPayload must beSome(JsString(payload))
@@ -507,7 +517,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
 
       val request = fakeAuthRequest(DELETE,
-        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?p1=v1", testCreds
       )
       val Some(result) = route(request)
       status(result) must equalTo(204)
@@ -520,6 +530,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       invocation.context.org.id must_== dummyRootOrgId
       invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
       invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
       invocation.provider must_== testProvider
       invocation.resource must beSome(createdResource)
       invocation.actionPayload must beNone

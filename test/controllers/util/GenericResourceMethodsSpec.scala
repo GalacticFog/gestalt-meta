@@ -164,7 +164,8 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None
+          environment = None,
+          queryParams = Map.empty
         ),
         provider = testProviderResource,
         resource = Some(dummyResource),

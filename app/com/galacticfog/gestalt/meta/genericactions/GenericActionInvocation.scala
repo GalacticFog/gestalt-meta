@@ -5,10 +5,12 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import play.api.libs.json._
+import play.api.mvc.RequestHeader
 
 case class GenericActionContext(org: GestaltResourceInstance,
                                 workspace: Option[GestaltResourceInstance],
-                                environment: Option[GestaltResourceInstance] ) {
+                                environment: Option[GestaltResourceInstance],
+                                queryParams: Map[String,Seq[String]]) {
   def toJson(): JsObject = Json.obj(
     "org" -> Output.renderInstance(org),
     "workspace" -> workspace.map(Output.renderInstance(_)),
@@ -24,7 +26,7 @@ case object GenericActionContext {
    *   POST .../containers/7?action=scale&numInstances=10
    */
 
-  def fromParent(org: GestaltResourceInstance, parent: GestaltResourceInstance): GenericActionContext = {
+  def fromParent(org: GestaltResourceInstance, parent: GestaltResourceInstance)(implicit request: RequestHeader): GenericActionContext = {
     GenericActionContext(
       org = org,
       workspace = parent.typeId match {
@@ -32,7 +34,8 @@ case object GenericActionContext {
         case ResourceIds.Environment => ResourceFactory.findParent(ResourceIds.Workspace, parent.id)
         case _ => None
       },
-      environment = if (parent.typeId == ResourceIds.Environment) Some(parent) else None
+      environment = if (parent.typeId == ResourceIds.Environment) Some(parent) else None,
+      queryParams = request.queryString - "action"
     )
   }
 }

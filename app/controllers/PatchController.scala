@@ -231,7 +231,7 @@ class PatchController @Inject()(
         customHandler(resource, patch, account, rh)
       case None if isProviderBackedResource(resource.typeId) =>
         log.debug(s"Using provider-backed PATCH handler for type: ${resource.typeId}")
-        providerBackedResourcePatch(resource, patch, account)
+        providerBackedResourcePatch(resource, patch, account, rh)
       // case None if isSomeSortOfProvider => patchProviderSpecial(resource, patch, account)
       case None =>
         log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
@@ -257,7 +257,8 @@ class PatchController @Inject()(
 
   private[controllers] def providerBackedResourcePatch( resource: GestaltResourceInstance,
                                                         patch: PatchDocument,
-                                                        user: AuthAccountWithCreds ): Future[GestaltResourceInstance] = {
+                                                        user: AuthAccountWithCreds,
+                                                        rh: RequestHeader ): Future[GestaltResourceInstance] = {
     log.debug("entered providerBackedResourcePatch(_,_,_)")
     for {
       patched <- Future.fromTry {
@@ -275,7 +276,7 @@ class PatchController @Inject()(
           org = org,
           identity = user,
           updatedResource = patched
-        )
+        )(rh)
       }
       _ = {
         log.debug("PATCHED RESOURCE : " + updated)

@@ -32,7 +32,8 @@ trait GenericResourceMethods {
   def deleteProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
                                     resource: GestaltResourceInstance,
-                                    actionVerb: String = "delete" ) : Future[Unit]
+                                    actionVerb: String = "delete" )
+                                  ( implicit request: RequestHeader ): Future[Unit]
 
   def performProviderBackedAction( org: GestaltResourceInstance,
                                    identity: AuthAccountWithCreds,
@@ -49,17 +50,18 @@ trait GenericResourceMethods {
                                     parent: GestaltResourceInstance,
                                     resourceType: UUID,
                                     providerType: UUID,
-                                    actionVerb: String = "create"
-                                  )
+                                    actionVerb: String = "create" )
                                   ( implicit request: RequestHeader ) : Future[Result]
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
-                                    updatedResource: GestaltResourceInstance ) : Future[GestaltResourceInstance]
+                                    updatedResource: GestaltResourceInstance )
+                                  ( implicit request: RequestHeader ): Future[GestaltResourceInstance]
 }
 
 @Singleton
-class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProviderManager ) extends GenericResourceMethods with MetaControllerUtils with JsonInput with AuthorizationMethods {
+class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProviderManager )
+  extends GenericResourceMethods with MetaControllerUtils with JsonInput with AuthorizationMethods {
 
   private[this] def fTry[T](t: => T): Future[T] =
     Future.fromTry(Try{t})
@@ -83,7 +85,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
   def deleteProviderBackedResource(org: GestaltResourceInstance,
                                    identity: AuthAccountWithCreds,
                                    resource: GestaltResourceInstance,
-                                   actionVerb: String = "delete" ) : Future[Unit] = {
+                                   actionVerb: String = "delete" )
+                                  (implicit request: RequestHeader) : Future[Unit] = {
 
     for {
       providerId <- getOrFail(
@@ -117,7 +120,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
-                                    updatedResource: GestaltResourceInstance ) : Future[GestaltResourceInstance] = {
+                                    updatedResource: GestaltResourceInstance )
+                                  ( implicit request: RequestHeader ): Future[GestaltResourceInstance] = {
     for {
       providerId <- getOrFail(
         updatedResource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
