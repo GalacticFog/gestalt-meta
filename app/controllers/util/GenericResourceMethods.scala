@@ -31,7 +31,8 @@ trait GenericResourceMethods {
 
   def deleteProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
-                                    resource: GestaltResourceInstance ) : Future[Unit]
+                                    resource: GestaltResourceInstance,
+                                    actionVerb: String = "delete" ) : Future[Unit]
 
   def performProviderBackedAction( org: GestaltResourceInstance,
                                    identity: AuthAccountWithCreds,
@@ -81,7 +82,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
   def deleteProviderBackedResource(org: GestaltResourceInstance,
                                    identity: AuthAccountWithCreds,
-                                   resource: GestaltResourceInstance ) : Future[Unit] = {
+                                   resource: GestaltResourceInstance,
+                                   actionVerb: String = "delete" ) : Future[Unit] = {
 
     for {
       providerId <- getOrFail(
@@ -100,7 +102,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"Could not locate parent for ${sdk.ResourceLabel(resource.typeId)} with id '${resource.id}'"
       )
       action <- getOrFail (
-        actions.prefixFromResource(resource).map { prefix => "%s.delete".format(prefix) },
+        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix,actionVerb) },
         s"Could not find action prefix for type '${sdk.ResourceLabel(resource.typeId)}'"
       )
       invocation <- fTry(GenericActionInvocation(

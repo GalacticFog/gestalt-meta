@@ -527,6 +527,40 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       ResourceFactory.findById(createdResource.id) must beNone
     }
 
+    "delete blueprints using the alternate verb against ActionProvider interface" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-delete"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
+
+      val request = fakeAuthRequest(DELETE,
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?action=import", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(204)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== "blueprint.import"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
+      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beNone
+    }
+
     "patch blueprints using the ActionProvider interface" in new TestActionProvider {
       val testBlueprintName = "test-blueprint-patch"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,

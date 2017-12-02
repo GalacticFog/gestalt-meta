@@ -91,10 +91,11 @@ class DeleteController @Inject()(
 
     SafeRequest (operations, options) ProtectAsync { _ =>
       for {
-        invokedDelete <- genericResourceMethods.deleteProviderBackedResource(
+        _ <- genericResourceMethods.deleteProviderBackedResource(
           org = orgFqon(fqon).get,
           identity = identity,
-          resource = resource
+          resource = resource,
+          actionVerb = request.getQueryString("action").getOrElse("delete")
         )
         metaDelete <-  Future.fromTry{
           DeleteHandler.handle(resource, identity)
