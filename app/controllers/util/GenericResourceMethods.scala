@@ -47,7 +47,9 @@ trait GenericResourceMethods {
                                     body: JsValue,
                                     parent: GestaltResourceInstance,
                                     resourceType: UUID,
-                                    providerType: UUID )
+                                    providerType: UUID,
+                                    actionVerb: String = "create"
+                                  )
                                   ( implicit request: RequestHeader ) : Future[Result]
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
@@ -227,7 +229,9 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                    body: JsValue,
                                    parent: GestaltResourceInstance,
                                    resourceType: UUID,
-                                   providerType: UUID )
+                                   providerType: UUID,
+                                   actionVerb: String = "create"
+                                  )
                                   ( implicit request: RequestHeader ) : Future[Result] = {
     val response = for {
       providerId <- getOrFail(
@@ -249,7 +253,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         actions.prefixFromResource(resource).fold {
           throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
         }{ prefix =>
-          val fqaction = "%s.%s".format(prefix, "create")
+          val fqaction = "%s.%s".format(prefix, actionVerb)
           MetaRequest(identity, resource, parent.id, fqaction, Some(META_URL))
         }
       }

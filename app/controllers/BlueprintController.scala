@@ -49,7 +49,8 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         body = request.body,
         parent = org,
         resourceType = sdk.ResourceIds.Blueprint,
-        providerType = sdk.ResourceIds.BlueprintProvider
+        providerType = sdk.ResourceIds.BlueprintProvider,
+        actionVerb = request.getQueryString("action").getOrElse("create")
       )
     } yield result
   }
@@ -64,7 +65,8 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         body = request.body,
         parent = workspace,
         resourceType = sdk.ResourceIds.Blueprint,
-        providerType = sdk.ResourceIds.BlueprintProvider
+        providerType = sdk.ResourceIds.BlueprintProvider,
+        actionVerb = request.getQueryString("action").getOrElse("create")
       )
     } yield result
   }
@@ -79,7 +81,8 @@ class BlueprintController @Inject()( messagesApi: MessagesApi,
         body = request.body,
         parent = environment,
         resourceType = sdk.ResourceIds.Blueprint,
-        providerType = sdk.ResourceIds.BlueprintProvider
+        providerType = sdk.ResourceIds.BlueprintProvider,
+        actionVerb = request.getQueryString("action").getOrElse("create")
       )
     } yield result
   }
