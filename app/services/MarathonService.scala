@@ -233,19 +233,25 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val VIPLabel = "VIP_([0-9]+)".r
     val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
-    val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
-      case Some("BRIDGE") | Some("USER") =>
-        log.debug("Detected BRIDGE/USER networking, parsing portMappings...")
-        Js.find(marApp, "/container/docker/portMappings") filterNot( _ == JsNull )
-      case _ =>
-        log.debug("Did not detect BRIDGE/USER networking, parsing portDefinitions...")
-        Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
-    }) map {
-      /*
-       * port names are required by Meta Container API, but not by Marathon,
-       * therefore we will map service addresses using port index
-       */
-      _.as[Seq[JsValue]].zipWithIndex flatMap { case (portDef, portIndex) =>
+    //    val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
+    //      case Some("BRIDGE") | Some("USER") =>
+    //        log.debug("Detected BRIDGE/USER networking, parsing portMappings...")
+    //        (Js.find(marApp, "/container/docker/portMappings") orElse Js.find(marApp, "/container/portMappings")) filterNot( _ == JsNull )
+    //      case _ =>
+    //        log.debug("Did not detect BRIDGE/USER networking, parsing portDefinitions...")
+    //        Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
+    //    }) map {
+
+    val serviceAddresses = (
+      (marApp \ "container" \ "docker" \ "portMappings").asOpt[Seq[JsValue]] orElse
+        (marApp \ "container" \ "portMappings").asOpt[Seq[JsValue]] orElse
+        (marApp \ "portDefinitions").asOpt[Seq[JsValue]]
+      ).map {
+        /*
+         * port names are required by Meta Container API, but not by Marathon,
+         * therefore we will map service addresses using port index
+         */
+      _.zipWithIndex flatMap { case (portDef, portIndex) =>
         // 'protocol' is optional in marathon API, default is "tcp"
         val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp")
         for {
