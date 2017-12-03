@@ -1,44 +1,30 @@
 package controllers
 
 
-import java.net.URL
 import java.util.UUID
 
+import scala.language.postfixOps
+import scala.concurrent.Future
+import scala.concurrent.duration._
+import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.models._
-
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
-import controllers.util._
-import controllers.util.db.EnvConfig
-import play.api.libs.json._
-import play.api.mvc.RequestHeader
-
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.Future
-import scala.concurrent.duration._
-import scala.concurrent.Await
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.providers.ProviderManager
+import controllers.util._
+import services._
+import play.api.mvc.RequestHeader
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.i18n.MessagesApi
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
-
-import scala.language.postfixOps
 import javax.inject.Singleton
-
-import com.galacticfog.gestalt.meta.providers.ProviderManager
-
-import services.KubernetesService
-import play.api.libs.ws.WSClient
-import com.galacticfog.gestalt.json.Js
-import services._
-
 
 @Singleton
 class DeleteController @Inject()(
@@ -46,11 +32,10 @@ class DeleteController @Inject()(
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     security: Security,
     providerManager: ProviderManager,
-    providerMethods: ProviderMethods,
     gatewayMethods: GatewayMethods,
     lambdaMethods: LambdaMethods,
-    ws: WSClient,
-    skuberFactory: SkuberFactory
+    skuberFactory: SkuberFactory,
+    genericResourceMethods: GenericResourceMethods
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
  
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
@@ -96,15 +81,38 @@ class DeleteController @Inject()(
         data = Some(Map("parentId" -> targetParent.id.toString)))    
   }
 
+  def deleteGenericProviderBackedResource( fqon: String, resource: GestaltResourceInstance, identity: AuthAccountWithCreds )
+                                         ( implicit request: RequestHeader ): Future[Unit] = {
+    val owner      = findResourceParent(resource.id)
+    val operations = deleteOps(resource.typeId)
+    val options    = requestOps(identity, resource.id, resource, owner)
+
+    log.debug(s"Policy Owner : " + owner.id)
+
+    SafeRequest (operations, options) ProtectAsync { _ =>
+      for {
+        _ <- genericResourceMethods.deleteProviderBackedResource(
+          org = orgFqon(fqon).get,
+          identity = identity,
+          resource = resource,
+          actionVerb = request.getQueryString("action").getOrElse("delete")
+        )
+        metaDelete <-  Future.fromTry{
+          DeleteHandler.handle(resource, identity)
+        }
+      } yield metaDelete
+    }
+  }
+
   def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
     val options    = requestOps(identity, resource.id, resource, owner)
-    
+
     log.debug(s"Policy Owner : " + owner.id)
-    
+
     SafeRequest (operations, options) ProtectAsync { _ =>
-      
+
       Future.fromTry {
         /*
          * TODO: This is a bit of a hack. The delete manager/handler system
@@ -118,22 +126,27 @@ class DeleteController @Inject()(
         }
         DeleteHandler.handle(resource, identity)
       }
-      
+
     }
   }
 
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     ???
   }
-  
+
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    
+
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
-    
+
     Resource.fromPath( p ) map {
-      deleteResource(_, request.identity)
-        .map (_ => NoContent)
-        .recover {case e => HandleExceptions(e)}
+      resource =>
+        val resp = if (isProviderBackedResource(resource.typeId)) {
+          deleteGenericProviderBackedResource(fqon, resource, request.identity)
+        } else {
+          deleteResource(resource, request.identity)
+        }
+        resp.map (_ => NoContent)
+            .recover {case e => HandleExceptions(e)}
     } getOrElse Future.successful(NotFoundResult(request.uri))
   }
   
@@ -144,7 +157,7 @@ class DeleteController @Inject()(
   def deleteExternalUser[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     val result = security.deleteAccount(res.id, account)
     result map ( _ => () )
-  }  
+  }
 
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     security.deleteGroup(res.id, account) map ( _ => () )

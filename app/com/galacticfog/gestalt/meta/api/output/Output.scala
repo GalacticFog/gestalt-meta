@@ -34,6 +34,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import scala.language.implicitConversions
 
 object OrgCache {
+  // this never gets updated when new orgs are created: https://gitlab.com/galacticfog/gestalt-meta/issues/364#note_48945348
   val orgs = ResourceFactory.findAll(ResourceIds.Org)
   val fqons: Map[UUID, String] = orgs.map(o =>
     (o.id -> o.properties.get("fqon"))).toMap

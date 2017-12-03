@@ -86,7 +86,7 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     val output = resources filter { r =>
       isAuthorized(r.id, caller.account.id, action, caller) getOrElse false
     }
-    handleExpansion(output, request.queryString, META_URL)
+    handleExpansion(output, request.queryString, Some(META_URL))
   }
   
   def forbidden(action: String) = new ForbiddenException(

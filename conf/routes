@@ -66,6 +66,14 @@ GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrati
 #DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrations/:id  controllers.IntegrationController.deleteIntegration(fqon: String, envid: java.util.UUID, id: java.util.UUID)
 
 ############################
+# BLUEPRINTS: TODO: delete these once generic create/action is in place
+############################
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints     					    controllers.BlueprintController.createBlueprintFqon(fqon: String)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:pid/blueprints     	    controllers.BlueprintController.createWorkspaceBlueprint(fqon: String, pid: java.util.UUID)
+POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:pid/blueprints          controllers.BlueprintController.createEnvironmentBlueprint(fqon: String, pid: java.util.UUID)
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints/:id                        controllers.BlueprintController.blueprintAction(fqon: String, id: java.util.UUID, action: String)
+
+############################
 # SEARCH ENDPOINTS
 ############################
 

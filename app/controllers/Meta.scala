@@ -90,7 +90,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
           setNewEntitlements(res.id, res.id, user, parent = Option(parentOrg))
           
-          Created(Output.renderInstance(res, META_URL))
+          Created(Output.renderInstance(res, Some(META_URL)))
         }
       }
 
@@ -122,7 +122,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
           }
           
           val newjson = { 
-            if (addusers.isEmpty) Output.renderInstance(res, META_URL)
+            if (addusers.isEmpty) Output.renderInstance(res, Some(META_URL))
             else {
               log.debug(s"Adding ${addusers.size} users to new group.")
               security.addAccountsToGroup(res.id, addusers) match {
@@ -257,7 +257,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             val callerId = request.identity.account.id
             setNewEntitlements(org, res.id, request.identity, parent = Option(org))
             securitySync.grantNewUserPermissions(callerId, res.id, rootOrg.id)
-            Created(Output.renderInstance(res, META_URL))
+            Created(Output.renderInstance(res, Some(META_URL)))
           }
         }
     }
@@ -603,7 +603,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       val targetid = newResourceId(json.as[JsObject])
 
       val user    = request.identity
-      val payload = normalizeProviderPayload(json, targetid, providerType, parent, META_URL).get
+      val payload = normalizeProviderPayload(json, targetid, providerType, parent, Some(META_URL)).get
 
       newResourceResultAsync(org, providerType, parent.id, payload) { _ =>
 
@@ -636,7 +636,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                   log.debug("Creating Provider Actions...")
 
                   val acts   = createProviderActions(newprovider, payload, user, providerEnv, parentId)
-                  val json   = Output.renderLinks(acts, META_URL)
+                  val json   = Output.renderLinks(acts, Some(META_URL))
                   val props  = newprovider.properties map { ps =>
                     ps ++ Map("provider_actions" -> Json.stringify(json))
                   }

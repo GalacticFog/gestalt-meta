@@ -1,9 +1,11 @@
 package controllers.util
 
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import modules._
+import net.codingwell.scalaguice.ScalaModule
 import org.specs2.mock.Mockito
 import play.api.inject._
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
@@ -38,11 +40,12 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
 
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
-      bind(classOf[SecureController]).toInstance(mockSecureController),
-      bind(classOf[SecurityClientProvider]).toInstance(mock[SecurityClientProvider]),
-      bind(classOf[SecurityKeyInit]).toInstance(mock[SecurityKeyInit]),
-      bind(classOf[MetaHealth]).toInstance(mock[MetaHealth]),
-      bind(classOf[MetaServiceStatus]).toInstance(mock[MetaServiceStatus])
+      bind[SecureController].toInstance(mockSecureController),
+      bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
+      bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
+      bind[MetaHealth].toInstance(mock[MetaHealth]),
+      bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
+      bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
     )
 
     new GuiceApplicationBuilder()
@@ -56,11 +59,12 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
    */
   def containerApp(additionalBindings: Seq[GuiceableModule] = Seq.empty): play.api.Application = {
     val bindings: Seq[GuiceableModule] = Seq(
-      bind(classOf[ContainerService]).toInstance(mockContainerService),
-      bind(classOf[ProviderManager]).toInstance(mockProviderManager),
-      bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
-      bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
-      bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory])
+      bind[ContainerService].toInstance(mockContainerService),
+      bind[ProviderManager].toInstance(mockProviderManager),
+      bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
+      bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
+      bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }

@@ -70,7 +70,7 @@ trait JsonInput {
   }
   
   /**
-   * Convert raw JSON to a GestaltResourceInput
+   * Convert raw JSON to a GestaltResourceInstance
    */
   def jsonToInput(org: UUID, creator: AuthAccountWithCreds, json: JsValue): Instance = {
     withInputDefaults(

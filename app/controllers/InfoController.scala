@@ -34,7 +34,7 @@ class InfoController @Inject()(
   def about() = Audited() { implicit request =>
     val result = AboutMeta( 
         status     = "OK",
-        url        = META_URL.get,
+        url        = META_URL,
         time       = org.joda.time.DateTime.now.toString,
         build_info = Json.parse(BuildInfo.toJson), 
         services   = Map(
