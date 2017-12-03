@@ -1,5 +1,7 @@
 package controllers.util
 
+import java.util.UUID
+
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
@@ -164,10 +166,10 @@ class GenericResourceMethodsSpec extends PlaySpecification
         "foo" -> "bar"
       )
 
-      var putBody: JsValue = null
+      var postBody: JsValue = null
       val routeInvoke = Route {
         case (POST, testUrl) => Action(parse.json) { request =>
-          putBody = request.body
+          postBody = request.body
           val resource = (request.body \ "resource").as[JsObject]
           val updated = resource.transform(
             (__ \ 'properties).json.update(
@@ -196,11 +198,15 @@ class GenericResourceMethodsSpec extends PlaySpecification
       val response = await(httpProvider.invokeAction(inv))
 
       routeInvoke.timeCalled must_== 1
+      (postBody \ "provider" \ "properties" \ "config" \ "providerSpecificConfig").asOpt[JsObject] must beSome(Json.obj(
+        "password" -> "monkey",
+        "url" -> "whatever"
+      ))
+      (postBody \ "action").asOpt[String] must beSome("noun.verb")
+      (postBody \ "actionPayload").asOpt[JsObject] must beSome(actionPayload)
+      (postBody \ "context" \ "org" \ "name").asOpt[String] must beSome("root")
+      (postBody \ "resource" \ "id").asOpt[UUID] must beSome(dummyResource.id)
 
-      // FINISH: more testing of the passed data
-
-
-      // FINISH: more testing of the response
       response must beLeft[GestaltResourceInstance](
         ((_: GestaltResourceInstance).properties.get) ^^ havePairs(
           "foo" -> "new-bar"
