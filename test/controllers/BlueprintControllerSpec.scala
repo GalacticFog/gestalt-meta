@@ -144,6 +144,26 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(BAD_REQUEST)
     }
 
+    "failure from endpoint should prevent resource creation" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-failure"
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+
+      val request = fakeAuthRequest(POST, s"/root/blueprints", testCreds).withBody(
+        Json.obj(
+          "name" -> testBlueprintName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "blueprint_type" -> "docker-compose",
+            "native_form" -> "blueprint data goes here"
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+
+      ResourceFactory.findAllByName(dummyRootOrgId, ResourceIds.Blueprint, testBlueprintName) must beEmpty
+    }
+
     "create org blueprints using the ActionProvider interface" in new TestActionProvider {
       val testBlueprintName = "test-blueprint"
       mockActionProvider.invokeAction(any) answers {
@@ -503,6 +523,27 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
     }
 
+    "action failure should return bad request" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-deploy-failure"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure message"))
+
+      val request = fakeAuthRequest(POST,
+        s"/root/blueprints/${createdResource.id}?action=deploy", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("failure message")
+    }
+
     "delete blueprints using the ActionProvider interface" in new TestActionProvider {
       val testBlueprintName = "test-blueprint-delete"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
@@ -574,6 +615,28 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       ResourceFactory.findById(createdResource.id) must beNone
     }
 
+    "failure during invocation should prevent blueprint deletion" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-delete-failure"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "native",
+          "canonical_form" -> "canonical"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+
+      val request = fakeAuthRequest(DELETE,
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?action=import", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+
+      ResourceFactory.findById(createdResource.id) must beSome
+    }
+
     "patch blueprints using the ActionProvider interface" in new TestActionProvider {
       val testBlueprintName = "test-blueprint-patch"
       val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
@@ -605,7 +668,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ).toJson
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(createdResource.id)
@@ -678,7 +740,6 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ).toJson
       )
       val Some(result) = route(request)
-      println(contentAsString(result))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(createdResource.id)
@@ -720,6 +781,38 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
     }
 
+    "failure during patch should not update resource" in new TestActionProvider {
+      val testBlueprintName = "test-blueprint-patch-failure"
+      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "blueprint_type" -> "docker-compose",
+          "native_form" -> "original blueprint",
+          "canonical_form" -> "ORIGINAL BLUEPRINT"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+
+      val request = fakeAuthRequest(PATCH,
+        s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}", testCreds
+      ).withBody(
+        PatchDocument(
+          PatchOp.Replace("/properties/native_form", "updated blueprint")
+        ).toJson
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+
+      ResourceFactory.findById(createdResource.id) must beSome
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "blueprint_type" -> "docker-compose",
+        "native_form" -> "original blueprint",
+        "canonical_form" -> "ORIGINAL BLUEPRINT"
+      )
+    }
 
   }
 

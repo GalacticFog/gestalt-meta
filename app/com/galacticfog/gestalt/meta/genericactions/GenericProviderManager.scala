@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.meta.genericactions
 
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
 import play.api.libs.json._
@@ -33,8 +33,12 @@ trait GenericProvider {
 
 case class HttpGenericProvider(client: WSClient, url: String) extends GenericProvider with JsonInput {
 
-  private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): InvocationResponse = {
-    val maybeResource = for {
+  private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): Try[InvocationResponse] = {
+    val maybeError = for {
+      json <- Try{response.json}.toOption
+      failure <- (json \ "failure").asOpt[String]
+    } yield Failure(new BadRequestException(failure))
+    lazy val maybeResource = for {
       json <- Try{response.json}.toOption
       // mandatory
       name <- (json \ "name").asOpt[String]
@@ -47,7 +51,7 @@ case class HttpGenericProvider(client: WSClient, url: String) extends GenericPro
       id     <- resource.map(_.id)
       typeId <- resource.map(_.typeId)
       owner  <- resource.map(_.owner)
-    } yield GestaltResourceInstance(
+    } yield Success(Left(GestaltResourceInstance(
       id = id,
       typeId = typeId,
       state = stateId,
@@ -59,15 +63,17 @@ case class HttpGenericProvider(client: WSClient, url: String) extends GenericPro
       variables = resource.flatMap(_.variables),
       tags = resource.flatMap(_.tags),
       auth = resource.flatMap(_.auth)
-    )
-    lazy val notResource = Right(
+    )))
+    lazy val notResource = Success(Right(
       Some(response.status), response.header(CONTENT_TYPE), Try{response.bodyAsBytes}.toOption.map(bts => new String(bts))
-    )
-    maybeResource.map(Left(_)) getOrElse notResource
+    ))
+    maybeError orElse maybeResource getOrElse notResource
   }
 
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
-    client.url(url).post(invocation.toJson()).map(processResponse(invocation.resource, _))
+    client.url(url).post(invocation.toJson()).flatMap(resp => Future.fromTry(
+      processResponse(invocation.resource, resp)
+    ))
   }
 
 }

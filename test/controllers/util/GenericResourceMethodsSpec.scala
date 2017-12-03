@@ -4,6 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.ResourceScope
@@ -160,7 +161,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
   "HttpGenericProvider" in {
 
-    "post to lambdas appropriately and parse Resource update semantics" in new TestApplication {
+    "post appropriately to endpoints and parse Resource update semantics" in new TestApplication {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val actionPayload = Json.obj(
         "foo" -> "bar"
@@ -212,6 +213,77 @@ class GenericResourceMethodsSpec extends PlaySpecification
           "foo" -> "new-bar"
         )
       )
+    }
+
+    "parse custom-response semantics from endpoints " in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+      val actionPayload = Json.obj(
+        "foo" -> "bar"
+      )
+
+      var postBody: JsValue = null
+      val customResponse = Json.obj(
+        "custom" -> "response"
+      )
+      val routeInvoke = Route {
+        case (POST, testUrl) => Action(parse.json) { request =>
+          postBody = request.body
+          Ok(customResponse)
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, testUrl)
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None,
+          queryParams = Map.empty
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource),
+        actionPayload = Some(actionPayload)
+      )
+
+      val response = await(httpProvider.invokeAction(inv))
+
+      routeInvoke.timeCalled must_== 1
+
+      response must beRight((
+        Some(200), Some("application/json; charset=utf-8"), Some(customResponse.toString)
+      ))
+    }
+
+    "parse failure semantics" in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+      val failureMessage = "some failure message"
+      val customResponse = Json.obj(
+        "failure" -> failureMessage
+      )
+      val routeInvoke = Route {
+        case (POST, testUrl) => Action(parse.json) { response => Ok(customResponse) }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, testUrl)
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None,
+          queryParams = Map.empty
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource),
+        actionPayload = Some(Json.obj(
+          "foo" -> "bar"
+        ))
+      )
+
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException](failureMessage)
     }
 
   }
