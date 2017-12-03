@@ -20,11 +20,12 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.ws.WSClient
 import play.api.mvc.Action
-import play.api.mvc.Results.Ok
+import play.api.mvc.Results.{Ok, Unauthorized, Forbidden, BadRequest, NotFound, Status}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
 import play.api.mvc.BodyParsers.parse
 import play.api.libs.json._
 import play.api.libs.json.Reads._
+import play.api.http.HeaderNames
 
 import scala.util.Success
 
@@ -97,6 +98,31 @@ class GenericResourceMethodsSpec extends PlaySpecification
       providerManager.getProvider(providerWithDefaultEndpoint, "some-verb") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
+      ))
+    }
+
+    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
+      val defaultUrl = "http://default-url"
+      val authHeader = "Bearer magic-token"
+      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+        "config" -> Json.obj(
+          "endpoints" -> Json.arr(
+            Json.obj(
+              "default" -> true,
+              "http" -> Json.obj(
+                "url" -> defaultUrl,
+                "authentication" -> authHeader
+              )
+            )
+          )
+        ).toString
+      )))
+
+      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].authHeader) ^^ beSome(authHeader))
       ))
     }
 
@@ -213,6 +239,66 @@ class GenericResourceMethodsSpec extends PlaySpecification
           "foo" -> "new-bar"
         )
       )
+    }
+
+    "use authentication header if configured" in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+
+      val testHeader = "Bearer some-magic-token"
+      val routeInvoke = Route {
+        case (POST, testUrl) => Action(parse.json) { request =>
+          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+            val resource = (request.body \ "resource").as[JsObject]
+            Ok(resource)
+          }
+          else Unauthorized("")
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, authHeader = Some(testHeader))
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None,
+          queryParams = Map.empty
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource)
+      )
+
+      await(httpProvider.invokeAction(inv)) must beLeft[GestaltResourceInstance]
+    }
+
+    "40x errors from endpoints should result in BadRequestException" in new TestApplication {
+      var status: Int = 398
+      val routeInvoke = Route {
+        case _ => Action(parse.json) { request =>
+          status = status + 1
+          new Status(status)
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, testUrl)
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None,
+          queryParams = Map.empty
+        ),
+        provider = providerWithDefaultEndpoint
+      )
+
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("399")
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("400")
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("401")
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("402")
+      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("403")
     }
 
     "parse custom-response semantics from endpoints " in new TestApplication {

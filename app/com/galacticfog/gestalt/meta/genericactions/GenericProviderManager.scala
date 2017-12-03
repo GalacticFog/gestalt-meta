@@ -10,7 +10,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSResponse}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.http.HeaderNames.CONTENT_TYPE
+import play.api.http.HeaderNames.{CONTENT_TYPE, AUTHORIZATION}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -31,7 +31,9 @@ trait GenericProvider {
   def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse]
 }
 
-case class HttpGenericProvider(client: WSClient, url: String) extends GenericProvider with JsonInput {
+case class HttpGenericProvider(client: WSClient,
+                               url: String,
+                               authHeader: Option[String] = None) extends GenericProvider with JsonInput {
 
   private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): Try[InvocationResponse] = {
     val maybeError = for {
@@ -67,11 +69,19 @@ case class HttpGenericProvider(client: WSClient, url: String) extends GenericPro
     lazy val notResource = Success(Right(
       Some(response.status), response.header(CONTENT_TYPE), Try{response.bodyAsBytes}.toOption.map(bts => new String(bts))
     ))
-    maybeError orElse maybeResource getOrElse notResource
+    response.status match {
+      case o if Range(200,299).contains(o) => maybeError orElse maybeResource getOrElse notResource
+      case e => Failure(BadRequestException(s"endpoint invocation return response code ${e}"))
+    }
   }
 
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
-    client.url(url).post(invocation.toJson()).flatMap(resp => Future.fromTry(
+    val request = authHeader.foldLeft(
+      client.url(url)
+    ){
+      case (req, header) => req.withHeaders(AUTHORIZATION -> header)
+    }
+    request.post(invocation.toJson()).flatMap(resp => Future.fromTry(
       processResponse(invocation.resource, resp)
     ))
   }
@@ -99,7 +109,8 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     val url = (for {
       http <- (endpoint \ "http").asOpt[JsObject]
       url  <- (http \ "url").asOpt[String]
-    } yield HttpGenericProvider(wsclient, url))
+      authHeader = (http \ "authentication").asOpt[String]
+    } yield HttpGenericProvider(wsclient, url, authHeader = authHeader))
     url map (Success(_)) getOrElse Failure(ConflictException(msg))
   }
 
