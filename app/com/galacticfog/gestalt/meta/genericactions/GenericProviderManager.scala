@@ -1,14 +1,13 @@
 package com.galacticfog.gestalt.meta.genericactions
 
-import java.util.UUID
-
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
-import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.libs.json._
+import play.api.libs.json.Reads._
+import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSResponse}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.http.HeaderNames.CONTENT_TYPE
@@ -17,13 +16,19 @@ import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 
 trait GenericProviderManager {
-  def getProvider(provider: GestaltResourceInstance): Try[GenericProvider]
+  case class EndpointProperties(default: Boolean, actions: Seq[String])
+  implicit val endpointPropsReads: Reads[EndpointProperties] = (
+    (__ \ "default").readNullable[Boolean].map(_ getOrElse false) and
+      (__ \ "actions").readNullable[Seq[String]].map(_ getOrElse Seq.empty)
+  )(EndpointProperties.apply _)
+
+  def getProvider(provider: GestaltResourceInstance, action: String): Try[Option[GenericProvider]]
 }
 
 trait GenericProvider {
   type InvocationResponse = Either[GestaltResourceInstance,(Option[Int],Option[String],Option[String])]
 
-  def invokeAction(context: GenericActionInvocation): Future[InvocationResponse]
+  def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse]
 }
 
 case class HttpGenericProvider(client: WSClient, url: String) extends GenericProvider with JsonInput {
@@ -61,33 +66,35 @@ case class HttpGenericProvider(client: WSClient, url: String) extends GenericPro
     maybeResource.map(Left(_)) getOrElse notResource
   }
 
-  override def invokeAction(context: GenericActionInvocation): Future[InvocationResponse] = {
-    client.url(url).post(context.toJson()).map(processResponse(context.resource, _))
+  override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
+    client.url(url).post(invocation.toJson()).map(processResponse(invocation.resource, _))
   }
 
 }
 
 class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
-  override def getProvider(provider: GestaltResourceInstance): Try[GenericProvider] = {
-    ContainerService.getProviderConfig(provider) flatMap (c => (c \ "endpoint").asOpt[JsObject]) match {
-      case None => Failure(ConflictException(
-        s"Could not instantiate GenericProvider because provider ${provider.id} was missing '.properties.config.endpoint'"
-      ))
-      case Some(endpointConfig) =>
-        parseEndpointType(endpointConfig) match {
-          case Some(gp) => Success(gp)
-          case None     => Failure(ConflictException(
-            s"Provider ${provider.id} endpoint configuration did not match supported types."
-          ))
-        }
+  override def getProvider(provider: GestaltResourceInstance, action: String): Try[Option[GenericProvider]] = {
+    val endpoints: Seq[JsObject] = ContainerService.getProviderConfig(provider) flatMap (c => (c \ "endpoints").asOpt[Seq[JsObject]]) getOrElse Seq.empty
+    endpoints find {
+      _.asOpt[EndpointProperties] match {
+        case Some(EndpointProperties(isDefault, actions)) =>
+          isDefault || actions.contains(action)
+        case _ =>
+          false
+      }
+    } match {
+      case None => Success(None)
+      case Some(ep) => parseEndpointType(ep, s"Provider ${provider.id} endpoint configuration did not match supported types.") map (Some(_))
     }
   }
 
-  private[this] def parseEndpointType(endpoint: JsObject): Option[GenericProvider] = {
-    (for {
+  private[this] def parseEndpointType(endpoint: JsObject, msg: => String): Try[GenericProvider] = {
+    // only support a single endpoint type right now, pretty simple
+    val url = (for {
       http <- (endpoint \ "http").asOpt[JsObject]
       url  <- (http \ "url").asOpt[String]
     } yield HttpGenericProvider(wsclient, url))
+    url map (Success(_)) getOrElse Failure(ConflictException(msg))
   }
 
 }

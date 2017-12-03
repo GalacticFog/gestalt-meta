@@ -100,7 +100,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ))
       ).get
       mockActionProvider = mock[GenericProvider]
-      providerManager.getProvider(testProvider) returns Success(mockActionProvider)
+      providerManager.getProvider(meq(testProvider), any) returns Success(Some(mockActionProvider))
       t
     }
   }
@@ -178,7 +178,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.create"
@@ -240,7 +240,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.create"
@@ -302,7 +302,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.create"
@@ -366,7 +366,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "native_form").asOpt[UUID] must beSome(importTarget)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.import"
@@ -430,7 +430,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       contentType(result) must beSome("text/plain")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.deploy")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.deploy"
@@ -480,7 +480,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       contentAsJson(result).toString must /("properties") /("canonical_form" -> payload)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.deploy")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.deploy"
@@ -523,7 +523,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(204)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.delete")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.delete"
@@ -560,7 +560,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(204)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.import"
@@ -617,7 +617,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("UPDATED BLUEPRINT")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.update")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.update"
@@ -690,7 +690,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "canonical_form").asOpt[String] must beSome("UPDATED BLUEPRINT")
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-      there was atLeastOne(providerManager).getProvider(testProvider)
+      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== "blueprint.import"

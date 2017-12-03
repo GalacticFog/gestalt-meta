@@ -143,7 +143,7 @@ class DeleteController @Inject()(
         val resp = if (isProviderBackedResource(resource.typeId)) {
           deleteGenericProviderBackedResource(fqon, resource, request.identity)
         } else {
-            deleteResource(resource, request.identity)
+          deleteResource(resource, request.identity)
         }
         resp.map (_ => NoContent)
             .recover {case e => HandleExceptions(e)}

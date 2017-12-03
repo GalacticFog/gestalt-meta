@@ -63,34 +63,25 @@ class GenericResourceMethodsSpec extends PlaySpecification
         )
         .injector
 
+    val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
+    val Success(providerWithDefaultEndpoint) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+      "config" -> Json.obj(
+        "endpoints" -> Json.arr(
+          Json.obj(
+            "default" -> true,
+            "http" -> Json.obj(
+              "url" -> testUrl
+            )
+          )
+        ),
+        "providerSpecificConfig" -> Json.obj(
+          "password" -> "monkey",
+          "url" -> "whatever"
+        )
+      ).toString
+    )))
+
     val Some(rootOrg) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
-
-//    val lambdaMethods = injector.instanceOf[LambdaMethods]
-
-//    val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
-//      "public" -> "true",
-//      "cpus" -> "0.1",
-//      "memory" -> "128",
-//      "code_type" -> "inline",
-//      "timeout" -> "30",
-//      "handler" -> "blah;blah",
-//      "headers" -> Json.obj(
-//        "Existing-Header" -> "ExistingHeaderValue",
-//        "Remove-Header" -> "Nobody Cares What's Here"
-//      ).toString,
-//      "runtime" -> "custom",
-//      "periodic_info" -> "{}",
-//      "provider" -> Json.obj(
-//        "name" -> testLambdaProvider.name,
-//        "id" -> testLambdaProvider.id.toString
-//      ).toString
-//    )))
-
-//    val mockJsonClient = mock[JsonClient]
-//    mockProviderMethods.configureWebClient(argThat(
-//      (provider: GestaltResourceInstance) => provider.id == testLambdaProvider.id
-//    ), any) returns mockJsonClient
-
   }
 
   trait TestApplication extends TestScope {
@@ -99,23 +90,67 @@ class GenericResourceMethodsSpec extends PlaySpecification
   "DefaultGenericProviderManager" should {
 
     "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
-      val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
+      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
+      ))
+    }
 
-      val Success(testProviderResource) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+    "use default when present" in new TestApplication {
+      val defaultUrl = "http://default-url"
+      val overrideUrl = "http://override-url"
+      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
         "config" -> Json.obj(
-          "endpoint" -> Json.obj(
-            "http" -> Json.obj(
-              "url" -> testUrl
+          "endpoints" -> Json.arr(
+            Json.obj(
+              "actions" -> Seq("action1", "action2"),
+              "http" -> Json.obj(
+                "url" -> overrideUrl
+              )
+            ),
+            Json.obj(
+              "default" -> true,
+              "http" -> Json.obj(
+                "url" -> defaultUrl
+              )
             )
           )
         ).toString
       )))
 
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProviderResource) must beASuccessfulTry(
+      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
-      )
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+      ))
+      providerManager.getProvider(testProvider, "action1") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+      ))
+      providerManager.getProvider(testProvider, "action2") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+      ))
+    }
+
+    "return None when there is no match or default" in new TestApplication {
+      val overrideUrl = "http://override-url"
+      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+        "config" -> Json.obj(
+          "endpoints" -> Json.arr(
+            Json.obj(
+              "actions" -> Seq("action1", "action2"),
+              "http" -> Json.obj(
+                "url" -> overrideUrl
+              )
+            )
+          )
+        ).toString
+      )))
+
+      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beNone)
     }
 
   }
@@ -124,20 +159,6 @@ class GenericResourceMethodsSpec extends PlaySpecification
   "HttpGenericProvider" in {
 
     "post to lambdas appropriately and parse Resource update semantics" in new TestApplication {
-      val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
-      val Success(testProviderResource) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
-        "config" -> Json.obj(
-          "endpoint" -> Json.obj(
-            "http" -> Json.obj(
-              "url" -> testUrl
-            )
-          ),
-          "providerSpecificConfig" -> Json.obj(
-            "password" -> "monkey",
-            "url" -> "whatever"
-          )
-        ).toString
-      )))
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val actionPayload = Json.obj(
         "foo" -> "bar"
@@ -167,7 +188,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
           environment = None,
           queryParams = Map.empty
         ),
-        provider = testProviderResource,
+        provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource),
         actionPayload = Some(actionPayload)
       )
@@ -177,7 +198,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       routeInvoke.timeCalled must_== 1
 
       // FINISH: more testing of the passed data
-      (putBody \ "action").asOpt[String] must beSome("noun.verb")
+
 
       // FINISH: more testing of the response
       response must beLeft[GestaltResourceInstance](

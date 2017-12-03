@@ -98,9 +98,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         ResourceFactory.findById(providerId),
         s"Provider '${providerId}' not found"
       )
-      provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource)
-      )
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
         s"Could not locate parent for ${sdk.ResourceLabel(resource.typeId)} with id '${resource.id}'"
@@ -115,8 +112,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         provider = providerResource,
         resource = Some(resource)
       ))
-      output <- provider.invokeAction(invocation) map (_ => ())
-    } yield output
+      provider <- Future.fromTry(
+        genericProviderManager.getProvider(providerResource, action)
+      )
+      _ <- provider.map(_.invokeAction(invocation)) getOrElse Future.successful(())
+    } yield ()
   }
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
@@ -133,9 +133,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         ResourceFactory.findById(providerId),
         s"Provider '${providerId}' not found"
       )
-      provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource)
-      )
       parent <- getOrFail(
         ResourceFactory.findParent(updatedResource.id),
         s"Could not locate parent for ${sdk.ResourceLabel(updatedResource.typeId)} with id '${updatedResource.id}'"
@@ -150,8 +147,13 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         provider = providerResource,
         resource = Some(updatedResource)
       ))
-      output <- provider.invokeAction(invocation)
-      providerUpdates = output.left.toOption getOrElse updatedResource
+      provider <- Future.fromTry(
+        genericProviderManager.getProvider(providerResource, action)
+      )
+      outputResource <- provider.map(
+        _.invokeAction(invocation).map(_.left.toOption)
+      ) getOrElse Future.successful(None)
+      providerUpdates = outputResource getOrElse updatedResource
     } yield providerUpdates
   }
 
@@ -176,9 +178,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
         s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
-      )
-      provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource)
       )
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
@@ -212,6 +211,14 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
             resource = Some(input),
             actionPayload = body.asText.map(JsString(_)) orElse body.asJson
           ))
+          provider <- Future.fromTry(
+            genericProviderManager.getProvider(providerResource, action) flatMap {
+              case Some(provider) => Success(provider)
+              case None => Failure(BadRequestException(
+                s"provider '${providerId}' was not configured with an endpoint for action '${actionVerb}' or a default endpoint"
+              ))
+            }
+          )
           output <- provider.invokeAction(invocation)
           response = output.fold(
             { resourceResponse =>
@@ -252,9 +259,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       json <- Future.fromTry({
         normalizeResourceType(body, resourceType)
       })
-      provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource)
-      )
       metaRequest = {
         val resource = j2r(org.id, identity, body, Some(resourceType))
         actions.prefixFromResource(resource).fold {
@@ -273,8 +277,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
             provider = providerResource,
             resource = Some(input)
           ))
-          output  <- provider.invokeAction(invocation)
-          persisted = output.fold(x => x, _ => input)
+          provider <- Future.fromTry(
+            genericProviderManager.getProvider(providerResource, metaRequest.action)
+          )
+          maybeOutputResource <- provider.map(_.invokeAction(invocation).map(_.left.toOption)) getOrElse Future.successful(None)
+          persisted = maybeOutputResource getOrElse input
           created <- Future.fromTry(CreateWithEntitlements(
             org.id, identity, persisted, Some(parent.id)
           ))
