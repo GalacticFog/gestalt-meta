@@ -5,6 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
@@ -434,7 +435,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           val invocation = a.asInstanceOf[GenericActionInvocation]
           val name = invocation.actionPayload.flatMap(j => (j \ "name").asOpt[String])
           Future.successful(Right(
-            (Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
+            RawInvocationResponse(Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
           ))
       }
 
@@ -555,7 +556,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "canonical_form" -> "canonical"
         ))
       ).get
-      mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
+      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
 
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?p1=v1", testCreds
@@ -592,7 +593,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "canonical_form" -> "canonical"
         ))
       ).get
-      mockActionProvider.invokeAction(any) returns Future.successful(Right(None,None,None))
+      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
 
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?action=import", testCreds
@@ -626,13 +627,14 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "canonical_form" -> "canonical"
         ))
       ).get
-      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("the failure message"))
 
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?action=import", testCreds
       )
       val Some(result) = route(request)
       status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("the failure message")
 
       ResourceFactory.findById(createdResource.id) must beSome
     }

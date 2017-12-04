@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.genericactions
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
+import com.galacticfog.gestalt.meta.genericactions.GenericProvider.{InvocationResponse, RawInvocationResponse}
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
 import play.api.libs.json._
@@ -10,7 +11,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import play.api.libs.ws.{WSClient, WSResponse}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.http.HeaderNames.{CONTENT_TYPE, AUTHORIZATION}
+import play.api.http.HeaderNames.{AUTHORIZATION, CONTENT_TYPE}
 
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
@@ -26,9 +27,14 @@ trait GenericProviderManager {
 }
 
 trait GenericProvider {
-  type InvocationResponse = Either[GestaltResourceInstance,(Option[Int],Option[String],Option[String])]
+  import GenericProvider._
 
   def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse]
+}
+
+object GenericProvider {
+  case class RawInvocationResponse(statusCode: Option[Int], contentType: Option[String], contentString: Option[String])
+  type InvocationResponse = Either[GestaltResourceInstance,RawInvocationResponse]
 }
 
 case class HttpGenericProvider(client: WSClient,
@@ -38,7 +44,7 @@ case class HttpGenericProvider(client: WSClient,
   private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): Try[InvocationResponse] = {
     val maybeError = for {
       json <- Try{response.json}.toOption
-      failure <- (json \ "failure").asOpt[String]
+      failure <- (json \ "actionFailed").asOpt[String]
     } yield Failure(new BadRequestException(failure))
     lazy val maybeResource = for {
       json <- Try{response.json}.toOption
@@ -67,7 +73,7 @@ case class HttpGenericProvider(client: WSClient,
       auth = resource.flatMap(_.auth)
     )))
     lazy val notResource = Success(Right(
-      Some(response.status), response.header(CONTENT_TYPE), Try{response.bodyAsBytes}.toOption.map(bts => new String(bts))
+      RawInvocationResponse(Some(response.status), response.header(CONTENT_TYPE), Try{response.bodyAsBytes}.toOption.map(bts => new String(bts)))
     ))
     response.status match {
       case o if Range(200,299).contains(o) => maybeError orElse maybeResource getOrElse notResource

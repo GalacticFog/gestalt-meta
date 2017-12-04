@@ -97,7 +97,7 @@ class DeleteController @Inject()(
           resource = resource,
           actionVerb = request.getQueryString("action").getOrElse("delete")
         )
-        metaDelete <-  Future.fromTry{
+        metaDelete <- Future.fromTry{
           DeleteHandler.handle(resource, identity)
         }
       } yield metaDelete
@@ -141,6 +141,7 @@ class DeleteController @Inject()(
     Resource.fromPath( p ) map {
       resource =>
         val resp = if (isProviderBackedResource(resource.typeId)) {
+          log.debug(s"resource '${resource.id}' of type '${sdk.ResourceLabel(resource.typeId)}' is provider-backed")
           deleteGenericProviderBackedResource(fqon, resource, request.identity)
         } else {
           deleteResource(resource, request.identity)
