@@ -627,13 +627,14 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "canonical_form" -> "canonical"
         ))
       ).get
-      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("the failure message"))
 
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/blueprints/${createdResource.id}?action=import", testCreds
       )
       val Some(result) = route(request)
       status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("the failure message")
 
       ResourceFactory.findById(createdResource.id) must beSome
     }
