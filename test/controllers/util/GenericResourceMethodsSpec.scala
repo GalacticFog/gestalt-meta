@@ -5,7 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.ResourceScope
@@ -21,7 +21,7 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.ws.WSClient
 import play.api.mvc.Action
-import play.api.mvc.Results.{BadRequest, Forbidden, NotFound, Ok, Status, Unauthorized}
+import play.api.mvc.Results.{Ok, Status, Unauthorized}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
 import play.api.mvc.BodyParsers.parse
 import play.api.libs.json._
@@ -371,6 +371,24 @@ class GenericResourceMethodsSpec extends PlaySpecification
       )
 
       await(httpProvider.invokeAction(inv)) must throwA[BadRequestException](failureMessage)
+    }
+
+  }
+
+  "GenericActionContext" should {
+
+    "render query parameters" in new TestApplication {
+      val json = GenericActionContext(
+        org = rootOrg,
+        workspace = None,
+        environment = None,
+        queryParams = Map(
+          "q1" -> Seq("1"),
+          "q2" -> Seq("2a", "2b")
+        )
+      ).toJson
+      (json \ "queryParams" \ "q1").as[Seq[String]] must containTheSameElementsAs(Seq("1"))
+      (json \ "queryParams" \ "q2").as[Seq[String]] must containTheSameElementsAs(Seq("2a", "2b"))
     }
 
   }
