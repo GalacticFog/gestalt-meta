@@ -76,8 +76,13 @@ case class HttpGenericProvider(client: WSClient,
       RawInvocationResponse(Some(response.status), response.header(CONTENT_TYPE), Try{response.bodyAsBytes}.toOption.map(bts => new String(bts)))
     ))
     response.status match {
-      case o if Range(200,299).contains(o) => maybeError orElse maybeResource getOrElse notResource
-      case e => Failure(BadRequestException(s"endpoint invocation return response code ${e}"))
+      case s if Range(200,299).contains(s) =>
+        val r = maybeError orElse maybeResource getOrElse notResource
+        log.debug(s"response $s from provider endpoint: $r")
+        r
+      case e =>
+        log.debug(s"response $e from provider endpoint, returning failure")
+        Failure(BadRequestException(s"endpoint invocation return response code ${e}"))
     }
   }
 
