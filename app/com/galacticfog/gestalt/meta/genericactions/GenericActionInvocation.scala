@@ -14,7 +14,8 @@ case class GenericActionContext(org: GestaltResourceInstance,
   def toJson(): JsObject = Json.obj(
     "org" -> Output.renderInstance(org),
     "workspace" -> workspace.map(Output.renderInstance(_)),
-    "environment" -> environment.map(Output.renderInstance(_))
+    "environment" -> environment.map(Output.renderInstance(_)),
+    "queryParams" -> Json.toJson(queryParams)
   )
 }
 
