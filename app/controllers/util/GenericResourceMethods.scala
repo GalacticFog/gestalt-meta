@@ -10,6 +10,7 @@ import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErr
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.auth.{ActionMethods, AuthorizationMethods}
+import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionContext, GenericActionInvocation, GenericProviderManager}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
@@ -227,7 +228,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                 case Failure(ex) => HandleExceptions(ex)
               }
             }, {
-              case (status,contentType,contentBody) => Result(
+              case RawInvocationResponse(status,contentType,contentBody) => Result(
                 ResponseHeader(status.getOrElse(200), contentType.map(ct => Map(CONTENT_TYPE -> ct)).getOrElse(Map.empty)),
                 Enumerator(contentBody.getOrElse("").getBytes)
               )

@@ -6,6 +6,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
+import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
@@ -20,7 +21,7 @@ import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.ws.WSClient
 import play.api.mvc.Action
-import play.api.mvc.Results.{Ok, Unauthorized, Forbidden, BadRequest, NotFound, Status}
+import play.api.mvc.Results.{BadRequest, Forbidden, NotFound, Ok, Status, Unauthorized}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
 import play.api.mvc.BodyParsers.parse
 import play.api.libs.json._
@@ -337,7 +338,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       routeInvoke.timeCalled must_== 1
 
-      response must beRight((
+      response must beRight(RawInvocationResponse(
         Some(200), Some("application/json; charset=utf-8"), Some(customResponse.toString)
       ))
     }
@@ -346,7 +347,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val failureMessage = "some failure message"
       val customResponse = Json.obj(
-        "failure" -> failureMessage
+        "actionFailed" -> failureMessage
       )
       val routeInvoke = Route {
         case (POST, testUrl) => Action(parse.json) { response => Ok(customResponse) }
