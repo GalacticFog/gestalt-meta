@@ -3,7 +3,7 @@ package controllers
 
 import java.util.UUID
 
-import scala.concurrent.Await
+import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -28,8 +28,8 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import controllers.util.JsonUtil._
 import play.api.i18n.MessagesApi
-import play.api.libs.json.{JsObject, JsString, Json}
-import play.api.mvc.{Action, Result}
+import play.api.libs.json.{JsObject, JsString, JsValue, Json}
+import play.api.mvc.{Action, AnyContent, Result}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.language.postfixOps
@@ -43,7 +43,8 @@ class ResourceController @Inject()(
     messagesApi: MessagesApi,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     security: Security,
-    containerService: ContainerService)
+    containerService: ContainerService,
+    genericResourceMethods: GenericResourceMethods )
     
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -192,7 +193,77 @@ class ResourceController @Inject()(
       }
     }    
   }
-  
+
+  private[this] def fTry[T](t: => T): Future[T] =
+    Future.fromTry(Try{t})
+
+  private[this] def findOrgOrFail(fqon: String): Future[GestaltResourceInstance] =
+    fTry(orgFqon(fqon) getOrElse {
+      throw new InternalErrorException("could not locate org resource after authentication")
+    })
+
+
+  def genericResourcePOST(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"genericResourcePOST(${fqon},${path})")
+    val rp = new ResourcePath(fqon, path)
+    log.debug(rp.info.toString)
+
+    if (rp.isList) {
+      // create
+      val tryParent = ResourceFactory.findById(
+        typeId = rp.parentTypeId getOrElse ResourceIds.Org,
+        id = rp.parentId getOrElse fqid(fqon)
+      ) match {
+        case Some(parent) => Success(parent)
+        case None => Failure(new ConflictException("parent not specified/does not exist/does match type"))
+      }
+
+      for {
+        org <- findOrgOrFail(fqon)
+        parent <- Future.fromTry(tryParent)
+        r: SecuredRequest[AnyContent] = request
+        jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
+        jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+        result <- getBackingProviderType(rp.targetTypeId) match {
+          case None => newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
+          case Some(backingProviderType) => genericResourceMethods.createProviderBackedResource(
+            org = org,
+            identity = request.identity,
+            body = jsonRequest.body,
+            parent = parent,
+            resourceType = rp.targetTypeId,
+            providerType = backingProviderType,
+            actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
+          )
+        }
+      } yield result
+    } else {
+      // perform action
+      for {
+        org <- findOrgOrFail(fqon)
+        action <- fTry{
+          request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
+        }
+        targetId <- rp.targetId match {
+          case Some(targetId) => Future.successful(UUID.fromString(targetId))
+          case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
+        }
+        result <- getBackingProviderType(rp.targetTypeId) match {
+          case None => Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
+          case Some(backingProviderType) => genericResourceMethods.performProviderBackedAction(
+            org = org,
+            identity = request.identity,
+            body = request.body,
+            resourceType = rp.targetTypeId,
+            providerType = backingProviderType,
+            actionVerb = action,
+            resourceId = targetId
+          )
+        }
+      } yield result
+    }
+  }
+
   /**
    * Get a Resource or list of Resources by path.
    */

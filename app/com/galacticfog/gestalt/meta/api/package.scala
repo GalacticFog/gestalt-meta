@@ -17,14 +17,16 @@ import com.galacticfog.gestalt.data.Hstore
 
 package object api {
 
-  private[this] val PBRs = Set(
-    ResourceIds.Blueprint
+  private[this] val PBRProviderMapping = Map(
+    ResourceIds.Blueprint -> ResourceIds.BlueprintProvider
   )
 
   /**
     * TODO: rewrite this against meta-data as part of generics work
     */
-  def isProviderBackedResource(typeId: UUID): Boolean = PBRs.contains(typeId)
+  def isProviderBackedResource(typeId: UUID): Boolean = PBRProviderMapping.get(typeId).isDefined
+
+  def getBackingProviderType(resourceType: UUID): Option[UUID] = PBRProviderMapping.get(resourceType)
 
   /**
     * Translate resource REST name to Resource Type ID
