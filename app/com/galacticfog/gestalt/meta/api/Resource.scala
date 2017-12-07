@@ -156,7 +156,6 @@ object Resource {
   protected[api] def findSecondLevelList(info: Map[String,String]) = {
     val org = orgOrElse(info(Fqon))
     val parentId = UUID.fromString(info(ParentId))    
-    val parentType   = typeOrElse(info(ParentType))
     val targetTypeId = typeOrElse(info(TargetType))
 
     ResourceFactory.findChildrenOfSubType(targetTypeId, parentId)
@@ -169,8 +168,7 @@ object Resource {
     
     val parentId = UUID.fromString(info(ParentId))
     val targetId = UUID.fromString(info(TargetId))
-    
-    val parentTypeId = typeOrElse(info(ParentType))
+
     val targetTypeId = typeOrElse(info(TargetType))
     
     ResourceFactory.findChildOfType(targetTypeId, parentId, targetId)
