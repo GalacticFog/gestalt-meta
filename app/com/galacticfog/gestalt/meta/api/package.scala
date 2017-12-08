@@ -1,32 +1,25 @@
 package com.galacticfog.gestalt.meta
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data.models._
-import _root_.play.api.libs.json._
-
+import com.galacticfog.gestalt.data.{DataType, PropertyFactory, TypeFactory}
 import java.util.UUID
-
-import _root_.play.api.mvc._
-import _root_.play.api.mvc.Action
-import _root_.play.api.mvc.Controller
-import _root_.play.api.mvc.RequestHeader
-import _root_.play.api.mvc.AnyContent
-//import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data.Hstore
+import scala.util.Try
 
 package object api {
 
-  private[this] val PBRProviderMapping = Map(
-    ResourceIds.Blueprint -> ResourceIds.BlueprintProvider
-  )
+  def isProviderBackedResource(typeId: UUID): Boolean = getBackingProviderType(typeId).isDefined
 
-  /**
-    * TODO: rewrite this against meta-data as part of generics work
-    */
-  def isProviderBackedResource(typeId: UUID): Boolean = PBRProviderMapping.get(typeId).isDefined
-
-  def getBackingProviderType(resourceType: UUID): Option[UUID] = PBRProviderMapping.get(resourceType)
+  def getBackingProviderType(resourceType: UUID): Option[UUID] = for {
+    // is the resourcetype marked as provider-backed?
+    rt <- TypeFactory.findById(resourceType)
+    props <- rt.properties
+    isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
+    if isProviderBacked
+    // what is the refers to type for the provider property?
+    pp <- PropertyFactory.findByName(resourceType, "provider")
+    if pp.datatype == DataType.id("resource::uuid::link")
+    refersTo <- pp.refersTo
+  } yield refersTo
 
   /**
     * Translate resource REST name to Resource Type ID

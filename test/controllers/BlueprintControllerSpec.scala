@@ -25,14 +25,6 @@ import services.{MarathonClientFactory, SkuberFactory}
 import scala.concurrent.Future
 import scala.util.{Success, Try}
 
-/*
-    FINISH: this test is currently built around Blueprint resoruces, but it could easily be modified to be a test of generic provider-backed resource capability
-    1) create new provider type
-    2) create new resource type, backed by provider type from 1
-    3) test just like below using that instead of Blueprint/BlueprintProvider
-
-    this should be done as part of the work to remove the hard-coded route entries in favor of generic routing
- */
 class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
