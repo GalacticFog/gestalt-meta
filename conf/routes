@@ -285,7 +285,7 @@ PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.PatchControl
 # POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:pid/blueprints          controllers.BlueprintController.createEnvironmentBlueprint(fqon: String, pid: java.util.UUID)
 # POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/blueprints/:id                        controllers.BlueprintController.blueprintAction(fqon: String, id: java.util.UUID, action: String)
 
-POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.genericResourcePOST(fqon: String, path: String)
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.genericResourceCreate(fqon: String, path: String)
 
 
 OPTIONS  /                           controllers.InfoController.options(path="")

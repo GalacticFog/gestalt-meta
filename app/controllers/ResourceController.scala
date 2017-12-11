@@ -203,8 +203,8 @@ class ResourceController @Inject()(
     })
 
 
-  def genericResourcePOST(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    log.debug(s"genericResourcePOST(${fqon},${path})")
+  def genericResourceCreate(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"genericResourceCreate(${fqon},${path})")
     val rp = new ResourcePath(fqon, path)
     log.debug(rp.info.toString)
 
@@ -221,20 +221,23 @@ class ResourceController @Inject()(
       for {
         org <- findOrgOrFail(fqon)
         parent <- Future.fromTry(tryParent)
-        r: SecuredRequest[AnyContent] = request
         jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
         jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
         result <- getBackingProviderType(rp.targetTypeId) match {
-          case None => newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
-          case Some(backingProviderType) => genericResourceMethods.createProviderBackedResource(
-            org = org,
-            identity = request.identity,
-            body = jsonRequest.body,
-            parent = parent,
-            resourceType = rp.targetTypeId,
-            providerType = backingProviderType,
-            actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
-          )
+          case None =>
+            log.debug("request to create non-provider-backed resource")
+            newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
+          case Some(backingProviderType) =>
+            log.debug(s"request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
+            genericResourceMethods.createProviderBackedResource(
+              org = org,
+              identity = request.identity,
+              body = jsonRequest.body,
+              parent = parent,
+              resourceType = rp.targetTypeId,
+              providerType = backingProviderType,
+              actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
+            )
         }
       } yield result
     } else {
