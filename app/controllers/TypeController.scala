@@ -29,8 +29,6 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
 
 
-
-
 @Singleton
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -67,7 +65,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   import com.galacticfog.gestalt.meta.providers._
   import scala.util.{Try,Success,Failure}
   
-
   /**
    * Get a Provider Action specification from the Provider. This is a convenience method that can be used to get
    * an Action spec before an Action instance is created. The intended use is to test rendering of the Action UI.
@@ -95,7 +92,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
           } else {
             Js.parse[ProviderActionSpec](action) match {
               case Failure(e) => HandleExceptions {
-                throw new RuntimeException(s"Could not parse action JSON from provider. Error: $e.getMessage")
+                throw new RuntimeException(s"Could not parse action JSON from provider. Error: ${e.getMessage}")
               }
               case Success(spec) => {
                 log.debug("Found 'envelope' query param.")

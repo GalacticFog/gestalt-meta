@@ -52,7 +52,7 @@ class DeleteController @Inject()(
     ws: WSClient,
     skuberFactory: SkuberFactory
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
- 
+   
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
   
   /*
@@ -93,9 +93,9 @@ class DeleteController @Inject()(
         authTarget = Option(policyOwner), 
         policyOwner = Option(policyOwner), 
         policyTarget = Option(target),
-        data = Some(Map("parentId" -> targetParent.id.toString)))    
+        data = Some(Map("parentId" -> targetParent.id.toString)))
   }
-
+  
   def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
@@ -122,8 +122,22 @@ class DeleteController @Inject()(
     }
   }
 
+  
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
-    ???
+    
+    log.debug(s"hardDeleteResourceType($fqon, $typeId)")
+    
+    TypeFactory.findById(typeId) map { tpe =>
+      
+      // TODO: Test for 'is-gestalt'
+
+      val forceParam = singleParamBoolean(request.queryString, "force")
+      val deleter = new HardDeleteResourceType[AuthAccountWithCreds]
+      deleter.delete(tpe, request.identity, forceParam, manager) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(_) => NoContent
+      }
+    } getOrElse NotFoundResult(s"Type with ID $typeId not found")
   }
   
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
@@ -166,6 +180,7 @@ class DeleteController @Inject()(
   }
   
   import skuber.Namespace
+  
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
@@ -193,7 +208,6 @@ class DeleteController @Inject()(
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
     }
   }
-
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
