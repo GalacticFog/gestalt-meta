@@ -1,28 +1,34 @@
 package com.galacticfog.gestalt.meta
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data.models._
-import _root_.play.api.libs.json._
-
+import com.galacticfog.gestalt.data.{DataType, PropertyFactory, TypeFactory}
 import java.util.UUID
-
-import _root_.play.api.mvc._
-import _root_.play.api.mvc.Action
-import _root_.play.api.mvc.Controller
-import _root_.play.api.mvc.RequestHeader
-import _root_.play.api.mvc.AnyContent
-//import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data.Hstore
+import scala.util.Try
 
 package object api {
 
+  def isProviderBackedResource(typeId: UUID): Boolean = getBackingProviderType(typeId).isDefined
+
+  def getBackingProviderType(resourceType: UUID): Option[UUID] = for {
+    // is the resourcetype marked as provider-backed?
+    rt <- TypeFactory.findById(resourceType)
+    props <- rt.properties
+    isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
+    if isProviderBacked
+    // what is the refers to type for the provider property?
+    pp <- PropertyFactory.findByName(resourceType, "provider")
+    if pp.datatype == DataType.id("resource::uuid::link")
+    refersTo <- pp.refersTo
+  } yield refersTo
+
   /**
-   * Translate resource REST name to Resource Type ID
-   */
+    * Translate resource REST name to Resource Type ID
+    *
+    * This list really has to die.
+    */
   def resourceUUID(resource: String): Option[UUID] = {
     resource match {
-      
+
       case "resources"        => Some(ResourceIds.Resource)
       case "orgs"             => Some(ResourceIds.Org)
       case "users"            => Some(ResourceIds.User)
@@ -52,17 +58,18 @@ package object api {
       case "datacontainers"   => Some(ResourceIds.DataContainer)
       case "actionproviders"  => Some(ResourceIds.ActionProvider)
       case "actions"          => Some(ResourceIds.ProviderAction)
+      case "blueprints"       => Some(ResourceIds.Blueprint)
       case _                  => None
     }
   }
-  
-  
+
+
   /**
-   * Translate Resource Type ID to REST name
-   */
+    * Translate Resource Type ID to REST name
+    */
   def resourceRestName(typeId: UUID): Option[String] = {
     typeId match {
-      
+
       case ResourceIds.Org             => Some("orgs")
       case ResourceIds.User            => Some("users")
       case ResourceIds.Group           => Some("groups")
@@ -72,7 +79,7 @@ package object api {
       case ResourceIds.Api             => Some("apis")
       case ResourceIds.ApiEndpoint     => Some("apiendpoints")
       case ResourceIds.Domain          => Some("domains")
-      case ResourceIds.Container       => Some("containers")      
+      case ResourceIds.Container       => Some("containers")
       case ResourceIds.Entitlement     => Some("entitlements")
       case ResourceIds.NodeType        => Some("nodetypes")
       case ResourceIds.EnvironmentType => Some("environmenttypes")
@@ -86,9 +93,10 @@ package object api {
       case ResourceIds.Integration     => Some("integrations")
       case ResourceIds.ActionProvider  => Some("actionproviders")
       case ResourceIds.ProviderAction  => Some("actions")
+      case ResourceIds.Blueprint       => Some("blueprints")
       case _ => None
     }
-  }  
-  
-  
+  }
+
+
 }

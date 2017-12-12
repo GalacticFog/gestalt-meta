@@ -56,7 +56,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         else if (qs.contains("type")) findCovariantTypes(qs)
         else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
       }
-      handleExpansion(tpes, qs, META_URL)
+      handleExpansion(tpes, qs, Some(META_URL))
     }
   }  
   
@@ -87,7 +87,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
           log.debug("Found 'render' query param.")
           
           if (booleanParam("envelope", request.queryString)) {
-            val out = Assembler.envelope(fqon, META_URL.get, None, request.identity)
+            val out = Assembler.envelope(fqon, META_URL, None, request.identity)
             Ok(out).as("text/html")
           } else {
             Js.parse[ProviderActionSpec](action) match {
@@ -96,7 +96,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
               }
               case Success(spec) => {
                 log.debug("Found 'envelope' query param.")
-                val output = Assembler.assemble(fqon, META_URL.get, spec, None, None, request.identity)
+                val output = Assembler.assemble(fqon, META_URL, spec, None, None, request.identity)
                 Ok(output).as("text/html")              
               }
             }

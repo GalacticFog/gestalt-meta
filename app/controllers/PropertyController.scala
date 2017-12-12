@@ -114,7 +114,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     PropertyFactory.findById(ResourceIds.TypeProperty, id).fold {
       NotFoundResult(Errors.PROPERTY_NOT_FOUND(id))
     }{ property =>
-      Ok(Output.renderTypePropertyOutput(property, META_URL))
+      Ok(Output.renderTypePropertyOutput(property, Some(META_URL)))
     }
   }
 

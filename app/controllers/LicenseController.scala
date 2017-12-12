@@ -78,14 +78,14 @@ class LicenseController @Inject()(
               } match {
                 case Failure(e2) => throw new BadRequestException("Invalid license.")
                 case Success(_) => Ok {
-                  findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL.get)
+                  findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL)
                 }
               }
           }
         }
 
       case Success(_) => Ok {
-        findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL.get)
+        findAndRenderLicenses(fqid(fqon), request.queryString, request.identity, META_URL)
       }
     }
   }

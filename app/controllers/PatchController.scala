@@ -12,6 +12,7 @@ import controllers.util._
 import com.galacticfog.gestalt.meta.api.patch._
 import controllers.util.JsonUtil
 import com.galacticfog.gestalt.patch._
+import com.galacticfog.gestalt.meta.api.isProviderBackedResource
 
 import scala.util.{Failure, Success, Try}
 import play.api.libs.json._
@@ -39,6 +40,7 @@ class PatchController @Inject()(
      gatewayMethods: GatewayMethods,
      lambdaMethods: LambdaMethods,
      containerService: ContainerService,
+     genericResourceMethods: GenericResourceMethods,
      resourceController: ResourceController )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -108,7 +110,7 @@ class PatchController @Inject()(
           
           updated match {
             case Failure(e) => HandleExceptionsAsync(e)
-            case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, META_URL)))
+            case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, Some(META_URL))))
           }
         }
       }
@@ -179,14 +181,14 @@ class PatchController @Inject()(
     val operations = standardRequestOperations(action)
     
     SafeRequest(operations, options) ProtectAsync { maybeState =>
-      val f = for {
-        r1 <- Patch(target)
-        r2 <- Future.fromTry {
+      val result = for {
+        patched <- Patch(target)
+        updated <- Future.fromTry {
           log.info("Updating resource in Meta...")
-          update(r1, user.account.id)
+          update(patched, user.account.id)
         }
-      } yield Ok(RenderSingle(r2))
-      f recover {
+      } yield Ok(RenderSingle(updated))
+      result recover {
         case e: Throwable => HandleExceptions(e)
       }
     }
@@ -227,6 +229,9 @@ class PatchController @Inject()(
       case Some(customHandler) =>
         log.debug(s"Found custom PATCH handler for type: ${resource.typeId}")
         customHandler(resource, patch, account, rh)
+      case None if isProviderBackedResource(resource.typeId) =>
+        log.debug(s"Using provider-backed PATCH handler for type: ${resource.typeId}")
+        providerBackedResourcePatch(resource, patch, account, rh)
       // case None if isSomeSortOfProvider => patchProviderSpecial(resource, patch, account)
       case None =>
         log.debug(s"Using default PATCH handler for type: ${resource.typeId}")
@@ -248,6 +253,36 @@ class PatchController @Inject()(
         throw new ResourceNotFoundException(path.path)
       }
     }
+  }
+
+  private[controllers] def providerBackedResourcePatch( resource: GestaltResourceInstance,
+                                                        patch: PatchDocument,
+                                                        user: AuthAccountWithCreds,
+                                                        rh: RequestHeader ): Future[GestaltResourceInstance] = {
+    log.debug("entered providerBackedResourcePatch(_,_,_)")
+    for {
+      patched <- Future.fromTry {
+        log.debug("Applying patch to resource...")
+        PatchInstance.applyPatch(resource, patch) map {_.asInstanceOf[GestaltResourceInstance]}
+      }
+      org <- Future.fromTry(Try{
+        ResourceFactory.findById(ResourceIds.Org, patched.orgId).getOrElse(
+          throw new InternalErrorException(s"could not locate org '${patched.orgId}' for resource '${patched.id}'")
+        )
+      })
+      updated <- {
+        log.debug("Invoking provider patch...")
+        genericResourceMethods.updateProviderBackedResource(
+          org = org,
+          identity = user,
+          updatedResource = patched,
+          actionVerb = rh.getQueryString("action").getOrElse("update")
+        )(rh)
+      }
+      _ = {
+        log.debug("PATCHED RESOURCE : " + updated)
+      }
+    } yield updated
   }
 
   private[controllers] def defaultResourcePatch(

@@ -3,7 +3,6 @@ package controllers.util
 
 import play.api.http.HeaderNames
 
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import controllers.util.db._
@@ -27,12 +26,18 @@ import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.patch._
 import controllers.util.JsonUtil._
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
+trait MetaControllerUtils extends AuthorizationMethods {
 
-trait MetaControllerUtils {
-  
+  case class MetaRequest( caller: AuthAccountWithCreds,
+                          resource: GestaltResourceInstance,
+                          resourceParent: UUID,
+                          action: String,
+                          baseUri: Option[String] = None)
+
   private[this] val log = Logger(this.getClass)
-  
+
   /**
    * Get an Org by FQON
    */
@@ -49,7 +54,63 @@ trait MetaControllerUtils {
   
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)
-    
+
+  private[controllers] def CreateWithEntitlements(
+                                                   owningOrgId: UUID,
+                                                   creator: AuthAccountWithCreds,
+                                                   resource: ResourceLike,
+                                                   parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+
+    ResourceFactory.create(ResourceIds.User, creator.account.id)(
+      resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
+      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+      r
+    }
+  }
+
+
+  /**
+    *
+    * @param baseUri if given this will be used to construct a URL pointing to resource in the EventMessage.
+    */
+  def newResourceRequestOptions(
+                                 caller: AuthAccountWithCreds,
+                                 resource: GestaltResourceInstance,
+                                 parentId: UUID,
+                                 baseUri: Option[String] = None) = {
+
+    RequestOptions(caller,
+      authTarget   = Option(parentId),
+      policyOwner  = Option(parentId),
+      policyTarget = Option(resource),
+      data = Option(Map(
+        "host"     -> baseUri.get,
+        "parentId" -> parentId.toString,
+        "typeId"   -> resource.typeId.toString)))
+  }
+
+  def newResourceRequestSetup(
+                               caller: AuthAccountWithCreds,
+                               resource: GestaltResourceInstance,
+                               resourceParent: UUID,
+                               action: String, baseUri: Option[String] = None):
+  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+    (
+      newResourceRequestOperations(resource.typeId, action),
+      newResourceRequestOptions(caller, resource, resourceParent, baseUri)
+    )
+  }
+
+  def newResourceRequestArgs(meta: MetaRequest):
+  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+    val (operations, options) = newResourceRequestSetup(
+      meta.caller,
+      meta.resource,
+      meta.resourceParent,
+      meta.action, meta.baseUri)
+    (operations, options)
+  }
+
   /**
     * Inspect a GestaltResourceInput, supplying default values where appropriate.
     */
@@ -77,35 +138,51 @@ trait MetaControllerUtils {
       tags = in.tags,
       auth = in.auth)
   }
-}
 
-
-
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-
-trait MetaController extends AuthorizationMethods with SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
-  
-  private[this] val log = Logger(this.getClass)
+  def newResourceRequestOperations(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
+    List(
+      controllers.util.Authorize(action),
+      controllers.util.Validate(action),
+      controllers.util.PolicyCheck(action),
+      controllers.util.EventsPre(action),
+      controllers.util.EventsPost(action))
+  }
 
   /**
     * Get the base URL for this Meta instance
     */
-  def META_URL(implicit requestHeader: RequestHeader) = {
+  def META_URL(implicit requestHeader: RequestHeader): String = {
     val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
       if (requestHeader.secure) "https" else "http"
     }).toLowerCase
     val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
-    Some(
-      "%s://%s".format(protocol, host)
-    )
+    "%s://%s".format(protocol, host)
   }
+
+  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
+    (obj \ "resource_type" match {
+      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
+      case t => {
+        if (!(t.as[UUID] == expectedType))
+          throw new BadRequestException(
+            s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
+        else obj
+      }
+    }).as[JsObject]
+  }
+
+}
+
+trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
+  private[this] val log = Logger(this.getClass)
+
   /**
    * Render a single GestaltResourceInstance to JSON
    */
   private[controllers] def RenderSingle(res: GestaltResourceInstance)(
       implicit rh: RequestHeader): JsValue = {
-    Output.renderInstance(res, META_URL)
+    Output.renderInstance(res, Some(META_URL))
   }
   
   /**
@@ -117,7 +194,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
       Output.renderCompact else Output.renderInstance
     
-    handleExpansion2(rss, request.queryString, META_URL)(render)    
+    handleExpansion2(rss, request.queryString, Some(META_URL))(render)
   }
   
 //  private[controllers] def RenderListCompact(rss: Seq[GestaltResourceInstance])(
@@ -182,19 +259,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   
   private[controllers] def CreateWithEntitlements(
       owningOrgId: UUID,
-      creator: AuthAccountWithCreds,
-      resource: ResourceLike,
-      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-
-    ResourceFactory.create(ResourceIds.User, creator.account.id)(
-      resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
-      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
-      r
-    }
-  }
-  
-  private[controllers] def CreateWithEntitlements(
-      owningOrgId: UUID,
       resource: ResourceLike,
       parentId: Option[UUID])(
           implicit request: SecuredRequest[_]): Try[GestaltResourceInstance] = {
@@ -242,97 +306,39 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
     HandleExceptions(ex)
   }
 
-  def newResourceRequestOperations(typeId: UUID, action: String): List[Operation[Seq[String]]] = {
-    List(
-      controllers.util.Authorize(action),
-      controllers.util.Validate(action),
-      controllers.util.PolicyCheck(action),
-      controllers.util.EventsPre(action),
-      controllers.util.EventsPost(action))
-  }
-  
-  /**
-   * 
-   * @param baseUri if given this will be used to construct a URL pointing to resource in the EventMessage.
-   */
-  def newResourceRequestOptions(
-      caller: AuthAccountWithCreds, 
-      resource: GestaltResourceInstance, 
-      parentId: UUID, 
-      baseUri: Option[String] = None) = {
-    
-    RequestOptions(caller, 
-      authTarget   = Option(parentId), 
-      policyOwner  = Option(parentId), 
-      policyTarget = Option(resource),
-      data = Option(Map(
-          "host"     -> baseUri.get,
-          "parentId" -> parentId.toString,
-          "typeId"   -> resource.typeId.toString)))
-  }
-  
-  def newResourceRequestSetup(
-      caller: AuthAccountWithCreds, 
-      resource: GestaltResourceInstance,
-      resourceParent: UUID,
-      action: String, baseUri: Option[String] = None): 
-        Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
-    (
-      newResourceRequestOperations(resource.typeId, action),
-      newResourceRequestOptions(caller, resource, resourceParent, baseUri)
-    )
-  } 
-  
-  def requestArgs(meta: MetaRequest): 
-      Tuple3[List[Operation[Seq[String]]], RequestOptions, GestaltResourceInstance] = {
-    val (operations, options) = newResourceRequestSetup(
-        meta.caller, 
-        meta.resource, 
-        meta.resourceParent, 
-        meta.action, meta.baseUri)
-    (operations, options, meta.resource)
-  }
-  
-  case class MetaRequest(
-    caller: AuthAccountWithCreds, 
-    resource: GestaltResourceInstance,
-    resourceParent: UUID,
-    action: String,
-    baseUri: Option[String] = None)
-
   import com.galacticfog.gestalt.meta.auth.ActionMethods
   import play.api.mvc.Result
-  
+
   def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
       implicit request: SecuredRequest[_]): MetaRequest = {
-    
+
     object actions extends ActionMethods
     val resource = j2r(org, request.identity, json, Some(resourceType))
     actions.prefixFromResource(resource).fold {
       throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
     }{ prefix =>
       val fqaction = "%s.%s".format(prefix, action)
-      MetaRequest(request.identity, resource, resourceParent, fqaction, META_URL)
+      MetaRequest(request.identity, resource, resourceParent, fqaction, Some(META_URL))
     }
   }
-  
+
   def newResourceRequest(org: UUID, resourceType: UUID, resourceParent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]): MetaRequest = {
     val json = payload getOrElse request.body
     metaRequest(org, json, resourceType, resourceParent, "create")
   }
-  
+
   def MetaCreate(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Result) => Result = {
-    val (operations, options, resource) = requestArgs {
+    val (operations, options) = newResourceRequestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
-    SafeRequest(operations, options).Execute _    
+    SafeRequest(operations, options).Execute _
   }
-  
+
   def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
-    val (operations, options, resource) = requestArgs {
+    val (operations, options) = newResourceRequestArgs {
       newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
     }
     SafeRequest(operations, options).ExecuteAsync _    
@@ -423,18 +429,6 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
         replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
   }
   
-  def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
-    (obj \ "resource_type" match {
-      case u : JsUndefined => obj.as[JsObject] + ("resource_type" -> expectedType.toString)
-      case t => {
-        if (!(t.as[UUID] == expectedType))
-          throw new BadRequestException(
-              s"Unexpected resource_type. found: ${t.toString}, required: ${expectedType.toString}")
-        else obj
-      }
-    }).as[JsObject]    
-  }  
-  
   def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue): Try[JsValue] = {
     payloadTransforms.get(tpe).fold(Try(payload)) { f =>
       val data = Map("org" -> org.toString, "parent" -> parent.toString, "typeId" -> tpe.toString)
@@ -449,7 +443,7 @@ trait MetaController extends AuthorizationMethods with SecurityResources with Me
   }
   
   protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
-    val link = Json.toJson(parentLink(parent, META_URL).get)
+    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
     JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
   }
   

@@ -57,7 +57,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
       
       // Ensure Environment exists and create Integration.
       findById(envid).fold( NotFoundResult(request.uri) ) { env =>
-        createIntegrationResult(fqid(fqon), envid, request.body, request.identity, META_URL)
+        createIntegrationResult(fqid(fqon), envid, request.body, request.identity, Some(META_URL))
       }
     }
   }
@@ -86,7 +86,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
         case Failure(e) => HandleExceptions(e)
         case Success(integration) => {
           setNewEntitlements(org, integration.id, user, Option(parent))
-          Created(Output.renderInstance(integration, META_URL))
+          Created(Output.renderInstance(integration, Some(META_URL)))
         }
       }
     }
@@ -102,7 +102,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
     try {
       val orgid = fqid(fqon)
       val integrations = ResourceFactory.findChildrenOfType(orgid, envid, ResourceIds.Integration)
-      Ok(Output.renderLinks(integrations, META_URL))
+      Ok(Output.renderLinks(integrations, Some(META_URL)))
     } catch {
       case e: Throwable => HandleExceptions(ResourceNotFoundException(e.getMessage))
     }
@@ -128,7 +128,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   				  // substitute env fields into url, headers, payload
           } 
 */
-           Ok(Output.renderInstance(integration, META_URL))
+           Ok(Output.renderInstance(integration, Some(META_URL)))
      }
   }
 

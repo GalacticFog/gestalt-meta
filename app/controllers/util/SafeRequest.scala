@@ -309,8 +309,8 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
   
   type OptIdResponse = OperationResponse[Option[UUID]]
   type SeqStringOp = Operation[Seq[String]]
-  
-  
+
+
   def Execute[T](f: GestaltResourceInstance => Result): Result = {
 
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
@@ -328,7 +328,7 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
      * Separate operations list into pre and post ops.
      */
     val (beforeOps, afterOps) = sansPost(operations)
-    
+
     val result = evaluate(beforeOps, Continue).toTry match {
       case Success(state) => {
         val resource = {
@@ -337,22 +337,22 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
         }
         f( resource )
       }
-      case Failure(error) => HandleExceptions(error) 
+      case Failure(error) => HandleExceptions(error)
     }
-    
+
     if (afterOps.isDefined) {
       log.debug(s"Found *.post events: ${afterOps.get}")
     } else {
       log.debug("No *.post events found.")
     }
-    
+
     afterOps map( _.proceed(options) )
-    
+
     result
-  }  
-  
-  
-def ExecuteAsync[T](f: GestaltResourceInstance => Future[Result]): Future[Result] = {
+  }
+
+
+  def ExecuteAsync[T](f: GestaltResourceInstance => Future[Result]): Future[Result] = {
 
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
       os match {
