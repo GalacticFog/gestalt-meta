@@ -260,25 +260,7 @@ class DeleteController @Inject()(
     } else Seq()
   }
 
-  /*
-   * TODO: Move this function... 
-   * Make part of common controller so all controllers can use.
-   * Possibly refactor into a QueryString object that makes dealing with the
-   * nested structure a bit easier.
-   * 
-   */
-  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
-    if (!qs.contains(param)) false
-    else {
-      val bp = qs(param)
-      Try {
-        bp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
-      }
-    }
-  }
+
 
   def findResourceParent(child: UUID) = {
     ResourceFactory.findParent(child) getOrElse {

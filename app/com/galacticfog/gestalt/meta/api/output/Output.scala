@@ -153,7 +153,7 @@ object Output {
     })
   }
   
-  def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None): JsValue = {  
+  def renderTypePropertyOutput(p: GestaltTypeProperty, baseUri: Option[String] = None): JsValue = { 
     val res = toPropertyOutput( p, baseUri )
     Json.toJson(res)
   }
@@ -191,7 +191,7 @@ object Output {
       requirement_type = JsString(RequirementType.name(p.requirementType)),
       visibility_type = JsString(VisibilityType.name(p.visibilityType)),
       refers_to = jsonTypeName(p.refersTo),
-
+      
       properties = jsonHstore(p.properties),
       variables = jsonHstore(p.variables),
       tags = jsonArray(p.tags),
@@ -343,9 +343,13 @@ object Output {
    */
   protected[output] def jsonTypeName(typeId: Option[UUID]): Option[JsValue] = {
     if (typeId.isEmpty) None
-    else TypeFactory.findById(typeId.get) match {
-      case Some(t) => Option(JsString(t.name))
-      case None => illegal(s"Unknown type_id '${typeId}'")
+    else {
+      val tid = typeId.get
+      TypeFactory.findById(tid).fold {
+        ReferenceFactory.findById(tid, tid).fold {
+          illegal(s"Unknown type_id '${tid}'")
+        }{ ref => Option(JsString(ref.name)) }
+      }{ tpe => Option(JsString(tpe.name)) }
     }
   }
   
