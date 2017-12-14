@@ -243,9 +243,8 @@ object Output {
     /* Get a Map of the properties defined for the current ResourceType. */
 
     val givenProps = properties getOrElse Map()
-    
     val templateProps = {
-      val ps = Properties.getTypePropertyMap(typeId)
+      val ps = Properties.getPrototype(typeId)
       val remove = ps.keySet.diff(givenProps.keySet)
       ps -- remove
     }
