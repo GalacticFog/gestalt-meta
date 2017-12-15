@@ -58,7 +58,6 @@ class ResourceController @Inject()(
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
-      ResourceIds.Lambda -> transformLambda,
       ResourceIds.Policy -> transformPolicy
   )
   
@@ -569,21 +568,6 @@ class ResourceController @Inject()(
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
   }
 
-  /**
-    * Builds lambda.properties.function_mappings object.
-    */
-  private[controllers] def transformLambda(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
-    val lmap = ResourceFactory.getLambdaFunctionMap(res.id)
-    val resJson = Json.toJson(res).as[JsObject]
-
-    val newjson = if (lmap.isEmpty) resJson else {
-      val smap = JsString(Json.toJson(lmap).toString)
-      val m2 = replaceJsonPropValue(resJson, "function_mappings", smap)
-      replaceJsonProps(resJson, m2)
-    }
-    newjson.validate[GestaltResourceInstance].get
-  }
-
   private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val resJson = Json.toJson(res).as[JsObject]
     val renderedLinks: Seq[JsObject] = (resJson \ "properties" \ "linked_providers").asOpt[Seq[JsObject]].map { _.flatMap {
@@ -792,7 +776,7 @@ class ResourceController @Inject()(
     def tname(typeId: UUID): String = resourceRestName(typeId).dropRight(1).mkString
     
     val org = {
-      ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", rp.fqon) map { 
+      Resource.findFqon(rp.fqon) map {
         toLink(_, None) }
     }
     val target = {
@@ -811,39 +795,6 @@ class ResourceController @Inject()(
 //    Map(ResourceLabel(rp.parentTypeId.get) -> rp.parentId) 
     
   }
-  
-  def mkPath(fqon: String, path: String) = {
-    def mkuri(fqon: String, r: GestaltResourceInstance) = {
-      "/%s/%s/%s".format(fqon, resourceRestName(r.typeId).get, r.id)
-    }
-    
-    def mkinfo(r: GestaltResourceInstance) = {
-      ResourceInfo(r.id, r.name, mkuri(fqon, r))
-    }
-    
-    def resolve(parent: UUID, cmps: List[(UUID,String)], dat: Map[String, ResourceInfo]): Try[Map[String,ResourceInfo]] = Try {
-      cmps match {
-        case Nil => dat
-        case h :: t => {
-          ResourceFactory.findChildByName(parent, h._1, h._2).fold {
-            throw new ResourceNotFoundException(s"${ResourceLabel(h._1)} with name '${h._2}' not found.")
-          }{ res => 
-            resolve(res.id, t, dat ++ Map(ResourceLabel(h._1).toLowerCase -> mkinfo(res))).get
-          }
-        }
-      }
-    }
-    
-    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
-    val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
-    val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
-    
-    resolve(org.id, (keys zip values), Map("org" -> mkinfo(org))) match {
-      case Success(m) => Ok(Json.toJson(m))
-      case Failure(e) => HandleRepositoryExceptions(e)
-    }    
-  }
-  
 
   def mapPath(fqon: String, path: String) = Audited(fqon) { implicit request =>
     
@@ -868,7 +819,9 @@ class ResourceController @Inject()(
       }
     }
     
-    val org = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon).get
+    val org = Resource.findFqon(fqon) getOrElse {
+      throw new InternalErrorException(s"could not locate org with fqon '${fqon}'")
+    }
     val keys = List(ResourceIds.Workspace, ResourceIds.Environment)
     val values = path.stripPrefix("/").stripSuffix("/").split("/").toList
     
