@@ -3,22 +3,19 @@ package controllers.util
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.bootstrap.LineageInfo
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState, TypeFactory}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, GestaltResourceType}
+import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
-import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import controllers.SecurityResources
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
-import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.specification.{BeforeAll, Scope}
 import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsString, Json}
@@ -27,7 +24,6 @@ import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 import scala.concurrent.Future
 import scala.util.Success
-import org.specs2.mutable._
 import org.specs2.runner._
 import org.junit.runner._
 
@@ -225,8 +221,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       }
 
       lazy val (testOrg,testWork,testEnv) = {
-        val Some(to) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
-        val Success((tw,te)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+        val Success(to) = createOrg(name = uuid().toString)
+        val Success((tw,te)) = createWorkEnv(org = to.id)
         Ents.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
         Ents.setNewEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
         Ents.setNewEntitlements(dummyRootOrgId, to.id, user, None)
@@ -236,7 +232,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     }
 
     "create provider of new provider type" in new testApp {
-      val request = fakeAuthRequest(POST, "/root/providers", testCreds).withBody(
+      val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(
         Json.obj(
           "name" -> testProviderName,
           "resource_type" -> providerTypeName,
@@ -282,7 +278,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ResourceFactory.findAllByName(dummyRootOrgId, resourceTypeId, testResourceName) must beEmpty
     }
 
-    "create provider-backed resources using the ActionProvider interface under orgs" in new testAppWithProvider {
+    "create org provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
       val testResourceName = "test-resource"
       mockActionProvider.invokeAction(any) answers {
         (a: Any) =>
@@ -318,7 +314,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
       val invocation = invocationCaptor.getValue
       invocation.action must_== s"${resourcePrefix}.create"
-      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beNone
       invocation.context.environment must beNone
       invocation.provider must_== testProvider
@@ -340,596 +336,569 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       )
     }
 
-    // TODO: finish updating these from blueprint-tests to the generic tests like above
+    "create workspace provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource"
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          Future.successful(Left(invocation.resource.get.copy(
+            properties = Some(invocation.resource.get.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
 
-//    "create workspace blueprints using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint"
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          Future.successful(Left(invocation.resource.get.copy(
-//            properties = Some(invocation.resource.get.properties.get ++ Map(
-//              "canonical_form" -> "meta canonical form"
-//            ))
-//          )))
-//      }
-//
-//      val request = fakeAuthRequest(POST, s"/root/workspaces/${testWork.id}/${resourcePrefix}s", testCreds).withBody(
-//        Json.obj(
-//          "name" -> testBlueprintName,
-//          "properties" -> Json.obj(
-//            "provider" -> testProvider.id,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//        )
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(CREATED)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
-//      (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.create"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beNone
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasName(testBlueprintName)
-//          and
-//          hasProperties(
-//            "provider" -> testProvider.id.toString,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//      )
-//
-//      val returnedId = (json \ "id").as[UUID]
-//      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
-//      persisted.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "blueprint data goes here",
-//        "canonical_form" -> "meta canonical form"
-//      )
-//    }
+      val request = fakeAuthRequest(POST, s"/${testOrg.name}/workspaces/${testWork.id}/${resourcePrefix}s", testCreds).withBody(
+        Json.obj(
+          "name" -> testResourceName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "string_prop" -> "some string"
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("some string")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
 
-//    "create environment blueprints using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint"
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          Future.successful(Left(invocation.resource.get.copy(
-//            properties = Some(invocation.resource.get.properties.get ++ Map(
-//              "canonical_form" -> "meta canonical form"
-//            ))
-//          )))
-//      }
-//
-//      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/${testPrefix}", testCreds).withBody(
-//        Json.obj(
-//          "name" -> testBlueprintName,
-//          "properties" -> Json.obj(
-//            "provider" -> testProvider.id,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//        )
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(CREATED)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
-//      (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.create"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasName(testBlueprintName)
-//          and
-//          hasProperties(
-//            "provider" -> testProvider.id.toString,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//      )
-//
-//      val returnedId = (json \ "id").as[UUID]
-//      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
-//      persisted.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "blueprint data goes here",
-//        "canonical_form" -> "meta canonical form"
-//      )
-//    }
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.create")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.create"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beNone
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasName(testResourceName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "string_prop" -> "some string"
+          )
+      )
 
-//    "create org blueprints using the import verb" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-import"
-//      val metaRep = "a representation of the import target"
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          Future.successful(Left(invocation.resource.get.copy(
-//            properties = Some(invocation.resource.get.properties.get ++ Map(
-//              "canonical_form" -> metaRep
-//            ))
-//          )))
-//      }
-//
-//      val importTarget = UUID.randomUUID()
-//      val request = fakeAuthRequest(POST, s"/root/${testPrefix}?action=import&p1=v1&p1=v1again&p2=v2", testCreds).withBody(
-//        Json.obj(
-//          "name" -> testBlueprintName,
-//          "properties" -> Json.obj(
-//            "provider" -> testProvider.id,
-//            "blueprint_type" -> "meta-import",
-//            "native_form" -> importTarget.toString
-//          )
-//        )
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(CREATED)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("meta-import")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome(metaRep)
-//      (json \ "properties" \ "native_form").asOpt[UUID] must beSome(importTarget)
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.import"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beNone
-//      invocation.context.environment must beNone
-//      invocation.context.queryParams must_==(Map(
-//        "p1" -> Seq("v1", "v1again"),
-//        "p2" -> Seq("v2")
-//      ))
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasName(testBlueprintName)
-//          and
-//          hasProperties(
-//            "provider" -> testProvider.id.toString,
-//            "blueprint_type" -> "meta-import",
-//            "native_form" -> importTarget.toString
-//          )
-//      )
-//
-//      val returnedId = (json \ "id").as[UUID]
-//      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
-//      persisted.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "meta-import",
-//        "native_form" -> importTarget.toString,
-//        "canonical_form" -> metaRep
-//      )
-//    }
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(resourceTypeId, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "some string",
+        "bool_prop" -> "true"
+      )
+    }
 
-//    "deploy blueprints using the ActionProvider interface with Json payload without update semantics" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-deploy"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          val name = invocation.actionPayload.flatMap(j => (j \ "name").asOpt[String])
-//          Future.successful(Right(
-//            RawInvocationResponse(Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
-//          ))
-//      }
-//
-//      val payload = Json.obj(
-//        "name" -> "Chris"
-//      )
-//      val request = fakeAuthRequest(POST,
-//        s"/root/${testPrefix}/${createdResource.id}?action=deploy&p1=v1", testCreds
-//      ).withBody(payload)
-//      val Some(result) = route(request)
-//      status(result) must equalTo(202)
-//      contentAsString(result) must_== "Hello, Chris"
-//      contentType(result) must beSome("text/plain")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.deploy")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.deploy"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.context.queryParams must_==(Map(
-//        "p1" -> Seq("v1")
-//      ))
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(createdResource)
-//      invocation.actionPayload must beSome(payload)
-//    }
+    "create environment provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource"
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          Future.successful(Left(invocation.resource.get.copy(
+            properties = Some(invocation.resource.get.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
 
-//    "deploy blueprints using the ActionProvider interface with text payload with update semantics" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-deploy"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          val updatedCF = invocation.actionPayload.flatMap(_.asOpt[String]) getOrElse ""
-//          val resource = invocation.resource.get
-//          Future.successful(Left(
-//            resource.copy(
-//              properties = Some(resource.properties.get ++ Map(
-//                "canonical_form" -> updatedCF
-//              ))
-//            )
-//          ))
-//      }
-//
-//      val payload = "updated canonical form during blueprint"
-//
-//      val request = fakeAuthRequest(POST,
-//        s"/root/${testPrefix}/${createdResource.id}?action=deploy&p1=v1", testCreds
-//      ).withBody(payload)
-//      val Some(result) = route(request)
-//      status(result) must equalTo(200)
-//      contentAsJson(result).toString must /("properties") /("canonical_form" -> payload)
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.deploy")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.deploy"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.context.queryParams must_==(Map(
-//        "p1" -> Seq("v1")
-//      ))
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(createdResource)
-//      invocation.actionPayload must beSome(JsString(payload))
-//
-//      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
-//      updatedResource.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "native",
-//        "canonical_form" -> payload
-//      )
-//    }
+      val request = fakeAuthRequest(POST, s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s", testCreds).withBody(
+        Json.obj(
+          "name" -> testResourceName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "string_prop" -> "some string"
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("some string")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
 
-//    "action failure should return bad request" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-deploy-failure"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure message"))
-//
-//      val request = fakeAuthRequest(POST,
-//        s"/root/${testPrefix}/${createdResource.id}?action=deploy", testCreds
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(BAD_REQUEST)
-//      contentAsString(result) must contain("failure message")
-//    }
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.create")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.create"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasName(testResourceName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "string_prop" -> "some string"
+          )
+      )
 
-//    "delete blueprints using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-delete"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
-//
-//      val request = fakeAuthRequest(DELETE,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}?p1=v1", testCreds
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(204)
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.delete")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.delete"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.context.queryParams must_==(Map(
-//        "p1" -> Seq("v1")
-//      ))
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(createdResource)
-//      invocation.actionPayload must beNone
-//
-//      ResourceFactory.findById(createdResource.id) must beNone
-//    }
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(resourceTypeId, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "some string",
+        "bool_prop" -> "true"
+      )
+    }
 
-//    "delete blueprints using the alternate verb against ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-delete"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
-//
-//      val request = fakeAuthRequest(DELETE,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}?action=import", testCreds
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(204)
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.import"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(createdResource)
-//      invocation.actionPayload must beNone
-//
-//      ResourceFactory.findById(createdResource.id) must beNone
-//    }
+    "create provider-backed resources using an alternative verb" in new testAppWithProvider {
+      val testResourceName = "test-resource"
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          Future.successful(Left(invocation.resource.get.copy(
+            properties = Some(invocation.resource.get.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
 
-//    "failure during invocation should prevent blueprint deletion" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-delete-failure"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "native",
-//          "canonical_form" -> "canonical"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("the failure message"))
-//
-//      val request = fakeAuthRequest(DELETE,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}?action=import", testCreds
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(BAD_REQUEST)
-//      contentAsString(result) must contain("the failure message")
-//
-//      ResourceFactory.findById(createdResource.id) must beSome
-//    }
+      val request = fakeAuthRequest(POST, s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s?action=${verb1}&qp1=v1&qp2=v2.1&qp2=v2.2", testCreds).withBody(
+        Json.obj(
+          "name" -> testResourceName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "string_prop" -> "some string"
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("some string")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
 
-//    "patch blueprints using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-patch"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "original blueprint",
-//          "canonical_form" -> "ORIGINAL BLUEPRINT"
-//        ))
-//      ).get
-//
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          val resource = invocation.resource.get
-//          Future.successful(Left(resource.copy(
-//            properties = Some(resource.properties.get ++ Map(
-//              "canonical_form" -> resource.properties.get("native_form").toUpperCase()
-//            ))
-//          )))
-//      }
-//
-//      val request = fakeAuthRequest(PATCH,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}", testCreds
-//      ).withBody(
-//        PatchDocument(
-//          PatchOp.Replace("/properties/native_form", "updated blueprint")
-//        ).toJson
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(OK)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
-//      (json \ "properties" \ "native_form").asOpt[String] must beSome("updated blueprint")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("UPDATED BLUEPRINT")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.update")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.update"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasId(createdResource.id)
-//          and
-//          hasName(createdResource.name)
-//          and
-//          hasProperties(
-//            "native_form"    -> "updated blueprint",  // updated in the patch op
-//            "canonical_form" -> "ORIGINAL BLUEPRINT"  // not updated in the patch op, updated by the invocation
-//          )
-//      )
-//      invocation.actionPayload must beNone
-//
-//      ResourceFactory.findById(createdResource.id) must beSome
-//      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
-//      updatedResource.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "updated blueprint",
-//        "canonical_form" -> "UPDATED BLUEPRINT"
-//      )
-//    }
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.${verb1}")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.${verb1}"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.context.queryParams must_== Map(
+        "qp1" -> Seq("v1"),
+        "qp2" -> Seq("v2.1", "v2.2")
+      )
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasName(testResourceName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "string_prop" -> "some string"
+          )
+      )
 
-//    "patch blueprints with alternate verb using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-patch"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "original blueprint",
-//          "canonical_form" -> "ORIGINAL BLUEPRINT"
-//        ))
-//      ).get
-//
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          val resource = invocation.resource.get
-//          Future.successful(Left(resource.copy(
-//            properties = Some(resource.properties.get ++ Map(
-//              "canonical_form" -> resource.properties.get("native_form").toUpperCase()
-//            ))
-//          )))
-//      }
-//
-//      val request = fakeAuthRequest(PATCH,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}?action=import", testCreds
-//      ).withBody(
-//        PatchDocument(
-//          PatchOp.Replace("/properties/native_form", "updated blueprint")
-//        ).toJson
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(OK)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
-//      (json \ "properties" \ "native_form").asOpt[String] must beSome("updated blueprint")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("UPDATED BLUEPRINT")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.import")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.import"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testWork.id) )
-//      invocation.context.environment must beSome( ((_:GestaltResourceInstance).id) ^^ be_==(testEnv.id) )
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasId(createdResource.id)
-//          and
-//          hasName(createdResource.name)
-//          and
-//          hasProperties(
-//            "native_form"    -> "updated blueprint",  // updated in the patch op
-//            "canonical_form" -> "ORIGINAL BLUEPRINT"  // not updated in the patch op, updated by the invocation
-//          )
-//      )
-//      invocation.actionPayload must beNone
-//
-//      ResourceFactory.findById(createdResource.id) must beSome
-//      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
-//      updatedResource.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "updated blueprint",
-//        "canonical_form" -> "UPDATED BLUEPRINT"
-//      )
-//    }
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(resourceTypeId, returnedId)
+      persisted.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "some string",
+        "bool_prop" -> "true"
+      )
+    }
 
-//    "failure during patch should not update resource" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint-patch-failure"
-//      val createdResource = createInstance(ResourceIds.Blueprint, testBlueprintName,
-//        parent = Some(testEnv.id),
-//        properties = Some(Map(
-//          "provider" -> testProvider.id.toString,
-//          "blueprint_type" -> "docker-compose",
-//          "native_form" -> "original blueprint",
-//          "canonical_form" -> "ORIGINAL BLUEPRINT"
-//        ))
-//      ).get
-//      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
-//
-//      val request = fakeAuthRequest(PATCH,
-//        s"/root/environments/${testEnv.id}/${testPrefix}/${createdResource.id}", testCreds
-//      ).withBody(
-//        PatchDocument(
-//          PatchOp.Replace("/properties/native_form", "updated blueprint")
-//        ).toJson
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(BAD_REQUEST)
-//
-//      ResourceFactory.findById(createdResource.id) must beSome
-//      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
-//      updatedResource.properties.get must havePairs(
-//        "provider" -> testProvider.id.toString,
-//        "blueprint_type" -> "docker-compose",
-//        "native_form" -> "original blueprint",
-//        "canonical_form" -> "ORIGINAL BLUEPRINT"
-//      )
-//    }
+    "perform resource actions using the ActionProvider interface with Json payload without update semantics" in new testAppWithProvider {
+      val testResourceName = "test-resource-action"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "some string",
+          "bool_prop" -> "false"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val name = invocation.actionPayload.flatMap(j => (j \ "name").asOpt[String])
+          Future.successful(Right(
+            RawInvocationResponse(Some(202),Some("text/plain"), Some(s"Hello, ${name.getOrElse("world")}"))
+          ))
+      }
+
+      val payload = Json.obj(
+        "name" -> "Chris"
+      )
+      val request = fakeAuthRequest(POST,
+        s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb1}&p1=v1", testCreds
+      ).withBody(payload)
+      val Some(result) = route(request)
+      status(result) must equalTo(202)
+      contentAsString(result) must_== "Hello, Chris"
+      contentType(result) must beSome("text/plain")
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.${verb1}")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.${verb1}"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.actionPayload must beSome(payload)
+    }
+
+    "perform resource actions using the ActionProvider interface with text payload with update semantics" in new testAppWithProvider {
+      val testResourceName = "test-resource-action"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "original string prop",
+          "bool_prop" -> "false"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val update = invocation.actionPayload.flatMap(_.asOpt[String]) getOrElse ""
+          val resource = invocation.resource.get
+          Future.successful(Left(
+            resource.copy(
+              properties = Some(resource.properties.get ++ Map(
+                "string_prop" -> update,
+                "bool_prop" -> "true"
+              ))
+            )
+          ))
+      }
+
+      val payload = "updated string prop"
+
+      val request = fakeAuthRequest(POST,
+        s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
+      ).withBody(payload)
+      val Some(result) = route(request)
+      status(result) must equalTo(200)
+      contentAsJson(result).toString must /("properties") /("string_prop" -> payload)
+      contentAsJson(result).toString must /("properties") /("bool_prop" -> "true")
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.${verb2}")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.${verb2}"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.actionPayload must beSome(JsString(payload))
+
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> payload,
+        "bool_prop" -> "true"
+      )
+    }
+
+    "action failure should return bad request" in new testAppWithProvider {
+      val testResourceName = "test-resource-action"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "original string prop",
+          "bool_prop" -> "false"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure message"))
+
+      val request = fakeAuthRequest(POST,
+        s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb1}", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("failure message")
+    }
+
+    "delete resources using the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource-delete"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> ""
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
+
+      val request = fakeAuthRequest(DELETE,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?p1=v1", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(204)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.delete")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.delete"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beNone
+    }
+
+
+    "delete resources using the alternate verb against the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource-delete"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> ""
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.successful(Right(RawInvocationResponse(None,None,None)))
+
+      val request = fakeAuthRequest(DELETE,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(204)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.${verb2}")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.${verb2}"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.context.queryParams must_==(Map(
+        "p1" -> Seq("v1")
+      ))
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(createdResource)
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beNone
+    }
+
+    "failure during action invocation should prevent resource deletion" in new testAppWithProvider {
+      val testResourceName = "test-resource-delete"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> ""
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("the failure message"))
+
+      val request = fakeAuthRequest(DELETE,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("the failure message")
+
+      ResourceFactory.findById(createdResource.id) must beSome
+    }
+
+    "patch resources using the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource-patch"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        org = testOrg.id,
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "original value",
+          "bool_prop" -> "false"
+        ))
+      ).get
+
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val resource = invocation.resource.get
+          Future.successful(Left(resource.copy(
+            properties = Some(resource.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
+
+      val request = fakeAuthRequest(PATCH,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}", testCreds
+      ).withBody(
+        PatchDocument(
+          PatchOp.Replace("/properties/string_prop", "updated value")
+        ).toJson
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("updated value")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.update")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.update"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasId(createdResource.id)
+          and
+          hasName(createdResource.name)
+          and
+          hasProperties(
+            "string_prop" -> "updated value",  // updated in the patch op
+            "bool_prop"   -> "false"           // not updated in the patch op, updated by the invocation
+          )
+      )
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beSome
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "updated value",
+        "bool_prop" -> "true"
+      )
+    }
+
+    "patch resources using an alternate verb against the ActionProvider interface" in new testAppWithProvider {
+      val testResourceName = "test-resource-patch"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        org = testOrg.id,
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "original value",
+          "bool_prop" -> "false"
+        ))
+      ).get
+
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          val resource = invocation.resource.get
+          Future.successful(Left(resource.copy(
+            properties = Some(resource.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
+
+      val request = fakeAuthRequest(PATCH,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?action=${verb2}", testCreds
+      ).withBody(
+        PatchDocument(
+          PatchOp.Replace("/properties/string_prop", "updated value")
+        ).toJson
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("updated value")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.${verb2}")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.${verb2}"
+      invocation.context.org.id must_== testOrg.id
+      invocation.context.workspace must beSome(testWork)
+      invocation.context.environment must beSome(testEnv)
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasId(createdResource.id)
+          and
+          hasName(createdResource.name)
+          and
+          hasProperties(
+            "string_prop" -> "updated value",  // updated in the patch op
+            "bool_prop"   -> "false"           // not updated in the patch op, updated by the invocation
+          )
+      )
+      invocation.actionPayload must beNone
+
+      ResourceFactory.findById(createdResource.id) must beSome
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "updated value",
+        "bool_prop" -> "true"
+      )
+    }
+
+    "failure during patch should not update resource" in new testAppWithProvider {
+      val testResourceName = "test-resource-patch-failure"
+      val createdResource = createInstance(resourceTypeId, testResourceName,
+        parent = Some(testEnv.id),
+        org = testOrg.id,
+        properties = Some(Map(
+          "provider" -> testProvider.id.toString,
+          "string_prop" -> "original value"
+        ))
+      ).get
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+
+      val request = fakeAuthRequest(PATCH,
+        s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}", testCreds
+      ).withBody(
+        PatchDocument(
+          PatchOp.Replace("/properties/string_prop", "updated value")
+        ).toJson
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+
+      ResourceFactory.findById(createdResource.id) must beSome
+      val Some(updatedResource) = ResourceFactory.findById(createdResource.id)
+      updatedResource.properties.get must havePairs(
+        "provider" -> testProvider.id.toString,
+        "string_prop" -> "original value"
+      )
+    }
 
   }
 

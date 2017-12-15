@@ -466,7 +466,9 @@ trait ResourceScope extends Scope with Mockito {
    */
   def createOrg(name: String, id: UUID = uuid(), org: UUID = dummyRootOrgId, properties: Option[Hstore] = None, parent: Option[UUID] = None): Try[GestaltResourceInstance] = {
     createInstance(ResourceIds.Org, 
-        name, id = id, org = org, properties = properties, parent = parent)
+        name, id = id, org = org, properties = Some(properties.getOrElse(Map.empty) ++ Map(
+        "fqon" -> name
+      )), parent = parent)
   }
   
   def actionValue(res: GestaltResourceInstance): String = {
