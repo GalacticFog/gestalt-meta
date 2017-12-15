@@ -169,13 +169,13 @@ class ResourceSpec extends PlaySpecification with ResourceScope with GestaltProv
     }
 
     "find an Org when given a valid FQON" in {
-      val org = Resource.findFqon(Map(Resource.Fqon -> "galacticfog"))
+      val org = Resource.findFqon("galacticfog")
       org must beSome[GestaltResourceInstance]
       org.get.properties.get("fqon") === "galacticfog"
     }
 
     "return None when given an invalid FQON" in {
-      Resource.findFqon(Map(Resource.Fqon -> "INVALID_FQON")) must beNone
+      Resource.findFqon("INVALID_FQON") must beNone
     }
   }
 

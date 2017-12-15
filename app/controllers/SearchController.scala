@@ -42,7 +42,7 @@ class SearchController @Inject()(
   }
 
   // GET /{fqon}/resourcetypes/{typeId}/resources/search?... 
-  def getAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+  def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     extractNameValue(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => handleExpansion(

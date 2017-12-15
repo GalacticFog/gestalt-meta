@@ -41,11 +41,6 @@ class ResourcePath(val path: String) {
 import com.galacticfog.gestalt.data._
 import play.api.libs.json._
 
-case class LineageInfo(parent_types: Seq[UUID], child_types: Option[Seq[UUID]] = None)
-object LineageInfo {
-  implicit lazy val lineageInfoFormat = Json.format[LineageInfo]
-}
-
 object ResourcePath {
   
   def validate(path: String) = {
@@ -53,11 +48,11 @@ object ResourcePath {
     
     rp match {
       case a if a.isOrg => {
-        ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", a.fqon).isDefined
+        Resource.findFqon(a.fqon).isDefined
       }
       case b if b.isFirstLevelList => {
         // lookup org and validate list type as child
-        val validorg = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", b.fqon).isDefined
+        val validorg = Resource.findFqon(b.fqon).isDefined
         if (validorg) {
           val orgtype = TypeFactory.findById(ResourceIds.Org)
         }

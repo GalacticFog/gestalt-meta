@@ -17,6 +17,7 @@ import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccou
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.marathon
+import com.galacticfog.gestalt.meta.api.Resource
 import controllers.util.MetaHealth
 import play.api.libs.json.Json.JsValueWrapper
 //import controllers.util.db.ConnectionManager
@@ -239,12 +240,12 @@ trait ResourceScope extends Scope with Mockito {
             "parent" -> getParent(env))))
   }
   
-  def getParent(id: UUID) = {
+  def getParent(id: UUID): String = {
     Json.stringify(Json.obj("id" -> id.toString))
   }
   
   
-  def getOrg(fqon: String) = ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
+  def getOrg(fqon: String): Option[Instance] = Resource.findFqon(fqon)
 
   def createWorkEnv(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): Try[(Instance, Instance)] = {
     for {

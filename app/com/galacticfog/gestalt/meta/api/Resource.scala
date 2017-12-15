@@ -10,7 +10,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import scala.util.Try
 import play.api.Logger
-import com.galacticfog.gestalt.data.ResourceFactory.findByPropertyValue
 
 import scala.language.postfixOps
 
@@ -121,7 +120,7 @@ object Resource {
 
   protected[api] def findResource(info: Map[String,String]): Option[GestaltResourceInstance] = {
     info.size match {
-      case 1 => findFqon(info)
+      case 1 => findFqon(info(Fqon))
       case 3 => find(info)
       case 5 => findChild(info)
       case _ => throw new RuntimeException("Invalid ResourceInfo map.")
@@ -131,10 +130,14 @@ object Resource {
   /**
    * Find an Org by FQON
    */
-  protected[api] def findFqon(info: Map[String,String]) = {
-    ResourceFactory.findByPropertyValue(ResourceIds.Org, Fqon, info(Fqon))
+  def findFqon(fqon: String) = {
+    val found = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", fqon)
+    if (found.size > 1) {
+      log.error(s"getOrgOrFail found multiple orgs with the fqon '${fqon}' ${found.map(_.id)}, returning the first one")
+    }
+    found.headOption
   }
-  
+
   /**
    * Find a Resource by Type and ID
    */
@@ -236,7 +239,7 @@ object Resource {
   }  
   
   protected[api] def orgOrElse(fqon: String) = {
-    findByPropertyValue(ResourceIds.Org, "fqon", fqon) map { _.id } getOrElse {
+    findFqon(fqon) map { _.id } getOrElse {
       throw new BadRequestException(s"Invalid FQON: '$fqon'")
     }
   }
