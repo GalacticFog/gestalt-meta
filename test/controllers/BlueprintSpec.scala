@@ -72,7 +72,9 @@ class BlueprintSpec extends PlaySpecification with MetaRepositoryOps with JsonMa
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
 
-      val Success((testWork,testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      val Success((tw,te)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      testWork = tw
+      testEnv = te
 
       Ents.setNewEntitlements(dummyRootOrgId, testEnv.id,  user, Some(testWork.id))
       Ents.setNewEntitlements(dummyRootOrgId, testWork.id, user, Some(dummyRootOrgId))

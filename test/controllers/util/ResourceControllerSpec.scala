@@ -2,6 +2,7 @@ package controllers.util
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.bootstrap.LineageInfo
 import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState, TypeFactory}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, GestaltResourceType}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -33,6 +34,17 @@ import org.junit.runner._
 @RunWith(classOf[JUnitRunner])
 class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
+  def hasName(name: => String): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).name) ^^ be_==(name)
+
+  def hasId(id: => UUID): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).id) ^^ be_==(id)
+
+  def hasProperties(props: (String,String)*): Matcher[GestaltResourceInstance] =
+    ((_: GestaltResourceInstance).properties.get) ^^ havePairs(props:_*)
+
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
   override def beforeAll(): Unit = {
     object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
     pristineDatabase()
@@ -48,11 +60,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
   }
 
-  lazy val mockGenericProviderManager = mock[GenericProviderManager]
-
   abstract class testApp extends WithApplication(application(additionalBindings = Seq(
     bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
-//    bind(classOf[ProviderManager]).to(classOf[ProviderManager]),
     bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
     bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),
     bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
@@ -67,11 +76,11 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
     val providerTypeName = "Gestalt::Configuration::Provider::TestProvider"
     val providerTypeId = UUID.randomUUID()
-    val resourceTypeName = "test-resource-type"
+    val resourceTypeName = "Gestalt::Configuration::Resource::TestResource"
     val resourceTypeId = UUID.randomUUID()
     val verb1 = "resourceVerb1"
     val verb2 = "resourceVerb2"
-    val resourcePrefix = "test-resource-types"
+    val resourcePrefix = "test-resource-type"
 
     "support creating new provider types" in new testApp {
       val request = fakeAuthRequest(POST, "/root/resourcetypes", testCreds).withBody(
@@ -93,7 +102,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
               )
             ),
             "api" -> Json.obj(
-              "rest_name" -> s"${providerTypeName}s"
+              "rest_name" -> s"providers"
             ),
             "actions" -> Json.obj(
               "prefix" -> "provider",
@@ -128,10 +137,10 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
               )
             ),
             "api" -> Json.obj(
-              "rest_name" -> s"${resourceTypeName}s"
+              "rest_name" -> s"${resourcePrefix}s"
             ),
             "actions" -> Json.obj(
-              "prefix" -> resourceTypeName,
+              "prefix" -> resourcePrefix,
               "verbs" -> Json.arr(verb1, verb2)
             )
           ),
@@ -145,10 +154,29 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val Some(result) = route(request)
       (contentAsJson(result) \ "id").as[UUID] must_== resourceTypeId
       TypeFactory.findById(providerTypeId) must beSome
+      def updateLineage(tid: UUID): Unit = {
+        TypeFactory.findById(tid) foreach {
+          tpe =>
+            val newProps = for {
+              props <- tpe.properties
+              l <- props.get("lineage")
+              lineage = Json.parse(l).as[LineageInfo]
+              newLineage = lineage.copy(
+                child_types = Some(lineage.child_types.getOrElse(Seq.empty) :+ resourceTypeId)
+              )
+            } yield props + ("lineage" -> Json.toJson(newLineage).toString)
+            TypeFactory.update(tpe.copy(
+              properties = newProps
+            ), adminUserId)
+        }
+      }
+      updateLineage(ResourceIds.Org)
+      updateLineage(ResourceIds.Workspace)
+      updateLineage(ResourceIds.Environment)
     }
 
     "create resources without .properties.provider should 400" in new testApp {
-      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}", testCreds).withBody(
+      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}s", testCreds).withBody(
         Json.obj(
           "name" -> "test-resource",
           "properties" -> Json.obj(
@@ -163,7 +191,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     }
 
     "create resources with non-existent provider should 400" in new testApp {
-      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}", testCreds).withBody(
+      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}s", testCreds).withBody(
         Json.obj(
           "name" -> "test-resource",
           "properties" -> Json.obj(
@@ -182,23 +210,27 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     lazy val testProvider = ResourceFactory.findChildByName(dummyRootOrgId, providerTypeId, testProviderName).get
 
     case class testAppWithProvider() extends testApp {
-      object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
+      lazy val mockProviderManager = {
+        app.injector.instanceOf[GenericProviderManager]
+      }
 
       lazy val mockActionProvider = {
         val map = mock[GenericProvider]
-        mockGenericProviderManager.getProvider(
+        mockProviderManager.getProvider(
           provider = meq(testProvider),
           action = any
         ) returns Success(Some(map))
         map
       }
 
-      lazy val (testWork,testEnv) = {
+      lazy val (testOrg,testWork,testEnv) = {
+        val Some(to) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
         val Success((tw,te)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-        Ents.setNewEntitlements(dummyRootOrgId, te.id,  user, Some(tw.id))
+        Ents.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
         Ents.setNewEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
-        Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
-        (tw,te)
+        Ents.setNewEntitlements(dummyRootOrgId, to.id, user, None)
+        (to,tw,te)
       }
 
     }
@@ -231,9 +263,9 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
     "failure from endpoint should prevent resource creation" in new testAppWithProvider {
       val testResourceName = "test-resource-failure"
-      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure"))
+      mockActionProvider.invokeAction(any) returns Future.failed(new BadRequestException("failure message from provider endpoint"))
 
-      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}", testCreds).withBody(
+      val request = fakeAuthRequest(POST, s"/${testOrg.name}/${resourcePrefix}s", testCreds).withBody(
         Json.obj(
           "name" -> testResourceName,
           "properties" -> Json.obj(
@@ -244,72 +276,71 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         )
       )
       val Some(result) = route(request)
+      (contentAsJson(result) \ "message").as[String] must contain("failure message from provider endpoint")
       status(result) must equalTo(BAD_REQUEST)
 
       ResourceFactory.findAllByName(dummyRootOrgId, resourceTypeId, testResourceName) must beEmpty
     }
 
-//    "create org blueprints using the ActionProvider interface" in new ExistingProvider {
-//      val testBlueprintName = "test-blueprint"
-//      mockActionProvider.invokeAction(any) answers {
-//        (a: Any) =>
-//          val invocation = a.asInstanceOf[GenericActionInvocation]
-//          Future.successful(Left(invocation.resource.get.copy(
-//            properties = Some(invocation.resource.get.properties.get ++ Map(
-//              "canonical_form" -> "meta canonical form"
-//            ))
-//          )))
-//      }
-//
-//      val request = fakeAuthRequest(POST, s"/root/${resourcePrefix}", testCreds).withBody(
-//        Json.obj(
-//          "name" -> testBlueprintName,
-//          "properties" -> Json.obj(
-//            "provider" -> testProvider.id,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//        )
-//      )
-//      val Some(result) = route(request)
-//      status(result) must equalTo(CREATED)
-//      val json = contentAsJson(result)
-//      (json \ "id").asOpt[UUID] must beSome
-//      (json \ "name").asOpt[String] must beSome(testBlueprintName)
-//      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Blueprint")
-//      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
-//      (json \ "properties" \ "blueprint_type").asOpt[String] must beSome("docker-compose")
-//      (json \ "properties" \ "native_form").asOpt[String] must beSome("blueprint data goes here")
-//      (json \ "properties" \ "canonical_form").asOpt[String] must beSome("meta canonical form")
-//
-//      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
-//      there was atLeastOne(providerManager).getProvider(testProvider, "blueprint.create")
-//      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
-//      val invocation = invocationCaptor.getValue
-//      invocation.action must_== "blueprint.create"
-//      invocation.context.org.id must_== dummyRootOrgId
-//      invocation.context.workspace must beNone
-//      invocation.context.environment must beNone
-//      invocation.provider must_== testProvider
-//      invocation.resource must beSome(
-//        hasName(testBlueprintName)
-//          and
-//          hasProperties(
-//            "provider" -> testProvider.id.toString,
-//            "blueprint_type" -> "docker-compose",
-//            "native_form" -> "blueprint data goes here"
-//          )
-//      )
-//
-//      val returnedId = (json \ "id").as[UUID]
-//      val Some(persisted) = ResourceFactory.findById(ResourceIds.Blueprint, returnedId)
-//      persisted.properties.get must havePairs(
-//         "provider" -> testProvider.id.toString,
-//         "blueprint_type" -> "docker-compose",
-//         "native_form" -> "blueprint data goes here",
-//         "canonical_form" -> "meta canonical form"
-//      )
-//    }
+    "create provider-backed resources using the ActionProvider interface under orgs" in new testAppWithProvider {
+      val testResourceName = "test-resource"
+      mockActionProvider.invokeAction(any) answers {
+        (a: Any) =>
+          val invocation = a.asInstanceOf[GenericActionInvocation]
+          Future.successful(Left(invocation.resource.get.copy(
+            properties = Some(invocation.resource.get.properties.get ++ Map(
+              "bool_prop" -> "true"
+            ))
+          )))
+      }
+
+      val request = fakeAuthRequest(POST, s"/${testOrg.name}/${resourcePrefix}s", testCreds).withBody(
+        Json.obj(
+          "name" -> testResourceName,
+          "properties" -> Json.obj(
+            "provider" -> testProvider.id,
+            "string_prop" -> "some string"
+          )
+        )
+      )
+      val Some(result) = route(request)
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome
+      (json \ "name").asOpt[String] must beSome(testResourceName)
+      (json \ "resource_type").asOpt[String] must beSome(resourceTypeName)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "string_prop").asOpt[String] must beSome("some string")
+      (json \ "properties" \ "bool_prop").asOpt[Boolean] must beSome(true)
+
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
+      there was atLeastOne(mockProviderManager).getProvider(testProvider, s"${resourcePrefix}.create")
+      there was one(mockActionProvider).invokeAction(invocationCaptor.capture())
+      val invocation = invocationCaptor.getValue
+      invocation.action must_== s"${resourcePrefix}.create"
+      invocation.context.org.id must_== dummyRootOrgId
+      invocation.context.workspace must beNone
+      invocation.context.environment must beNone
+      invocation.provider must_== testProvider
+      invocation.resource must beSome(
+        hasName(testResourceName)
+          and
+          hasProperties(
+            "provider" -> testProvider.id.toString,
+            "string_prop" -> "some string"
+          )
+      )
+
+      val returnedId = (json \ "id").as[UUID]
+      val Some(persisted) = ResourceFactory.findById(resourceTypeId, returnedId)
+      persisted.properties.get must havePairs(
+         "provider" -> testProvider.id.toString,
+         "string_prop" -> "some string",
+         "bool_prop" -> "true"
+      )
+    }
+
+    // TODO: finish updating these from blueprint-tests to the generic tests like above
 
 //    "create workspace blueprints using the ActionProvider interface" in new ExistingProvider {
 //      val testBlueprintName = "test-blueprint"
@@ -323,7 +354,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 //          )))
 //      }
 //
-//      val request = fakeAuthRequest(POST, s"/root/workspaces/${testWork.id}/${resourcePrefix}", testCreds).withBody(
+//      val request = fakeAuthRequest(POST, s"/root/workspaces/${testWork.id}/${resourcePrefix}s", testCreds).withBody(
 //        Json.obj(
 //          "name" -> testBlueprintName,
 //          "properties" -> Json.obj(

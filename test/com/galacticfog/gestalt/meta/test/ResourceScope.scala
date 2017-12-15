@@ -243,8 +243,7 @@ trait ResourceScope extends Scope with Mockito {
   def getParent(id: UUID): String = {
     Json.stringify(Json.obj("id" -> id.toString))
   }
-  
-  
+
   def getOrg(fqon: String): Option[Instance] = Resource.findFqon(fqon)
 
   def createWorkEnv(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): Try[(Instance, Instance)] = {
