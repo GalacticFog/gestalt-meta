@@ -2,8 +2,8 @@ package controllers.util
 
 
 import play.api.http.HeaderNames
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import controllers.util.db._
 import play.api.Logger
@@ -24,6 +24,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.patch._
 import controllers.util.JsonUtil._
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
@@ -42,7 +43,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
    * Get an Org by FQON
    */
   protected[controllers] def orgFqon(fqon: String): Option[GestaltResourceInstance] = {
-    ResourceFactory.findByPropertyValue(ResourceIds.Org, "fqon", fqon)
+    Resource.findFqon(fqon)
   }
 
   /**

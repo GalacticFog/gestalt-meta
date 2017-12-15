@@ -125,11 +125,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   def findEntitlementsByResource(resource: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
   }
-  
-  def findEntitlementByAction(resource: UUID, action: String): Option[GestaltResourceInstance] = {
-    ResourceFactory.findByPropertyValue(ResourceIds.Entitlement, "action", action)  
-  }
-  
+
   /**
    * 
    * @param parent the parent of the new Resource

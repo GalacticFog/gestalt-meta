@@ -138,17 +138,12 @@ trait ActionMethods {
    * Includes actions inherited by super-types of the children.
    */
   def getChildActions(tpe: GestaltResourceType): Seq[String] = {
-    def loop(types: Seq[UUID], acc: Seq[String]): Seq[String] = {
-      types match {
-        case Nil => acc
-        case rtype :: tail => loop(tail, acc ++ getSelfActions(rtype))
-      }
-    }
-    
     (for {
       info     <- getLineageInfo(tpe)
       children <- info.child_types
-      actions  <- Option(loop(children, Seq.empty))
+      actions  = children.foldLeft[Seq[String]](Seq.empty)(
+        _ ++ getSelfActions(_)
+      )
     } yield actions) getOrElse Seq.empty
   }
   

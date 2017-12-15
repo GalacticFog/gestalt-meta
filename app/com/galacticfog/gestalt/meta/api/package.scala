@@ -3,6 +3,10 @@ package com.galacticfog.gestalt.meta
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.{DataType, PropertyFactory, TypeFactory}
 import java.util.UUID
+
+import com.galacticfog.gestalt.data
+import play.api.libs.json.Json
+
 import scala.util.Try
 
 package object api {
@@ -23,12 +27,9 @@ package object api {
 
   /**
     * Translate resource REST name to Resource Type ID
-    *
-    * This list really has to die.
     */
   def resourceUUID(resource: String): Option[UUID] = {
-    resource match {
-
+    val wellKnown = resource match {
       case "resources"        => Some(ResourceIds.Resource)
       case "orgs"             => Some(ResourceIds.Org)
       case "users"            => Some(ResourceIds.User)
@@ -58,9 +59,9 @@ package object api {
       case "datacontainers"   => Some(ResourceIds.DataContainer)
       case "actionproviders"  => Some(ResourceIds.ActionProvider)
       case "actions"          => Some(ResourceIds.ProviderAction)
-      case "blueprints"       => Some(ResourceIds.Blueprint)
       case _                  => None
     }
+    wellKnown orElse TypeFactory.listByApiPrefix(resource).headOption.map(_.id)
   }
 
 
@@ -68,8 +69,7 @@ package object api {
     * Translate Resource Type ID to REST name
     */
   def resourceRestName(typeId: UUID): Option[String] = {
-    typeId match {
-
+    val wellKnown = typeId match {
       case ResourceIds.Org             => Some("orgs")
       case ResourceIds.User            => Some("users")
       case ResourceIds.Group           => Some("groups")
@@ -93,8 +93,16 @@ package object api {
       case ResourceIds.Integration     => Some("integrations")
       case ResourceIds.ActionProvider  => Some("actionproviders")
       case ResourceIds.ProviderAction  => Some("actions")
-      case ResourceIds.Blueprint       => Some("blueprints")
       case _ => None
+    }
+    wellKnown orElse {
+      for {
+        tpe <- data.TypeFactory.findById(typeId)
+        props <- tpe.properties
+        api <- props.get("api")
+        api_json <- Try{Json.parse(api)}.toOption
+        rest_name <- (api_json \ "rest_name").asOpt[String]
+      } yield rest_name
     }
   }
 

@@ -25,7 +25,7 @@ import services.{MarathonClientFactory, SkuberFactory}
 import scala.concurrent.Future
 import scala.util.{Success, Try}
 
-class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
+class BlueprintSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -72,9 +72,9 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
 
-      val Success(wrkEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = wrkEnv._1
-      testEnv = wrkEnv._2
+      val Success((tw,te)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      testWork = tw
+      testEnv = te
 
       Ents.setNewEntitlements(dummyRootOrgId, testEnv.id,  user, Some(testWork.id))
       Ents.setNewEntitlements(dummyRootOrgId, testWork.id, user, Some(dummyRootOrgId))
@@ -104,7 +104,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
     import com.galacticfog.gestalt.meta.api.errors._
 
-    "create containers without .properties.provider should 400" in new TestActionProvider {
+    "create blueprints without .properties.provider should 400" in new TestActionProvider {
       val request = fakeAuthRequest(POST, s"/root/blueprints", testCreds).withBody(
         Json.obj(
           "name" -> "test-blueprint",
@@ -120,7 +120,7 @@ class BlueprintControllerSpec extends PlaySpecification with MetaRepositoryOps w
       status(result) must equalTo(BAD_REQUEST)
     }
 
-    "create containers with non-existent provider should 400" in new TestActionProvider {
+    "create blueprints with non-existent provider should 400" in new TestActionProvider {
       val request = fakeAuthRequest(POST, s"/root/blueprints", testCreds).withBody(
         Json.obj(
           "name" -> "test-blueprint",
