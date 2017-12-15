@@ -184,7 +184,7 @@ object Output {
       modified = Json.toJson(p.modified),
 
       applies_to = jsonTypeName(Option(p.appliesTo)),
-      datatype = JsString(DataType.name(p.datatype)), //name
+      data_type = JsString(DataType.name(p.datatype)), //name
       default_value = jsStringOpt(p.defaultValue),
       is_sealed = p.isSealed,
       is_system = p.isSystem,
