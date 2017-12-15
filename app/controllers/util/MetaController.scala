@@ -214,7 +214,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
    * Handles the 'expand' querystring parameter.
    */
   private type RenderFunction = (GestaltResourceInstance, Option[String]) => JsValue
-  def handleExpansion2(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None)(
+  def handleExpansion2(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None)(
       render: RenderFunction) = {
 
     if (getExpandParam(qs)) {
@@ -223,7 +223,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     else Ok(Output.renderLinks(rs, baseUri))
   }
   
-  def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
+  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
     if (getExpandParam(qs)) {
       Ok(Json.toJson(rs map { r => 
         Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) 
@@ -233,7 +233,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
   }
   
   def expandOutput[A <: ResourceLike](
-      rs: Seq[A], qs: QueryString, baseUri: Option[String] = None)(
+      rs: Seq[A], qs: Map[String, Seq[String]], baseUri: Option[String] = None)(
        f: (A, Option[String]) => JsValue): Result = {
     
     if (getExpandParam(qs)) {

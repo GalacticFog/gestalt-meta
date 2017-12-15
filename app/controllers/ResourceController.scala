@@ -48,11 +48,11 @@ class ResourceController @Inject()(
     
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
-  type FilterFunction    = ((Seq[ResourceLike], QueryString) => Seq[ResourceLike])
+  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Try[GestaltResourceInstance]
+  type FilterFunction    = ((Seq[ResourceLike], Map[String, Seq[String]]) => Seq[ResourceLike])
   
-  type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[QueryString]) => Option[GestaltResourceInstance]
-  type LookupSeq = (ResourcePath, AuthAccountWithCreds, QueryString) => Seq[GestaltResourceInstance]
+  type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Option[GestaltResourceInstance]
+  type LookupSeq = (ResourcePath, AuthAccountWithCreds, Map[String, Seq[String]]) => Seq[GestaltResourceInstance]
   
   
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
@@ -77,7 +77,7 @@ class ResourceController @Inject()(
     ResourceIds.ProviderAction -> lookupProviderActions
   )
   
-  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val parent = mapPathData(Resource.ParentId)
     
@@ -88,13 +88,13 @@ class ResourceController @Inject()(
     }
   }
   
-  def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
+  def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val policy = mapPathData(Resource.ParentId)
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
   
-  def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+  def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupProvider(_,_,_)...")
     
     Resource.toInstance(path) map { res =>
@@ -104,7 +104,7 @@ class ResourceController @Inject()(
     }
   }
 
-  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
     Resource.toInstance(path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
@@ -120,7 +120,7 @@ class ResourceController @Inject()(
     }
   }
   
-  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
       val mapPathData = Resource.mapListPathData(path.path)
@@ -431,17 +431,17 @@ class ResourceController @Inject()(
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
    * org that is owned by itself.
    */
-  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     Resource.listFromPath(path.path) filter { o =>
       o.properties.get("fqon") != path.fqon  
     }
   }
   
-  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
+  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
   
-  def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+  def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     
     val rs = if (Resource.isTopLevel(path.path)) {
       val org = fqid(Resource.getFqon(path.path))
@@ -454,7 +454,7 @@ class ResourceController @Inject()(
   /*
    * Type-Based Lookup Functions
    */ 
-  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqProviders(${path.path}, user = ${account.account.id}")
     
     val parentId = { 
@@ -475,7 +475,7 @@ class ResourceController @Inject()(
     }
   }
 
-  def lookupSeqSecrets(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
+  def lookupSeqSecrets(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqSecrets(${path.path}, user = ${account.account.id}")
 
     val parentEnvId = if ( !path.parentTypeId.contains(ResourceIds.Environment) ) {
@@ -534,7 +534,7 @@ class ResourceController @Inject()(
 
   import com.galacticfog.gestalt.meta.auth._
 
-  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
+  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     val props  = EntitlementProps.make(res)
     val output = props.identities map { ids =>
       
@@ -557,7 +557,7 @@ class ResourceController @Inject()(
   private[controllers] def transformPolicy(
       res: GestaltResourceInstance, 
       user: AuthAccountWithCreds, 
-      qs: Option[QueryString] = None) = Try {
+      qs: Option[Map[String, Seq[String]]] = None) = Try {
     
     def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
       resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -568,7 +568,7 @@ class ResourceController @Inject()(
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
   }
 
-  private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
+  private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     val resJson = Json.toJson(res).as[JsObject]
     val renderedLinks: Seq[JsObject] = (resJson \ "properties" \ "linked_providers").asOpt[Seq[JsObject]].map { _.flatMap {
       js => for {
@@ -586,7 +586,7 @@ class ResourceController @Inject()(
   /**
    * Build the dynamic 'groups' property on a User instance.
    */
-  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
+  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     security.getAccountGroups(res.id, user) match {
       case Failure(er) => {
         throw new RuntimeException(Errors.USER_GROUP_LOOKUP_FAILED(res.id, er.getMessage))
@@ -603,7 +603,7 @@ class ResourceController @Inject()(
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
    */
-  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
+  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None): Try[GestaltResourceInstance] = {
     // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
     // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
     // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247

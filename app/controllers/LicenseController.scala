@@ -141,7 +141,7 @@ class LicenseController @Inject()(
    */
   private[controllers] def findAndRenderLicenses(
       org: UUID, 
-      qs: QueryString, 
+      qs: Map[String, Seq[String]], 
       caller: AuthAccountWithCreds, 
       metaUrl: String): JsValue = {
       

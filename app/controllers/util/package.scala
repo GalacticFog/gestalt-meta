@@ -38,8 +38,6 @@ import scala.concurrent.ExecutionContext
 
 package object util {
   
-  type QueryString = Map[String,Seq[String]]  
-  
   protected[controllers] object Errors {
     def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
