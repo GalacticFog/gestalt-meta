@@ -241,6 +241,19 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     } else Ok(Output.renderLinks(rs, baseUri))
   }
   
+  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
+    if (!qs.contains(param)) false
+    else {
+      val bp = qs(param)
+      Try {
+        bp.mkString.toBoolean
+      } match {
+        case Success(b) => b == true
+        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
+      }
+    }
+  }  
+  
   protected[controllers] def CreateResource(
     org: UUID,
     caller: AuthAccountWithCreds,

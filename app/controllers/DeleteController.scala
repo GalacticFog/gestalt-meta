@@ -37,7 +37,7 @@ class DeleteController @Inject()(
     skuberFactory: SkuberFactory,
     genericResourceMethods: GenericResourceMethods
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
- 
+   
   // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
   
   /*
@@ -78,8 +78,9 @@ class DeleteController @Inject()(
         authTarget = Option(policyOwner), 
         policyOwner = Option(policyOwner), 
         policyTarget = Option(target),
-        data = Some(Map("parentId" -> targetParent.id.toString)))    
+        data = Some(Map("parentId" -> targetParent.id.toString)))
   }
+
 
   def deleteGenericProviderBackedResource( fqon: String, resource: GestaltResourceInstance, identity: AuthAccountWithCreds )
                                          ( implicit request: RequestHeader ): Future[Unit] = {
@@ -103,6 +104,7 @@ class DeleteController @Inject()(
       } yield metaDelete
     }
   }
+
 
   def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
     val owner      = findResourceParent(resource.id)
@@ -130,8 +132,22 @@ class DeleteController @Inject()(
     }
   }
 
+  
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
-    ???
+    
+    log.debug(s"hardDeleteResourceType($fqon, $typeId)")
+    
+    TypeFactory.findById(typeId) map { tpe =>
+      
+      // TODO: Test for 'is-gestalt'
+
+      val forceParam = singleParamBoolean(request.queryString, "force")
+      val deleter = new HardDeleteResourceType[AuthAccountWithCreds]
+      deleter.delete(tpe, request.identity, forceParam, manager) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(_) => NoContent
+      }
+    } getOrElse NotFoundResult(s"Type with ID $typeId not found")
   }
 
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
@@ -180,6 +196,7 @@ class DeleteController @Inject()(
   }
   
   import skuber.Namespace
+  
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
@@ -207,7 +224,6 @@ class DeleteController @Inject()(
         s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
     }
   }
-
   
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
@@ -244,25 +260,7 @@ class DeleteController @Inject()(
     } else Seq()
   }
 
-  /*
-   * TODO: Move this function... 
-   * Make part of common controller so all controllers can use.
-   * Possibly refactor into a QueryString object that makes dealing with the
-   * nested structure a bit easier.
-   * 
-   */
-  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
-    if (!qs.contains(param)) false
-    else {
-      val bp = qs(param)
-      Try {
-        bp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
-      }
-    }
-  }
+
 
   def findResourceParent(child: UUID) = {
     ResourceFactory.findParent(child) getOrElse {

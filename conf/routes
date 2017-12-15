@@ -193,13 +193,17 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers/:cid  	
 ### Get any system resource.
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.getResources(fqon: String, path: String)
 
+### Delete a resource-type
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId controllers.DeleteController.hardDeleteResourceType(fqon: String, typeId: java.util.UUID)
+
+
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
 
 ### Delete any system resource
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.DeleteController.hardDeleteResource(fqon: String, path)
 
 ###
-#DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId
+#
 
 
 ############################

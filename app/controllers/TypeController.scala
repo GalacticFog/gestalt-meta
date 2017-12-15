@@ -29,8 +29,6 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
 
 
-
-
 @Singleton
 class TypeController @Inject()(messagesApi: MessagesApi,
                                env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
@@ -67,7 +65,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   import com.galacticfog.gestalt.meta.providers._
   import scala.util.{Try,Success,Failure}
   
-
   /**
    * Get a Provider Action specification from the Provider. This is a convenience method that can be used to get
    * an Action spec before an Action instance is created. The intended use is to test rendering of the Action UI.
@@ -95,7 +92,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
           } else {
             Js.parse[ProviderActionSpec](action) match {
               case Failure(e) => HandleExceptions {
-                throw new RuntimeException(s"Could not parse action JSON from provider. Error: $e.getMessage")
+                throw new RuntimeException(s"Could not parse action JSON from provider. Error: ${e.getMessage}")
               }
               case Success(spec) => {
                 log.debug("Found 'envelope' query param.")
@@ -113,11 +110,25 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
   
   def getResourceTypeByIdFqon(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
-    OkTypeByIdResult(fqid(fqon), id)
+    log.debug(s"getResourceTypeByIdFqon($fqon, $id)")
+    OkTypeByIdResult(fqid(fqon), id, request.queryString)
   }
   
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
-    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
+    /*
+     * This will be a cheap operation once type-caching is in place.
+     */
+    val allTypeNames = TypeFactory.findAll.map { _.name.toLowerCase }
+    
+    Js.find(request.body.as[JsObject], "/name").fold {
+      throw new BadRequestException("You must supply a 'name' for your type.")
+    }{ name =>
+      val nm = name.as[String]
+      if (allTypeNames.contains(nm.toLowerCase)) {
+        throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
+      } else CreateTypeWithPropertiesResult(fqid(fqon), request.body) 
+    }
+    //    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
   
   override def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
@@ -210,9 +221,24 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   /** 
    * Get a single ResourceType by ID 
    */
-  private def OkTypeByIdResult(org: UUID, id: UUID) = {
+  private def OkTypeByIdResult(org: UUID, id: UUID, qs: Map[String, Seq[String]])(
+      implicit request: SecuredRequest[_]) = {
+    
+    val withProps = singleParamBoolean(qs, "withprops")
+
     TypeFactory.findById(id).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))) {
-      typ => Ok(Output.renderResourceTypeOutput(typ))
+      typ =>
+        val typeJson = Output.renderResourceTypeOutput(typ)
+        val outputJson = {
+          if (singleParamBoolean(qs, "withprops")) {
+            log.debug("Found 'withprops' query param - looking up type-properties for expansion...")
+            val jsonProperties = PropertyFactory.findAll(id).map { p =>
+              Output.renderTypePropertyOutput(p, Some(META_URL))
+            }
+            typeJson.as[JsObject] ++ Json.obj("property_defs" -> jsonProperties)
+          } else typeJson
+        }
+        Ok(outputJson)
     }
   }
   
@@ -276,7 +302,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       Ok(Json.parse(result))
     }
   }
-  
   
   def renderProviderConfiguration(typ: GestaltResourceType): String = {
     val emptyArray = "[]"
