@@ -7,26 +7,51 @@ import scala.util.Try
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 
-class QueryString(qs: Map[String,Seq[String]]) {
-  
-}
 
 object QueryString {
   
-  def single[V](qs: Map[String,Seq[V]], param: String): Option[V] = {
-    qs.get(param).map { buf =>
-      if (buf.size > 1) {
-        throw new BadRequestException(s"Too many values found for '$param'. Expected: 1, Found: ${buf.size}")
-      } else buf.head
+  /**
+   * Get a single parameter value from the querystring Map. Throws an exception if
+   * the parameter is given more than once.
+   * 
+   * @param qs Map from which to extract the param value
+   * @param param Key of the param value to extract
+   * @param strict when true an error will be thrown if the param is present but no value is given
+   */
+  def single[V](qs: Map[String,Seq[V]], param: String, strict: Boolean = false): Option[V] = {
+    qs.get(param).flatMap { buf =>
+      
+      buf.size match {
+        case 1 => 
+          Some(buf.head)
+        case e if e > 1 => 
+          throw badRequest(s"Too many values found for '$param'. Expected: 1, Found: ${buf.size}")
+        case e if e == 0 => {
+          if (strict) errorNoValue(param) else Option.empty[V]
+        }
+      }
     }
   }
   
-  def list[V](qs: Map[String,Seq[V]], param: String): Seq[V] = {
-    qs.getOrElse(param, Seq.empty[V])
+  /**
+   * Get a list of one or more values identified by key from the querystring Map. 
+   * 
+   * @param qs Map from which to extract param values
+   * @param param key of the param values to extract
+   * @param strict when true an error will be thrown if the param is present but no value is given
+   */
+  def list[V](qs: Map[String,Seq[V]], param: String, strict: Boolean = false): Seq[V] = {
+    val results = qs.getOrElse(param, Seq.empty[V])
+    if (results.isEmpty && strict) errorNoValue(param) else results
   }
-  
-  def singleBoolean[V](qs: Map[String, Seq[V]], param: String): Boolean = {
-    single(qs, param).fold(false) { p =>
+
+  /**
+   * Get a single Boolean value from the querystring Map.
+   */
+  def singleBoolean[V](qs: Map[String, Seq[V]], param: String, strict: Boolean = false): Boolean = {
+    single(qs, param).fold {
+      if (strict) errorNoValue(param) else false
+    }{ p =>
       Try(p.toString.toBoolean) match {
         case Success(b) => b == true
         case Failure(_) => 
@@ -35,18 +60,10 @@ object QueryString {
     }
   }
   
+  private def badRequest(message: String) = new BadRequestException(message)
   
-  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
-    if (!qs.contains(param)) false
-    else {
-      val bp = qs(param)
-      Try {
-        bp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
-      }
-    }
-  }
+  private def errorNoValue(param: String) =
+    throw badRequest(s"Given param '$param' must have a value")
+  
 }
 
