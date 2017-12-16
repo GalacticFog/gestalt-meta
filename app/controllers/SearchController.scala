@@ -37,7 +37,7 @@ class SearchController @Inject()(
   private case class Criterion(name: String, value: String)
   
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
-    handleExpansion(ResourceFactory.findAll(typeId, fqid(fqon)),
+    handleExpandResourceResult(ResourceFactory.findAll(typeId, fqid(fqon)),
       request.queryString, Some(META_URL))
   }
 
@@ -45,7 +45,7 @@ class SearchController @Inject()(
   def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
     extractNameValue(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
-      case Success((name,value)) => handleExpansion(
+      case Success((name,value)) => handleExpandResourceResult(
         getByProperty(ResourceIds.User, Criterion(name,value)),
         request.queryString, Some(META_URL))
     }
@@ -133,7 +133,7 @@ class SearchController @Inject()(
     f(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => {
-        handleExpansion(getByProperty(typeId, Criterion(name,value), org), 
+        handleExpandResourceResult(getByProperty(typeId, Criterion(name,value), org), 
          request.queryString, Some(META_URL))
       }
     }    

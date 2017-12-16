@@ -141,7 +141,7 @@ class DeleteController @Inject()(
       
       // TODO: Test for 'is-gestalt'
 
-      val forceParam = singleParamBoolean(request.queryString, "force")
+      val forceParam = QueryString.singleBoolean(request.queryString, "force")
       val deleter = new HardDeleteResourceType[AuthAccountWithCreds]
       deleter.delete(tpe, request.identity, forceParam, manager) match {
         case Failure(e) => HandleExceptions(e)
@@ -239,7 +239,7 @@ class DeleteController @Inject()(
       manager.delete(
         res.asInstanceOf[GestaltResourceInstance], 
         account, 
-        singleParamBoolean(request.queryString, "force"),
+        QueryString.singleBoolean(request.queryString, "force"),
         skipExternals(res, request.queryString)) map { Success(_) }
     }
   }
@@ -251,7 +251,7 @@ class DeleteController @Inject()(
    */
   protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
     if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider).contains(res.typeId) &&
-        !singleParamBoolean(qs, "deleteContainers")) {
+        !QueryString.singleBoolean(qs, "deleteContainers")) {
       
       log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")
       log.debug("Containers WILL NOT be deleted from Marathon.")

@@ -694,7 +694,7 @@ class ResourceController @Inject()(
       case Success(gs) => {
         val userids = gs map { _.id }
         if (userids.isEmpty) Ok(Json.parse("[]")) else {
-        handleExpansion(ResourceFactory.findAllIn(ResourceIds.User, userids),
+        handleExpandResourceResult(ResourceFactory.findAllIn(ResourceIds.User, userids),
             request.queryString, Some(META_URL))
         }
       }
@@ -714,7 +714,7 @@ class ResourceController @Inject()(
       case Success(gs)  => {
         val groupids = gs map { _.id }
         if (groupids.isEmpty) Ok(Json.parse("[]")) else {
-          handleExpansion(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.Group, groupids),
+          handleExpandResourceResult(ResourceFactory.findAllIn(fqid(fqon), ResourceIds.Group, groupids),
               request.queryString, Some(META_URL))
         }
       }
@@ -747,7 +747,7 @@ class ResourceController @Inject()(
 
     this.AuthorizedResourceList(path, "apiendpoint.view")
 
-    handleExpansion(
+    handleExpandResourceResult(
       ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", containerId.toString),
       request.queryString)
   }
@@ -762,7 +762,7 @@ class ResourceController @Inject()(
     
     this.AuthorizedResourceList(path, "apiendpoint.view") 
     
-    handleExpansion(
+    handleExpandResourceResult(
       ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", lambda.toString),
     request.queryString)
   }  

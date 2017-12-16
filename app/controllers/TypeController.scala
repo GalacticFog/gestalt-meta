@@ -56,11 +56,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         else if (qs.contains("type")) findCovariantTypes(qs)
         else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
       }
-      handleExpansion(tpes, qs, Some(META_URL))
+      Ok(handleExpandType(tpes, qs, Some(META_URL)))
     }
   }  
   
-  import controllers.util.booleanParam
+  //import controllers.util.booleanParam
   import com.galacticfog.gestalt.meta.providers.ui.Assembler
   import com.galacticfog.gestalt.meta.providers._
   import scala.util.{Try,Success,Failure}
@@ -83,10 +83,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
             s"/properties/provider_actions/$actionIndex not found in Resource Type $typeId")
         }
       }{ action =>
-        if (booleanParam("render", request.queryString)) {
+        val qs = request.queryString
+        if (QueryString.singleBoolean(qs, "render")) {
           log.debug("Found 'render' query param.")
           
-          if (booleanParam("envelope", request.queryString)) {
+          if (QueryString.singleBoolean(qs, "envelope")) {
             val out = Assembler.envelope(fqon, META_URL, None, request.identity)
             Ok(out).as("text/html")
           } else {
@@ -131,12 +132,13 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     //    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
   
-  override def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }  
+//  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
+//
+//    if (getExpandParam(qs)) {
+//      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
+//    }
+//    else Ok(Output.renderLinks(rs, baseUri))
+//  }  
   
   private[controllers] def findCovariantTypes(qs: Map[String, Seq[String]]): Seq[GestaltResourceType] = {
     if (qs.get("type").isEmpty) List.empty

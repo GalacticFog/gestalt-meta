@@ -100,8 +100,8 @@ class LicenseController @Inject()(
     findById(ResourceIds.License, license).fold {
       LicenseNotFound(license) 
     }{ lic => Authorize(lic.id, action) {
-      
-        if (booleanParam("transform", request.queryString))
+
+        if (QueryString.singleBoolean(request.queryString, "transform"))
           Ok(Json.parse(GestaltLicense.instance.view))
         else Ok(RenderSingle(lic))
         
@@ -154,8 +154,8 @@ class LicenseController @Inject()(
         if(!isAuthorized(license.id, action, caller).get) 
           Json.arr() // not authorized - empty array
         else {
-          val ex = booleanParam("expand", qs)
-          val tr = booleanParam("transform", qs)
+          val ex = QueryString.singleBoolean(qs, "expand")
+          val tr = QueryString.singleBoolean(qs, "transform")
           
           if (ex && tr) 
             throw new ConflictException(s"Querystring parameters 'expand' and 'transform' cannot both be TRUE")
