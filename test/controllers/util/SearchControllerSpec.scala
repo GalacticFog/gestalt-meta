@@ -97,6 +97,26 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
       json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1, l2))
     }
 
+    "support multiple query parameters" in new testAppWithEnv {
+      // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
+      val l1 = UUID.randomUUID()
+      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-3", org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> l1.toString,
+        "resource" -> ""
+      )))
+      val request = fakeAuthRequest(GET,
+        s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&implementation_id=${l1}&expand=true",
+        testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must beEqualTo(OK)
+      val json = contentAsJson(result)
+      json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_type").asOpt[UUID]) must containTheSameElementsAs(Seq("lambda"))
+    }
+
   }
 
 }
