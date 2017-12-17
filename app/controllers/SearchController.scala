@@ -46,7 +46,7 @@ class SearchController @Inject()(
     extractNameValue(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => handleExpandResourceResult(
-        getByProperty(ResourceIds.User, Criterion(name,value), Some(fqid(fqon))),
+        getByProperty(typeId, Criterion(name,value), Some(fqid(fqon))),
         request.queryString, Some(META_URL))
     }
   }

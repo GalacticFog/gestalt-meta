@@ -76,13 +76,15 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
       // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
       val l1 = UUID.randomUUID()
       val l2 = UUID.randomUUID()
-      val r1 = newInstance(ResourceIds.ApiEndpoint, "endpoint-1", org = testOrg.id, properties = Some(Map(
+      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-1", org = testOrg.id, properties = Some(Map(
         "implementation_type" -> "lambda",
-        "implementation_id" -> l1.toString
+        "implementation_id" -> l1.toString,
+        "resource" -> ""
       )))
-      val r2 = newInstance(ResourceIds.ApiEndpoint, "endpoint-2", org = testOrg.id, properties = Some(Map(
+      val Success(r2) = createInstance(ResourceIds.ApiEndpoint, "endpoint-2", org = testOrg.id, properties = Some(Map(
         "implementation_type" -> "lambda",
-        "implementation_id" -> l2.toString
+        "implementation_id" -> l2.toString,
+        "resource" -> ""
       )))
       val request = fakeAuthRequest(GET,
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&expand=true",
@@ -92,7 +94,7 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id, r2.id))
-      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[JsObject]) must containTheSameElementsAs(Seq(r1.id, r2.id))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1, l2))
     }
 
   }
