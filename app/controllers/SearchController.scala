@@ -46,7 +46,7 @@ class SearchController @Inject()(
     extractNameValue(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => handleExpandResourceResult(
-        getByProperty(ResourceIds.User, Criterion(name,value)),
+        getByProperty(ResourceIds.User, Criterion(name,value), Some(fqid(fqon))),
         request.queryString, Some(META_URL))
     }
   }
@@ -142,7 +142,7 @@ class SearchController @Inject()(
   private[controllers] def getByProperty(typeId: UUID, crtn: Criterion, org: Option[UUID] = None) = {
     if (crtn.name == "name") {
       org.fold(ResourceFactory.findAllByName(typeId, crtn.value)) { oid =>
-        ResourceFactory.findAllByName(org.get, typeId, crtn.value)
+        ResourceFactory.findAllByName(oid, typeId, crtn.value)
       }
     } else {
       org.fold(ResourceFactory.findAllByPropertyValue(typeId, crtn.name, crtn.value)) { oid =>
@@ -155,7 +155,7 @@ class SearchController @Inject()(
    * TODO: Factor these three functions into one.
    */
   private def extractNameValue(qs: Map[String, Seq[String]]) = Try {
-    val key = qs.keys.toList
+    val key = (qs - "expand").keys.toList
     if (key.isEmpty)  badRequest(s"Must provide a search term.")
     if (key.size > 1) badRequest(s"Must provide a SINGLE search term.")
     val name = key(0)
