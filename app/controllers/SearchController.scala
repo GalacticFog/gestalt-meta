@@ -17,13 +17,13 @@ import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, G
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
-
 import javax.inject.Singleton
-import controllers.util.Security
 
+import controllers.util.Security
 import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltGroup}
 import com.galacticfog.gestalt.security.api.json.JsonImports._
-  
+
+import scala.collection.immutable
 import scala.concurrent.Future
 
 @Singleton
@@ -43,10 +43,11 @@ class SearchController @Inject()(
 
   // GET /{fqon}/resourcetypes/{typeId}/resources/search?... 
   def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    extractNameValue(request.queryString) match {
-      case Failure(error)        => HandleExceptions(error)
-      case Success((name,value)) => handleExpandResourceResult(
-        getByProperty(typeId, Criterion(name,value), Some(fqid(fqon))),
+    extractNameValues(request.queryString) match {
+      case Failure(error) => HandleExceptions(error)
+      case Success(Nil)   => HandleExceptions(BadRequestException("endpoint requires at least one query parameter"))
+      case Success(qs)    => handleExpandResourceResult(
+        ResourceFactory.findAllInOrgByPropertyValues(fqid(fqon), typeId, qs),
         request.queryString, Some(META_URL))
     }
   }
@@ -71,9 +72,7 @@ class SearchController @Inject()(
   import com.galacticfog.gestalt.security.api.GestaltResource
   import scala.concurrent.ExecutionContext.Implicits.global
   import play.api.mvc.Request
-  import play.api.libs.json._
-  
-  
+
   def findUsers(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
     findSecurityPassThrough(
       fqon, 
@@ -150,23 +149,16 @@ class SearchController @Inject()(
       }
     }
   }
-  
-  /*
-   * TODO: Factor these three functions into one.
-   */
-  private def extractNameValue(qs: Map[String, Seq[String]]) = Try {
-    val key = (qs - "expand").keys.toList
-    if (key.isEmpty)  badRequest(s"Must provide a search term.")
-    if (key.size > 1) badRequest(s"Must provide a SINGLE search term.")
-    val name = key(0)
-    
-    val value = qs(name)
-    if (value.size > 1) badRequest(s"Must provide a SINGLE value for ${name}")
-    if (value(0).isEmpty()) badRequest(s"Must provide a value for ${name}")
-    
-    (name, value(0))
+
+  private def extractNameValues(qs: Map[String, Seq[String]]): Try[Seq[(String, String)]] = {
+    val pairs: immutable.Iterable[Try[(String, String)]] = (qs - "expand") map {
+      case (name, Seq(value)) => Success(name -> value)
+      case (name, Nil)        => Failure(BadRequestException(s"Query parameter '${name}' did not include a search term."))
+      case (name, _)          => Failure(BadRequestException(s"Query parameter '${name}' included multiple search terms."))
+    }
+    Try{pairs.toSeq.map(_.get)}
   }
-  
+
   private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {
     val good = List("name", "email", "phoneNumber")
     val key = qs.keys.toList

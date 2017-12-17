@@ -74,8 +74,8 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
 
     "support resource expansion" in new testAppWithEnv {
       // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
-      val l1 = UUID.randomUUID()
-      val l2 = UUID.randomUUID()
+      val l1 = uuid()
+      val l2 = uuid()
       val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-1", org = testOrg.id, properties = Some(Map(
         "implementation_type" -> "lambda",
         "implementation_id" -> l1.toString,
@@ -99,10 +99,16 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
 
     "support multiple query parameters" in new testAppWithEnv {
       // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
-      val l1 = UUID.randomUUID()
-      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-3", org = testOrg.id, properties = Some(Map(
+      val l1 = uuid()
+      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-1", org = testOrg.id, properties = Some(Map(
         "implementation_type" -> "lambda",
         "implementation_id" -> l1.toString,
+        "resource" -> ""
+      )))
+      // we do not want this endpoint to come back in the search
+      val Success(r2) = createInstance(ResourceIds.ApiEndpoint, "endpoint-2", org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> uuid().toString,
         "resource" -> ""
       )))
       val request = fakeAuthRequest(GET,
@@ -114,7 +120,80 @@ class SearchControllerSpec extends PlaySpecification with MetaRepositoryOps with
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
       json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1))
-      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_type").asOpt[UUID]) must containTheSameElementsAs(Seq("lambda"))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_type").asOpt[String]) must containTheSameElementsAs(Seq("lambda"))
+    }
+
+    "support mixing name and properties in searches" in new testAppWithEnv {
+      // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
+      val l1 = uuid()
+      val l2 = uuid()
+      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, "endpoint-1", org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> l1.toString,
+        "resource" -> ""
+      )))
+      // we do not want this endpoint to come back in the search
+      val Success(r2) = createInstance(ResourceIds.ApiEndpoint, "endpoint-2", org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> l2.toString,
+        "resource" -> ""
+      )))
+      val request = fakeAuthRequest(GET,
+        s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?name=${r1.name}&implementation_id=${l1}&expand=true",
+        testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must beEqualTo(OK)
+      val json = contentAsJson(result)
+      json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "name").asOpt[String]) must containTheSameElementsAs(Seq(r1.name))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1))
+    }
+
+    "support searching only by name" in new testAppWithEnv {
+      // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields
+      val l1 = uuid()
+      val Success(r1) = createInstance(ResourceIds.ApiEndpoint, uuid().toString, org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> l1.toString,
+        "resource" -> ""
+      )))
+      // we do not want this endpoint to come back in the search
+      val Success(r2) = createInstance(ResourceIds.ApiEndpoint, "endpoint-2", org = testOrg.id, properties = Some(Map(
+        "implementation_type" -> "lambda",
+        "implementation_id" -> uuid().toString,
+        "resource" -> ""
+      )))
+      val request = fakeAuthRequest(GET,
+        s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?name=${r1.name}&expand=true",
+        testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must beEqualTo(OK)
+      val json = contentAsJson(result)
+      json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "name").asOpt[String]) must containTheSameElementsAs(Seq(r1.name))
+      json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1))
+    }
+
+    "return 400 for repeated query parameters" in new testAppWithEnv {
+      val request = fakeAuthRequest(GET,
+        s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&implementation_type=lambda&expand=true",
+        testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must beEqualTo(BAD_REQUEST)
+      contentAsString(result) must contain("included multiple search terms")
+    }
+
+    "return 400 for no query parameters" in new testAppWithEnv {
+      val request = fakeAuthRequest(GET,
+        s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?expand=true",
+        testCreds
+      )
+      val Some(result) = route(request)
+      status(result) must beEqualTo(BAD_REQUEST)
+      contentAsString(result) must contain("endpoint requires at least one query parameter")
     }
 
   }
