@@ -66,11 +66,6 @@ class AuthorizationController @Inject()(
     postEntitlementCommon(fqid(fqon), typeId, resourceId)
   }
 
-  def handleEntitlementOptions(org: UUID, qs: Map[String,Seq[String]], baseUrl: Option[String] = None) = {
-    val merge = booleanParam("effective", qs)
-    val filter = qs.get("action")
-  }
-
   /**
    * Ensure that neither the Entitlement ID or Action have been modified.
    */

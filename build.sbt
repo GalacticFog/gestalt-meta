@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.6.62"
+version := "0.6.63"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -80,27 +80,24 @@ libraryDependencies += "com.lihaoyi" %% "scalatags" % "0.6.7"
 
 libraryDependencies ++= Seq(
 
-	"org.jtwig" 	   	 % "jtwig-core" 					 % "5.86.0.RELEASE",
+	"org.jtwig" 	   	 % "jtwig-core" 					 			 		% "5.86.0.RELEASE",
+	"com.galacticfog" %% "gestalt-meta-repository" 		 		% "0.6.62" withSources(),
+	"com.galacticfog" %% "gestalt-play-json" 			 		 		% "0.3.0" withSources(),
+	"com.galacticfog" %% "gestalt-security-sdk-scala"  		%  "2.3.4" withSources(),
+	"com.galacticfog" %% "gestalt-security-play" 		 	 		% "3.0.5" withSources(),
+	"com.galacticfog" %% "gestalt-security-play-testkit" 	% "3.0.5" withSources(),
+	"com.galacticfog"  % "gestalt-license-keymgr" 		 		% "1.2.2-SNAPSHOT",
+	"com.galacticfog" %% "gestalt-caas-kube" 			 				% "0.2.3" withSources(),
+  "net.codingwell"  %% "scala-guice" 					 					% "4.1.0",
+  "org.slf4j" 	   	 % "slf4j-api" 											% "1.7.21",
+	"ch.qos.logback"   % "logback-classic" 								% "1.1.7",
+	"org.postgresql"   % "postgresql" 										% "9.4.1208.jre7",
+	"com.rabbitmq"     % "amqp-client" 										% "3.6.6",
+  "io.jsonwebtoken"  % "jjwt"            		 						% "0.7.0",
+  "com.spotify" 	   % "docker-client" 									% "8.7.1",
 
-	"com.galacticfog" %% "gestalt-meta-repository" 		 % "0.6.61" withSources(),
-
-    // "com.galacticfog" %% "gestalt-meta-sdk-scala" 		 % "0.6.19" withSources(),
-	"com.galacticfog" %% "gestalt-play-json" 			 % "0.3.0" withSources(),
-	"com.galacticfog" %% "gestalt-security-sdk-scala" %  "2.3.4" withSources(),
-	"com.galacticfog" %% "gestalt-security-play" 		 % "3.0.5" withSources(),
-	"com.galacticfog" %% "gestalt-security-play-testkit" % "3.0.5" withSources(),
-	"com.galacticfog"  % "gestalt-license-keymgr" 		 % "1.2.2-SNAPSHOT",
-	"com.galacticfog" %% "gestalt-caas-kube" 			 % "0.2.3" withSources(),
-  "net.codingwell"  %% "scala-guice" 					 % "4.1.0",
-  "org.slf4j" 	   	 % "slf4j-api" 		% "1.7.21",
-	"ch.qos.logback"   % "logback-classic" 	% "1.1.7",
-	"org.postgresql"   % "postgresql" 		% "9.4.1208.jre7",
-	"com.rabbitmq"     % "amqp-client" 		% "3.6.6",
-  "io.jsonwebtoken"  % "jjwt"             % "0.7.0",
-  "com.spotify" 	   % "docker-client" 	% "8.7.1",
-
-  "org.scalikejdbc" %% "scalikejdbc-config"           % "2.5.1",
-  "org.scalikejdbc" %% "scalikejdbc-play-initializer" % "2.5.1",
+  "org.scalikejdbc" %% "scalikejdbc-config"           	% "2.5.1",
+  "org.scalikejdbc" %% "scalikejdbc-play-initializer" 	% "2.5.1",
 
 	Library.Play.specs2          % Test,
 	Library.Specs2.matcherExtra  % Test,

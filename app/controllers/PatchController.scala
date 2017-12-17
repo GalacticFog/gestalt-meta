@@ -140,13 +140,15 @@ class PatchController @Inject()(
             c <- Js.parse[GestaltResourceType] {
               u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
             }
-            d <- TypeFactory.update(c, request.identity.account.id)
-          } yield d
-          
+            up <- TypeFactory.update(c, request.identity.account.id)
+            out <- TypeMethods.renderType(up, request.queryString, META_URL)
+          } yield out
+
           updated match {
             case Failure(e) => HandleExceptionsAsync(e)
-            case Success(up) => Future.successful(Accepted(Output.renderResourceTypeOutput(up)))
+            case Success(t) => Future.successful(Accepted(t))
           }
+          
         }
       }
     }

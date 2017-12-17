@@ -13,12 +13,12 @@ import play.api.libs.json._
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test._
 
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 
 
-class ResourcePathSpec extends Specification {
+class ResourcePathSpec extends Specification with MetaRepositoryOps {
   
   "targetTypeId" should {
     
@@ -82,8 +82,8 @@ class ResourcePathSpec extends Specification {
     
     "contain the parent ID if the path refers to a second level resource or list" in {
       val parentId = uuid.toString
-      new ResourcePath(s"/testorg/workspaces/$parentId/environments").parentId must beSome(uuid(parentId)) 
-      new ResourcePath(s"/testorg/workspaces/$parentId/environments/${uuid}").parentId must beSome(uuid(parentId))
+      new ResourcePath(s"/testorg/workspaces/$parentId/environments").parentId must beSome(UUID.fromString(parentId)) 
+      new ResourcePath(s"/testorg/workspaces/$parentId/environments/${uuid}").parentId must beSome(UUID.fromString(parentId))
     }
     
     "be empty if the path refers to a first-level resource or list" in {

@@ -81,8 +81,85 @@ object Output {
     ))
   }
 
-  def renderCompact(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
+  
+  def compact(r: JsValue, metaUrl: Option[String] = None): JsValue = {
+    import com.galacticfog.gestalt.patch._
+    
+    val patch = PatchDocument(
+        PatchOp.Remove("/org"),
+        PatchOp.Remove("/owner"),
+        PatchOp.Remove("/created"),
+        PatchOp.Remove("/modified"))
+    
+    patch.applyPatch(r.as[JsObject]).get
+  }
+  
+  private def compactType(r: GestaltResourceType, metaUrl: Option[String] = None) = {
+    
+    val res = GestaltResourceTypeOutput(
+      id = r.id,
+      name = r.name,
+      extend = jsonTypeName(r.extend),
+      resource_type = jsonTypeName(Option(r.typeId)).get,
+      resource_state = JsString(ResourceState.name(r.state)),
 
+      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, metaUrl),
+      owner = Json.toJson(r.owner),
+      description = r.description,
+      created = Json.toJson(r.created),
+      modified = Json.toJson(r.modified),
+      properties = jsonHstore(r.properties),
+      variables = jsonHstore(r.variables),
+      tags = jsonArray(r.tags),
+      auth = jsonHstore(r.auth),
+      property_defs = jsonTypePropertyLinks(r.id))
+      
+    // this renders the properties
+    val renderedProps = renderTypeProperties(r.id, r.id, r.properties)//renderInstanceProperties(r.typeId, r.id, r.properties)
+    val result = Json.toJson(res.copy(
+      properties = renderedProps.orElse(Some(Json.obj()))
+    ))
+    
+    compact(result, metaUrl)
+  }  
+  
+  def compactInstance(r: GestaltResourceInstance, metaUrl: Option[String] = None): JsValue = {
+
+    val res = GestaltResourceOutput(
+      id = r.id,
+      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, metaUrl),
+      resource_type = jsonTypeName(Option(r.typeId)).get,
+      resource_state = JsString(ResourceState.name(r.state)),
+      owner = Json.toJson(r.owner),
+      name = r.name,
+      description = r.description,
+      created = Json.toJson(r.created),
+      modified = Json.toJson(r.modified),
+      properties = None, // expanded below
+      variables = jsonHstore(r.variables),
+      tags = jsonArray(r.tags),
+      auth = r.auth)       
+
+    // this renders the properties
+    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    val result = Json.toJson(res.copy(
+      properties = renderedProps orElse Some(Json.obj())
+    ))
+    
+    compact(result, metaUrl)
+    
+//    import com.galacticfog.gestalt.patch._
+//    
+//    val patch = PatchDocument(
+//        PatchOp.Remove("/org"),
+//        PatchOp.Remove("/owner"),
+//        PatchOp.Remove("/created"),
+//        PatchOp.Remove("/modified"))
+//    patch.applyPatch(result.as[JsObject]).get
+  }
+  
+  
+  def renderCompact(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
     val res = GestaltResourceOutput(
       id = r.id,
       org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri),
@@ -141,12 +218,7 @@ object Output {
       auth = jsonHstore(r.auth),
       property_defs = jsonTypePropertyLinks(r.id))      
   }
-  
-  def renderTypeProperties(typeId: UUID, baseUri: Option[String] = None) = {
-    val ps = Properties.getTypeProperties(typeId) map { p => toPropertyOutput( p, baseUri ) }
-    Json.toJson( ps )
-  }
-  
+
   def renderPropertyLinks(rs: Seq[GestaltTypeProperty], baseUri: Option[String] = None): JsValue = {
     Json.toJson(rs map { r => 
       toLink(r.typeId, r.id, name = Some(r.name), orgId = r.orgId, baseUri = baseUri) 
@@ -184,7 +256,7 @@ object Output {
       modified = Json.toJson(p.modified),
 
       applies_to = jsonTypeName(Option(p.appliesTo)),
-      datatype = JsString(DataType.name(p.datatype)), //name
+      data_type = JsString(DataType.name(p.datatype)), //name
       default_value = jsStringOpt(p.defaultValue),
       is_sealed = p.isSealed,
       is_system = p.isSystem,

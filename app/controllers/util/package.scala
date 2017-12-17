@@ -38,8 +38,6 @@ import scala.concurrent.ExecutionContext
 
 package object util {
   
-  type QueryString = Map[String,Seq[String]]  
-  
   protected[controllers] object Errors {
     def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
@@ -144,32 +142,10 @@ package object util {
    * TODO: This only handles true | false. Extend to allow for expansion
    * of individual resource attributes and properties.
    */
-  def getExpandParam(qs: Map[String,Seq[String]]): Boolean = {
-    if (!qs.contains("expand")) false
-    else {
-      val fp = qs("expand")
-      Try {
-        fp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of 'expand' parameter must be true or false. found: $fp")
-      }
-    }
-  }  
-  
-  def booleanParam(paramName: String, qs: Map[String,Seq[String]]): Boolean = {
-    if (!qs.contains(paramName)) false
-    else {
-      val fp = qs(paramName)
-      Try {
-        fp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of '$paramName' parameter must be true or false. found: $fp")
-      }
-    }
-  }  
-  
+  def getExpandParam(qs: Map[String, Seq[String]]): Boolean = {
+    QueryString.singleBoolean(qs,"expand")
+  }
+
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {
       case Success(out) => success(out)

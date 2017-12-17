@@ -117,7 +117,7 @@ object ContainerService {
                           container: GestaltResourceInstance,
                           user: AuthAccountWithCreds,
                           metaUrl: String,
-                          queryString: QueryString) = {
+                          queryString: Map[String, Seq[String]]) = {
     val action = "container.migrate"
     val operations = List(
       controllers.util.Authorize(action),

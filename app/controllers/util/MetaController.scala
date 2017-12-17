@@ -177,7 +177,9 @@ trait MetaControllerUtils extends AuthorizationMethods {
 trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
   
   private[this] val log = Logger(this.getClass)
-
+  
+  private type RenderFunction = (GestaltResourceInstance, Option[String]) => JsValue
+  
   /**
    * Render a single GestaltResourceInstance to JSON
    */
@@ -185,75 +187,76 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
       implicit rh: RequestHeader): JsValue = {
     Output.renderInstance(res, Some(META_URL))
   }
-  
+
   /**
    * Render a Seq of GestaltResourceInstances to Result[Ok(JsValue)]
    */
-  private[controllers] def RenderList(rss: Seq[GestaltResourceInstance])(
-      implicit request: Request[_]): Result = {
+  protected[controllers] def RenderList(rss: Seq[GestaltResourceInstance])(implicit request: Request[_]): Result = {
+    val qs = request.queryString
     
-    val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
-      Output.renderCompact else Output.renderInstance
     
-    handleExpansion2(rss, request.queryString, Some(META_URL))(render)
+    if (QueryString.singleBoolean(qs, "compact")) {
+      val compacted = rss.map(r => Output.renderCompact(r, Some(META_URL)))
+      Ok(Json.toJson(compacted))
+    } else Ok(handleExpandResource(rss, qs, Some(META_URL)))
+  }
+
+  
+  /**
+   * Check querystring for 'expand' param and render expanded resources/types if set to true.
+   * This is used to control output for 'list' type GETs in the API. If expand is set to 'false'
+   * the targets are rendered as JSON links.
+   * 
+   * @tparam A a subtype of ResourceLike (i.e. GestaltResourceInstance, GestaltResourceType)
+   * @param rs a sequence of resources to render
+   */
+  def handleExpand[A <: ResourceLike](rs: Seq[A], qs: Map[String, Seq[String]], baseUri: Option[String] = None)
+      (f: (A, Option[String]) => JsValue): JsValue = {
+    if (getExpandParam(qs)) {
+      Json.toJson(rs.map(f(_, baseUri)))
+    } else Output.renderLinks(rs, baseUri)
   }
   
-//  private[controllers] def RenderListCompact(rss: Seq[GestaltResourceInstance])(
-//      implicit request: Request[_]): Result = {
-//    
-//    val render: RenderFunction = if (booleanParam("compact", request.queryString)) 
-//      Output.renderCompact else Output.renderInstance
-//    
-//    handleExpansion2(rss, request.queryString, META_URL)(render)
-//  }
+  /**
+   * Render a list of GestaltResourceTypes to JSON based on the given querystring. If the 'expand'
+   * querystring param is true, render full resource. If set to false, render a Link.
+   */
+  def handleExpandType(rs: Seq[GestaltResourceType], qs: Map[String, Seq[String]], metaUrl: Option[String] = None) = {
+    handleExpand(rs, qs, metaUrl)(Output.renderResourceTypeOutput)
+  }
   
-  protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
-    NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
+  /**
+   * Render a list of GestaltResourceInstances to JSON based on the given querystring. If the 'expand'
+   * querystring param is true, render full resource. If set to false, render a Link.
+   */
+  def handleExpandResource(rs: Seq[GestaltResourceInstance], qs: Map[String, Seq[String]], metaUrl: Option[String] = None) = {
+    handleExpand(rs, qs, metaUrl)(Output.renderInstance)
+  }
 
   /**
-   * Handles the 'expand' querystring parameter.
-   */
-  private type RenderFunction = (GestaltResourceInstance, Option[String]) => JsValue
-  def handleExpansion2(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None)(
-      render: RenderFunction) = {
+   * Render a list of GestaltResourceInstances to JSON based on the given querystring. If the 'expand' 
+   * querystring param is true, render full resource. If set to false, render a Link.  The resulting JSON
+   * is wrapped in a 200 OK HTTP response. 
+   */  
+  def handleExpandResourceResult(rs: Seq[GestaltResourceInstance], qs: Map[String, Seq[String]], metaUrl: Option[String] = None) = {
+    Ok(handleExpandResource(rs, qs, metaUrl))
+  }
 
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => render(r.asInstanceOf[GestaltResourceInstance], baseUri) }))
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }
+
   
-  def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => 
-        Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) 
-      }))
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }
-  
-  def expandOutput[A <: ResourceLike](
-      rs: Seq[A], qs: QueryString, baseUri: Option[String] = None)(
-       f: (A, Option[String]) => JsValue): Result = {
+//  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
+//    if (getExpandParam(qs)) {
+//      Ok(Json.toJson(rs map { r => 
+//        Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) 
+//      }))
+//    }
+//    else Ok(Output.renderLinks(rs, baseUri))
+//  }
+
+
+  protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
+    NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
     
-    if (getExpandParam(qs)) {
-      Ok(Json.toJson(rs map { r => f(r, baseUri) }))
-    } else Ok(Output.renderLinks(rs, baseUri))
-  }
-  
-  def singleParamBoolean(qs: Map[String,Seq[String]], param: String) = {
-    if (!qs.contains(param)) false
-    else {
-      val bp = qs(param)
-      Try {
-        bp.mkString.toBoolean
-      } match {
-        case Success(b) => b == true
-        case Failure(_) => throw new BadRequestException(s"Value of '$param' parameter must be true or false. found: $bp")
-      }
-    }
-  }  
-  
   protected[controllers] def CreateResource(
     org: UUID,
     caller: AuthAccountWithCreds,

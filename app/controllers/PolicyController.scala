@@ -90,7 +90,7 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
         rules filter { _.typeId == typeId }
       } else rules
     }
-    handleExpansion(outputRules, qs, Some(META_URL))
+    handleExpandResourceResult(outputRules.asInstanceOf[Seq[GestaltResourceInstance]], qs, Some(META_URL))
   }  
   
   protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {

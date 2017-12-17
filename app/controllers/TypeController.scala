@@ -56,11 +56,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         else if (qs.contains("type")) findCovariantTypes(qs)
         else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
       }
-      handleExpansion(tpes, qs, Some(META_URL))
+      Ok(handleExpandType(tpes, qs, Some(META_URL)))
     }
   }  
   
-  import controllers.util.booleanParam
+  //import controllers.util.booleanParam
   import com.galacticfog.gestalt.meta.providers.ui.Assembler
   import com.galacticfog.gestalt.meta.providers._
   import scala.util.{Try,Success,Failure}
@@ -83,10 +83,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
             s"/properties/provider_actions/$actionIndex not found in Resource Type $typeId")
         }
       }{ action =>
-        if (booleanParam("render", request.queryString)) {
+        val qs = request.queryString
+        if (QueryString.singleBoolean(qs, "render")) {
           log.debug("Found 'render' query param.")
           
-          if (booleanParam("envelope", request.queryString)) {
+          if (QueryString.singleBoolean(qs, "envelope")) {
             val out = Assembler.envelope(fqon, META_URL, None, request.identity)
             Ok(out).as("text/html")
           } else {
@@ -131,14 +132,15 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     //    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
   
-  override def handleExpansion(rs: Seq[ResourceLike], qs: QueryString, baseUri: Option[String] = None) = {
-    if (getExpandParam(qs)) {
-      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
-    }
-    else Ok(Output.renderLinks(rs, baseUri))
-  }  
+//  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
+//
+//    if (getExpandParam(qs)) {
+//      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
+//    }
+//    else Ok(Output.renderLinks(rs, baseUri))
+//  }  
   
-  private[controllers] def findCovariantTypes(qs: QueryString): Seq[GestaltResourceType] = {
+  private[controllers] def findCovariantTypes(qs: Map[String, Seq[String]]): Seq[GestaltResourceType] = {
     if (qs.get("type").isEmpty) List.empty
     else if (qs("type").size > 1) {
       throw new BadRequestException("Query parameter 'type' may only be given once. Found multiple.")
@@ -151,7 +153,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     }
   }
   
-  private[controllers] def findNamedTypes(qs: QueryString): Seq[GestaltResourceType] = {
+  private[controllers] def findNamedTypes(qs: Map[String, Seq[String]]): Seq[GestaltResourceType] = {
     qs("name").toSeq.flatMap(TypeFactory.findByName(_))     
   }  
   
@@ -223,26 +225,35 @@ class TypeController @Inject()(messagesApi: MessagesApi,
    */
   private def OkTypeByIdResult(org: UUID, id: UUID, qs: Map[String, Seq[String]])(
       implicit request: SecuredRequest[_]) = {
-    
-    val withProps = singleParamBoolean(qs, "withprops")
 
-    TypeFactory.findById(id).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))) {
-      typ =>
-        val typeJson = Output.renderResourceTypeOutput(typ)
-        val outputJson = {
-          if (singleParamBoolean(qs, "withprops")) {
-            log.debug("Found 'withprops' query param - looking up type-properties for expansion...")
-            val jsonProperties = PropertyFactory.findAll(id).map { p =>
-              Output.renderTypePropertyOutput(p, Some(META_URL))
-            }
-            typeJson.as[JsObject] ++ Json.obj("property_defs" -> jsonProperties)
-          } else typeJson
-        }
-        Ok(outputJson)
+    TypeFactory.findById(id).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))) { typ =>
+      TypeMethods.renderType(typ, request.queryString, META_URL) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(jsonType) => Ok(jsonType)
+      }
     }
   }
   
-  /** Convert GestaltResourceTypeInut to GestaltResourceType */
+//  /**
+//   * Render a ResourceType to JSON.
+//   * Uses the provided querystring to determine whether or not to expand property definitions inline.
+//   * 
+//   * @param p the type to render
+//   * @param qs the querystring sent with the original request
+//   * @param metaUrl address of the hosting meta server (used in creating resource link hrefs)
+//   */
+//  def renderType(p: GestaltResourceType, qs: Map[String, Seq[String]], metaUrl: String): Try[JsValue] = Try {
+//    val typeJson = Output.renderResourceTypeOutput(p, Some(metaUrl))
+//    if (singleParamBoolean(qs, "withprops")) {
+//      log.debug("Found 'withprops' query param - looking up type-properties for expansion...")
+//      TypeMethods.withPropertiesExpanded(p.id, typeJson, metaUrl)
+//    } else typeJson
+//  }
+  
+  
+  /** 
+   * Convert GestaltResourceTypeInut to GestaltResourceType 
+   */
   private def typeFromInput(org: UUID, owner: UUID, r: GestaltResourceTypeInput) = Try {
 
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
@@ -285,7 +296,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     go(names, Seq())
   }
   
-  def getSchemaResult(typeId: UUID, qs: QueryString) = {
+  def getSchemaResult(typeId: UUID, qs: Map[String, Seq[String]]) = {
     TypeFactory.findById(typeId).fold{
       NotFoundResult(s"ResourceType ID '$typeId' not found.")
     }{ typ =>
@@ -320,7 +331,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
   
   
-  private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty], qs: QueryString) = {
+  private def renderTypePropertySchema(ps: Seq[GestaltTypeProperty], qs: Map[String, Seq[String]]) = {
     
     def loop(ps: Seq[GestaltTypeProperty], acc: Seq[SchemaEntry]): Seq[SchemaEntry] = {
       ps match {
