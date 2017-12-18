@@ -145,6 +145,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users/:id/groups  	controllers.Re
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes    			controllers.TypeController.createResourceTypeFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes  	    	controllers.TypeController.getAllResourceTypesFqon(fqon: String)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.TypeController.getResourceTypeByIdFqon(fqon: String, typeId: java.util.UUID)
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId     controllers.DeleteController.hardDeleteResourceType(fqon: String, typeId: java.util.UUID)
 
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/actions/:index  	controllers.TypeController.getProviderActionByIndex(fqon: String, typeId: java.util.UUID, index: Int)
 
@@ -156,6 +157,7 @@ GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/schema  	co
 ############################
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties      							controllers.PropertyController.getAllPropertiesFqon(fqon: String)
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id  							controllers.PropertyController.getTypePropertyByIdFqon(fqon: String, id: java.util.UUID)
+DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id 	                        controllers.DeleteController.hardDeleteTypeProperty(fqon: String, id: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties/:uuid 	controllers.PropertyController.getPropertyByIdFqon(fqon: String, typeId: java.util.UUID, uuid: java.util.UUID)
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:uuid/typeproperties 	   		controllers.PropertyController.getAllPropertiesByTypeFqon(fqon: String, uuid: java.util.UUID)
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId/typeproperties  	    controllers.PropertyController.createTypePropertyFqon(fqon: String, typeId: java.util.UUID)
@@ -176,38 +178,6 @@ DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/providers/
 
 ### Special delete used to remove a user from a group. Remove when group PATCH is fully implemented.
 DELETE	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/:group/users 	controllers.Meta.deleteGroupUsers(fqon: String, group: java.util.UUID)
-
-############################
-# COMMON
-############################
-GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*> 		  		controllers.ResourceController.getOrgFqon(fqon: String)
-
-### GET override for lambda endpoints
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:id/apiendpoints		    controllers.ResourceController.getEndpointsByLambdaFqon(fqon: String, id: java.util.UUID)
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:id/apiendpoints		controllers.ResourceController.getEndpointsByContainerFqon(fqon: String, id: java.util.UUID)
-
-### Shortcut lookup to get Containers directly from Provider (without going through Environment)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers  		controllers.ResourceController.getProviderContainers(fqon: String, pid: java.util.UUID)
-GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers/:cid  	controllers.ResourceController.getProviderContainer(fqon: String, pid: java.util.UUID, cid: java.util.UUID)
-
-### Get any system resource.
-GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.getResources(fqon: String, path: String)
-
-### Delete a resource-type
-DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId controllers.DeleteController.hardDeleteResourceType(fqon: String, typeId: java.util.UUID)
-
-### Delete a type-property
-DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id 	controllers.DeleteController.hardDeleteTypeProperty(fqon: String, id: java.util.UUID)
-
-
-DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
-
-### Delete any system resource
-DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.DeleteController.hardDeleteResource(fqon: String, path)
-
-###
-#
-
 
 ############################
 # ORGS
@@ -238,13 +208,11 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 				controllers.Meta.postU
 # RESOURCES
 ############################
 #POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources	   				 controllers.Meta.postResourceFqon(fqon: String)
-
 #PATCH  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resources/:resId			 controllers.Meta.patchResourceFqon(fqon: String, resId: java.util.UUID)
 
 ############################
 # WORKSPACES
 ############################
-
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces  						controllers.Meta.postResourceToOrg(fqon: String, typ: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343")
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/environments 	controllers.Meta.postResource2(fqon: String, typ: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID)
 
@@ -265,7 +233,6 @@ POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/secrets  	
 ############################
 # APIS
 ############################
-
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postResourceOpt(fqon: String, typ: Option[String] = Some("df4bf8b5-170f-453e-9526-c37c898d96c9"), id: java.util.UUID)
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:id/apiendpoints		controllers.ApiController.postApiEndpoint(fqon: String, id: java.util.UUID)
 
@@ -276,17 +243,38 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers   					controllers.Met
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/providers   	controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/providers 	controllers.Meta.postProviderConfigFqon(fqon: String, parentType = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
 
-############################
-# DOMAINS
-############################
-#POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:workspace/domains  		controllers.Meta.postDomainFqon(fqon: String, workspace: java.util.UUID)
+### Shortcut lookup to get Containers directly from Provider (without going through Environment)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers  		controllers.ResourceController.getProviderContainers(fqon: String, pid: java.util.UUID)
+GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:pid/containers/:cid  	controllers.ResourceController.getProviderContainer(fqon: String, pid: java.util.UUID, cid: java.util.UUID)
 
+
+
+############################
+# COMMON
+############################
+
+### Get any org
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*> 		  		controllers.ResourceController.getOrgFqon(fqon: String)
+
+### Get any system resource
+GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.getResources(fqon: String, path: String)
+
+### Delete any org
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
+
+### Delete any system resource
+DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.DeleteController.hardDeleteResource(fqon: String, path)
+
+### Update any org
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.PatchController.patchResourceFqon(fqon: String)
+
+### Update any system resource
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.PatchController.patchResource(fqon, path)
 
+### Create any system resource without a specific creation route above
 POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.genericResourceCreate(fqon: String, path: String)
 
-
+### CORS support
 OPTIONS  /                           controllers.InfoController.options(path="")
 OPTIONS  /*path                      controllers.InfoController.options(path)
 
