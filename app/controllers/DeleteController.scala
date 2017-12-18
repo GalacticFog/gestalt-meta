@@ -128,10 +128,22 @@ class DeleteController @Inject()(
         }
         DeleteHandler.handle(resource, identity)
       }
-
     }
   }
 
+  def hardDeleteTypeProperty(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
+    log.debug(s"hardDeleteTypeProperty($fqon, $id)")
+    
+    PropertyFactory.findById(id).map { p =>
+      val force = QueryString.singleBoolean(request.queryString, "force")
+      val deleter = new HardDeletePropertyType[AuthAccountWithCreds]
+      
+      deleter.delete(p, request.identity, force, manager) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(_) => NoContent
+      }
+    } getOrElse NotFoundResult(s"Property with ID $id not found")
+  }
   
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     
@@ -143,13 +155,14 @@ class DeleteController @Inject()(
 
       val forceParam = QueryString.singleBoolean(request.queryString, "force")
       val deleter = new HardDeleteResourceType[AuthAccountWithCreds]
+      
       deleter.delete(tpe, request.identity, forceParam, manager) match {
         case Failure(e) => HandleExceptions(e)
         case Success(_) => NoContent
       }
     } getOrElse NotFoundResult(s"Type with ID $typeId not found")
   }
-
+  
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
 
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
