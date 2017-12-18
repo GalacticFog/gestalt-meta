@@ -8,10 +8,8 @@ import scala.util.Success
 import scala.util.Try
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import controllers.util.{BadRequestResult, GenericErrorResult, HandleExceptions, SecureController}
-import play.api.mvc.RequestHeader
+import controllers.util.{HandleExceptions, SecureController}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
@@ -20,22 +18,20 @@ import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 
 import controllers.util.Security
-import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltGroup}
-import com.galacticfog.gestalt.security.api.json.JsonImports._
 
 import scala.collection.immutable
 import scala.concurrent.Future
 
 @Singleton
 class SearchController @Inject()(
-    messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
-    security: Security,
-    securitySync: SecuritySync)
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+                                  messagesApi: MessagesApi,
+                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                  security: Security,
+                                  securitySync: SecuritySync)
+  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   private case class Criterion(name: String, value: String)
-  
+
   def getAllResourcesByTypeFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     handleExpandResourceResult(ResourceFactory.findAll(typeId, fqid(fqon)),
       request.queryString, Some(META_URL))
@@ -43,7 +39,7 @@ class SearchController @Inject()(
 
   // GET /{fqon}/resourcetypes/{typeId}/resources/search?... 
   def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
-    extractNameValues(request.queryString) match {
+    util.extractQueryParameters(request.queryString) match {
       case Failure(error) => HandleExceptions(error)
       case Success(Nil)   => HandleExceptions(BadRequestException("endpoint requires at least one query parameter"))
       case Success(qs)    => handleExpandResourceResult(
@@ -57,7 +53,7 @@ class SearchController @Inject()(
     getResourcesByProperty(ResourceIds.User)(validateUserSearchCriteria)
   }
 
-  // GET /users/search?{name}={value}
+  // GET /groups/search?{name}={value}
   def getGroupByPropertyGlobal() = Audited() { implicit request =>
     getResourcesByProperty(ResourceIds.Group)(validateGroupSearchCriteria)
   }
@@ -65,9 +61,16 @@ class SearchController @Inject()(
   // GET /{fqon}/users/search?{name}={value}  
   def getUserByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
-        ResourceIds.User, Option(fqid(fqon)))(validateUserSearchCriteria)
-  }  
-  
+      ResourceIds.User, Option(fqid(fqon)))(validateUserSearchCriteria)
+  }
+
+  // GET /{fqon}/groups/search?{name}={value}
+  def getGroupByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
+    getResourcesByProperty(
+      ResourceIds.Group, Option(fqid(fqon)))(validateGroupSearchCriteria)
+  }
+
+
   import com.galacticfog.gestalt.data.models.GestaltResourceInstance
   import com.galacticfog.gestalt.security.api.GestaltResource
   import scala.concurrent.ExecutionContext.Implicits.global
@@ -75,24 +78,24 @@ class SearchController @Inject()(
 
   def findUsers(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
     findSecurityPassThrough(
-      fqon, 
-      request.identity, 
+      fqon,
+      request.identity,
       ResourceIds.User)(
-        ResourceFactory.findAllIn, security.searchAccounts)
+      ResourceFactory.findAllIn, security.searchAccounts)
   }
-  
+
   def findGroups(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
     findSecurityPassThrough(
-      fqon, 
-      request.identity, 
+      fqon,
+      request.identity,
       ResourceIds.Group)(
-        ResourceFactory.findAllIn, security.searchGroups)
-  }  
-  
+      ResourceFactory.findAllIn, security.searchGroups)
+  }
+
   def findSecurityPassThrough(fqon: String, identity: AuthAccountWithCreds, metaTypeId: UUID)(
-      metaLookup: (UUID, Seq[UUID]) => Seq[GestaltResourceInstance],
-      securityLookup: (UUID, AuthAccountWithCreds, (String,String)*) => Future[Seq[GestaltResource]])(implicit request: Request[_]) = {
-    
+    metaLookup: (UUID, Seq[UUID]) => Seq[GestaltResourceInstance],
+    securityLookup: (UUID, AuthAccountWithCreds, (String,String)*) => Future[Seq[GestaltResource]])(implicit request: Request[_]) = {
+
     val org = fqid(fqon)
     val args = request.queryString.map{case (k,v) => (k -> v(0))}.toSeq
 
@@ -117,27 +120,21 @@ class SearchController @Inject()(
       }
       RenderList(results)(request.asInstanceOf[play.api.mvc.Request[_]])
     }
-  }    
-  
-  
-  // GET /{fqon}/users/search?{name}={value}  
-  def getGroupByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
-    getResourcesByProperty(
-        ResourceIds.Group, Option(fqid(fqon)))(validateGroupSearchCriteria)
   }
-  
-  
+
+
+
   private[controllers] def getResourcesByProperty(typeId: UUID, org: Option[UUID] = None)
-      (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: SecuredRequest[_]) = {
+                                                 (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: SecuredRequest[_]) = {
     f(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => {
-        handleExpandResourceResult(getByProperty(typeId, Criterion(name,value), org), 
-         request.queryString, Some(META_URL))
+        handleExpandResourceResult(getByProperty(typeId, Criterion(name,value), org),
+          request.queryString, Some(META_URL))
       }
-    }    
+    }
   }
-  
+
   private[controllers] def getByProperty(typeId: UUID, crtn: Criterion, org: Option[UUID] = None) = {
     if (crtn.name == "name") {
       org.fold(ResourceFactory.findAllByName(typeId, crtn.value)) { oid =>
@@ -150,15 +147,6 @@ class SearchController @Inject()(
     }
   }
 
-  private def extractNameValues(qs: Map[String, Seq[String]]): Try[Seq[(String, String)]] = {
-    val pairs: immutable.Iterable[Try[(String, String)]] = (qs - "expand") map {
-      case (name, Seq(value)) => Success(name -> value)
-      case (name, Nil)        => Failure(BadRequestException(s"Query parameter '${name}' did not include a search term."))
-      case (name, _)          => Failure(BadRequestException(s"Query parameter '${name}' included multiple search terms."))
-    }
-    Try{pairs.toSeq.map(_.get)}
-  }
-
   private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {
     val good = List("name", "email", "phoneNumber")
     val key = qs.keys.toList
@@ -166,15 +154,15 @@ class SearchController @Inject()(
     if (key.size > 1) badRequest(s"Must provide a SINGLE search term. One of : ${good.mkString(",")}")
     if (!good.contains(key(0))) badRequest(s"Unknown search term '${key(0)}. Valid terms: ${good.mkString(",")}")
     val name = key(0)
-    
+
     val value = qs(name)
-    
+
     // NOTE: value is never 'empty' - contains a Buffer()
     if (value.size > 1) badRequest(s"Must provide a SINGLE value for ${name}")
     if (value(0).isEmpty()) badRequest(s"Must provide a value for ${name}")
     (name, value(0))
   }
-  
+
   private def validateGroupSearchCriteria(qs: Map[String, Seq[String]]) = Try {
     val good = List("name")
     val key = qs.keys.toList
@@ -182,9 +170,9 @@ class SearchController @Inject()(
     if (key.size > 1) badRequest(s"Must provide a SINGLE search term. One of : ${good.mkString(",")}")
     if (!good.contains(key(0))) badRequest(s"Unknown search term '${key(0)}. Valid terms: ${good.mkString(",")}")
     val name = key(0)
-    
+
     val value = qs(name)
-    
+
     // NOTE: value is never 'empty' - contains a Buffer()
     if (value.size > 1) badRequest(s"Must provide a SINGLE value for ${name}")
     if (value(0).isEmpty()) badRequest(s"Must provide a value for ${name}")
