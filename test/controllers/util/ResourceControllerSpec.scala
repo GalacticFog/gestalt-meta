@@ -18,7 +18,7 @@ import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsString, Json}
+import play.api.libs.json.{JsObject, JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
@@ -204,6 +204,19 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
     val testProviderName = "test-provider-name"
     lazy val testProvider = ResourceFactory.findChildByName(dummyRootOrgId, providerTypeId, testProviderName).get
+
+    case class testAppWithEnv() extends testApp {
+
+      lazy val (testOrg,testWork,testEnv) = {
+        val Success(to) = createOrg(name = uuid().toString)
+        val Success((tw,te)) = createWorkEnv(org = to.id)
+        Ents.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+        Ents.setNewEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
+        Ents.setNewEntitlements(dummyRootOrgId, to.id, user, None)
+        (to,tw,te)
+      }
+
+    }
 
     case class testAppWithProvider() extends testApp {
 

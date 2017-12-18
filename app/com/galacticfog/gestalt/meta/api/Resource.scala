@@ -29,11 +29,11 @@ object Resource {
   /**
    * Find a list of same-typed resources by fully-qualified path
    */
-  def listFromPath(p: String): List[GestaltResourceInstance] = {
+  def listFromPath(p: String, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     val info = mapListPathData(p)
     val f = info.size match {
-      case 2 => findFirstLevelList _
-      case 4 => findSecondLevelList _
+      case 2 => findFirstLevelList((_: Map[String,String]), qs)
+      case 4 => findSecondLevelList((_: Map[String,String]), qs)
       case _ => throw illegal(s"Invalid path. found '$p'")
     }
     f(info)
@@ -149,20 +149,26 @@ object Resource {
     else ResourceFactory.findById(typeOrElse(targetTypeName), targetId)
   }
   
-  protected[api] def findFirstLevelList(info: Map[String,String]) = {
+  protected[api] def findFirstLevelList(info: Map[String,String], qs: Map[String, Seq[String]] = Map.empty) = {
     val org = orgOrElse(info(Fqon))
-    val targetTypeId = typeOrElse(info(TargetType))
-    
-    ResourceFactory.findAll(targetTypeId, org)
-  }
-  
-  protected[api] def findSecondLevelList(info: Map[String,String]) = {
-    val org = orgOrElse(info(Fqon))
-    val parentId = UUID.fromString(info(ParentId))    
-    val parentType   = typeOrElse(info(ParentType))
     val targetTypeId = typeOrElse(info(TargetType))
 
-    ResourceFactory.findChildrenOfSubType(targetTypeId, parentId)
+    val criteria = controllers.util.extractQueryParameters(qs).get
+    ResourceFactory.findAllInOrgByPropertyValues(org, targetTypeId, criteria)
+  }
+  
+  protected[api] def findSecondLevelList(info: Map[String,String], qs: Map[String, Seq[String]] = Map.empty) = {
+    val _ = {
+      // these are required validation calls, do not delete them
+      orgOrElse(info(Fqon))
+      typeOrElse(info(ParentType))
+    }
+    //
+    val parentId = UUID.fromString(info(ParentId))
+    val targetTypeId = typeOrElse(info(TargetType))
+
+    val criteria = controllers.util.extractQueryParameters(qs).get
+    ResourceFactory.findChildrenOfSubType(targetTypeId, parentId, criteria)
   }
   
   /**
