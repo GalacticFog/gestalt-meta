@@ -732,41 +732,6 @@ class ResourceController @Inject()(
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
 
-  // --------------------------------------------------------------------------
-  // API_ENDPOINTS
-  // --------------------------------------------------------------------------
-
-  /**
-    * Finding Endpoints by Container calls a different factory endpoint, because Endpoints are NOT
-    * stored as children of Containers, because Endpoints are stored as children of Apis
-    * TODO: there is some duplication here with getEndpointsByContainerFqon, not a big deal for now
-    */
-  def getEndpointsByContainerFqon(fqon: String, containerId: UUID) = Audited(fqon) { implicit request =>
-
-    val path = new ResourcePath(fqon, s"containers/$containerId/apiendpoints")
-
-    this.AuthorizedResourceList(path, "apiendpoint.view", request.queryString)
-
-    handleExpandResourceResult(
-      ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", containerId.toString),
-      request.queryString)
-  }
-
-  /**
-   * Finding Endpoints by Lambda calls a different factory endpoint, because Endpoints are NOT
-   * stored as children of Lambdas, because Endpoints are stored as children of Apis
-   */
-  def getEndpointsByLambdaFqon(fqon: String, lambda: UUID) = Audited(fqon) { implicit request =>
-    
-    val path = new ResourcePath(fqon, s"lambdas/$lambda/apiendpoints")
-    
-    this.AuthorizedResourceList(path, "apiendpoint.view", request.queryString)
-    
-    handleExpandResourceResult(
-      ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", lambda.toString),
-    request.queryString)
-  }  
-
   import com.galacticfog.gestalt.meta.api.output.toLink
   
   def mkPath2(fqon: String, path: String) = {
