@@ -196,6 +196,9 @@ GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceCon
 ### Delete a resource-type
 DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId controllers.DeleteController.hardDeleteResourceType(fqon: String, typeId: java.util.UUID)
 
+### Delete a type-property
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:id 	controllers.DeleteController.hardDeleteTypeProperty(fqon: String, id: java.util.UUID)
+
 
 DELETE 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.DeleteController.hardDeleteResource(fqon: String, path: String = "")
 
