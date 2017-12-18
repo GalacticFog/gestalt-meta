@@ -146,6 +146,16 @@ package object util {
     QueryString.singleBoolean(qs,"expand")
   }
 
+  def extractQueryParameters(qs: Map[String, Seq[String]]): Try[Seq[(String, String)]] = {
+    val pairs = (qs - "expand") map {
+      case (name, Seq(value)) => Success(name -> value)
+      case (name, Nil)        => Failure(BadRequestException(s"Query parameter '${name}' did not include a search term."))
+      case (name, _)          => Failure(BadRequestException(s"Query parameter '${name}' included multiple search terms."))
+    }
+    Try{pairs.toSeq.map(_.get)}
+  }
+
+
   abstract class TryHandler[A,B](success: A => B)(failure: Throwable => B) {
     def handle(in: Try[A]) = in match {
       case Success(out) => success(out)

@@ -137,7 +137,7 @@ class ResourceController @Inject()(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds
       ) map (_._1)
-    } else Resource.listFromPath(path.path)
+    } else Resource.listFromPath(path.path, qs)
   }
   
   def FqonNotFound(fqon: String) = {
@@ -277,7 +277,7 @@ class ResourceController @Inject()(
     log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
 
-    if (rp.isList) AuthorizedResourceList(rp, action) 
+    if (rp.isList) AuthorizedResourceList(rp, action, request.queryString)
     else AuthorizedResourceSingle(rp, action)
   }  
   
@@ -309,14 +309,14 @@ class ResourceController @Inject()(
     }
   }
   
-  private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String)
+  private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: Map[String, Seq[String]])
       (implicit request: SecuredRequest[_]): Result = {
 
     log.debug(s"AuthorizedResourceList(${path.path}, $action)")
 
     val rss = lookupSeqs.get(path.targetTypeId).fold {
       log.debug(s"Executing standard lookup function for resource list: ${path.path}")
-      Resource.listFromPath(path.path)
+      Resource.listFromPath(path.path, qs)
     }{ f => f(path, request.identity, request.queryString).toList }
     
     AuthorizeList(action) {
@@ -432,7 +432,7 @@ class ResourceController @Inject()(
    * org that is owned by itself.
    */
   def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
-    Resource.listFromPath(path.path) filter { o =>
+    Resource.listFromPath(path.path, qs) filter { o =>
       o.properties.get("fqon") != path.fqon  
     }
   }
@@ -446,7 +446,7 @@ class ResourceController @Inject()(
     val rs = if (Resource.isTopLevel(path.path)) {
       val org = fqid(Resource.getFqon(path.path))
       ResourceFactory.findChildrenOfType(org, org, ResourceIds.Entitlement)
-    } else Resource.listFromPath(path.path)
+    } else Resource.listFromPath(path.path, qs)
 
     if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
   }
@@ -745,7 +745,7 @@ class ResourceController @Inject()(
 
     val path = new ResourcePath(fqon, s"containers/$containerId/apiendpoints")
 
-    this.AuthorizedResourceList(path, "apiendpoint.view")
+    this.AuthorizedResourceList(path, "apiendpoint.view", request.queryString)
 
     handleExpandResourceResult(
       ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", containerId.toString),
@@ -760,7 +760,7 @@ class ResourceController @Inject()(
     
     val path = new ResourcePath(fqon, s"lambdas/$lambda/apiendpoints")
     
-    this.AuthorizedResourceList(path, "apiendpoint.view") 
+    this.AuthorizedResourceList(path, "apiendpoint.view", request.queryString)
     
     handleExpandResourceResult(
       ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", lambda.toString),

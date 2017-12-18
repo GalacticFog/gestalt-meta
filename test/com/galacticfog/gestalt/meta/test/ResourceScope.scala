@@ -421,7 +421,7 @@ trait ResourceScope extends Scope with Mockito {
       owner: ResourceOwnerLink = dummyOwner, 
       org: UUID = dummyRootOrgId, 
       properties: Option[Hstore] = None,
-      description: Option[String] = None ) = {
+      description: Option[String] = None ): Instance = {
 
     GestaltResourceInstance(
       id = id,
