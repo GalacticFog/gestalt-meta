@@ -71,5 +71,8 @@ object TypeMethods {
      */
     pjson.as[JsObject] ++ Json.obj("property_defs" -> jsonProperties)
   }  
-  
+ 
+  def typeId(name: String): Option[UUID] = {
+    TypeFactory.findByName(name) map { _.id }
+  }  
 }

@@ -30,7 +30,7 @@ import javax.inject.Singleton
 
 import com.galacticfog.gestalt.json.Js
 import play.api.mvc.{RequestHeader, Result}
-
+import com.galacticfog.gestalt.meta.api.output._
 
 @Singleton
 class PatchController @Inject()( 
@@ -83,31 +83,31 @@ class PatchController @Inject()(
     )
   }
   
-  import com.galacticfog.gestalt.meta.api.output._
   def patchProperty(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
     log.debug(s"patchProperty($fqon, $id)")
     PropertyFactory.findById(id).fold {
       Future.successful(NotFoundResult(s"Property with ID $id not found"))
     }{ prop =>
       val ops = JsonUtil.safeParse[Seq[PatchOp]](request.body)
+      
       PatchProperty.applyPatch(prop, PatchDocument(ops:_*)) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(u) => {
 
           val p1 = Js.find(u.as[JsObject], "/properties").get.as[JsObject]
-          val p2 = Js.parse[Map[String,JsValue]](p1).get.map { 
-            case (k,v) => (k, v.toString) 
-          }
-
-          val updated = for {
-            a <- Js.parse[Map[String,JsValue]](p1)
-            b  = a.map { case (k,v) => (k, v.toString) }
-            c <- Js.parse[GestaltTypeProperty] {
-              u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(p2))
-            }
-            d <- PropertyFactory.update(c, request.identity.account.id)
-          } yield d
           
+          val updated = for {
+            jsonProps <- Js.parse[Map[String,JsValue]](p1)
+            stringProps  = jsonProps.map { case (k,v) => (k, v.toString) }
+            resource <- Js.parse[GestaltTypeProperty] {
+              u.as[JsObject] ++ Json.obj("properties" -> Json.toJson(stringProps))
+            }
+            d <- {
+              val result = PropertyFactory.update(resource, request.identity.account.id)
+              result
+            }
+          } yield d
+
           updated match {
             case Failure(e) => HandleExceptionsAsync(e)
             case Success(up) => Future.successful(Accepted(Output.renderTypePropertyOutput(up, Some(META_URL))))

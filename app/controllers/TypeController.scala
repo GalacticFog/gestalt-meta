@@ -132,20 +132,13 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     //    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
   }
   
-//  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
-//
-//    if (getExpandParam(qs)) {
-//      expandOutput(rs.asInstanceOf[Seq[GestaltResourceType]], qs, baseUri)(Output.renderResourceTypeOutput)
-//    }
-//    else Ok(Output.renderLinks(rs, baseUri))
-//  }  
-  
+
   private[controllers] def findCovariantTypes(qs: Map[String, Seq[String]]): Seq[GestaltResourceType] = {
     if (qs.get("type").isEmpty) List.empty
     else if (qs("type").size > 1) {
       throw new BadRequestException("Query parameter 'type' may only be given once. Found multiple.")
     } else {
-      typeId(qs("type").head).fold {
+      TypeMethods.typeId(qs("type").head).fold {
         throw new ResourceNotFoundException(s"Type with ID '${qs("type")}' not found.")
       } { tid =>
         ResourceSelector.findTypesWithVariance(CoVariant(tid))
@@ -206,12 +199,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       newtype
     }
   }
-  
-  
-  /* DELETE /orgs/:uuid/resourcetypes/:uuid */
-  def deleteResourceTypeById(org: UUID, id: UUID) = GestaltFrameworkAuthAction(Some(org)) { implicit request =>
-    ???    
-  }  
 
   /** 
    * Get a list of ResourceTypes 
@@ -233,24 +220,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       }
     }
   }
-  
-//  /**
-//   * Render a ResourceType to JSON.
-//   * Uses the provided querystring to determine whether or not to expand property definitions inline.
-//   * 
-//   * @param p the type to render
-//   * @param qs the querystring sent with the original request
-//   * @param metaUrl address of the hosting meta server (used in creating resource link hrefs)
-//   */
-//  def renderType(p: GestaltResourceType, qs: Map[String, Seq[String]], metaUrl: String): Try[JsValue] = Try {
-//    val typeJson = Output.renderResourceTypeOutput(p, Some(metaUrl))
-//    if (singleParamBoolean(qs, "withprops")) {
-//      log.debug("Found 'withprops' query param - looking up type-properties for expansion...")
-//      TypeMethods.withPropertiesExpanded(p.id, typeJson, metaUrl)
-//    } else typeJson
-//  }
-  
-  
+
   /** 
    * Convert GestaltResourceTypeInut to GestaltResourceType 
    */
@@ -372,12 +342,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     }
   }
   
-  def typeId(name: String): Option[UUID] = {
-    TypeFactory.findByName(name) map { _.id }
-  }
-  
-  private def maxwidth(ps: Seq[GestaltTypeProperty]) = {
-    ps map ( _.name.size ) reduceLeft ( _ max _)
-  }
-  
+
+
 }
