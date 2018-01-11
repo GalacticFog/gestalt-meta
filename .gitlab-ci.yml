@@ -35,12 +35,12 @@ variables:
   RABBIT_HTTP_PORT: "15672"
   RABBIT_ROUTE: test-route
   RABBIT_EXCHANGE: policy
+  LEGACY_CI_URL: "https://gtw1.demo.galacticfog.com/ci/legacy-ci"
 
 test:
   stage: test
   services:
     - galacticfog/fat-postgres:9.4
-    #- galacticfog/gestalt-security:2.2.5-SNAPSHOT-b246c46b
   script:
     - sbt clean update test docker:stage
   artifacts:
@@ -60,9 +60,9 @@ docker-publish:
     - docker build -t $DOCKER_IMG:$DOCKER_TAG .
     - docker push     $DOCKER_IMG:$DOCKER_TAG
     - |
-      if [ ${CI_COMMIT_REF_NAME} == "master" ]; then 
-         docker tag $DOCKER_IMG:$DOCKER_TAG $DOCKER_IMG:latest 
-         docker push $DOCKER_IMG:latest 
+      if [ ${CI_COMMIT_REF_NAME} == "master" ]; then
+         docker tag $DOCKER_IMG:$DOCKER_TAG $DOCKER_IMG:latest
+         docker push $DOCKER_IMG:latest
       fi
     - docker rmi      $DOCKER_IMG:$DOCKER_TAG
 
@@ -91,17 +91,18 @@ github-publish:
   script: 
     - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
-    - /usr/local/bin/update-deployed-app.sh  marathon.mesos:8080 gestalt-test-tasks/meta  $DOCKER_IMG:$DOCKER_TAG
-  allow_failure: true
+    - http --check-status -a "$API_KEY":"$API_SECRET" --ignore-stdin $LEGACY_CI_URL project=$CI_PROJECT_NAME image=$DOCKER_IMG:$DOCKER_TAG git_ref=$CI_COMMIT_REF_NAME git_sha=$CI_COMMIT_SHA git_author="$GITLAB_USER_NAME"
   artifacts:
 
 auto-deploy-master:
   <<: *deploy_to_test
+  allow_failure: false
   only: 
     - master
 
 manual-deploy-non-master:
   <<: *deploy_to_test
+  allow_failure: true
   except: 
     - master
   when: manual
