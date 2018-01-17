@@ -15,8 +15,6 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val username = System.getenv("DATABASE_USERNAME")
   private lazy val password = System.getenv("DATABASE_PASSWORD")
   private lazy val timeout = System.getenv("DATABASE_TIMEOUT_MS")
-  private lazy val apigateway = System.getenv("GESTALT_APIGATEWAY")
-  private lazy val lambda = System.getenv("GESTALT_LAMBDA")
 
   lazy val securityKey = System.getenv("GESTALT_SECURITY_KEY")
   lazy val securitySecret = System.getenv("GESTALT_SECURITY_SECRET")
@@ -31,10 +29,7 @@ object EnvConfig extends JdbcConfiguration {
   private lazy val security_protocol = System.getenv("GESTALT_SECURITY_PROTOCOL")
   private lazy val security_hostname = System.getenv("GESTALT_SECURITY_HOSTNAME")
   private lazy val security_port = sys.env.get("GESTALT_SECURITY_PORT")
-  
-  val gatewayUrl  = apigateway
-  val lambdaUrl   = lambda
-  
+
   val databaseUrl = {
     "jdbc:postgresql://%s:%s/%s?user=%s&password=*****".format(host, port, dbname, username)
   }
@@ -48,10 +43,8 @@ object EnvConfig extends JdbcConfiguration {
   
   private val rabbit = Json.obj("url" -> rabbitUrl, "exchange" -> rabbitExchange, "route" -> rabbitRoute)
   
-  
   def isValid() = {
     !(empty(host) && empty(port) && empty(dbname) && empty(username) && empty(password) &&
-        empty(apigateway) && empty(lambda) &&
         empty(security_protocol) && empty(security_hostname) &&
         empty(rabbitHost) &&
         empty(rabbitPort) &&
@@ -75,8 +68,6 @@ object EnvConfig extends JdbcConfiguration {
     s"""
       |EnvConfig(
       |  database = ${databaseUrl},
-      |  apigateway = ${gatewayUrl},
-      |  lambda = ${lambdaUrl},
       |  security = ${securityUrl},
       |  events = ${Json.prettyPrint(rabbit)})
     """.stripMargin

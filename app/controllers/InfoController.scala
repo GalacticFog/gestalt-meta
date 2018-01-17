@@ -22,7 +22,12 @@ class InfoController @Inject()(
     metaHealth: MetaHealth)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  case class AboutMeta(status: String, url: String, time: String, build_info: JsValue, services: Map[String,ServiceInfo])
+  case class AboutMeta( status: String,
+                        url: String,
+                        time: String,
+                        build_info: JsValue,
+                        services: Map[String,ServiceInfo],
+                        dockerImage: Option[String] )
   case class ServiceInfo(url: String, status: String)
 
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
@@ -32,21 +37,21 @@ class InfoController @Inject()(
    * TODO: 
    */
   def about() = Audited() { implicit request =>
-    val result = AboutMeta( 
-        status     = "OK",
-        url        = META_URL,
-        time       = org.joda.time.DateTime.now.toString,
-        build_info = Json.parse(BuildInfo.toJson), 
-        services   = Map(
-            "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
-            "gateway"        -> ServiceInfo(url = EnvConfig.gatewayUrl, status = "OK"),
-            "gestalt-lambda" -> ServiceInfo(url = EnvConfig.lambdaUrl, status = "OK"),
-            "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")))
-            
+    val result = AboutMeta(
+      status     = "OK",
+      url        = META_URL,
+      time       = org.joda.time.DateTime.now.toString,
+      build_info = Json.parse(BuildInfo.toJson),
+      services   = Map(
+        "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
+        "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")
+      ),
+      dockerImage = sys.env.get("MARATHON_APP_DOCKER_IMAGE")
+    )
     Ok(Json.toJson(result))
-  }  
-  
-  
+  }
+
+
   /**
    * Unauthenticated health-check endpoint. Gives status as simple healthy/unhealthy.
    */
