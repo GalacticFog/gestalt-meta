@@ -39,8 +39,6 @@ class InfoController @Inject()(
         build_info = Json.parse(BuildInfo.toJson), 
         services   = Map(
             "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
-            "gateway"        -> ServiceInfo(url = EnvConfig.gatewayUrl, status = "OK"),
-            "gestalt-lambda" -> ServiceInfo(url = EnvConfig.lambdaUrl, status = "OK"),
             "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")))
             
     Ok(Json.toJson(result))
