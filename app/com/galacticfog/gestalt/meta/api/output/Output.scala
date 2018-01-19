@@ -93,36 +93,7 @@ object Output {
     
     patch.applyPatch(r.as[JsObject]).get
   }
-  
-  private def compactType(r: GestaltResourceType, metaUrl: Option[String] = None) = {
-    
-    val res = GestaltResourceTypeOutput(
-      id = r.id,
-      name = r.name,
-      extend = jsonTypeName(r.extend),
-      resource_type = jsonTypeName(Option(r.typeId)).get,
-      resource_state = JsString(ResourceState.name(r.state)),
 
-      org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, metaUrl),
-      owner = Json.toJson(r.owner),
-      description = r.description,
-      created = Json.toJson(r.created),
-      modified = Json.toJson(r.modified),
-      properties = jsonHstore(r.properties),
-      variables = jsonHstore(r.variables),
-      tags = jsonArray(r.tags),
-      auth = jsonHstore(r.auth),
-      property_defs = jsonTypePropertyLinks(r.id))
-      
-    // this renders the properties
-    val renderedProps = renderTypeProperties(r.id, r.id, r.properties)//renderInstanceProperties(r.typeId, r.id, r.properties)
-    val result = Json.toJson(res.copy(
-      properties = renderedProps.orElse(Some(Json.obj()))
-    ))
-    
-    compact(result, metaUrl)
-  }  
-  
   def compactInstance(r: GestaltResourceInstance, metaUrl: Option[String] = None): JsValue = {
 
     val res = GestaltResourceOutput(
@@ -190,10 +161,10 @@ object Output {
     patch.applyPatch(result.as[JsObject]).get
   }  
   
-  def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
+  def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None): JsValue = {
     val res = mkTypeOutput(r)    
     val props = res.properties.get.validate[Map[String,String]].get
-    val renderedProps = renderTypeProperties(r.id, r.id, Some(props))
+    val renderedProps = renderTypeProperties(ResourceIds.ResourceType, Some(props))
     
     Json.toJson(res.copy(properties = renderedProps))
   }
@@ -311,7 +282,7 @@ object Output {
     }
   }
   
-  def renderTypeProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
+  def renderTypeProperties(typeId: UUID, properties: Option[Hstore]): Option[JsValue] = {
     /* Get a Map of the properties defined for the current ResourceType. */
 
     val givenProps = properties getOrElse Map()
