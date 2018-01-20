@@ -56,7 +56,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         else if (qs.contains("type")) findCovariantTypes(qs)
         else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
       }
-      Ok(handleExpandType(tpes, qs, Some(META_URL)))
+      Ok(handleExpandType(tpes, qs, META_URL))
     }
   }  
   

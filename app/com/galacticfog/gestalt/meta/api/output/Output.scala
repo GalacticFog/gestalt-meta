@@ -388,11 +388,10 @@ object Output {
     if (typeId.isEmpty) None
     else {
       val tid = typeId.get
-      TypeFactory.findById(tid).fold {
-        ReferenceFactory.findById(tid, tid).fold {
-          illegal(s"Unknown type_id '${tid}'")
-        }{ ref => Option(JsString(ref.name)) }
-      }{ tpe => Option(JsString(tpe.name)) }
+      Option(JsString(
+        TypeFactory.findById(tid).map(_.name)
+          getOrElse ResourceName(tid)
+      ))
     }
   }
   

@@ -221,8 +221,14 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
    * Render a list of GestaltResourceTypes to JSON based on the given querystring. If the 'expand'
    * querystring param is true, render full resource. If set to false, render a Link.
    */
-  def handleExpandType(rs: Seq[GestaltResourceType], qs: Map[String, Seq[String]], metaUrl: Option[String] = None) = {
-    handleExpand(rs, qs, metaUrl)(Output.renderResourceTypeOutput)
+  def handleExpandType(rs: Seq[GestaltResourceType], qs: Map[String, Seq[String]], metaUrl: String) = {
+    val expansion = if (QueryString.singleBoolean(qs, "withprops")) {
+      (r: GestaltResourceType, _: Option[String]) => {
+        val typeJson = Output.renderResourceTypeOutput(r)
+        TypeMethods.withPropertiesExpanded(r.id, typeJson, metaUrl)
+      }
+    } else Output.renderResourceTypeOutput(_,_)
+    handleExpand(rs, qs, Some(metaUrl))(expansion)
   }
   
   /**
