@@ -329,9 +329,11 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     HandleExceptions(ex)
   }
 
+  
   import com.galacticfog.gestalt.meta.auth.ActionMethods
   import play.api.mvc.Result
-
+  
+  
   def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
       implicit request: SecuredRequest[_]): MetaRequest = {
 
@@ -408,8 +410,9 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parent.id.toString))
     val definedAt = Json.parse(parent.properties.get("parent"))
     JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
-  }  
-   def resolveRuleTypeFromString(json: JsValue): Try[UUID] = Try {
+  }
+  
+  def resolveRuleTypeFromString(json: JsValue): Try[UUID] = Try {
     Js.find(json.as[JsObject], "/resource_type").fold {
       throw new BadRequestException("You must provide a resource_type")
     } { tpe =>

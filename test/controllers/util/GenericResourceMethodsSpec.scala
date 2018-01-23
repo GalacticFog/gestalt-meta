@@ -33,9 +33,9 @@ import scala.util.Success
 class GenericResourceMethodsSpec extends PlaySpecification
   with GestaltSecurityMocking with ResourceScope
   with BeforeAll with JsonMatchers with JsonInput with DefaultAwaitTimeout with FutureAwaits {
-
+  
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
-
+  
   override def beforeAll(): Unit = {
     pristineDatabase()
     val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
@@ -48,13 +48,13 @@ class GenericResourceMethodsSpec extends PlaySpecification
       user.account.description
     )
   }
-
+  
   sequential
-
+  
   abstract class TestScope extends Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
+    
     val mockProviderMethods = mock[ProviderMethods]
     val injector =
       new GuiceApplicationBuilder()
@@ -393,4 +393,115 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
   }
 
+  
+  
+  import com.galacticfog.gestalt.data.bootstrap.{SystemType, TypeProperty}
+  import com.galacticfog.gestalt.data.TypeFactory
+  import scala.concurrent.Future
+  
+  //lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID)
+  "lookupProvider" should {
+    
+    "succeed when given good information" in {
+      
+      val providerTypeId = uuid()
+
+      SystemType(
+        dummyRootOrgId, dummyOwner,
+        typeId   = providerTypeId,
+        typeName = providerTypeId.toString,
+        extend = Some(ResourceIds.Provider)
+      ).save()
+      
+      val tpe = TypeFactory.findById(providerTypeId)
+      tpe must beSome      
+      
+      val provider = createInstance(providerTypeId, uuid.toString)
+      provider must beSuccessfulTry
+      
+      val providerId = provider.get.id
+      
+      val impl = new GenericResourceMethodsImpl(new DefaultGenericProviderManager(mock[WSClient]))
+      val payload = Json.obj("name" -> "foo", "properties" -> Json.obj("provider" -> providerId.toString))
+      
+      await(impl.lookupProvider(payload, uuid(), providerTypeId)).id === providerId
+    }
+    
+    "fail when payload is missing `properties.provider`" in {
+      val providerTypeId = uuid()
+
+      SystemType(
+        dummyRootOrgId, dummyOwner,
+        typeId   = providerTypeId,
+        typeName = providerTypeId.toString,
+        extend = Some(ResourceIds.Provider)
+      ).save()
+      
+      val tpe = TypeFactory.findById(providerTypeId)
+      tpe must beSome      
+      
+      val provider = createInstance(providerTypeId, uuid.toString)
+      provider must beSuccessfulTry
+      
+      val providerId = provider.get.id
+      
+      val impl = new GenericResourceMethodsImpl(new DefaultGenericProviderManager(mock[WSClient]))
+      
+      // Missing 'properties.provider'
+      val payload = Json.obj("name" -> "foo")
+      
+      await(impl.lookupProvider(payload, uuid(), providerTypeId)) must throwA[BadRequestException]
+    }
+    
+    "fail when there is no resource with the given provider ID" in {
+      val providerTypeId = uuid()
+
+      SystemType(
+        dummyRootOrgId, dummyOwner,
+        typeId   = providerTypeId,
+        typeName = providerTypeId.toString,
+        extend = Some(ResourceIds.Provider)
+      ).save()
+      
+      val tpe = TypeFactory.findById(providerTypeId)
+      tpe must beSome      
+      
+      val providerId = uuid()
+      
+      val impl = new GenericResourceMethodsImpl(new DefaultGenericProviderManager(mock[WSClient]))
+      
+      // Missing 'properties.provider'
+      val payload = Json.obj("name" -> "foo")
+      
+      await(impl.lookupProvider(payload, uuid(), providerTypeId)) must throwA[BadRequestException]
+    }
+    
+    "fail if providerType is not a sub-type of provider" in {
+      val providerTypeId = uuid()
+
+      // This type does NOT extend Provider
+      SystemType(
+        dummyRootOrgId, dummyOwner,
+        typeId   = providerTypeId,
+        typeName = providerTypeId.toString
+      ).save()
+      
+      val tpe = TypeFactory.findById(providerTypeId)
+      tpe must beSome      
+      
+      val notProviderInstance = createInstance(providerTypeId, uuid.toString)
+      notProviderInstance must beSuccessfulTry
+      
+      // We have the ID of a valid, existing resource, but it is NOT a sub-type of Provider.
+      val providerId = notProviderInstance.get.id
+      
+      val impl = new GenericResourceMethodsImpl(new DefaultGenericProviderManager(mock[WSClient]))
+      val payload = Json.obj("name" -> "foo", "properties" -> Json.obj("provider" -> providerId.toString))
+      
+      await(impl.lookupProvider(payload, uuid(), providerTypeId)) must throwA[BadRequestException]
+      
+    }
+    
+  }
+  
 }

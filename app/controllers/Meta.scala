@@ -302,6 +302,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
           }.toMap
 
         log.debug("Parsed provider-type as : " + v.as[String])
+        
+        log.debug("VALID PROVIDERS")
+        validProviderTypes.foreach { case (k,v) => log.debug(s"[$v] - $k") }
+          
         validProviderTypes.get(v.as[String]).fold {
           throw new BadRequestException(s"Unknown provider type : '${v.as[String]}'")
         }{ id => id }

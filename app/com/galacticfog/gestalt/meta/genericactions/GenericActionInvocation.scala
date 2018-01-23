@@ -46,13 +46,16 @@ case class GenericActionInvocation(action: String,
                                    provider: GestaltResourceInstance,
                                    resource: Option[GestaltResourceInstance] = None,
                                    actionPayload: Option[JsValue] = None ) {
-  def toJson(): JsObject = Json.obj(
-    "action" -> action,
-    "context" -> context.toJson(),
-    "provider" -> Output.renderInstance(provider),
-    "resource" -> resource.map(Output.renderInstance(_)),
-    "actionPayload" -> actionPayload
-  )
+  def toJson(): JsObject = {
+
+    Json.obj(
+      "action" -> action,
+      "context" -> context.toJson(),
+      "provider" -> Output.renderInstance(provider),
+      "resource" -> resource.map(Output.renderInstance(_)),
+      "actionPayload" -> actionPayload
+    )
+  }
 }
 
 

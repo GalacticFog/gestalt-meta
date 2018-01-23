@@ -181,6 +181,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
       ResourceFactory.findById(ResourceIds.SystemConfig).fold {
         logger.info("did not recover security credentials from system config")
         Option.empty[(String, String)]
+        
       }{ config =>
         logger.info("recovered security credentials from system config")
         for {
@@ -198,6 +199,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
 
   }
 
+  
   private def discoverSecurityConfig: Option[GestaltSecurityConfig] = {
     logger.info("> checking environment for Gestalt security config")
 
@@ -209,7 +211,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
       case HTTP => 80
       case HTTPS => 443
     }
-
+    
     def checkProtocol(proto: String): Protocol = proto match {
       case "HTTP" => HTTP
       case "http" => HTTP
