@@ -26,6 +26,7 @@ class InfoController @Inject()(
                        url: String,
                        time: String,
                        build_info: JsValue,
+                       meta_repo_build_info: JsValue,
                        services: Map[String,ServiceInfo],
                        docker_image: Option[String] )
   case class ServiceInfo(url: String, status: String)
@@ -42,6 +43,7 @@ class InfoController @Inject()(
       url        = META_URL,
       time       = org.joda.time.DateTime.now.toString,
       build_info = Json.parse(BuildInfo.toJson),
+      meta_repo_build_info = Json.parse(com.galacticfog.gestalt.data.BuildInfo.toJson),
       services   = Map(
         "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
         "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")

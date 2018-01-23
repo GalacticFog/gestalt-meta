@@ -116,7 +116,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "match_actions"    -> Json.toJson(List(action)).toString,
+                "actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "lambda" -> lambda.toString,
                 "parent"     -> policy.id.toString)))
@@ -223,7 +223,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "match_actions"    -> Json.toJson(List(action)).toString,
+                "actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "parent"     -> policy.id.toString)))
         (policy.id, rule.get.id)
