@@ -119,9 +119,9 @@ class LambdaController @Inject()(
 
               if (Seq(200, 201).contains(result.status)) {
                 log.info("Successfully created Lambda in backend system.")
-                setNewEntitlements(org, meta.id, caller, Some(parent.id))
                 Created(RenderSingle(meta))
               } else {
+                
                 log.error("Error creating Lambda in backend system.")
                 updateFailedBackendCreate(caller, meta, ApiError(result.status, result.body).throwable)
               }              

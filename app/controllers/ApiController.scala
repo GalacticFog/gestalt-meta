@@ -148,7 +148,6 @@ class ApiController @Inject()(
           client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created Endpoint in GatewayManager.")
-              setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
               Created(RenderSingle(metaEndpoint))
             } else {
               log.error("Error creating Endpoint in GatewayManager.")
