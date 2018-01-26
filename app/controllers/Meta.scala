@@ -283,7 +283,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newResourceResult2(org, typeid, parent, request.body) { resource =>
-      CreateWithEntitlements(org, resource, Some(parent)) match {
+      CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
       }    
@@ -609,7 +609,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
         val identity = user.account.id
                 
-        CreateResource(org, user, payload, providerType, Some(parentId)) match {
+        CreateWithEntitlements(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
@@ -785,7 +785,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
     for {
-      input    <- safeGetInputJson(json, Option(typeId))
+      input    <- toInput(json, Option(typeId))
       resource <- syncWithSecurity(org, typeId, input)(sc, mc)
     } yield resource
   }

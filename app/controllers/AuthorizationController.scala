@@ -220,7 +220,7 @@ class AuthorizationController @Inject()(
     val entitlement = for {
       parent <- findOrFail(typeId, resourceId)
       input  <- validateEntitlementPayload(org, parent.id, user, json, "create")
-      output <- CreateResource(org, user, json, ResourceIds.Entitlement, Some(resourceId))
+      output <- CreateWithEntitlements(org, user, json, ResourceIds.Entitlement, Some(resourceId))
     } yield output
 
     entitlement match {
@@ -298,7 +298,7 @@ class AuthorizationController @Inject()(
    * 
    */
   def toResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = Try {
-    safeGetInputJson(json) match {
+    toInput(json) match {
       case Failure(error) => throw error
       case Success(input) => {
         withInputDefaults(org, input, creator, Option(ResourceIds.Entitlement))

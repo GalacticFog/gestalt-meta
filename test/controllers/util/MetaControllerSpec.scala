@@ -20,7 +20,7 @@ import play.api.http.HttpVerbs
 
 import scala.util.Success
 
-class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking with ResourceScope with BeforeAll with JsonMatchers {
+class MetaControllerSpec  extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -64,6 +64,101 @@ class MetaControllerSpec  extends PlaySpecification with GestaltProviderMocking 
       controller.resolveTypeFromPayload(BadUUIDs.org) must throwAn[UnprocessableEntityException]
     }
 
+  }
+  
+import com.galacticfog.gestalt.data.bootstrap.ActionInfo
+import com.galacticfog.gestalt.data.bootstrap.LineageInfo
+import com.galacticfog.gestalt.data.bootstrap.SystemType
+
+  "CreateWithEntitlements(JSON)" should {
+    
+    "create a resource with appropriate entitlements when given good data" in new App {
+      
+      val parentTypeId = uuid()
+      val childTypeId = uuid()
+
+      val parentPrefix = "parent"
+      val childPrefix = "child"
+      
+      SystemType(dummyRootOrgId, dummyOwner,
+        typeId      = childTypeId, 
+        typeName    = childTypeId.toString,
+        extend      = Some(ResourceIds.Resource)
+      ).withActionInfo(
+        ActionInfo(
+            prefix = childPrefix, 
+            verbs = Seq("spin", "flip"))    
+      ).save()      
+      
+      val childType = TypeFactory.findById(childTypeId)
+      childType must beSome
+      
+      SystemType(dummyRootOrgId, dummyOwner,
+        typeId      = parentTypeId, 
+        typeName    = parentTypeId.toString,
+        extend      = Some(ResourceIds.Resource)
+      ).withActionInfo(
+        ActionInfo(
+            prefix = parentPrefix, 
+            verbs = Seq.empty)
+      ).withLineageInfo(
+        LineageInfo(
+          parent_types = Seq(ResourceIds.Org),
+          child_types  = Option {
+            Seq(childTypeId)})            
+      ).save()
+
+      val parentType = TypeFactory.findById(parentTypeId)
+      parentType must beSome
+
+      /*
+       * Creating an instance of parent-type should set entitlements for itself plus child-types.
+       */
+
+      val mc = new MetaControllerUtils {}
+
+      val user = dummyAuthAccountWithCreds()
+      val parent = mc.CreateWithEntitlements(dummyRootOrgId, user, Json.obj("name" -> uuid.toString), parentTypeId, Some(dummyRootOrgId))
+      parent must beSuccessfulTry
+      
+      /*
+       * There should be 10 entitlements on parent: 
+       * 4 CRUD parent
+       * 4 CRUD child
+       * 2 custom child actions (spin, flip)
+       */
+      
+      val ents = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, parent.get.id)
+      ents.sortBy(_.name) foreach { e => println(s"*** : ${e.properties.get("action")}") }
+      
+      ents.size === 10
+      val actions = ents.map(_.properties.get("action"))
+      
+      actions.contains(parentPrefix + ".create") === true
+      actions.contains(parentPrefix + ".view") === true
+      actions.contains(parentPrefix + ".update") === true
+      actions.contains(parentPrefix + ".delete") === true
+      
+      actions.contains(childPrefix + ".create") === true
+      actions.contains(childPrefix + ".view") === true
+      actions.contains(childPrefix + ".update") === true
+      actions.contains(childPrefix + ".delete") === true
+      actions.contains(childPrefix + ".spin") === true
+      actions.contains(childPrefix + ".flip") === true
+
+    }
+    
+    "fail when given a bad type-id" in new App {
+      
+      val mc = new MetaControllerUtils {}
+      val user = dummyAuthAccountWithCreds()
+      val badTypeId = uuid()
+      
+      mc.CreateWithEntitlements(dummyRootOrgId, user, 
+          Json.obj("name" -> uuid.toString), 
+          badTypeId, Some(dummyRootOrgId)) must beFailedTry      
+    }
+    
   }
 
 //  "linked_provider creation" should {

@@ -115,7 +115,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     payload: JsValue,
     caller: AuthAccountWithCreds): Future[GestaltResourceInstance] = {
     
-    val input    = safeGetInputJson(payload, Some(ResourceIds.Lambda)).get
+    val input    = toInput(payload, Some(ResourceIds.Lambda)).get
     val lambdaId = input.id.getOrElse(UUID.randomUUID)
     
     // Set ID for the Lambda.
@@ -241,7 +241,7 @@ import com.galacticfog.gestalt.meta.providers._
     typeId: UUID,
     parentId: Option[UUID]): Try[GestaltResourceInstance] = {
     
-    safeGetInputJson(resourceJson) flatMap { input =>
+    toInput(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, Option(typeId))
       ResourceFactory.create(ResourceIds.User, caller.account.id)(
         withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
