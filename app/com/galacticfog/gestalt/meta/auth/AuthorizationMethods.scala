@@ -171,7 +171,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
       } map { ent =>
         
-        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
         
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],
