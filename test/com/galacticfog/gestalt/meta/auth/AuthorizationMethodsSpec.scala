@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.auth
 import org.specs2.specification.BeforeAll
 import org.specs2.specification.Scope
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.bootstrap.ActionInfo
 import com.galacticfog.gestalt.data.bootstrap.LineageInfo
@@ -11,8 +12,9 @@ import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-
+import com.galacticfog.gestalt.json.Js
 import controllers.util.GestaltSecurityMocking
+import java.util.UUID
 
 
 trait ResourceTypeScope extends Scope {
@@ -154,6 +156,85 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
 ////      failure
 ////    }
 //    
+  }
+  
+  "withIdentities" should {
+    
+    "add new identities to an existing entitlement.identities sequence" >> {
+      
+      val oldIdentities = Seq(uuid(), uuid(), uuid())
+      val newIdentities = Seq(uuid(), uuid())
+      val action = "foo." + uuid.toString
+      val (wrk, env) = this.createWorkspaceEnvironment()
+      
+      val e1 = createEntitlement(action, env, Some(oldIdentities))
+      val e2 = Auth.withIdentities(e1, newIdentities)
+
+      val ids = {
+        val eids = Entitlement.make(e2).properties.identities
+        eids must beSome
+        eids.get
+      }
+
+      val a: Seq[UUID] = Seq(ids:_*)
+      val b: Seq[UUID] = Seq((oldIdentities ++ newIdentities):_*)
+
+      (a.sorted == b.sorted) must beTrue      
+    }
+    
+    "accept an empty list of new identities" >> {
+      
+      val oldIdentities = Seq(uuid(), uuid(), uuid())
+      val newIdentities = Seq.empty
+      val action = "foo." + uuid.toString
+      val (wrk, env) = this.createWorkspaceEnvironment()
+      
+      val e1 = createEntitlement(action, env, Some(oldIdentities))
+      
+      val e2 = Auth.withIdentities(e1, newIdentities)
+
+      val ids = {
+        val eids = Entitlement.make(e2).properties.identities
+        eids must beSome
+        eids.get
+      }
+      
+      val a: Seq[UUID] = Seq(ids:_*)
+      val b: Seq[UUID] = Seq(oldIdentities:_*)
+
+      (a.sorted == b.sorted) must beTrue    
+    }
+    
+    "silently ensure that each identity occurs only once" >> {
+      
+      val usera = uuid()
+      val userb = uuid()
+      
+      val oldIdentities = Seq(usera, userb)
+      val newIdentities = Seq(uuid(), uuid())
+      
+      // these are redundant IDs and should be filtered out.
+      val newIds2 = Seq(usera, userb, usera, userb) 
+      
+      val action = "foo." + uuid.toString
+      val (wrk, env) = this.createWorkspaceEnvironment()
+      
+      val e1 = createEntitlement(action, env, Some(oldIdentities))
+      val e2 = Auth.withIdentities(e1, (newIdentities ++ newIds2))
+
+      val ids = {
+        val eids = Entitlement.make(e2).properties.identities
+        eids must beSome
+        eids.get
+      }
+
+      val a: Seq[UUID] = Seq(ids:_*)
+      val b: Seq[UUID] = Seq((oldIdentities ++ newIdentities):_*)
+
+      (a.sorted == b.sorted) must beTrue   
+    }
+    
+    
   }
 
 }

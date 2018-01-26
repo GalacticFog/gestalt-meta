@@ -28,7 +28,10 @@ import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.patch._
 import controllers.util.JsonUtil._
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-
+import com.galacticfog.gestalt.meta.auth.ActionMethods
+import play.api.mvc.Result
+  
+  
 trait MetaControllerUtils extends AuthorizationMethods {
 
   case class MetaRequest( caller: AuthAccountWithCreds,
@@ -57,19 +60,34 @@ trait MetaControllerUtils extends AuthorizationMethods {
     throw new BadRequestException(message)
 
   private[controllers] def CreateWithEntitlements(
-                                                   owningOrgId: UUID,
-                                                   creator: AuthAccountWithCreds,
-                                                   resource: ResourceLike,
-                                                   parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+      owningOrgId: UUID,
+      creator: AuthAccountWithCreds,
+      resource: ResourceLike,
+      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
 
     ResourceFactory.create(ResourceIds.User, creator.account.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
-      val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
-      r
-    }
+        val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+        r
+      }
   }
+  
+  protected[controllers] def CreateWithEntitlements(
+      org: UUID,
+      creator: AuthAccountWithCreds,
+      payload: JsValue,
+      typeId: UUID,
+      parentId: Option[UUID]): Try[GestaltResourceInstance] = {
 
-
+    for {
+      // Convert input JSON to in-memory resource
+      resource <- asResource(org, payload, creator, Some(typeId))
+      
+      // Persist resource to Meta along with appropriate Entitlements
+      result   <- CreateWithEntitlements(org, creator, resource, parentId)
+    } yield result
+  }  
+  
   /**
     *
     * @param baseUri if given this will be used to construct a URL pointing to resource in the EventMessage.
@@ -248,78 +266,33 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     Ok(handleExpandResource(rs, qs, metaUrl))
   }
 
-
-  
-//  def handleExpansion(rs: Seq[ResourceLike], qs: Map[String, Seq[String]], baseUri: Option[String] = None) = {
-//    if (getExpandParam(qs)) {
-//      Ok(Json.toJson(rs map { r => 
-//        Output.renderInstance(r.asInstanceOf[GestaltResourceInstance], baseUri) 
-//      }))
-//    }
-//    else Ok(Output.renderLinks(rs, baseUri))
-//  }
-
-
   protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
     NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
     
-  protected[controllers] def CreateResource(
-    org: UUID,
-    caller: AuthAccountWithCreds,
-    resourceJson: JsValue,
-    typeId: UUID,
-    parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-    
-    safeGetInputJson(resourceJson) flatMap { input =>
-      val tid = assertValidTypeId(input, Option(typeId))
-      ResourceFactory.create(ResourceIds.User, caller.account.id)(
-        withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
-          setNewEntitlements(org, res.id, caller, parentId)
-          res
-        }
-    }
-  }
+//  protected[controllers] def CreateWithEntitlements(
+//    org: UUID,
+//    caller: AuthAccountWithCreds,
+//    resourceJson: JsValue,
+//    typeId: UUID,
+//    parentId: Option[UUID]): Try[GestaltResourceInstance] = {
+//    
+//    toInput(resourceJson) flatMap { input =>
+//      val tid = assertValidTypeId(input, Option(typeId))
+//      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+//        withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
+//          setNewEntitlements(org, res.id, caller, parentId)
+//          res
+//        }
+//    }
+//  }
   
-  private[controllers] def CreateWithEntitlements(
-      owningOrgId: UUID,
-      resource: ResourceLike,
-      parentId: Option[UUID])(
-          implicit request: SecuredRequest[_]): Try[GestaltResourceInstance] = {
-    CreateWithEntitlements(owningOrgId, request.identity, resource, parentId)
-  }
 
+  
   /**
    * Convert a string FQON to corresponding Org UUID.
    */
   def fqid(fqon: String): UUID = orgFqon(fqon) map { _.id } getOrElse {
     throw new ResourceNotFoundException(s"Org with FQON '$fqon' not found.")
-  }
-
-  def inputToResource(org: UUID, creator: AuthAccountWithCreds, json: JsValue) = {
-    inputWithDefaults(
-      org = org, 
-      input = safeGetInputJson(json).get, 
-      creator = creator)
-  }  
-  
-  def inputWithDefaults(
-      org: UUID,
-      input: GestaltResourceInput,
-      typeId: Option[UUID],
-      creator: AuthAccountWithCreds) = {
-
-    val resid = if (input.id.isDefined) input.id else Some(UUID.randomUUID())
-    val owner = if (input.owner.isDefined) input.owner else Some(SecurityResources.ownerFromAccount(creator))
-    val state = if (input.resource_state.isDefined) input.resource_state else Some(ResourceStates.Active)
-    val tpeid = Option(assertValidTypeId(input, typeId))
-
-    val newInput = input.copy(
-        id = resid,
-        owner = owner,
-        resource_type = tpeid,
-        resource_state = state)
-
-    fromResourceInput(org, newInput)
   }
 
   def updateFailedBackendCreate(caller: AuthAccountWithCreds, metaResource: GestaltResourceInstance, ex: Throwable) = {
@@ -329,43 +302,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     HandleExceptions(ex)
   }
 
-  import com.galacticfog.gestalt.meta.auth.ActionMethods
-  import play.api.mvc.Result
 
-  def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
-      implicit request: SecuredRequest[_]): MetaRequest = {
-
-    object actions extends ActionMethods
-    val resource = j2r(org, request.identity, json, Some(resourceType))
-    actions.prefixFromResource(resource).fold {
-      throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
-    }{ prefix =>
-      val fqaction = "%s.%s".format(prefix, action)
-      MetaRequest(request.identity, resource, resourceParent, fqaction, Some(META_URL))
-    }
-  }
-
-  def newResourceRequest(org: UUID, resourceType: UUID, resourceParent: UUID, payload: Option[JsValue] = None)(
-      implicit request: SecuredRequest[JsValue]): MetaRequest = {
-    val json = payload getOrElse request.body
-    metaRequest(org, json, resourceType, resourceParent, "create")
-  }
-
-  def MetaCreate(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
-      implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Result) => Result = {
-    val (operations, options) = newResourceRequestArgs {
-      newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
-    }
-    SafeRequest(operations, options).Execute _
-  }
-
-  def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
-      implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
-    val (operations, options) = newResourceRequestArgs {
-      newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
-    }
-    SafeRequest(operations, options).ExecuteAsync _    
-  }      
       
   type JsonPayloadTransform = (JsValue, Map[String, String]) => Try[JsValue]
   
@@ -474,18 +411,56 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
   }
   
+  
+  
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
     val json = transformPayload(tpe, org, parent, payload).get
     
     MetaCreate(org, tpe, parent, Some(json)).apply { resource =>
-      CreateWithEntitlements(org, resource, Some(parent)) match {
+      //CreateWithEntitlements(org, resource, Some(parent)) match {
+      CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
       }
     }
   }
+  
+  def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
+      implicit request: SecuredRequest[_]): MetaRequest = {
+
+    object actions extends ActionMethods
+    val resource = j2r(org, request.identity, json, Some(resourceType))
+    actions.prefixFromResource(resource).fold {
+      throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
+    }{ prefix =>
+      val fqaction = "%s.%s".format(prefix, action)
+      MetaRequest(request.identity, resource, resourceParent, fqaction, Some(META_URL))
+    }
+  }
+
+  def newResourceRequest(org: UUID, resourceType: UUID, resourceParent: UUID, payload: Option[JsValue] = None)(
+      implicit request: SecuredRequest[JsValue]): MetaRequest = {
+    val json = payload getOrElse request.body
+    metaRequest(org, json, resourceType, resourceParent, "create")
+  }
+
+  def MetaCreate(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
+      implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Result) => Result = {
+    val (operations, options) = newResourceRequestArgs {
+      newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
+    }
+    SafeRequest(operations, options).Execute _
+  }
+
+  def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
+      implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
+    val (operations, options) = newResourceRequestArgs {
+      newResourceRequest(org, tpe, resourceParent = parent, payload = payload)
+    }
+    SafeRequest(operations, options).ExecuteAsync _    
+  }        
   
   private[controllers] def newResourceResult2(
       org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(f: GestaltResourceInstance => Result)(
@@ -508,6 +483,8 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
       f(resource)
     }
   }
+  
+  
   
   private[controllers] def resolveTypeFromPayload(json: JsValue): Option[UUID] = {
     Js.find(json.as[JsObject], "/resource_type") flatMap { typeIdentifier =>

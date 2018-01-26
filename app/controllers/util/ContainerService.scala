@@ -420,7 +420,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       for {
         metaResource <- Future.fromTry {
           log.debug("Creating container resource in Meta")
-          ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+          //ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+          
+          CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta container created: " + metaResource.id)
         service <- Future.fromTry {

@@ -264,6 +264,8 @@ trait ResourceScope extends Scope with Mockito {
     } yield (w, e)
   }
 
+  
+  
   def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): (UUID,UUID) = {
 
     val wrk1 = createInstance(ResourceIds.Workspace, wrkName,
@@ -436,6 +438,10 @@ trait ResourceScope extends Scope with Mockito {
   
   def uuid() = UUID.randomUUID
   
+  def save(r: GestaltResourceInstance, parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
+    ResourceFactory.create(ResourceIds.Org, dummyRootOrgId)(r, parentId)
+  }
+  
   def createResourceType(
       name:        String, 
       org:         UUID = dummyRootOrgId,
@@ -492,7 +498,6 @@ trait ResourceScope extends Scope with Mockito {
         }
       }
     }
-    println("*****ACTIONS.TOLIST:" + actions.toList)
     go(actions.toList, Seq.empty)
   }  
   
