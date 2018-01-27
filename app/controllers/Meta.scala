@@ -47,7 +47,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
-
+import play.api.Logger
 
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
@@ -283,7 +283,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     val org = fqid(fqon)
     val typeid = UUID.fromString(typ)
     newResourceResult2(org, typeid, parent, request.body) { resource =>
-      CreateWithEntitlements(org, resource, Some(parent)) match {
+      CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
       }    
@@ -493,7 +493,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     RequestOptions(user, 
       authTarget = Option(org), 
       policyOwner = Option(org), 
-      policyTarget = Option(j2r(org, user, payload, Option(ResourceIds.Provider))),
+      policyTarget = Option(jsonToResource(org, user, payload, Option(ResourceIds.Provider)).get),
       data = Option(Map("host" -> baseUrl)))    
   }
   
@@ -613,7 +613,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
         val identity = user.account.id
                 
-        CreateResource(org, user, payload, providerType, Some(parentId)) match {
+        CreateWithEntitlements(org, user, payload, providerType, Some(parentId)) match {
           case Failure(e) => {
             /*
              * TODO: Update Provider as 'FAILED' in Meta
@@ -789,7 +789,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
     for {
-      input    <- safeGetInputJson(json, Option(typeId))
+      input    <- toInput(json, Option(typeId))
       resource <- syncWithSecurity(org, typeId, input)(sc, mc)
     } yield resource
   }

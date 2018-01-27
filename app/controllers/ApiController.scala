@@ -74,7 +74,7 @@ class ApiController @Inject()(
        * of the already created Meta resource to 'FAILED'.
        */
       
-      CreateResource(org, caller, payload, ResourceIds.Api, Some(parent)) match {
+      CreateWithEntitlements(org, caller, payload, ResourceIds.Api, Some(parent)) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(resource) => {
           log.debug("Creating API in GatewayManager...")
@@ -129,7 +129,7 @@ class ApiController @Inject()(
         p <- validateNewEndpoint(request.body, a)
         ep <- gatewayMethods.toGatewayEndpoint(p, api)
         pWithAddlProps <- addUpstreamUrlAndProvider(p, ep.upstreamUrl, apiProvider)
-        r <- CreateResource(org, caller, pWithAddlProps, ResourceIds.ApiEndpoint, Some(api))
+        r <- CreateWithEntitlements(org, caller, pWithAddlProps, ResourceIds.ApiEndpoint, Some(api))
       } yield (r, ep)
 
       metaCreate match {
@@ -148,7 +148,6 @@ class ApiController @Inject()(
           client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
             if (Seq(200, 201).contains(result.status)) {
               log.info("Successfully created Endpoint in GatewayManager.")
-              setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
               Created(RenderSingle(metaEndpoint))
             } else {
               log.error("Error creating Endpoint in GatewayManager.")
@@ -205,7 +204,7 @@ class ApiController @Inject()(
   private[controllers] def validateNewEndpoint(js: JsValue, api: GestaltResourceInstance): Try[JsValue] = Try {
     val json = js.as[JsObject]
     val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
-
+    
     val path = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
       unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
     }
@@ -239,7 +238,7 @@ class ApiController @Inject()(
         
     patch.applyPatch(json).get
   }
-
+  
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,
     parent: UUID,
@@ -261,7 +260,6 @@ class ApiController @Inject()(
       controllers.util.EventsPost(action))
   }
   
-
 }
 
 

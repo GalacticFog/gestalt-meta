@@ -116,7 +116,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "match_actions"    -> Json.toJson(List(action)).toString,
+                "actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "lambda" -> lambda.toString,
                 "parent"     -> policy.id.toString)))
@@ -217,13 +217,15 @@ trait ResourceScope extends Scope with Mockito {
     val output = createInstance(ResourceIds.Policy,
         org = org,
         name = uuid,
+        properties = Option(Map("parent" -> 
+          Json.stringify(Json.obj("parent" -> Json.obj("id" -> parent.toString))))),
         parent = Option(parent)) map { policy =>
         val rule = createInstance(ruleType,
             org = org,
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "match_actions"    -> Json.toJson(List(action)).toString,
+                "actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "parent"     -> policy.id.toString)))
         (policy.id, rule.get.id)
@@ -264,6 +266,8 @@ trait ResourceScope extends Scope with Mockito {
     } yield (w, e)
   }
 
+  
+  
   def createWorkspaceEnvironment(org: UUID = dummyRootOrgId, workspaceProps: Map[String,String] = Map(), environmentProps: Map[String,String] = Map(), wrkName: String = uuid(), envName: String = uuid()): (UUID,UUID) = {
 
     val wrk1 = createInstance(ResourceIds.Workspace, wrkName,
@@ -436,6 +440,10 @@ trait ResourceScope extends Scope with Mockito {
   
   def uuid() = UUID.randomUUID
   
+  def save(r: GestaltResourceInstance, parentId: Option[UUID] = None): Try[GestaltResourceInstance] = {
+    ResourceFactory.create(ResourceIds.Org, dummyRootOrgId)(r, parentId)
+  }
+  
   def createResourceType(
       name:        String, 
       org:         UUID = dummyRootOrgId,
@@ -492,7 +500,6 @@ trait ResourceScope extends Scope with Mockito {
         }
       }
     }
-    println("*****ACTIONS.TOLIST:" + actions.toList)
     go(actions.toList, Seq.empty)
   }  
   

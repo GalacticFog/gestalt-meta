@@ -24,19 +24,21 @@ import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
 
 import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
-
+import com.galacticfog.gestalt.patch._
 
 trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   //private val log = Logger(this.getClass)
   
-  
-  def normalizeActions(prefix: String, actions: Seq[String]): Seq[String] = {
-    ???
-  }
-  
   /**
+   * Ensure an identity has entitlements for the given actions on a resource.
+   * First looks at the existing entitlements on a resource ensuring the identity is included. If there
+   * is an action in the list for which there is no existing entitlement, a new one is created for the
+   * given identity
    * 
+   * @param caller the caller of this function (user) 
+   * @param identity the user or group ID to grant entitlements to
+   * @param resource the Resource to set entitlements on
    * @param actions list of actions to grant user on the resource.
    */
   def grant(caller: UUID, identity: UUID, resource: UUID, actions: String*): Seq[Try[GestaltResourceInstance]] = {
@@ -55,9 +57,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
         if (existingActions.contains(a)) {
           val eid = existingActions(a)
-          
+
           log.debug(s"Found existing entitlement: [$eid.id] - UPDATING")
-          updateEntitlement(caller, eid, Seq(identity)) match {
+          addIdentities(caller, eid, Seq(identity)) match {
             case Failure(e) => {
               log.error(s"Failed updating Entitlement ${a}${eid.id}': ${e.getMessage}")
               Failure(e)
@@ -84,12 +86,14 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }
   
-  def newEntitlement(action: String, identities: Seq[UUID]) = {
-    //Entitlement(
-    ???
-  }
-  
-  def updateEntitlement(
+  /**
+   * Add one or more identities to an Entitlement and persist.
+   * 
+   * @param caller the caller of this function (user)
+   * @param ent the entitlement to add identities to
+   * @param identities list of identitites to add to the entitlement
+   */
+  def addIdentities(
       caller: UUID, 
       ent: GestaltResourceInstance, 
       identities: Seq[UUID]): Try[GestaltResourceInstance] = {
@@ -100,20 +104,24 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     ResourceFactory.update(updated, caller)
   }
   
-  def withIdentities(ent: GestaltResourceInstance, ids: Seq[UUID]): GestaltResourceInstance = {
+  /**
+   * Merge a list of identities into existing entitlement.identities
+   * 
+   * @param ent the Entitlement to modify
+   * @param ids list of identities to add to the existing identities list on the Entitlement
+   */
+  private[auth] def withIdentities(ent: GestaltResourceInstance, ids: Seq[UUID]): GestaltResourceInstance = {
     val props = ent.properties.get
     val currentIds = getIdentities(ent)
     val newIds = (ids.toSet ++ currentIds.toSet)
-    
-    log.debug("CURRENT-IDS : " + currentIds)
-    log.debug("NEW-IDS     : " + newIds)
-    
-    val t = Option((props ++ Map("identities" -> Json.stringify(Json.toJson(newIds)))))
-    log.debug("T           : " + t)
-    ent.copy(properties = t
-      )
+
+    ent.copy(properties = 
+      Option((props ++ Map("identities" -> Json.stringify(Json.toJson(newIds))))))
   }
   
+  /**
+   * Get the list of identities set for the given Entitlement
+   */
   def getIdentities(ent: GestaltResourceInstance): Seq[UUID] = {
     val ids = ent.properties.get("identities")
     val idarray = Js.parse[Seq[String]](Json.parse(ids)).getOrElse {
@@ -122,12 +130,18 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     idarray.map { i => UUID.fromString(i) }    
   }
   
+  /**
+   * Get list of entitlements that are set on a resource.
+   */
   def findEntitlementsByResource(resource: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
   }
 
   /**
+   * Set entitlements on a new resource.
    * 
+   * @param resource the resource to set entitlements on
+   * @param creator the user that is setting the entitlements (caller)
    * @param parent the parent of the new Resource
    */
   def setNewEntitlements(
@@ -136,6 +150,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       creator: AuthAccountWithCreds,
       parent: Option[UUID]) = {
 
+    // Get the target resource so we can learn its type
     val res = ResourceFactory.findById(resource) getOrElse {
       throw new IllegalArgumentException(s"Resource with ID '$resource' not found.")
     }
@@ -148,14 +163,14 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       val actions = getNewResourceActionSet(res.typeId).toSeq
       
       //if (log.isDebugEnabled) debugLogActions(res, actions)
-      
       val ents = entitlements(creator.account.id, org, resource, actions)
-      import com.galacticfog.gestalt.patch._
+      
       {
         if (parent.isEmpty) ents 
         else mergeParentEntitlements(ents, res.typeId, parent.get)
         
       } map { ent =>
+        
         //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
         
         val payload = {
@@ -171,10 +186,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }
   
-  private[this] def debugLogActions(res: GestaltResourceInstance, actions: Seq[String]) = {
-    //log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
-    actions.sorted foreach { e => log.debug(e) }
-  }
+
   
   def getResourceEntitlements(resource: UUID) = {
     ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resource)
@@ -389,7 +401,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }  
 
   
-  object PermissionSet {
+  private object PermissionSet {
     val SELF = "self"
     val MERGED = "merged"
   }
@@ -449,9 +461,33 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }  
 
   /**
-   * Generate a list of Entitlements corresponding to the given actions.
+   * Create a new, in-memory Entitlement domain object.
+   * Does not persist the entitlement.
    */
-  def entitlements(
+  def newEntitlement(
+      creator: UUID,
+      org: UUID, 
+      resource: UUID, 
+      action: String,
+      identities: Option[Seq[UUID]],
+      name: Option[String] = None,
+      value: Option[String] = None,
+      description: Option[String] = None): Entitlement = {
+    
+    Entitlement(
+      id = UUID.randomUUID,
+      org = org,
+      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
+      description = description,
+      properties = EntitlementProps(action, value, identities) )
+  }  
+  
+  /**
+   * Generate a list of new Entitlements corresponding to the given actions.
+   * This function creates one Entitlement for each action in the `actions` Seq. Only
+   * the `creator` is added to identities.
+   */
+  private[auth] def entitlements(
       creator: UUID,
       org: UUID,
       resource: UUID,
@@ -469,22 +505,9 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }  
   
-  def newEntitlement(
-      creator: UUID,
-      org: UUID, 
-      resource: UUID, 
-      action: String,
-      identities: Option[Seq[UUID]],
-      name: Option[String] = None,
-      value: Option[String] = None,
-      description: Option[String] = None): Entitlement = {
-    
-    Entitlement(
-      id = UUID.randomUUID,
-      org = org,
-      name = (if (name.isDefined) name.get else s"${resource}.${action}"),
-      description = description,
-      properties = EntitlementProps(action, value, identities) )
-  }
-  
+  private[this] def debugLogActions(res: GestaltResourceInstance, actions: Seq[String]) = {
+    //log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
+    actions.sorted foreach { e => log.debug(e) }
+  }  
 }
+

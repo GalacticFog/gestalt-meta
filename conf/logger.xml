@@ -26,10 +26,9 @@
   <logger name="javax" level="ERROR"/>
   <logger name="skuber" level="WARN"/>
   <logger name="controllers.util.MetaController" level="INFO"/>
-  <logger name="controllers.LaserController" level="INFO"/>
+  <logger name="controllers.LambdaController" level="INFO"/>
   <logger name="gestalt-security-play" level="INFO"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
-  
 
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />

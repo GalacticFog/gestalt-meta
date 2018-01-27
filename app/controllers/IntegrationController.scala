@@ -82,7 +82,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
      */
     SafeRequest (operations, options) Protect { maybeState =>
 
-      CreateResource(org, user, inputJson, typeId, Some(parent)) match {
+      CreateWithEntitlements(org, user, inputJson, typeId, Some(parent)) match {
         case Failure(e) => HandleExceptions(e)
         case Success(integration) => {
           setNewEntitlements(org, integration.id, user, Option(parent))
@@ -162,7 +162,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
    */
   private[controllers] def createIntegration(orgid: UUID, envid: UUID)(implicit request: SecuredRequest[JsValue]) = {
     log.info(s"INFO - creating integration resource in meta." + request.body.toString)
-    CreateResource(orgid, request.identity, request.body, ResourceIds.Integration, Some(envid))
+    CreateWithEntitlements(orgid, request.identity, request.body, ResourceIds.Integration, Some(envid))
   }
   
   private[controllers] def IntegrationNotFound(integrationId: UUID) = {
@@ -188,8 +188,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
       RequestOptions(user, 
           authTarget = Option(policyOwner), 
           policyOwner = Option(policyOwner), 
-          policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Integration)))/*,
-          data = Option(Map("host" -> baseUri.get))*/)
+          policyTarget = Option(jsonToResource(org, user, inputJson, Option(ResourceIds.Integration)).get))
   }
   
 }

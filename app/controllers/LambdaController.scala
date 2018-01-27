@@ -48,7 +48,7 @@ class LambdaController @Inject()(
     messagesApi: MessagesApi,
     providerMethods: ProviderMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+      extends SecureController(messagesApi = messagesApi, env = env) with Authorization with JsonInput {
   
   /*
    * This is the provider variable containing the provider host address.
@@ -85,10 +85,13 @@ class LambdaController @Inject()(
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[JsValue]): Future[play.api.mvc.Result] = {
     
-    safeGetInputJson(request.body, Some(ResourceIds.Lambda)) match {
+    toInput(request.body) match {
+      
       case Failure(e)     => HandleExceptionsAsync(e)
       case Success(input) => {
-
+        
+        assertValidTypeId(input, Some(ResourceIds.Lambda))
+            
         val lambdaId: UUID = input.id.getOrElse(UUID.randomUUID)
         
         // Set ID for the Lambda.
@@ -104,7 +107,7 @@ class LambdaController @Inject()(
         val client = providerMethods.configureWebClient(provider, Some(ws))
   
         val metaCreate = for {
-          metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
+          metalambda <- CreateWithEntitlements(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
           laserlambda = toLaserLambda(metalambda, provider.id.toString)
         } yield (metalambda, laserlambda)
         
@@ -119,9 +122,9 @@ class LambdaController @Inject()(
 
               if (Seq(200, 201).contains(result.status)) {
                 log.info("Successfully created Lambda in backend system.")
-                setNewEntitlements(org, meta.id, caller, Some(parent.id))
                 Created(RenderSingle(meta))
               } else {
+                
                 log.error("Error creating Lambda in backend system.")
                 updateFailedBackendCreate(caller, meta, ApiError(result.status, result.body).throwable)
               }              

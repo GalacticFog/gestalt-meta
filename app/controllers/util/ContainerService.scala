@@ -404,7 +404,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
                       userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance] = {
 
     val input = ContainerSpec.toResourcePrototype(containerSpec).copy(id = userRequestedId)
-    val proto = withInputDefaults(context.workspace.orgId, input, user, None)
+    val proto = resourceWithDefaults(context.workspace.orgId, input, user, None)
     val operations = containerRequestOperations("container.create")
     val options = containerRequestOptions(user, context.environmentId, proto)
 
@@ -420,7 +420,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       for {
         metaResource <- Future.fromTry {
           log.debug("Creating container resource in Meta")
-          ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+          //ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
+          
+          CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta container created: " + metaResource.id)
         service <- Future.fromTry {
@@ -439,7 +441,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
   override def createSecret(context: ProviderContext, user: AuthAccountWithCreds, secretSpec: SecretSpec, userRequestedId: Option[UUID]): Future[Instance] = {
 
     val input = SecretSpec.toResourcePrototype(secretSpec).copy(id = userRequestedId)
-    val proto = withInputDefaults(context.environment.orgId, input, user, None)
+    val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
     val operations = secretRequestOperations("secret.create")
     val options = secretRequestOptions(user, context.environmentId, proto)
 

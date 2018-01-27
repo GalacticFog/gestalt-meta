@@ -197,7 +197,7 @@ class LicenseController @Inject()(
     (for {
       _ <- removeExistingLicense(org)
       _ <- installNewLicense(json.as[JsObject])
-      r <- CreateResource(org, request.identity, json, ResourceIds.License, Some(org))
+      r <- CreateWithEntitlements(org, request.identity, json, ResourceIds.License, Some(org))
     } yield r) map { license =>
       license 
     }
@@ -244,7 +244,7 @@ class LicenseController @Inject()(
    * @param request the
    */
   private[controllers] def createLicense(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
-    CreateResource(org, request.identity, request.body, ResourceIds.License, Some(org))
+    CreateWithEntitlements(org, request.identity, request.body, ResourceIds.License, Some(org))
   }
 
   private[this] def LicenseNotFound(licenseId: UUID) = {
