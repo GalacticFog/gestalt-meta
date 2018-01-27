@@ -96,6 +96,7 @@ class JsonInputSpec extends PlaySpecification with ResourceScope with BeforeAll 
     }    
   }
   
+  
   "toInputValidated" >> {
     
     "succeed when type properties are valid" >> {
@@ -118,7 +119,7 @@ class JsonInputSpec extends PlaySpecification with ResourceScope with BeforeAll 
   }  
   
   
-  "withInputDefaults" should {
+  "resourceWithDefaults" should {
     
     "populate default ID, ResourceOwner, and ResourceState values if none are provided" in {
       
@@ -131,7 +132,7 @@ class JsonInputSpec extends PlaySpecification with ResourceScope with BeforeAll 
       input.get.resource_state must beNone
       
       val creator = this.dummyAuthAccountWithCreds()
-      val res = in.withInputDefaults(dummyRootOrgId, input.get, creator)
+      val res = in.resourceWithDefaults(dummyRootOrgId, input.get, creator)
       
       // owner defaults to 'creator'
       res.owner.id === creator.account.id.toString
@@ -163,12 +164,57 @@ class JsonInputSpec extends PlaySpecification with ResourceScope with BeforeAll 
       input2.resource_state must beSome
       
       val creator = dummyAuthAccountWithCreds()
-      val res = in.withInputDefaults(dummyRootOrgId, input2, creator)
+      val res = in.resourceWithDefaults(dummyRootOrgId, input2, creator)
       
       res.id       === UUID.fromString(id)
       res.state    === ResourceState.id(state)    
       res.owner.id === owner.id
     }
+  }
+
+  "jsonToResource" should {
+    
+    "convert JSON to a GestaltResourceInstance" >> {
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString), Some(ResourceIds.Org))
+      res must beSuccessfulTry
+    }
+    
+    "succeed when type-id is given in the JSON" >> {
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString, "resource_type" -> ResourceIds.Org.toString), typeId = None)
+      res must beSuccessfulTry
+    }
+    
+    "succeed when type-id is given in the variable" >> {
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString), Some(ResourceIds.Org))
+      res must beSuccessfulTry
+    }
+    
+    "use the value from JSON if type-id is in both places" >> {
+      val expectedId = ResourceIds.Org
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString, "resource_type" -> expectedId.toString), 
+          typeId = Some(ResourceIds.Workspace))
+          
+      res must beSuccessfulTry
+      res.get.typeId === expectedId
+    }
+    
+    "fail if there is no type-id in the JSON or variable" >> {
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString), typeId = None)
+      res must beFailedTry
+    }
+    
+    "fail if the given type-id is invalid" >> {
+      val invalidTypeId = uuid()
+      val res = in.jsonToResource(dummyRootOrgId, dummyAuthAccountWithCreds(), 
+          Json.obj("name" -> uuid.toString), Some(invalidTypeId))
+      res must beFailedTry
+    }
+    
   }
 
 }

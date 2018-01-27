@@ -301,7 +301,7 @@ class AuthorizationController @Inject()(
     toInput(json) match {
       case Failure(error) => throw error
       case Success(input) => {
-        withInputDefaults(org, input, creator, Option(ResourceIds.Entitlement))
+        resourceWithDefaults(org, input, creator, Option(ResourceIds.Entitlement))
       }
     }
   }

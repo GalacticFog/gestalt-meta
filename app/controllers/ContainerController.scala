@@ -72,7 +72,7 @@ class ContainerController @Inject()(
     val containerResourceInput: GestaltResourceInput = 
       ContainerSpec.toResourcePrototype(containerSpec).copy( id = containerId )
       
-    withInputDefaults(org, containerResourceInput, user, None)
+    resourceWithDefaults(org, containerResourceInput, user, None)
   }  
   
   type MetaCreate = (AuthAccountWithCreds, GestaltResourceInstance, UUID) => Try[GestaltResourceInstance]
@@ -160,7 +160,7 @@ class ContainerController @Inject()(
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
-      proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputContainer(payload))
+      proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputContainer(payload), None))
       spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
       context   = ProviderContext(request, spec.provider.id, None)
       container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
@@ -172,7 +172,7 @@ class ContainerController @Inject()(
   def postSecret(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val created = for {
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
-      proto     = jsonToInput(fqid(fqon), request.identity, normalizeInputSecret(payload))
+      proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputSecret(payload), None))
       spec      <- Future.fromTry(SecretSpec.fromResourceInstance(proto))
       context   = ProviderContext(request, spec.provider.id, None)
       secret <- containerService.createSecret(context, request.identity, spec, Some(proto.id))

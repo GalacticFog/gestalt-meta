@@ -47,7 +47,7 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
-
+import play.api.Logger
 
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
@@ -489,7 +489,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     RequestOptions(user, 
       authTarget = Option(org), 
       policyOwner = Option(org), 
-      policyTarget = Option(j2r(org, user, payload, Option(ResourceIds.Provider))),
+      policyTarget = Option(jsonToResource(org, user, payload, Option(ResourceIds.Provider)).get),
       data = Option(Map("host" -> baseUrl)))    
   }
   
