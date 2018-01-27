@@ -36,7 +36,7 @@ import scala.language.postfixOps
 import javax.inject.Singleton
 
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-
+import play.api.Logger
 
 @Singleton
 class ResourceController @Inject()( 

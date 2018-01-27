@@ -50,8 +50,8 @@ trait MetaControllerUtils extends AuthorizationMethods {
   }
 
   /**
-    * Convert a string to a resource-state UUID. If state is empty, state = Active.
-    */
+   * Convert a string to a resource-state UUID. If state is empty, state = Active.
+   */
   protected[controllers] def resolveResourceState(state: Option[String]) = {
     ResourceState.id(state getOrElse ResourceStates.Active)
   }
@@ -81,7 +81,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
 
     for {
       // Convert input JSON to in-memory resource
-      resource <- asResource(org, payload, creator, Some(typeId))
+      resource <- jsonToResource(org, creator, payload, Some(typeId))
       
       // Persist resource to Meta along with appropriate Entitlements
       result   <- CreateWithEntitlements(org, creator, resource, parentId)
@@ -192,7 +192,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
 
 }
 
-trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput { this: SecureController =>
+trait MetaController extends SecurityResources with MetaControllerUtils with JsonInput with PolicyMethods { this: SecureController =>
   
   private[this] val log = Logger(this.getClass)
   
@@ -211,7 +211,6 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
    */
   protected[controllers] def RenderList(rss: Seq[GestaltResourceInstance])(implicit request: Request[_]): Result = {
     val qs = request.queryString
-    
     
     if (QueryString.singleBoolean(qs, "compact")) {
       val compacted = rss.map(r => Output.renderCompact(r, Some(META_URL)))
@@ -266,27 +265,15 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     Ok(handleExpandResource(rs, qs, metaUrl))
   }
 
+  
+  protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
+    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
+    JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
+  }  
+
+  
   protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
     NotFoundResult(s"${ResourceLabel(typeId)} with ID '$id' not found.")  
-    
-//  protected[controllers] def CreateWithEntitlements(
-//    org: UUID,
-//    caller: AuthAccountWithCreds,
-//    resourceJson: JsValue,
-//    typeId: UUID,
-//    parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-//    
-//    toInput(resourceJson) flatMap { input =>
-//      val tid = assertValidTypeId(input, Option(typeId))
-//      ResourceFactory.create(ResourceIds.User, caller.account.id)(
-//        withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
-//          setNewEntitlements(org, res.id, caller, parentId)
-//          res
-//        }
-//    }
-//  }
-  
-
   
   /**
    * Convert a string FQON to corresponding Org UUID.
@@ -302,8 +289,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     HandleExceptions(ex)
   }
 
-
-      
+  
   type JsonPayloadTransform = (JsValue, Map[String, String]) => Try[JsValue]
   
   val payloadTransforms: Map[UUID, JsonPayloadTransform] = Map(
@@ -313,68 +299,19 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     ResourceIds.RuleEvent   -> transformRule
   )
   
+  def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue): Try[JsValue] = {
+    payloadTransforms.get(tpe).fold(Try(payload)) { f =>
+      val data = Map("org" -> org.toString, "parent" -> parent.toString, "typeId" -> tpe.toString)
+      f(payload, data)
+    }
+  }  
+  
   def transformEnvironment(json: JsValue, data: Map[String, String]): Try[JsValue] = {
     for {
       a <- normalizeResourceType(json, ResourceIds.Environment)
       b <- upsertProperty(a, "workspace", JsString(data("parent")))
       c <- normalizeEnvironmentType(b)
     } yield c      
-  }
-  
-  /*
-   * TODO: clean this up - use PatchOps to transform json.
-   */
-  def transformRule(json3: JsValue, data: Map[String, String]): Try[JsValue] = Try {
-
-    val parentId = data("parent")
-    val typeId = data("typeId")
-    
-    val json = json3.as[JsObject] ++ Json.obj("resource_type" -> JsString(typeId))
-    val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parentId))
-    
-    val definedAt = ResourceFactory.findById(ResourceIds.Policy, UUID.fromString(parentId)).fold {
-      throw new RuntimeException("Could not find parent policy.")
-    }{ p =>
-      Json.parse(p.properties.get("parent"))
-    }
-    JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
-  }
-  
-  protected [controllers] def updateRuleJson(ruleJson: JsValue, resourceType: UUID, parent: GestaltResourceInstance) = {
-    val json = ruleJson.as[JsObject] ++ Json.obj("resource_type" -> JsString(resourceType.toString))
-    val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parent.id.toString))
-    val definedAt = Json.parse(parent.properties.get("parent"))
-    JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
-  }  
-   def resolveRuleTypeFromString(json: JsValue): Try[UUID] = Try {
-    Js.find(json.as[JsObject], "/resource_type").fold {
-      throw new BadRequestException("You must provide a resource_type")
-    } { tpe =>
-      ruleTypeId(expandRuleTypeName(tpe.as[String])).get
-    }
-  }
-  
-  /**
-   * Create a fully-qualified Rule type name from it's simple name, i.e.,
-   * 'event' becomes 'Gestalt::Resource::Rule::Event'
-   */   
-   private lazy val RULE_TYPE_NAME = Resources.Rule
-   protected[controllers] def expandRuleTypeName(shortName: String) = {
-    if (Seq("config", "event", "limit").contains(shortName.trim.toLowerCase)) {
-      "%s::%s".format(RULE_TYPE_NAME, shortName.trim.capitalize)
-    } else throw new BadRequestException(s"Invalid Rule type - found: '$shortName'")
-  }
-  
-  /**
-   * Get Rule type ID from its fully-qualified name.
-   */
-  protected [controllers] def ruleTypeId(typeName: String) = {
-    typeName match {
-      case a if a == Resources.RuleEvent  => Some(ResourceIds.RuleEvent)
-      case b if b == Resources.RuleConfig => Some(ResourceIds.RuleConfig)
-      case c if c == Resources.RuleLimit  => Some(ResourceIds.RuleLimit)
-      case _ => None
-    }
   }
   
   // TODO: Need to generalize name->uuid lookups
@@ -389,37 +326,12 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
         replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
   }
   
-  def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue): Try[JsValue] = {
-    payloadTransforms.get(tpe).fold(Try(payload)) { f =>
-      val data = Map("org" -> org.toString, "parent" -> parent.toString, "typeId" -> tpe.toString)
-      f(payload, data)
-    }
-  }
-  
-  def transformPolicy(json: JsValue, data: Map[String, String]): Try[JsValue]  = {
-    val parentId = UUID.fromString(data("parent"))
-    val link = Json.toJson(parentLink(parentId, None).get)
-    Try(JsonUtil.withJsonPropValue(json.as[JsObject], "parent", link))
-  }
-  
-  protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[_]) = {
-    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
-    JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
-  }
-  
-  protected [controllers] def parentLink(pid: UUID, baseUri: Option[String]): Option[ResourceLink] = {
-    ResourceFactory.findById(pid) map { toLink( _, baseUri ) }
-  }
-  
-  
-  
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
     
     val json = transformPayload(tpe, org, parent, payload).get
     
     MetaCreate(org, tpe, parent, Some(json)).apply { resource =>
-      //CreateWithEntitlements(org, resource, Some(parent)) match {
       CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
@@ -431,7 +343,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
       implicit request: SecuredRequest[_]): MetaRequest = {
 
     object actions extends ActionMethods
-    val resource = j2r(org, request.identity, json, Some(resourceType))
+    val resource = jsonToResource(org, request.identity, json, Some(resourceType)).get
     actions.prefixFromResource(resource).fold {
       throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
     }{ prefix =>
@@ -483,7 +395,6 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
       f(resource)
     }
   }
-  
   
   
   private[controllers] def resolveTypeFromPayload(json: JsValue): Option[UUID] = {

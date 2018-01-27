@@ -451,7 +451,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val containerResourceInput: GestaltResourceInput =
       ContainerSpec.toResourcePrototype(containerSpec).copy(id = containerId)
 
-    withInputDefaults(org, containerResourceInput, user, None)
+    resourceWithDefaults(org, containerResourceInput, user, None)
   }
 
   private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext): Secret = {

@@ -659,7 +659,7 @@ class ProviderManager @Inject() (
 
   trait ResourceTransform extends GestaltProviderService
   case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
-    lazy val resource = jsonToInput(org, caller, normalizeInputContainer(json))
+    lazy val resource = jsonToResource(org, caller, normalizeInputContainer(json), None).get
     lazy val spec = ContainerSpec.fromResourceInstance(resource)
   }
 

@@ -188,8 +188,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
       RequestOptions(user, 
           authTarget = Option(policyOwner), 
           policyOwner = Option(policyOwner), 
-          policyTarget = Option(j2r(org, user, inputJson, Option(ResourceIds.Integration)))/*,
-          data = Option(Map("host" -> baseUri.get))*/)
+          policyTarget = Option(jsonToResource(org, user, inputJson, Option(ResourceIds.Integration)).get))
   }
   
 }

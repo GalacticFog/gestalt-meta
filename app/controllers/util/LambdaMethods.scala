@@ -244,7 +244,7 @@ import com.galacticfog.gestalt.meta.providers._
     toInput(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, Option(typeId))
       ResourceFactory.create(ResourceIds.User, caller.account.id)(
-        withInputDefaults(org, input, caller, Option(tid)), parentId) map { res =>
+        resourceWithDefaults(org, input, caller, Option(tid)), parentId) map { res =>
           setNewEntitlements(org, res.id, caller, parentId)
           res
         }

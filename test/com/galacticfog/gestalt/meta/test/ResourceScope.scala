@@ -217,6 +217,8 @@ trait ResourceScope extends Scope with Mockito {
     val output = createInstance(ResourceIds.Policy,
         org = org,
         name = uuid,
+        properties = Option(Map("parent" -> 
+          Json.stringify(Json.obj("parent" -> Json.obj("id" -> parent.toString))))),
         parent = Option(parent)) map { policy =>
         val rule = createInstance(ruleType,
             org = org,
