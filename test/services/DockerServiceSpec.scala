@@ -61,7 +61,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
 
     lazy val (testWork, testEnv) = {
       val (w,e) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
       (w,e)
     }
 
@@ -140,7 +140,7 @@ class DockerServiceSpec extends PlaySpecification with ResourceScope with Before
 
     lazy val (testWork, testEnv) = {
       val (w,e) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, e.id, user, Some(w.id))
       (w,e)
     }
 

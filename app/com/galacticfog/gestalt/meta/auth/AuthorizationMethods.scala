@@ -144,7 +144,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * @param creator the user that is setting the entitlements (caller)
    * @param parent the parent of the new Resource
    */
-  def setNewEntitlements(
+  def setNewResourceEntitlements(
       org: UUID,
       resource: UUID, 
       creator: AuthAccountWithCreds,
@@ -186,6 +186,26 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }
   
+  def setEntitlements(
+      org: UUID, 
+      creator: AuthAccountWithCreds, 
+      target: GestaltResourceInstance, 
+      entitlements: Seq[Entitlement]) = {
+    
+    entitlements.map { ent =>
+      val payload = {
+        Js.transform(Json.toJson(ent).as[JsObject],
+          PatchOp.Add("/properties", 
+              Json.obj("parent" -> Json.obj("id" -> target.id, "name" -> target.name)))).get
+      }
+      CreateNewResource(
+        org, 
+        creator, 
+        json   = payload,  
+        typeId = Option(ResourceIds.Entitlement), 
+        parent = Option(target.id))     
+    }
+  }
 
   
   def getResourceEntitlements(resource: UUID) = {
@@ -487,7 +507,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * This function creates one Entitlement for each action in the `actions` Seq. Only
    * the `creator` is added to identities.
    */
-  private[auth] def entitlements(
+   def entitlements(
       creator: UUID,
       org: UUID,
       resource: UUID,
@@ -505,6 +525,42 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }
   }  
   
+   def entitlements2(
+      creator: UUID,
+      org: UUID,
+      resource: UUID,
+      identities: Seq[UUID],
+      actions: Seq[String],
+      resourceOwner: Option[UUID] = None): Seq[Entitlement] = {
+    
+     
+    val ids = identitySet(creator, identities, resourceOwner)
+     
+    actions map { action =>
+      newEntitlement(
+          creator, 
+          org, 
+          resource, 
+          action, 
+          Option(ids), 
+          name        = None, 
+          value       = None, 
+          description = None)
+    }
+  }
+
+  /**
+   * Normalize multiple UUIDs into a unique Set.
+   * Ensures each UUID is included only once - both creator and owner might be in the identities seq.
+   */
+  def identitySet(creator: UUID, identities: Seq[UUID], owner: Option[UUID]): Seq[UUID] = {
+    val ownerId = owner.fold(Set.empty[UUID])(Set(_))
+    (identities.toSet ++ Set(creator) ++ ownerId).toSeq
+  }
+  
+//   i need a function that can create entitlements with multiple identities at once - the funtion should also
+//   have a flag `withOwner` that when true adds the owner of the target resource to the identity list.
+   
   private[this] def debugLogActions(res: GestaltResourceInstance, actions: Seq[String]) = {
     //log.debug(s"Setting Entitlements for new : type=${ResourceLabel(res.typeId)}, name=${res.name}:")
     actions.sorted foreach { e => log.debug(e) }

@@ -144,7 +144,7 @@ class LambdaMethods @Inject()( ws: WSClient,
 
           if (Seq(200, 201).contains(result.status)) {
             log.info("Successfully created Lambda in backend system.")
-            setNewEntitlements(org, meta.id, caller, Some(parent.id))
+            setNewResourceEntitlements(org, meta.id, caller, Some(parent.id))
             meta
           } else {
             log.error("Error creating Lambda in backend system.")
@@ -245,7 +245,7 @@ import com.galacticfog.gestalt.meta.providers._
       val tid = assertValidTypeId(input, Option(typeId))
       ResourceFactory.create(ResourceIds.User, caller.account.id)(
         resourceWithDefaults(org, input, caller, Option(tid)), parentId) map { res =>
-          setNewEntitlements(org, res.id, caller, parentId)
+          setNewResourceEntitlements(org, res.id, caller, parentId)
           res
         }
     }

@@ -81,7 +81,7 @@ libraryDependencies += "com.lihaoyi" %% "scalatags" % "0.6.7"
 libraryDependencies ++= Seq(
 
 	"org.jtwig" 	   	 % "jtwig-core" 					 			 		% "5.86.0.RELEASE",
-	"com.galacticfog" %% "gestalt-meta-repository" 		 		% "0.6.67" withSources(),
+	"com.galacticfog" %% "gestalt-meta-repository" 		 		% "0.6.68" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 		 		% "0.3.0" withSources(),
 	"com.galacticfog" %% "gestalt-security-sdk-scala"  		%  "2.3.4" withSources(),
 	"com.galacticfog" %% "gestalt-security-play" 		 	 		% "3.0.5" withSources(),

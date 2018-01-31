@@ -70,7 +70,7 @@ class BootstrapController @Inject()(
           }
           case Success(_) => {
             log.info("Setting entitlements for admin-user on root-org...")
-            setNewEntitlements(org.id, org.id, caller, None)
+            setNewResourceEntitlements(org.id, org.id, caller, None)
     
             log.info("Stashing credentials in gestalt-security...")
             initGestaltSecurityCreds(org.id, caller)
@@ -140,7 +140,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
         else 
           throw new ForbiddenException(s"Insufficient permissions. POST /bootstrap may only be executed by the root/admin user.")
       }
-    } yield out    
+    } yield out
   }
 
   private[controllers] def seedMetaDb(rootUser: GestaltAccount, rootOrg: GestaltOrg) = {

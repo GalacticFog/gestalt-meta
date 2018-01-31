@@ -27,11 +27,16 @@ import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
-
+import com.galacticfog.gestalt.meta.providers.ui.Assembler
+import com.galacticfog.gestalt.meta.providers._
+import scala.util.{Try,Success,Failure}
+import controllers.util.Security
 
 @Singleton
-class TypeController @Inject()(messagesApi: MessagesApi,
-                               env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
+class TypeController @Inject()(
+    messagesApi: MessagesApi,
+    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    security: Security)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   private[this] val log = Logger(this.getClass)
@@ -59,11 +64,6 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       Ok(handleExpandType(tpes, qs, META_URL))
     }
   }  
-  
-  //import controllers.util.booleanParam
-  import com.galacticfog.gestalt.meta.providers.ui.Assembler
-  import com.galacticfog.gestalt.meta.providers._
-  import scala.util.{Try,Success,Failure}
   
   /**
    * Get a Provider Action specification from the Provider. This is a convenience method that can be used to get
@@ -115,21 +115,92 @@ class TypeController @Inject()(messagesApi: MessagesApi,
     OkTypeByIdResult(fqid(fqon), id, request.queryString)
   }
   
+  
+  def validateTypeCreate(payload: JsValue): Try[JsValue] = Try {
+    
+    val json = payload.as[JsObject]
+    
+    val info = TypeFactory.findTypeMetadata()
+
+    val prefixes: Seq[String]  = info.filter { case (_,_,_,p) => p.nonEmpty }.map { _._4.get }//info.collect { case (_,_,_,p) if p.isDefined => p.get }
+    val restNames: Seq[String] = info.filter { case (_,_,r,_) => r.nonEmpty }.map { case (_,_,r,_) => r.get }
+    val typeNames: Seq[String] = info.map { case (_,n,_,_) => n.toLowerCase }
+    
+    println("****PREFIXES : " + prefixes)
+    
+    val prefix = Js.find(json, "/properties/actions/prefix") getOrElse {
+      throw new BadRequestException("You must supply a value for `/properties/actions/prefix`")
+    }
+    if (prefixes.contains(prefix.as[String])) {
+      throw new ConflictException(s"`/properties/actions/prefix` must be globally unique. Value '$prefix' is taken.")
+    }
+    
+    val restName = Js.find(json, "/properties/api/rest_name") getOrElse {
+      throw new BadRequestException("You must supply a value for `/properties/api/rest_name`")
+    }
+    
+    if (restNames.contains(restName.as[String])) {
+      throw new ConflictException(s"`/properties/api/rest_name` must be globally unique. Value '$restName' is taken.")
+    }
+    
+    // MUST have at least one parent-type
+    val parentTypes = Js.find(json, "/properties/lineage/parent_types") getOrElse {
+      throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
+    }
+    
+    Js.parse[Seq[String]](parentTypes) match {
+      case Failure(e) => throw new BadRequestException("Failed parsing `/properties/lineage/parent_types`")
+      case Success(ps) => if (ps.isEmpty)
+        throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
+    }
+    
+    val name = Js.find(json, "/name") getOrElse {
+      throw new BadRequestException("You must supply a 'name' for your type.")
+    }
+  
+    val nm = name.as[String]
+    if (typeNames.contains(nm.toLowerCase)) {
+      throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
+    }
+    
+    payload
+  }
+  
+  
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
     /*
      * This will be a cheap operation once type-caching is in place.
      */
-    val allTypeNames = TypeFactory.findAll.map { _.name.toLowerCase }
+//    val allTypeNames = TypeFactory.findAll.map { _.name.toLowerCase }
+
+    /*
+     * TODO: Enhance validation
+     * - If a new type doesn't explicitly extend another type, it MUST extend Gestalt::Resource
+     * - All types must have at least one parent type (if only one, cannot be self)
+     * - Both api.rest_name, and actions.prefix MUST be globally unique
+     * 
+     */
     
-    Js.find(request.body.as[JsObject], "/name").fold {
-      throw new BadRequestException("You must supply a 'name' for your type.")
-    }{ name =>
-      val nm = name.as[String]
-      if (allTypeNames.contains(nm.toLowerCase)) {
-        throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
-      } else CreateTypeWithPropertiesResult(fqid(fqon), request.body) 
+//    Js.find(request.body.as[JsObject], "/name").fold {
+//      throw new BadRequestException("You must supply a 'name' for your type.")
+//    }{ name =>
+//      val nm = name.as[String]
+//      if (allTypeNames.contains(nm.toLowerCase)) {
+//        throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
+//      } else CreateTypeWithPropertiesResult(fqid(fqon), request.body) 
+//    }
+
+    validateTypeCreate(request.body) match {
+      case Failure(e) => HandleExceptionsAsync(e)
+      case Success(payload) => {
+        if (QueryString.singleBoolean(request.queryString, "test")) {
+          Future.successful(Ok(payload))
+        } else {
+          CreateTypeWithPropertiesResult(fqid(fqon), payload)
+        }
+      }
     }
-    //    CreateTypeWithPropertiesResult(fqid(fqon), request.body)  
+    
   }
   
 
@@ -178,6 +249,51 @@ class TypeController @Inject()(messagesApi: MessagesApi,
   }
 
   
+  import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
+  import com.galacticfog.gestalt.security.api.GestaltOrg
+  import com.galacticfog.gestalt.security.api.GestaltOrgSync
+  import com.galacticfog.gestalt.security.api.GestaltResource
+  import com.galacticfog.gestalt.security.api.json.JsonImports._
+
+  
+  def getRootAccountWithCreds() = {
+    
+    val securityJs = Json.toJson {
+      security.getOrgSyncTree2() match {
+        case Failure(e) => 
+          throw new RuntimeException("Failed retrieving data from gestalt-security: " + e.getMessage)
+        case Success(t) => t      
+      }
+    }.as[JsObject]
+    
+    val adminId: UUID = {
+      Js.find(securityJs, "/admin/id").fold {
+        throw new RuntimeException("Could not parse admin id from security info.")
+      }{ id =>
+        UUID.fromString(id.as[String])
+      }
+    }
+    val rootAccount  = findSecurityObject[GestaltAccount](securityJs, "/accounts", adminId)
+    val directoryOrg = findSecurityObject[GestaltOrg](securityJs, "/orgs", rootAccount.directory.orgId)
+    
+    TypeMethods.makeAccount(directoryOrg, rootAccount)
+  }
+
+  
+  private def findSecurityObject[A <: GestaltResource](json: JsObject, path: String, target: UUID)(implicit ra: Reads[A]): A = {
+    Js.find(json, path).fold(Option.empty[A]){ accts =>
+      Js.parse[Seq[A]](accts) match {
+        case Failure(e) => 
+          throw new RuntimeException("Failed parsing accounts: " + e.getMessage)
+        case Success(acts) => acts.find(_.id == target)
+      }
+    } getOrElse {
+      throw new RuntimeException("Could not find admin account in security info.")
+    }      
+  }
+  
+  private[this] val root: AuthAccountWithCreds = getRootAccountWithCreds()
+
   private def createTypeWithProperties[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Try {
       val owner = request.identity.account.id
@@ -195,10 +311,57 @@ class TypeController @Inject()(messagesApi: MessagesApi,
           PropertyFactory.create(owner)(prop).get
         }
       }
+      
+      log.debug("Setting type lineage...")
+      /*
+       * Get list of types this type declares as parents.
+       * Add current type to child list of each parent type.
+       * 
+       * 1.) Create type - get type-ID
+       * 2.) Update all parent types /properties/lineage/child_types
+       * 3.) Update all instances of all parent-types with entitlements for the new type.
+       */
+
+      val caller = request.identity.account.id
+      
+      // Get a list of all parent-type IDs
+      val newParentTypes = TypeMethods.getParentTypes(newtype)
+      
+      if (newParentTypes.nonEmpty) {
+      
+        // Update the parent-types with this new child type
+        val results = TypeMethods.makeNewParents(caller, newtype.id, newParentTypes)
+        
+        
+        val errors = results.filter(_.isFailure)
+        if (errors.nonEmpty) {
+          /*
+           * TODO: Build useable error message.
+           */
+          throw new RuntimeException(s"There were errors updating parent-type schemas.")
+        }
+        
+        
+        //...use root account with creds to set entitlements...
+        
+        def loop(types: Seq[UUID]): Unit = {
+          types match {
+            case Nil => ;
+            case h :: t => {
+              TypeMethods.updateInstanceEntitlements(
+                  h, newtype.id, root, request.identity, None)
+              loop(t)
+            }
+          }
+        }
+        loop(newParentTypes)
+      }
+      
       log.debug("createTypeWithProperties => COMPLETE.")
       newtype
     }
   }
+  
 
   /** 
    * Get a list of ResourceTypes 
@@ -225,7 +388,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
    * Convert GestaltResourceTypeInut to GestaltResourceType 
    */
   private def typeFromInput(org: UUID, owner: UUID, r: GestaltResourceTypeInput) = Try {
-
+  
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
 
     GestaltResourceType(
@@ -244,9 +407,7 @@ class TypeController @Inject()(messagesApi: MessagesApi,
         auth = r.auth)
   }
   
-  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
-    getSchemaResult(typeId, request.queryString)
-  }
+
   
   private def safeGetTypeJson(json: JsValue): Try[GestaltResourceTypeInput] = Try {
     json.validate[GestaltResourceTypeInput].map{
@@ -255,6 +416,11 @@ class TypeController @Inject()(messagesApi: MessagesApi,
       e => throw new BadRequestException(Js.errorString(e))
     }
   }
+
+  
+  def getPropertySchemaFqon(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
+    getSchemaResult(typeId, request.queryString)
+  }  
   
   def getTypesByName(org: UUID, names: List[String]): Seq[ResourceLike] = {
     def go(nms: List[String], out: Seq[ResourceLike]): Seq[ResourceLike] = {

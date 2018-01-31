@@ -69,7 +69,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
 
     ResourceFactory.create(ResourceIds.User, creator.account.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
-        val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+        val es = setNewResourceEntitlements(owningOrgId, r.id, creator, parentId)
         r
       }
   }

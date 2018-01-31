@@ -40,7 +40,7 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
     scalikejdbc.config.DBs.setupAll()
 
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     val mockProviderManager  = mock[ProviderManager]
     var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
     val mockCaasService = mock[KubernetesService]

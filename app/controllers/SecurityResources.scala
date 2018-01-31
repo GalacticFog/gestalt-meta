@@ -107,7 +107,7 @@ class SecuritySync @Inject()(
       createNewMetaOrg(account, parent, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
-          setNewEntitlements(org.id, org.id, account, parent = Option(parent))
+          setNewResourceEntitlements(org.id, org.id, account, parent = Option(parent))
         }
       }
     }
@@ -138,7 +138,7 @@ class SecuritySync @Inject()(
       createNewMetaGroup(account, org, group, 
           properties = None, group.description) match {
         case Failure(err) => throw err
-        case Success(group) => setNewEntitlements(org, group.id, account, parent = Option(org))
+        case Success(group) => setNewResourceEntitlements(org, group.id, account, parent = Option(org))
       }
     }
   }
@@ -166,7 +166,7 @@ class SecuritySync @Inject()(
         case Success(usr) => {
           
           log.debug("Setting new user entitlements.")
-          setNewEntitlements(org, usr.id, account, parent = Option(org))
+          setNewResourceEntitlements(org, usr.id, account, parent = Option(org))
           
           log.debug("Setting new user entitlements on root Org.")
           val rootorgid = security.getRootOrg(account).get.id

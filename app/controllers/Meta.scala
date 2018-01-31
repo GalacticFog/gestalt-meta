@@ -88,7 +88,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
 
-          setNewEntitlements(res.id, res.id, user, parent = Option(parentOrg))
+          setNewResourceEntitlements(res.id, res.id, user, parent = Option(parentOrg))
           
           Created(Output.renderInstance(res, Some(META_URL)))
         }
@@ -137,7 +137,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
               }
             }
           }
-          setNewEntitlements(org, res.id, request.identity, parent = Option(org))
+          setNewResourceEntitlements(org, res.id, request.identity, parent = Option(org))
           Created( newjson )
         }
       }
@@ -255,7 +255,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
           }
           case Success(res) => {
             val callerId = request.identity.account.id
-            setNewEntitlements(org, res.id, request.identity, parent = Option(org))
+            setNewResourceEntitlements(org, res.id, request.identity, parent = Option(org))
             securitySync.grantNewUserPermissions(callerId, res.id, rootOrg.id)
             Created(Output.renderInstance(res, Some(META_URL)))
           }

@@ -53,7 +53,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
   
   abstract class TestScope extends Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     
     val mockProviderMethods = mock[ProviderMethods]
     val injector =

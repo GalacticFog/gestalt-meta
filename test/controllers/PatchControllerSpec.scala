@@ -38,7 +38,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       )),
       user.account.description
     )
-    Entitlements.setNewEntitlements(dummyRootOrgId, userAccount.id, user, None)
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, userAccount.id, user, None)
   }
 
   sequential
@@ -54,7 +54,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
   trait TestApplication extends FakeSecurity {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
-    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val Success(testKubeProvider) = createInstance(ResourceIds.KubeProvider, "test-kube-provider", properties = Some(Map()))
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(

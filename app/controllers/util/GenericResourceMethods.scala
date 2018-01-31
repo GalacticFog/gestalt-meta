@@ -321,7 +321,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     
     for {
       json <- Future.fromTry(normalizeResourceType(payload, resourceType))
-      resource = j2r(orgId, identity, json, Some(resourceType))
+      resource = jsonToResource(orgId, identity, json, Some(resourceType)).get
       request  = actions.prefixFromResource(resource).fold {
         throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
       }{ prefix =>

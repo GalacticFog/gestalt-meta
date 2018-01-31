@@ -139,7 +139,7 @@ class ApiController @Inject()(
         }
         case Success((metaEndpoint, gmEndpoint)) => {
           log.info("Endpoint created in Meta.")
-          setNewEntitlements(org, metaEndpoint.id, caller, Some(api))
+          setNewResourceEntitlements(org, metaEndpoint.id, caller, Some(api))
 
           log.info("Creating Endpoint in GatewayManager...")
           val uri = "/apis/%s/endpoints".format(api.toString)
