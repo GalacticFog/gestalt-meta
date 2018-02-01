@@ -73,7 +73,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     lazy val (testWork, testEnv) = {
       val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
       (tw,te)
     }
 
@@ -108,7 +108,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     lazy val (testWork, testEnv) = {
       val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
       (tw,te)
     }
 

@@ -30,8 +30,10 @@ import controllers.util.JsonUtil._
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.auth.ActionMethods
 import play.api.mvc.Result
-  
-  
+import com.galacticfog.gestalt.meta.auth.ActionMethods
+import play.api.mvc.Result
+
+
 trait MetaControllerUtils extends AuthorizationMethods {
 
   case class MetaRequest( caller: AuthAccountWithCreds,
@@ -67,7 +69,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
 
     ResourceFactory.create(ResourceIds.User, creator.account.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
-        val es = setNewEntitlements(owningOrgId, r.id, creator, parentId)
+        val es = setNewResourceEntitlements(owningOrgId, r.id, creator, parentId)
         r
       }
   }
@@ -289,7 +291,6 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     HandleExceptions(ex)
   }
 
-  
   type JsonPayloadTransform = (JsValue, Map[String, String]) => Try[JsValue]
   
   val payloadTransforms: Map[UUID, JsonPayloadTransform] = Map(
@@ -314,6 +315,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     } yield c      
   }
   
+
   // TODO: Need to generalize name->uuid lookups
   // Replace environment_type simple-name into type UUID in environment properties
   def normalizeEnvironmentType(env: JsObject) = Try {

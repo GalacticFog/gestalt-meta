@@ -76,9 +76,9 @@ class BlueprintSpec extends PlaySpecification with MetaRepositoryOps with JsonMa
       testWork = tw
       testEnv = te
 
-      Ents.setNewEntitlements(dummyRootOrgId, testEnv.id,  user, Some(testWork.id))
-      Ents.setNewEntitlements(dummyRootOrgId, testWork.id, user, Some(dummyRootOrgId))
-      Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+      Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id,  user, Some(testWork.id))
+      Ents.setNewResourceEntitlements(dummyRootOrgId, testWork.id, user, Some(dummyRootOrgId))
+      Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
 
       val injector = app.injector
       providerManager = injector.instanceOf[GenericProviderManager]

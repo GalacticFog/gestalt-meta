@@ -344,7 +344,7 @@ class ProviderManager @Inject() (
         
         log.info("Meta container created: " + metaResource.id)
         log.info("Setting entitlements on new container.")
-        setNewEntitlements(pm.org, environment.id, account, Some(pm.id))
+        setNewResourceEntitlements(pm.org, environment.id, account, Some(pm.id))
         
         log.info("Creating container in backend CaaS...")
         for {
@@ -418,7 +418,7 @@ class ProviderManager @Inject() (
         resource,
         parentId = Some(provider.id), 
         validate = true) map { env =>  
-      setNewEntitlements(org, env.id, account, Some(provider.id))
+      setNewResourceEntitlements(org, env.id, account, Some(provider.id))
       env
     }
   }

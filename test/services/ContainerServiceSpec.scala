@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import controllers.{ContainerController, DeleteController, SecurityResources}
-import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
+import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking, Security}
 import org.joda.time.DateTime
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.ValueCheck.typedValueCheck
@@ -40,14 +40,14 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
     scalikejdbc.config.DBs.setupAll()
 
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     val mockProviderManager  = mock[ProviderManager]
     var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
     val mockCaasService = mock[KubernetesService]
     mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
     val mockDeleteController = mock[DeleteController]
     val containerService = new ContainerServiceImpl(mockProviderManager, mockDeleteController)
-
+    val security = mock[Security]
     try AsResult(f(TestScope(testWork, testEnv, testProvider, mockCaasService, containerService)))
     finally {
       scalikejdbc.config.DBs.closeAll()

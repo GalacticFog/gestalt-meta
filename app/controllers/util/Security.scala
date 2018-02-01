@@ -66,7 +66,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       }
     } yield a2
   }
-  
+
   def getRootInfo(auth: AuthAccountWithCreds): (GestaltOrg, Option[GestaltAccount]) = {
     (for {
       org    <- getRootOrg(auth)
@@ -79,6 +79,10 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds): Try[GestaltOrgSync] = {
     Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
   }
+  
+  def getOrgSyncTree2()(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
+    Try(Await.result(GestaltOrg.syncOrgTree(None), 5 seconds))
+  }  
   
   def getRootOrg(auth: AuthAccountWithCreds): Try[GestaltOrg] = {
     def unwrap(os: Seq[GestaltOrg]) = Try {

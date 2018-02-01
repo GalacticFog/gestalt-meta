@@ -67,10 +67,38 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
       ents exists { _.properties.action == actions(1) } must beTrue
       ents exists { _.properties.action == actions(2) } must beTrue
     }
+  }
+  
+  "setEntitlements" should {
+    
+    "set the given entitlements on the given resource" >> {
+      
+      val (wrk, _) = createWorkspaceEnvironment()
+      
+      val beforeEnts = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, wrk)
+      val actions = Seq("foo.bar", "baz.qux", "garply.waldo")
+      val ents = Auth.entitlements(dummyOwner.id, dummyRootOrgId, uuid(), actions)      
+      
+      val user = this.dummyAuthAccountWithCreds()
+      val workspace = {
+        val t = ResourceFactory.findById(wrk)
+        t must beSome
+        t.get
+      }
+      Auth.setEntitlements(dummyRootOrgId, user, workspace, ents)
+      val afterEnts = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, wrk)
+      
+      afterEnts.size === (beforeEnts.size + actions.size)
+      
+      afterEnts exists { _.properties.get("action") == actions(0) } must beTrue
+      afterEnts exists { _.properties.get("action") == actions(1) } must beTrue
+      afterEnts exists { _.properties.get("action") == actions(2) } must beTrue
+      
+    }
     
   }
   
-  "setNewEntitlements" should {
+  "setNewResourceEntitlements" should {
     
     "create new entitlements corresponding to actions on the new resource" in {
       
@@ -121,19 +149,19 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
       
       val p  = createInstance(parent, name=uuid(), parent = Option(dummyRootOrgId))
       p must beSuccessfulTry
-      val pe = Auth.setNewEntitlements(dummyRootOrgId, p.get.id, creator, Option(dummyRootOrgId))
+      val pe = Auth.setNewResourceEntitlements(dummyRootOrgId, p.get.id, creator, Option(dummyRootOrgId))
       pe.size === 16
       
       
       val c1 = createInstance(child1, name=uuid(), parent = Option(p.get.id))
       c1 must beSuccessfulTry
-      val c1e = Auth.setNewEntitlements(dummyRootOrgId, c1.get.id, creator, Option(p.get.id))
+      val c1e = Auth.setNewResourceEntitlements(dummyRootOrgId, c1.get.id, creator, Option(p.get.id))
       c1e.size === 6
       
       
       val c2 = createInstance(child2, name=uuid(), parent = Option(p.get.id))
       c2 must beSuccessfulTry
-      val c2e = Auth.setNewEntitlements(dummyRootOrgId, c2.get.id, creator, Option(p.get.id))
+      val c2e = Auth.setNewResourceEntitlements(dummyRootOrgId, c2.get.id, creator, Option(p.get.id))
       c2e.size === 6
       
       

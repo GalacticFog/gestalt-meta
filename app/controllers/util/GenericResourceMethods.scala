@@ -11,7 +11,7 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.auth.{ActionMethods, AuthorizationMethods}
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
-import com.galacticfog.gestalt.meta.genericactions.{GenericActionContext, GenericActionInvocation, GenericProviderManager}
+import com.galacticfog.gestalt.meta.genericactions.{GenericActionContext, GenericActionInvocation, GenericProviderManager, GenericProvider}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
 import play.api.libs.iteratee.Enumerator
@@ -89,7 +89,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                    resource: GestaltResourceInstance,
                                    actionVerb: String = "delete" )
                                   (implicit request: RequestHeader) : Future[Unit] = {
-
     for {
       providerId <- getOrFail(
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
@@ -119,7 +118,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       _ <- provider.map(_.invokeAction(invocation)) getOrElse Future.successful(())
     } yield ()
   }
-
+  
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
                                     updatedResource: GestaltResourceInstance,
@@ -239,57 +238,136 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     } yield response
     response recover { case e => HandleExceptions(e) }
   }
-
-  def createProviderBackedResource(org: GestaltResourceInstance,
-                                   identity: AuthAccountWithCreds,
-                                   body: JsValue,
-                                   parent: GestaltResourceInstance,
-                                   resourceType: UUID,
-                                   providerType: UUID,
-                                   actionVerb: String = "create")
-                                  ( implicit request: RequestHeader ) : Future[Result] = {
+  
+  
+  def createProviderBackedResource(
+        org: GestaltResourceInstance,
+        identity: AuthAccountWithCreds,
+        body: JsValue,
+        parent: GestaltResourceInstance,
+        resourceType: UUID,
+        providerType: UUID,
+        actionVerb: String = "create")
+        (implicit request: RequestHeader) : Future[Result] = {
+    
+    
+    def newMetaRequest() = for {
+      metaRequest <- buildMetaRequest(org.id, identity, body, parent.id, resourceType, actionVerb, META_URL)
+      (operations, options) = newResourceRequestArgs(metaRequest)
+    } yield (operations, options, metaRequest)
+    
+    
     val response = for {
+
+			//Find the provider backing the current resource
+      backingProvider <- lookupProvider(body, resourceType, providerType)
+      
+      (operations, options, metaRequest) <- newMetaRequest()
+
+      response <- SafeRequest(operations, options).ExecuteAsync {
+        input => for {
+
+          // Execute provider action function if one exists, return result if there is one.
+          actionResult <- invokeProviderAction(backingProvider, org, parent, metaRequest, input, body)
+          
+          // Execute create action in meta
+          metaResult <- Future.fromTry {
+            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input), Some(parent.id))
+          }
+        } yield Created(Output.renderInstance(metaResult, Some(META_URL)))
+      }
+    } yield response
+    
+    response recover { case e => HandleExceptions(e) }
+  }
+  
+  import com.galacticfog.gestalt.data.TypeFactory
+  import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+  
+  
+  /**
+   * Find and retrieve a Provider resource instance from a 'resource.create' payload.
+   */
+  private[util] def lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID): Future[GestaltResourceInstance] = {
+    
+    if (!ResourceFactory.isSubTypeOf(providerType, ResourceIds.Provider)) {
+      throw new BadRequestException(s"Given provider-type '$providerType' is not a sub-type of Provider.")
+    }
+    
+    for {
+			// Lookup provider-id in the payload properties (properties.provider)
       providerId <- getOrFail(
-        (body \ "properties" \ "provider").asOpt[UUID],
+        (payload \ "properties" \ "provider").asOpt[UUID],
         s"${sdk.ResourceLabel(resourceType)} creation requires a provider to be specified in 'obj.properties.provider'"
       )
+
+			//Retrieve the provider resource.
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
         s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
       )
-      json <- Future.fromTry({
-        normalizeResourceType(body, resourceType)
-      })
-      metaRequest = {
-        val resource = jsonToResource(org.id, identity, json, Some(resourceType)).get
-        actions.prefixFromResource(resource).fold {
-          throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
-        }{ prefix =>
-          val fqaction = "%s.%s".format(prefix, actionVerb)
-          MetaRequest(identity, resource, parent.id, fqaction, Some(META_URL))
+    } yield providerResource
+  }
+  
+  
+  private[util] def buildMetaRequest(
+      orgId: UUID, 
+      identity: AuthAccountWithCreds, 
+      payload: JsValue, 
+      parentId: UUID, 
+      resourceType: UUID, 
+      verb: String, 
+      metaUrl: String) = {
+    
+    for {
+      json <- Future.fromTry(normalizeResourceType(payload, resourceType))
+      resource = jsonToResource(orgId, identity, json, Some(resourceType)).get
+      request  = actions.prefixFromResource(resource).fold {
+        throw new RuntimeException(s"Could not find action prefix for type '${resourceType}'")
+      }{ prefix =>
+        MetaRequest(identity, resource, parentId, s"${prefix}.${verb}", Some(metaUrl))
+      } 
+    } yield request
+  }
+  
+  
+  private[util] def invokeProviderAction(
+      backingProvider: GestaltResourceInstance, 
+      org: GestaltResourceInstance, 
+      parent: GestaltResourceInstance,
+      metaRequest: MetaRequest,
+      resource: GestaltResourceInstance,
+      payload: JsValue)
+        (implicit request: RequestHeader): Future[Option[GestaltResourceInstance]] = {
+    
+    for {
+      providerImpl <- {
+        Future.fromTry(
+          genericProviderManager.getProvider(backingProvider, metaRequest.action)
+        )
+      }
+
+      invocation <- {
+        fTry(GenericActionInvocation(
+          action   = metaRequest.action,
+          context  = GenericActionContext.fromParent(org, parent),
+          provider = backingProvider,
+          resource = Some(resource),
+          actionPayload = Some(payload)
+        ))
+      }
+      
+      maybeOutputResource <- {
+        providerImpl.fold {
+          log.debug("")
+          Future.successful(Option.empty[GestaltResourceInstance])
+        }{ p =>
+          p.invokeAction(invocation).map { response =>
+            response.left.toOption
+          }              
         }
       }
-      (operations, options) = newResourceRequestArgs(metaRequest)
-      response <- SafeRequest(operations, options).ExecuteAsync {
-        input => for {
-          invocation <- fTry(GenericActionInvocation(
-            action = metaRequest.action,
-            context = GenericActionContext.fromParent(org, parent),
-            provider = providerResource,
-            resource = Some(input)
-          ))
-          provider <- Future.fromTry(
-            genericProviderManager.getProvider(providerResource, metaRequest.action)
-          )
-          maybeOutputResource <- provider.map(_.invokeAction(invocation).map(_.left.toOption)) getOrElse Future.successful(None)
-          persisted = maybeOutputResource getOrElse input
-          created <- Future.fromTry(CreateWithEntitlements(
-            org.id, identity, persisted, Some(parent.id)
-          ))
-        } yield Created(Output.renderInstance(created, Some(META_URL)))
-      }
-    } yield response
-    response recover { case e => HandleExceptions(e) }
-  }
-
+    } yield maybeOutputResource
+  }  
+  
 }

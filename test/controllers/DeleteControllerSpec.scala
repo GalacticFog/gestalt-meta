@@ -47,7 +47,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
   trait TestApplication extends FakeSecurity {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
-    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
       "config" ->

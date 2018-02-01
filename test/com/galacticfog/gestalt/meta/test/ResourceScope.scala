@@ -302,7 +302,7 @@ trait ResourceScope extends Scope with Mockito {
   def createMetaUser(auth: AuthAccountWithCreds): GestaltResourceInstance = {
     val org = auth.authenticatingOrgId
     val u = createNewUser(org, auth.account.id)
-    Entitlements.setNewEntitlements(org, u.id, auth, Some(org))
+    Entitlements.setNewResourceEntitlements(org, u.id, auth, Some(org))
     u
   }
   

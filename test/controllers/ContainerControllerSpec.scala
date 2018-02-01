@@ -71,7 +71,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       testWork = wrkEnv._1
       testEnv = wrkEnv._2
 
-      Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+      Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
       val injector = app.injector
       containerService = injector.instanceOf[ContainerService]
@@ -315,7 +315,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       containerService.getEnvironmentContainer("root", testEnv.id, testContainer.id) returns Future(Some(testContainer -> Seq.empty))
 
       // Set entitlements on new environment for container creation
-      val ces = Ents.setNewEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
+      val ces = Ents.setNewResourceEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
       ces exists { _.isFailure } must beFalse
 
       val path = s"/root/environments/${testEnv.id}/containers/${testContainer.id}"
@@ -567,7 +567,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get))).get
 
-      val ces = Ents.setNewEntitlements(
+      val ces = Ents.setNewResourceEntitlements(
         dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
       ces exists { _.isFailure } must beFalse
 

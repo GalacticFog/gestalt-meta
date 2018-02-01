@@ -85,7 +85,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
       CreateWithEntitlements(org, user, inputJson, typeId, Some(parent)) match {
         case Failure(e) => HandleExceptions(e)
         case Success(integration) => {
-          setNewEntitlements(org, integration.id, user, Option(parent))
+          setNewResourceEntitlements(org, integration.id, user, Option(parent))
           Created(Output.renderInstance(integration, Some(META_URL)))
         }
       }

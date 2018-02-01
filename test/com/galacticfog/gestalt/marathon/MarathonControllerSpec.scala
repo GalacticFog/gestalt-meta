@@ -48,7 +48,7 @@ class MarathonControllerSpec extends PlaySpecification with MetaRepositoryOps wi
   trait TestMarathonController extends FakeSecurity {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
 
-    Ents.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val testProvider = createMarathonProvider(testEnv.id, "test-provider").get
     val mockProviderService = mock[MarathonService]

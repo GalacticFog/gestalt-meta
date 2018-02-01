@@ -53,7 +53,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
   abstract class FakeLambdaScope extends Scope {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val mockProviderMethods = mock[ProviderMethods]
     val injector =

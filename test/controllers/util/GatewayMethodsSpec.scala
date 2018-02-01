@@ -66,7 +66,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
   trait TestApplication extends FakeGatewayScope {
     
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     
     val gatewayMethods = application.injector.instanceOf[GatewayMethods]
     val mockProviderMethods = application.injector.instanceOf[ProviderMethods]

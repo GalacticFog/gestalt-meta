@@ -71,7 +71,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     lazy val (testWork, testEnv) = {
       val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
       (tw,te)
     }
 
@@ -101,7 +101,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     lazy val (testWork, testEnv) = {
       val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
       (tw,te)
     }
 
@@ -180,7 +180,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     lazy val (testWork, testEnv) = {
       val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
       (tw,te)
     }
 
@@ -938,7 +938,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "provision namespace with the expected name and labels" in new FakeKube {
       val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-      Entitlements.setNewEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
       testSetup.kubeClient.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef)) returns Future.successful(None)
       testSetup.kubeClient.create(argThat(
         ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)

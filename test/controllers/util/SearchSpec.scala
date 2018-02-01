@@ -44,7 +44,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
       )),
       user.account.description
     )
-    Ents.setNewEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+    Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
   }
 
   abstract class testApp extends WithApplication(application(additionalBindings = Seq(
@@ -60,9 +60,9 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
     lazy val (testOrg,testWork,testEnv) = {
       val Success(to) = createOrg(name = uuid().toString)
       val Success((tw,te)) = createWorkEnv(org = to.id)
-      Ents.setNewEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
-      Ents.setNewEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
-      Ents.setNewEntitlements(dummyRootOrgId, to.id, user, None)
+      Ents.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      Ents.setNewResourceEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
+      Ents.setNewResourceEntitlements(dummyRootOrgId, to.id, user, None)
       (to,tw,te)
     }
 
