@@ -112,9 +112,20 @@ object TypeMethods extends AuthorizationMethods {
     
     instances.map { instance =>
       log.debug(s"Creating new entitlements on : ${instance.id} [$actionList]")
+      /*
+       * If the caller is the owner of the target instance set the 'owner' var which
+       * will cause them to be added to the entitlement along with 'root'
+       */
       val owner = if (instance.owner.id == userId) Some(userId) else None
-      val ents = entitlements2(rootId, instance.orgId, instance.id, Seq.empty, actions, owner)
-      setEntitlements(instance.orgId, rootAccount, instance, ents)
+      
+      /*
+       * This is the 'owning org' (Org where the entitlement will be created). If the target
+       * instance *is* an Org, we use that ID. If it is any other type, we use its parent org ID
+       */
+      val orgId = if (instance.typeId == ResourceIds.Org) instance.id else instance.orgId
+      
+      val ents = entitlements2(rootId, orgId, instance.id, Seq.empty, actions, owner)
+      setEntitlements(orgId, rootAccount, instance, ents)
     }
   }
   
