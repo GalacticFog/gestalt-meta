@@ -115,82 +115,8 @@ class TypeController @Inject()(
     OkTypeByIdResult(fqid(fqon), id, request.queryString)
   }
   
-  
-  def validateTypeCreate(payload: JsValue): Try[JsValue] = Try {
-    
-    val json = payload.as[JsObject]
-    
-    val info = TypeFactory.findTypeMetadata()
-
-    val prefixes: Seq[String]  = info.filter { case (_,_,_,p) => p.nonEmpty }.map { _._4.get }//info.collect { case (_,_,_,p) if p.isDefined => p.get }
-    val restNames: Seq[String] = info.filter { case (_,_,r,_) => r.nonEmpty }.map { case (_,_,r,_) => r.get }
-    val typeNames: Seq[String] = info.map { case (_,n,_,_) => n.toLowerCase }
-    
-    println("****PREFIXES : " + prefixes)
-    
-    val prefix = Js.find(json, "/properties/actions/prefix") getOrElse {
-      throw new BadRequestException("You must supply a value for `/properties/actions/prefix`")
-    }
-    if (prefixes.contains(prefix.as[String])) {
-      throw new ConflictException(s"`/properties/actions/prefix` must be globally unique. Value '$prefix' is taken.")
-    }
-    
-    val restName = Js.find(json, "/properties/api/rest_name") getOrElse {
-      throw new BadRequestException("You must supply a value for `/properties/api/rest_name`")
-    }
-    
-    if (restNames.contains(restName.as[String])) {
-      throw new ConflictException(s"`/properties/api/rest_name` must be globally unique. Value '$restName' is taken.")
-    }
-    
-    // MUST have at least one parent-type
-    val parentTypes = Js.find(json, "/properties/lineage/parent_types") getOrElse {
-      throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
-    }
-    
-    Js.parse[Seq[String]](parentTypes) match {
-      case Failure(e) => throw new BadRequestException("Failed parsing `/properties/lineage/parent_types`")
-      case Success(ps) => if (ps.isEmpty)
-        throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
-    }
-    
-    val name = Js.find(json, "/name") getOrElse {
-      throw new BadRequestException("You must supply a 'name' for your type.")
-    }
-  
-    val nm = name.as[String]
-    if (typeNames.contains(nm.toLowerCase)) {
-      throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
-    }
-    
-    payload
-  }
-  
-  
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
-    /*
-     * This will be a cheap operation once type-caching is in place.
-     */
-//    val allTypeNames = TypeFactory.findAll.map { _.name.toLowerCase }
-
-    /*
-     * TODO: Enhance validation
-     * - If a new type doesn't explicitly extend another type, it MUST extend Gestalt::Resource
-     * - All types must have at least one parent type (if only one, cannot be self)
-     * - Both api.rest_name, and actions.prefix MUST be globally unique
-     * 
-     */
-    
-//    Js.find(request.body.as[JsObject], "/name").fold {
-//      throw new BadRequestException("You must supply a 'name' for your type.")
-//    }{ name =>
-//      val nm = name.as[String]
-//      if (allTypeNames.contains(nm.toLowerCase)) {
-//        throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
-//      } else CreateTypeWithPropertiesResult(fqid(fqon), request.body) 
-//    }
-
-    validateTypeCreate(request.body) match {
+    TypeMethods.validateCreatePayload(request.body) match {
       case Failure(e) => HandleExceptionsAsync(e)
       case Success(payload) => {
         if (QueryString.singleBoolean(request.queryString, "test")) {
@@ -200,9 +126,7 @@ class TypeController @Inject()(
         }
       }
     }
-    
   }
-  
 
   private[controllers] def findCovariantTypes(qs: Map[String, Seq[String]]): Seq[GestaltResourceType] = {
     if (qs.get("type").isEmpty) List.empty
@@ -256,7 +180,7 @@ class TypeController @Inject()(
   import com.galacticfog.gestalt.security.api.json.JsonImports._
 
   
-  def getRootAccountWithCreds() = {
+  def getRootAccountWithCreds(): AuthAccountWithCreds = {
     
     val securityJs = Json.toJson {
       security.getOrgSyncTree2() match {
@@ -278,7 +202,7 @@ class TypeController @Inject()(
     
     TypeMethods.makeAccount(directoryOrg, rootAccount)
   }
-
+  
   
   private def findSecurityObject[A <: GestaltResource](json: JsObject, path: String, target: UUID)(implicit ra: Reads[A]): A = {
     Js.find(json, path).fold(Option.empty[A]){ accts =>
@@ -292,7 +216,7 @@ class TypeController @Inject()(
     }      
   }
   
-  private[this] val root: AuthAccountWithCreds = getRootAccountWithCreds()
+  private[this] lazy val root: AuthAccountWithCreds = getRootAccountWithCreds()
 
   private def createTypeWithProperties[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Try {
@@ -322,6 +246,9 @@ class TypeController @Inject()(
        * 3.) Update all instances of all parent-types with entitlements for the new type.
        */
 
+      /*
+       * TODO: Extract this code to own method...
+       */
       val caller = request.identity.account.id
       
       // Get a list of all parent-type IDs
@@ -331,8 +258,7 @@ class TypeController @Inject()(
       
         // Update the parent-types with this new child type
         val results = TypeMethods.makeNewParents(caller, newtype.id, newParentTypes)
-        
-        
+
         val errors = results.filter(_.isFailure)
         if (errors.nonEmpty) {
           /*
@@ -340,10 +266,7 @@ class TypeController @Inject()(
            */
           throw new RuntimeException(s"There were errors updating parent-type schemas.")
         }
-        
-        
-        //...use root account with creds to set entitlements...
-        
+          
         def loop(types: Seq[UUID]): Unit = {
           types match {
             case Nil => ;
@@ -356,6 +279,9 @@ class TypeController @Inject()(
         }
         loop(newParentTypes)
       }
+      /*
+       * TODO: ...End extract code
+       */
       
       log.debug("createTypeWithProperties => COMPLETE.")
       newtype

@@ -145,23 +145,84 @@ class DeleteController @Inject()(
     } getOrElse NotFoundResult(s"Property with ID $id not found")
   }
   
+  
+  import play.api.libs.json._
+  import com.galacticfog.gestalt.json._
+  
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     
     log.debug(s"hardDeleteResourceType($fqon, $typeId)")
     
-    TypeFactory.findById(typeId) map { tpe =>
-      
+    TypeFactory.findById(typeId).fold {
+      NotFoundResult(s"Type with ID $typeId not found") 
+    }{ tpe =>
+ 
       // TODO: Test for 'is-gestalt'
 
       val forceParam = QueryString.singleBoolean(request.queryString, "force")
       val deleter = new HardDeleteResourceType[AuthAccountWithCreds]
+      val caller = request.identity.account.id
       
-      deleter.delete(tpe, request.identity, forceParam, manager) match {
+      val result = for {
+        // Delete resource-type in meta
+        x <- deleter.delete(tpe, request.identity, forceParam, manager)
+        
+        // Cleanup entitlements and parent lineage
+        y <- teardownResourceType(caller, tpe)
+      } yield y
+      
+      result match {
         case Failure(e) => HandleExceptions(e)
         case Success(_) => NoContent
-      }
-    } getOrElse NotFoundResult(s"Type with ID $typeId not found")
+      } 
+    }
   }
+  
+  
+  private[controllers] def teardownResourceType(caller: UUID, tpe: GestaltResourceType): Try[Unit] = Try {
+
+    val parentTypes = TypeMethods.getParentTypes(tpe)
+    
+    log.debug(s"Unlinking deleted type (${tpe.typeId}) from parents...")
+    val unlinkErrors = TypeMethods.divorceParents(caller, tpe.id, parentTypes).filter {
+      _.isFailure
+    }
+    
+    log.debug("Testing for unlink errors...")
+    if (unlinkErrors.nonEmpty) {
+      throw new RuntimeException("There were errors unlinking parent-types.")
+    }
+    
+    log.debug("Finding prefix...")
+    /*
+     *  This gets the action prefix which we'll use to build the pattern for finding
+     *  the entitlements we need to delete. 
+     */
+    val prefix = tpe.properties.get.get("actions").fold {
+      throw new RuntimeException("Could not find `actions` value in resource-type data.")
+    }{ api =>
+      Js.find(Json.parse(api).as[JsObject], "/prefix").getOrElse {
+        throw new RuntimeException("Could not parse `prefix` value from `properties/actions/prefix`")
+      }
+    }.as[String]
+    
+    /*
+     * Here's where we delete entitlements for the deleted resource-type from ALL resources
+     * everywhere in the tree.  Action-prefix is globally unique, so we can safely pattern-match
+     * against the action-name declared by the entitlement. Here's where we build the pattern
+     * and select the entitlements to get their IDs.
+     */
+    val actionPattern = "%s.%%".format(prefix)
+    val deleteIds = ResourceFactory.findEntitlementsByAction(actionPattern).map(_.id)
+    
+    log.debug(s"Destroying ALL entitlements with action-pattern : ${actionPattern}")
+    ResourceFactory.destroyAllResourcesIn(deleteIds) match {
+      case Failure(e) =>
+        throw new RuntimeException("There were errors destroying instance entitlements: " + e.getMessage)
+      case Success(_) => ;
+    }
+  }
+  
   
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
 

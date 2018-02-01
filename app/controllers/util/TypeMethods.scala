@@ -82,6 +82,10 @@ object TypeMethods extends AuthorizationMethods {
     }
   }
   
+  
+  /*
+   * This function ADDS entitlements for new resource-types
+   */
   def updateInstanceEntitlements(
       targetType: UUID,
       forType: UUID,
@@ -92,7 +96,7 @@ object TypeMethods extends AuthorizationMethods {
     val instances = startingOrg.fold {
       ResourceFactory.findAll(targetType)
     }{ 
-      org => ResourceFactory.findAll(targetType, startingOrg.get) 
+      org => ResourceFactory.findAll(targetType, org) 
     }
     
     /*
@@ -119,11 +123,7 @@ object TypeMethods extends AuthorizationMethods {
   import com.galacticfog.gestalt.security.api.GestaltOrg
   
   
-  
-  
-  def makeAccount(directoryOrg: GestaltOrg, account: GestaltAccount) = {
-    //val (org, user) = security.getRootInfo(request.identity)
-    
+  def makeAccount(directoryOrg: GestaltOrg, account: GestaltAccount) = {  
     val directory = GestaltDirectory(uuid(), directoryOrg.name, None, orgId = directoryOrg.id)
     
     newAuthAccountWithCreds(Map(
@@ -171,7 +171,7 @@ object TypeMethods extends AuthorizationMethods {
    * @param parent the resource type to update
    * @param children Seq of UUIDs to add to the child_types list
    */
-  def updateChildTypes(caller: UUID, parent: GestaltResourceType, children: Seq[UUID]): Try[GestaltResourceType] = {
+  def addChildTypes(caller: UUID, parent: GestaltResourceType, children: Seq[UUID]): Try[GestaltResourceType] = {
     
     if (children.isEmpty) Success(parent)
     else {
@@ -189,6 +189,35 @@ object TypeMethods extends AuthorizationMethods {
   }
   
   /**
+   * Update a resource-type by removing the given list of UUIDs from its
+   * `properties.lineage.child_types` list.
+   * 
+   * NOTE: This method actually saves the updated resource-type back to meta-repository.
+   * 
+   * @param caller UUID of the user calling this function
+   * @param parent the resource type to update
+   * @param children Seq of UUIDs to remove from the child_types list
+   */
+  def removeChildTypes(caller: UUID, parent: GestaltResourceType, children: Seq[UUID]): Try[GestaltResourceType] = {
+    
+    if (children.isEmpty) Success(parent)
+    else {
+      val p = SystemType.fromResourceType(parent)
+      val lineage = p.lineage getOrElse LineageInfo(Seq.empty, None)
+      val oldlist = lineage.child_types getOrElse Seq.empty
+      val newlist = oldlist.filter(!children.contains(_))
+      
+      val newlineage = lineage.copy(child_types = Some(newlist))
+      val newprops = (parent.properties.get + ("lineage" -> Json.stringify(Json.toJson(newlineage))))
+      val updated = parent.copy(properties = Some(newprops))
+      
+      TypeFactory.update(updated, caller)
+    }
+  }  
+
+  private[controllers] type LineageFunction = (UUID, GestaltResourceType, Seq[UUID]) => Try[GestaltResourceType]
+  
+  /**
    * Make the given type ID a child of each resource-type named in the parents sequence. Adds child
    * to `properties.lineage.child_types` of each parent resource.
    * 
@@ -197,6 +226,25 @@ object TypeMethods extends AuthorizationMethods {
    * @param parents Seq of UUIDs to modify with the new child-type 
    */
   def makeNewParents(caller: UUID, child: UUID, parents: Seq[UUID]) = {
+    log.debug(s"Adding $child to new parents.")
+    modifyLineage(caller, child, parents)(TypeMethods.addChildTypes)
+  }
+
+  /**
+   * Remove the given type ID as a child of each resource-type named in the parents sequence. Removes
+   * the child from `properties.lineage.child_types` of each parent resource.
+   * 
+   * @param caller UUID of the user calling this function
+   * @param child UUID of the child-type to remove
+   * @param parents Seq of type UUIDs from which to remove child-type 
+   */  
+  def divorceParents(caller: UUID, child: UUID, parents: Seq[UUID]) = {
+    log.debug(s"Removing $child from parents.")
+    modifyLineage(caller, child, parents)(TypeMethods.removeChildTypes)
+  }
+
+  
+  def modifyLineage(caller: UUID, child: UUID, parents: Seq[UUID])(f: LineageFunction) = {
 
     def loop(pids: Seq[UUID], acc: Seq[Try[GestaltResourceType]]): Seq[Try[GestaltResourceType]] = {
       pids match {
@@ -205,15 +253,91 @@ object TypeMethods extends AuthorizationMethods {
           TypeFactory.findById(id).fold {
             throw new UnprocessableEntityException(s"Cannot find given parent-type '$id'.")
           }{ parent =>
-            log.debug(s"Adding $child as a child-of ${parent.name}")
-            loop(tail, TypeMethods.updateChildTypes(caller, parent, Seq(child)) +: acc)
+            loop(tail, f(caller, parent, Seq(child)) +: acc)
           }
         }
       }
     }
     loop(parents, Seq.empty)
+  }  
+  
+  
+  def typeIsProvider(json: JsValue, prefix: Option[String], restName: Option[String]): Boolean = {
+    Js.find(json.as[JsObject], "/extend").fold(false) { ext =>
+      val issubtype = ResourceFactory.isSubTypeOf(UUID.fromString(ext.as[String]), ResourceIds.Provider)
+      if (issubtype) {
+        val goodprefix = prefix.fold(true)(_.trim.toLowerCase == "provider")
+        val goodrestname = restName.fold(true)(_.trim.toLowerCase == "providers")
+        goodprefix && goodrestname
+      } else false
+    }
   }
   
+  def validateCreatePayload(payload: JsValue): Try[JsValue] = Try {
+    
+    val json = payload.as[JsObject]
+    
+    val info = TypeFactory.findTypeMetadata()
+
+    val prefixes: Seq[String]  = info.filter { case (_,_,_,p) => p.nonEmpty }.map { _._4.get }//info.collect { case (_,_,_,p) if p.isDefined => p.get }
+    val restNames: Seq[String] = info.filter { case (_,_,r,_) => r.nonEmpty }.map { case (_,_,r,_) => r.get }
+    val typeNames: Seq[String] = info.map { case (_,n,_,_) => n.toLowerCase }
+
+    
+    val prefix = Js.find(json, "/properties/actions/prefix") getOrElse {
+      throw new BadRequestException("You must supply a value for `/properties/actions/prefix`")
+    }
+    
+    if (prefix == null || prefix.as[String].trim.size == 0) {
+      throw new BadRequestException("You must supply a value for `/properties/actions/prefix`")
+    }
+    
+    val isProvider = prefix.as[String].trim.toLowerCase == "provider"
+    
+    /*
+     * Providers (currently) allow duplicates - the prefix is always 'provider'
+     */
+    if (!isProvider && prefixes.contains(prefix.as[String])) {
+      throw new ConflictException(s"`/properties/actions/prefix` must be globally unique. Value '$prefix' is taken.")
+    }
+    
+    /*
+     * We only test for rest_name if current resource is NOT a provider. 
+     */
+    if (!isProvider) {
+      val restName = Js.find(json, "/properties/api/rest_name") getOrElse {
+        throw new BadRequestException("You must supply a value for `/properties/api/rest_name`")
+      }
+      
+      if (restNames.contains(restName.as[String])) {
+        throw new ConflictException(s"`/properties/api/rest_name` must be globally unique. Value '$restName' is taken.")
+      }
+    }
+    
+    // MUST have at least one parent-type
+    val parentTypes = Js.find(json, "/properties/lineage/parent_types") getOrElse {
+      throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
+    }
+    
+    Js.parse[Seq[String]](parentTypes) match {
+      case Failure(e) => throw new BadRequestException("Failed parsing `/properties/lineage/parent_types`")
+      case Success(ps) => if (ps.isEmpty)
+        throw new BadRequestException("You must supply at least one parent type in `/properties/lineage/parent_types`")
+    }
+    
+    val name = Js.find(json, "/name") getOrElse {
+      throw new BadRequestException("You must supply a 'name' for your type.")
+    }
+  
+    val nm = name.as[String]
+    if (typeNames.contains(nm.toLowerCase)) {
+      throw new BadRequestException(s"A type with name '$nm' already exists. Type names must be globally unique.")
+    }
+    
+    payload
+  }  
+  
+ 
   /**
    * Transform type JSON into input-format.
    */
