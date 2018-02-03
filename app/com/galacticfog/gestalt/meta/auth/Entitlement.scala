@@ -14,6 +14,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import play.api.libs.json.JsArray
 import play.api.libs.json.Json
 import scala.language.postfixOps
+import play.api.libs.json._
 
 case class Entitlement(
     id: UUID,
@@ -106,8 +107,9 @@ object EntitlementProps {
 
 case class EntitlementProps(
     action: String, 
-    value: Option[String], 
-    identities: Option[Seq[UUID]]) {
+    value: Option[String] = None,
+    identities: Option[Seq[UUID]] = None,
+    parent: Option[JsValue] = None) {
 
   /**
    * Validates that action name is valid for the resource type and that all identities given are valid.

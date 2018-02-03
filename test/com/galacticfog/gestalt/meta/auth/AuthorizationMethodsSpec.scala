@@ -96,6 +96,72 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
       
     }
     
+  def makeDummyEntitlement(action: String, identities: Seq[UUID]) = {
+    Entitlement(uuid(), dummyRootOrgId, uuid.toString, 
+        properties = EntitlementProps(action, identities = Option(identities)))
+  }    
+    
+    "return an existing entitlement with merged identities if one exists" >> {
+      val user1 = createNewUser()
+      val user2 = createNewUser()      
+      
+      val target = {
+        val r = createInstance(ResourceIds.Workspace, uuid.toString)
+        r must beSuccessfulTry
+        r.get
+      }
+      
+      Auth.findEntitlementsByResource(target.id).isEmpty === true
+      
+      val action1 = uuid.toString
+      val action2 = uuid.toString
+      val action3 = uuid.toString
+      
+      val ents = Seq(
+          makeDummyEntitlement(action1, Seq(user1.id)),
+          makeDummyEntitlement(action2, Seq(user1.id)),
+          makeDummyEntitlement(action3, Seq(user1.id)))
+      
+      val creator = dummyAuthAccountWithCreds(userInfo = Map("id" -> user1.id))
+      val results = Auth.setEntitlements(dummyRootOrgId, creator, target, ents)      
+      
+      results.filter( _.isFailure ).isEmpty === true
+
+      val ents2 = Auth.findEntitlementsByResource(target.id)
+      ents2.size === 3
+      
+      /*
+       *  Try adding the same entitlements with a different identity
+       */
+      val duplicateEnts = Seq(
+          makeDummyEntitlement(action1, Seq(user2.id)),
+          makeDummyEntitlement(action2, Seq(user2.id)),
+          makeDummyEntitlement(action3, Seq(user2.id, user1.id)))
+      
+      val results2 = Auth.setEntitlements(dummyRootOrgId, creator, target, duplicateEnts)
+      results2.filter(_.isFailure).isEmpty === true
+      
+      val ents3 = Auth.findEntitlementsByResource(target.id)
+      ents3.size === 3
+      
+      val actionList: Seq[String] = ents3.map(_.properties.get("action"))
+      val identityList: Seq[Seq[UUID]] = ents3.map { 
+        Entitlement.make( _ ).properties.identities.get
+      }
+      
+      actionList.contains(action1) === true
+      actionList.contains(action2) === true
+      actionList.contains(action3) === true
+
+      /*
+       * Ensure identities contains IDs of both users
+       */
+      val expectedIds = Seq(user1.id, user2.id).sorted
+      identityList(0).sorted === expectedIds
+      identityList(1).sorted === expectedIds
+      identityList(2).sorted === expectedIds
+    }    
+    
   }
   
   "setNewResourceEntitlements" should {

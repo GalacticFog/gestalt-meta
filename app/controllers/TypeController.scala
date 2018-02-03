@@ -266,7 +266,7 @@ class TypeController @Inject()(
            */
           throw new RuntimeException(s"There were errors updating parent-type schemas.")
         }
-          
+        
         def loop(types: Seq[UUID]): Unit = {
           types match {
             case Nil => ;
@@ -288,6 +288,43 @@ class TypeController @Inject()(
     }
   }
   
+  def establishTypeLineage(caller: AuthAccountWithCreds, targetType: GestaltResourceType) = {
+    //val caller = request.identity.account.id
+    
+    // Get a list of all parent-type IDs
+    val newParentTypes = TypeMethods.getParentTypes(targetType)
+    
+    if (newParentTypes.nonEmpty) {
+    
+      // Update the parent-types with this new child type
+      val results = TypeMethods.makeNewParents(caller.account.id, targetType.id, newParentTypes)
+
+      val errors = results.filter(_.isFailure)
+      if (errors.nonEmpty) {
+        /*
+         * TODO: Build useable error message.
+         */
+        throw new RuntimeException(s"There were errors updating parent-type schemas.")
+      }
+      
+//      def loop(types: Seq[UUID]): Unit = {
+//        types match {
+//          case Nil => ;
+//          case h :: t => {
+//            TypeMethods.updateInstanceEntitlements(
+//                h, targetType.id, root, request.identity, None)
+//            loop(t)
+//          }
+//        }
+//      }
+//      loop(newParentTypes)
+      
+      newParentTypes.map { tpe =>
+        TypeMethods.updateInstanceEntitlements(tpe, targetType.id, root, caller, None)
+      }
+      
+    }    
+  }
 
   /** 
    * Get a list of ResourceTypes 
