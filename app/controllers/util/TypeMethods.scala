@@ -82,6 +82,7 @@ object TypeMethods extends AuthorizationMethods {
     }
   }
   
+  import scala.util.{Either,Left,Right}
   
   /*
    * This function ADDS entitlements for new resource-types
@@ -91,7 +92,7 @@ object TypeMethods extends AuthorizationMethods {
       forType: UUID,
       rootAccount: AuthAccountWithCreds,
       callerAccount: AuthAccountWithCreds,
-      startingOrg: Option[UUID] = None): Seq[Seq[Try[GestaltResourceInstance]]] = {
+      startingOrg: Option[UUID] = None): Either[List[String], Unit]/*: Seq[Seq[Try[GestaltResourceInstance]]]*/ = {
     
     val instances = startingOrg.fold {
       ResourceFactory.findAll(targetType)
@@ -110,7 +111,7 @@ object TypeMethods extends AuthorizationMethods {
     val actions = getSelfActions(forType)
     val actionList = actions.mkString(",")
     
-    instances.map { instance =>
+    val results = instances.map { instance =>
       log.debug(s"Creating new entitlements on : ${instance.id} [$actionList]")
       /*
        * If the caller is the owner of the target instance set the 'owner' var which
@@ -125,8 +126,16 @@ object TypeMethods extends AuthorizationMethods {
       val orgId = if (instance.typeId == ResourceIds.Org) instance.id else instance.orgId
       
       val ents = entitlements2(rootId, orgId, instance.id, Seq.empty, actions, owner)
-      setEntitlements(orgId, rootAccount, instance, ents)
+
+      setEntitlements(orgId, rootAccount, instance, ents).collect { case Failure(e) => e.getMessage }
     }
+    
+    /*
+     * If any errors occurred setting entitlements the error messages will be in results. We just
+     * flatten the messages and return the error state.
+     */
+    val test = results.flatten
+    if (test.nonEmpty) Left(test) else Right(())
   }
   
   

@@ -209,6 +209,10 @@ class ResourceController @Inject()(
 
     if (rp.isList) {
       // create
+      
+      /*
+       *  Lookup  parent resource
+       */
       val tryParent = ResourceFactory.findById(
         typeId = rp.parentTypeId getOrElse ResourceIds.Org,
         id = rp.parentId getOrElse fqid(fqon)
@@ -222,10 +226,14 @@ class ResourceController @Inject()(
         parent <- Future.fromTry(tryParent)
         jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
         jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+        /*
+         * Determine if the resource-we're creating is backed by a provider.
+         */
         result <- getBackingProviderType(rp.targetTypeId) match {
           case None =>
             log.debug("request to create non-provider-backed resource")
             newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
+            
           case Some(backingProviderType) =>
             log.debug(s"request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
             genericResourceMethods.createProviderBackedResource(
@@ -239,28 +247,43 @@ class ResourceController @Inject()(
             )
         }
       } yield result
+      
     } else {
+      
       // perform action
       for {
         org <- findOrgOrFail(fqon)
+        
+        /*
+         *  Lookup action to be performed
+         */
         action <- fTry{
           request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
         }
+        
+        /*
+         * Get resource target ID from request URL
+         */
         targetId <- rp.targetId match {
           case Some(targetId) => Future.successful(UUID.fromString(targetId))
           case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
         }
+        
+        /*
+         * 
+         */
         result <- getBackingProviderType(rp.targetTypeId) match {
-          case None => Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
-          case Some(backingProviderType) => genericResourceMethods.performProviderBackedAction(
-            org = org,
-            identity = request.identity,
-            body = request.body,
-            resourceType = rp.targetTypeId,
-            providerType = backingProviderType,
-            actionVerb = action,
-            resourceId = targetId
-          )
+          case None => 
+            Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
+          case Some(backingProviderType) => 
+            genericResourceMethods.performProviderBackedAction(
+              org = org,
+              identity = request.identity,
+              body = request.body,
+              resourceType = rp.targetTypeId,
+              providerType = backingProviderType,
+              actionVerb = action,
+              resourceId = targetId)
         }
       } yield result
     }
