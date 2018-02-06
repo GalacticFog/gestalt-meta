@@ -51,7 +51,7 @@ class DeleteController @Inject()(
       ResourceIds.Org         -> deleteExternalOrg,
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
-      //ResourceIds.Container   -> deleteExternalContainer,
+      ResourceIds.Container   -> deleteExternalContainer,
       ResourceIds.Secret      -> deleteExternalSecret,
       ResourceIds.Api         -> gatewayMethods.deleteApiHandler,
       ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
@@ -130,8 +130,6 @@ class DeleteController @Inject()(
          */
         val test = if (resource.typeId == ResourceIds.Environment) {
           deleteEnvironmentSpecial(resource, identity)
-        } else if (resource.typeId == ResourceIds.Container) {
-          deleteContainerSpecial(resource, identity)
         } else {
           Success(())
         }
@@ -144,23 +142,23 @@ class DeleteController @Inject()(
     }
   }
   
-  def deleteContainerSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-    deleteExternalContainer(res, account) match {
-      case Failure(e) => {
-        log.info("An ERROR occurred attempting to delete the container in the backend CaaS")
-        log.error("ERROR : " + e.getMessage)
-        log.info("Container WILL NOT be deleted from Meta. Try again later or contact and administrator")
-        
-        throw new RuntimeException(s"There was an error deleting the container in the backend CaaS: ${e.getMessage}")
-      }
-      case Success(_) => {
-        log.info("Received SUCCESS result from CaaS Provider for delete.")
-        log.info("Proceeding with Container delete in Meta...")
-        
-        Success(())
-      }
-    }
-  }
+//  def deleteContainerSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
+//    deleteExternalContainer(res, account) match {
+//      case Failure(e) => {
+//        log.error("An ERROR occurred attempting to delete the container in the backend CaaS")
+//        log.error("ERROR : " + e.getMessage)
+//        log.info("Container WILL NOT be deleted from Meta. Try again later or contact and administrator")
+//        
+//        throw new RuntimeException(s"There was an error deleting the container in the backend CaaS: ${e.getMessage}")
+//      }
+//      case Success(_) => {
+//        log.info("Received SUCCESS result from CaaS Provider for delete.")
+//        log.info("Proceeding with Container delete in Meta...")
+//        
+//        Success(())
+//      }
+//    }
+//  }
   
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
     val provider = containerProvider(res)
