@@ -355,7 +355,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val provider = ContainerService.containerProvider(container)
     /*
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers
-     * must never user ResourceFactory directly.
+     * must never use ResourceFactory directly.
      */
     val environment: String = {
       ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
