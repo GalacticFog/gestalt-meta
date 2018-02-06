@@ -32,6 +32,13 @@ import com.galacticfog.gestalt.meta.providers._
 import scala.util.{Try,Success,Failure}
 import controllers.util.Security
 
+import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
+import com.galacticfog.gestalt.security.api.GestaltOrg
+import com.galacticfog.gestalt.security.api.GestaltOrgSync
+import com.galacticfog.gestalt.security.api.GestaltResource
+import com.galacticfog.gestalt.security.api.json.JsonImports._
+
+
 @Singleton
 class TypeController @Inject()(
     messagesApi: MessagesApi,
@@ -116,6 +123,7 @@ class TypeController @Inject()(
   }
   
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
+    
     TypeMethods.validateCreatePayload(request.body) match {
       case Failure(e) => HandleExceptionsAsync(e)
       case Success(payload) => {
@@ -145,7 +153,7 @@ class TypeController @Inject()(
     qs("name").toSeq.flatMap(TypeFactory.findByName(_))     
   }  
   
-  private def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+  private[controllers] def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
     Future {
       createTypeWithProperties(org, typeJson) match {
         case Failure(e) => HandleExceptions(e)
@@ -159,7 +167,7 @@ class TypeController @Inject()(
    * _1 : A GestaltResourceType
    * _2 : An Option[Seq[GestaltTypeProperty]]
    */
-  private def deconstructType(org: UUID, owner: UUID, typeJson: JsValue)(): 
+  private[controllers] def deconstructType(org: UUID, owner: UUID, typeJson: JsValue)(): 
       (GestaltResourceType, Option[Seq[GestaltTypeProperty]]) = {    
     
     val input: GestaltResourceTypeInput = safeGetTypeJson(typeJson).get
@@ -172,15 +180,7 @@ class TypeController @Inject()(
     (domain, definitions)
   }
 
-  
-  import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
-  import com.galacticfog.gestalt.security.api.GestaltOrg
-  import com.galacticfog.gestalt.security.api.GestaltOrgSync
-  import com.galacticfog.gestalt.security.api.GestaltResource
-  import com.galacticfog.gestalt.security.api.json.JsonImports._
-
-  
-  def getRootAccountWithCreds(): AuthAccountWithCreds = {
+  private[controllers] def getRootAccountWithCreds(): AuthAccountWithCreds = {
     
     val securityJs = Json.toJson {
       security.getOrgSyncTree2() match {
@@ -218,7 +218,48 @@ class TypeController @Inject()(
   
   private[this] lazy val root: AuthAccountWithCreds = getRootAccountWithCreds()
 
-  private def createTypeWithProperties[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+  
+  /**
+   * Add a new child type to a parent at the type level. This enables child-type to be a 'childOf'
+   * the parent type in the schema (child-type is now a child of each given parent-type).
+   */
+  private[controllers] def updateParentLineage(
+      caller: UUID, 
+      childType: GestaltResourceType, 
+      parents: Seq[UUID]): Try[Unit] = Try {
+
+    // Update the parent-types with this new child type
+    val results = TypeMethods.makeNewParents(caller, childType.id, parents)
+    val errors = results.collect { case Failure(e) => e.getMessage }
+    
+    if (errors.nonEmpty) {
+      val msg = errors.flatten.mkString(",")
+      throw new RuntimeException(s"There were errors updating parent-type schemas: " + msg )
+    }
+  }
+  
+  /**
+   * Set entitlements for a child-type on all instances of the given parent IDs.
+   */
+  private[controllers] def updateParentEntitlements(
+      caller: AuthAccountWithCreds, 
+      childType: UUID, 
+      parents: Seq[UUID]): Try[Unit] = Try {
+    
+    
+    val t = parents.foldLeft(Try(())) { (_, parent) =>
+      TypeMethods.updateInstanceEntitlements(parent, childType, root, caller, None) match {
+        case Left(errs) => 
+          throw new RuntimeException("There were errors setting instance entitlements: " + errs.mkString(","))
+        case Right(_) => Success(())
+      }      
+    }
+  }
+  
+  private[controllers] def createTypeWithProperties[T](
+      org: UUID, 
+      typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+    
     Try {
       val owner = request.identity.account.id
       
@@ -238,7 +279,7 @@ class TypeController @Inject()(
       
       log.debug("Setting type lineage...")
       /*
-       * Get list of types this type declares as parents.
+       * Get list of types declared as parent types.
        * Add current type to child list of each parent type.
        * 
        * 1.) Create type - get type-ID
@@ -246,49 +287,22 @@ class TypeController @Inject()(
        * 3.) Update all instances of all parent-types with entitlements for the new type.
        */
 
-      /*
-       * TODO: Extract this code to own method...
-       */
-      val caller = request.identity.account.id
-      
       // Get a list of all parent-type IDs
       val newParentTypes = TypeMethods.getParentTypes(newtype)
       
-      if (newParentTypes.nonEmpty) {
+      val results = for {
+        _ <- updateParentLineage(owner, newtype, newParentTypes)
+        a <- updateParentEntitlements(request.identity, newtype.id, newParentTypes)
+      } yield a
       
-        // Update the parent-types with this new child type
-        val results = TypeMethods.makeNewParents(caller, newtype.id, newParentTypes)
-
-        val errors = results.filter(_.isFailure)
-        if (errors.nonEmpty) {
-          /*
-           * TODO: Build useable error message.
-           */
-          throw new RuntimeException(s"There were errors updating parent-type schemas.")
-        }
-          
-        def loop(types: Seq[UUID]): Unit = {
-          types match {
-            case Nil => ;
-            case h :: t => {
-              TypeMethods.updateInstanceEntitlements(
-                  h, newtype.id, root, request.identity, None)
-              loop(t)
-            }
-          }
-        }
-        loop(newParentTypes)
+      results match {
+        case Failure(e) => throw e
+        case Success(_) => newtype
       }
-      /*
-       * TODO: ...End extract code
-       */
-      
-      log.debug("createTypeWithProperties => COMPLETE.")
-      newtype
     }
   }
-  
 
+  
   /** 
    * Get a list of ResourceTypes 
    */

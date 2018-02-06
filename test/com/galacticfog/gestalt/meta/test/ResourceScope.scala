@@ -35,6 +35,7 @@ trait ResourceScope extends Scope with Mockito {
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
   
+  
   object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
   lazy val appBuilder = new GuiceApplicationBuilder().disable(
@@ -307,7 +308,7 @@ trait ResourceScope extends Scope with Mockito {
   }
   
   def createNewUser(
-      org: UUID, 
+      org: UUID = dummyRootOrgId, 
       id: UUID = uuid(), 
       name: String = uuid.toString, 
       properties: Option[Map[String,String]] = None) = {

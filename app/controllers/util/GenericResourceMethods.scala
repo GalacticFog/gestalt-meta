@@ -167,32 +167,41 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                  ( implicit request: RequestHeader ) : Future[Result] = {
 
     val response = for {
+      /*
+       * Resource we're performing the action against.
+       */
       resource <- getOrFail(
         ResourceFactory.findById(resourceType, resourceId),
         s"Resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
       )
+      
       providerId <- getOrFail(
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
         s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
       )
+      
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
         s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
       )
+      
       parent <- getOrFail(
         ResourceFactory.findParent(resource.id),
         s"Could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
       )
+      
       action <- getOrFail (
         actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
         s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
       )
+      
       operations = List(
         controllers.util.Authorize(action),
         controllers.util.PolicyCheck(action),
         controllers.util.EventsPre(action),
         controllers.util.EventsPost(action)
       )
+      
       options = RequestOptions(identity,
         authTarget   = Option(parent.id),
         policyOwner  = Option(parent.id),
@@ -202,8 +211,10 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           "parentId" -> parent.id.toString,
           "typeId"   -> resource.typeId.toString))
       )
+      
       response <- SafeRequest(operations, options).ExecuteAsync {
         input => for {
+          
           invocation <- fTry(GenericActionInvocation(
             action = action,
             context = GenericActionContext.fromParent(org, parent),
@@ -211,6 +222,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
             resource = Some(input),
             actionPayload = body.asText.map(JsString(_)) orElse body.asJson
           ))
+          
           provider <- Future.fromTry(
             genericProviderManager.getProvider(providerResource, action) flatMap {
               case Some(provider) => Success(provider)
@@ -219,7 +231,9 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
               ))
             }
           )
+          
           output <- provider.invokeAction(invocation)
+          
           response = output.fold(
             { resourceResponse =>
               ResourceFactory.update(resourceResponse, identity.account.id, updateTimestamp = true) match {
@@ -287,6 +301,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
   
   /**
    * Find and retrieve a Provider resource instance from a 'resource.create' payload.
+   * 
    */
   private[util] def lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID): Future[GestaltResourceInstance] = {
     
@@ -301,7 +316,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"${sdk.ResourceLabel(resourceType)} creation requires a provider to be specified in 'obj.properties.provider'"
       )
 
-			//Retrieve the provider resource.
+			// Retrieve the provider resource.
       providerResource <- getOrFail(
         ResourceFactory.findById(providerType, providerId),
         s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
@@ -364,7 +379,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         }{ p =>
           p.invokeAction(invocation).map { response =>
             response.left.toOption
-          }              
+          }
         }
       }
     } yield maybeOutputResource
