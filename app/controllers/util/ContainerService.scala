@@ -278,6 +278,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
       stats = saasProvider.find(ctx, metaContainer)
     } yield stats).getOrElse(Future.successful(None)) recover {
+      
+      case ce: java.net.ConnectException =>
+        log.error("Error connecting to CaaS provider", ce)
+        None
+        
       case e: Throwable =>
         log.warn(s"error fetching stats for container ${containerId} from provider", e)
         None

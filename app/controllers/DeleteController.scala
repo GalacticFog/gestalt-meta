@@ -10,8 +10,7 @@ import scala.concurrent.Await
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
@@ -25,6 +24,7 @@ import play.api.i18n.MessagesApi
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import javax.inject.Singleton
+import play.api.libs.json.Json
 
 @Singleton
 class DeleteController @Inject()(
@@ -51,7 +51,7 @@ class DeleteController @Inject()(
       ResourceIds.Org         -> deleteExternalOrg,
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
-      ResourceIds.Container   -> deleteExternalContainer,
+      //ResourceIds.Container   -> deleteExternalContainer,
       ResourceIds.Secret      -> deleteExternalSecret,
       ResourceIds.Api         -> gatewayMethods.deleteApiHandler,
       ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
@@ -84,6 +84,9 @@ class DeleteController @Inject()(
 
   def deleteGenericProviderBackedResource( fqon: String, resource: GestaltResourceInstance, identity: AuthAccountWithCreds )
                                          ( implicit request: RequestHeader ): Future[Unit] = {
+    
+    log.debug(s"deleteGenericProviderBackedResource($fqon, ${resource.name}, _)")
+    
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
     val options    = requestOps(identity, resource.id, resource, owner)
@@ -107,6 +110,9 @@ class DeleteController @Inject()(
 
 
   def deleteResource(resource: GestaltResourceInstance, identity: AuthAccountWithCreds)(implicit request: RequestHeader): Future[Unit] = {
+    
+    log.debug(s"deleteResource(${resource.name}, _)")
+    
     val owner      = findResourceParent(resource.id)
     val operations = deleteOps(resource.typeId)
     val options    = requestOps(identity, resource.id, resource, owner)
@@ -117,20 +123,54 @@ class DeleteController @Inject()(
 
       Future.fromTry {
         /*
-         * TODO: This is a bit of a hack. The delete manager/handler system
-         * needs an overhaul. The issue with Environment is we need to get
-         * any child kube-providers *before* children are deleted. Currently
-         * the only hook occurs *after*. See:
-         * https://gitlab.com/galacticfog/gestalt-meta/issues/319
+         * TODO: The type testing and branching here is a hack to get around limitations
+         * in the general delete handler mechanism.
+         * 
+         * See: https://gitlab.com/galacticfog/gestalt-meta/issues/319
          */
-        if (resource.typeId == ResourceIds.Environment) {
+        val test = if (resource.typeId == ResourceIds.Environment) {
           deleteEnvironmentSpecial(resource, identity)
+        } else if (resource.typeId == ResourceIds.Container) {
+          deleteContainerSpecial(resource, identity)
+        } else {
+          Success(())
         }
-        DeleteHandler.handle(resource, identity)
+        
+        test match {
+          case Failure(e) => throw e
+          case Success(_) => DeleteHandler.handle(resource, identity)
+        }
       }
     }
   }
-
+  
+  def deleteContainerSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
+    deleteExternalContainer(res, account) match {
+      case Failure(e) => {
+        log.info("An ERROR occurred attempting to delete the container in the backend CaaS")
+        log.error("ERROR : " + e.getMessage)
+        log.info("Container WILL NOT be deleted from Meta. Try again later or contact and administrator")
+        
+        throw new RuntimeException(s"There was an error deleting the container in the backend CaaS: ${e.getMessage}")
+      }
+      case Success(_) => {
+        log.info("Received SUCCESS result from CaaS Provider for delete.")
+        log.info("Proceeding with Container delete in Meta...")
+        
+        Success(())
+      }
+    }
+  }
+  
+  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
+    val provider = containerProvider(res)
+    
+    log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroy(res), 5 seconds)
+    }
+  }  
+  
   def hardDeleteTypeProperty(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     log.debug(s"hardDeleteTypeProperty($fqon, $id)")
     
@@ -254,18 +294,10 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
 
-  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
-    val provider = containerProvider(res)
-
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroy(res), 5 seconds)
-    }
-  }
-
   def deleteExternalSecret(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
     val provider = containerProvider(res)
     providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroySecret(res), 5 seconds)
+      Await.result(service.destroySecret(res), 10.seconds)
     }
   }
   
