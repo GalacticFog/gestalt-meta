@@ -186,6 +186,9 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
       case s if (200 to 299).contains(s) =>
         log.info(s"delete app: marathon response:\n" + Json.prettyPrint(marResp.json))
         marResp.json
+      case 404 =>
+        log.warn(s"delete app: marathon responded with 404, app was already deleted. will proceed as normal.")
+        Json.obj()
       case _ => throw otherError(marResp)
     } }
   }  
