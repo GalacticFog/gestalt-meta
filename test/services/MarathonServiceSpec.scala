@@ -1266,7 +1266,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       there was one(testSetup.client).deleteApplication(meq("/some/marathon/app"))(any)
     }
 
-    "delete service on container delete reconstructing external_id" in new FakeDCOS {
+    "not attempt to reconstruct missing external_id on container delete, just proceed" in new FakeDCOS {
       val testProps = ContainerSpec(
         name = "",
         container_type = "DOCKER",

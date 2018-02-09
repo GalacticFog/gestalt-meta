@@ -182,7 +182,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
           _ = log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(resp)}")
         } yield ()
       case None =>
-        log.debug(s"no external_id property in container ${container.id}, will not attempt delete against provider")
+        log.warn(s"no external_id property in container ${container.id}, will not attempt delete against provider")
         Future.successful(())
     }
   }

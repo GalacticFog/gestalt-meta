@@ -141,34 +141,21 @@ class DeleteController @Inject()(
       }
     }
   }
-  
-//  def deleteContainerSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-//    deleteExternalContainer(res, account) match {
-//      case Failure(e) => {
-//        log.error("An ERROR occurred attempting to delete the container in the backend CaaS")
-//        log.error("ERROR : " + e.getMessage)
-//        log.info("Container WILL NOT be deleted from Meta. Try again later or contact and administrator")
-//        
-//        throw new RuntimeException(s"There was an error deleting the container in the backend CaaS: ${e.getMessage}")
-//      }
-//      case Success(_) => {
-//        log.info("Received SUCCESS result from CaaS Provider for delete.")
-//        log.info("Proceeding with Container delete in Meta...")
-//        
-//        Success(())
-//      }
-//    }
-//  }
-  
+
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-    val provider = containerProvider(res)
-    
-    log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroy(res), 5 seconds)
+    val result = for {
+      provider <- Try{containerProvider(res)}
+      service <-  providerManager.getProviderImpl(provider.typeId)
+      result <- Try {
+        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+        Await.result(service.destroy(res), 5 seconds)
+      }
+    } yield result
+    result recoverWith {
+      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
     }
-  }  
-  
+  }
+
   def hardDeleteTypeProperty(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     log.debug(s"hardDeleteTypeProperty($fqon, $id)")
     
