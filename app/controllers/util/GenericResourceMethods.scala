@@ -108,12 +108,13 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       )
       invocation <- fTry(GenericActionInvocation(
         action = action,
+        metaAddress = META_URL,
         context = GenericActionContext.fromParent(org, parent),
         provider = providerResource,
         resource = Some(resource)
       ))
       provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource, action)
+        genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue)
       )
       _ <- provider.map(_.invokeAction(invocation)) getOrElse Future.successful(())
     } yield ()
@@ -143,12 +144,13 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       )
       invocation <- fTry(GenericActionInvocation(
         action = action,
+        metaAddress = META_URL,
         context = GenericActionContext.fromParent(org, parent),
         provider = providerResource,
         resource = Some(updatedResource)
       ))
       provider <- Future.fromTry(
-        genericProviderManager.getProvider(providerResource, action)
+        genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue)
       )
       outputResource <- provider.map(
         _.invokeAction(invocation).map(_.left.toOption)
@@ -217,14 +219,15 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           
           invocation <- fTry(GenericActionInvocation(
             action = action,
+            metaAddress = META_URL,
             context = GenericActionContext.fromParent(org, parent),
             provider = providerResource,
             resource = Some(input),
             actionPayload = body.asText.map(JsString(_)) orElse body.asJson
           ))
-          
+
           provider <- Future.fromTry(
-            genericProviderManager.getProvider(providerResource, action) flatMap {
+            genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue) flatMap {
               case Some(provider) => Success(provider)
               case None => Failure(BadRequestException(
                 s"provider '${providerId}' was not configured with an endpoint for action '${actionVerb}' or a default endpoint"
@@ -277,16 +280,25 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       backingProvider <- lookupProvider(body, resourceType, providerType)
       
       (operations, options, metaRequest) <- newMetaRequest()
-
+      
       response <- SafeRequest(operations, options).ExecuteAsync {
         input => for {
-
+        
           // Execute provider action function if one exists, return result if there is one.
-          actionResult <- invokeProviderAction(backingProvider, org, parent, metaRequest, input, body)
+          actionResult <- {
+            invokeProviderAction(
+                backingProvider, org, parent, 
+                metaRequest, input, body, identity.creds.headerValue)
+          }
           
           // Execute create action in meta
           metaResult <- Future.fromTry {
-            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input), Some(parent.id))
+            /*
+             * TODO: Using actionResult OR input here is not a good idea. By the time we get here
+             * any policy checks have already been run against 'input' - allowing the substitution
+             * at this point gives function authors a very clear way to circumvent policy.
+             */
+            CreateWithEntitlements(org.id, identity, /*actionResult.getOrElse(input),*/input, Some(parent.id))
           }
         } yield Created(Output.renderInstance(metaResult, Some(META_URL)))
       }
@@ -352,19 +364,21 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       parent: GestaltResourceInstance,
       metaRequest: MetaRequest,
       resource: GestaltResourceInstance,
-      payload: JsValue)
+      payload: JsValue,
+      callerAuth: String)
         (implicit request: RequestHeader): Future[Option[GestaltResourceInstance]] = {
     
     for {
       providerImpl <- {
         Future.fromTry(
-          genericProviderManager.getProvider(backingProvider, metaRequest.action)
+          genericProviderManager.getProvider(backingProvider, metaRequest.action, callerAuth)
         )
       }
 
       invocation <- {
         fTry(GenericActionInvocation(
           action   = metaRequest.action,
+          metaAddress = META_URL,
           context  = GenericActionContext.fromParent(org, parent),
           provider = backingProvider,
           resource = Some(resource),
