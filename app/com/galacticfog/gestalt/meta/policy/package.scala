@@ -195,16 +195,16 @@ package object policy {
     if (log.isDebugEnabled) {
       if (rules.isEmpty) log.debug(s"No Policy Rules found for resource $parentId")
       else {
-        log.debug(s"Policy Rules found for resource $parentId")
+        log.debug(s"****Policy Rules found for resource $parentId")
         rules foreach { r =>
           log.debug("%s - %s - %s".format(
-            r.id, r.name, r.properties.get("actions")))
+            r.id, r.name, r.properties.get("match_actions")))
         }
       }
     }
   }
 
-  def effectiveRules(parentId: UUID, ruleType: Option[UUID] = None, actions: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+  def effectiveRules(parentId: UUID, ruleType: Option[UUID] = None, matchActions: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
     val rules = for {
       p <- ResourceFactory.findChildrenOfType(ResourceIds.Policy, parentId)
       r <- ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, p.id)
@@ -216,14 +216,14 @@ package object policy {
     def matchAction(a: Seq[String], b: Seq[String]) = !(a intersect b).isEmpty
     def matchType(test: UUID) = (test == (ruleType getOrElse test))
 
-    if (actions.isEmpty) rules else {
+    if (matchActions.isEmpty) rules else {
       rules filter { r =>
         matchType(r.typeId) &&
-          matchAction(array(r.properties.get("actions")), actions)
+          matchAction(array(r.properties.get("match_actions")), matchActions)
       }
     }
   }
-
+  
   /*
    * TODO: This is temporary. This gets us around the issue where we allow limit + 1 containers to be
    * created when the operator is '<='.

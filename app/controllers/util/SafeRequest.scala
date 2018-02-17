@@ -158,7 +158,7 @@ trait EventMethods {
     } yield r
 
     val fs = if (event.isEmpty) rs else {
-      rs filter { _.properties.get("actions").contains(event.get) }
+      rs filter { _.properties.get("match_actions").contains(event.get) }
     }
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))

@@ -26,14 +26,14 @@ import com.galacticfog.gestalt.meta.api.errors._
 import java.util.UUID
 import scala.util.{Either,Left,Right}
 
-class V1(version: String, identity: UUID) extends MetaMigration(version, identity) {
+class V1() extends MetaMigration() {
 
   private val acc = new MessageAccumulator()
   
   
-  def migrate(payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
+  def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
     
-    perform match {
+    perform(identity) match {
       case Success(_) => {
         Right(MigrationStatus(
             status = "SUCCESS",
@@ -51,7 +51,7 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
     }
   }
   
-  def perform() = Try {
+  private[migrations] def perform(identity: UUID) = Try {
     /*
      * Get all the resource-types upfront.
      */
@@ -85,7 +85,7 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
      * one type to another is a simple matter of copying the property and changing 'applies_to' to the ID of 
      * the new type (of course it's UUID also changes)
      */
-    val cloneFailures = cloneProperties(baseRule, newProps).collect { case Failure(e) => e.getMessage }
+    val cloneFailures = cloneProperties(identity, baseRule, newProps).collect { case Failure(e) => e.getMessage }
     if (cloneFailures.nonEmpty) {
       throw new GenericApiException(500, 
           s"There were error clonging properties to type '${Resources.Rule}'",
@@ -104,7 +104,7 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
     removePropertiesFromType(limitRule.id, commonPropNames).get
     verifyPropsRemoved(limitRule.id, commonPropNames)
     acc push s"Removed properties ${bracketString(commonPropNames)} from ${Resources.RuleLimit}"
-
+    
     
     /* ----------------------------------------------------------------------------------------------------------------
      * Remove common properties from RuleEvent
@@ -112,33 +112,62 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
     removePropertiesFromType(eventRule.id, commonPropNames).get
     verifyPropsRemoved(eventRule.id, commonPropNames)
     acc push s"Removed properties ${bracketString(commonPropNames)} from ${Resources.RuleEvent}"
-  
+    
     
     /* ----------------------------------------------------------------------------------------------------------------
      * Update ALL instances that are a sub-type of Rule with new action property name.
      * Lookup any instances that are sub-types of Rule and update the 'actions' property name to 'match_actions'
      */
+    
+//    val updated = allRules.map { r =>
+//      val old = r.properties.get
+//      val newps = old.collect { case (k, v) =>
+//        val key = if (k == "actions") "match_actions" else k
+//        (key, v)
+//      }
+//      val upd = ResourceFactory.update(r.copy(properties = Some(newps)), identity).get
+//      acc push s"Updated ${ResourceLabel(upd.typeId)} [${upd.id}] /properties/actions to 'match_actions'"
+//    }
+    
     val allRules = ResourceFactory.findAllOfType(CoVariant(ResourceIds.Rule))
-    val updated = allRules.map { r =>
-      val old = r.properties.get
-      val newps = old.collect { case (k, v) =>
-        val key = if (k == "actions") "match_actions" else k
-        (key, v)
-      }
-      val upd = ResourceFactory.update(r.copy(properties = Some(newps)), identity).get
-      acc push s"Updated ${ResourceLabel(upd.typeId)} [${upd.id}] /properties/actions to 'match_actions'"
+    val updated = updateInstancePropertyNames(allRules, Map("actions" -> "match_actions")).map { r =>
+      val upd = ResourceFactory.update(r, identity).get
+      acc push s"Updated ${ResourceLabel(upd.typeId)} [${upd.id}] with new property-mappings."      
     }
     
+    acc push s"Instance updates complete. ${updated.size} instances updated."
+    acc push "Migration complete"
   }
   
-  def verifyPropsRemoved(tpe: UUID, expectedGone: Seq[String]) {
+  
+  
+  private[migrations] def updateInstancePropertyNames(
+      rss: Seq[GestaltResourceInstance], propMap: Map[String, String]): Seq[GestaltResourceInstance] = {
+ 
+    rss.map { r =>
+      val oldProps = r.properties.get
+      val newProps = oldProps.map { case (k, v) =>
+        val key = if (propMap.contains(k)) propMap(k) else k
+        (key, v)
+      }
+      r.copy(properties = Some(newProps))
+    }
+  }
+  
+  /**
+   * Ensure the list of named properties no longer exist on the given Resourcetype,
+   */
+  private[migrations] def verifyPropsRemoved(tpe: UUID, expectedGone: Seq[String]) {
     val props = PropertyFactory.findByType(tpe).collect { case p if expectedGone.contains(p.name) => p.name }
     assert(props.isEmpty) {
       s"Errors removing properties from ${Resources.RuleLimit}. The following properties were not removed: ${bracketString(props)}"
     } 
   }
   
-  def verifyClonedProps(expected: Seq[String], given: Seq[String]) = {
+  /**
+   * Ensure the content of two string sequences match each other exactly.
+   */
+  private[migrations] def verifyClonedProps(expected: Seq[String], given: Seq[String]) = {
     assert(given == expected) {
       val expectedStr = bracketString(expected)
       val foundStr = bracketString(given)
@@ -147,28 +176,39 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
     }    
   }
   
-  def getPropertiesByName(tpe: UUID, propNames: Seq[String]) = {
+  /**
+   * Get the named properties (GestaltTypeProperty) from the given ResourceType
+   */
+  private[migrations] def getPropertiesByName(tpe: UUID, propNames: Seq[String]) = {
     val pnames = propNames.map(_.trim.toLowerCase)
     def takeit(name: String) = pnames.contains(name.trim.toLowerCase)
     
     PropertyFactory.findByType(tpe).collect { case p if takeit(p.name) => p } 
   }
   
-  def cloneProperties(tpe: GestaltResourceType, props: Seq[GestaltTypeProperty]): Seq[Try[GestaltTypeProperty]] = {
+  /**
+   * Copy the list of given properties to the given ResourceType.
+   * This affects persisted data - the cloned properties are cloned as children
+   * of the given Type. 
+   */
+  private[migrations] def cloneProperties(identity: UUID, tpe: GestaltResourceType, props: Seq[GestaltTypeProperty]): Seq[Try[GestaltTypeProperty]] = {
     val existing = PropertyFactory.findByType(tpe.id).map(_.name.trim.toLowerCase)
     val given = props.map(_.name.trim.toLowerCase)
     val conflicts = existing.intersect(given)
     
     if (conflicts.nonEmpty) {
       throw new ConflictException(
-          s"Cannot clone given properties to type - there are conflicts: ${conflicts.mkString("[", ",", "]")}")
+          s"Cannot clone given properties to type - there are conflicts: ${bracketString(conflicts)}")
     }
     props.map { p =>
       PropertyFactory.create(identity)(p.copy(id = UUID.randomUUID(), appliesTo = tpe.id))
     }
   }
   
-  def removePropertiesFromType(tpe: UUID, propNames: Seq[String]): Try[Unit] = Try {
+  /**
+   * Delete the given list of properties from the given ResourceType
+   */
+  private[migrations] def removePropertiesFromType(tpe: UUID, propNames: Seq[String]): Try[Unit] = Try {
     val pnames = propNames.map(_.trim.toLowerCase)
     
     def killit(name: String) = pnames.contains(name.trim.toLowerCase)
@@ -186,11 +226,11 @@ class V1(version: String, identity: UUID) extends MetaMigration(version, identit
     else ()
   }
   
-  def assert(b: => Boolean)(errorMessage: String) {
-    if (!b) throw new RuntimeException(errorMessage)
+  private[migrations] def assert(predicate: => Boolean)(errorMessage: String): Unit = {
+    if (!predicate) throw new RuntimeException(errorMessage)
   }
   
-  def bracketString[A](seq: Seq[A]): String = {
+  private[migrations] def bracketString[A](seq: Seq[A]): String = {
     seq.mkString("[",",","]")
   }  
   

@@ -38,6 +38,16 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import play.api.Logger
 
+/**
+ * WIP: Allow administrators to manually run a meta-schema migration of a specific version.
+ * Currently handles a single route:
+ * 
+ * ```POST /migrate?version={version}```
+ * 
+ * - Calling user MUST be 'root' (not yet enforced)
+ * - `version` querystring param MUST be present and non-null
+ * - Payload is currently empty
+ */
 
 class MigrationController @Inject()( 
     messagesApi: MessagesApi,
@@ -46,38 +56,48 @@ class MigrationController @Inject()(
     genericResourceMethods: GenericResourceMethods )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  
   private[this] val log = Logger(this.getClass)
   
-
-  
+  /**
+   * Perform a meta-schema migration. Expects querystring param '?version={version}'
+   */
   def migrate() = Audited() { implicit request =>
     log.debug("migrate()")
     
+    /*
+     * `?version={version} querystring parameter must be present and it must have a value.
+     */
     val version = QueryString.single(request.queryString, "version", strict = true) getOrElse {
       throw new BadRequestException("You must supply 'version' in the query string.")
     }
-  
-    log.debug("Found migration component matching '$version'. Initiating migration...")
     
-    lookupMigration(version, request.identity.account.id) match {
-      case Failure(e) => HandleExceptions(e)
-      case Success(migration) => {
-        migration.migrate(None) match {
-          case Left(e) => InternalServerError(e)
-          case Right(m) => Ok(m)
-        }
-      }
+    executeMigration(version, request.identity.account.id) match {
+      case Left(e) => InternalServerError(e)
+      case Right(m) => Ok(m)
     }
   }
+
+  /**
+   * Find and perform a schema migration to the given version as the given identity.
+   */
+  def executeMigration(version: String, identity: UUID) = {
+    lookupMigration(version).get.migrate(identity, None)
+  }
   
-  private def lookupMigration(version: String, identity: UUID): Try[MetaMigration] = Try {
+  /**
+   * Find and return a Migration component for the given version string.
+   */
+  private def lookupMigration(version: String): Try[MetaMigration] = Try {
     version match {
-      case "V1" => new V1(version, identity)
+      case "V1" => new V1()
       case _ => throw new BadRequestException(s"No migration found for version '$version'")
     }
   }
   
+  /*
+   * TODO: Unused at the moment, but the intention is that 'migrations' may only be performed by
+   * the admin/root user. This function will be used to determine who the caller is.
+   */
   private[migrations] def validateAdminUser(auth: AuthAccountWithCreds) = {
     for {
       admin <- security.getRootUser(auth)
