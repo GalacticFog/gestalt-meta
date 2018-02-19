@@ -3,8 +3,8 @@ package com.galacticfog.gestalt.meta.api.output
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.meta.api.sdk
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceLabel, ResourceIds}
 import com.galacticfog.gestalt.meta.providers.{ProviderEnv, ProviderMap}
 import com.galacticfog.gestalt.meta.test._
 import org.specs2.matcher.JsonMatchers
@@ -40,10 +40,11 @@ class OutputSpec extends PlaySpecification with MetaRepositoryOps {
         }
       }
       
+      val t = Try(Output.renderResourceTypeOutput(TypeFactory.findById(ResourceIds.RuleLimit).get, None))
       val failed = results.filter { case (k, v) => v.isFailure }
       
       if (failed.nonEmpty) {
-      failed.foreach { case (k,v) => println(s"FAILED: ${k}") }
+      failed.foreach { case (k,v) => println(s"FAILED: ${ResourceLabel(k)}") }
     }
     
     failed.isEmpty === true      

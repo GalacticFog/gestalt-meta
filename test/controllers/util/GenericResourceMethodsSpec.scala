@@ -96,7 +96,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
     "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb") must beASuccessfulTry(beSome(
+      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
       ))
@@ -120,7 +120,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       )))
 
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beSome(
+      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].authHeader) ^^ beSome(authHeader))
@@ -150,15 +150,15 @@ class GenericResourceMethodsSpec extends PlaySpecification
       )))
 
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beSome(
+      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
       ))
-      providerManager.getProvider(testProvider, "action1") must beASuccessfulTry(beSome(
+      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
       ))
-      providerManager.getProvider(testProvider, "action2") must beASuccessfulTry(beSome(
+      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
       ))
@@ -180,7 +180,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       )))
 
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action") must beASuccessfulTry(beNone)
+      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beNone)
     }
 
   }
@@ -212,6 +212,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
+        metaAddress = "http://example.com",
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
@@ -260,6 +261,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
+        metaAddress = "http://example.com",
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
@@ -286,6 +288,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
+        metaAddress = "http://example.com",
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
@@ -295,11 +298,11 @@ class GenericResourceMethodsSpec extends PlaySpecification
         provider = providerWithDefaultEndpoint
       )
 
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("399")
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("400")
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("401")
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("402")
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException]("403")
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("399")
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("400")
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("401")
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("402")
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("403")
     }
 
     "parse custom-response semantics from endpoints " in new TestApplication {
@@ -323,6 +326,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
+        metaAddress = "http://example.com",
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
@@ -357,6 +361,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
+        metaAddress = "http://example.com",
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
@@ -370,7 +375,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         ))
       )
 
-      await(httpProvider.invokeAction(inv)) must throwA[BadRequestException](failureMessage)
+      await(httpProvider.invokeAction(inv)) must throwA[RuntimeException](failureMessage)
     }
 
   }

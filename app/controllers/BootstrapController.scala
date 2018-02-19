@@ -24,6 +24,7 @@ import modules.SecurityKeyInit
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
+import migrations.MigrationController
 
 @Singleton
 class BootstrapController @Inject()( 
@@ -34,7 +35,8 @@ class BootstrapController @Inject()(
        securityInit: SecurityKeyInit,
        deleteController: DeleteController,
        db: play.api.db.Database,
-       appconfig: play.api.Configuration)
+       appconfig: play.api.Configuration,
+       migration: MigrationController)
      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
   
@@ -75,12 +77,48 @@ class BootstrapController @Inject()(
             log.info("Stashing credentials in gestalt-security...")
             initGestaltSecurityCreds(org.id, caller)
             
+            import controllers.util.QueryString
+            
+            /*
+             * Test for migration (default is 'true', always migrate) pass ?migrate=false
+             * to suppress.
+             * If migrate param is missing, assume false, otherwise use given value
+             */
+            val performMigration: Boolean = {
+              QueryString.single(request.queryString, "migrate").fold(true) {
+                /*
+                 * If we can't read the migrate value, set it to false. They
+                 * can migrate manually.
+                 */
+                b => Try(b.toBoolean).recover { case _ =>
+                  log.warn(s"Could not read value of `migrate` parameter found: '$b'. Setting to 'false'.")
+                  false 
+                }.get
+              }
+            }
+            
+            
+            val report = if (performMigration) {
+              log.info("Performing Meta-Schema migrations...")
+              val result = migration.executeMigration("V1", caller.account.id) match {
+                case Left(e) => {
+                  log.error("There was an error during meta-schema migration.")
+                  e
+                }
+                case Right(s) => {
+                  log.info("Meta-Schema migration complete.")
+                  s
+                }
+              }
+              Some(result)
+            } else None
+            
             log.info("Bootstrap complete.")
-            Ok(bootstrapOutputMessage(org))             
+            Ok(bootstrapOutputMessage(org, report))             
           }
         }
         
-       
+        
       }
     }
   }
@@ -168,13 +206,19 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
     }
   }  
   
-  private[controllers] def bootstrapOutputMessage(rootOrg: GestaltOrg): JsValue = {
+  private[controllers] def bootstrapOutputMessage(rootOrg: GestaltOrg, migrationReport: Option[JsValue] = None): JsValue = {
+    
+    val report = migrationReport.fold {
+      Json.obj("status" -> "No migration was performed.")
+    }{ _.as[JsObject] }
+    
     Json.obj(
       "start_time" -> ZonedDateTime.now.toString,
       "root_org" -> Json.obj(
           "id"   -> rootOrg.id.toString,
           "name" -> rootOrg.name
-      )
+      ),
+      "migration" -> report
     )      
   }  
   

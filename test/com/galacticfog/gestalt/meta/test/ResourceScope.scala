@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.test
 
 import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import org.specs2.mutable._
@@ -26,6 +27,7 @@ import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.inject.bind
 //import controllers.util.db.ConnectionManager
+import migrations._
 
 trait ResourceScope extends Scope with Mockito {
   println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
@@ -56,7 +58,21 @@ trait ResourceScope extends Scope with Mockito {
       c <- db.loadReferenceData
       d <- db.loadSystemTypes
       e <- db.initialize("root")
-    } yield e    
+      f <- Try {
+        /*
+         * 
+         * TODO: This temporarily hard-codes the migration to call. The process of automatically evolving
+         * the meta-schema is very much 'in-progress'. Obviously this needs to be more flexible and will
+         * need to follow the final pattern once that's established.
+         * 
+         */
+        val m = new V1()
+        m.migrate(dummyRootOrgId) match {
+          case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V1'", Some(x))
+          case Right(y) => y
+        }
+      }
+    } yield f    
   }
   
   def newOrg(
@@ -117,7 +133,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "actions"    -> Json.toJson(List(action)).toString,
+                "match_actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "lambda" -> lambda.toString,
                 "parent"     -> policy.id.toString)))
@@ -226,7 +242,7 @@ trait ResourceScope extends Scope with Mockito {
             name = uuid,
             parent = Option(policy.id),
             properties = Option(Map(
-                "actions"    -> Json.toJson(List(action)).toString,
+                "match_actions"    -> Json.toJson(List(action)).toString,
                 "defined_at" -> "foo",
                 "parent"     -> policy.id.toString)))
         (policy.id, rule.get.id)
