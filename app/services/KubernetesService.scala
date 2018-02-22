@@ -493,8 +493,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val ingressPMs = for {
       pm <- containerSpec.port_mappings
       vhost <- pm.virtual_hosts.getOrElse(Seq.empty)
-      if pm.expose_endpoint.contains(true) && pm.service_port.orElse(pm.container_port).isDefined
-    } yield (vhost,pm.service_port.getOrElse(pm.container_port.get))
+      cp <- pm.lb_port.orElse(pm.container_port)
+      if pm.expose_endpoint.contains(true)
+    } yield (vhost,cp)
 
     if (ingressPMs.isEmpty) None
     else Some(ingressPMs.foldLeft[Ingress](
@@ -557,13 +558,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             META_PROVIDER_KEY -> context.providerId.toString
           ))
       ) {
-        case (svc, pm) => svc.exposeOnPort(Service.Port(
-          name = pm.name.getOrElse(""),
-          protocol = pm.protocol,
-          port = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")),
-          targetPort = Some(Left(pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")))),
-          nodePort = pm.service_port.getOrElse(0)
-        ))
+        case (svc, pm) =>
+          val cp = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))
+          svc.exposeOnPort(Service.Port(
+            name = pm.name.getOrElse(""),
+            protocol = pm.protocol,
+            port = pm.lb_port.getOrElse(cp),
+            targetPort = Some(Left(cp)),
+            nodePort = pm.service_port.getOrElse(0)
+          ))
       }
       Some(srv)
     }

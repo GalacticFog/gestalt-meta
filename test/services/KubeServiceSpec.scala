@@ -493,14 +493,23 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       port_mappings = Seq(
         ContainerSpec.PortMapping(
           name = Some("http"), protocol = "tcp",
-          container_port = Some(80),
+          container_port = Some(9000),
+          lb_port = Some(80),
           service_port = None,       // auto-assigned
           expose_endpoint = Some(true)
         ),
         ContainerSpec.PortMapping(
           name = Some("https"), protocol = "tcp",
-          container_port = Some(443),
-          service_port = Some(8443), // manually requested
+          container_port = Some(9443),
+          service_port = Some(5000),   // manually requested
+          lb_port = Some(443),
+          expose_endpoint = Some(true)
+        ),
+        ContainerSpec.PortMapping(
+          name = Some("health"), protocol = "tcp",
+          container_port = Some(9001),
+          service_port = Some(0), // auto-assigned
+          lb_port = Some(0),      // auto-assigned
           expose_endpoint = Some(true)
         ),
         ContainerSpec.PortMapping(
@@ -521,7 +530,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           and
         hasExactlyContainerPorts(
           skuber.Container.Port(80,   skuber.Protocol.TCP, "http"),
-          skuber.Container.Port(443,  skuber.Protocol.TCP, "https"),
+          skuber.Container.Port(9443, skuber.Protocol.TCP, "https"),
+          skuber.Container.Port(9001, skuber.Protocol.TCP, "health"),
           skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
         )
       ))(any,meq(skuber.ext.Deployment.deployDef))
@@ -531,8 +541,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val createdService = serviceCaptor.getValue
       createdService must inNamespace(testSetup.testNS.name) and
         hasExactlyServicePorts(
-          skuber.Service.Port("http",  skuber.Protocol.TCP,   80, Some(Left(80)),     0),
-          skuber.Service.Port("https", skuber.Protocol.TCP,  443, Some(Left(443)), 8443)
+          skuber.Service.Port("http",   skuber.Protocol.TCP,   80, Some(Left(9000)),   0),
+          skuber.Service.Port("https",  skuber.Protocol.TCP,  443, Some(Left(9443)), 5000),
+          skuber.Service.Port("health", skuber.Protocol.TCP, 9001, Some(Left(9001)), 0)
         )  and hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
         (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
       createdService.metadata.labels must havePairs(
@@ -550,8 +561,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
-        PortMapping("tcp", Some(80),         None, Some(assignedNodePorts("http")), Some("http"),  None, Some(true), Some(ServiceAddress(svcHost,  80, Some("tcp"), None)), None),
-        PortMapping("tcp", Some(443),        None, Some(8443),                      Some("https"), None, Some(true), Some(ServiceAddress(svcHost, 443, Some("tcp"), None)), None),
+        PortMapping("tcp", Some(9000),       None, Some(assignedNodePorts("http")),   Some("http"),   None, Some(true), Some(ServiceAddress(svcHost,  80, Some("tcp"), None)), None, Some(80)),
+        PortMapping("tcp", Some(9443),       None, Some(5000),                        Some("https"),  None, Some(true), Some(ServiceAddress(svcHost, 443, Some("tcp"), None)), None, Some(443)),
+        PortMapping("tcp", Some(9001),       None, Some(assignedNodePorts("health")), Some("health"), None, Some(true), Some(ServiceAddress(svcHost, 9001, Some("tcp"), None)), None, Some(9001)),
         PortMapping("udp", Some(9999), Some(9999), None,                            Some("debug"), None, None, None, None)
       ))
       there were two(testSetup.kubeClient).close
@@ -1116,9 +1128,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),   expose_endpoint = Some(true), name = Some("http"), virtual_hosts = Some(Seq("galacticfog.com","www.galacticfog.com")) ),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),  service_port = Some(8443), expose_endpoint = Some(true), name = Some("https"), virtual_hosts = Some(Seq("secure.galacticfog.com")) ),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(10000), expose_endpoint = Some(false), name = Some("not-exposed"), virtual_hosts = Some(Seq("no-exposure-no-vhost.galacticfog.com")) )
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"), virtual_hosts = Some(Seq("galacticfog.com","www.galacticfog.com")) ),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(8443), expose_endpoint = Some(true), name = Some("https"), virtual_hosts = Some(Seq("secure.galacticfog.com")) ),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(10000),                       expose_endpoint = Some(false), name = Some("not-exposed"), virtual_hosts = Some(Seq("no-exposure-no-vhost.galacticfog.com")) )
     )) {
       testSetup.kubeClient.create(any)(any,meq(Ingress.ingDef)) returns Future(mock[Ingress])
 
