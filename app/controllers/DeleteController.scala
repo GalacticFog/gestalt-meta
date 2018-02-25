@@ -1,6 +1,5 @@
 package controllers
 
-
 import java.util.UUID
 
 import scala.language.postfixOps
@@ -13,6 +12,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
+
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -24,7 +24,11 @@ import play.api.i18n.MessagesApi
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import javax.inject.Singleton
-import play.api.libs.json.Json
+import play.api.libs.json._
+import skuber.Namespace
+import skuber.api.client.K8SException
+import com.galacticfog.gestalt.json.Js
+
 
 @Singleton
 class DeleteController @Inject()(
@@ -170,10 +174,6 @@ class DeleteController @Inject()(
     } getOrElse NotFoundResult(s"Property with ID $id not found")
   }
   
-  
-  import play.api.libs.json._
-  import com.galacticfog.gestalt.json._
-  
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     
     log.debug(s"hardDeleteResourceType($fqon, $typeId)")
@@ -285,9 +285,7 @@ class DeleteController @Inject()(
       Await.result(service.destroySecret(res), 10.seconds)
     }
   }
-  import skuber.api.client.K8SException
-  import skuber.Namespace
-  
+
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
@@ -399,7 +397,6 @@ class DeleteController @Inject()(
       Seq(ResourceIds.Container)
     } else Seq()
   }
-
 
 
   def findResourceParent(child: UUID) = {
