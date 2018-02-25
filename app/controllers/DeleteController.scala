@@ -285,7 +285,7 @@ class DeleteController @Inject()(
       Await.result(service.destroySecret(res), 10.seconds)
     }
   }
-  
+  import skuber.api.client.K8SException
   import skuber.Namespace
   
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
@@ -297,8 +297,20 @@ class DeleteController @Inject()(
     
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
+      
       skuberFactory.initializeKube(k.id, namespace) flatMap { kube =>
-        val deleted = kube.delete[Namespace](namespace)
+        val deleted = kube.delete[Namespace](namespace).recoverWith { 
+          case e: skuber.api.client.K8SException => {
+            /*
+             * There are a few cases where kube may throw an error when attempting to 
+             * delete a namespace. This guard checks for thos known cases and ignores
+             * the failure if possible.
+             */
+            if (ignorableNamespaceError(namespace, e.status)) 
+              Future.successful(())
+            else throw e
+          }
+        }
         deleted.onComplete(_ => kube.close)
         deleted
       }
@@ -306,6 +318,43 @@ class DeleteController @Inject()(
     Await.result(Future.sequence(deletes), 10.seconds)
     ()
   }
+  
+  /**
+   * Examine the API status returned from attempting to delete a Kubernetes namespace - if
+   * an error is found, determine if it is safe to ignore the error.
+   * 
+   * Many systems return a 200 when trying to delete an entity that does not exist. Kubernetes does NOT
+   * behave this way, returning a 404 instead. Our process aligns kube namespaces with meta environments.
+   * When a meta environment is deleted, the corresponding kube namespace is also deleted. This function 
+   * handles the case where the corresponding namespaces does not exist in kube (or was already cleaned up),
+   * by ignoring the 404 received on namepsace delete.
+   * 
+   * Kubernetes returns a 409 when you attempt to delete a namespace that has associated runtime entitiles
+   * (specifically pods/containers). The error returned indicates that this is the case, but states that
+   * the system is "attempting to purge", and the namespace will be deleted when complete. I believe this is
+   * a bug - the return should be 'Accepted' since that's what happened.  I've confirmed that waiting before repeating
+   * the delete succeeds.  This function simply looks for the 409 and a mention of "purge" in the reason and
+   * ignores the error if satisfied.
+   */
+  private def ignorableNamespaceError(namespace: UUID, status: skuber.api.client.Status): Boolean = {
+    val code = status.code
+    
+    if (code.nonEmpty) {
+      if (code.get == 404) {
+        log.warn(s"Namespace '$namespace' not found in Kubernetes. Skipping.")
+        true
+      }
+      else if (code.get == 409 && status.message.contains("be purged")) {
+        log.warn(s"Conflict deleting namespace '$namespace'. Ignoring.")
+        true
+      }
+      else {
+        log.error(s"Recieved code '${code.get}' on namespace delete.")
+        false
+      }
+    } else false
+  }
+  
   
   private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
     val providerId = ContainerService.containerProviderId(container)
