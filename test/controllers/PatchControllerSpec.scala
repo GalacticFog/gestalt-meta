@@ -323,6 +323,14 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       )
     }
 
+    "create RequestOptions with appropriate policyOwner" in new TestApplication {
+      // this is a half-assed approach for testing that policies will be located so that they can be fired
+      val pc = app.injector.instanceOf[PatchController]
+      pc.standardRequestOptions(user, testLambda).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testContainer).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testEndpoint).policyOwner must beSome(testEnv.id)
+    }
+
   }
   
 }
