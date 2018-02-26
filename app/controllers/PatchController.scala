@@ -203,10 +203,14 @@ class PatchController @Inject()(
 
     // cgbaker: may need a more general solution for this, but for resources parented under an environment,
     // this should locate the policies in the environment, which is what we want
-    val parentId = ResourceFactory.findParent(resource.id) map (_.id)
+    val ancEnv = {
+      val parent = ResourceFactory.findParent(resource.id)
+      if (parent.exists(_.typeId == ResourceIds.Environment)) parent
+      else parent.map(_.id).flatMap(ResourceFactory.findParent).filter(_.typeId == ResourceIds.Environment)
+    }.map(_.id)
     RequestOptions(user,
       authTarget = Option(resource.id),
-      policyOwner = parentId orElse Option(resource.id),
+      policyOwner = ancEnv orElse Option(resource.id),
       policyTarget = Option(resource),
       data)
   }

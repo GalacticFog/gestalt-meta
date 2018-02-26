@@ -86,13 +86,19 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       )),
       parent = Some(testEnv.id)
     )
+    val Success(testApi) = createInstance(
+      ResourceIds.Api,
+      "test-api",
+      properties = Some(Map()),
+      parent = Some(testEnv.id)
+    )
     val Success(testEndpoint) = createInstance(
       ResourceIds.ApiEndpoint,
       "test-endpoint",
       properties = Some(Map(
         "resource" -> "/the/path"
       )),
-      parent = Some(testEnv.id)
+      parent = Some(testApi.id)
     )
     val Success(testContainer) = createInstance(
       ResourceIds.Container,
@@ -202,7 +208,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       val patchDoc = PatchDocument()
 
       val request = fakeAuthRequest(PATCH,
-        s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
+        s"/root/lambdas/${testLambda.id}", testCreds
       ).withBody(patchDoc.toJson)
 
       val Some(result) = route(request)
@@ -274,7 +280,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       val patchDoc = PatchDocument()
 
       val request = fakeAuthRequest(PATCH,
-        s"/root/environments/${testEnv.id}/apiendpoints/${testEndpoint.id}", testCreds
+        s"/root/apiendpoints/${testEndpoint.id}", testCreds
       ).withBody(patchDoc.toJson)
 
       val Some(result) = route(request)
@@ -328,6 +334,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       val pc = app.injector.instanceOf[PatchController]
       pc.standardRequestOptions(user, testLambda).policyOwner must beSome(testEnv.id)
       pc.standardRequestOptions(user, testContainer).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testApi).policyOwner must beSome(testEnv.id)
       pc.standardRequestOptions(user, testEndpoint).policyOwner must beSome(testEnv.id)
     }
 
