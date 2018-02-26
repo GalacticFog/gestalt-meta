@@ -179,7 +179,7 @@ object Resource {
     val parentId = UUID.fromString(info(ParentId))
     val targetId = UUID.fromString(info(TargetId))
     
-    val parentTypeId = typeOrElse(info(ParentType))
+    val _            = typeOrElse(info(ParentType))
     val targetTypeId = typeOrElse(info(TargetType))
     
     ResourceFactory.findChildOfType(targetTypeId, parentId, targetId)
