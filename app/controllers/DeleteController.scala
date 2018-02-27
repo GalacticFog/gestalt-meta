@@ -1,6 +1,5 @@
 package controllers
 
-
 import java.util.UUID
 
 import scala.language.postfixOps
@@ -13,6 +12,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.sdk._
+
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -24,7 +24,11 @@ import play.api.i18n.MessagesApi
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import javax.inject.Singleton
-import play.api.libs.json.Json
+import play.api.libs.json._
+import skuber.Namespace
+import skuber.api.client.K8SException
+import com.galacticfog.gestalt.json.Js
+
 
 @Singleton
 class DeleteController @Inject()(
@@ -141,34 +145,21 @@ class DeleteController @Inject()(
       }
     }
   }
-  
-//  def deleteContainerSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-//    deleteExternalContainer(res, account) match {
-//      case Failure(e) => {
-//        log.error("An ERROR occurred attempting to delete the container in the backend CaaS")
-//        log.error("ERROR : " + e.getMessage)
-//        log.info("Container WILL NOT be deleted from Meta. Try again later or contact and administrator")
-//        
-//        throw new RuntimeException(s"There was an error deleting the container in the backend CaaS: ${e.getMessage}")
-//      }
-//      case Success(_) => {
-//        log.info("Received SUCCESS result from CaaS Provider for delete.")
-//        log.info("Proceeding with Container delete in Meta...")
-//        
-//        Success(())
-//      }
-//    }
-//  }
-  
+
   def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-    val provider = containerProvider(res)
-    
-    log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroy(res), 5 seconds)
+    val result = for {
+      provider <- Try{containerProvider(res)}
+      service <-  providerManager.getProviderImpl(provider.typeId)
+      result <- Try {
+        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+        Await.result(service.destroy(res), 5 seconds)
+      }
+    } yield result
+    result recoverWith {
+      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
     }
-  }  
-  
+  }
+
   def hardDeleteTypeProperty(fqon: String, id: UUID) = Audited(fqon) { implicit request =>
     log.debug(s"hardDeleteTypeProperty($fqon, $id)")
     
@@ -182,10 +173,6 @@ class DeleteController @Inject()(
       }
     } getOrElse NotFoundResult(s"Property with ID $id not found")
   }
-  
-  
-  import play.api.libs.json._
-  import com.galacticfog.gestalt.json._
   
   def hardDeleteResourceType(fqon: String, typeId: UUID) = Audited(fqon) { implicit request =>
     
@@ -298,9 +285,7 @@ class DeleteController @Inject()(
       Await.result(service.destroySecret(res), 10.seconds)
     }
   }
-  
-  import skuber.Namespace
-  
+
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
@@ -310,8 +295,20 @@ class DeleteController @Inject()(
     
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
+      
       skuberFactory.initializeKube(k.id, namespace) flatMap { kube =>
-        val deleted = kube.delete[Namespace](namespace)
+        val deleted = kube.delete[Namespace](namespace).recoverWith { 
+          case e: skuber.api.client.K8SException => {
+            /*
+             * There are a few cases where kube may throw an error when attempting to 
+             * delete a namespace. This guard checks for thos known cases and ignores
+             * the failure if possible.
+             */
+            if (ignorableNamespaceError(namespace, e.status)) 
+              Future.successful(())
+            else throw e
+          }
+        }
         deleted.onComplete(_ => kube.close)
         deleted
       }
@@ -319,6 +316,43 @@ class DeleteController @Inject()(
     Await.result(Future.sequence(deletes), 10.seconds)
     ()
   }
+  
+  /**
+   * Examine the API status returned from attempting to delete a Kubernetes namespace - if
+   * an error is found, determine if it is safe to ignore the error.
+   * 
+   * Many systems return a 200 when trying to delete an entity that does not exist. Kubernetes does NOT
+   * behave this way, returning a 404 instead. Our process aligns kube namespaces with meta environments.
+   * When a meta environment is deleted, the corresponding kube namespace is also deleted. This function 
+   * handles the case where the corresponding namespaces does not exist in kube (or was already cleaned up),
+   * by ignoring the 404 received on namepsace delete.
+   * 
+   * Kubernetes returns a 409 when you attempt to delete a namespace that has associated runtime entitiles
+   * (specifically pods/containers). The error returned indicates that this is the case, but states that
+   * the system is "attempting to purge", and the namespace will be deleted when complete. I believe this is
+   * a bug - the return should be 'Accepted' since that's what happened.  I've confirmed that waiting before repeating
+   * the delete succeeds.  This function simply looks for the 409 and a mention of "purge" in the reason and
+   * ignores the error if satisfied.
+   */
+  private def ignorableNamespaceError(namespace: UUID, status: skuber.api.client.Status): Boolean = {
+    val code = status.code
+    
+    if (code.nonEmpty) {
+      if (code.get == 404) {
+        log.warn(s"Namespace '$namespace' not found in Kubernetes. Skipping.")
+        true
+      }
+      else if (code.get == 409 && status.message.contains("be purged")) {
+        log.warn(s"Conflict deleting namespace '$namespace'. Ignoring.")
+        true
+      }
+      else {
+        log.error(s"Recieved code '${code.get}' on namespace delete.")
+        false
+      }
+    } else false
+  }
+  
   
   private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
     val providerId = ContainerService.containerProviderId(container)
@@ -363,7 +397,6 @@ class DeleteController @Inject()(
       Seq(ResourceIds.Container)
     } else Seq()
   }
-
 
 
   def findResourceParent(child: UUID) = {

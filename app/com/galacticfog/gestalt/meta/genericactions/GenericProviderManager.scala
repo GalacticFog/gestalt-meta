@@ -23,7 +23,7 @@ trait GenericProviderManager {
       (__ \ "actions").readNullable[Seq[String]].map(_ getOrElse Seq.empty)
   )(EndpointProperties.apply _)
 
-  def getProvider(provider: GestaltResourceInstance, action: String): Try[Option[GenericProvider]]
+  def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String): Try[Option[GenericProvider]]
 }
 
 trait GenericProvider {
@@ -94,17 +94,18 @@ case class HttpGenericProvider(client: WSClient,
   }
   
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
-    
     val request = authHeader.foldLeft( client.url(url) ) {
-      case (req, header) => req.withHeaders(AUTHORIZATION -> header)
+      case (req, header) => {
+        req.withHeaders(AUTHORIZATION -> header)
+      }
     }
-
+    
     request.post(invocation.toJson()).flatMap { resp => 
       Future.fromTry(processResponse(invocation.resource, resp))
     }.recover {
       case e: Throwable => {
         log.error("Failed calling external action endpoint : " + e.getMessage)
-        throw e
+        throw new RuntimeException("Failed calling external action endpoint : " + e.getMessage)
       }
     }
   }
@@ -113,7 +114,7 @@ case class HttpGenericProvider(client: WSClient,
 
 class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
   
-  override def getProvider(provider: GestaltResourceInstance, action: String): Try[Option[GenericProvider]] = {
+  override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String): Try[Option[GenericProvider]] = {
     
     // Parse config.endpoints from provider resource properties.
 
@@ -135,19 +136,18 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
       case None => Success(None)
       case Some(ep) => {
         // Ensure the endpoint is of a supported type
-        parseEndpointType(ep, 
+        parseEndpointType(ep, callerAuth,
             msg = s"Provider ${provider.id} endpoint configuration did not match supported types.").map(Some(_))
       }
     }
   }
   
-  private[this] def parseEndpointType(endpoint: JsObject, msg: => String): Try[GenericProvider] = {
-
+  private[this] def parseEndpointType(endpoint: JsObject, callerAuth: String, msg: => String): Try[GenericProvider] = {
     // only support a single endpoint type right now, pretty simple
     val url = (for {
       http <- (endpoint \ "http").asOpt[JsObject]
       url  <- (http \ "url").asOpt[String]
-      authHeader = (http \ "authentication").asOpt[String]
+      authHeader = ((http \ "authentication").asOpt[String] orElse Some(callerAuth))
     } yield HttpGenericProvider(wsclient, url, authHeader = authHeader))
     url map (Success(_)) getOrElse Failure(ConflictException(msg))
   }

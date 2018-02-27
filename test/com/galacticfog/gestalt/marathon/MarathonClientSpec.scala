@@ -35,6 +35,10 @@ class MarathonClientSpec extends PlaySpecification with Mockito with JsonMatcher
       case None => Ok(response)
     }}
   }
+  def always404 = Route {
+    case (_,_) => Action{NotFound(Json.obj("message" -> "nobody here by that name"))}
+  }
+
 
   abstract class FakeWS(clientToken: Option[String], testRoute: MockWS.Routes) extends Scope {
     val routes = Route.apply(testRoute)
@@ -81,6 +85,10 @@ class MarathonClientSpec extends PlaySpecification with Mockito with JsonMatcher
     }
 
     "deleteApplication should not use auth header if token not specified" in new FakeWS(clientToken = None, testRoute = marathonWithoutAuth(Json.obj())) {
+      await(marClient.deleteApplication("/some/app/id")) must_== Json.obj()
+    }
+
+    "deleteApplication should return success on 404 from Marathon" in new FakeWS(clientToken = None, testRoute = always404) {
       await(marClient.deleteApplication("/some/app/id")) must_== Json.obj()
     }
 

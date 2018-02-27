@@ -42,6 +42,7 @@ case object GenericActionContext {
 }
 
 case class GenericActionInvocation(action: String,
+                                   metaAddress: String,
                                    context: GenericActionContext,
                                    provider: GestaltResourceInstance,
                                    resource: Option[GestaltResourceInstance] = None,
@@ -50,6 +51,7 @@ case class GenericActionInvocation(action: String,
 
     Json.obj(
       "action" -> action,
+      "metaAddress" -> metaAddress,
       "context" -> context.toJson(),
       "provider" -> Output.renderInstance(provider),
       "resource" -> resource.map(Output.renderInstance(_)),

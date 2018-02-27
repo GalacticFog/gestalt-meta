@@ -176,7 +176,7 @@ class PatchController @Inject()(
    */
   private[controllers] def applyPatch( target: GestaltResourceInstance )
                                      ( implicit request: SecuredRequest[JsValue] ): Future[Result] = {
-    
+
     val user = request.identity
     val action = actionInfo(target.typeId).prefix + ".update"
     val options = standardRequestOptions(user, target)
@@ -196,14 +196,21 @@ class PatchController @Inject()(
     }
   }
 
-  private[this] def standardRequestOptions(
+  private[controllers] def standardRequestOptions(
     user: AuthAccountWithCreds,
     resource: GestaltResourceInstance,
     data: Option[Map[String, String]] = None) = {
 
+    // cgbaker: may need a more general solution for this, but for resources parented under an environment,
+    // this should locate the policies in the environment, which is what we want
+    val ancEnv = {
+      val parent = ResourceFactory.findParent(resource.id)
+      if (parent.exists(_.typeId == ResourceIds.Environment)) parent
+      else parent.map(_.id).flatMap(ResourceFactory.findParent).filter(_.typeId == ResourceIds.Environment)
+    }.map(_.id)
     RequestOptions(user,
       authTarget = Option(resource.id),
-      policyOwner = Option(resource.id),
+      policyOwner = ancEnv orElse Option(resource.id),
       policyTarget = Option(resource),
       data)
   }
