@@ -105,38 +105,23 @@ class LambdaController @Inject()(
         
         val caller = request.identity
         val client = providerMethods.configureWebClient(provider, Some(ws))
-  
-        val metaCreate = for {
-          metalambda <- CreateWithEntitlements(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-          laserlambda = toLaserLambda(metalambda, provider.id.toString)
-        } yield (metalambda, laserlambda)
         
-        metaCreate match {
-          case Failure(e) => {
-            log.error("Failed to create Lambda in Meta: " + e.getMessage)
-            HandleExceptionsAsync(e)
-          }
-          case Success((meta,laser)) => {
-            log.debug("Creating lambda in Laser...")
-            client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
-
-              if (Seq(200, 201).contains(result.status)) {
-                log.info("Successfully created Lambda in backend system.")
-                Created(RenderSingle(meta))
-              } else {
-                
-                log.error("Error creating Lambda in backend system.")
-                updateFailedBackendCreate(caller, meta, ApiError(result.status, result.body).throwable)
-              }              
-            } recover {
-              case e: Throwable => {
-               log.error(s"Error creating Lambda in backend system.")
-               updateFailedBackendCreate(caller, meta, e)
-              }
+        for {
+          r <- newDefaultResourceResult(org, ResourceIds.Lambda, parent.id, newjson)
+          meta = ResourceFactory.findById(lambdaId).get
+          laser = toLaserLambda(meta, provider.id.toString)
+          result <- client.post("/lambdas", Option(Json.toJson(laser)))
+          response = {
+            if (Seq(200, 201, 202).contains(result.status)) {
+              log.info("Successfully created Lambda in backend system.")
+              Created(RenderSingle(meta))
+            } else { 
+              log.error("Error creating Lambda in backend system.")
+              updateFailedBackendCreate(caller, meta, ApiError(result.status, result.body).throwable)
             }
           }
-        }
-        
+        } yield response
+
       }
     }
   }

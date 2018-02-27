@@ -123,13 +123,13 @@ trait MetaControllerUtils extends AuthorizationMethods {
   }
 
   def newResourceRequestArgs(meta: MetaRequest):
-  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
-    val (operations, options) = newResourceRequestSetup(
-      meta.caller,
-      meta.resource,
-      meta.resourceParent,
-      meta.action, meta.baseUri)
-    (operations, options)
+    Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+      val (operations, options) = newResourceRequestSetup(
+        meta.caller,
+        meta.resource,
+        meta.resourceParent,
+        meta.action, meta.baseUri)
+      (operations, options)
   }
 
   /**
@@ -327,6 +327,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
         "properties" -> 
         replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
   }
+
   
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
@@ -340,6 +341,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
       }
     }
   }
+  
   
   def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
       implicit request: SecuredRequest[_]): MetaRequest = {
