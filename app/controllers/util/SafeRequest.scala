@@ -163,8 +163,19 @@ trait EventMethods {
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))
   }
-  
-  
+
+  /* DO NOT DELETE
+   * TODO: This *will be* the correct way to find effective event rules once we agree
+   * upon what should happen in the event of multiple rule matches.
+   
+  def findEffectiveEventRules2(targetId: UUID, event: Option[String] = None): Seq[GestaltResourceInstance] = {
+    ResourceFactory.findAncestorsOfSubType(ResourceIds.RuleEvent, targetId).filter { r =>
+      r.properties.get("actions").contains(event.get)
+    }
+  }
+   * 
+   */
+   
   def publishEvent( 
       actionName: String, 
       eventType: String,
@@ -175,16 +186,38 @@ trait EventMethods {
       val parentId = opts.data.fold(Option.empty[UUID]){ 
         x => x.get("parentId") map { UUID.fromString(_) }
       }
+         
+//      log.debug("TARGET-PARENT : " + parentId)
+//      log.debug("OPTS-DATA : " + opts.data)
       
-      log.debug("TARGET-PARENT : " + parentId)
-      log.debug("OPTS-DATA : " + opts.data)
+      val owner = (parentId getOrElse opts.policyOwner.get)
       
-      parentId getOrElse opts.policyOwner.get
-      //opts.policyOwner.get
+      /*
+       * Find our policy-root resource. If it's an Environment, use it,
+       * otherwise find the nearest
+       */
+      
+      log.debug("Selecting policy root...")
+      ResourceFactory.findById(owner).fold {
+        throw new RuntimeException("Could not determine policy owner from request-options.")
+      }{ r => 
+        if (r.typeId == ResourceIds.Environment) {
+          log.debug(s"Policy root found. Environment : ${r.id}")
+          r.id
+        } else {
+          
+          log.debug("Searching for ancestor Environment...")
+          val env = ResourceFactory.findAncestorsOfSubType(ResourceIds.Environment, r.id).lastOption getOrElse {
+            throw new RuntimeException("Could not find a parent environment")
+          }
+          log.debug(s"Policy root found. Environment : ${r.id}")
+          env.id
+        }
+      }
     }
-
+    
     log.debug(s"findEffectiveEventRules($target, $eventName)")
-
+    
     findEffectiveEventRules(target, Option(eventName)) match { 
       case None => {
         log.debug("No effective event rules found. Nothing to publish")
