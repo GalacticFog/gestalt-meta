@@ -63,7 +63,7 @@ class ApiController @Inject()(
     }{ _ =>
       
       //val (payload, provider, location) = validateNewApi(json)
-      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")  
+      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")
       
       val lapi = gatewayMethods.toGatewayApi(payload.as[JsObject], location)
       val client = providerMethods.configureWebClient(provider, Some(ws))
@@ -96,75 +96,149 @@ class ApiController @Inject()(
           }
         }
       }
+      
+      
+      
     }
   }
-
 
   def postApiEndpoint(fqon: String, api: UUID) = AsyncAudited(fqon) { implicit request =>
 
     ResourceFactory.findById(ResourceIds.Api, api).fold {
       Future(ResourceNotFound(ResourceIds.Api, api))
     }{ a =>
-
+      
       val caller = request.identity
-      val provider = gatewayMethods.findGatewayProvider(a).get // <-- can generate in 'for' below
-
+      val gatewayProvider = gatewayMethods.findGatewayProvider(a) getOrElse {
+        throw new UnprocessableEntityException(s"Cannot find gateway provider for API '${a.id} (${a.name})'")
+      }
       log.info("Creating Endpoint in Meta...")
 
-      def addUpstreamUrlAndProvider(json: JsValue, upstreamUrl: String, provider: JsObject): Try[JsObject] = {
-        val propAdder = (__ \ 'properties).json.update(
-          __.read[JsObject].map{ o =>
-            o ++ Json.obj( "upstream_url" -> upstreamUrl ) ++ Json.obj( "provider" -> provider )
-          }
-        )
-        json.transform(propAdder) match {
-          case JsSuccess(o,_) => Success(o)
-          case JsError(_) => Failure(new RuntimeException("unable to add 'upstream_url' and 'provider' to ApiEndpoint resource"))
-        }
-      }
-
+      val endpointId = Js.find(request.body.as[JsObject], "/id").fold(UUID.randomUUID.toString)(_.as[String])
+      
       val org = fqid(fqon)
-      val metaCreate = for {
-        apiProvider <- Try{Json.parse(a.properties.get("provider")).as[JsObject]}
-        p <- validateNewEndpoint(request.body, a)
-        ep <- gatewayMethods.toGatewayEndpoint(p, api)
-        pWithAddlProps <- addUpstreamUrlAndProvider(p, ep.upstreamUrl, apiProvider)
-        r <- CreateWithEntitlements(org, caller, pWithAddlProps, ResourceIds.ApiEndpoint, Some(api))
-      } yield (r, ep)
-
-      metaCreate match {
-        case Failure(e) => {
-          log.error("Failed creating Endpoint in Meta",e)
-          HandleExceptionsAsync(e)
-        }
-        case Success((metaEndpoint, gmEndpoint)) => {
-          log.info("Endpoint created in Meta.")
-          setNewResourceEntitlements(org, metaEndpoint.id, caller, Some(api))
-
-          log.info("Creating Endpoint in GatewayManager...")
-          val uri = "/apis/%s/endpoints".format(api.toString)
-          val client = providerMethods.configureWebClient(provider, Some(ws))
-
-          client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
-            if (Seq(200, 201).contains(result.status)) {
-              log.info("Successfully created Endpoint in GatewayManager.")
-              Created(RenderSingle(metaEndpoint))
-            } else {
-              log.error("Error creating Endpoint in GatewayManager.")
-              updateFailedBackendCreate(caller, metaEndpoint, ApiError(result.status, result.body).throwable)
+      val setup = for {
+        apiProvider  <- Try{Json.parse(a.properties.get("provider")).as[JsObject]}
+        endpointJson <- validateNewEndpoint(request.body, a)
+        gmEndpoint   <- gatewayMethods.toGatewayEndpoint(endpointJson, api)
+        updatedJson  <- addUpstreamUrlAndProvider(endpointJson, gmEndpoint.upstreamUrl, apiProvider)
+      } yield ((updatedJson ++ Json.obj("id" -> endpointId)), gmEndpoint)
+      
+      val uri = "/apis/%s/endpoints".format(api.toString)
+      val client = providerMethods.configureWebClient(gatewayProvider, Some(ws))
+      
+      setup match {
+        case Failure(e) => HandleExceptionsAsync(e)
+        case Success((payload, gatewayEndpoint)) => {
+          for {
+            r <- newDefaultResourceResult(org, ResourceIds.ApiEndpoint, api, payload)
+            metaEndpoint = ResourceFactory.findById(UUID.fromString(endpointId)).get
+            result <- {
+              log.info("Endpoint created in Meta.")
+              log.info("Creating Endpoint in GatewayManager...")
+              client.post(uri, Option(Json.toJson(gatewayEndpoint)))
             }
-          } recover {
-            case e: Throwable => {
-              log.error(s"Error creating Endpoint in Gateway Manager.")
-              updateFailedBackendCreate(caller, metaEndpoint, e)
+            response = {
+              if (Seq(200, 201, 202).contains(result.status)) {
+                log.info("Successfully created Endpoint in GatewayManager.")
+                Created(RenderSingle(metaEndpoint))
+              } else {
+                log.error("Error creating Endpoint in GatewayManager.")
+                updateFailedBackendCreate(caller, metaEndpoint, ApiError(result.status, result.body).throwable)
+              }
             }
-            
-          }
+          } yield response
         }
       }
-
     }
   }
+  
+  
+  private[controllers] def addUpstreamUrlAndProvider(json: JsValue, upstreamUrl: String, provider: JsObject): Try[JsObject] = {
+    val propAdder = (__ \ 'properties).json.update(
+      __.read[JsObject].map{ o =>
+        o ++ Json.obj( "upstream_url" -> upstreamUrl ) ++ Json.obj( "provider" -> provider )
+      }
+    )
+    json.transform(propAdder) match {
+      case JsSuccess(o,_) => Success(o)
+      case JsError(_) => Failure(
+          new RuntimeException("unable to add 'upstream_url' and 'provider' to ApiEndpoint resource"))
+    }
+  }
+  
+//  def postApiEndpoint(fqon: String, api: UUID) = AsyncAudited(fqon) { implicit request =>
+//
+//    ResourceFactory.findById(ResourceIds.Api, api).fold {
+//      Future(ResourceNotFound(ResourceIds.Api, api))
+//    }{ a =>
+//
+//      val caller = request.identity
+//      val gatewayProvider = gatewayMethods.findGatewayProvider(a) getOrElse {
+//        throw new UnprocessableEntityException(s"Cannot find gateway provider for API '${a.id} (${a.name})'")
+//      }
+//
+//      log.info("Creating Endpoint in Meta...")
+//
+//      def addUpstreamUrlAndProvider(json: JsValue, upstreamUrl: String, provider: JsObject): Try[JsObject] = {
+//        val propAdder = (__ \ 'properties).json.update(
+//          __.read[JsObject].map{ o =>
+//            o ++ Json.obj( "upstream_url" -> upstreamUrl ) ++ Json.obj( "provider" -> provider )
+//          }
+//        )
+//        json.transform(propAdder) match {
+//          case JsSuccess(o,_) => Success(o)
+//          case JsError(_) => Failure(
+//              new RuntimeException("unable to add 'upstream_url' and 'provider' to ApiEndpoint resource"))
+//        }
+//      }
+//
+//      val org = fqid(fqon)
+//      val metaCreate = for {
+//        apiProvider <- Try{Json.parse(a.properties.get("provider")).as[JsObject]}
+//        p  <- validateNewEndpoint(request.body, a)
+//        ep <- gatewayMethods.toGatewayEndpoint(p, api)
+//        pWithAddlProps <- addUpstreamUrlAndProvider(p, ep.upstreamUrl, apiProvider)
+//        r <- CreateWithEntitlements(org, caller, pWithAddlProps, ResourceIds.ApiEndpoint, Some(api))
+//      } yield (r, ep)
+//
+//      
+//      val rr = newDefaultResourceResult(org, ResourceIds.ApiEndpoint, api, ???)
+//      
+//      
+//      metaCreate match {
+//        case Failure(e) => {
+//          log.error("Failed creating Endpoint in Meta",e)
+//          HandleExceptionsAsync(e)
+//        }
+//        case Success((metaEndpoint, gmEndpoint)) => {
+//          log.info("Endpoint created in Meta.")
+//          //setNewResourceEntitlements(org, metaEndpoint.id, caller, Some(api))
+//
+//          log.info("Creating Endpoint in GatewayManager...")
+//          val uri = "/apis/%s/endpoints".format(api.toString)
+//          val client = providerMethods.configureWebClient(gatewayProvider, Some(ws))
+//
+//          client.post(uri, Option(Json.toJson(gmEndpoint))) map { result =>
+//            if (Seq(200, 201).contains(result.status)) {
+//              log.info("Successfully created Endpoint in GatewayManager.")
+//              Created(RenderSingle(metaEndpoint))
+//            } else {
+//              log.error("Error creating Endpoint in GatewayManager.")
+//              updateFailedBackendCreate(caller, metaEndpoint, ApiError(result.status, result.body).throwable)
+//            }
+//          } recover {
+//            case e: Throwable => {
+//              log.error(s"Error creating Endpoint in Gateway Manager.")
+//              updateFailedBackendCreate(caller, metaEndpoint, e)
+//            }
+//            
+//          }
+//        }
+//      }
+//
+//    }
+//  }
 
   
   private[controllers] def validateNewApi(js: JsValue): (JsValue, GestaltResourceInstance, UUID) = {
