@@ -182,17 +182,17 @@ class PatchController @Inject()(
     val options = standardRequestOptions(user, target)
     val operations = standardRequestOperations(action)
     
-    SafeRequest(operations, options) ProtectAsync { maybeState =>
-      val result = for {
+    val updated = SafeRequest(operations, options) ProtectAsync { maybeState =>
+      for {
         patched <- Patch(target)
         updated <- Future.fromTry {
           log.info("Updating resource in Meta...")
           update(patched, user.account.id)
         }
       } yield Ok(RenderSingle(updated))
-      result recover {
-        case e: Throwable => HandleExceptions(e)
-      }
+    }
+    updated recover {
+      case e: Throwable => HandleExceptions(e)
     }
   }
 
