@@ -129,7 +129,11 @@ class DeleteController @Inject()(
          * See: https://gitlab.com/galacticfog/gestalt-meta/issues/319
          */
         val test = if (resource.typeId == ResourceIds.Environment) {
-          deleteEnvironmentSpecial(resource, identity)
+//          if (DeleteHandler.canDelete(ResourceIds.Environment, resource.id)) {
+            deleteEnvironmentSpecial(resource, identity)
+//          } else {
+//            Failure(new ConflictException("This resource has children and cannot be deleted."))
+//          }
         } else {
           Success(())
         }
@@ -345,6 +349,10 @@ class DeleteController @Inject()(
         account, 
         QueryString.singleBoolean(request.queryString, "force"),
         skipExternals(res, request.queryString)) map { Success(_) }
+    }
+    
+    def canDelete(typeId: UUID, resourceId: UUID): Boolean = {
+      manager.canDelete(typeId, resourceId)
     }
   }
 
