@@ -122,7 +122,9 @@ class ApiController @Inject()(
         endpointJson <- validateNewEndpoint(request.body, a)
         gmEndpoint   <- gatewayMethods.toGatewayEndpoint(endpointJson, api)
         updatedJson  <- addUpstreamUrlAndProvider(endpointJson, gmEndpoint.upstreamUrl, apiProvider)
-      } yield ((updatedJson ++ Json.obj("id" -> endpointId)), gmEndpoint)
+      } yield (
+          (updatedJson ++ Json.obj("id" -> endpointId)), 
+          gmEndpoint.copy(id = Some(UUID.fromString(endpointId))))
       
       val uri = "/apis/%s/endpoints".format(api.toString)
       val client = providerMethods.configureWebClient(gatewayProvider, Some(ws))
