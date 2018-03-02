@@ -1,5 +1,6 @@
 package controllers.util
 
+
 import java.util.UUID
 
 import scala.annotation.tailrec
@@ -176,6 +177,8 @@ trait EventMethods {
    * 
    */
    
+  import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
+  
   def publishEvent( 
       actionName: String, 
       eventType: String,
@@ -186,17 +189,8 @@ trait EventMethods {
       val parentId = opts.data.fold(Option.empty[UUID]){ 
         x => x.get("parentId") map { UUID.fromString(_) }
       }
-         
-//      log.debug("TARGET-PARENT : " + parentId)
-//      log.debug("OPTS-DATA : " + opts.data)
-      
       val owner = (parentId getOrElse opts.policyOwner.get)
-      
-      /*
-       * Find our policy-root resource. If it's an Environment, use it,
-       * otherwise find the nearest
-       */
-      
+
       log.debug("Selecting policy root...")
       ResourceFactory.findById(owner).fold {
         throw new RuntimeException("Could not determine policy owner from request-options.")
@@ -207,7 +201,7 @@ trait EventMethods {
         } else {
           
           log.debug("Searching for ancestor Environment...")
-          val env = ResourceFactory.findAncestorsOfSubType(ResourceIds.Environment, r.id).lastOption getOrElse {
+          val env = ResourceFactory.findAncestorsOfType(r.id, ResourceIds.Environment).lastOption getOrElse {
             throw new RuntimeException("Could not find a parent environment")
           }
           log.debug(s"Policy root found. Environment : ${r.id}")
@@ -298,10 +292,10 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
         Continue
       }
       case Failure(e) => {
-        log.error(s"Failure publishing event : '$eventName'")
+        log.error(s"Failure publishing event: '$eventName' : ${e.getMessage}")
         Continue
       }
-    }    
+    }
   }
 
   private def predicateMessage(p: Predicate[Any]) = {
@@ -322,7 +316,7 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
     publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
-        log.error(s"Failure publishing event : '$eventName'")
+        log.error(s"Failure publishing event : '$eventName' : ${e.getMessage}")
         Continue
       }
     }
