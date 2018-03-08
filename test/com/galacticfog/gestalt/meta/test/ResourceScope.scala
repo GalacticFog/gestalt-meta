@@ -71,6 +71,12 @@ trait ResourceScope extends Scope with Mockito {
           case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V1'", Some(x))
           case Right(y) => y
         }
+        
+        val m2 = new V2()
+        m2.migrate(dummyRootOrgId) match {
+          case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V2'", Some(x))
+          case Right(y) => y
+        }        
       }
     } yield f    
   }

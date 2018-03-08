@@ -1,30 +1,19 @@
 package migrations
 
 
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import play.api.libs.json._
-import play.api.libs.ws.ning.{NingWSRequest, NingAsyncHttpClientConfigBuilder, NingWSClient}
-import scala.concurrent.Future
+import java.util.UUID
+
+import scala.util.{Either, Left, Right}
 import scala.util.{Try, Success, Failure}
-import play.api.Play.current
-import play.api.libs.ws._
-import play.api.libs.json._
 
-import scala.concurrent.duration._
-import scala.concurrent.Await
-
-import com.ning.http.client.AsyncHttpClientConfig
-import controllers.util.db.EnvConfig
-import scala.concurrent.ExecutionContext.Implicits.global
-
-import com.galacticfog.gestalt.meta.auth._
+import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-import java.util.UUID
-import scala.util.{Either,Left,Right}
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.session
+import play.api.libs.json._
+
 
 class V1() extends MetaMigration() {
 

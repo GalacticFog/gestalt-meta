@@ -90,6 +90,7 @@ class MigrationController @Inject()(
   private def lookupMigration(version: String): Try[MetaMigration] = Try {
     version match {
       case "V1" => new V1()
+      case "V2" => new V2()
       case _ => throw new BadRequestException(s"No migration found for version '$version'")
     }
   }
