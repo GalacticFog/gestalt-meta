@@ -398,50 +398,31 @@ trait ResourceScope extends Scope with Mockito {
         value = None, 
         description = None)
   }  
-  
-//  def createEnt(
-//      action: String,
-//      parent: UUID,
-//      identities: Seq[UUID]       = Seq.empty,
-//      name: String                = uuid.toString,
-//      id: UUID                    = uuid(),
-//      owner: ResourceOwnerLink    = dummyOwner,
-//      org: UUID                   = dummyRootOrgId,
-//      /*properties: Option[Hstore]  = None,*/
-//      description: Option[String] = None): Try[GestaltResourceInstance] = {
-//    
-//    
-//    ResourceFactory.create(ResourceIds.Org, org)(
-//      newInstance(
-//        id = id, owner = owner, org = org, 
-//        typeId = ResourceIds.Entitlement, 
-//        name = name, properties = properties, 
-//        description = description), Some(parent))
-//  }
-
 
   def createApi(
-                 name: String = uuid.toString,
-                 id: UUID = uuid(),
-                 owner: ResourceOwnerLink = dummyOwner,
-                 org: UUID = dummyRootOrgId,
-                 properties: Option[Hstore] = None,
-                 parent: Option[UUID] = None,
-                 description: Option[String] = None): Try[GestaltResourceInstance] = {
+     name: String = uuid.toString,
+     id: UUID = uuid(),
+     owner: ResourceOwnerLink = dummyOwner,
+     org: UUID = dummyRootOrgId,
+     properties: Option[Hstore] = None,
+     parent: Option[UUID] = None,
+     description: Option[String] = None): Try[GestaltResourceInstance] = {
+    
     createInstance(ResourceIds.Api, name, id, owner, org, properties, parent, description)
   }
 
   def createApiEndpoint(
-     parentApi: GestaltResourceInstance,
+     parentApi: UUID,
      name: String = uuid.toString,
      id: UUID = uuid(),
      owner: ResourceOwnerLink = dummyOwner,
      org: UUID = dummyRootOrgId,
      properties: Option[Hstore] = None,
      description: Option[String] = None): Try[GestaltResourceInstance] = {
-    createInstance(ResourceIds.ApiEndpoint, name, id, owner, org, properties, Some(parentApi.id), description)
-  }
-  
+    
+    createInstance(ResourceIds.ApiEndpoint, name, id, owner, org, properties, Some(parentApi), description)
+  }  
+
   def createInstance(typeId: UUID,
                      name: String,
                      id: UUID = uuid(),
@@ -518,11 +499,6 @@ trait ResourceScope extends Scope with Mockito {
   }
   
   def setEntitlements(parent: UUID, actions: (String,String)*): Try[Seq[UUID]] = Try {
-//    actions foreach { a => createInstance(ResourceIds.Entitlement, uuid(),
-//      parent = Option(parent),
-//      properties = Option(Map(a._1 -> a._2)))
-//    }
-    
     def go(acts: Seq[(String,String)], acc: Seq[UUID]): Seq[UUID] = {
       acts match {
         case Nil => acc
