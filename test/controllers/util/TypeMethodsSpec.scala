@@ -586,6 +586,10 @@ class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {
     
   }
   
+
+  
+  
+  
 //  "updateInstanceEntitlements" should {
 //    /*
 //  def updateInstanceEntitlements(

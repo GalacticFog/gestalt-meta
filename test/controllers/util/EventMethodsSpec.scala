@@ -71,7 +71,7 @@ class EventMethodsSpec extends PlaySpecification with MetaRepositoryOps {
       val (wrk, env) = createWorkspaceEnvironment(dummyRootOrgId)
 
       val Success(testApi) = createApi("test-api", parent = Some(env))
-      val Success(testEndpoint) = createApiEndpoint(testApi, name = "-dummy", properties = Some(Map(
+      val Success(testEndpoint) = createApiEndpoint(testApi.id, name = "-dummy", properties = Some(Map(
         "resource" -> "/dummy"
       )))
       val testLambda = newDummyLambda(env)

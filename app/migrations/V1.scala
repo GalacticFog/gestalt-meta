@@ -107,17 +107,7 @@ class V1() extends MetaMigration() {
      * Update ALL instances that are a sub-type of Rule with new action property name.
      * Lookup any instances that are sub-types of Rule and update the 'actions' property name to 'match_actions'
      */
-    
-//    val updated = allRules.map { r =>
-//      val old = r.properties.get
-//      val newps = old.collect { case (k, v) =>
-//        val key = if (k == "actions") "match_actions" else k
-//        (key, v)
-//      }
-//      val upd = ResourceFactory.update(r.copy(properties = Some(newps)), identity).get
-//      acc push s"Updated ${ResourceLabel(upd.typeId)} [${upd.id}] /properties/actions to 'match_actions'"
-//    }
-    
+
     val allRules = ResourceFactory.findAllOfType(CoVariant(ResourceIds.Rule))
     val updated = updateInstancePropertyNames(allRules, Map("actions" -> "match_actions")).map { r =>
       val upd = ResourceFactory.update(r, identity).get
@@ -127,8 +117,7 @@ class V1() extends MetaMigration() {
     acc push s"Instance updates complete. ${updated.size} instances updated."
     acc push "Migration complete"
   }
-  
-  
+
   
   private[migrations] def updateInstancePropertyNames(
       rss: Seq[GestaltResourceInstance], propMap: Map[String, String]): Seq[GestaltResourceInstance] = {
