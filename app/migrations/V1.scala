@@ -1,30 +1,19 @@
 package migrations
 
 
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import play.api.libs.json._
-import play.api.libs.ws.ning.{NingWSRequest, NingAsyncHttpClientConfigBuilder, NingWSClient}
-import scala.concurrent.Future
+import java.util.UUID
+
+import scala.util.{Either, Left, Right}
 import scala.util.{Try, Success, Failure}
-import play.api.Play.current
-import play.api.libs.ws._
-import play.api.libs.json._
 
-import scala.concurrent.duration._
-import scala.concurrent.Await
-
-import com.ning.http.client.AsyncHttpClientConfig
-import controllers.util.db.EnvConfig
-import scala.concurrent.ExecutionContext.Implicits.global
-
-import com.galacticfog.gestalt.meta.auth._
+import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-import java.util.UUID
-import scala.util.{Either,Left,Right}
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.session
+import play.api.libs.json._
+
 
 class V1() extends MetaMigration() {
 
@@ -118,17 +107,7 @@ class V1() extends MetaMigration() {
      * Update ALL instances that are a sub-type of Rule with new action property name.
      * Lookup any instances that are sub-types of Rule and update the 'actions' property name to 'match_actions'
      */
-    
-//    val updated = allRules.map { r =>
-//      val old = r.properties.get
-//      val newps = old.collect { case (k, v) =>
-//        val key = if (k == "actions") "match_actions" else k
-//        (key, v)
-//      }
-//      val upd = ResourceFactory.update(r.copy(properties = Some(newps)), identity).get
-//      acc push s"Updated ${ResourceLabel(upd.typeId)} [${upd.id}] /properties/actions to 'match_actions'"
-//    }
-    
+
     val allRules = ResourceFactory.findAllOfType(CoVariant(ResourceIds.Rule))
     val updated = updateInstancePropertyNames(allRules, Map("actions" -> "match_actions")).map { r =>
       val upd = ResourceFactory.update(r, identity).get
@@ -138,8 +117,7 @@ class V1() extends MetaMigration() {
     acc push s"Instance updates complete. ${updated.size} instances updated."
     acc push "Migration complete"
   }
-  
-  
+
   
   private[migrations] def updateInstancePropertyNames(
       rss: Seq[GestaltResourceInstance], propMap: Map[String, String]): Seq[GestaltResourceInstance] = {

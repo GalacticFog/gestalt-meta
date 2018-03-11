@@ -71,6 +71,12 @@ trait ResourceScope extends Scope with Mockito {
           case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V1'", Some(x))
           case Right(y) => y
         }
+        
+        val m2 = new V2()
+        m2.migrate(dummyRootOrgId) match {
+          case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V2'", Some(x))
+          case Right(y) => y
+        }        
       }
     } yield f    
   }
@@ -134,7 +140,7 @@ trait ResourceScope extends Scope with Mockito {
             parent = Option(policy.id),
             properties = Option(Map(
                 "match_actions"    -> Json.toJson(List(action)).toString,
-                "defined_at" -> "foo",
+                "defined_at" -> policy.id.toString,
                 "lambda" -> lambda.toString,
                 "parent"     -> policy.id.toString)))
         (policy.id, rule.get.id)
@@ -392,29 +398,8 @@ trait ResourceScope extends Scope with Mockito {
         value = None, 
         description = None)
   }  
-  
-//  def createEnt(
-//      action: String,
-//      parent: UUID,
-//      identities: Seq[UUID]       = Seq.empty,
-//      name: String                = uuid.toString,
-//      id: UUID                    = uuid(),
-//      owner: ResourceOwnerLink    = dummyOwner,
-//      org: UUID                   = dummyRootOrgId,
-//      /*properties: Option[Hstore]  = None,*/
-//      description: Option[String] = None): Try[GestaltResourceInstance] = {
-//    
-//    
-//    ResourceFactory.create(ResourceIds.Org, org)(
-//      newInstance(
-//        id = id, owner = owner, org = org, 
-//        typeId = ResourceIds.Entitlement, 
-//        name = name, properties = properties, 
-//        description = description), Some(parent))
-//  }
-  
-  
-  def createApi( 
+
+  def createApi(
      name: String = uuid.toString,
      id: UUID = uuid(),
      owner: ResourceOwnerLink = dummyOwner,
@@ -422,9 +407,22 @@ trait ResourceScope extends Scope with Mockito {
      properties: Option[Hstore] = None,
      parent: Option[UUID] = None,
      description: Option[String] = None): Try[GestaltResourceInstance] = {
-    createInstance(ResourceIds.Api, name, id, owner, org, properties, parent, description)  
+    
+    createInstance(ResourceIds.Api, name, id, owner, org, properties, parent, description)
   }
-  
+
+  def createApiEndpoint(
+     parentApi: UUID,
+     name: String = uuid.toString,
+     id: UUID = uuid(),
+     owner: ResourceOwnerLink = dummyOwner,
+     org: UUID = dummyRootOrgId,
+     properties: Option[Hstore] = None,
+     description: Option[String] = None): Try[GestaltResourceInstance] = {
+    
+    createInstance(ResourceIds.ApiEndpoint, name, id, owner, org, properties, Some(parentApi), description)
+  }  
+
   def createInstance(typeId: UUID,
                      name: String,
                      id: UUID = uuid(),
@@ -501,11 +499,6 @@ trait ResourceScope extends Scope with Mockito {
   }
   
   def setEntitlements(parent: UUID, actions: (String,String)*): Try[Seq[UUID]] = Try {
-//    actions foreach { a => createInstance(ResourceIds.Entitlement, uuid(),
-//      parent = Option(parent),
-//      properties = Option(Map(a._1 -> a._2)))
-//    }
-    
     def go(acts: Seq[(String,String)], acc: Seq[UUID]): Seq[UUID] = {
       acts match {
         case Nil => acc
