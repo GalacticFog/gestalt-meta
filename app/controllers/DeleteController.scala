@@ -221,37 +221,8 @@ class DeleteController @Inject()(
     if (unlinkErrors.nonEmpty) {
       throw new RuntimeException("There were errors unlinking parent-types.")
     }
-    
-    log.debug("Finding prefix...")
-    /*
-     *  This gets the action prefix which we'll use to build the pattern for finding
-     *  the entitlements we need to delete. 
-     */
-    val prefix = tpe.properties.get.get("actions").fold {
-      throw new RuntimeException("Could not find `actions` value in resource-type data.")
-    }{ api =>
-      Js.find(Json.parse(api).as[JsObject], "/prefix").getOrElse {
-        throw new RuntimeException("Could not parse `prefix` value from `properties/actions/prefix`")
-      }
-    }.as[String]
-    
-    /*
-     * Here's where we delete entitlements for the deleted resource-type from ALL resources
-     * everywhere in the tree.  Action-prefix is globally unique, so we can safely pattern-match
-     * against the action-name declared by the entitlement. Here's where we build the pattern
-     * and select the entitlements to get their IDs.
-     */
-    val actionPattern = "%s.%%".format(prefix)
-    val deleteIds = ResourceFactory.findEntitlementsByAction(actionPattern).map(_.id)
-    
-    log.debug(s"Destroying ALL entitlements with action-pattern : ${actionPattern}")
-    ResourceFactory.destroyAllResourcesIn(deleteIds) match {
-      case Failure(e) =>
-        throw new RuntimeException("There were errors destroying instance entitlements: " + e.getMessage)
-      case Success(_) => ;
-    }
+    TypeMethods.destroyTypeEntitlements(tpe).get
   }
-  
   
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
 
