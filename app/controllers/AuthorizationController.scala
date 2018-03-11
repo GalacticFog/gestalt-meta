@@ -3,7 +3,6 @@ package controllers
 import java.util.UUID
 
 import scala.annotation.tailrec
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import scala.util.Failure
@@ -94,9 +93,8 @@ class AuthorizationController @Inject()(
   }
   
   def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    val parentType = UUID.fromString(parentTypeId)
     ResourceFactory.findById(parentTypeId, parentId) match {
-      case None => Future(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
+      case None => Future.successful(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
       case Some(parent) => {
         putEntitlementCommon(fqid(fqon), parent.id, id)
       }
@@ -119,8 +117,10 @@ class AuthorizationController @Inject()(
     targets map { ent =>
       val existing = IdentityChange.getIdentities(ent)
       val newids = reconcile(existing, delta.added, delta.deleted)
-      Entitlement.toGestalt(ent.owner.id,
-        Entitlement.make(ent).withIdentities(newids))
+      Entitlement.toGestalt(
+        creator = ent.owner.id,
+        ent = Entitlement.make(ent).withIdentities(newids)
+      )
     }
   }
 
@@ -132,10 +132,10 @@ class AuthorizationController @Inject()(
     val json = request.body
 
     val targetEntitlement = ResourceFactory.findById(ResourceIds.Entitlement, id) getOrElse {
-        throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
+      throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
     }
 
-    val target = ResourceFactory.findById(parent) getOrElse {
+    val _ = ResourceFactory.findById(parent) getOrElse {
       throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
     }
 
@@ -146,7 +146,7 @@ class AuthorizationController @Inject()(
     val options = this.standardRequestOptions(user, id, targetEntitlement)
     val operations = this.standardRequestOperations("entitlement.update")
     
-    SafeRequest(operations, options) Protect { maybeState =>
+    SafeRequest(operations, options) Protect { _ =>
       
       val modified = for {
         r1   <- validateEntitlementPayload(org, parent, user, json, "update")
@@ -158,15 +158,15 @@ class AuthorizationController @Inject()(
       modified match {
         case Failure(error) => HandleExceptions(error)
         case Success(updates)  => {
-          
-          val persisted = updates map { entitlement => 
+
+          val persisted = updates map { entitlement =>
             ResourceFactory.update(entitlement, user.account.id).get
           }
           log.debug(s"${persisted.size} entitlements modified in cascade.")
           val root = getUpdatedRoot(id, persisted).get
           Ok(transformEntitlement(root, org, Some(META_URL)))
         }
-      }  
+      }
     }
   }
   
@@ -174,17 +174,14 @@ class AuthorizationController @Inject()(
   /**
    * Filter the root entitlement from a list of descendant entitlements
    */
-  private[controllers] def getUpdatedRoot(id: UUID, updates: Seq[GestaltResourceInstance]
-      ): Try[GestaltResourceInstance] = Try {
-    val updated = updates filter { _.id == id }
-    updated.size match {
-      case 1 => updated(0)
-      case 0 => throw new RuntimeException("Could not find updated entitlement in cascade list. This is a bug.")
-      case _ => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
+  private[controllers] def getUpdatedRoot( id: UUID,
+                                           updates: Seq[GestaltResourceInstance] ): Try[GestaltResourceInstance] = Try {
+    updates filter { _.id == id } match {
+      case Seq(root) => root
+      case Nil       => throw new RuntimeException("Could not find updated entitlement in cascade list. This is a bug.")
+      case _         => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
     }    
   }
-
-  //private[controllers] def findChildTargets(targetType: UUID
 
   private[controllers] def findOrFail(typeId: UUID, id: UUID): Try[GestaltResourceInstance] = Try {
     ResourceFactory.findById(typeId, id) getOrElse {
@@ -315,7 +312,7 @@ class AuthorizationController @Inject()(
     entitlements map { transformEntitlement(_, org, Some(META_URL)) }
   }
   
-  private[this] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
+  private[controllers] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
     
     val props = EntitlementProps.make(ent)
     

@@ -8,14 +8,15 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.auth.Entitlement
 import controllers.util.GestaltProviderMocking
 import play.api.libs.json.Json
-import play.api.test.PlaySpecification
-import play.api.test.WithApplication
+import play.api.test.{FakeRequest, PlaySpecification, WithApplication}
 import controllers.util.DataStore
 import com.galacticfog.gestalt.meta.test._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-class AuthorizationControllerSpec extends PlaySpecification with MetaRepositoryOps {
+class AuthorizationControllerSpec extends GestaltProviderMocking with MetaRepositoryOps {
 
   sequential
 
@@ -333,6 +334,51 @@ class AuthorizationControllerSpec extends PlaySpecification with MetaRepositoryO
 
       missedSome must beFalse
     }
+  }
+
+  "apiendpoint.invoke entitlements" should {
+
+    val Success(testUser) = createInstance(
+      typeId = ResourceIds.User,
+      name = uuid().toString
+    )
+    val Success(testGroup) = createInstance(
+      typeId = ResourceIds.Group,
+      name = uuid().toString
+    )
+
+    "result in update calls to the associated apiendpoints" in new TestApplication {
+
+//      var Success((testWork, testEnv)) = createWorkEnv()
+//      val Success(api) = controller.CreateWithEntitlements(
+//        dummyRootOrgId, user, Json.obj(
+//          "name" -> uuid()
+//        ), ResourceIds.Api, Some(testEnv.id)
+//      )
+      val Success(endpoint) = controller.CreateWithEntitlements(
+        dummyRootOrgId, user, Json.obj(
+          "name" -> uuid(),
+          "properties" -> Json.obj(
+            "resource" -> "/test-endpoint"
+          )
+        ), ResourceIds.ApiEndpoint, None // Some(api.id)
+      )
+      val List(ent) = ResourceFactory.findDescendantEntitlements(endpoint.id, "apiendpoint.invoke")
+      val updated = Entitlement.make(ent).withIdentities(
+        ids = Seq(testUser.id, testGroup.id)
+      )
+
+      val _ = controller.putEntitlementFqon(dummyRootOrgId.toString, ResourceIds.ApiEndpoint.toString, endpoint.id, ent.id)(FakeRequest(
+        "PUT", s"/root/apiendpoints/${endpoint.id}/entitlements/${ent.id}"
+      ).withBody(
+        controller.transformEntitlement(Entitlement.toGestalt(user.account.id, updated), dummyRootOrgId, None)
+      ))
+
+      there was one(mockGatewayMethods).patchEndpointHandler()
+
+      ok("done")
+    }
+
   }
   
 //  "postEntitlementCommon" should {
