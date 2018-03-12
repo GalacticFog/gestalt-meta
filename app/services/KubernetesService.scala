@@ -520,20 +520,33 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   private[services] def updateContainerSpecPortMappings(containerSpec: ContainerSpec, namespace: String, maybeSvc: Option[skuber.Service]): Seq[PortMapping] = {
     maybeSvc match {
       case None =>
-        containerSpec.port_mappings.map(_.copy( service_address = None ))
+        containerSpec.port_mappings.map(_.copy(service_address = None))
       case Some(svc) =>
         val svchost = s"${svc.name}.${namespace}.svc.cluster.local"
         val svcPorts = svc.spec.map(_.ports) getOrElse List.empty
         containerSpec.port_mappings.map {
-          case pm if pm.expose_endpoint.contains(true) => pm.copy(
-            service_port = svcPorts.find(p => pm.name.contains(p.name) || pm.container_port.contains(p.port)).map(_.nodePort),
-            service_address = Some(ContainerSpec.ServiceAddress(
-              host = svchost,
-              port = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port")),
-              protocol = Some(pm.protocol)
-            ))
-          )
-          case pm => pm.copy(service_address = None)
+          pm => svcPorts.find(
+            p => pm.name.contains(p.name) || (pm.lb_port.filter(_ != 0) orElse pm.container_port).contains(p.port)
+          ) match {
+            case Some(sp) if pm.expose_endpoint.contains(true) =>
+              log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} matched to Service.Port ${sp}")
+              pm.copy(
+                service_port = Some(sp.nodePort),
+                service_address = Some(ContainerSpec.ServiceAddress(
+                  host = svchost,
+                  port = sp.port,
+                  protocol = Some(pm.protocol)
+                )),
+                lb_port = Some(sp.port)
+              )
+            case None =>
+              log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
+              pm.copy(
+                service_address = None,
+                lb_port = None,
+                expose_endpoint = Some(false)
+              )
+          }
         }
     }
   }
@@ -563,7 +576,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           svc.exposeOnPort(Service.Port(
             name = pm.name.getOrElse(""),
             protocol = pm.protocol,
-            port = pm.lb_port.getOrElse(cp),
+            port = pm.lb_port.filter(_ != 0).getOrElse(cp),
             targetPort = Some(Left(cp)),
             nodePort = pm.service_port.getOrElse(0)
           ))
@@ -762,7 +775,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
        *
        * for a given container, all of the .volumeMounts[].mountPath must be unique
        * the uniqueness requirement means that we have to consider other SecretFileMount objects together
-       * for example, mounting the secret parts part-a and part-b into /mnt/secrets/files/part-[a,b] requires either:
+
        * - combining them into one secret volume (and one mount at '/mnt/secrets/files') with both items, or
        * - keeping them as two volumes and two mounts with distinct mountPaths
        * the latter approach is possible in this case (e.g., mountPaths /mnt/secrets and /mnt/secrets/files), but will not be in general
