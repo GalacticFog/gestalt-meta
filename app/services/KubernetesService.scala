@@ -522,7 +522,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case None =>
         containerSpec.port_mappings.map(_.copy(service_address = None))
       case Some(svc) =>
-        val svchost = s"${svc.name}.${namespace}.svc.cluster.local"
+        val svcHost = s"${svc.name}.${namespace}.svc.cluster.local"
         val svcPorts = svc.spec.map(_.ports) getOrElse List.empty
         containerSpec.port_mappings.map {
           pm => svcPorts.find(
@@ -533,13 +533,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               pm.copy(
                 service_port = Some(sp.nodePort),
                 service_address = Some(ContainerSpec.ServiceAddress(
-                  host = svchost,
+                  host = svcHost,
                   port = sp.port,
                   protocol = Some(pm.protocol)
                 )),
                 lb_port = Some(sp.port)
               )
-            case None =>
+            case _ =>
               log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
               pm.copy(
                 service_address = None,

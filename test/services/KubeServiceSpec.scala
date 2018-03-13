@@ -571,7 +571,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("tcp", Some(9000),       None, Some(assignedNodePorts("http")),    Some("http"),    None, Some(true), Some(ServiceAddress(svcHost,  80, Some("tcp"), None)), None, Some(80)),
         PortMapping("tcp", Some(9443),       None, Some(5000),                         Some("https"),   None, Some(true), Some(ServiceAddress(svcHost, 443, Some("tcp"), None)), None, Some(443)),
         PortMapping("tcp", Some(9001),       None, Some(assignedNodePorts("health")),  Some("health"),  None, Some(true), Some(ServiceAddress(svcHost, 9001, Some("tcp"), None)), None, Some(9001)),
-        PortMapping("udp", Some(9999), Some(9999), None,                               Some("debug"),   None, None, None, None)
+        PortMapping("udp", Some(9999), Some(9999), None,                               Some("debug"),   None, Some(false), None, None)
       ))
       there were two(testSetup.kubeClient).close
     }
@@ -1511,14 +1511,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
       testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.update(any)(any,meq(Ingress.ingDef)) returns Future.successful(mock[skuber.ext.Ingress])
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Service.svcDef)) returns Future.successful(Some(
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Service.svcDef)) returns Future.successful(Some(mockSvc()))
+      testSetup.kubeClient.update(any)(any,meq(Service.svcDef)) returns Future.successful(
         mockSvc().exposeOnPort(
           skuber.Service.Port("add-service", skuber.Protocol.TCP, 80, Some(9000), 30000)
         ).exposeOnPort(
           skuber.Service.Port("add-port", skuber.Protocol.TCP, 444, Some(444), 30001)
         )
-      ))
-      testSetup.kubeClient.update(any)(any,meq(Service.svcDef)) returns Future.successful(mockSvc())
+      )
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1578,6 +1578,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps must havePair(
         "image" -> "nginx:updated"
       )
+      println(updatedContainerProps("port_mappings"))
       updatedContainerProps("port_mappings") must /#(0) and not /#(0) /("service_address")
       updatedContainerProps("port_mappings") must /#(1) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
       updatedContainerProps("port_mappings") must /#(2) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
