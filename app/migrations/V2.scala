@@ -15,6 +15,8 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.data.session
 import play.api.libs.json._
+import com.galacticfog.gestalt.meta.auth._
+import com.galacticfog.gestalt.meta.api.output._
 
 
 class V2 extends MetaMigration() {
@@ -24,11 +26,120 @@ class V2 extends MetaMigration() {
   
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
 
-    addInvokeVerbToApiEndpointType(identity, payload)
+    val process = for {
+      // This updates the ApiEndpoint Type with the invoke verb.
+      _ <- addInvokeVerbToApiEndpointType(identity, payload)
+      x <- {
+        // This creates the 'apiendpoint.invoke' entitlement on all appropriate resources.
+        val failures = addInvokeEntitlements(identity).collect { case Failure(e) => e.getMessage }
+        if (failures.nonEmpty) {
+          Failure(new RuntimeException(failures.mkString("[", ",", "]")))
+        } else {
+          Success(())
+        }
+      }
+    } yield x
 
+    process match {
+      case Success(_) => {
+        acc push "Meta update successful."
+        Right(MigrationStatus(
+            status = "SUCCESS",
+            message = s"Upgrade successfully applied",
+            succeeded = Some(acc.messages),
+            None).toJson)
+      }
+      case Failure(e) => {
+        Left(MigrationStatus(
+            status = "FAILURE",
+            message = s"There were errors performing this upgrade: ${e.getMessage}",
+            succeeded = Some(acc.messages),
+            errors = Some(Seq(e.getMessage))).toJson)
+      }
+    }
   }
   
-  private[migrations] def addInvokeVerbToApiEndpointType(identity: UUID, payload: Option[JsValue]) = {
+  
+  private[migrations] def addInvokeEntitlements(identity: UUID): Seq[Try[Unit]] = {
+    /*
+     * Add 'apiendpoint.invoke' Entitlement to: 
+     * - All existing ApiEndpoints
+     * - All apiendpoint.parentType instances
+     */
+    
+    val allEndpoints = ResourceFactory.findAll(ResourceIds.ApiEndpoint) 
+    val tpe = TypeFactory.findById(ResourceIds.ApiEndpoint).map { t =>
+      SystemType.fromResourceType(t)
+    }.get
+    
+    val action = "apiendpoint.invoke"
+    
+    /*
+     * Gather all existing resources that *can be* parent to an ApiEndpoint 
+     */
+    val parentTypes = tpe.lineage.get.parent_types
+    val allParents = parentTypes.flatMap(typeId => ResourceFactory.findAll(typeId))
+    
+    /*
+     * The full set of resources to update is the union all ApiEndpoints and all possible
+     * ApiEndpoint parents.
+     */
+    val allForUpdate = (allEndpoints ++ allParents)
+    
+    /*
+     * Here we gather all resources that *already* have the 'invoke' entitlement.
+     */
+    val entitlementExists = ResourceFactory.findEntitlementsByAction(action).map {
+      ent => ResourceFactory.findParent(ent.id).get.id
+    }
+    
+    def hasEntitlement(id: UUID): Boolean = {
+      entitlementExists.contains(id)
+    }
+    
+    acc push s"Adding 'apiendpoint.invoke' entitlement to existing instances. (${allForUpdate.size} resources total)"
+    
+    if (allForUpdate.isEmpty) {
+      /*
+       * There were no resources in the system requiring update - there's nothing to do.
+       */
+      acc push "There are no resource instances to update at this time."
+      Seq(Success(()))
+    } else {
+    
+      allForUpdate.map { p =>
+        if (hasEntitlement(p.id)) {
+          /*
+           * Resource already has invoke entitlement - there's nothing to do.
+           */
+          acc push s"${ResourceLabel(p.typeId)} '${p.id}' already has the entitlement. Skipping..."
+          Success(())
+        } else {
+          /*
+           * Resource *does not* have the invoke entitlement. Create new entitlement and attach to resource.
+           */
+          val owner = p.owner.id
+          val ent = Entitlement(
+              id = UUID.randomUUID(),
+              org = p.orgId,
+              name = s"${p.id}.apiendpoint.invoke",
+              properties = EntitlementProps(action, None, Some(Seq(identity, owner))))
+          
+          ResourceFactory.create(ResourceIds.User, identity)(
+              Entitlement.toGestalt(identity, ent), parentId = Some(p.id)) match {
+            case Failure(e) => throw e
+            case Success(_) => {
+              acc push s"Entitlement added to ${ResourceLabel(p.typeId)} '${p.id}'"
+              Success(())
+            }
+          }
+        }
+      }
+    }
+  }
+  
+  
+  private[migrations] def addInvokeVerbToApiEndpointType(identity: UUID, payload: Option[JsValue]) = Try {
     
     acc push s"Looking up Resource Type ApiEndpoint '${ResourceIds.ApiEndpoint}'"
     val endpoint = TypeFactory.findById(ResourceIds.ApiEndpoint).getOrElse {
@@ -59,24 +170,7 @@ class V2 extends MetaMigration() {
     val updated = endpoint.copy(properties = Some(newProps))
     
     acc push "Performing update in Meta"
-    TypeFactory.update(updated, identity) match {
-      case Success(_) => {
-        acc push "Meta update successful."
-        Right(MigrationStatus(
-            status = "SUCCESS",
-            message = s"Upgrade successfully applied",
-            succeeded = Some(acc.messages),
-            None).toJson)
-      }
-      case Failure(e) => {
-        Left(MigrationStatus(
-            status = "FAILURE",
-            message = s"There were errors performing this upgrade: ${e.getMessage}",
-            succeeded = Some(acc.messages),
-            errors = Some(Seq(e.getMessage))).toJson)
-      }
-    }    
-    
+    TypeFactory.update(updated, identity).get
   }
   
 }
