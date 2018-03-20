@@ -202,7 +202,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
     val (patchedEndpoint,updatedUrl) = {
       val partiallyPatchedEP = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
       val newProps = partiallyPatchedEP.properties getOrElse Map.empty
-      val implementation_type: String   =   newProps.get("implementation_type") getOrElse(throw new RuntimeException(s"could not locate current 'implementation_type' for ApiEndpoint ${r.id}"))
+      val implementation_type: String   = newProps.get("implementation_type") getOrElse(throw new RuntimeException(s"could not locate current 'implementation_type' for ApiEndpoint ${r.id}"))
       val implementation_id_str: String = newProps.get("implementation_id")   getOrElse(throw new RuntimeException(s"could not locate current 'implementation_id' for ApiEndpoint ${r.id}"))
       val port_name: Option[String]     = newProps.get("container_port_name")
       val synchronous: Boolean          = newProps.get("synchronous").flatMap(s => Try{s.toBoolean}.toOption) getOrElse true
