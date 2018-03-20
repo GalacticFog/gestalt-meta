@@ -21,20 +21,11 @@ object JsonUtil {
    * otherwise the new key will have the old value.
    */
   def replaceKey(obj: JsObject, oldName: String, newName: String, newValue: Option[JsValue] = None) = {
-    Js.find(obj, oldName).fold(obj) { v =>
-      val value = if (newValue.isDefined) newValue.get else v
-      (obj - oldName) ++ Json.obj(newName -> value)
+    Js.find(obj, oldName).fold(obj) {
+      oldValue => (obj - oldName) ++ Json.obj(
+        newName -> newValue.getOrElse[JsValue](oldValue)
+      )
     }
-    
-//    obj \ oldName match {
-//      case u: JsUndefined => obj
-//      case v => {
-//        val value = {
-//          if (newValue.isDefined) newValue.get else v
-//        }
-//        (obj - oldName) ++ Json.obj(newName -> value)
-//      }
-//    }
   }
   
   /**
