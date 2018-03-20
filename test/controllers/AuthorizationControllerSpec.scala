@@ -467,10 +467,8 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
 
   "apiendpoint.invoke entitlements" should {
 
-
     "result in update calls to the associated apiendpoints" in new TestEndpointSupport {
 
-      println("test start")
       val List(ent) = ResourceFactory.findDescendantEntitlements(testEndpoint.id, "apiendpoint.invoke")
       val updated = Entitlement.make(ent).withIdentities(
         ids = Seq(testUser.id, testGroup.id)
@@ -484,11 +482,10 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
       }
 
       val body = Output.renderInstance(Entitlement.toGestalt(user.account.id, updated)).as[JsObject] - "resource_type"
-      println(body)
       val resp = controller.putEntitlementFqon("root", ResourceIds.ApiEndpoint.toString, testEndpoint.id, ent.id)(fakeAuthRequest(
         PUT, s"/root/apiendpoints/${testEndpoint.id}/entitlements/${ent.id}", testCreds
       ).withBody(body))
-      println(contentAsString(resp))
+      status(resp) must_== OK
 
       there was one(mockGatewayMethods).patchEndpointHandler(
         r = argThat( (r: GestaltResourceInstance) => r.id must_== testEndpoint.id),
