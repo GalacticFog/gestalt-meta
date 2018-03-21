@@ -78,9 +78,28 @@ class GatewayMethods @Inject() ( ws: WSClient,
     }
   }
 
+  def createEndpoint( api: GestaltResourceInstance,
+                      metaEndpoint: GestaltResourceInstance,
+                      gatewayEndpoint: LaserEndpoint ): Future[GestaltResourceInstance] = {
+    val uri = "/apis/%s/endpoints".format(api.toString)
+    val gatewayProvider = findGatewayProvider(api) getOrElse {
+      throw new UnprocessableEntityException(s"Cannot find gateway provider for API '${api.id} (${api.name})'")
+    }
+    val client = providerMethods.configureWebClient(gatewayProvider, Some(ws))
+    client.post(uri, Option(Json.toJson(gatewayEndpoint))) flatMap {
+      result =>
+        if (Seq(200, 201, 202).contains(result.status)) {
+          log.info("Successfully created Endpoint in GatewayManager.")
+          Future.successful(metaEndpoint)
+        } else {
+          Future.failed(
+            ApiError(result.status, result.body).throwable
+          )
+        }
+    }
+  }
+
   def toGatewayEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = {
-
-
     for {
       json  <- Try{js.as[JsObject]}
       apiId <- Try{Js.find(json, "/id").flatMap(_.asOpt[String]).getOrElse(

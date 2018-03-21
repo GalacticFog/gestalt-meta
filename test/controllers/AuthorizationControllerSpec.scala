@@ -503,6 +503,60 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
       updatedPlugins must not /("gestaltSecurity") /("groups")
     }
 
+    "be appropriately set at creation" in new TestEndpointSupport {
+
+      val apiController = app.injector.instanceOf[ApiController]
+
+      mockGatewayMethods.patchEndpointHandler(any, any, any, any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          val r = arr(0).asInstanceOf[GestaltResourceInstance]
+          // we don't really care how it answers, but we'd rather not log an error in this test
+          Future.successful(r)
+      }
+
+      val result = apiController.postApiEndpoint("root", testApi.id)(fakeAuthRequest(
+        POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds
+      ).withBody(Json.obj(
+        "name" -> uuid(),
+        "properties" -> Json.obj(
+          "resource"     -> "/some/path",
+          "methods" -> Json.toJson(Seq("GET")).toString,
+          "implementation_type" -> "lambda",
+          "implementation_id" -> testLambda.id.toString,
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id.toString,
+            "locations" -> Json.arr(testKongProvider.id.toString).toString
+          ).toString,
+          "plugins" -> Json.obj(
+            "gestaltSecurity" -> Json.obj(
+              "enabled" -> true
+            )
+          ).toString
+        )
+      )))
+
+      status(result) must_== OK
+      val createdEndpointId = (contentAsJson(result) \ "id").as[UUID]
+
+      val ent = Entitlement.make(ResourceFactory.findDescendantEntitlements(createdEndpointId, "apiendpoint.invoke").head)
+
+      there was one(mockGatewayMethods).patchEndpointHandler(
+        r = argThat( (r: GestaltResourceInstance) => r.id must_== createdEndpointId),
+        patch = Matchers.eq(PatchDocument(
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/users", Json.arr(testUser.id)),
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/groups", Json.arr(testGroup.id))
+        )),
+        user = any,
+        request = any
+      )
+
+      val Some(updatedEndpoint) = ResourceFactory.findById(ResourceIds.ApiEndpoint, createdEndpointId)
+      val updatedPlugins = updatedEndpoint.properties.get("plugins")
+      updatedPlugins must not /("gestaltSecurity") /("users")
+      updatedPlugins must not /("gestaltSecurity") /("groups")
+    }
+
   }
   
 //  "postEntitlementCommon" should {

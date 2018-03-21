@@ -42,19 +42,18 @@ package object laser {
 
   case class LaserProvider(id: Option[String], name: String, href: Option[String] = None, providerInfo: Option[JsValue] = None)
   case class LaserLocation(id: Option[String], name: String, providerId: String)
-  
-  case class LaserEndpoint(
-      id: Option[String], 
-      apiId: String, 
-      upstreamUrl: String,
-      path: String, 
-      domain: Option[JsValue] = None,
-      url: Option[String] = None,
-      provider: Option[JsValue] = None,
-      endpointInfo: Option[JsValue] = None, 
-      authentication: Option[JsValue] = None,
-      methods: Option[Seq[String]] = None,
-      plugins: Option[JsValue] = None)
+
+  case class LaserEndpoint( id: Option[String],
+                            apiId: String,
+                            upstreamUrl: String,
+                            path: String,
+                            domain: Option[JsValue] = None,
+                            url: Option[String] = None,
+                            provider: Option[JsValue] = None,
+                            endpointInfo: Option[JsValue] = None,
+                            authentication: Option[JsValue] = None,
+                            methods: Option[Seq[String]] = None,
+                            plugins: Option[JsValue] = None )
 
   case class LaserArtifactDescription(
       artifactUri: Option[String],
