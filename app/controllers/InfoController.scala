@@ -105,4 +105,50 @@ class InfoController @Inject()(
   }
 
   
+  import scala.io.Source
+  import controllers.util.QueryString
+  import com.galacticfog.gestalt.meta.api.errors._
+  import java.nio.file.{Paths,Files}
+  
+  def readAuditLogs() = Audited() { implicit request =>
+    val fileVar = "META_AUDIT_LOG_FILE"
+    val DEFAULT_MAX_LINES = 1000
+    
+    // Find META_AUDIT_LOG environment var
+    val file: String = sys.env.get(fileVar).map(s => s) getOrElse {
+      throw new BadRequestException(s"Env Var ${fileVar} not found.")
+    }
+    
+    // Ensure named log-file exists
+    val source = {
+      if (Files.exists(Paths.get(file))) Source.fromFile(file)
+      else throw new ResourceNotFoundException(s"Audit log file '${file}' not found")
+    }
+    
+    try {
+      val head = QueryString.single(request.queryString, "head").flatMap(parseInt(_))
+      val tail = QueryString.single(request.queryString, "tail").flatMap(parseInt(_))
+     
+      val data: List[String] = {
+        val dat = source.getLines
+        if (head.nonEmpty) 
+          dat.take(head.get).toList
+        else if (tail.nonEmpty) {
+          dat.toList.takeRight(tail.get)
+        } else dat.take(DEFAULT_MAX_LINES).toList
+      }
+      
+      Ok(data.mkString("\n")).withHeaders("Content-Type" -> "text/plain")
+    
+    } finally {
+      source.close() 
+    }
+  }
+
+  def parseInt(s: String): Option[Int] = try {
+    Option(s.toInt)
+  } catch {
+    case e: Throwable => None
+  }  
+  
 }

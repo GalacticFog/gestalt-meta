@@ -4,6 +4,8 @@
 
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
 
+GET	 /logs/audit		  controllers.InfoController.readAuditLogs()
+
 POST 	/migrate		  migrations.MigrationController.migrate()
 
 POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
