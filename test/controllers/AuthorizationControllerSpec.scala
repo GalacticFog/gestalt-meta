@@ -3,21 +3,18 @@ package controllers
 import java.util.UUID
 
 import org.specs2.specification.BeforeAll
-import org.specs2.mock.Mockito
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.laser.LaserEndpoint
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import controllers.util.{DataStore, GatewayMethods, GestaltProviderMocking, ProviderMethods}
 import play.api.libs.json.{JsObject, Json}
-import play.api.test.{FakeRequest, PlaySpecification, WithApplication}
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import org.mockito.Matchers
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
+import org.mockito.{ArgumentCaptor, Matchers}
 import org.specs2.matcher.JsonMatchers
 import play.api.inject.bind
 
@@ -30,7 +27,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -105,7 +102,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
         "properties" -> Json.obj(
           "provider" -> Json.obj(
             "id" -> testGatewayProvider.id.toString,
-            "locations" -> Json.arr(testKongProvider.id.toString).toString
+            "locations" -> Json.arr(testKongProvider.id.toString)
           ).toString
         )
       ), ResourceIds.Api, Some(testEnv.id)
@@ -468,17 +465,12 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
   "apiendpoint.invoke entitlements" should {
 
     "result in update calls to the associated apiendpoints" in new TestEndpointSupport {
-
       val List(ent) = ResourceFactory.findDescendantEntitlements(testEndpoint.id, "apiendpoint.invoke")
       val updated = Entitlement.make(ent).withIdentities(
         ids = Seq(testUser.id, testGroup.id)
       )
-      mockGatewayMethods.patchEndpointHandler(any, any, any, any) answers {
-        (a: Any) =>
-          val arr = a.asInstanceOf[Array[Object]]
-          val r = arr(0).asInstanceOf[GestaltResourceInstance]
-          // we don't really care how it answers, but we'd rather not log an error in this test
-          Future.successful(r)
+      mockGatewayMethods.updateEndpoint(any) answers {
+        (r: Any) => Future.successful(r.asInstanceOf[GestaltResourceInstance])
       }
 
       val body = Output.renderInstance(Entitlement.toGestalt(user.account.id, updated)).as[JsObject] - "resource_type"
@@ -487,15 +479,12 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
       ).withBody(body))
       status(resp) must_== OK
 
-      there was one(mockGatewayMethods).patchEndpointHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id must_== testEndpoint.id),
-        patch = Matchers.eq(PatchDocument(
-          PatchOp.Replace("/properties/plugins/gestaltSecurity/users", Json.arr(testUser.id)),
-          PatchOp.Replace("/properties/plugins/gestaltSecurity/groups", Json.arr(testGroup.id))
-        )),
-        user = any,
-        request = any
-      )
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+      there was one(mockGatewayMethods).updateEndpoint(invocationCaptor.capture())
+      val endpointArg = invocationCaptor.getValue
+      val plugins = Json.parse(endpointArg.properties.get("plugins"))
+      (plugins \ "gestaltSecurity" \ "users").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(Seq(testUser.id)))
+      (plugins \ "gestaltSecurity" \ "groups").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(Seq(testGroup.id)))
 
       val Some(updatedEndpoint) = ResourceFactory.findById(ResourceIds.ApiEndpoint, testEndpoint.id)
       val updatedPlugins = updatedEndpoint.properties.get("plugins")
@@ -504,16 +493,24 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
     }
 
     "be appropriately set at creation" in new TestEndpointSupport {
-
       val apiController = app.injector.instanceOf[ApiController]
 
-      mockGatewayMethods.patchEndpointHandler(any, any, any, any) answers {
+      mockGatewayMethods.createEndpoint(any, any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
-          val r = arr(0).asInstanceOf[GestaltResourceInstance]
+          val r = arr(1).asInstanceOf[GestaltResourceInstance]
           // we don't really care how it answers, but we'd rather not log an error in this test
           Future.successful(r)
       }
+
+      // update the apiendpoint.invoke entitlement on the parent API for a richer test
+      val apiEnt = Entitlement.make(ResourceFactory.findDescendantEntitlements(testApi.id, "apiendpoint.invoke").head)
+      val Success(_) = ResourceFactory.update(Entitlement.toGestalt(
+        user.account.id,
+        apiEnt.copy(
+          properties = apiEnt.properties.addIdentities(testUser.id, testGroup.id)
+        )
+      ), user.account.id)
 
       val result = apiController.postApiEndpoint("root", testApi.id)(fakeAuthRequest(
         POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds
@@ -521,44 +518,48 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
         "name" -> uuid(),
         "properties" -> Json.obj(
           "resource"     -> "/some/path",
-          "methods" -> Json.toJson(Seq("GET")).toString,
+          "methods" -> Json.toJson(Seq("GET")),
           "implementation_type" -> "lambda",
-          "implementation_id" -> testLambda.id.toString,
+          "implementation_id" -> testLambda.id,
           "provider" -> Json.obj(
-            "id" -> testGatewayProvider.id.toString,
-            "locations" -> Json.arr(testKongProvider.id.toString).toString
-          ).toString,
+            "id" -> testGatewayProvider.id,
+            "locations" -> Json.arr(testKongProvider.id)
+          ),
           "plugins" -> Json.obj(
             "gestaltSecurity" -> Json.obj(
               "enabled" -> true
             )
-          ).toString
+          )
         )
       )))
 
-      status(result) must_== OK
+      status(result) must_== CREATED
+
       val createdEndpointId = (contentAsJson(result) \ "id").as[UUID]
+      val endpointEnt = Entitlement.make(ResourceFactory.findDescendantEntitlements(createdEndpointId, "apiendpoint.invoke").head)
+      val (expectedUserIds,expectedGroupIds) = endpointEnt.properties.identities.getOrElse(Seq.empty).partition(id => ResourceFactory.findById(ResourceIds.User, id).isDefined)
 
-      val ent = Entitlement.make(ResourceFactory.findDescendantEntitlements(createdEndpointId, "apiendpoint.invoke").head)
-
-      there was one(mockGatewayMethods).patchEndpointHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id must_== createdEndpointId),
-        patch = Matchers.eq(PatchDocument(
-          PatchOp.Replace("/properties/plugins/gestaltSecurity/users", Json.arr(testUser.id)),
-          PatchOp.Replace("/properties/plugins/gestaltSecurity/groups", Json.arr(testGroup.id))
-        )),
-        user = any,
-        request = any
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[LaserEndpoint])
+      there was one(mockGatewayMethods).createEndpoint(
+        api = argThat( ((_:GestaltResourceInstance).id) ^^ be_==(testApi.id) ),
+        metaEndpoint = argThat( ((_:GestaltResourceInstance).id) ^^ be_==(createdEndpointId) ),
+        gatewayEndpoint = invocationCaptor.capture()
       )
 
-      val Some(updatedEndpoint) = ResourceFactory.findById(ResourceIds.ApiEndpoint, createdEndpointId)
-      val updatedPlugins = updatedEndpoint.properties.get("plugins")
+      val ep = invocationCaptor.getValue
+      val plugins = ep.plugins.getOrElse(Json.obj())
+      (plugins \ "gestaltSecurity" \ "enabled").asOpt[Boolean] must beSome(true)
+      (plugins \ "gestaltSecurity" \ "users").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(expectedUserIds))
+      (plugins \ "gestaltSecurity" \ "groups").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(expectedGroupIds))
+
+      val Some(createdEndpoint) = ResourceFactory.findById(ResourceIds.ApiEndpoint, createdEndpointId)
+      val updatedPlugins = createdEndpoint.properties.get("plugins")
       updatedPlugins must not /("gestaltSecurity") /("users")
       updatedPlugins must not /("gestaltSecurity") /("groups")
     }
 
   }
-  
+
 //  "postEntitlementCommon" should {
 //    
 //    "succeed when given valid data" in new TestApplication {

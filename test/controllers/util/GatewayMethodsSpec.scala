@@ -7,33 +7,24 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.laser.LaserEndpoint
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds}
-import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.meta.auth.Entitlement
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import controllers.{ContainerController, DeleteController, SecurityResources}
-
+import controllers._
 import mockws.{MockWS, Route}
-import org.joda.time.DateTime
-import org.mockito.Matchers.{eq => meq}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.specification.{BeforeAll, Scope}
-
+import org.specs2.specification.BeforeAll
 import play.api.http.HttpVerbs
 import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.libs.ws.WSResponse
-import play.api.mvc._
-import play.api.mvc.Results._
-import play.api.test.{FakeRequest, PlaySpecification}
+import play.api.libs.json.{JsValue, Json}
 import play.api.mvc.BodyParsers.parse
+import play.api.mvc.Results._
+import play.api.mvc._
+import play.api.test.FakeRequest
 
-import scala.concurrent.Future
 import scala.util.Success
 
 class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
@@ -70,6 +61,9 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     
     val gatewayMethods = application.injector.instanceOf[GatewayMethods]
     val mockProviderMethods = application.injector.instanceOf[ProviderMethods]
+
+    val patchController = application.injector.instanceOf[PatchController]
+    val apiController = application.injector.instanceOf[ApiController]
     
     val Success(testLambdaProvider) = createInstance(ResourceIds.LambdaProvider, "test-lambda-provider", properties = Some(Map(
       "config" ->
@@ -132,33 +126,60 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       ).toString
     )))
 
-    val Success(testApi) = createInstance(
-      ResourceIds.Api,
-      "test-api",
-      properties = Some(Map(
-        "provider" -> Json.obj(
-          "id" -> testGatewayProvider.id.toString,
-          "locations" -> Json.arr(testKongProvider.id.toString).toString
-        ).toString
-      ))
+    val Success(testApi) = apiController.CreateWithEntitlements(
+      dummyRootOrgId, user, Json.obj(
+        "name" -> "test-api",
+        "properties" -> Json.obj(
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id.toString,
+            "locations" -> Json.arr(testKongProvider.id.toString)
+          ).toString
+        )
+      ), ResourceIds.Api, Some(testEnv.id)
     )
 
-    val Success(testEndpoint) = createInstance(
-      ResourceIds.ApiEndpoint,
-      "test-endpoint",
-      properties = Some(Map(
-        "resource"     -> "/original/path",
-        "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
-        "methods" -> Json.toJson(Seq("GET")).toString,
-        "implementation_type" -> "lambda",
-        "implementation_id" -> testLambda.id.toString,
-        "provider" -> Json.obj(
-          "id" -> testGatewayProvider.id.toString,
-          "locations" -> Json.arr(testKongProvider.id.toString).toString
-        ).toString
-      )),
-      parent = Some(testApi.id)
+
+    val Success(testEndpoint) = apiController.CreateWithEntitlements(
+      dummyRootOrgId, user, Json.obj(
+        "name" -> "test-endpoint",
+        "properties" -> Json.obj(
+          "resource"     -> "/original/path",
+          "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+          "methods" -> Json.toJson(Seq("GET")).toString,
+          "implementation_type" -> "lambda",
+          "implementation_id" -> testLambda.id.toString,
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id.toString,
+            "locations" -> Json.arr(testKongProvider.id.toString).toString
+          ).toString
+        )
+      ), ResourceIds.ApiEndpoint, Some(testApi.id)
     )
+
+    val Success(testUser) = createInstance(
+      typeId = ResourceIds.User,
+      name = uuid().toString,
+      properties = Some(Map(
+        "firstName" -> "Testy",
+        "lastName" -> "McTestFace"
+      ))
+    )
+    val Success(testGroup) = createInstance(
+      typeId = ResourceIds.Group,
+      name = uuid().toString
+    )
+
+    // update the apiendpoint.invoke entitlement on the parent API for a richer test
+    val (expectedUserIds, expectedGroupIds) = {
+      val apiEnt = Entitlement.make(ResourceFactory.findDescendantEntitlements(testEndpoint.id, "apiendpoint.invoke").head)
+      val Success(newApiEnt) = ResourceFactory.update(Entitlement.toGestalt(
+        user.account.id,
+        apiEnt.copy(
+          properties = apiEnt.properties.addIdentities(testUser.id, testGroup.id)
+        )
+      ), user.account.id)
+      Entitlement.make(newApiEnt).properties.identities.getOrElse(Seq.empty).partition(id => ResourceFactory.findById(ResourceIds.User, id).isDefined)
+    }
 
     val routeGetEndpoint = Route {
       case (GET, uri) if uri == s"http://gateway.service:6473/endpoints/${testEndpoint.id}" => Action {
@@ -203,7 +224,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "properly create upstream_url for synchronous lambda-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -221,7 +242,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "properly create upstream_url for asynchronous lambda-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -239,7 +260,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "properly infer implementation_type from implementation_id for backwards compatibility for lambda-bound endpoints and overwrite upstream_url" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_id" -> testLambda.id.toString,
@@ -256,7 +277,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "properly create upstream_url for container-bound endpoints" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -275,8 +296,8 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
       val methods = Seq("PATCH", "PUT")
-      
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -288,16 +309,16 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       ), apiId) must beSuccessfulTry(
         (e: LaserEndpoint) => (e.methods must beSome) and (e.methods.get === methods)
       )
-    }    
-    
+    }
+
     "properly create with /properties/rateLimit given" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()
       val limit = Json.obj("perMinute" -> 2)
-      
+
       val pluginJson = Json.obj("rateLimit" -> Json.obj("perMinute" -> 2))
-      
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> endpointId.toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -309,10 +330,10 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       ), apiId) must beSuccessfulTry(
         (e: LaserEndpoint) => (e.plugins must beSome) and (e.plugins.get === pluginJson)
       )
-    }        
-    
+    }
+
     "BadRequest for container-bound endpoints with un-exposed port mapping" in new TestApplication {
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -326,7 +347,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     }
 
     "BadRequest for container-bound endpoints with missing port mapping" in new TestApplication {
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -340,7 +361,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     }
 
     "BadRequest for missing lambda on lambda-bound endpoints" in new TestApplication {
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "lambda",
@@ -354,7 +375,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     }
 
     "BadRequest for missing container on container-bound endpoints" in new TestApplication {
-      gatewayMethods.toGatewayEndpoint(Json.obj(
+      GatewayMethods.toGatewayEndpoint(Json.obj(
         "id" -> UUID.randomUUID().toString,
         "properties" -> Json.obj(
           "implementation_type" -> "container",
@@ -371,7 +392,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       val newPath = "/new/path"
       val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invoke"
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -402,7 +423,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       val newPath = "/new/path"
       val expUpstreamUrl = s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync"
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -433,7 +454,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         "GET", "POST", "OPTION"
       )
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/methods", newMethods)
@@ -454,7 +475,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         "GET", "PUT"
       )
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Add("/properties/methods/1","PUT")
@@ -476,10 +497,10 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         "plugin2" -> Json.obj("very" -> "opaque")
       )
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
-          PatchOp.Replace("/properties/plugins",    newPlugins)
+          PatchOp.Replace("/properties/plugins", newPlugins)
         ),
         user = user,
         request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
@@ -500,7 +521,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         )
       )
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/plugins/gestaltSecurity/enabled", true)
@@ -512,8 +533,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       routeGetEndpoint.timeCalled must_== 1
       routePutEndpoint.timeCalled must_== 1
       (putBody \ "apiId").as[String] must_== testApi.id.toString
-      (putBody \ "plugins").as[JsValue] must_== newPlugins
-      Json.parse(updatedEndpoint.properties.get("plugins")) must_== newPlugins
+      updatedEndpoint.properties.get("plugins") must /("gestaltSecurity") /("enabled" -> true)
     }
 
     "deep patch against api-gateway provider to modify rateLimit plugin" in new TestApplication {
@@ -524,7 +544,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         )
       )
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/plugins/rateLimit/perMinute", 100)
@@ -545,7 +565,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       val expUpstreamUrl = "http://my-nginx.service-address:80"
       val newPath = "/new/path"
 
-      val updatedEndpoint = await(gatewayMethods.patchEndpointHandler(
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
         r = testEndpoint,
         patch = PatchDocument(
           PatchOp.Replace("/properties/resource",    newPath),
@@ -569,6 +589,73 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       updatedEndpoint.properties.get("implementation_type") must_== "container"
       updatedEndpoint.properties.get("implementation_id") must_== testContainer.id.toString
     }
+
+    "populate gestaltSecurity plugin with entitlements on update" in new TestApplication {
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/enabled", true)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins" \ "gestaltSecurity" \ "users").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(expectedUserIds))
+      (putBody \ "plugins" \ "gestaltSecurity" \ "groups").asOpt[Seq[UUID]] must beSome(containTheSameElementsAs(expectedGroupIds))
+
+      val updatedPlugins = updatedEndpoint.properties.get.get("plugins")
+      updatedPlugins must beNone or beSome(not /("gestaltSecurity") /("users"))
+      updatedPlugins must beNone or beSome(not /("gestaltSecurity") /("groups"))
+    }
+
+    "do not populate gestaltSecurity plugin with entitlements on update if it is not enabled" in new TestApplication {
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/properties/plugins/gestaltSecurity/enabled", false)
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins" \ "gestaltSecurity" \ "users").asOpt[Seq[UUID]] must beNone
+      (putBody \ "plugins" \ "gestaltSecurity" \ "groups").asOpt[Seq[UUID]] must beNone
+
+      val updatedPlugins = updatedEndpoint.properties.get("plugins")
+      updatedPlugins must not /("gestaltSecurity") /("users")
+      updatedPlugins must not /("gestaltSecurity") /("groups")
+    }
+
+    "do not populate gestaltSecurity plugin with entitlements on update if it is absent" in new TestApplication {
+      // .properties.plugins.gestaltSecurity does not exist
+      val updatedEndpoint = await(patchController.patchEndpointHandler(
+        r = testEndpoint,
+        patch = PatchDocument(
+          PatchOp.Replace("/description", "new description is sufficient")
+        ),
+        user = user,
+        request = FakeRequest(HttpVerbs.PATCH, s"/root/endpoints/${testLambda.id}")
+      ))
+
+      routeGetEndpoint.timeCalled must_== 1
+      routePutEndpoint.timeCalled must_== 1
+
+      (putBody \ "apiId").as[String] must_== testApi.id.toString
+      (putBody \ "plugins" \ "gestaltSecurity").asOpt[JsValue] must beNone
+
+      val updatedPlugins = updatedEndpoint.properties.get.get("plugins")
+      updatedPlugins must beNone or beSome(not /("gestaltSecurity") /("users"))
+      updatedPlugins must beNone or beSome(not /("gestaltSecurity") /("groups"))
+    }
+
 
     "delete against GatewayMethods deletes apis" in new TestApplication {
       val Success(_) = gatewayMethods.deleteApiHandler(

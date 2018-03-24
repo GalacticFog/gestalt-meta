@@ -3,6 +3,7 @@ package controllers
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -10,20 +11,16 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.parseUUID
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.errors._
-
 import controllers.util._
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.auth.{Authorization, Entitlement}
 import com.galacticfog.gestalt.data.string2uuid
-
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import com.galacticfog.gestalt.json.Js
-
-
 import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch._
@@ -40,7 +37,7 @@ class ApiController @Inject()(
     db: play.api.db.Database )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
-  import gatewayMethods.unprocessable
+  import GatewayMethods.unprocessable
   
   def postResourceOpt(fqon: String, typ: Option[String], parent: UUID) = AsyncAudited(fqon) { implicit request =>
     val org = fqid(fqon)
@@ -65,7 +62,7 @@ class ApiController @Inject()(
       //val (payload, provider, location) = validateNewApi(json)
       log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")
       
-      val lapi = gatewayMethods.toGatewayApi(payload.as[JsObject], location)
+      val lapi = GatewayMethods.toGatewayApi(payload.as[JsObject], location)
       val client = providerMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
       /*
@@ -115,7 +112,7 @@ class ApiController @Inject()(
       val setup = for {
         apiProvider  <- Try{Json.parse(api.properties.get("provider")).as[JsObject]}
         endpointJson <- validateNewEndpoint(request.body, api)
-        gmEndpoint   <- gatewayMethods.toGatewayEndpoint(endpointJson, apiId)
+        gmEndpoint   <- GatewayMethods.toGatewayEndpoint(endpointJson, apiId)
         updatedJson  <- addUpstreamUrlAndProvider(endpointJson, gmEndpoint.upstreamUrl, apiProvider)
       } yield (
         (updatedJson ++ Json.obj("id" -> endpointId)),
@@ -129,9 +126,14 @@ class ApiController @Inject()(
           for {
             r <- newDefaultResourceResult(org, ResourceIds.ApiEndpoint, apiId, payload)
             metaEndpoint = ResourceFactory.findById(UUID.fromString(endpointId)).get
+            endpointEnts = ResourceFactory.findDescendantEntitlements(metaEndpoint.id, "apiendpoint.invoke").headOption map Entitlement.make
+            (users,groups) = endpointEnts.flatMap(_.properties.identities).getOrElse(Seq.empty).partition(
+              id => ResourceFactory.findById(ResourceIds.User, id).isDefined
+            )
+            endpointWithAuth = gatewayEndpoint.updateWithAuthorization(users,groups)
             result <- {
               log.info("Endpoint created in Meta... creating Endpoint in GatewayManager...")
-              gatewayMethods.createEndpoint(api, metaEndpoint, gatewayEndpoint) map (_ => Created(RenderSingle(metaEndpoint)))
+              gatewayMethods.createEndpoint(api, metaEndpoint, endpointWithAuth) map (_ => Created(RenderSingle(metaEndpoint)))
             } recover {
               case e =>
                 log.error("Error creating Endpoint in GatewayManager.")
@@ -195,7 +197,7 @@ class ApiController @Inject()(
     val json = js.as[JsObject]
     val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
     
-    val path = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
+    val _ = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
       unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
     }
     
@@ -204,7 +206,7 @@ class ApiController @Inject()(
         unprocessable(s"Parent API [${api.id}] does not have properties. This resource is invalid.")
       }{ ps =>
         ps.get("provider").fold {
-          unprocessable(s"Parent API [${api.id}] is missing proprty [provider]. This resource is invalid.")
+          unprocessable(s"Parent API [${api.id}] is missing property [provider]. This resource is invalid.")
         }{ pstr =>
           val provider = Json.parse(pstr).as[JsObject]
           Js.find(provider, "/locations").fold {
