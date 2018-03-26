@@ -7,6 +7,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.Logger
 
 import scala.util.Try
@@ -16,45 +17,48 @@ package object laser {
   private val log = Logger(this.getClass)
   
   implicit lazy val laserApiFormat = Json.format[LaserApi]
-  implicit lazy val laserGatewayInfoFormat = Json.format[LaserGatewayInfo]
-  implicit lazy val laserGatewayFormat = Json.format[LaserGateway]
   implicit lazy val laserEndpointFormat = Json.format[LaserEndpoint]
   implicit lazy val laserArtifactDescriptionFormat = Json.format[LaserArtifactDescription]
   implicit lazy val laserLambdaFormat = Json.format[LaserLambda]
-  implicit lazy val laserProviderFormat = Json.format[LaserProvider]
-  implicit lazy val laserLocationFormat = Json.format[LaserLocation]
-  
-  
-  case class LaserGatewayInfo(host: String, port: Int, username: String, password: String)
-  
-  case class LaserGateway(
-      id: Option[String], 
-      name: String, 
-      locationId: String,
-      gatewayInfo: JsValue)  
-  
+
   case class LaserApi(
-      id: Option[String], 
+      id: Option[String],
       name: String, 
       gatewayId: Option[String] = None,
       provider: Option[JsValue] = None, 
       description: Option[String] = None)
 
-  case class LaserProvider(id: Option[String], name: String, href: Option[String] = None, providerInfo: Option[JsValue] = None)
-  case class LaserLocation(id: Option[String], name: String, providerId: String)
-  
-  case class LaserEndpoint(
-      id: Option[String], 
-      apiId: String, 
-      upstreamUrl: String,
-      path: String, 
-      domain: Option[JsValue] = None,
-      url: Option[String] = None,
-      provider: Option[JsValue] = None,
-      endpointInfo: Option[JsValue] = None, 
-      authentication: Option[JsValue] = None,
-      methods: Option[Seq[String]] = None,
-      plugins: Option[JsValue] = None)
+  case class LaserEndpoint( id: Option[String],
+                            apiId: String,
+                            upstreamUrl: String,
+                            path: String,
+                            domain: Option[JsValue] = None,
+                            url: Option[String] = None,
+                            provider: Option[JsValue] = None,
+                            endpointInfo: Option[JsValue] = None,
+                            authentication: Option[JsValue] = None,
+                            methods: Option[Seq[String]] = None,
+                            plugins: Option[JsValue] = None ) {
+
+    def updateWithAuthorization(users: Seq[UUID], groups: Seq[UUID]): LaserEndpoint = {
+      val updated = for {
+        plugins <- this.plugins.flatMap(_.asOpt[JsObject])
+        secPlugin <- (plugins \ "gestaltSecurity").asOpt[JsObject]
+        if (secPlugin \ "enabled").asOpt[Boolean].contains(true)
+        updatedSecPlugin = secPlugin ++ Json.obj(
+          "users" -> users,
+          "groups" -> groups
+        )
+        updatedPlugins = plugins ++ Json.obj(
+          "gestaltSecurity" -> updatedSecPlugin
+        )
+      } yield this.copy(
+        plugins = Some(updatedPlugins)
+      )
+      updated getOrElse this
+    }
+
+  }
 
   case class LaserArtifactDescription(
       artifactUri: Option[String],
@@ -77,7 +81,6 @@ package object laser {
       public: Boolean,
       provider: Option[JsValue],
       artifactDescription: LaserArtifactDescription)
-
 
   /*
    * TODO: This may translate into multiple LaserLambdas

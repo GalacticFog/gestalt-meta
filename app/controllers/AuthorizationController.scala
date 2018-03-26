@@ -13,11 +13,13 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.io.util.patch
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
@@ -190,14 +192,11 @@ class AuthorizationController @Inject()(
         val (users,groups) = ent.properties.identities.getOrElse(Seq.empty).partition (
           id => ResourceFactory.findById(ResourceIds.User, id).isDefined
         )
-        gatewayMethods.patchEndpointHandler(
-          r = endpoint,
-          patch = PatchDocument(
+        gatewayMethods.updateEndpoint(
+          PatchInstance.applyPatch(endpoint, PatchDocument(
             PatchOp.Replace("/properties/plugins/gestaltSecurity/users", Json.toJson(users)),
             PatchOp.Replace("/properties/plugins/gestaltSecurity/groups", Json.toJson(groups))
-          ),
-          user = request.identity,
-          request = request
+          )).get.asInstanceOf[GestaltResourceInstance]
         ) map (_ => ())
       case _ => Future.successful(())
     }
