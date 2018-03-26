@@ -863,45 +863,6 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
       pdef.port must_== 0          // we did not pass service port through to Marathon
     }
 
-    "do not pass meta service_port through to marathon servicePort in BRIDGE networking mode" in {
-      val providerId = UUID.randomUUID()
-      val resourceJson = Json.obj(
-        "name" -> "name",
-        "container_type" -> "DOCKER",
-        "image" -> "some/image:tag",
-        "provider" -> Json.obj(
-          "id" -> providerId
-        ),
-        "port_mappings" -> Json.toJson(Seq(
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(80),
-            service_port = Some(80), // user specified service port but...
-            name = Some("web")
-          )
-        )),
-        "cmd" -> "/usr/bin/someCmd",
-        "cpus" -> 2.0,
-        "memory" -> 256.0,
-        "num_instances" -> 3,
-        "network" -> "BRIDGE",
-        "force_pull" -> true,
-        "env" -> Json.obj()
-      )
-      val provider = mock[GestaltResourceInstance]
-      val config = Json.obj(
-        "networks" -> Json.arr(Json.obj(
-          "name" -> "BRIDGE"
-        ))
-      ).toString
-      provider.properties returns Some(Map(
-        "config" -> config
-      ))
-      provider.id returns providerId
-      val Some(Seq(pm)) = marPayload(resourceJson.as[ContainerSpec], provider).container.get.docker.get.portMappings
-      pm.servicePort must beNone or beSome(0)
-    }
-
     "throw exception for marathon payload with invalid provider network" in {
       marPayload(ContainerSpec(
         name = "test-container",
@@ -966,6 +927,59 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
       marJson must not /("ports")
       marJson must not /("ipAddress")
       marJson must not /("portDefinitions")
+    }
+
+    "generate VIP payload with appropriate load balancer port (BRIDGE)" in {
+      val marJson = Json.toJson(marPayload(ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(9000),  host_port = Some(65000), name = Some("http"),  service_port = Some(12345), lb_port = Some(80),  expose_endpoint = Some(true)),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(443),                            name = Some("https"),                             lb_port = Some(443), expose_endpoint = Some(true)),
+          ContainerSpec.PortMapping(protocol = "tcp", container_port = Some(9999),                           name = Some("debug"),                                                  expose_endpoint = Some(false))
+        ),
+        network = Some("BRIDGE"),
+        num_instances = 1
+      ), marathonProviderWithoutNetworks))
+      println(marJson)
+      (marJson \"container" \"docker" \ "network").asOpt[String] must beSome("BRIDGE")
+      ((marJson \ "container" \ "docker" \ "portMappings")(0) \ "containerPort").as[Int] must be_==(9000)
+      ((marJson \ "container" \ "docker" \ "portMappings")(0) \ "servicePort").as[Int] must be_==(12345)
+      ((marJson \ "container" \ "docker" \ "portMappings")(0) \ "hostPort").as[Int] must be_==(65000)
+      ((marJson \ "container" \ "docker" \ "portMappings")(0) \ "labels" \ "VIP_0").as[String] must(endWith(":80"))
+      ((marJson \ "container" \ "docker" \ "portMappings")(1) \ "containerPort").as[Int] must be_==(443)
+      ((marJson \ "container" \ "docker" \ "portMappings")(1) \ "servicePort").asOpt[Int] must beNone
+      ((marJson \ "container" \ "docker" \ "portMappings")(1) \ "hostPort").asOpt[Int] must beNone
+      ((marJson \ "container" \ "docker" \ "portMappings")(1) \ "labels" \ "VIP_0").as[String] must(endWith(":443"))
+      ((marJson \ "container" \ "docker" \ "portMappings")(2) \ "containerPort").as[Int] must be_==(9999)
+      ((marJson \ "container" \ "docker" \ "portMappings")(2) \ "servicePort").asOpt[Int] must beNone
+      ((marJson \ "container" \ "docker" \ "portMappings")(2) \ "hostPort").asOpt[Int] must beNone
+      ((marJson \ "container" \ "docker" \ "portMappings")(2) \ "labels" \ "VIP_0").asOpt[JsValue] must beNone
+    }
+
+    "generate VIP payload with appropriate load balancer port (HOST)" in {
+      val marJson = Json.toJson(marPayload(ContainerSpec(
+        name = "test-container",
+        container_type = "DOCKER",
+        image = "nginx:latest",
+        provider = ContainerSpec.InputProvider(id = marathonProviderWithoutNetworks.id),
+        port_mappings = Seq(
+          ContainerSpec.PortMapping(protocol = "tcp", host_port = Some(65000), name = Some("http"),  lb_port = Some(80),  expose_endpoint = Some(true)),
+          ContainerSpec.PortMapping(protocol = "tcp",                          name = Some("https"), lb_port = Some(443), expose_endpoint = Some(true)),
+          ContainerSpec.PortMapping(protocol = "tcp",                          name = Some("debug"),                      expose_endpoint = Some(false))
+        ),
+        network = Some("HOST"),
+        num_instances = 1
+      ), marathonProviderWithoutNetworks))
+      (marJson \"container" \"docker" \ "network").asOpt[String] must beSome("HOST")
+      ((marJson \ "portDefinitions")(0) \ "port").as[Int] must be_==(65000)
+      ((marJson \ "portDefinitions")(0) \ "labels" \ "VIP_0").as[String] must(endWith(":80"))
+      ((marJson \ "portDefinitions")(1) \ "port").as[Int] must be_==(0)
+      ((marJson \ "portDefinitions")(1) \ "labels" \ "VIP_0").as[String] must(endWith(":443"))
+      ((marJson \ "portDefinitions")(2) \ "port").as[Int] must be_==(0)
+      ((marJson \ "portDefinitions")(2) \ "labels" \ "VIP_0").asOpt[JsValue] must beNone
     }
 
     "generate marathon payload with empty acceptedResourceRoles" in {
