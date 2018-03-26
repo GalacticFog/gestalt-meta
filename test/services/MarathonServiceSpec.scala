@@ -283,7 +283,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
   "MarathonService" should {
 
     "set labels for exposed port mappings and set service addresses (bridged networking)" in new FakeDCOS {
-      // - one exposure has default container_port==service_port, the other overrides the service_port
+      // - one exposure has default container_port==lb_port, the other overrides the lb_port
       // - one port has a required host port
       val testProps = ContainerSpec(
         name = "test-container",
@@ -301,7 +301,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
-            service_port = Some(8443),
+            lb_port = Some(8443),
             name = Some("https"),
             expose_endpoint = Some(true)
           ),
@@ -501,7 +501,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "set labels for exposed port mappings and set service addresses (marathon 1.5 networking)" in new FakeDCOS {
-      // - one exposure has default container_port==service_port, the other overrides the service_port
+      // - one exposure has default container_port==lb_port, the other overrides the lb_port
       // - one port has a required host port
       val testProps = ContainerSpec(
         name = "test-container",
@@ -519,7 +519,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
-            service_port = Some(8443),
+            lb_port = Some(8443),
             name = Some("https"),
             expose_endpoint = Some(true)
           ),
@@ -736,8 +736,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(80),
-            host_port = None,
-            service_port = None,
             name = Some("http"),
             labels = None,
             expose_endpoint = Some(true),
@@ -876,8 +874,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "set labels for exposed port mappings and set service addresses (host networking)" in new FakeDCOS {
-      // - one exposure has service_port, as required
-      // - another exposure is missing service_port, so it won't work
+      // - one exposure has lb_port, as required
+      // - another exposure is missing lb_port, so it won't work
       // - a third isn't exposed
       // also, verify that host_port isn't used
       val testProps = ContainerSpec(
@@ -888,14 +886,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
-            host_port = Some(81),    // not used
-            service_port = Some(80), // used *only* for VIP
+            host_port = Some(81),
+            lb_port = Some(80), // used *only* for VIP
             name = Some("http"),
             expose_endpoint = Some(true)
           ),
           ContainerSpec.PortMapping(
             protocol = "tcp",
-            service_port = None, // this is necessary for a service address, will result in no service_address
+            lb_port = None, // this is necessary for a service address, will result in no service_address
             name = Some("https"),
             expose_endpoint = Some(true)
           ),
@@ -975,7 +973,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
            |                "VIP_0": "/test-container.${testEnv.id}:80"
            |            },
            |            "name": "http",
-           |            "port": 1234,
+           |            "port": 81,
            |            "protocol": "tcp"
            |        },
            |        {
@@ -1029,7 +1027,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
       there was one(testSetup.client).launchApp(
         hasExactlyPortDefs(
-          marathon.AppUpdate.PortDefinition( 0, "tcp", Some("http"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80")),
+          marathon.AppUpdate.PortDefinition(81, "tcp", Some("http"),  Map("VIP_0" -> s"/test-container.${testEnv.id}:80")),
           marathon.AppUpdate.PortDefinition( 0, "tcp", Some("https"), Map.empty),
           marathon.AppUpdate.PortDefinition( 0, "udp", Some("debug"), Map.empty)
         ) and ( ((_:JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beNone )
@@ -1074,7 +1072,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             host_port = Some(0),
-            service_port = Some(80),
+            lb_port = Some(80),
             name = Some("web"),
             labels = None,
             expose_endpoint = Some(true)
@@ -1201,7 +1199,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
         PortMapping(
-          protocol = "tcp", container_port = None, host_port = Some(0), service_port = Some(80),
+          protocol = "tcp", container_port = None, host_port = Some(0), lb_port = Some(80),
           name = Some("web"), labels = None, expose_endpoint = Some(true),
           service_address = Some(ServiceAddress(svcHost, 80, Some("tcp")))
         )
@@ -1374,7 +1372,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ContainerSpec.PortMapping(
             protocol = "tcp",
             container_port = Some(443),
-            service_port = Some(8443),
+            lb_port = Some(8443),
             name = Some("https"),
             expose_endpoint = Some(true)
           ),
@@ -1446,9 +1444,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "image" -> "nginx:updated"
       )
       Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
-        ContainerSpec.PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
-        ContainerSpec.PortMapping("tcp", Some(443),  None, Some(8443), Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",8443,Some("tcp")))),
-        ContainerSpec.PortMapping("tcp", Some(9999), None,       None, Some("debug"), None, Some(false), None)
+        ContainerSpec.PortMapping("tcp", Some(80),   None, None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(443),  None, None, Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",8443,Some("tcp"))), None, Some(8443)),
+        ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug"), None, Some(false), None)
       ))
     }
 

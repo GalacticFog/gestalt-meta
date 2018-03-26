@@ -70,7 +70,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
     } else {
       defaultClient
     }
-    val auth = (providerConfig \ Properties.AUTH_CONFIG).asOpt[JsObject] getOrElse(Json.obj())
+    val auth = (providerConfig \ Properties.AUTH_CONFIG).asOpt[JsObject] getOrElse Json.obj()
 
     val baseClient = MarathonClient(wsclient, marathonBaseUrl, None, secretBaseUrl, secretStore)
 
@@ -88,7 +88,7 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
           url <- (auth \ "dcos_base_url").asOpt[String]
         } yield DCOSAuthTokenActor.DCOSAuthTokenRequest(provider.id, acceptAnyCert, id, key, url)
         tokReq.fold[Future[MarathonClient]] {
-          Future.failed(new BadRequestException("provider with 'acs' authentication was missing required fields"))
+          Future.failed(BadRequestException("provider with 'acs' authentication was missing required fields"))
         } {
           req =>
             val fTokenResp = dcosTokenActor.ask(req)(acsTokenRequestTimeout)
@@ -99,9 +99,9 @@ class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
                   acsToken = Some(authToken)
                 ))
               case DCOSAuthTokenActor.DCOSAuthTokenError(msg) =>
-                Future.failed(new BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
+                Future.failed(BadRequestException(s"error from DCOSAuthTokenActor: ${msg}"))
               case _ =>
-                Future.failed(new InternalErrorException("unexpected response from DCOSAuthTokenActor"))
+                Future.failed(InternalErrorException("unexpected response from DCOSAuthTokenActor"))
             }
         }
       case _ =>
@@ -117,7 +117,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
   import MarathonService.Properties
   import scala.language.implicitConversions
-  implicit def jsval2obj(jsv: JsValue) = jsv.as[JsObject]
+  implicit def jsval2obj(jsv: JsValue): JsObject = jsv.as[JsObject]
 
   def create( context: ProviderContext, container: GestaltResourceInstance )
             ( implicit ec: ExecutionContext ): Future[GestaltResourceInstance] = {
@@ -136,10 +136,10 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
     def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
       // TODO: this has no side-effect
-      val updatedResource = upsertProperties(resource,
-        "status" -> "LAUNCH_FAILED"
-      )
-      new BadRequestException(s"launch failed: ${t.getMessage}")
+      // val updatedResource = upsertProperties(resource,
+      //   "status" -> "LAUNCH_FAILED"
+      // )
+      BadRequestException(s"launch failed: ${t.getMessage}")
     }
 
     val fMarClient = marathonClientFactory.getClient(context.provider)
@@ -155,7 +155,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         )
         val marathonAppCreatePayload = Json.toJson(marathonApp)
         log.debug("Marathon v2 application payload: ")
-        log.debug(Json.prettyPrint(marathonAppCreatePayload))
+        log.debug(marathonAppCreatePayload.toString)
         for {
           marClient <- fMarClient
           resp <- marClient.launchApp(
@@ -179,7 +179,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         for {
           marClient <- fMarClient
           resp <- marClient.deleteApplication(eid)
-          _ = log.debug(s"response from MarathonClient.deleteApplication:\n${Json.prettyPrint(resp)}")
+          _ = log.debug(s"response from MarathonClient.deleteApplication:\n$resp")
         } yield ()
       case None =>
         log.warn(s"no external_id property in container ${container.id}, will not attempt delete against provider")
@@ -212,8 +212,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  private[services] def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
-
   /**
     * Look at the Marathon payload and extract VIP_{n} labels from portDefinitions
     *
@@ -233,15 +231,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     val VIPLabel = "VIP_([0-9]+)".r
     val VIPValue = "/([-a-z0-9.]+):(\\d+)".r
 
-    //    val serviceAddresses = ((marApp \ "container" \ "docker" \ "network").asOpt[String] match {
-    //      case Some("BRIDGE") | Some("USER") =>
-    //        log.debug("Detected BRIDGE/USER networking, parsing portMappings...")
-    //        (Js.find(marApp, "/container/docker/portMappings") orElse Js.find(marApp, "/container/portMappings")) filterNot( _ == JsNull )
-    //      case _ =>
-    //        log.debug("Did not detect BRIDGE/USER networking, parsing portDefinitions...")
-    //        Js.find(marApp, "/portDefinitions") filterNot( _ == JsNull )
-    //    }) map {
-
     val serviceAddresses = (
       (marApp \ "container" \ "docker" \ "portMappings").asOpt[Seq[JsValue]] orElse
         (marApp \ "container" \ "portMappings").asOpt[Seq[JsValue]] orElse
@@ -256,7 +245,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         val protocol = Js.find(portDef, "/protocol").map(_.as[String]) orElse Some("tcp")
         for {
           labels   <- Js.find(portDef.as[JsObject], "/labels")
-          labelMap <- Try(labels.as[Map[String, String]]).toOption
+          labelMap <- labels.asOpt[Map[String, String]]
           serviceAddress <- labelMap.collectFirst { // collectFirst, because one VIP is as good as another
             case (VIPLabel(_), VIPValue(address, port)) =>
               ServiceAddress(address + clusterid, port.toInt, protocol)
@@ -312,7 +301,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
         Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
         val previousName = external_id.split("/").lastOption
-        if (previousName.exists(_ != container.name)) return Future.failed(new BadRequestException("renaming containers is not supported"))
+        if (previousName.exists(_ != container.name)) return Future.failed(BadRequestException("renaming containers is not supported"))
 
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
         val fMarClient = marathonClientFactory.getClient(provider)
@@ -330,14 +319,14 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
               id = Some(external_id)
             )
             val putPayload = Json.toJson(marathonApp)
-            log.debug("Marathon PUT payload:\n" + Json.prettyPrint(putPayload))
+            log.debug("Marathon PUT payload: " + putPayload)
             for {
               marClient <- fMarClient
               resp <- marClient.updateApplication(
                 appId = external_id,
                 marPayload = putPayload
               )
-              _ = log.debug("Marathon PUT response:\n" + Json.prettyPrint(resp))
+              _ = log.debug(s"Marathon PUT response: $resp")
               updated = updateServiceAddresses(context.provider, putPayload, container)
               _ = log.debug("Meta resource with updated service addresses: " + Json.toJson(Output.renderInstance(updated)))
             } yield updated
@@ -357,7 +346,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
 
     def createFailed(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
       ResourceFactory.hardDeleteResource(resource.id)
-      new UnprocessableEntityException(s"secret creation failed: ${t.getMessage}")
+      UnprocessableEntityException(s"secret creation failed: ${t.getMessage}")
     }
 
     val fMarClient = marathonClientFactory.getClient(context.provider)
@@ -365,9 +354,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Failure(e) => Future.failed(e)
       case Success(spec) =>
         val (secretId, secretPayload) = toDcosSecretPayload( context, spec, items )
-        log.debug(
-          s"DCOS v1 secret payload: ${secretId}\n" ++ Json.prettyPrint(secretPayload)
-        )
+        log.debug(s"DCOS v1 secret payload: $secretPayload")
         for {
           marClient <- fMarClient
           resp <- marClient.createSecret(
@@ -389,7 +376,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Some(eid) =>
         for {
           marClient <- fMarClient
-          resp <- marClient.deleteSecret(eid)
+          _ <- marClient.deleteSecret(eid)
         } yield ()
       case None =>
         log.debug(s"no external_id property in container ${secret.id}, will not attempt delete against provider")
@@ -406,12 +393,7 @@ object MarathonService {
       ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY)
   }
 
-  def getHaproxyGroup(provider: ResourceLike): Option[String] = {
-    ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP) orElse
-      ContainerService.getProviderProperty[String](provider, APP_GROUP_PREFIX_PROP_LEGACY)
-  }
-
-  val DEFAULT_ACS_TOKEN_REQUEST_TIMEOUT = 10 seconds
+  val DEFAULT_ACS_TOKEN_REQUEST_TIMEOUT: FiniteDuration = 10 seconds
   object Properties {
     val MARATHON_FRAMEWORK_NAME = "marathon_framework_name"
     val DCOS_CLUSTER_NAME = "dcos_cluster_name"
