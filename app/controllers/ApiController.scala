@@ -52,8 +52,8 @@ class ApiController @Inject()(
     }
   }
   
-  def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: UUID)(
-      implicit request: SecuredRequest[JsValue]) = {
+  def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: UUID)
+               (implicit request: SecuredRequest[JsValue]) = {
     
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(ResourceNotFound(ResourceIds.Environment, parent))
@@ -181,9 +181,10 @@ class ApiController @Inject()(
       unprocessable(s"Invalid [provider.location] (not a valid UUID). found: '$location'")
     }
     // If payload doesn't specify /id, inject one.
-    val finaljson = Js.find(js.as[JsObject], "/id").fold {
-      js.as[JsObject] ++ Json.obj("id" -> UUID.randomUUID.toString)
-    }{ json => json.as[JsObject] }
+    val finaljson = Js.find(js.as[JsObject], "/id") match {
+      case Some(_) => js
+      case None => js.as[JsObject] ++ Json.obj("id" -> UUID.randomUUID.toString)
+    }
     
     // 'provider.id' is an existing KONG provider.
     ResourceFactory.findById(ResourceIds.GatewayManager, uid).fold {
