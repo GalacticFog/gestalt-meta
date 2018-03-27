@@ -42,7 +42,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
   def createEndpoint( api: GestaltResourceInstance,
                       metaEndpoint: GestaltResourceInstance,
                       gatewayEndpoint: LaserEndpoint ): Future[GestaltResourceInstance] = {
-    val uri = "/apis/%s/endpoints".format(api.toString)
+    val uri = s"/apis/${api.id}/endpoints"
     val gatewayProvider = findGatewayProvider(api) getOrElse {
       throw new UnprocessableEntityException(s"Cannot find gateway provider for API '${api.id} (${api.name})'")
     }

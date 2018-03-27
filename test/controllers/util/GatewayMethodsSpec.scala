@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
+import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers._
 import mockws.{MockWS, Route}
 import org.specs2.matcher.JsonMatchers
@@ -212,7 +213,21 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         Ok( Json.obj() )
       }
     }
-    val ws = MockWS (routeGetEndpoint orElse routePutEndpoint orElse routeDeleteApi orElse routeDeleteEndpoint)
+    var apiPostBody: JsValue = null
+    val routePostApi = Route {
+      case (POST, uri) if uri == s"http://gateway.service:6473/apis" => Action(parse.json) { implicit request =>
+        apiPostBody = request.body
+        Ok( Json.obj() )
+      }
+    }
+    var endpointPostBody: JsValue = null
+    val routePostEndpoint = Route {
+      case (POST, uri) if uri == s"http://gateway.service:6473/apis/${testApi.id}/endpoints" => Action(parse.json) { implicit request =>
+        endpointPostBody = request.body
+        Ok( Json.obj() )
+      }
+    }
+    val ws = MockWS (routeGetEndpoint orElse routePutEndpoint orElse routeDeleteApi orElse routeDeleteEndpoint orElse routePostApi orElse routePostEndpoint)
     mockProviderMethods.configureWebClient(argThat(
       (provider: GestaltResourceInstance) => provider.id == testGatewayProvider.id
     ), any) returns new JsonClient(HostConfig("http", "gateway.service", Some(6473)), Some(ws))
@@ -386,6 +401,46 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       ), UUID.randomUUID()) must beFailedTry(
         (e: Throwable) => (e must beAnInstanceOf[BadRequestException]) and (e.getMessage must contain("no container with id matching"))
       )
+    }
+
+    "post against api-gateway provider to create api" in new TestApplication {
+      val testApiName = uuid().toString
+      val testApiId   = uuid()
+      val Some(createdApiResponse) = route(fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/apis", testCreds).withBody(Json.obj(
+        "id" -> testApiId,
+        "name" -> testApiName,
+        "properties" -> Json.obj(
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id,
+            "locations" -> Seq(testKongProvider.id)
+          )
+        )
+      )))
+      status(createdApiResponse) must_== CREATED
+      routePostApi.timeCalled must_== 1
+      (apiPostBody \ "name").asOpt[String] must beSome(testApiName)
+      (apiPostBody \ "id").asOpt[UUID] must beSome(testApiId)
+    }
+
+    "post against api-gateway provider to create apiendpoint" in new TestApplication {
+      val testEndpointName = uuid().toString
+      val testEndpointId   = uuid()
+      val Some(createEndpointResult) = route(fakeAuthRequest(POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds).withBody(Json.obj(
+        "id" -> testEndpointId,
+        "name" -> testEndpointName,
+        "properties" -> Json.obj(
+          "resource" -> "blah",
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id,
+            "locations" -> Seq(testKongProvider.id)
+          ),
+          "implementation_id" -> testLambda.id,
+          "implementation_type" -> "lambda"
+        )
+      )))
+      status(createEndpointResult) must_== CREATED
+      routePostEndpoint.timeCalled must_== 1
+      (endpointPostBody \ "id").asOpt[UUID] must beSome(testEndpointId)
     }
 
     "patch against api-gateway provider to an async lambda" in new TestApplication {
