@@ -300,7 +300,9 @@ class ResourceController @Inject()(
     log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
 
-    if (rp.isList) AuthorizedResourceList(rp, action, request.queryString)
+    if (rp.isList) {
+      AuthorizedResourceList(rp, action, request.queryString)
+    }
     else AuthorizedResourceSingle(rp, action)
   }  
   
@@ -343,7 +345,9 @@ class ResourceController @Inject()(
     }{ f => f(path, request.identity, request.queryString).toList }
     
     AuthorizeList(action) {
-      transforms.get(path.targetTypeId).fold(rss) { f =>
+      transforms.get(path.targetTypeId).fold {
+        rss
+        }{ f =>
         rss map { f(_, request.identity, Option(request.queryString)).get }
       }
     }
