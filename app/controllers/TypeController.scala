@@ -186,7 +186,7 @@ class TypeController @Inject()(
       security.getOrgSyncTree2() match {
         case Failure(e) => 
           throw new RuntimeException("Failed retrieving data from gestalt-security: " + e.getMessage)
-        case Success(t) => t      
+        case Success(t) => t
       }
     }.as[JsObject]
     
@@ -205,13 +205,15 @@ class TypeController @Inject()(
   
   
   private def findSecurityObject[A <: GestaltResource](json: JsObject, path: String, target: UUID)(implicit ra: Reads[A]): A = {
-    Js.find(json, path).fold(Option.empty[A]){ accts =>
-      Js.parse[Seq[A]](accts) match {
-        case Failure(e) => 
-          throw new RuntimeException("Failed parsing accounts: " + e.getMessage)
-        case Success(acts) => acts.find(_.id == target)
+    val found = for {
+      obj <- Js.find(json,path)
+      as = Js.parse[Seq[A]](obj) match {
+        case Failure(e) => throw new RuntimeException("Failed parsing accounts: " + e.getMessage,e)
+        case Success(as) => as
       }
-    } getOrElse {
+      a <- as.find(_.id == target)
+    } yield a
+    found getOrElse {
       throw new RuntimeException("Could not find admin account in security info.")
     }      
   }
@@ -267,7 +269,12 @@ class TypeController @Inject()(
       val (domain, propdefs) = deconstructType(org, owner, typeJson)
 
       log.debug("Creating new ResourceType...")
-      val newtype = TypeFactory.create(owner)(domain).get
+      val newtype = TypeFactory.create(owner)(domain) match {
+        case Success(s) => s
+        case Failure(e) =>
+          log.error("Error creating new ResourceType",e)
+          throw e
+      }
       
       log.debug("Checking for TypeProperties...")
       if (propdefs.isDefined) {
@@ -332,19 +339,19 @@ class TypeController @Inject()(
     val ownerLink = ResourceOwnerLink(ResourceIds.User, owner)
 
     GestaltResourceType(
-        id = r.id.getOrElse(UUID.randomUUID),
-        typeId = ResourceIds.ResourceType,
-        extend = r.extend,
-        state = r.resource_state.getOrElse(ResourceState.id(ResourceStates.Active)),
-        orgId = org,
-        owner = ownerLink,
-        name = r.name,
-        description = r.description,
-        created = None, modified = None,
-        properties = stringmap(r.properties), 
-        variables = r.variables, 
-        tags = r.tags, 
-        auth = r.auth)
+      id = r.id.getOrElse(UUID.randomUUID),
+      typeId = ResourceIds.ResourceType,
+      extend = r.extend,
+      state = r.resource_state.getOrElse(ResourceState.id(ResourceStates.Active)),
+      orgId = org,
+      owner = ownerLink,
+      name = r.name,
+      description = r.description,
+      created = None, modified = None,
+      properties = stringmap(r.properties),
+      variables = r.variables,
+      tags = r.tags,
+      auth = r.auth)
   }
   
 

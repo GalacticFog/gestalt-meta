@@ -68,15 +68,21 @@ trait ResourceScope extends Scope with Mockito {
          */
         val m = new V1()
         m.migrate(dummyRootOrgId) match {
-          case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V1'", Some(x))
+          case Left(x) => throw new GenericApiException(500, "Error running migration 'V1'", Some(x))
           case Right(y) => y
         }
         
         val m2 = new V2()
         m2.migrate(dummyRootOrgId) match {
-          case Left(x) => throw new GenericApiException(500, "Error runnint migration 'V2'", Some(x))
+          case Left(x) => throw new GenericApiException(500, "Error running migration 'V2'", Some(x))
           case Right(y) => y
-        }        
+        }
+
+        val m3 = new V3()
+        m3.migrate(dummyRootOrgId) match {
+          case Left(x) => throw new GenericApiException(500, "Error running migration 'V3'", Some(x))
+          case Right(y) => y
+        }
       }
     } yield f    
   }
@@ -255,14 +261,25 @@ trait ResourceScope extends Scope with Mockito {
     }
     output.get
   }
-  
+
   def createDummyGateway(env: UUID, name: String = uuid(), org: UUID = dummyRootOrgId) = {
-    createInstance(ResourceIds.GatewayManager, 
+    createInstance(ResourceIds.GatewayManager,
+      name,
+      org = org,
+      parent = Some(env),
+      properties = Some(Map(
+        "parent" -> getParent(env))))
+  }
+
+  def createDummyKong(env: UUID, name: String = uuid(), org: UUID = dummyRootOrgId, props: Map[String,String] = Map.empty) = {
+    createInstance(ResourceIds.KongGateway,
         name,
         org = org,
         parent = Some(env),
         properties = Some(Map(
-            "parent" -> getParent(env))))
+            "parent" -> getParent(env)
+        ) ++ props)
+    )
   }
   
   def getParent(id: UUID): String = {
