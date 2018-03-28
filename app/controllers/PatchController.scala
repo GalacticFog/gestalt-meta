@@ -65,12 +65,11 @@ class PatchController @Inject()(
     ResourceIds.Group       -> groupMethods.groupPatch,
     ResourceIds.User        -> groupMethods.userPatch,
     ResourceIds.Lambda      -> lambdaMethods.patchLambdaHandler,
-    ResourceIds.ApiEndpoint -> gatewayMethods.patchEndpointHandler,
+    ResourceIds.ApiEndpoint -> patchEndpointHandler,
     ResourceIds.Entitlement -> entitlementPatch,
     ResourceIds.Container   -> containerService.patchContainer
   )
-  
-  
+
   /**
    * Patch an Org by FQON
    * Implements route `PATCH /{fqon}`
@@ -352,8 +351,15 @@ class PatchController @Inject()(
     }
     // apply patch to newres
     defaultResourcePatch(resource, patch, auth)
-  }  
-  
+  }
+
+  def patchEndpointHandler( r: GestaltResourceInstance,
+                            patch: PatchDocument,
+                            user: AuthAccountWithCreds,
+                            request: RequestHeader ): Future[GestaltResourceInstance] = {
+    gatewayMethods.updateEndpoint(PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance])
+  }
+
   /*
    * environment_type is input as a string (name) but stored as a UUID.
    * This function handles that conversion.

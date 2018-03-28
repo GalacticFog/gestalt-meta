@@ -275,7 +275,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
     "use GatewayMethods for external apiendpoint patch" in new TestApplication {
 
-      mockGatewayMethods.patchEndpointHandler(any, any, any, any) returns Future.successful(testEndpoint)
+      mockGatewayMethods.updateEndpoint(any) returns Future.successful(testEndpoint)
 
       val patchDoc = PatchDocument()
 
@@ -287,13 +287,8 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
       status(result) must equalTo(OK)
 
-      there was one(mockGatewayMethods).patchEndpointHandler(
-        r = argThat(
-          (r: GestaltResourceInstance) => r.id == testEndpoint.id
-        ),
-        patch = meq(patchDoc),
-        user = any,
-        request = any
+      there was one(mockGatewayMethods).updateEndpoint(
+        PatchInstance.applyPatch(testEndpoint, patchDoc).get.asInstanceOf[GestaltResourceInstance]
       )
     }
 

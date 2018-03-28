@@ -45,10 +45,10 @@ case object AppUpdate {
     val DefaultMaxConsecutiveFailures = 3
   }
 
-  case class PortDefinition(port: Int,
-                            protocol: String = "tcp",
-                            name: Option[String] = None,
-                            labels: Map[String,String] = Map.empty)
+  case class PortDefinition( port: Int,
+                             protocol: String = "tcp",
+                             name: Option[String] = None,
+                             labels: Map[String,String] = Map.empty )
 
   case class IPPerTaskInfo(discovery: Option[IPPerTaskInfo.DiscoveryInfo], networkName: Option[String] = None)
 

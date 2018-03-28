@@ -487,25 +487,24 @@ package object marathon {
 
     def portMapping(vip: String, exposeHost: Boolean, pm: ContainerSpec.PortMapping) = Container.Docker.PortMapping(
       protocol = Some(pm.protocol),
-      containerPort = pm.container_port,
+      containerPort = Some(pm.container_port.getOrElse(0)),
       hostPort = pm.host_port,
-      servicePort = None,  //  TODO: need to revisit this: https://gitlab.com/galacticfog/gestalt-meta/issues/226
+      servicePort = pm.service_port,
       name = pm.name,
       labels = for {
-        cp <- pm.service_port orElse pm.container_port
+        lbp <- pm.lb_port orElse pm.container_port
         ep <- pm.expose_endpoint if ep == true
-      } yield Map("VIP_0" -> s"${vip}:${cp}")
+      } yield Map("VIP_0" -> s"${vip}:${lbp}")
     )
 
-    // TODO: marathon supports requesting a specific host port with host networking (set .portDefinitions.port and .requirePorts == true), however meta has not defined any semantics to activate that use case
-    def portDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
-      port = 0, //  TODO: need to revisit this: https://gitlab.com/galacticfog/gestalt-meta/issues/226
+    def hostPortDefinition(vip: String, pm: ContainerSpec.PortMapping) = AppUpdate.PortDefinition(
+      port = pm.host_port.getOrElse(0),
       protocol = pm.protocol,
       name = pm.name,
       labels = (for {
-        sp <- pm.service_port
+        lbport <- pm.lb_port
         ep <- pm.expose_endpoint if ep == true
-      } yield Map("VIP_0" -> s"${vip}:${sp}")) getOrElse Map.empty
+      } yield Map("VIP_0" -> s"${vip}:${lbport}")) getOrElse Map.empty
     )
 
     val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName,cntrName)
@@ -528,7 +527,7 @@ package object marathon {
           privileged = Some(false)
         )),
           None,
-          if (requestedNetwork.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None
+          if (requestedNetwork.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(hostPortDefinition(namedVIP, _))) else None
         )
       } else {
         providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
@@ -546,7 +545,7 @@ package object marathon {
               privileged = Some(false)
             )),
               None,
-              if (stdNet.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(portDefinition(namedVIP, _))) else None
+              if (stdNet.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(hostPortDefinition(namedVIP, _))) else None
             )
           case Some(userNetwork) =>
             val docker = Container.Docker(

@@ -1,40 +1,10 @@
 package controllers.util
 
 
-import java.util.UUID
-
-import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserEndpoint, LaserLambda}
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, HostConfig, JsonClient, ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import controllers.SecurityResources
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.specification.{BeforeAll, Scope}
-import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsBoolean, JsObject, JsValue, Json}
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.{FakeRequest, PlaySpecification}
-import play.api.mvc._
-import play.api.mvc.Results._
-import play.api.http.HttpVerbs._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.ws.WSResponse
-import com.galacticfog.gestalt.laser._
-import play.api.http.HttpVerbs
-
-import scala.concurrent.Future
+import play.api.test.PlaySpecification
 import scala.util.{Success, Try}
-import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.meta.policy.EventMessage
-
 
 class EventMethodsSpec extends PlaySpecification with MetaRepositoryOps {
   
