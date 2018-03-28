@@ -139,7 +139,7 @@ abstract class SecureController(
     val time = s"${(System.currentTimeMillis() - startTime).toString}ms"
     val email = u.email getOrElse "N/A"
     
-    val template = " request.id=%s request.status=%s request.time=%s request.method=%s request.uri=%s user.id=%s user.name=%s user.email=%s route=%s"
+    val template = " request.id=%s request.status=%s request.time=%s request.method=%s request.uri=%s user.id=%s user.name=%s user.email=%s"
     template.format(
       sr.id,
       result.header.status,
