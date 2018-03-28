@@ -36,7 +36,7 @@ class ApiControllerSpec extends PlaySpecification with MetaRepositoryOps {
     }""".trim.stripMargin
   }
   
-  "validateNewEndpoint" should {
+  "ApiController#validateNewEndpoint" should {
     
     "inject api.providers.locations[0] into endpoint payload" in new ApiApp {
       val location = uuid()
