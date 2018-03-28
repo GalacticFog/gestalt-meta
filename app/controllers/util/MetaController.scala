@@ -66,12 +66,13 @@ trait MetaControllerUtils extends AuthorizationMethods {
       creator: AuthAccountWithCreds,
       resource: ResourceLike,
       parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-
-    ResourceFactory.create(ResourceIds.User, creator.account.id)(
+      
+    val result = ResourceFactory.create(ResourceIds.User, creator.account.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
         val es = setNewResourceEntitlements(owningOrgId, r.id, creator, parentId)
         r
       }
+    result
   }
   
   protected[controllers] def CreateWithEntitlements(
@@ -331,10 +332,11 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
   
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
-    
+
     val json = transformPayload(tpe, org, parent, payload).get
     
     MetaCreate(org, tpe, parent, Some(json)).apply { resource =>
+      
       CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
@@ -369,7 +371,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     }
     SafeRequest(operations, options).Execute _
   }
-
+  
   def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
     val (operations, options) = newResourceRequestArgs {
