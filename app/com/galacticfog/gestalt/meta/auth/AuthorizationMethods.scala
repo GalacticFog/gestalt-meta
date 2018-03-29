@@ -379,7 +379,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
-//    log.debug(s"Finding entitlements matching: $action($resource)")
+    log.debug(s"Finding entitlements matching: $action($resource)")
     findMatchingEntitlement(resource, action) match {
       case None => false
       case Some(entitlement) => {
@@ -388,13 +388,13 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         val membership = getUserMembership(identity, account)
         val intersection = (allowed intersect membership)
         
-//        log.debug("identities : " + allowed)
-//        log.debug("membership : " + membership)
-//        log.debug("intersection : " + (allowed intersect membership))        
+        log.debug("identities : " + allowed)
+        log.debug("membership : " + membership)
+        log.debug("intersection : " + (allowed intersect membership))        
         
         //(allowed intersect membership).isDefinedAt(0)
         if (intersection.isDefinedAt(0)) {
-          //log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
+          log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
           true
         }
         else forbiddenAction(account.account.id, resource, action)        

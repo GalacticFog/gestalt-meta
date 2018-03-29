@@ -86,13 +86,19 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       )),
       parent = Some(testEnv.id)
     )
+    val Success(testApi) = createInstance(
+      ResourceIds.Api,
+      "test-api",
+      properties = Some(Map()),
+      parent = Some(testEnv.id)
+    )
     val Success(testEndpoint) = createInstance(
       ResourceIds.ApiEndpoint,
       "test-endpoint",
       properties = Some(Map(
         "resource" -> "/the/path"
       )),
-      parent = Some(testEnv.id)
+      parent = Some(testApi.id)
     )
     val Success(testContainer) = createInstance(
       ResourceIds.Container,
@@ -202,7 +208,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       val patchDoc = PatchDocument()
 
       val request = fakeAuthRequest(PATCH,
-        s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
+        s"/root/lambdas/${testLambda.id}", testCreds
       ).withBody(patchDoc.toJson)
 
       val Some(result) = route(request)
@@ -269,25 +275,20 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
 
     "use GatewayMethods for external apiendpoint patch" in new TestApplication {
 
-      mockGatewayMethods.patchEndpointHandler(any, any, any, any) returns Future.successful(testEndpoint)
+      mockGatewayMethods.updateEndpoint(any) returns Future.successful(testEndpoint)
 
       val patchDoc = PatchDocument()
 
       val request = fakeAuthRequest(PATCH,
-        s"/root/environments/${testEnv.id}/apiendpoints/${testEndpoint.id}", testCreds
+        s"/root/apiendpoints/${testEndpoint.id}", testCreds
       ).withBody(patchDoc.toJson)
 
       val Some(result) = route(request)
 
       status(result) must equalTo(OK)
 
-      there was one(mockGatewayMethods).patchEndpointHandler(
-        r = argThat(
-          (r: GestaltResourceInstance) => r.id == testEndpoint.id
-        ),
-        patch = meq(patchDoc),
-        user = any,
-        request = any
+      there was one(mockGatewayMethods).updateEndpoint(
+        PatchInstance.applyPatch(testEndpoint, patchDoc).get.asInstanceOf[GestaltResourceInstance]
       )
     }
 
@@ -321,6 +322,15 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         user = any,
         request = any
       )
+    }
+
+    "create RequestOptions with appropriate policyOwner" in new TestApplication {
+      // this is a half-assed approach for testing that policies will be located so that they can be fired
+      val pc = app.injector.instanceOf[PatchController]
+      pc.standardRequestOptions(user, testLambda).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testContainer).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testApi).policyOwner must beSome(testEnv.id)
+      pc.standardRequestOptions(user, testEndpoint).policyOwner must beSome(testEnv.id)
     }
 
   }

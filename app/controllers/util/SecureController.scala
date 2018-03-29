@@ -30,8 +30,8 @@ abstract class SecureController(
   
   implicit def getSecurityClient: GestaltSecurityClient = env.client
 
-  private def Authenticate() = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => None: Option[UUID] }))
-  private def Authenticate(fqon: String) = new GestaltFrameworkAuthActionBuilder(Some({ rh: RequestHeader => Some(fqon) }))
+  private[controllers] def Authenticate() = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => None: Option[UUID] }))
+  private[controllers] def Authenticate(fqon: String) = new GestaltFrameworkAuthActionBuilder(Some({ rh: RequestHeader => Some(fqon) }))
   private def Authenticate(org: UUID) = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => Some(org) }))
   
   def AsyncAudited()(block: SecuredRequest[JsValue] => Future[Result]) =
@@ -86,7 +86,6 @@ abstract class SecureController(
   }
   
   private def logAction[A](request: SecuredRequest[A], result: Result, startTime: Long) = {
-
     if (FailureRange.contains(result.header.status)) {
       audit.log(auditError(request, result.body.toString, result.header.status, startTime))
     } else {
@@ -107,11 +106,24 @@ abstract class SecureController(
       e.asInstanceOf[ApiException].code else 500
   }
 
+  import play.api.routing.Router.Tags
+
   private def auditError[A](sr: SecuredRequest[A], errorMessage: String, statusCode: Int, startTime: Long) = {
     val u = sr.identity.account
     val time = s"${(System.currentTimeMillis() - startTime).toString}ms"
     val email = u.email getOrElse "N/A"
 
+    /*
+     * You can use this to determine the actual handler engaged for the route.
+     */
+//    val route = if (sr.tags.contains(Tags.RouteController)) {
+//      "%s.%s".format(
+//        sr.tags(Tags.RouteController),
+//        sr.tags(Tags.RouteActionMethod))
+//    } else "ERROR_ROUTE_NOT_FOUND"
+//    println("*****ROUTE : " + route)
+      
+      
     val template = " [ERROR] request.id=%s request.status=%s request.time=%s request.method=%s request.uri=%s user.id=%s user.name=%s user.email=%s error.message='%s'"
     template.format(sr.id, statusCode.toString, time, sr.method, sr.uri, u.id, u.name, email, errorMessage)
   }
@@ -120,11 +132,13 @@ abstract class SecureController(
     auditError(sr, ex.getMessage, errorCode(ex), startTime)
   }  
   
+  
+  
   private def auditPost[A](sr: SecuredRequest[A], result: Result, startTime: Long) = {
     val u = sr.identity.account
     val time = s"${(System.currentTimeMillis() - startTime).toString}ms"
     val email = u.email getOrElse "N/A"
-
+    
     val template = " request.id=%s request.status=%s request.time=%s request.method=%s request.uri=%s user.id=%s user.name=%s user.email=%s"
     template.format(
       sr.id,

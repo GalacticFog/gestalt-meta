@@ -100,17 +100,34 @@ class BootstrapController @Inject()(
             
             val report = if (performMigration) {
               log.info("Performing Meta-Schema migrations...")
-              val result = migration.executeMigration("V1", caller.account.id) match {
-                case Left(e) => {
-                  log.error("There was an error during meta-schema migration.")
-                  e
+              
+              val result = {
+                val migrations = Seq("V1", "V2")
+                migrations.map { v =>
+                    migration.executeMigration(v, caller.account.id) match {
+                    case Left(e) => {
+                      log.error("There was an error during meta-schema migration.")
+                      e
+                    }
+                    case Right(s) => {
+                      log.info("Meta-Schema migration complete.")
+                      s
+                    }
+                  }
                 }
-                case Right(s) => {
-                  log.info("Meta-Schema migration complete.")
-                  s
-                }
+//                migration.executeMigration("V1", caller.account.id) match {
+//                  case Left(e) => {
+//                    log.error("There was an error during meta-schema migration.")
+//                    e
+//                  }
+//                  case Right(s) => {
+//                    log.info("Meta-Schema migration complete.")
+//                    s
+//                  }
+//                }
               }
-              Some(result)
+              //Some(result.)
+              result.lastOption
             } else None
             
             log.info("Bootstrap complete.")

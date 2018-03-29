@@ -8,13 +8,7 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe
 import org.specs2.mock.Mockito
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.GestaltAPICredentials
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltAuthResponse
-import com.galacticfog.gestalt.security.api.GestaltDirectory
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
+import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltOrg, GestaltOrgSync, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
@@ -25,7 +19,7 @@ import play.api.test.PlaySpecification
 
 trait GestaltSecurityMocking extends PlaySpecification with Mockito with ResourceScope {
 
-  lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
+  lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds(Seq.empty, dummyRootOrgId)
   lazy val testCreds: GestaltAPICredentials = testAuthResponse.creds
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
 
@@ -46,6 +40,13 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   val account2auth = dummyAuthResponseWithCreds()
   val account2creds = account2auth.creds
   val account2 = AuthAccountWithCreds(account2auth.account, Seq.empty, Seq.empty, account2creds, dummyRootOrgId)
+
+  val dummyOrgSync = GestaltOrgSync(
+    orgs = Seq(GestaltOrg(dummyRootOrgId, "root", "root", None, None, Seq.empty)),
+    accounts = Seq(testAuthResponse.account),
+    groups = Seq.empty,
+    admin = Some(testAuthResponse.account.getLink())
+  )
 
   def fakeSecurityEnvironment(
                                auth: GestaltAuthResponseWithCreds = testAuthResponse,
@@ -97,7 +98,7 @@ object GestaltSecurityMocking {
   def dummyAuthResponseWithCreds( groups: Seq[SecurityLink] = Seq(),
                                   orgId: UUID = uuid(),
                                   creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds = {
-    val directory = GestaltDirectory(uuid(), "test-directory", None, uuid())
+    val directory = GestaltDirectory(uuid(), "test-directory", None, orgId)
     val account = GestaltAccount(
       id = uuid(),
       username = "someUser",

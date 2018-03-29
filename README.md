@@ -81,6 +81,16 @@ This will return basic information about the current status and setting for audi
     }
 }
 ```
+### Viewing Audit Logs via REST (0.6.83)
+```
+GET /logs/audit
+```
+| Param | Description |
+|----------|----------|
+|`/logs/audit`| display the _last 1000 lines_ in the log file|
+|`/logs/audit?head={n}`| display the _first_ `n` lines from the file (oldest)|
+|`/logs/audit?tail={n}`| display the _last_ `n` lines from file (newest)|
+
 
 ### Synchronizing Users/Groups with gestalt-security
 Currently synchronization is engaged exclusively by three endpoints:
@@ -97,4 +107,3 @@ All three endpoints execute the same code updating Orgs, Users, and Groups all a
 |----------|----------|
 |`/users/search?`| username, email, phoneNumber|
 |`/groups/search?`| name|
-

@@ -66,12 +66,13 @@ trait MetaControllerUtils extends AuthorizationMethods {
       creator: AuthAccountWithCreds,
       resource: ResourceLike,
       parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-
-    ResourceFactory.create(ResourceIds.User, creator.account.id)(
+      
+    val result = ResourceFactory.create(ResourceIds.User, creator.account.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId) map { r =>
         val es = setNewResourceEntitlements(owningOrgId, r.id, creator, parentId)
         r
       }
+    result
   }
   
   protected[controllers] def CreateWithEntitlements(
@@ -123,13 +124,13 @@ trait MetaControllerUtils extends AuthorizationMethods {
   }
 
   def newResourceRequestArgs(meta: MetaRequest):
-  Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
-    val (operations, options) = newResourceRequestSetup(
-      meta.caller,
-      meta.resource,
-      meta.resourceParent,
-      meta.action, meta.baseUri)
-    (operations, options)
+    Tuple2[List[Operation[Seq[String]]], RequestOptions] = {
+      val (operations, options) = newResourceRequestSetup(
+        meta.caller,
+        meta.resource,
+        meta.resourceParent,
+        meta.action, meta.baseUri)
+      (operations, options)
   }
 
   /**
@@ -327,19 +328,22 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
         "properties" -> 
         replaceJsonPropValue(env, "environment_type", envTypeId.toString)) 
   }
+
   
   private[controllers] def newDefaultResourceResult(org: UUID, tpe: UUID, parent: UUID, payload: JsValue)(
       implicit request: SecuredRequest[JsValue]) = Future {
-    
+
     val json = transformPayload(tpe, org, parent, payload).get
     
     MetaCreate(org, tpe, parent, Some(json)).apply { resource =>
+      
       CreateWithEntitlements(org, request.identity, resource, Some(parent)) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => Created(RenderSingle(res))
       }
     }
   }
+  
   
   def metaRequest(org: UUID, json: JsValue, resourceType: UUID, resourceParent: UUID, action: String)(
       implicit request: SecuredRequest[_]): MetaRequest = {
@@ -367,7 +371,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     }
     SafeRequest(operations, options).Execute _
   }
-
+  
   def MetaCreateAsync(org: UUID, tpe: UUID, parent: UUID, payload: Option[JsValue] = None)(
       implicit request: SecuredRequest[JsValue]):(GestaltResourceInstance => Future[Result]) => Future[Result] = {
     val (operations, options) = newResourceRequestArgs {

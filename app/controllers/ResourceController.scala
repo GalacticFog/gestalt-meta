@@ -58,7 +58,10 @@ class ResourceController @Inject()(
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
-      ResourceIds.Policy -> transformPolicy
+      ResourceIds.Policy -> transformPolicy,
+      ResourceIds.ApiEndpoint -> transformApiEndpoint,
+      ResourceIds.Lambda -> embedApiEndpoints,
+      ResourceIds.Container -> embedApiEndpoints
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -300,7 +303,9 @@ class ResourceController @Inject()(
     log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
 
-    if (rp.isList) AuthorizedResourceList(rp, action, request.queryString)
+    if (rp.isList) {
+      AuthorizedResourceList(rp, action, request.queryString)
+    }
     else AuthorizedResourceSingle(rp, action)
   }  
   
@@ -343,7 +348,9 @@ class ResourceController @Inject()(
     }{ f => f(path, request.identity, request.queryString).toList }
     
     AuthorizeList(action) {
-      transforms.get(path.targetTypeId).fold(rss) { f =>
+      transforms.get(path.targetTypeId).fold {
+        rss
+        }{ f =>
         rss map { f(_, request.identity, Option(request.queryString)).get }
       }
     }
@@ -573,7 +580,11 @@ class ResourceController @Inject()(
     }
     if (output.isDefined) output.get else res
   }
-  
+
+  private[this] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
+  }
+
   /**
    * Lookup and inject associated rules into policy.
    */
@@ -582,13 +593,66 @@ class ResourceController @Inject()(
       user: AuthAccountWithCreds, 
       qs: Option[Map[String, Seq[String]]] = None) = Try {
     
-    def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-      resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-    }
-    val ruleLinks = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map {  
-      rule => toLink(rule, None) 
-    }
+    val ruleLinks = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map {  toLink(_, None) }
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
+  }
+
+  /**
+    * Lookup and inject apiendpoints into upstream object according to implementation_id
+    */
+  private[controllers] def embedApiEndpoints( res: GestaltResourceInstance,
+                                              user: AuthAccountWithCreds,
+                                              qs: Option[Map[String, Seq[String]]] = None) = Try {
+    val embedEndpoints = for {
+      qs <- qs
+      embed <- qs.get("embed")
+    } yield embed.contains("apiendpoints")
+
+    if (embedEndpoints.contains(true)) {
+      val endpoints = {
+        val raw = ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", res.id)
+        raw.map {
+          ep => transformApiEndpoint(ep, user, None) match {
+            case Success(xep) => xep
+            case Failure(e) =>   ep
+          }
+        }
+      }
+      val rendered = Json.stringify(Json.toJson(endpoints.map(Output.renderInstance(_))))
+      upsertProperties(res, "apiendpoints" -> rendered)
+    } else {
+      res
+    }
+  }
+
+  /**
+    * Lookup and inject Kong public_url into ApiEndpoint
+    */
+  private[controllers] def transformApiEndpoint( res: GestaltResourceInstance,
+                                                 user: AuthAccountWithCreds,
+                                                 qs: Option[Map[String, Seq[String]]] = None) = Try {
+
+    val maybePublicUrl = for {
+      api <- ResourceFactory.findParent(ResourceIds.Api, res.id)
+      props <- res.properties
+      resourcePath <- props.get("resource")
+      provider <- props.get("provider")
+      providerJson <- Try{Json.parse(provider)}.toOption
+      locations <- (providerJson \ "locations").asOpt[Seq[String]]
+      location <- locations.headOption
+      kongId <- Try{UUID.fromString(location)}.toOption
+      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
+      kpp <- kongProvider.properties
+      kpc <- kpp.get("config")
+      kpcJson <- Try{Json.parse(kpc)}.toOption
+      kongVhost <- (kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String]
+      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
+      publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
+    } yield publicUrl
+
+    maybePublicUrl.fold(res) {public_url =>
+      upsertProperties(res, "public_url" -> public_url)
+    }
   }
 
   private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {

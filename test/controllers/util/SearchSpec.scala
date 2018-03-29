@@ -199,7 +199,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
   }
 
   "ResourceController l1 queries" should {
-
+    
     "support expansion" in new testAppWithEnv {
       // test with API endpoints, because they are a primary use case and they have multiple, easily-searchable string fields
       val l1 = uuid()
@@ -225,10 +225,12 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
       )
       val Some(result) = route(request)
       status(result) must beEqualTo(OK)
+
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id, r2.id))
       json.as[Seq[JsObject]].flatMap(j => (j \ "properties" \ "implementation_id").asOpt[UUID]) must containTheSameElementsAs(Seq(l1, l2))
     }
+    
 
     "support multi-param with expand" in new testAppWithEnv {
       // test with API endpoints, because they are the dominant use case and they have multiple, easily-searchable string fields

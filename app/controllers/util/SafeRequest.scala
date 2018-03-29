@@ -1,5 +1,6 @@
 package controllers.util
 
+
 import java.util.UUID
 
 import scala.annotation.tailrec
@@ -14,8 +15,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.events._
 import com.galacticfog.gestalt.keymgr.{GestaltFeature,GestaltLicense}
 
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.policy._
@@ -26,6 +26,8 @@ import play.api.libs.json.JsObject
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.mvc.Result
+import com.galacticfog.gestalt.meta.validation._
+import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 
 
 abstract class Operation[T](val args: T) {
@@ -46,7 +48,6 @@ case class Feature(override val args: String*) extends Operation(args) {
   private def s2f(s: String): GestaltFeature = GestaltFeature.valueOf(s)
 }
 
-import com.galacticfog.gestalt.meta.validation._
 
 case class Validate(override val args: String*) extends Operation(args) {
   def proceed(opts: RequestOptions) = {
@@ -85,10 +86,12 @@ case class Authorize(override val args: String*) extends Operation(args) with Au
     val target = opts.authTarget.get
     
     log.debug(s"Checking Authorization : action=$action, user=${user.account.id}, target=$target")
-    
+
     isAuthorized(target, action, user) match {
       case Success(_) => Continue
-      case Failure(e) => Halt(e.getMessage)
+      case Failure(e) => {
+        Halt(e.getMessage)
+      }
     }
   }
 }
@@ -163,8 +166,19 @@ trait EventMethods {
     // TODO: This is temporary. Need a strategy for multiple matching rules.
     if (fs.isEmpty) None else Some(fs(0))
   }
-  
-  
+
+  /* DO NOT DELETE
+   * TODO: This *will be* the correct way to find effective event rules once we agree
+   * upon what should happen in the event of multiple rule matches.
+   
+  def findEffectiveEventRules2(targetId: UUID, event: Option[String] = None): Seq[GestaltResourceInstance] = {
+    ResourceFactory.findAncestorsOfSubType(ResourceIds.RuleEvent, targetId).filter { r =>
+      r.properties.get("actions").contains(event.get)
+    }
+  }
+   * 
+   */
+   
   def publishEvent( 
       actionName: String, 
       eventType: String,
@@ -175,16 +189,29 @@ trait EventMethods {
       val parentId = opts.data.fold(Option.empty[UUID]){ 
         x => x.get("parentId") map { UUID.fromString(_) }
       }
-      
-      log.debug("TARGET-PARENT : " + parentId)
-      log.debug("OPTS-DATA : " + opts.data)
-      
-      parentId getOrElse opts.policyOwner.get
-      //opts.policyOwner.get
+      val owner = (parentId getOrElse opts.policyOwner.get)
+
+      log.debug("Selecting policy root...")
+      ResourceFactory.findById(owner).fold {
+        throw new RuntimeException("Could not determine policy owner from request-options.")
+      }{ r => 
+        if (r.typeId == ResourceIds.Environment) {
+          log.debug(s"Policy root found. Environment : ${r.id}")
+          r.id
+        } else {
+          
+          log.debug("Searching for ancestor Environment...")
+          val env = ResourceFactory.findAncestorsOfType(r.id, ResourceIds.Environment).lastOption getOrElse {
+            throw new RuntimeException("Could not find a parent environment")
+          }
+          log.debug(s"Policy root found. Environment : ${r.id}")
+          env.id
+        }
+      }
     }
-
+    
     log.debug(s"findEffectiveEventRules($target, $eventName)")
-
+    
     findEffectiveEventRules(target, Option(eventName)) match { 
       case None => {
         log.debug("No effective event rules found. Nothing to publish")
@@ -195,7 +222,9 @@ trait EventMethods {
         val event = EventMessage.make(
               id       = UUID.randomUUID, 
               identity = opts.user.account.id, 
+              
               /*resource = "http://dummy.href", // TODO: Add RequestOptions.host*/
+              
               event    = eventName, 
               action   = actionName, 
               rule     = rule, 
@@ -265,10 +294,10 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
         Continue
       }
       case Failure(e) => {
-        log.error(s"Failure publishing event : '$eventName'")
+        log.error(s"Failure publishing event: '$eventName' : ${e.getMessage}")
         Continue
       }
-    }    
+    }
   }
 
   private def predicateMessage(p: Predicate[Any]) = {
@@ -289,12 +318,13 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
     publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
-        log.error(s"Failure publishing event : '$eventName'")
+        log.error(s"Failure publishing event : '$eventName' : ${e.getMessage}")
         Continue
       }
     }
   }
 }
+
 
 case class RequestOptions(
     user: AuthAccountWithCreds, 
@@ -302,6 +332,7 @@ case class RequestOptions(
     policyOwner: Option[UUID], 
     policyTarget: Option[GestaltResourceInstance],
     data: Option[Map[String,String]] = None)
+
 
 class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) {
   
@@ -319,7 +350,14 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
         case op :: tail => op.proceed(options) match {
           case Continue => evaluate(tail, Continue)
           case Accepted => evaluate(tail, Accepted)
-          case e: Halt  => e
+          case e: Halt  => {
+            /*
+             * It might be fine to just throw whatever exception we want right here.
+             * As it exists, we still run the *.post event when the operation fails.
+             * That might not be what we want.
+             */
+            e 
+          }
         }
       }
     }
@@ -329,15 +367,22 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
      */
     val (beforeOps, afterOps) = sansPost(operations)
 
-    val result = evaluate(beforeOps, Continue).toTry match {
+    /*
+     * Per comment above, this checks if there was an exception during evaluation - if
+     * there was, 1) we hang on to it, 2) execute *.post event, 3) return the error.
+     * The correct behavior might be to throw the error as soon as it occurs.
+     */
+    val (result, exception) = evaluate(beforeOps, Continue).toTry match {
       case Success(state) => {
         val resource = {
           val res = options.policyTarget.get
           state.fold(res)(st => res.copy(state = st))
         }
-        f( resource )
+        f( resource ) -> None
       }
-      case Failure(error) => HandleExceptions(error)
+      case Failure(error) => {
+        HandleExceptions(error) -> Some(error)
+      }
     }
 
     if (afterOps.isDefined) {
@@ -348,7 +393,8 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
 
     afterOps map( _.proceed(options) )
 
-    result
+    if (exception.nonEmpty) throw exception.get
+    else result
   }
 
 
@@ -388,9 +434,9 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     }
     
     afterOps map( _.proceed(options) )
-    
     result
   }    
+  
   
   def Protect[T](f: Option[UUID] => Result): Result = {
 
@@ -422,10 +468,10 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     }
     
     afterOps map( _.proceed(options) )
-    
     result
   }
 
+  
   def ProtectAsync[T](f: Option[UUID] => Future[T]): Future[T] = {
 
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {

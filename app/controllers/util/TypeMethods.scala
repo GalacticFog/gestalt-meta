@@ -264,6 +264,39 @@ object TypeMethods extends AuthorizationMethods {
   }
 
   
+  def destroyTypeEntitlements(tpe: GestaltResourceType): Try[Unit] = Try {
+    val prefix = tpe.properties.get.get("actions").fold {
+      throw new RuntimeException("Could not find `actions` value in resource-type data.")
+    }{ api =>
+      Js.find(Json.parse(api).as[JsObject], "/prefix").getOrElse {
+        throw new RuntimeException("Could not parse `prefix` value from `properties/actions/prefix`")
+      }
+    }.as[String]
+
+    def isPolymorphic(prefix: String): Boolean = {
+      prefix == "provider" || prefix == "rule"
+    }
+    
+    if (!isPolymorphic(prefix)) {
+      
+      /*
+       * TODO: Deleting entitlements by 'action-pattern' removes all entitlements from the system
+       * where action matches '{prefix}.*'. This is a problem for polymorphic resources that use the
+       * same prefix such as 'provider' and 'rule'. 
+       */
+      val actionPattern = "%s.%%".format(prefix)
+      val deleteIds = ResourceFactory.findEntitlementsByAction(actionPattern).map(_.id)
+      
+      log.debug(s"Destroying ALL entitlements with action-pattern : ${actionPattern}")
+      ResourceFactory.destroyAllResourcesIn(deleteIds) match {
+        case Failure(e) =>
+          throw new RuntimeException("There were errors destroying instance entitlements: " + e.getMessage)
+        case Success(_) => ;
+      }
+    }    
+  }  
+  
+  
   def modifyLineage(caller: UUID, child: UUID, parents: Seq[UUID])(f: LineageFunction) = {
 
     def loop(pids: Seq[UUID], acc: Seq[Try[GestaltResourceType]]): Seq[Try[GestaltResourceType]] = {

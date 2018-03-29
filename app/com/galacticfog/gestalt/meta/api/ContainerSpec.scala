@@ -81,7 +81,8 @@ case object ContainerSpec extends Spec {
                          labels: Option[Map[String,String]] = None,
                          expose_endpoint: Option[Boolean] = None,
                          service_address: Option[ServiceAddress] = None,
-                         virtual_hosts: Option[Seq[String]] = None)
+                         virtual_hosts: Option[Seq[String]] = None,
+                         lb_port: Option[Int] = None)
                          
   case class Volume(container_path: String,
                     host_path: Option[String],
@@ -268,15 +269,16 @@ case object ContainerSpec extends Spec {
   implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
 
   implicit lazy val metaPortMappingSpecReads: Reads[ContainerSpec.PortMapping] = (
-    (JsPath \ "protocol").read[String] and
-      (JsPath \ "container_port").readNullable[Int] and
-      (JsPath \ "host_port").readNullable[Int] and
-      (JsPath \ "service_port").readNullable[Int] and
-      (JsPath \ "name").readNullable[String](pattern("^[a-z0-9]([a-z0-9-]*[a-z0-9])*$".r, "error.iana_svc_name") andKeep maxLength(15)) and
-      (JsPath \ "labels").readNullable[Map[String,String]] and
-      (JsPath \ "expose_endpoint").readNullable[Boolean] and
-      (JsPath \ "service_address").readNullable[ServiceAddress] and
-      (JsPath \ "virtual_hosts").readNullable[Seq[String]]
+    (__ \ "protocol").read[String] and
+      (__ \ "container_port").readNullable[Int](max(65535) andKeep min(1)) and
+      (__ \ "host_port").readNullable[Int](max(65535) andKeep min(0)) and
+      (__ \ "service_port").readNullable[Int](max(65535) andKeep min(0)) and
+      (__ \ "name").readNullable[String](pattern("^[a-z0-9]([a-z0-9-]*[a-z0-9])*$".r, "error.iana_svc_name") andKeep maxLength(15)) and
+      (__ \ "labels").readNullable[Map[String,String]] and
+      (__ \ "expose_endpoint").readNullable[Boolean] and
+      (__ \ "service_address").readNullable[ServiceAddress] and
+      (__ \ "virtual_hosts").readNullable[Seq[String]] and
+      (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0))
     )(ContainerSpec.PortMapping.apply _)
 
   implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]

@@ -586,18 +586,4 @@ class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {
     
   }
   
-//  "updateInstanceEntitlements" should {
-//    /*
-//  def updateInstanceEntitlements(
-//      targetType: UUID,
-//      forType: UUID,
-//      rootAccount: AuthAccountWithCreds,
-//      callerAccount: AuthAccountWithCreds,
-//      startingOrg: Option[UUID] = None)
-//     */
-//    "set entitlements on parent-type instances when given good data" >> {
-//      failure
-//    }
-//    
-//  }
 }

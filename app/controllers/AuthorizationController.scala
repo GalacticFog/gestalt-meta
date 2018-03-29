@@ -3,8 +3,8 @@ package controllers
 import java.util.UUID
 
 import scala.annotation.tailrec
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
@@ -13,11 +13,13 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.string2uuid
+import com.galacticfog.gestalt.io.util.patch
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
@@ -29,7 +31,7 @@ import play.api.libs.json.JsObject
 import play.api.libs.json.JsValue
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth._
-
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -43,6 +45,7 @@ import javax.inject.Singleton
 @Singleton
 class AuthorizationController @Inject()(
     messagesApi: MessagesApi,
+    gatewayMethods: GatewayMethods,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     db: play.api.db.Database)
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
@@ -94,9 +97,8 @@ class AuthorizationController @Inject()(
   }
   
   def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    val parentType = UUID.fromString(parentTypeId)
     ResourceFactory.findById(parentTypeId, parentId) match {
-      case None => Future(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
+      case None => Future.successful(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
       case Some(parent) => {
         putEntitlementCommon(fqid(fqon), parent.id, id)
       }
@@ -119,8 +121,10 @@ class AuthorizationController @Inject()(
     targets map { ent =>
       val existing = IdentityChange.getIdentities(ent)
       val newids = reconcile(existing, delta.added, delta.deleted)
-      Entitlement.toGestalt(ent.owner.id,
-        Entitlement.make(ent).withIdentities(newids))
+      Entitlement.toGestalt(
+        creator = ent.owner.id,
+        ent = Entitlement.make(ent).withIdentities(newids)
+      )
     }
   }
 
@@ -132,10 +136,10 @@ class AuthorizationController @Inject()(
     val json = request.body
 
     val targetEntitlement = ResourceFactory.findById(ResourceIds.Entitlement, id) getOrElse {
-        throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
+      throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
     }
 
-    val target = ResourceFactory.findById(parent) getOrElse {
+    val _ = ResourceFactory.findById(parent) getOrElse {
       throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
     }
 
@@ -146,7 +150,7 @@ class AuthorizationController @Inject()(
     val options = this.standardRequestOptions(user, id, targetEntitlement)
     val operations = this.standardRequestOperations("entitlement.update")
     
-    SafeRequest(operations, options) Protect { maybeState =>
+    SafeRequest(operations, options) Protect { _ =>
       
       val modified = for {
         r1   <- validateEntitlementPayload(org, parent, user, json, "update")
@@ -158,33 +162,58 @@ class AuthorizationController @Inject()(
       modified match {
         case Failure(error) => HandleExceptions(error)
         case Success(updates)  => {
-          
-          val persisted = updates map { entitlement => 
+
+          val persisted = updates map { entitlement =>
+            // for apiendpoint.invoke only; do we care if this doesn't work?
+            updateApiEndpointByEntitlement(entitlement) recover {
+              case e =>
+                log.error(s"Error updating ApiEndpoint associated with Entitlement ${entitlement.id}", e)
+            }
             ResourceFactory.update(entitlement, user.account.id).get
           }
           log.debug(s"${persisted.size} entitlements modified in cascade.")
           val root = getUpdatedRoot(id, persisted).get
           Ok(transformEntitlement(root, org, Some(META_URL)))
         }
-      }  
+      }
     }
   }
-  
-  
+
+  private[controllers] def updateApiEndpointByEntitlement(entitlement: GestaltResourceInstance)
+                                                         (implicit request: SecuredRequest[JsValue]): Future[Unit] = {
+    val pair = for {
+      ent <- Option(Entitlement.make(entitlement))
+      if ent.properties.action == "apiendpoint.invoke"
+      endpoint <- ResourceFactory.findParent(ResourceIds.ApiEndpoint, entitlement.id)
+    } yield (ent,endpoint)
+    pair match {
+      case Some((ent,endpoint)) =>
+        log.trace(s"updating 'apiendpoint.invoke' entitlement ${ent.id} for endpoint ${endpoint.id}")
+        val (users,groups) = ent.properties.identities.getOrElse(Seq.empty).partition (
+          id => ResourceFactory.findById(ResourceIds.User, id).isDefined
+        )
+        gatewayMethods.updateEndpoint(
+          PatchInstance.applyPatch(endpoint, PatchDocument(
+            PatchOp.Replace("/properties/plugins/gestaltSecurity/users", Json.toJson(users)),
+            PatchOp.Replace("/properties/plugins/gestaltSecurity/groups", Json.toJson(groups))
+          )).get.asInstanceOf[GestaltResourceInstance]
+        ) map (_ => ())
+      case _ => Future.successful(())
+    }
+  }
+
+
   /**
    * Filter the root entitlement from a list of descendant entitlements
    */
-  private[controllers] def getUpdatedRoot(id: UUID, updates: Seq[GestaltResourceInstance]
-      ): Try[GestaltResourceInstance] = Try {
-    val updated = updates filter { _.id == id }
-    updated.size match {
-      case 1 => updated(0)
-      case 0 => throw new RuntimeException("Could not find updated entitlement in cascade list. This is a bug.")
-      case _ => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
+  private[controllers] def getUpdatedRoot( id: UUID,
+                                           updates: Seq[GestaltResourceInstance] ): Try[GestaltResourceInstance] = Try {
+    updates filter { _.id == id } match {
+      case Seq(root) => root
+      case Nil       => throw new RuntimeException("Could not find updated entitlement in cascade list. This is a bug.")
+      case _         => throw new RuntimeException("Multiple matching root entitlements found. This is a bug.")
     }    
   }
-
-  //private[controllers] def findChildTargets(targetType: UUID
 
   private[controllers] def findOrFail(typeId: UUID, id: UUID): Try[GestaltResourceInstance] = Try {
     ResourceFactory.findById(typeId, id) getOrElse {
@@ -315,42 +344,20 @@ class AuthorizationController @Inject()(
     entitlements map { transformEntitlement(_, org, Some(META_URL)) }
   }
   
-  private[this] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
+  private[controllers] def transformEntitlement(ent: GestaltResourceInstance, org: UUID, baseUrl: Option[String]): JsValue = {
     
-    val props = EntitlementProps.make(ent)
-    
-    val output = props.identities match {
-      case None => None
-      case Some(ids) => {
-        val identities = ResourceFactory.findAllIn(ids)
-        
-        // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
-        val idJson = Output.renderLinks(identities, baseUrl)
-        
-        JsonUtil.upsertProperty(Json.toJson(ent).as[JsObject], "identities", idJson) match {
-          case Failure(e) => throw e
-          case Success(newres) => {
-            
-            val orgLink = {
-              Json.toJson {
-                com.galacticfog.gestalt.meta.api.output.toLink(
-                  ResourceFactory.findById(org).get, baseUrl)
-              }
-            }
-            
-            val out =
-              JsonUtil.replaceKey(
-                JsonUtil.replaceKey(
-                  JsonUtil.replaceKey(newres, "typeId", "resource_type"),
-                    "state", "resource_state"),
-                      "orgId", "org", Some(orgLink))
+    val identities = ResourceFactory.findAllIn(
+      EntitlementProps.make(ent).identities.getOrElse(Seq.empty)
+    )
 
-            Option(out.as[JsValue])
-          }
-        }
-      }
-    }  
-    if (output.isDefined) output.get else Json.toJson(ent) 
+    // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
+    val idJson = Output.renderLinks(identities, baseUrl)
+
+    JsonUtil.upsertProperty(
+      Output.renderInstance(ent,baseUrl).as[JsObject],
+      "identities",
+      idJson
+    ).get
   }
 
   private[this] def standardRequestOptions(

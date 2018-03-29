@@ -147,7 +147,7 @@ package object util {
   }
 
   def extractQueryParameters(qs: Map[String, Seq[String]]): Try[Seq[(String, String)]] = {
-    val pairs = (qs - "expand") map {
+    val pairs = (qs - "expand" - "embed") map {
       case (name, Seq(value)) => Success(name -> value)
       case (name, Nil)        => Failure(BadRequestException(s"Query parameter '${name}' did not include a search term."))
       case (name, _)          => Failure(BadRequestException(s"Query parameter '${name}' included multiple search terms."))

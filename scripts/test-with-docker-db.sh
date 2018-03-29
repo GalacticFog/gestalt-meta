@@ -62,7 +62,7 @@ echo "Running tests!"
 if [ $# -eq 0 ]; then 
   sbt test || true
 else 
-  sbt "$*"  || true
+  sbt -jvm-debug 10000 -Dlogger.resource=logger-debug.xml "$*"  || true
 fi
 
 exit 0
