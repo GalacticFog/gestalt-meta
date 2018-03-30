@@ -363,20 +363,19 @@ class DeleteController @Inject()(
 
   /**
    * Get the type ID for any resources that should have their external delete function skipped.
-   * Currently only used for MarathonProvider - if 'deleteContainers' is false (or missing), we
-   * need to skip the delete from Marathon.
+   * Currently only used for CaaS Providers - if 'deleteContainers' is false (or missing), we
+   * need to skip the delete from the cloud provider.
    */
   protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
     if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider).contains(res.typeId) &&
         !QueryString.singleBoolean(qs, "deleteContainers")) {
       
-      log.debug("Delete Marathon Provider: 'deleteContainers' is FALSE.")
-      log.debug("Containers WILL NOT be deleted from Marathon.")
+      log.debug("Delete CaaS Provider: 'deleteContainers' is FALSE.")
+      log.debug("Containers WILL NOT be deleted from backend cloud provider.")
       
       Seq(ResourceIds.Container)
     } else Seq()
   }
-
 
   def findResourceParent(child: UUID) = {
     ResourceFactory.findParent(child) getOrElse {
