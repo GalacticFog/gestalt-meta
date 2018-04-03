@@ -104,7 +104,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
   override implicit val executionContext: ExecutionContext = ec
   
   override def init(org: UUID, caller: AuthAccountWithCreds) = {
-    
+
     val creds = caller.creds.asInstanceOf[GestaltBasicCredentials]
     
     maybeEnvSecConfig = maybeEnvSecConfig map {
@@ -113,17 +113,18 @@ class GestaltLateInitSecurityEnvironment @Inject() (
         apiSecret = creds.password
       )
     }
-    
+
     ResourceFactory.findById(ResourceIds.SystemConfig).fold {
       logger.info("no system configuration found. creating...")
       val configJson = sysConfigJson(creds)
-      newSysConfig(org, caller, configJson) recover {
-        case e: Throwable => {
+
+      newSysConfig(org, caller, configJson) match {
+        case Success(_) => logger.info("new system configuration created.")
+        case Failure(e) => {
           logger.error("failed to create system configuration")
           throw e
         }
       }
-      logger.info("new system configuration created.")
     }{ config =>
       val secprops = newSecurityProperties(creds)
       val newprops = (config.properties getOrElse Map.empty) ++ secprops
@@ -144,7 +145,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
     Json.obj(
         "id" -> ResourceIds.SystemConfig.toString,
         "name" -> "gestalt-system-config",
-        "properties" -> Json.obj("config" -> Json.toJson(props)))
+        "properties" -> Json.obj("data" -> Json.toJson(props)))
   }
   
   def newSecurityProperties(creds: GestaltBasicCredentials) = 
@@ -186,7 +187,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
         logger.info("recovered security credentials from system config")
         for {
           props <- config.properties
-          config <- props.get("config")
+          config <- props.get("data")
           jsconfig <- Try(Json.parse(config)).toOption
           k <- (jsconfig \ KEY_NAME).asOpt[String]
           s <- (jsconfig \ KEY_SECRET).asOpt[String]
