@@ -47,8 +47,10 @@ class BootstrapController @Inject()(
 
   
   def bootstrap() = Audited() { implicit request =>
+    log.debug("bootstrap()")
     val caller = request.identity    
     
+    log.debug("Attempting to bootstrap Meta...")
     val maybeBootstrapped = for {
       admin  <- validateAdminUser(caller)
       org    <- security.getRootOrg(caller)
@@ -221,7 +223,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
       case _ =>
         log.warn("Bootstrap did not use API credentials; will not initialize security client")
     }
-  }  
+  }
   
   private[controllers] def bootstrapOutputMessage(rootOrg: GestaltOrg, migrationReport: Option[JsValue] = None): JsValue = {
     
