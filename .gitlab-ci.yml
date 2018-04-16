@@ -44,7 +44,7 @@ test:
   script:
     - sbt clean update test docker:stage
   artifacts:
-    expire_in: 30 minutes
+    expire_in: 2 days
     paths:
     - target/docker/stage/
 
