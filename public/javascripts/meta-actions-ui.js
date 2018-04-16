@@ -140,8 +140,8 @@
             }).then(response => response.json());
 
           /* Hook form 'submit' to custom function */
-          const form = document.getElementById(GF_CONTROLS_FORM);             
-          form.addEventListener("submit", invokeAction);     
+          //const form = document.getElementById(GF_CONTROLS_FORM);             
+          //form.addEventListener("submit", invokeAction);     
 
           const triggerModal = (id) => $(id).modal().modal('open');
 

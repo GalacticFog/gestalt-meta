@@ -12,20 +12,27 @@ import java.util.UUID
 
 case class ProviderActionSpec(
     name: String, 
-    endpoint_url: String, 
+    endpoint_url: Option[String], 
     implementation: ActionImplSpec, 
     ui_locations: Seq[UiLocation]) {
 
-  def toResource(org: UUID, parent: UUID, owner: ResourceOwnerLink, implId: UUID, id: UUID = uuid()): GestaltResourceInstance = {
+  def toResource(org: UUID, parent: UUID, owner: ResourceOwnerLink, implId: Option[UUID] = None, id: UUID = uuid()): GestaltResourceInstance = {
 
+    
+    val impl = {
+      if (implId.isEmpty) Json.toJson(implementation).as[JsObject]
+      else Json.toJson(implementation).as[JsObject] ++ Json.obj("id" -> implId.toString)
+    }
+    
     val props = Map(
-      "endpoint_url"   -> endpoint_url,
-      "implementation" -> {
+      "endpoint_url"   -> (endpoint_url getOrElse ""),
+      //"implementation" -> {s
         // TODO: Here - implementation should be a resource link.
         //Json.stringify(Json.toJson(implementation))
-        val impl = Json.toJson(implementation).as[JsObject] ++ Json.obj("id" -> implId.toString)
-        Json.stringify(impl)
-      },
+      //  val impl = Json.toJson(implementation).as[JsObject] ++ Json.obj("id" -> implId.toString)
+      //  Json.stringify(impl)
+      //},
+      "implementation" -> Json.stringify(impl),
       "parent" -> Json.stringify(Json.obj("id" -> parent.toString)),
       "ui_locations"   -> Json.stringify(Json.toJson(ui_locations)))
 
@@ -69,9 +76,10 @@ object ProviderActionSpec {
       }
     }
     
-    val endpoint = props.get("endpoint_url") getOrElse {
+    val endpoint = props.get("endpoint_url") 
+    /*getOrElse {
       throw new RuntimeException("Could not find 'endpoint_url' in properties.")
-    }
+    }*/
     ProviderActionSpec(r.name, endpoint, impl, locations)
   }
   
@@ -94,5 +102,7 @@ case class ActionImplSpec(
     kind: String, 
     spec: Option[JsValue], 
     id: Option[String], 
-    input: Option[ActionInput])
+    input: Option[ActionInput],
+    method: Option[String] = None,
+    uri: Option[String] = None)
 

@@ -56,7 +56,7 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
             
         val actionSpec = ProviderActionSpec(
             name = uuid.toString, 
-            endpoint_url = "http://example.com/example", 
+            endpoint_url = Some("http://example.com/example"), 
             implementation = impl, 
             ui_locations = Seq.empty)
         val (_, eid) = createWorkspaceEnvironment()
@@ -80,7 +80,7 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
             
         val actionSpec = ProviderActionSpec(
             name = uuid.toString,
-            endpoint_url = "http://example.com/example",
+            endpoint_url = Some("http://example.com/example"),
             implementation = impl,
             ui_locations = Seq.empty)
             
@@ -104,7 +104,7 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
             
         val actionSpec = ProviderActionSpec(
             name = uuid.toString,
-            endpoint_url = "http://example.com/example",
+            endpoint_url = Some("http://example.com/example"),
             implementation = impl,
             ui_locations = Seq.empty)
             
@@ -128,7 +128,7 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
             
         val actionSpec = ProviderActionSpec(
             name = uuid.toString,
-            endpoint_url = "http://example.com/example",
+            endpoint_url = Some("http://example.com/example"),
             implementation = impl,
             ui_locations = Seq.empty)
             
@@ -152,7 +152,7 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
             
         val actionSpec = ProviderActionSpec(
             name = uuid.toString,
-            endpoint_url = "http://example.com/example",
+            endpoint_url = Some("http://example.com/example"),
             implementation = impl,
             ui_locations = Seq.empty)
             
