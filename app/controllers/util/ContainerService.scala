@@ -5,22 +5,25 @@ import java.util.UUID
 import play.api.libs.json._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.util.{ Failure, Success, Try }
+import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
-import com.galacticfog.gestalt.data.{ Instance, ResourceFactory, ResourceState }
-import com.galacticfog.gestalt.data.models.{ GestaltResourceInstance, ResourceLike }
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.{ ResourceIds, ResourceStates }
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api._
+import com.galacticfog.gestalt.meta.policy
+import com.galacticfog.gestalt.meta.policy.{Continue, Halt}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.google.inject.Inject
 import controllers.DeleteController
+import play.api.Logger
 import play.api.mvc.RequestHeader
-import services.{ FakeURI, ProviderContext }
+import services.{FakeURI, ProviderContext}
 
 import scala.language.postfixOps
 

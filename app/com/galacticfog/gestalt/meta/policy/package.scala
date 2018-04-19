@@ -37,22 +37,35 @@ package object policy {
     }
   }
 
-  def propertyContainerCount(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
+  def countContainerInstances(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
     log.debug(s"propertyContainerCount(policyOwner = ${opts.policyOwner}")
-    val env = opts.policyOwner.get
-    JsNumber(ResourceFactory.findChildrenOfType(ResourceIds.Container, env).size)
+    val env = opts.policyOwner.getOrElse(throw InternalErrorException("countContainerInstances: request options did not have policyOwner"))
+
+    val requestedNumInstances = (resourceJson \ "properties" \ "num_instances").asOpt[Int] getOrElse 0
+
+    def getContainerInstances(r: GestaltResourceInstance): Option[Int] = for {
+      props <- r.properties
+      str <- props.get("num_instances")
+      i <- Try(str.toInt).toOption
+    } yield i
+
+    JsNumber(
+      ResourceFactory.findChildrenOfType(ResourceIds.Container, env)
+        .flatMap(getContainerInstances)
+        .fold(requestedNumInstances)(_ + _)
+    )
   }
-  
+
   /**
    * Get container.properties.num_instances as a JsNumber.  This function is necessary because rules
    * may check container.properties.num_instances in events other than 'scale' (i.e. on
    * container creation).  This function determines the value to return in the order below
    * (first value found will be used):
-   * 
+   *
    * 1.) RequestOptions.data -> scaleTo
    * 2.) container.properties.num_instances
    * 3.) 1
-   */  
+   */
   def propertyContainerNumInstances(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
 
     opts.data.flatMap(_.get("scaleTo")).fold {
@@ -62,15 +75,15 @@ package object policy {
       }{ ni => JsNumber(ni.as[Int]) }
     }{ scaleTo => JsNumber(scaleTo.toInt) }
   }
-  
+
 
   private def rte(message: String) = new RuntimeException(message)
-  
-  
+
+
   type PropertyLookup = (Predicate[Any],RequestOptions,JsValue) => JsValue
-  
+
   private val propertyFunctions: Map[String, PropertyLookup] = Map(
-    "containers.count" -> propertyContainerCount,
+    "containers.count" -> countContainerInstances,
     "container.properties.num_instances" -> propertyContainerNumInstances
   )
   
