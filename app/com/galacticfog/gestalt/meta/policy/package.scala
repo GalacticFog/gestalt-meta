@@ -41,17 +41,28 @@ package object policy {
     log.debug(s"propertyContainerCount(policyOwner = ${opts.policyOwner}")
     val env = opts.policyOwner.getOrElse(throw InternalErrorException("countContainerInstances: request options did not have policyOwner"))
 
-    val requestedNumInstances = (resourceJson \ "properties" \ "num_instances").asOpt[Int] getOrElse 0
+    // similar to propertyContainerNumInstances below:
+    //   if we're scaling a container, the relevant property is the scaling target
+    //   otherwise, the relevant property is the explicit update/create num_instances property
+    val requestedNumInstances = opts.data.flatMap(_.get("scaleTo")).fold {
+      (resourceJson \ "properties" \ "num_instances").asOpt[Int] getOrElse 1
+    } {
+      _.toInt
+    }
 
-    def getContainerInstances(r: GestaltResourceInstance): Option[Int] = for {
+    def targetNumberOfInstances(r: GestaltResourceInstance): Option[Int] = for {
       props <- r.properties
       str <- props.get("num_instances")
       i <- Try(str.toInt).toOption
     } yield i
 
+    // need to ignore the existing container from this count
+    // policy doesn't't care how many instances it has currently, only how many it will have after
+    val maybeExistingInstance = opts.policyTarget.map(_.id)
     JsNumber(
       ResourceFactory.findChildrenOfType(ResourceIds.Container, env)
-        .flatMap(getContainerInstances)
+        .filter(r => !maybeExistingInstance.contains(r.id))
+        .flatMap(targetNumberOfInstances)
         .fold(requestedNumInstances)(_ + _)
     )
   }
@@ -67,7 +78,6 @@ package object policy {
    * 3.) 1
    */
   def propertyContainerNumInstances(predicate: Predicate[Any], opts: RequestOptions, resourceJson: JsValue): JsValue = {
-
     opts.data.flatMap(_.get("scaleTo")).fold {
       val path = dot2slash("container.properties.num_instances")
       Js.find(resourceJson.as[JsObject], path).fold {
@@ -107,11 +117,10 @@ package object policy {
     log.debug(s"Testing: ${predicate.toString}")
     
     /*
-     * Check if we have a lookup function for the property - execute it to
-     * get the test-value if we do, otherwise try to get the value from the
-     * target JSON.
+     * Check if we have a lookup function for the property under policy
+     * if we do, execute it to get the test-value
+     * otherwise try to get the value from the target JSON.
      */
-    
     val testValue = propertyFunctions.get(predicate.property).fold {
       Js.find(json.as[JsObject], path)
     }{ f =>
@@ -121,8 +130,7 @@ package object policy {
     
     log.debug("Test-Value : " + testValue)
     testValue.fold(missingProperty(rule, predicate)) { test =>
-      val p1 = normalizedPredicate(predicate)
-      if (compareJson(test, p1)) Right(Unit) else Left(predicate.toString)      
+      if (compareJson(test, predicate)) Right(Unit) else Left(predicate.toString)
     }
 
   }
@@ -235,20 +243,6 @@ package object policy {
           matchAction(array(r.properties.get("match_actions")), matchActions)
       }
     }
-  }
-  
-  /*
-   * TODO: This is temporary. This gets us around the issue where we allow limit + 1 containers to be
-   * created when the operator is '<='.
-   */
-  protected[policy] def normalizedPredicate(predicate: Predicate[_]) = {
-    if (Seq("containers.count", "container.scale").contains(predicate.property)) {
-      predicate operator match {
-        case "<=" => predicate.copy(operator = "<")
-        case ">=" => predicate.copy(operator = ">")
-        case _    => predicate
-      }
-    } else predicate
   }
 
   protected[policy] def propertyHandler(typeId: UUID): ResourceProperties = {
