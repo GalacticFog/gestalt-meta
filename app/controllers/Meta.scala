@@ -757,7 +757,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       log.info("Attempting to resolve action-implementation...")
       
       val impl = spec.get.implementation
-  
+      
       val action = impl.kind.trim.toLowerCase match {
         case "lambda" => {
           actionMethods.resolveLambdaImplementation(r.orgId, impl, providerEnv, creator).map { lam =>
@@ -766,22 +766,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
         }
         case "metacallback" => Future(spec.get.toResource(r.orgId, r.id, r.owner))
       }      
-      
-      
-//      actionMethods.resolveActionImplementation(r.orgId, spec.get, providerEnv, creator) map { lam =>        
-//        /*
-//         * TODO: Create MessageEndpoint.
-//         */
-//        // Here is where we inject the Lambda ID into `action.properties.implementation.id`
-//        val action = spec.get.toResource(r.orgId, r.id, r.owner, implId = Some(lam.id))
-//
-//        log.debug("***ACTION:\n" + action)
-//        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) match {
-//          case Success(res) => res
-//          case Failure(err) => throw new RuntimeException("Failed creating ProviderAction: " + err.getMessage)
-//        }  
-//      }
-      
+
       action map { act =>
         CreateWithEntitlements(r.orgId, creator, act, Some(r.id)) match {
           case Success(res) => res

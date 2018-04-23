@@ -3,5 +3,9 @@
   "version": "1.0.0",
   "description": "Gestalt Meta StreamSpecProvider implementation.",
   "main": "index.js",
-  "license": "MIT"
+  "license": "MIT",
+  "dependencies": {
+    "axios": "~0.18.0",
+    "concat-stream": "~1.6.2"
+  }
 }

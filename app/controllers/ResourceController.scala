@@ -204,7 +204,15 @@ class ResourceController @Inject()(
       throw new InternalErrorException("could not locate org resource after authentication")
     })
 
-
+    
+  def findResourceGlobal(typeName: String, id: UUID) = Audited() { implicit request =>
+    GlobalResource.getResource(typeName, id) match {
+      case Failure(e) => HandleExceptions(e)
+      case Success(res) => Ok(RenderSingle(res))
+    }
+  }
+  
+  
   def genericResourceCreate(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
     log.debug(s"genericResourceCreate(${fqon},${path})")
     val rp = new ResourcePath(fqon, path)
@@ -403,6 +411,7 @@ class ResourceController @Inject()(
           throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
         }
       } yield res
+      
       import com.galacticfog.gestalt.meta.providers.ui._
 
       val output = Assembler.assemble(

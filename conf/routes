@@ -2,7 +2,13 @@
 ###
 ###
 
+
+
+
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
+
+GET /top/:typeName/:id  controllers.ResourceController.findResourceGlobal(typeName: String, id: java.util.UUID)
+
 
 GET	 /logs/audit		  controllers.InfoController.readAuditLogs()
 

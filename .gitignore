@@ -22,3 +22,5 @@ sec-init.sh
 /.worksheet/
 *.cache*
 ********.log
+node_modules/
+.vscode

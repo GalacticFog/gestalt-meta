@@ -142,7 +142,17 @@
           /* Hook form 'submit' to custom function */
           //const form = document.getElementById(GF_CONTROLS_FORM);             
           //form.addEventListener("submit", invokeAction);     
+            
+        const testInvoke = function(event, url) {
+        	alert("POST : " + _ctx.invoke_url);
+        	event.preventDefault()
+        }
 
+        const __bindSubmit = function(url) {
+          const form = document.getElementById(GF_CONTROLS_FORM); 
+          form.addEventListener("submit", testInvoke.bind(this, url), true);    
+        }
+            
           const triggerModal = (id) => $(id).modal().modal('open');
 
         /**

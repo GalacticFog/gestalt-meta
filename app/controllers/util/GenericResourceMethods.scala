@@ -223,9 +223,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
             context = GenericActionContext.fromParent(org, parent),
             provider = providerResource,
             resource = Some(input),
-            actionPayload = body.asText.map(JsString(_)) orElse body.asJson
+            actionPayload = body.asText.map(JsString(_)) orElse body.asJson,
+            requestUrl = Option(request.uri),
+            queryParams = request.queryString
           ))
-
+          
           provider <- Future.fromTry(
             genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue) flatMap {
               case Some(provider) => Success(provider)
@@ -298,7 +300,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
              * any policy checks have already been run against 'input' - allowing the substitution
              * at this point gives function authors a very clear way to circumvent policy.
              */
-            CreateWithEntitlements(org.id, identity, /*actionResult.getOrElse(input),*/input, Some(parent.id))
+            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input),/*input,*/ Some(parent.id))
           }
         } yield Created(Output.renderInstance(metaResult, Some(META_URL)))
       }
@@ -335,7 +337,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       )
     } yield providerResource
   }
-  
   
   private[util] def buildMetaRequest(
       orgId: UUID, 
@@ -376,13 +377,19 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       }
 
       invocation <- {
+        
+        println("***REQUEST-URL : " + request.uri)
+        println("***QUERY-PARAMS: " + request.queryString)
+        
         fTry(GenericActionInvocation(
           action   = metaRequest.action,
           metaAddress = META_URL,
           context  = GenericActionContext.fromParent(org, parent),
           provider = backingProvider,
           resource = Some(resource),
-          actionPayload = Some(payload)
+          actionPayload = Some(payload),
+          requestUrl = Option(request.uri),
+          queryParams = request.queryString
         ))
       }
       
