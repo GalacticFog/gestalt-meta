@@ -238,7 +238,7 @@ object Resource {
     }
   }
   
-  protected[api] def typeOrElse(typeName: String) = {
+  def typeOrElse(typeName: String) = {
     resourceUUID(typeName) getOrElse {
       throw new BadRequestException(s"Invalid Resource Type name: '${typeName}'")
     }

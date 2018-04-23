@@ -735,7 +735,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       p <- s.properties
       a <- p.get("provider_actions")
       jsv  = Json.parse(a)
-      acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_) }
+      acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_)(providerActionFormat) }
     } yield acts
     
     val (failedParse, successfulParse) = (actionSpecs getOrElse Seq.empty) partition { _.isFailure }
@@ -753,22 +753,27 @@ class Meta @Inject()( messagesApi: MessagesApi,
        */
       log.debug("Creating Action Lambda...")
       log.debug(Json.prettyPrint(Json.toJson(spec.get)))
-      actionMethods.resolveActionImplementation(r.orgId, spec.get, providerEnv, creator) map { lam =>
+      
+      log.info("Attempting to resolve action-implementation...")
+      
+      val impl = spec.get.implementation
+      
+      val action = impl.kind.trim.toLowerCase match {
+        case "lambda" => {
+          actionMethods.resolveLambdaImplementation(r.orgId, impl, providerEnv, creator).map { lam =>
+            spec.get.toResource(r.orgId, r.id, r.owner, implId = Some(lam.id))
+          }
+        }
+        case "metacallback" => Future(spec.get.toResource(r.orgId, r.id, r.owner))
+      }      
 
-        /*
-         * TODO: Create MessageEndpoint.
-         */
-        // Here is where we inject the Lambda ID into `action.properties.implementation.id`
-        val action = spec.get.toResource(r.orgId, r.id, r.owner, implId = lam.id)
-//        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) getOrElse {
-//          throw new RuntimeException("Failed creating ProviderAction.")
-//        }
-        log.debug("***ACTION:\n" + action)
-        CreateWithEntitlements(r.orgId, creator, action, Some(r.id)) match {
+      action map { act =>
+        CreateWithEntitlements(r.orgId, creator, act, Some(r.id)) match {
           case Success(res) => res
           case Failure(err) => throw new RuntimeException("Failed creating ProviderAction: " + err.getMessage)
-        }
+        }        
       }
+      
     }
     import scala.concurrent.Await
     import scala.concurrent.duration.DurationInt

@@ -361,7 +361,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
          "string_prop" -> "some string",
          "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create workspace provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -419,7 +419,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         "string_prop" -> "some string",
         "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create environment provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -477,7 +477,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         "string_prop" -> "some string",
         "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create provider-backed resources using an alternative verb" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -539,7 +539,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         "string_prop" -> "some string",
         "bool_prop" -> "true"
       )
-    }.pendingUntilFixed("we can come to an agreement on create semantics")
+    }//.pendingUntilFixed("we can come to an agreement on create semantics")
 
     "perform resource actions using the ActionProvider interface with Json payload without update semantics" in new testAppWithProvider {
       val testResourceName = "test-resource-action"

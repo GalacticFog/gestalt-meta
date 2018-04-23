@@ -28,10 +28,12 @@ package object ui {
     def encode64(s: String, charset: Charset = DEFAULT_CHARSET): String =
       Base64.getEncoder.encodeToString(s.getBytes(charset))
 
-    def decode64(s: String): String = if (!isBase64(s))
-      throw new IllegalArgumentException("Argument is not Base64 encoded.")
-    else new String(Base64.getDecoder.decode(s))
+//    def decode64(s: String): String = if (!isBase64(s))
+//      throw new IllegalArgumentException("Argument is not Base64 encoded.")
+//    else new String(Base64.getDecoder.decode(s))
 
+    def decode64(s: String): String = new String(Base64.getDecoder.decode(s))    
+    
     def decode64Opt(opt: Option[String]): Option[String] = {
       opt.map(decode64(_))
     }
@@ -97,10 +99,22 @@ package object ui {
     val jsonAction = Output.renderLink(action)
     
     val jsonRes = Output.renderInstance(r)     
+    
+    val invokeUrl = {
+      val act = ProviderActionSpec.fromResource(action)
+      if(act.implementation.kind.trim.toLowerCase == "metacallback") {
+        val uri = act.implementation.uri.get.replace("{resource_id}", r.id.toString)
+        JsString("%s/%s".format(metaUrl, uri.stripPrefix("/")))
+      } else {
+        throw new RuntimeException("Only 'implementation.kind == MetaCallback' is implemented at this time.")
+      } 
+    }
+    
     Json.obj(
         "action" -> jsonAction, 
         "user" -> jsonUser, 
-        "resource" -> jsonRes)
+        "resource" -> jsonRes,
+        "invoke_url" -> invokeUrl)
   }
 
 

@@ -41,12 +41,16 @@ case object GenericActionContext {
   }
 }
 
-case class GenericActionInvocation(action: String,
-                                   metaAddress: String,
-                                   context: GenericActionContext,
-                                   provider: GestaltResourceInstance,
-                                   resource: Option[GestaltResourceInstance] = None,
-                                   actionPayload: Option[JsValue] = None ) {
+case class GenericActionInvocation(
+     action: String,
+     metaAddress: String,
+     context: GenericActionContext,
+     provider: GestaltResourceInstance,
+     resource: Option[GestaltResourceInstance] = None,
+     actionPayload: Option[JsValue] = None,
+     requestUrl: Option[String] = None,
+     queryParams: Map[String, Seq[String]] = Map.empty) {
+  
   def toJson(): JsObject = {
 
     Json.obj(
@@ -55,7 +59,9 @@ case class GenericActionInvocation(action: String,
       "context" -> context.toJson(),
       "provider" -> Output.renderInstance(provider),
       "resource" -> resource.map(Output.renderInstance(_)),
-      "actionPayload" -> actionPayload
+      "actionPayload" -> actionPayload,
+      "requestUrl" -> requestUrl,
+      "queryParams" -> queryParams
     )
   }
 }
