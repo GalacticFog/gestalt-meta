@@ -262,7 +262,10 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     } getOrElse Seq.empty
 
     val updatedPortMappings = metaPortMaps.zipWithIndex map {
-      case (pm,portIndex) => pm.copy(service_address = serviceAddresses.get(portIndex))
+      case (pm,portIndex) => pm.copy(
+        service_address = serviceAddresses.get(portIndex),
+        lb_port = (pm.lb_port orElse pm.container_port).filter(_ => pm.expose_endpoint.contains(true))
+      )
     }
 
     val newproperties = origResource.properties.getOrElse(Map.empty) ++ Map(

@@ -6,9 +6,10 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.policy
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
@@ -624,6 +625,145 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         secretSpec = testSpec,
         userRequestedId = None
       ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
+    }
+
+  }
+
+  "containers.count limit policies" should {
+
+    "enforce environment container limits" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testContainerName = "test-container"
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        num_instances = 1
+      )
+      val Success(_) = createInstance(
+        ResourceIds.Policy,
+        org = dummyRootOrgId,
+        name = "test-limit",
+        properties = Option(Map(
+          "parent" -> Json.stringify(Json.obj("parent" -> Json.obj("id" -> testEnv.id.toString)))
+        )),
+        parent = Option(testEnv.id)
+      ) map { policy =>
+        createInstance(ResourceIds.RuleLimit,
+          org = dummyRootOrgId,
+          name = "test-rule",
+          parent = Option(policy.id),
+          properties = Option(Map(
+            "match_actions"    -> Json.toJson(List("container.create")).toString,
+            "eval_logic" -> Json.obj(
+              "property" -> "containers.count",
+              "operator" -> "<=",
+              "value" -> 0
+            ).toString,
+            "parent" -> policy.id.toString,
+            "defined_at" -> policy.properties.get("parent")
+          ))
+        )
+      }
+
+      // have 0 instances in environment, want to create 1, policy only allows zero => fail
+      await(containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      )) must throwAn[ConflictException]
+
+      there were no(mockCaasService).create(
+        context = any,
+        container = any
+      )(any)
+    }
+
+    "enforce accumulative environment container limits" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testContainerName = "test-container"
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        num_instances = 2
+      )
+      val Success(_) = createInstance(
+        ResourceIds.Policy,
+        org = dummyRootOrgId,
+        name = "test-limit",
+        properties = Option(Map(
+          "parent" -> Json.stringify(Json.obj("parent" -> Json.obj("id" -> testEnv.id.toString)))
+        )),
+        parent = Option(testEnv.id)
+      ) map { policy =>
+        createInstance(ResourceIds.RuleLimit,
+          org = dummyRootOrgId,
+          name = "test-rule",
+          parent = Option(policy.id),
+          properties = Option(Map(
+            "match_actions"    -> Json.toJson(List("container.create")).toString,
+            "eval_logic" -> Json.obj(
+              "property" -> "containers.count",
+              "operator" -> "<=",
+              "value" -> 3
+            ).toString,
+            "parent" -> policy.id.toString,
+            "defined_at" -> policy.properties.get("parent")
+          ))
+        )
+      }
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        org = dummyRootOrgId,
+        name = "pre-existing-container",
+        properties = Option(Map(
+          "num_instances" -> "2",
+          "provider" -> "",
+          "image" -> "",
+          "container_type" -> ""
+        )),
+        parent = Option(testEnv.id)
+      )
+      // have 2 instances in environment, want to create 2 more, policy only allows three => fail
+      val Success(_) = createInstance(
+        ResourceIds.Policy,
+        org = dummyRootOrgId,
+        name = "test-limit",
+        properties = Option(Map("parent" ->
+          Json.stringify(Json.obj("parent" -> Json.obj("id" -> testEnv.id.toString))))),
+        parent = Option(testEnv.id)
+      ) map { policy =>
+        createInstance(ResourceIds.RuleLimit,
+          org = dummyRootOrgId,
+          name = "test-rule",
+          parent = Option(policy.id),
+          properties = Option(Map(
+            "match_actions"    -> Json.toJson(List("container.create")).toString,
+            "eval_logic" -> Json.obj(
+              "property" -> "containers.count",
+              "operator" -> "<=",
+              "value" -> 3
+            ).toString,
+            "parent"     -> policy.id.toString
+          ))
+        )
+      }
+
+      await(containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      )) must throwAn[ConflictException]
+
+      there were no(mockCaasService).create(
+        context = any,
+        container = any
+      )(any)
     }
 
   }

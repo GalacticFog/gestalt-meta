@@ -714,9 +714,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must contain(exactly(
-        (pm: PortMapping) => pm.name == Some("http")  && pm.service_address.contains(ServiceAddress(svcHost, 80, Some("tcp"))),
-        (pm: PortMapping) => pm.name == Some("https") && pm.service_address.contains(ServiceAddress(svcHost, 8443, Some("tcp"))),
-        (pm: PortMapping) => pm.name == Some("debug") && pm.service_address.isEmpty
+        PortMapping("tcp", Some(80),   None,       None, Some("http"),  None, Some(true), Some(ServiceAddress(svcHost, 80,   Some("tcp"))), Some(Seq("web.test.com")), Some(80)),
+        PortMapping("tcp", Some(443),  None,       None, Some("https"), None, Some(true), Some(ServiceAddress(svcHost, 8443, Some("tcp"))),                      None, Some(8443)),
+        PortMapping("udp", Some(9999), Some(9999), None, Some("debug"), None, None, None, None, None)
       ))
       val persistedLabels = Json.parse(updatedContainerProps("labels")).asOpt[Map[String,String]]
       persistedLabels must beSome(Map("USERVAR" -> "USERVAL"))
@@ -1444,7 +1444,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "image" -> "nginx:updated"
       )
       Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]] must containTheSameElementsAs(Seq(
-        ContainerSpec.PortMapping("tcp", Some(80),   None, None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",80,Some("tcp")))),
+        ContainerSpec.PortMapping("tcp", Some(80),   None, None, Some("http"),  None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",80,Some("tcp"))), None, Some(80)),
         ContainerSpec.PortMapping("tcp", Some(443),  None, None, Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",8443,Some("tcp"))), None, Some(8443)),
         ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug"), None, Some(false), None)
       ))
