@@ -44,7 +44,8 @@ class ResourceController @Inject()(
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     security: Security,
     containerService: ContainerService,
-    genericResourceMethods: GenericResourceMethods )
+    genericResourceMethods: GenericResourceMethods,
+    lambdaMethods: LambdaMethods )
     
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -61,7 +62,8 @@ class ResourceController @Inject()(
       ResourceIds.Policy -> transformPolicy,
       ResourceIds.ApiEndpoint -> transformApiEndpoint,
       ResourceIds.Lambda -> embedApiEndpoints,
-      ResourceIds.Container -> embedApiEndpoints
+      ResourceIds.Container -> embedApiEndpoints,
+      UUID.fromString("e9e90e0a-4f87-492e-afcc-2cd84057f226") -> transformStreamSpec
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -414,9 +416,16 @@ class ResourceController @Inject()(
       
       import com.galacticfog.gestalt.meta.providers.ui._
 
+      val metaAddress = {
+        val org = fqid(fqon)
+        EnvironmentVars.get(org, org).getOrElse("META_ASSET_BASE", META_URL)
+      }
+
+      log.debug("using META_ADDRESS : " + metaAddress)
+      
       val output = Assembler.assemble(
           fqon,
-          META_URL,
+          metaAddress,
           act, resource.get, request.identity)
       Ok(output).as("text/html")
     }
@@ -694,7 +703,17 @@ class ResourceController @Inject()(
       }
     }
   }
-
+  
+  import controllers.util.LambdaMethods
+  
+  def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None): Try[GestaltResourceInstance] = Try {
+    log.debug("Entered transformStreamSpec...")
+    val streams = lambdaMethods.getLambdaStreams(r, user).get
+    val oldprops = r.properties.get
+    val newprops = oldprops ++ Map("streams" -> Json.stringify(streams))
+    r.copy(properties = Some(newprops))
+  }
+  
   /**
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.

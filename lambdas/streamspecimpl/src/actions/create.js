@@ -106,6 +106,7 @@ async function metaGetDataFeed(id, client) {
     .then(feed => feed.data)
     .catch(err => {
       console.error("ERROR : " + err.stack)
+      throw err
     })
 }
 
