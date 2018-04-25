@@ -267,7 +267,7 @@ object Assembler {
   
       script(`type` := "text/javascript")(
         raw(s"""
-          const getToken = () => '$${user.creds.headerValue}';
+          const getToken = () => '${user.creds.headerValue}';
           const _ctx =  {{ ${TemplateKeys.GESTALT_ACTION_CONTEXT} }};
           const _url = '{{ ${TemplateKeys.GESTALT_ACTION_URL} }}';
           const res = _ctx.resource;

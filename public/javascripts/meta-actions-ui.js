@@ -143,17 +143,30 @@
           //const form = document.getElementById(GF_CONTROLS_FORM);             
           //form.addEventListener("submit", invokeAction);     
             
-        const testInvoke = function(event, url) {
-        	alert("POST : " + _ctx.invoke_url);
-        	event.preventDefault()
+        const testInvoke = function(url, token, event) {
+
+          const opts = {
+            method: 'POST',
+            headers: {
+              'Authorization': token
+            }
+          }
+          
+        	const res = 
+          	fetch(_ctx.invoke_url, opts) 
+              .then(response => response.json())
+              .then(data => Window.opener.postMessage(data, "*"))
+              .catch(error => console.error(error))
+        	
+        	event.preventDefault();        	
         }
 
-        const __bindSubmit = function(url) {
+        const __bindSubmit = function(url, token) {
           const form = document.getElementById(GF_CONTROLS_FORM); 
-          form.addEventListener("submit", testInvoke.bind(this, url), true);    
+          form.addEventListener("submit", testInvoke.bind(this, url, token), true);    
         }
             
-          const triggerModal = (id) => $(id).modal().modal('open');
+        const triggerModal = (id) => $(id).modal().modal('open');
 
         /**
          *  

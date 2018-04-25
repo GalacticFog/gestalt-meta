@@ -96,11 +96,13 @@ case class HttpGenericProvider(client: WSClient,
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
     val request = authHeader.foldLeft( client.url(url) ) {
       case (req, header) => {
+        log.debug("Adding header to external request config: " + AUTHORIZATION + " : " + header)
         req.withHeaders(AUTHORIZATION -> header)
       }
     }
     
     request.post(invocation.toJson()).flatMap { resp => 
+      
       Future.fromTry(processResponse(invocation.resource, resp))
     }.recover {
       case e: Throwable => {
