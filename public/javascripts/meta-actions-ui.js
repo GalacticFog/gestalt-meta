@@ -155,7 +155,7 @@
         	const res = 
           	fetch(_ctx.invoke_url, opts) 
               .then(response => response.json())
-              .then(data => Window.opener.postMessage(data, "*"))
+              .then(data => window.parent.postMessage(data, "*"))
               .catch(error => console.error(error))
         	
         	event.preventDefault();        	
