@@ -1,26 +1,25 @@
 package modules
 
-import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig}
-import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkAuthProvider, GestaltSecurityEnvironment}
-import com.mohiva.play.silhouette.api.{EventBus, RequestProvider}
-import com.mohiva.play.silhouette.api.services.{AuthenticatorService, IdentityService}
-import com.mohiva.play.silhouette.impl.authenticators.{DummyAuthenticator, DummyAuthenticatorService}
-import javax.inject.{Inject, Singleton}
+import java.util.UUID
 
-import com.galacticfog.gestalt.security.api._
+import actors.SystemConfigActor
+import akka.actor.ActorRef
+import com.galacticfog.gestalt.data.util.PostgresHealth
+import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
+import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkAuthProvider, GestaltSecurityEnvironment}
 import com.google.inject.AbstractModule
+import com.google.inject.name.Named
+import com.mohiva.play.silhouette.api.services.{AuthenticatorService, IdentityService}
+import com.mohiva.play.silhouette.api.{EventBus, RequestProvider}
+import com.mohiva.play.silhouette.impl.authenticators.{DummyAuthenticator, DummyAuthenticatorService}
+import controllers.util.JsonInput
+import javax.inject.{Inject, Singleton}
 import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
 import play.api.libs.ws.WSClient
 
-import scala.concurrent.ExecutionContext
+import scala.concurrent.{Await, ExecutionContext}
 import scala.util.{Failure, Success, Try}
-import java.util.UUID
-import com.galacticfog.gestalt.data.util.PostgresHealth
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.meta.api.sdk._
-import controllers.util.JsonInput
-import play.api.libs.json._  
 
 class ProdSecurityModule extends AbstractModule with ScalaModule {
 
@@ -44,14 +43,15 @@ trait SecurityClientProvider {
 
 
 @Singleton
-class GestaltLateInitSecurityEnvironment @Inject() ( 
-     wsclient: WSClient,
-     bus: EventBus,
-     identitySvc: IdentityService[AuthAccountWithCreds],
-     db: play.api.db.Database,
-     appconfig: play.api.Configuration)(implicit ec: ExecutionContext)
-      extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-      with SecurityClientProvider with SecurityKeyInit {
+class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
+                                                     bus: EventBus,
+                                                     identitySvc: IdentityService[AuthAccountWithCreds],
+                                                     db: play.api.db.Database,
+                                                     appconfig: play.api.Configuration,
+                                                     @Named(SystemConfigActor.name) configActor: ActorRef )
+                                                   ( implicit ec: ExecutionContext )
+  extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
+    with SecurityClientProvider with SecurityKeyInit {
 
   private val logger = Logger(this.getClass)
 
@@ -114,43 +114,13 @@ class GestaltLateInitSecurityEnvironment @Inject() (
       )
     }
 
-    ResourceFactory.findById(ResourceIds.SystemConfig).fold {
-      logger.info("no system configuration found. creating...")
-      val configJson = sysConfigJson(creds)
+    configActor ! SystemConfigActor.SetKeys(
+      caller.account.id,
+      KEY_NAME -> creds.username,
+      KEY_SECRET -> creds.password
+    )
+  }
 
-      newSysConfig(org, caller, configJson) match {
-        case Success(_) => logger.info("new system configuration created.")
-        case Failure(e) => {
-          logger.error("failed to create system configuration")
-          throw e
-        }
-      }
-    }{ config =>
-      val secprops = newSecurityProperties(creds)
-      val newprops = (config.properties getOrElse Map.empty) ++ secprops
-      val updated = config.copy(properties = Some(newprops))
-      
-      ResourceFactory.update(updated, caller.account.id)
-    }
-  }
-  
-  def newSysConfig(org: UUID, caller: AuthAccountWithCreds, configJson: JsValue) = {
-    jsonInput.CreateNewResource(org, caller, configJson, 
-      typeId = Some(ResourceIds.Configuration), 
-      parent = Some(org))    
-  }
-  
-  def sysConfigJson(creds: GestaltBasicCredentials) = {
-    val props = newSecurityProperties(creds)
-    Json.obj(
-        "id" -> ResourceIds.SystemConfig.toString,
-        "name" -> "gestalt-system-config",
-        "properties" -> Json.obj("data" -> Json.toJson(props)))
-  }
-  
-  def newSecurityProperties(creds: GestaltBasicCredentials) = 
-    Map(KEY_NAME -> creds.username, KEY_SECRET -> creds.password)    
-  
   /**
    * Determine whether or not it is safe to lookup credentials in Meta repository.
    * Returns TRUE if meta repository has been initialized. FALSE otherwise.
@@ -177,27 +147,20 @@ class GestaltLateInitSecurityEnvironment @Inject() (
   def getCredsFromSystem: Option[(String, String)] = {
 
     if (proceedWithLookup()) {
-      logger.info("Meta repository is initialized. Looking up credentials...")
+      import akka.pattern.ask
 
-      ResourceFactory.findById(ResourceIds.SystemConfig).fold {
-        logger.info("did not recover security credentials from system config")
-        Option.empty[(String, String)]
-        
-      }{ config =>
-        logger.info("recovered security credentials from system config")
-        for {
-          props <- config.properties
-          config <- props.get("data")
-          jsconfig <- Try(Json.parse(config)).toOption
-          k <- (jsconfig \ KEY_NAME).asOpt[String]
-          s <- (jsconfig \ KEY_SECRET).asOpt[String]
-        } yield (k,s)
-      }
+      import scala.concurrent.duration._
+      implicit val askTimeout: akka.util.Timeout = 15.seconds
+      logger.info("Meta repository is initialized. Looking up credentials...")
+      val fConfig = (configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]
+      val fCreds = fConfig.map(
+        config => config.get(KEY_NAME).zip(config.get(KEY_SECRET)).headOption
+      )(ec)
+      Await.result(fCreds, 15.seconds)
     } else {
       logger.info("Skipping credential lookup.")
       None
     }
-
   }
 
   
@@ -225,7 +188,7 @@ class GestaltLateInitSecurityEnvironment @Inject() (
       proto  <- getEnv(ePROTOCOL) orElse Some("http") map checkProtocol
       host   <- getEnv(eHOSTNAME)
       port   <- getEnv(ePORT) flatMap {s => Try{s.toInt}.toOption} orElse Some(defaultPort(proto))
-      dbCreds = getCredsFromSystem //getCredsFromDB
+      dbCreds = getCredsFromSystem
       key    = dbCreds.map(_._1) orElse getEnv(eKEY)    getOrElse {logger.warn("Could not identity API key for use with gestalt-security; authentication is not functional."); ""}
       secret = dbCreds.map(_._2) orElse getEnv(eSECRET) getOrElse {logger.warn("Could not identity API secret for use with gestalt-security; authentication is not functional."); ""}
       realm  = getEnv(eREALM)
