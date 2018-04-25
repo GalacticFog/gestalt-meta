@@ -1,16 +1,11 @@
 package actors
 
-import akka.actor.{ActorRef, Props}
+import akka.actor.Props
 import akka.pattern.ask
-import akka.testkit.ImplicitSender
+import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, WithDb}
+import play.api.test.PlaySpecification
 
 import scala.concurrent.duration._
-import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, ResourceScope, WithDb}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.specification.{BeforeAfterEach, BeforeAll}
-import play.api.inject.BindingKey
-import play.api.libs.concurrent.AkkaGuiceSupport
-import play.api.test.PlaySpecification
 
 class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
 
@@ -25,10 +20,18 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
 
     "return system config entries" in new TestScope {
 
-      configActor ! SystemConfigActor.SetKey("test-key", "test-value")
-      await((configActor ? SystemConfigActor.GetKey("test-key")).mapTo[Option[String]]) must beSome("test-value")
+      await((configActor ? SystemConfigActor.GetKey("nonexistent-key")).mapTo[Option[String]]) must beNone
+      await((configActor ? SystemConfigActor.SetKeys( ("test-key" -> "test-value-a") )).mapTo[Boolean]) must beTrue
+      await((configActor ? SystemConfigActor.GetKey("test-key-a")).mapTo[Option[String]]) must beSome("test-value-a")
+      await((configActor ? SystemConfigActor.SetKeys( ("test-key-b" -> "test-value-b") )).mapTo[Boolean]) must beTrue
       await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePair(
-        "test-key" -> "test-value"
+        "test-key-a" -> "test-value-a",
+        "test-key-b" -> "test-value-b"
+      )
+      await((configActor ? SystemConfigActor.SetKeys( ("test-key-a" -> "updated-value-a") )).mapTo[Boolean]) must beTrue
+      await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePair(
+        "test-key-a" -> "updated-value-a",
+        "test-key-b" -> "test-value-b"
       )
     }
 
