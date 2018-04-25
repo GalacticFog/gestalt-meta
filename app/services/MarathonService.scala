@@ -5,7 +5,6 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import play.api.libs.ws.WSClient
-import play.api.Play.current
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}

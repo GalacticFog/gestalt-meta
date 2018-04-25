@@ -117,18 +117,7 @@ class BootstrapController @Inject()(
                     }
                   }
                 }
-//                migration.executeMigration("V1", caller.account.id) match {
-//                  case Left(e) => {
-//                    log.error("There was an error during meta-schema migration.")
-//                    e
-//                  }
-//                  case Right(s) => {
-//                    log.info("Meta-Schema migration complete.")
-//                    s
-//                  }
-//                }
               }
-              //Some(result.)
               result.lastOption
             } else None
             
