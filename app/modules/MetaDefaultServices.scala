@@ -1,6 +1,5 @@
 package modules
 
-import actors.SystemConfigActor
 import com.galacticfog.gestalt.events.{AmqpClient, AmqpConnection}
 import com.galacticfog.gestalt.meta.genericactions.{DefaultGenericProviderManager, GenericProviderManager}
 import com.google.inject.AbstractModule
@@ -14,7 +13,6 @@ class MetaDefaultServices extends AbstractModule with ScalaModule with AkkaGuice
     bind[GenericProviderManager].to[DefaultGenericProviderManager]
     bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
     bind[ContainerService].to[ContainerServiceImpl]
-    bindActor[SystemConfigActor](SystemConfigActor.name)
     bind[AmqpClient].toInstance({
       AmqpClient(
           AmqpConnection(sys.env("RABBIT_HOST"), sys.env("RABBIT_PORT").toInt, heartbeat = 300))

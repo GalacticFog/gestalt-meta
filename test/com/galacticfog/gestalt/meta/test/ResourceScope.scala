@@ -20,6 +20,7 @@ import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.marathon
 import com.galacticfog.gestalt.meta.api.Resource
 import controllers.util.MetaHealth
+import modules.ProdSecurityModule
 import play.api.libs.json.Json.JsValueWrapper
 //import controllers.util.db.ConnectionManager
 import controllers.util.DataStore
@@ -42,6 +43,7 @@ trait ResourceScope extends Scope with Mockito {
 
   lazy val appBuilder = new GuiceApplicationBuilder().disable(
     classOf[modules.HealthModule],
+    classOf[ProdSecurityModule],
     classOf[modules.MetaDefaultServices]
   )
   lazy val injector = appBuilder.injector()
