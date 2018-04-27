@@ -48,8 +48,7 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
     admin = Some(testAuthResponse.account.getLink())
   )
 
-  def fakeSecurityEnvironment(
-                               auth: GestaltAuthResponseWithCreds = testAuthResponse,
+  def fakeSecurityEnvironment( auth: GestaltAuthResponseWithCreds = testAuthResponse,
                                config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
                                client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
 
