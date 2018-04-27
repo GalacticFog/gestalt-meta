@@ -37,7 +37,7 @@ async function handlePost(request, response) {
     console.log("*******ABOUT TO CALL LAMBDA FUNCTION...")
     console.log('TYPEOF CALLBACK : ' + (typeof callback))
     
-    lambda.entryPoint(event, context, callback)
+    lambda.entryPoint(JSON.stringify(event), JSON.stringify(context), callback)
 
     //console.log('Data: ', JSON.stringify(event, null, 2));
     //console.log('\nCONTEXT : ' + JSON.stringify(fakeLambdaContext(request.method, request.headers), null, 2))

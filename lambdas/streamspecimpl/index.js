@@ -33,7 +33,7 @@ exports.entryPoint = function(event, context, callback) {
 
         console.log('RETURN-VALUE : ' + util.pretty(sendback))
 
-        callback(null, util.pretty(sendback))
+        callback(null, sendback)
 
         break
       case 'streamspec.stop':

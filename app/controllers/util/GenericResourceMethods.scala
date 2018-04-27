@@ -376,7 +376,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     val metaAddress = {
       EnvironmentVars.get(org.id, org.id).getOrElse("META_ASSET_BASE", META_URL)
     }
-    log.debug("Using Meta Address: " + metaAddress)
+    log.debug("Using Meta Address*: " + metaAddress)
     
     for {
       providerImpl <- {

@@ -94,6 +94,7 @@ case class HttpGenericProvider(client: WSClient,
   }
   
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
+    println(s"***** invokeAction(...${invocation.action}...)")
     val request = authHeader.foldLeft( client.url(url) ) {
       case (req, header) => {
         log.debug("Adding header to external request config: " + AUTHORIZATION + " : " + header)

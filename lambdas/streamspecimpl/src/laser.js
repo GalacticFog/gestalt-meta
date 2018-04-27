@@ -11,7 +11,7 @@ module.exports = {
     }
   },
   getAuth(context) {
-    //return "Bearer 8bd51de3-5f26-4d26-bc15-7ba7bb233da1"
+    //return "Bearer e7a861bc-33da-44f9-80c3-1ec69b17f724"
     return context.headers.Authorization
   }
 }

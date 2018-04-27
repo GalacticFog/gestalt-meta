@@ -100,15 +100,21 @@ package object ui {
     
     val jsonRes = Output.renderInstance(r)     
     
+    val resourceFqon = {
+      ResourceFactory.findById(r.orgId).get.properties.get("fqon")
+    }
+    
     val invokeUrl = {
       val act = ProviderActionSpec.fromResource(action)
       if(act.implementation.kind.trim.toLowerCase == "metacallback") {
         val uri = act.implementation.uri.get.replace("{resource_id}", r.id.toString)
-        JsString("%s/%s".format(metaUrl, uri.stripPrefix("/")))
+        JsString("%s/%s/%s".format(metaUrl, resourceFqon, uri.stripPrefix("/")))
       } else {
         throw new RuntimeException("Only 'implementation.kind == MetaCallback' is implemented at this time.")
       } 
     }
+    
+    log.debug("INVOKE_URL : " + invokeUrl)
     
     Json.obj(
         "action" -> jsonAction, 
