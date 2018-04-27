@@ -648,22 +648,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                   ProviderMethods.injectProviderActions(newprovider)
                 }
               }
-              
 
-              implicit lazy val griFormat = Json.format[GestaltResourceInstance]
-//              val cm = new controllers.util.ConfigurationMethods()
-//              
-//              val config = cm.extractConfig(payload).map { c =>
-//                val cfg = cm.toResource(org, identity, output.id, c)
-//                if (c.isPrivate) {
-//                  log.debug("Creating PRIVATE configuration")
-//                  CreateWithEntitlements(org, user, cfg, Some(output.id))
-//                } else {
-//                  log.debug("Creating Configuration with standard permissions.")
-//                  CreateWithEntitlements(org, user, cfg, Some(output.id))
-//                }
-//              }
-              
               Created(RenderSingle(output))
               
             } recover {
