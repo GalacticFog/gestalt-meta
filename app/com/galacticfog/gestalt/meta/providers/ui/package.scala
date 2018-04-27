@@ -113,7 +113,7 @@ package object ui {
         throw new RuntimeException("Only 'implementation.kind == MetaCallback' is implemented at this time.")
       } 
     }
-    
+
     log.debug("INVOKE_URL : " + invokeUrl)
     
     Json.obj(

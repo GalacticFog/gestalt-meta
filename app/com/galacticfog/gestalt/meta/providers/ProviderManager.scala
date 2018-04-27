@@ -603,7 +603,7 @@ class ProviderManager @Inject() (
               s"Container Provider not found. Value from [properties.provider.id]: $pid")
         }{ provider =>
           // Plug provider values into json object and add to properties.
-          val pobj = Json.obj("provider" -> Json.obj("id" -> provider.id, "name" -> provider.name)) 
+          val pobj = Json.obj("provider" -> Json.obj("id" -> provider.id, "name" -> provider.name, "resource_type" -> provider.typeId))
           json.as[JsObject] ++ Json.obj("properties" -> (oldprops.as[JsObject] ++ pobj))
         }
       }
