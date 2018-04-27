@@ -3,40 +3,29 @@ package controllers
 
 import java.util.UUID
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.ResourceLike
-import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.data.uuid
-import com.galacticfog.gestalt.data.uuid2string
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, string2uuid, uuid, uuid2string}
 import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-import com.galacticfog.gestalt.meta.api.sdk.Resources
-import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util._
 import controllers.util.JsonUtil._
-import play.api.i18n.MessagesApi
-import play.api.libs.json.{JsObject, JsString, JsValue, Json}
-import play.api.mvc.{Action, AnyContent, Result}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
-import scala.language.postfixOps
+import controllers.util._
 import javax.inject.Singleton
+import play.api.i18n.MessagesApi
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.mvc.{Action, Result}
 
-import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import play.api.Logger
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 @Singleton
 class ResourceController @Inject()( 
@@ -383,9 +372,8 @@ class ResourceController @Inject()(
   }  
   
   
+  import com.galacticfog.gestalt.data.parseUUID
   import com.galacticfog.gestalt.meta.providers._
-  import com.galacticfog.gestalt.meta.providers.ui._
-  import com.galacticfog.gestalt.data.parseUUID  
   
 
   def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
@@ -536,9 +524,8 @@ class ResourceController @Inject()(
     }
   }
 
-  import com.galacticfog.gestalt.data.{Variance, Invariant, CoVariant}
-  import com.galacticfog.gestalt.data.ResourceType
-  import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance 
+  import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
+  import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}
   
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
