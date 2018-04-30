@@ -1,7 +1,9 @@
 package controllers
 
+import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
@@ -21,7 +23,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   override def beforeAll(): Unit = {
-    pristineDatabase()
+    val Success(_) = pristineDatabase()
     val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
@@ -83,14 +85,12 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     }
 
     "return 200 with appropriate payload when there is no upgrade" in new TestUpgradeController {
-      val request = fakeAuthRequest(GET,
-        s"/upgrade", testCreds
-      )
+      val request = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
 
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsJson(result) must_== Json.obj(
-        "status" -> "inactive"
+        "active" -> false
       )
     }
 

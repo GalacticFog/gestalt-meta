@@ -1,33 +1,26 @@
 package com.galacticfog.gestalt.meta.test
 
 
-import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import org.specs2.mutable._
-import org.specs2.specification._
-import org.joda.time.DateTime
-import org.specs2.specification.Scope
 import java.util.UUID
 
-import scala.util.Try
-import play.api.libs.json.{JsValue, Json}
+import com.galacticfog.gestalt.data._
+import com.galacticfog.gestalt.data.bootstrap.Bootstrap
+import com.galacticfog.gestalt.data.models._
+import com.galacticfog.gestalt.meta.api.Resource
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.data.bootstrap.Bootstrap
-import com.galacticfog.gestalt.marathon
-import com.galacticfog.gestalt.meta.api.Resource
-import controllers.util.MetaHealth
 import modules.ProdSecurityModule
+import org.specs2.specification.Scope
+import play.api.libs.json.Json
 import play.api.libs.json.Json.JsValueWrapper
-//import controllers.util.db.ConnectionManager
+
+import scala.util.Try
 import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.inject.bind
-//import controllers.util.db.ConnectionManager
 import migrations._
 
 trait ResourceScope extends Scope with Mockito {
@@ -37,8 +30,7 @@ trait ResourceScope extends Scope with Mockito {
   val dummyRootOrgId = UUID.randomUUID()
   val dummyOwner = ResourceOwnerLink(ResourceIds.Org, dummyRootOrgId.toString)
   val adminUserId = UUID.randomUUID()
-  
-  
+
   object Entitlements extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 
   lazy val appBuilder = new GuiceApplicationBuilder().disable(
@@ -60,7 +52,25 @@ trait ResourceScope extends Scope with Mockito {
       c <- db.loadReferenceData
       d <- db.loadSystemTypes
       e <- db.initialize("root")
-      f <- Try {
+      f <- {
+        val gestaltAdmin = GestaltResourceInstance(
+          id     = adminUserId,
+          typeId = ResourceIds.User,
+          orgId  = dummyRootOrgId,
+          owner  = ResourceOwnerLink(ResourceIds.User, adminUserId),
+          name   = "root",
+          state  = ResourceState.id(ResourceStates.Active),
+          properties = Some(Map(
+            "firstName"    -> "Rooty",
+            "lastName"     -> "McRootFace",
+            "email"        -> "",
+            "phoneNumber"   -> "",
+            "gestalt_home" -> "root"))
+        )
+        ResourceFactory.create(ResourceIds.User, adminUserId)(gestaltAdmin, Some(dummyRootOrgId))
+      }
+      g <- Try {
+        println("*** Applying migrations ***")
         /*
          * 
          * TODO: This temporarily hard-codes the migration to call. The process of automatically evolving
@@ -85,8 +95,14 @@ trait ResourceScope extends Scope with Mockito {
           case Left(x) => throw new GenericApiException(500, "Error running migration 'V3'", Some(x))
           case Right(y) => y
         }
+
+        val m4 = new V4()
+        m4.migrate(adminUserId) match {
+          case Left(x) => throw new GenericApiException(500, "Error running migration 'V4'", Some(x))
+          case Right(y) => y
+        }
       }
-    } yield f    
+    } yield g
   }
   
   def newOrg(
@@ -530,9 +546,7 @@ trait ResourceScope extends Scope with Mockito {
       }
     }
     go(actions.toList, Seq.empty)
-  }  
-  
-  import play.api.libs.json.JsString
+  }
   
   def setEntitlements2(parent: UUID, properties: (String, Seq[UUID])*): Try[Seq[UUID]] = Try {
 

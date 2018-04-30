@@ -9,6 +9,7 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import javax.inject.{Named, Singleton}
 import play.api.i18n.MessagesApi
+import play.api.libs.json.Json
 
 import scala.concurrent.Future
 
@@ -20,7 +21,9 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
 
   def check() = AsyncAuditedAny() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
-      Future.successful(Ok(""))
+      Future.successful(Ok(Json.obj(
+        "active" -> false
+      )))
     }
   }
 
