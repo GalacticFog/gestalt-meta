@@ -24,18 +24,11 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
   override def beforeAll(): Unit = {
     val Success(_) = pristineDatabase()
-    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
-      Some(Map(
-        "firstName" -> user.account.firstName,
-        "lastName" -> user.account.lastName,
-        "email" -> user.account.email.getOrElse(""),
-        "phoneNumber" -> user.account.phoneNumber.getOrElse("")
-      )),
-      user.account.description
-    )
   }
 
   sequential
+
+  stopOnFail
 
   def appWithMocks() = application(additionalBindings = Seq(
     bind[ContainerService].toInstance(mock[ContainerService]),
@@ -46,35 +39,11 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
   ))
 
   abstract class TestUpgradeController extends WithApplication(appWithMocks()) {
-    var testWork: GestaltResourceInstance = null
-    var testEnv: GestaltResourceInstance = null
-    var containerService: ContainerService = null
-    var providerManager: ProviderManager = null
-
-    var testProvider: GestaltResourceInstance = null
-    var mockCaasService: CaasService = null
-
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
-
-      val Success(wrkEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = wrkEnv._1
-      testEnv = wrkEnv._2
-
-      Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
-      val injector = app.injector
-      containerService = injector.instanceOf[ContainerService]
-      providerManager = injector.instanceOf[ProviderManager]
-
-      testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
-      mockCaasService = mock[CaasService]
-      providerManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
       t
     }
   }
-
-  stopOnFail
 
   "UpgradeController" should {
 
@@ -89,10 +58,48 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
       val Some(result) = route(request)
       status(result) must equalTo(OK)
-      contentAsJson(result) must_== Json.obj(
-        "active" -> false
-      )
+      contentAsString(result) must /("active" -> false)
     }
+
+    "return 201 on POST" in new TestUpgradeController {
+      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj(
+        // FINISH
+      ))
+      val Some(pResult) = route(pRequest)
+      status(pResult) must equalTo(ACCEPTED)
+      contentAsString(pResult) must /("active" -> true)
+      contentAsString(pResult) must /("endpoint" -> "https://gtw1.test.galacticfog.com/test-upgrader")
+
+      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
+      val Some(gResult) = route(gRequest)
+      status(gResult) must equalTo(OK)
+      contentAsString(gResult) must_== contentAsString(pResult)
+    }
+
+    "return 400 on additional POST" in new TestUpgradeController {
+      val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj(
+        // FINISH
+      ))
+
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must /("message" -> contain("upgrade is already active"))
+    }
+
+    "return 201 on DELETE and reset to inactive" in new TestUpgradeController {
+      val dRequest = fakeAuthRequest(DELETE, s"/upgrade", testAdminCreds)
+
+      val Some(dResult) = route(dRequest)
+      status(dResult) must equalTo(ACCEPTED)
+      contentAsString(dResult) must /("active" -> false)
+      contentAsString(dResult) must not /("endpoint")
+
+      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
+      val Some(gResult) = route(gRequest)
+      status(gResult) must equalTo(OK)
+      contentAsString(gResult) must_== contentAsString(dResult)
+    }
+
 
   }
 
