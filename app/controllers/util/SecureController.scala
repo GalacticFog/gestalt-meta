@@ -44,6 +44,12 @@ abstract class SecureController(
     auditedActionAsync(request, System.currentTimeMillis)(block)
   }
 
+  def AsyncAuditedAny()(block: SecuredRequest[AnyContent] => Future[Result]) =
+    Authenticate().async { implicit request: SecuredRequest[AnyContent] =>
+      auditedActionAsync(request, System.currentTimeMillis)(block)
+    }
+
+
   def AsyncAuditedAny(fqon: String)(block: SecuredRequest[AnyContent] => Future[Result]) =
       Authenticate(fqon).async { implicit request: SecuredRequest[AnyContent] =>
     auditedActionAsync(request, System.currentTimeMillis)(block)

@@ -5,8 +5,9 @@ import com.galacticfog.gestalt.meta.genericactions.{DefaultGenericProviderManage
 import com.google.inject.AbstractModule
 import controllers.util.{ContainerService, ContainerServiceImpl, GenericResourceMethods, GenericResourceMethodsImpl}
 import net.codingwell.scalaguice.ScalaModule
+import play.api.libs.concurrent.AkkaGuiceSupport
 
-class MetaDefaultServices extends AbstractModule with ScalaModule {
+class MetaDefaultServices extends AbstractModule with ScalaModule with AkkaGuiceSupport {
 
   override def configure(): Unit = {
     bind[GenericProviderManager].to[DefaultGenericProviderManager]

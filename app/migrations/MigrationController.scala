@@ -3,40 +3,17 @@ package migrations
 
 import java.util.UUID
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import scala.util.{Failure, Success, Try}
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.ResourceLike
-import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.data.uuid
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.ResourceInfo
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
-import com.galacticfog.gestalt.meta.api.sdk.Resources
-import com.galacticfog.gestalt.meta.api.sdk.resourceInfoFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
-import controllers.util.JsonUtil._
+import play.api.Logger
 import play.api.i18n.MessagesApi
-import play.api.libs.json.{JsObject, JsString, JsValue, Json}
-import play.api.mvc.{Action, AnyContent, Result}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.language.postfixOps
-import javax.inject.Singleton
-
-import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import play.api.Logger
+import scala.util.Try
 
 /**
  * WIP: Allow administrators to manually run a meta-schema migration of a specific version.
@@ -92,6 +69,7 @@ class MigrationController @Inject()(
       case "V1" => new V1()
       case "V2" => new V2()
       case "V3" => new V3()
+      case "V4" => new V4()
       case _ => throw new BadRequestException(s"No migration found for version '$version'")
     }
   }
