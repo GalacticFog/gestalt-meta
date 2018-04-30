@@ -24,6 +24,17 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   lazy val user = AuthAccountWithCreds(testAuthResponse.account, Seq.empty, Seq.empty, testCreds, dummyRootOrgId)
 
 
+  lazy val testAdminAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds(Seq.empty, dummyRootOrgId, userInfo = Map(
+    "id" -> adminUserId.toString,
+    "username" -> "root",
+    "firstName" -> "Rooty",
+    "lastName" -> "McRootFace",
+    "email" -> "root@root.com",
+    "phoneNumber" -> "+15555555555"
+  ))
+  lazy val testAdminCreds: GestaltAPICredentials = testAdminAuthResponse.creds
+  lazy val adminUser = AuthAccountWithCreds(testAdminAuthResponse.account, Seq.empty, Seq.empty, testAdminCreds, dummyRootOrgId)
+
   def dummyAuthResponse(userInfo: Map[String,String] = Map(),
                         groups: Seq[SecurityLink] = Seq(),
                         orgId: UUID = uuid()): GestaltAuthResponse =
@@ -48,12 +59,12 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
     admin = Some(testAuthResponse.account.getLink())
   )
 
-  def fakeSecurityEnvironment( auth: GestaltAuthResponseWithCreds = testAuthResponse,
+  def fakeSecurityEnvironment( auth: Seq[GestaltAuthResponseWithCreds] = Seq(testAuthResponse, testAdminAuthResponse),
                                config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
                                client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
 
     FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
-      identities = Seq(auth.creds -> auth),
+      identities = auth.map(a => a.creds -> a),
       config = config,
       client = client)
   }
@@ -96,16 +107,18 @@ object GestaltSecurityMocking {
 
   def dummyAuthResponseWithCreds( groups: Seq[SecurityLink] = Seq(),
                                   orgId: UUID = uuid(),
-                                  creds:  GestaltAPICredentials = dummyCreds()): GestaltAuthResponseWithCreds = {
+                                  creds:  GestaltAPICredentials = dummyCreds(),
+                                  userInfo: Map[String,String] = Map()
+                                ): GestaltAuthResponseWithCreds = {
     val directory = GestaltDirectory(uuid(), "test-directory", None, orgId)
     val account = GestaltAccount(
-      id = uuid(),
-      username = "someUser",
-      firstName = "John",
-      lastName = "Doe",
-      description = Option("a crash-test dummy"),
-      email = Option("john@doe.com"),
-      phoneNumber = Option("+15058675309"),
+      userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),
+      userInfo.getOrElse("username", "someUser"),
+      userInfo.getOrElse("firstName", "John"),
+      userInfo.getOrElse("lastName", "Doe"),
+      userInfo.get("description") orElse Option("a crash-test dummy"),
+      userInfo.get("email") orElse Option("john@doe.com"),
+      userInfo.get("phoneNumber") orElse Option("+15058675309"),
       directory = directory)
     new GestaltAuthResponseWithCreds(
       account = account,
