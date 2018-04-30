@@ -69,13 +69,6 @@ class ConfigDelegationActor extends Actor with ActorLogging {
 
   def updateConfig(caller: UUID, data: Map[String,String]) = {
     ResourceFactory.findById(ResourceIds.SystemConfig).fold {
-      val json = Json.obj(
-        "id" -> ResourceIds.SystemConfig,
-        "name" -> "gestalt-system-config",
-        "properties" -> Json.obj(
-          "data" -> Json.toJson(data)
-        )
-      )
       ResourceFactory.create(ResourceIds.Org, caller)(
         GestaltResourceInstance(
           id = ResourceIds.SystemConfig,
@@ -92,8 +85,8 @@ class ConfigDelegationActor extends Actor with ActorLogging {
     } {
       sc =>
         val props = sc.properties.getOrElse(Map.empty)
-        val oldDdata = props.get("data").map(Json.parse(_)).map(_.as[JsObject]).getOrElse(Json.obj())
-        val updatedData = oldDdata ++ Json.toJson(data).as[JsObject]
+        val oldData = props.get("data").map(Json.parse(_)).map(_.as[JsObject]).getOrElse(Json.obj())
+        val updatedData = oldData ++ Json.toJson(data).as[JsObject]
         val updatedProps = props ++ Map(
           "data" -> updatedData.toString
         )
@@ -101,8 +94,7 @@ class ConfigDelegationActor extends Actor with ActorLogging {
           resource = sc.copy(
             properties = Some(updatedProps)
           ),
-          identity = caller,
-          updateTimestamp = false
+          identity = caller
         ).get
     }
   }

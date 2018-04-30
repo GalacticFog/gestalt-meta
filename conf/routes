@@ -18,6 +18,8 @@ POST 	/bootstrap  			 controllers.BootstrapController.bootstrap()
 POST	/sync					 controllers.SyncController.sync()
 
 GET     /upgrade                 controllers.UpgradeController.check()
+POST    /upgrade                 controllers.UpgradeController.launch()
+DELETE  /upgrade                 controllers.UpgradeController.delete()
 
 GET		/about					 controllers.InfoController.about()
 GET		/health 				 controllers.InfoController.health()
