@@ -16,10 +16,9 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
-  abstract class TestScope extends WithDb(containerApp(
-  )) {
-    lazy val configActor = app.actorSystem.actorOf(Props(new SystemConfigActor))
-    lazy val Success(testUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+  override def beforeAll(): Unit = {
+    pristineDatabase()
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
@@ -30,23 +29,56 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
     )
   }
 
+
+  abstract class TestScope extends WithDb(containerApp()) {
+    lazy val configActor = app.actorSystem.actorOf(Props(new SystemConfigActor))
+    lazy val testUserId = user.account.id
+  }
+
   "SystemConfigActor" should {
 
-    "return system config entries" in new TestScope {
+    "handle missing config on startup" in new TestScope {
+      await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must beEmpty
+    }
 
-      await((configActor ? SystemConfigActor.GetKey("nonexistent-key")).mapTo[Option[String]]) must beNone
-      await((configActor ? SystemConfigActor.SetKeys( testUser.id, ("test-key-a" -> "test-value-a") )).mapTo[Boolean]) must beTrue
+    "set and return individual keys appropriately" in new TestScope {
+      await((configActor ? SystemConfigActor.GetKey("solo-key-a")).mapTo[Option[String]]) must beNone
+      await((configActor ? SystemConfigActor.SetKey( testUserId, "solo-key-a", Some("value-a"))).mapTo[Option[String]]) must beNone
+      await((configActor ? SystemConfigActor.GetKey("solo-key-a")).mapTo[Option[String]]) must beSome("value-a")
+      await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePair(
+        "solo-key-a" -> "value-a"
+      )
+    }
+
+    "handle multiple add/remove in a transaction" in new TestScope {
+      await((configActor ? SystemConfigActor.SetKeys(testUserId, Map(
+        "test-key-a" -> Some("test-value-a")
+      ))).mapTo[Map[String,Option[String]]]) must_== Map(
+        "test-key-a" -> None
+      )
       await((configActor ? SystemConfigActor.GetKey("test-key-a")).mapTo[Option[String]]) must beSome("test-value-a")
-      await((configActor ? SystemConfigActor.SetKeys( testUser.id, ("test-key-b" -> "test-value-b") )).mapTo[Boolean]) must beTrue
+      await((configActor ? SystemConfigActor.SetKeys( testUserId, Map(
+        "test-key-b" -> Some("test-value-b")
+      ))).mapTo[Map[String,Option[String]]]) must_== Map(
+        "test-key-b" -> None
+      )
       await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePairs(
         "test-key-a" -> "test-value-a",
         "test-key-b" -> "test-value-b"
       )
-      await((configActor ? SystemConfigActor.SetKeys( testUser.id, ("test-key-a" -> "updated-value-a") )).mapTo[Boolean]) must beTrue
-      await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePairs(
-        "test-key-a" -> "updated-value-a",
-        "test-key-b" -> "test-value-b"
+      await((configActor ? SystemConfigActor.SetKeys( testUserId, Map(
+        "test-key-a" -> None,
+        "test-key-b" -> Some("new-test-value-b"),
+        "test-key-c" -> Some("test-value-c")
+      ))).mapTo[Map[String,Option[String]]]) must_== Map(
+        "test-key-a" -> Some("test-value-a"),
+        "test-key-b" -> Some("test-value-b"),
+        "test-key-c" -> None
       )
+      await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePairs(
+        "test-key-b" -> "new-test-value-b",
+        "test-key-c" -> "test-value-c"
+      ) and not haveKey("test-key-a")
     }
 
   }

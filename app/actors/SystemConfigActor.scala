@@ -29,9 +29,13 @@ class SystemConfigActor() extends Actor with ActorLogging {
   }
 
   override def receive: Receive = {
+    case sk: SetKey =>
+      val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
+        .mapTo[Option[String]]
+      f pipeTo sender()
     case sk: SetKeys =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
-        .mapTo[Boolean]
+        .mapTo[Map[String,Option[String]]]
       f pipeTo sender()
     case GetKey(key) =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
@@ -42,6 +46,7 @@ class SystemConfigActor() extends Actor with ActorLogging {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
         .mapTo[Map[String,String]]
       f pipeTo sender()
+    case _ =>
   }
 
 }
@@ -49,7 +54,8 @@ class SystemConfigActor() extends Actor with ActorLogging {
 object SystemConfigActor {
   final val name = "meta-system-config-actor"
 
-  case class SetKeys(caller: UUID, pairs: (String,String)*)
+  case class SetKey(caller: UUID, k: String, v: Option[String])
+  case class SetKeys(caller: UUID, pairs: Map[String,Option[String]])
   case class GetKey(key: String)
   case object GetAllConfig
 }
@@ -67,8 +73,11 @@ class ConfigDelegationActor extends Actor with ActorLogging {
     } yield m
   }
 
-  def updateConfig(caller: UUID, data: Map[String,String]) = {
+  def updateConfig(caller: UUID, data: Map[String,Option[String]]) = {
     ResourceFactory.findById(ResourceIds.SystemConfig).fold {
+      val initData = data collect {
+        case (k, Some(v)) => k -> v
+      }
       ResourceFactory.create(ResourceIds.Org, caller)(
         GestaltResourceInstance(
           id = ResourceIds.SystemConfig,
@@ -78,17 +87,23 @@ class ConfigDelegationActor extends Actor with ActorLogging {
           owner = ResourceOwnerLink(ResourceIds.Org,root.id.toString),
           name = "gestalt-system-config",
           properties = Some(Map(
-            "data" -> Json.toJson(data).toString
+            "data" -> Json.toJson(initData).toString
           ))
         )
       ).get
+      data.keys.map(_ -> Option.empty[String]).toMap
     } {
       sc =>
         val props = sc.properties.getOrElse(Map.empty)
-        val oldData = props.get("data").map(Json.parse(_)).map(_.as[JsObject]).getOrElse(Json.obj())
-        val updatedData = oldData ++ Json.toJson(data).as[JsObject]
+        val oldData = props.get("data").map(Json.parse(_)).map(_.as[Map[String,String]]).getOrElse(Map.empty)
+        val removeKeys = data collect {
+          case (k, None) => k
+        }
+        val updateKeys = data collect {
+          case (k, Some(v)) => k -> v
+        }
         val updatedProps = props ++ Map(
-          "data" -> updatedData.toString
+          "data" -> Json.toJson(oldData -- removeKeys ++ updateKeys).toString
         )
         ResourceFactory.update(
           resource = sc.copy(
@@ -96,13 +111,15 @@ class ConfigDelegationActor extends Actor with ActorLogging {
           ),
           identity = caller
         ).get
+        data.keys map (k => k -> oldData.get(k)) toMap
     }
   }
 
   override def receive: Receive = {
+    case SystemConfigActor.SetKey(caller, k, v) =>
+      sender() ! updateConfig(caller, Map(k -> v)).get(k).flatten
     case SystemConfigActor.SetKeys(caller, pairs) =>
-      updateConfig(caller, Map(pairs))
-      sender() ! true
+      sender() ! updateConfig(caller, pairs)
     case SystemConfigActor.GetAllConfig =>
       sender() ! getConfig.getOrElse(Map.empty[String,String])
     case _ =>

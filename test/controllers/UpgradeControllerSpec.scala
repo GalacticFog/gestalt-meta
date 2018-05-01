@@ -1,9 +1,6 @@
 package controllers
 
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
@@ -12,10 +9,9 @@ import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
 import play.api.inject.bind
 import play.api.libs.json.Json
-import play.api.test.{FakeRequest, PlaySpecification, WithApplication}
-import services.{CaasService, MarathonClientFactory, SkuberFactory}
+import play.api.test.{PlaySpecification, WithApplication}
+import services.{MarathonClientFactory, SkuberFactory}
 
-import scala.concurrent.Await
 import scala.util.Success
 
 class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
@@ -99,7 +95,6 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       status(gResult) must equalTo(OK)
       contentAsString(gResult) must_== contentAsString(dResult)
     }
-
 
   }
 

@@ -9,7 +9,7 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import javax.inject.{Named, Singleton}
 import play.api.i18n.MessagesApi
-import play.api.libs.json.Json
+import play.api.libs.json.{Format, Json}
 
 import scala.concurrent.Future
 import akka.pattern.ask
@@ -25,30 +25,9 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
                                    @Named(SystemConfigActor.name) configActor: ActorRef )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
-  case class UpgradeStatus(active: Boolean, endpoint: Option[String])
-  case object UpgradeStatus {
-    def inactive = UpgradeStatus(false,None)
-  }
-  implicit val usFmt = Json.format[UpgradeStatus]
   implicit val askTimeout: akka.util.Timeout = 15.seconds
 
-  def getStatus: Future[UpgradeStatus] = {
-    (configActor ? SystemConfigActor.GetKey("upgrade")).mapTo[Option[String]].map(_.fold(UpgradeStatus.inactive){
-      str => Try {
-        Json.parse(str).as[UpgradeStatus]
-      } getOrElse UpgradeStatus.inactive
-    })
-  }
-
-  def updateStatus(newStatus: UpgradeStatus)(implicit request: SecuredRequest[_]): Future[Unit] = {
-    (configActor ? SystemConfigActor.SetKeys(
-      caller = request.identity.account.id,
-      "upgrade" -> Json.toJson(newStatus).toString
-    )).mapTo[Boolean].flatMap {
-      case true => Future.successful(())
-      case false => Future.failed(new InternalErrorException("failed to set upgrade status"))
-    }
-  }
+  import UpgradeController._
 
   def check() = AsyncAuditedAny() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
@@ -56,19 +35,27 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     }
   }
 
+  def setAndTest()(implicit request: SecuredRequest[_]): Future[Boolean] = {
+    for {
+      maybeLocked <- (configActor ? SystemConfigActor.SetKey(request.identity.account.id, "upgrade_lock",  Some("true")))
+          .mapTo[Option[String]]
+      locked = maybeLocked.map(_.toBoolean).getOrElse(false)
+    } yield locked
+  }
+
   def launch() = AsyncAudited() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
-      getStatus flatMap { status =>
-        if (! status.active) {
-          val newStatus = status.copy(
+      setAndTest flatMap { alreadyLocked =>
+        if (alreadyLocked) {
+          Future.successful(BadRequest(Json.obj(
+            "message" -> "upgrade is already active"
+          )))
+        } else {
+          val newStatus = UpgradeStatus(
             active = true,
             endpoint = Some("https://gtw1.test.galacticfog.com/test-upgrader")
           )
           updateStatus(newStatus) map {_ => Accepted(Json.toJson(newStatus))}
-        } else {
-          Future.successful(BadRequest(Json.obj(
-            "message" -> "upgrade is already active"
-          )))
         }
       }
     }
@@ -98,5 +85,33 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     policyTarget = None,
     data = None
   )
+
+  private[this] def getStatus: Future[UpgradeStatus] = {
+    (configActor ? SystemConfigActor.GetKey("upgrade_status")).mapTo[Option[String]].map(_.fold(UpgradeStatus.inactive){
+      str => Try {
+        Json.parse(str).as[UpgradeStatus]
+      } getOrElse UpgradeStatus.inactive
+    })
+  }
+
+  private[this] def updateStatus(newStatus: UpgradeStatus)(implicit request: SecuredRequest[_]): Future[UpgradeStatus] = {
+    (configActor ? SystemConfigActor.SetKey(
+      caller = request.identity.account.id,
+      "upgrade_status",
+      Some(Json.toJson(newStatus).toString)
+    )).mapTo[Option[String]].map { _ => newStatus }
+  }
+
+
+}
+
+case object UpgradeController {
+
+  case class UpgradeStatus(active: Boolean, endpoint: Option[String])
+  case object UpgradeStatus {
+    def inactive = UpgradeStatus(false,None)
+  }
+
+  implicit val usFmt: Format[UpgradeStatus] = Json.format[UpgradeStatus]
 
 }
