@@ -54,6 +54,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsString(result) must /("active" -> false)
+      contentAsString(result) must not /("endpoint")
     }
 
     "return 201 on POST" in new TestUpgradeController {

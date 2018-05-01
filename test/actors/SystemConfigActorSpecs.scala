@@ -43,7 +43,7 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
 
     "set and return individual keys appropriately" in new TestScope {
       await((configActor ? SystemConfigActor.GetKey("solo-key-a")).mapTo[Option[String]]) must beNone
-      await((configActor ? SystemConfigActor.SetKey( testUserId, "solo-key-a", Some("value-a"))).mapTo[Option[String]]) must beNone
+      await((configActor ? SystemConfigActor.SetKey(testUserId, "solo-key-a", Some("value-a"))).mapTo[Option[String]]) must beNone
       await((configActor ? SystemConfigActor.GetKey("solo-key-a")).mapTo[Option[String]]) must beSome("value-a")
       await((configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]) must havePair(
         "solo-key-a" -> "value-a"
@@ -57,7 +57,7 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
         "test-key-a" -> None
       )
       await((configActor ? SystemConfigActor.GetKey("test-key-a")).mapTo[Option[String]]) must beSome("test-value-a")
-      await((configActor ? SystemConfigActor.SetKeys( testUserId, Map(
+      await((configActor ? SystemConfigActor.SetKeys(testUserId, Map(
         "test-key-b" -> Some("test-value-b")
       ))).mapTo[Map[String,Option[String]]]) must_== Map(
         "test-key-b" -> None
@@ -66,7 +66,7 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
         "test-key-a" -> "test-value-a",
         "test-key-b" -> "test-value-b"
       )
-      await((configActor ? SystemConfigActor.SetKeys( testUserId, Map(
+      await((configActor ? SystemConfigActor.SetKeys(testUserId, Map(
         "test-key-a" -> None,
         "test-key-b" -> Some("new-test-value-b"),
         "test-key-c" -> Some("test-value-c")
@@ -79,6 +79,37 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
         "test-key-b" -> "new-test-value-b",
         "test-key-c" -> "test-value-c"
       ) and not haveKey("test-key-a")
+    }
+
+    "test-and-set for non-existent items" in new TestScope {
+      await((configActor ? SystemConfigActor.TestAndSet(
+        testUserId, "nonexistent-test-and-set",
+        {(o: Option[String]) => o.contains("will not pass")},
+        {(o: Option[String]) => Some("does will not")}
+      )).mapTo[SystemConfigActor.TestAndSetResult]) must_== (false, None)
+      await((configActor ? SystemConfigActor.GetKey("nonexistent-test-and-set")).mapTo[Option[String]]) must beNone
+    }
+
+    "test-and-set for bad predicate functions" in new TestScope {
+      await((configActor ? SystemConfigActor.TestAndSet(
+        testUserId, "nonexistent-test-and-set",
+        {(o: Option[String]) => throw new RuntimeException("who's bad?")},
+        {(o: Option[String]) => Some("does will not")}
+      )).mapTo[SystemConfigActor.TestAndSetResult]) must_== (false, None)
+      await((configActor ? SystemConfigActor.GetKey("nonexistent-test-and-set")).mapTo[Option[String]]) must beNone
+    }
+
+    "test-and-set for bad value functions" in new TestScope {
+      await((configActor ? SystemConfigActor.TestAndSet(
+        testUserId, "nonexistent-test-and-set",
+        {(o: Option[String]) => true},
+        {(o: Option[String]) => throw new RuntimeException("who's bad?")}
+      )).mapTo[SystemConfigActor.TestAndSetResult]) must_== (false, None)
+      await((configActor ? SystemConfigActor.GetKey("nonexistent-test-and-set")).mapTo[Option[String]]) must beNone
+    }
+
+    "test-and-set for extant items" in new TestScope {
+
     }
 
   }
