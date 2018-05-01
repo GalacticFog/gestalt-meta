@@ -98,7 +98,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
 
   private[this] def updateStatus(newStatus: UpgradeStatus)(implicit request: SecuredRequest[_]): Future[UpgradeStatus] = {
     (configActor ? SystemConfigActor.SetKeys(
-      caller = request.identity.account.id,
+      creator = request.identity.account.id,
       pairs = Map(
         "upgrade_status" -> Some(Json.toJson(newStatus).toString),
         "upgrade_lock" -> Some(newStatus.active.toString)

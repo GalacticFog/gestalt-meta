@@ -12,6 +12,7 @@ import play.api.libs.json.{JsObject, Json}
 
 import scala.language.postfixOps
 import scala.concurrent.duration._
+import scala.util.{Failure, Success, Try}
 
 @Singleton
 class SystemConfigActor() extends Actor with ActorLogging {
@@ -31,11 +32,9 @@ class SystemConfigActor() extends Actor with ActorLogging {
   override def receive: Receive = {
     case sk: SetKey =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
-        .mapTo[Option[String]]
       f pipeTo sender()
     case sk: SetKeys =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
-        .mapTo[Map[String,Option[String]]]
       f pipeTo sender()
     case GetKey(key) =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
@@ -44,7 +43,9 @@ class SystemConfigActor() extends Actor with ActorLogging {
       f pipeTo sender()
     case GetAllConfig =>
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
-        .mapTo[Map[String,String]]
+      f pipeTo sender()
+    case ts: TestAndSet =>
+      val f = (context.actorOf(Props(new ConfigDelegationActor)) ? ts)
       f pipeTo sender()
     case _ =>
   }
@@ -54,10 +55,14 @@ class SystemConfigActor() extends Actor with ActorLogging {
 object SystemConfigActor {
   final val name = "meta-system-config-actor"
 
-  case class SetKey(caller: UUID, k: String, v: Option[String])
-  case class SetKeys(caller: UUID, pairs: Map[String,Option[String]])
+  case class SetKey(creator: UUID, key: String, value: Option[String])
+  case class SetKeys(creator: UUID, pairs: Map[String,Option[String]])
   case class GetKey(key: String)
   case object GetAllConfig
+  case class TestAndSet(creator: UUID, key: String, p: Option[String] => Boolean, f: Option[String] => Option[String])
+
+  type TestAndSetResult = Tuple2[Boolean, Option[String]]
+
 }
 
 class ConfigDelegationActor extends Actor with ActorLogging {
@@ -73,12 +78,12 @@ class ConfigDelegationActor extends Actor with ActorLogging {
     } yield m
   }
 
-  def updateConfig(caller: UUID, data: Map[String,Option[String]]) = {
+  def updateConfig(creator: UUID, data: Map[String,Option[String]]) = {
     ResourceFactory.findById(ResourceIds.SystemConfig).fold {
       val initData = data collect {
         case (k, Some(v)) => k -> v
       }
-      ResourceFactory.create(ResourceIds.Org, caller)(
+      ResourceFactory.create(ResourceIds.Org, creator)(
         GestaltResourceInstance(
           id = ResourceIds.SystemConfig,
           typeId = ResourceIds.Configuration,
@@ -109,20 +114,38 @@ class ConfigDelegationActor extends Actor with ActorLogging {
           resource = sc.copy(
             properties = Some(updatedProps)
           ),
-          identity = caller
+          identity = creator
         ).get
         data.keys map (k => k -> oldData.get(k)) toMap
     }
   }
 
+  def testAndSet(creator: UUID, key: String, p: Option[String] => Boolean, f: Option[String] => Option[String]): SystemConfigActor.TestAndSetResult = {
+    val maybeV = getConfig flatMap {_.get(key)}
+    Try(p(maybeV)) match {
+      case Success(true) => Try(f(maybeV)) match {
+          case Success(newV) =>
+            updateConfig(creator, Map(key -> newV))
+            (true, maybeV)
+          case Failure(_) =>
+            (false, maybeV)
+        }
+      case _ =>
+        (false, maybeV)
+    }
+  }
+
   override def receive: Receive = {
-    case SystemConfigActor.SetKey(caller, k, v) =>
-      sender() ! updateConfig(caller, Map(k -> v)).get(k).flatten
-    case SystemConfigActor.SetKeys(caller, pairs) =>
-      sender() ! updateConfig(caller, pairs)
+    case SystemConfigActor.SetKey(creator, k, v) =>
+      sender() ! updateConfig(creator, Map(k -> v)).get(k).flatten
+    case SystemConfigActor.SetKeys(creator, pairs) =>
+      sender() ! updateConfig(creator, pairs)
     case SystemConfigActor.GetAllConfig =>
       sender() ! getConfig.getOrElse(Map.empty[String,String])
+    case SystemConfigActor.TestAndSet(creator, key, p, f) =>
+      sender() ! testAndSet(creator, key, p, f)
     case _ =>
   }
+
 }
 
