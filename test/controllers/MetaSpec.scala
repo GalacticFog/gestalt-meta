@@ -63,7 +63,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       scalikejdbc.config.DBs.closeAll()
       scalikejdbc.config.DBs.setupAll()
       t
-    }    
+    }
   }
 
   "Meta Controller" should {

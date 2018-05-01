@@ -116,8 +116,10 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
 
     configActor ! SystemConfigActor.SetKeys(
       caller.account.id,
-      KEY_NAME -> creds.username,
-      KEY_SECRET -> creds.password
+      Map(
+        KEY_NAME -> Some(creds.username),
+        KEY_SECRET -> Some(creds.password)
+      )
     )
   }
 
