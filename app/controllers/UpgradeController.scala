@@ -51,11 +51,12 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
             "message" -> "upgrade is already active"
           )))
         } else {
+          // TODO: setup
           val newStatus = UpgradeStatus(
             active = true,
             endpoint = Some("https://gtw1.test.galacticfog.com/test-upgrader")
           )
-          updateStatus(newStatus) map {_ => Accepted(Json.toJson(newStatus))}
+          updateStatus(newStatus) map {s => Accepted(Json.toJson(s))}
         }
       }
     }
@@ -66,6 +67,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
       getStatus flatMap { status =>
         if (status.active) {
           val newStatus = UpgradeStatus.inactive
+          // TODO: cleanup
           updateStatus(newStatus) map {_ => Accepted(Json.toJson(newStatus))}
         } else {
           Future.successful(Accepted(Json.toJson(status)))
@@ -95,11 +97,13 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
   }
 
   private[this] def updateStatus(newStatus: UpgradeStatus)(implicit request: SecuredRequest[_]): Future[UpgradeStatus] = {
-    (configActor ? SystemConfigActor.SetKey(
+    (configActor ? SystemConfigActor.SetKeys(
       caller = request.identity.account.id,
-      "upgrade_status",
-      Some(Json.toJson(newStatus).toString)
-    )).mapTo[Option[String]].map { _ => newStatus }
+      pairs = Map(
+        "upgrade_status" -> Some(Json.toJson(newStatus).toString),
+        "upgrade_lock" -> Some(newStatus.active.toString)
+      )
+    )).map { _ => newStatus }
   }
 
 

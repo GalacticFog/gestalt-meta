@@ -49,9 +49,8 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       status(result) must throwA[ConflictException]
     }
 
-    "return 200 with appropriate payload when there is no upgrade" in new TestUpgradeController {
+    "return 200 with appropriate payload when there is no active upgrade" in new TestUpgradeController {
       val request = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-
       val Some(result) = route(request)
       status(result) must equalTo(OK)
       contentAsString(result) must /("active" -> false)
@@ -76,7 +75,6 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj(
         // FINISH
       ))
-
       val Some(result) = route(request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must /("message" -> contain("upgrade is already active"))
@@ -84,7 +82,6 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
     "return 201 on DELETE and reset to inactive" in new TestUpgradeController {
       val dRequest = fakeAuthRequest(DELETE, s"/upgrade", testAdminCreds)
-
       val Some(dResult) = route(dRequest)
       status(dResult) must equalTo(ACCEPTED)
       contentAsString(dResult) must /("active" -> false)
@@ -94,6 +91,21 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       val Some(gResult) = route(gRequest)
       status(gResult) must equalTo(OK)
       contentAsString(gResult) must_== contentAsString(dResult)
+    }
+
+    "then return 201 on POST" in new TestUpgradeController {
+      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj(
+        // FINISH
+      ))
+      val Some(pResult) = route(pRequest)
+      status(pResult) must equalTo(ACCEPTED)
+      contentAsString(pResult) must /("active" -> true)
+      contentAsString(pResult) must /("endpoint" -> "https://gtw1.test.galacticfog.com/test-upgrader")
+
+      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
+      val Some(gResult) = route(gRequest)
+      status(gResult) must equalTo(OK)
+      contentAsString(gResult) must_== contentAsString(pResult)
     }
 
   }
