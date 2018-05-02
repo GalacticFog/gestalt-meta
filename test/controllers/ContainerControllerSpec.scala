@@ -18,7 +18,7 @@ import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.ContainerService
+import controllers.util.{ContainerService, UpgraderService}
 import org.specs2.execute.{AsResult, Result}
 import play.api.inject.guice.GuiceableModule
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -48,6 +48,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
   sequential
 
   def appWithMocks() = application(additionalBindings = Seq(
+    bind[UpgraderService].toInstance(mock[UpgraderService]),
     bind[ContainerService].toInstance(mock[ContainerService]),
     bind[ProviderManager].toInstance(mock[ProviderManager]),
     bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
