@@ -62,6 +62,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[ContainerService].toInstance(mockContainerService),
       bind[ProviderManager].toInstance(mockProviderManager),
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[UpgraderService].toInstance(mock[UpgraderService]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager])

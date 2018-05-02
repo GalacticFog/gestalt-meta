@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch._
-import controllers.util.{GatewayMethods, GestaltProviderMocking, LambdaMethods}
+import controllers.util._
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito

@@ -9,11 +9,10 @@ import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import javax.inject.{Named, Singleton}
 import play.api.i18n.MessagesApi
-import play.api.libs.json.{Format, Json}
+import play.api.libs.json.Json
 
 import scala.concurrent.Future
 import akka.pattern.ask
-import com.galacticfog.gestalt.meta.api.errors.InternalErrorException
 
 import scala.util.Try
 import scala.concurrent.duration._
@@ -22,12 +21,13 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 @Singleton
 class UpgradeController @Inject()( messagesApi: MessagesApi,
                                    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                   upgraderService: UpgraderService,
                                    @Named(SystemConfigActor.name) configActor: ActorRef )
   extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
 
   implicit val askTimeout: akka.util.Timeout = 15.seconds
 
-  import UpgradeController._
+  import UpgraderService._
 
   def check() = AsyncAuditedAny() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
@@ -44,31 +44,37 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
   }
 
   def launch() = AsyncAudited() { implicit request =>
-    SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
-      setAndTest flatMap { alreadyLocked =>
-        if (alreadyLocked) {
-          Future.successful(BadRequest(Json.obj(
-            "message" -> "upgrade is already active"
-          )))
-        } else {
-          // TODO: setup
-          val newStatus = UpgradeStatus(
-            active = true,
-            endpoint = Some("https://gtw1.test.galacticfog.com/test-upgrader")
-          )
-          updateStatus(newStatus) map {s => Accepted(Json.toJson(s))}
+    request.body.validate[UpgraderService.UpgradeLaunch].fold({
+      errs =>
+        val details = errs.map({
+          case (path, e) => path.toString -> e.mkString(",")
+        }).toMap
+        Future.successful(BadRequest(Json.obj(
+          "message" -> "invalid payload",
+          "details" -> details
+        )))
+    },{ payload =>
+      SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
+        setAndTest flatMap { alreadyLocked =>
+          if (alreadyLocked) {
+            Future.successful(BadRequest(Json.obj(
+              "message" -> "upgrade is already active"
+            )))
+          } else {
+            upgraderService.launchUpgrader(request.identity.account.id, payload)
+              .map {s => Accepted(Json.toJson(s))}
+          }
         }
       }
-    }
+    })
   }
 
   def delete() = AsyncAuditedAny() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
       getStatus flatMap { status =>
         if (status.active) {
-          val newStatus = UpgradeStatus.inactive
-          // TODO: cleanup
-          updateStatus(newStatus) map {_ => Accepted(Json.toJson(newStatus))}
+          upgraderService.deleteUpgrader(request.identity.account.id, status)
+            .map {s => Accepted(Json.toJson(s))}
         } else {
           Future.successful(Accepted(Json.toJson(status)))
         }
@@ -96,26 +102,5 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     })
   }
 
-  private[this] def updateStatus(newStatus: UpgradeStatus)(implicit request: SecuredRequest[_]): Future[UpgradeStatus] = {
-    (configActor ? SystemConfigActor.SetKeys(
-      creator = request.identity.account.id,
-      pairs = Map(
-        "upgrade_status" -> Some(Json.toJson(newStatus).toString),
-        "upgrade_lock" -> Some(newStatus.active.toString)
-      )
-    )).map { _ => newStatus }
-  }
-
-
-}
-
-case object UpgradeController {
-
-  case class UpgradeStatus(active: Boolean, endpoint: Option[String])
-  case object UpgradeStatus {
-    def inactive = UpgradeStatus(false,None)
-  }
-
-  implicit val usFmt: Format[UpgradeStatus] = Json.format[UpgradeStatus]
 
 }
