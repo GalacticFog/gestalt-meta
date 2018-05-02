@@ -2,32 +2,28 @@ package controllers
 
 import java.util.UUID
 
-import scala.language.postfixOps
-import scala.concurrent.Future
-import scala.concurrent.duration._
-import scala.concurrent.Await
-import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api._
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
-
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import controllers.util._
-import services._
-import play.api.mvc.RequestHeader
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.i18n.MessagesApi
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import controllers.util._
 import javax.inject.Singleton
-import play.api.libs.json._
+import play.api.i18n.MessagesApi
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.mvc.RequestHeader
+import services._
 import skuber.Namespace
-import skuber.api.client.K8SException
-import com.galacticfog.gestalt.json.Js
+
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
+import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 
 @Singleton
