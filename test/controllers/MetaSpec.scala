@@ -6,7 +6,7 @@ import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.{ProviderEnv, ProviderMap}
 import com.galacticfog.gestalt.meta.test._
-import controllers.util.{ContainerService, GestaltProviderMocking}
+import controllers.util.{ContainerService, GestaltProviderMocking, UpgraderService}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
@@ -49,6 +49,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
   abstract class TestApplication extends WithApplication(
     application(
       additionalBindings = Seq(
+        bind[UpgraderService].toInstance(mock[UpgraderService]),
         bind[ContainerService].toInstance(mock[ContainerService]),
         bind[SkuberFactory].toInstance(mock[SkuberFactory]),
         bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
