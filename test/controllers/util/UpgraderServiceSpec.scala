@@ -85,8 +85,6 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
   "DefaultUpgraderService" should {
 
     "create provider on launch and save config" in new TestApplication {
-      val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
-      val endpointCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
       mockProviderManager.getOrCreateProviderEnvironment(any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
@@ -127,6 +125,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
           )))
           Future.successful(pm -> Seq(testContainer))
       }
+      val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+      val endpointCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
       mockGatewayMethods.createEndpoint(apiCaptor.capture(), endpointCaptor.capture(), any) answers {
         (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
       }
@@ -139,14 +139,14 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         kongProviderId = kongProviderId
       )))
 
-      val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade-provider")).mapTo[Option[String]]
+      val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
       status.active must beTrue
       status.endpoint must beSome(s"https://test-kong.mycompany.com/${apiCaptor.getValue.name}/${endpointCaptor.getValue.name}")
     }
 
     "delete provider on launch and delete config" in new TestApplication {
-      val Some(providerId) = await((systemConfigActor ? SystemConfigActor.GetKey("upgrade-provider")).mapTo[Option[String]]).map(UUID.fromString(_))
+      val Some(providerId) = await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]).map(UUID.fromString(_))
       ResourceFactory.findById(providerId) must beSome
       val oldStatus = UpgraderService.UpgradeStatus(true, endpoint = Some("blah"))
       val status = await(upgrader.deleteUpgrader(adminUser, oldStatus))
