@@ -31,6 +31,7 @@ trait UpgraderService {
 
 class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configActor: ActorRef,
                                          providerManager: ProviderManager,
+                                         containerService: ContainerService,
                                          gatewayMethods: GatewayMethods )
   extends UpgraderService with JsonInput with AuthorizationMethods {
 
@@ -39,7 +40,14 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
 
   lazy val rootId = Resource.findFqon("root").map(_.id).getOrElse(throw new RuntimeException("could not find root org"))
 
-  val deleteMgr = new HardDeleteInstanceManager[AccountLike]
+  private[this] def wrapUnauthedHandler(f: (GestaltResourceInstance) => Try[Unit])(r: GestaltResourceInstance, a: AccountLike) = f(r)
+  private val deleteMgr = new HardDeleteInstanceManager[AccountLike](
+    external = Map(
+      ResourceIds.Container   -> wrapUnauthedHandler(containerService.deleteContainerHandler),
+      ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
+      ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler)
+    )
+  )
 
   override def deleteUpgrader(creator: AccountLike, status: UpgradeStatus)
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
@@ -48,7 +56,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
       maybeProvider = maybeProviderId
         .flatMap(s => Try(UUID.fromString(s)).toOption)
         .flatMap(ResourceFactory.findById(ResourceIds.Provider, _))
-      deleted <- maybeProvider.fold(Future.successful(()))({
+      _ <- maybeProvider.fold(Future.successful(()))({
         provider => Future.fromTry(deleteMgr.delete(provider, creator, true).map(_ => ()))
       })
       newStatus <- updateStatus(creator.id, UpgradeStatus.inactive, None)

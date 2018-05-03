@@ -47,7 +47,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
 
-  def deleteLambdaHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
+  def deleteLambdaHandler( r: ResourceLike ): Try[Unit] = {
     log.debug("Finding lambda in backend system...")
     val provider = getLambdaProvider(r)
     val client = providerMethods.configureWebClient(provider, Some(ws))

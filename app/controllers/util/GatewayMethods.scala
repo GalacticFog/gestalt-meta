@@ -61,7 +61,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
     }
   }
 
-  def deleteApiHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
+  def deleteApiHandler( r: ResourceLike ): Try[Unit] = {
     val fdelete = (for {
       provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))
@@ -80,7 +80,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
     }
   }
 
-  def deleteEndpointHandler( r: ResourceLike, user: AuthAccountWithCreds ): Try[Unit] = {
+  def deleteEndpointHandler( r: ResourceLike ): Try[Unit] = {
     val fdelete = (for {
       provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))

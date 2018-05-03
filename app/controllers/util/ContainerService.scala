@@ -5,7 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -18,7 +18,8 @@ import play.api.libs.json._
 import play.api.mvc.RequestHeader
 import services.{FakeURI, ProviderContext}
 
-import scala.concurrent.Future
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
@@ -43,6 +44,10 @@ trait ContainerService extends JsonInput {
   def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
   def updateContainer(context: ProviderContext, container: GestaltResourceInstance, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
+
+  def deleteSecretHandler(res: GestaltResourceInstance): Try[Unit]
+
+  def deleteContainerHandler(res: GestaltResourceInstance): Try[Unit]
 
 }
 
@@ -223,7 +228,7 @@ object ContainerService {
   /**
    * Lookup and return the Provider configured for the given Container.
    */
-  def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+  def containerProvider(container: ResourceLike): GestaltResourceInstance = {
     val providerId = containerProviderId(container)
     caasProvider(providerId)
   }
@@ -498,6 +503,27 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
       updated <- service.update(context, patched)
     } yield updated
+  }
+
+  override def deleteSecretHandler(res: Instance): Try[Unit] = {
+    val provider = containerProvider(res)
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroySecret(res), 10.seconds)
+    }
+  }
+
+  override def deleteContainerHandler(res: Instance): Try[Unit] = {
+    val result = for {
+      provider <- Try{containerProvider(res)}
+      service <-  providerManager.getProviderImpl(provider.typeId)
+      result <- Try {
+        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+        Await.result(service.destroy(res), 5 seconds)
+      }
+    } yield result
+    result recoverWith {
+      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+    }
   }
 
 }

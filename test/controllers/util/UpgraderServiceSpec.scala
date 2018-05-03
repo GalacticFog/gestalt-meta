@@ -51,6 +51,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
     val gwmProviderId = uuid
     val kongProviderId = uuid
 
+    val testProviderEnvId = uuid
+
     val systemConfigActor = application.injector.instanceOf(BindingKey(classOf[ActorRef]).qualifiedWith(SystemConfigActor.name))
 
     implicit val ec = application.injector.instanceOf[ExecutionContext]
@@ -86,43 +88,47 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
 
     "create provider on launch and save config" in new TestApplication {
       mockProviderManager.getOrCreateProviderEnvironment(any, any) answers {
-        (a: Any) =>
-          val arr = a.asInstanceOf[Array[Object]]
-          val p = arr(0).asInstanceOf[GestaltResourceInstance]
-          val Success(env) = createInstance(ResourceIds.Environment,
-            name = "services",
-            parent = Option(p.id),
-            properties = Option(Map(
-              "environment_type" -> EnvironmentType.id("other").toString
-            ))
-          )
-          env
+        (a: Any) => ResourceFactory.findById(ResourceIds.Environment, testProviderEnvId).get
       }
       mockProviderManager.processProvider(any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
           val pm = arr(0).asInstanceOf[ProviderMap]
-          val Success(testContainer) = createInstance(ResourceIds.Container, "test-container", properties = Some(Map(
-            "cpus" -> "0.1",
-            "memory" -> "128",
-            "image" -> "nginx",
-            "container_type" -> "DOCKER",
-            "port_mappings" -> Json.toJson(Seq(
-              ContainerSpec.PortMapping("tcp",
-                name = Some("api"),
-                expose_endpoint = Some(true),
-                service_address = Some(ContainerSpec.ServiceAddress(
-                  host = "my-nginx.service-address",
-                  port = 9000,
-                  protocol = Some("tcp")
-                ))
-              )
-            )).toString,
-            "provider" -> Json.obj(
-              "id" -> UUID.randomUUID().toString,
-              "name" -> "nonexistent-provider-does-not-matter"
-            ).toString
-          )))
+          val Success(env) = createInstance(
+            typeId = ResourceIds.Environment,
+            id = testProviderEnvId,
+            name = "services",
+            parent = Option(pm.root.id),
+            properties = Option(Map(
+              "environment_type" -> EnvironmentType.id("other").toString
+            ))
+          )
+          val Success(testContainer) = createInstance(
+            typeId = ResourceIds.Container,
+            name = "test-container",
+            properties = Some(Map(
+              "cpus" -> "0.1",
+              "memory" -> "128",
+              "image" -> "nginx",
+              "container_type" -> "DOCKER",
+              "port_mappings" -> Json.toJson(Seq(
+                ContainerSpec.PortMapping("tcp",
+                  name = Some("api"),
+                  expose_endpoint = Some(true),
+                  service_address = Some(ContainerSpec.ServiceAddress(
+                    host = "my-nginx.service-address",
+                    port = 9000,
+                    protocol = Some("tcp")
+                  ))
+                )
+              )).toString,
+              "provider" -> Json.obj(
+                "id" -> UUID.randomUUID().toString,
+                "name" -> "nonexistent-provider-does-not-matter"
+              ).toString
+            )),
+            parent = Some(testProviderEnvId)
+          )
           Future.successful(pm -> Seq(testContainer))
       }
       val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
@@ -146,6 +152,10 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
     }
 
     "delete provider on launch and delete config" in new TestApplication {
+      mockContainerService.deleteContainerHandler(any) returns Success(())
+      mockGatewayMethods.deleteApiHandler(any) returns Success(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
+
       val Some(providerId) = await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]).map(UUID.fromString(_))
       ResourceFactory.findById(providerId) must beSome
       val oldStatus = UpgraderService.UpgradeStatus(true, endpoint = Some("blah"))
@@ -153,6 +163,13 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       status.active must beFalse
       status.endpoint must beNone
       ResourceFactory.findById(providerId) must beNone
+
+      await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]) must beNone
+      await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_lock")).mapTo[Option[String]]) must beNone or beSome("false")
+
+      there was one(mockContainerService).deleteContainerHandler(any)
+      there was one(mockGatewayMethods).deleteApiHandler(any)
+      there was one(mockGatewayMethods).deleteEndpointHandler(any)
     }
 
   }
