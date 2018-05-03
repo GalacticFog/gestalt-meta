@@ -74,12 +74,12 @@ trait JsonInput {
    */
   def jsonToResource(
       org: UUID, 
-      creator: AuthAccountWithCreds,
+      creator: AccountLike,
       json: JsValue,
       typeId: Option[UUID] = None): Try[GestaltResourceInstance] = {
 
     toInput(json, typeId, requireTypeId = true).map { input =>
-      resourceWithDefaults(org, input, creator.account, typeId)
+      resourceWithDefaults(org, input, creator, typeId)
     }
   }
   

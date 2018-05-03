@@ -8,17 +8,15 @@ import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.json.Js
 import play.api.libs.json.Reads._
 import java.util.UUID
-import javax.inject.{Inject, Singleton}
 
+import javax.inject.{Inject, Singleton}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors._
-
 import services._
-
-import controllers.util.JsonInput
+import controllers.util.{AccountLike, JsonInput}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 import scala.concurrent.Future
@@ -393,15 +391,14 @@ class ProviderManager @Inject() (
     } yield f
   }
 
-  private[providers] def createProviderEnvironment(
-      provider: GestaltResourceInstance, 
-      account: AuthAccountWithCreds) = {
-    
+  private[providers] def createProviderEnvironment( provider: GestaltResourceInstance,
+                                                    creator: AccountLike ) = {
+
     val org = provider.orgId
-    
+
     val props = Map(
         "environment_type" -> EnvironmentType.id("other").toString)
-        
+
     val resource = GestaltResourceInstance(
         id = UUID.randomUUID(),
         typeId = ResourceIds.Environment,
@@ -411,14 +408,14 @@ class ProviderManager @Inject() (
         description = Some(""),
         state = ResourceState.id(ResourceStates.Active),
         properties = Some(props))
-    
+
     val owner = provider.owner
-    
+
     ResourceFactory.create(owner.typeId, owner.id)(
         resource,
-        parentId = Some(provider.id), 
-        validate = true) map { env =>  
-      setNewResourceEntitlements(org, env.id, account, Some(provider.id))
+        parentId = Some(provider.id),
+        validate = true) map { env =>
+      setNewResourceEntitlements(org, env.id, creator, Some(provider.id))
       env
     }
   }
@@ -433,14 +430,13 @@ class ProviderManager @Inject() (
     }
   }
 
-  def getOrCreateProviderEnvironment(
-      provider: GestaltResourceInstance,
-      account: AuthAccountWithCreds): GestaltResourceInstance = {
-    
+  def getOrCreateProviderEnvironment( provider: GestaltResourceInstance,
+                                      creator: AccountLike ): GestaltResourceInstance = {
+
     getProviderEnvironment(provider.id) getOrElse {
       log.info(s"Creating Container-Environment for Provider '${provider.id}'.")
-      
-      createProviderEnvironment(provider, account) match {
+
+      createProviderEnvironment(provider, creator) match {
         case Failure(e) => {
           log.error(s"Failed creating Environment for Provider '${provider.id}'")
           throw e
