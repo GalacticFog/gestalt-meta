@@ -7,6 +7,7 @@ import com.google.inject.Singleton
 import akka.pattern.{ask, pipe}
 import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink, ResourceStates}
 import play.api.libs.json.{JsObject, Json}
 
@@ -67,7 +68,7 @@ object SystemConfigActor {
 
 class ConfigDelegationActor extends Actor with ActorLogging {
 
-  lazy val root = ResourceFactory.findAllByName(ResourceIds.Org, "root").head
+  lazy val root = Resource.findFqon("root").getOrElse(throw new RuntimeException("Could not find 'root' org"))
 
   def getConfig: Option[Map[String,String]] = {
     for {
