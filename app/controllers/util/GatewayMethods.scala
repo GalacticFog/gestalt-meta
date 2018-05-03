@@ -311,6 +311,26 @@ object GatewayMethods {
         "location" -> location.toString)))
   }
 
+  def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
+    for {
+      api <- ResourceFactory.findParent(ResourceIds.Api, endpointResource.id)
+      props <- endpointResource.properties
+      resourcePath <- props.get("resource")
+      provider <- props.get("provider")
+      providerJson <- Try{Json.parse(provider)}.toOption
+      locations <- (providerJson \ "locations").asOpt[Seq[String]]
+      location <- locations.headOption
+      kongId <- Try{UUID.fromString(location)}.toOption
+      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
+      kpp <- kongProvider.properties
+      kpc <- kpp.get("config")
+      kpcJson <- Try{Json.parse(kpc)}.toOption
+      kongVhost <- (kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String]
+      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
+      publicUrl = s"${kongProto}://${kongVhost}/${api.name}/${resourcePath}"
+    } yield publicUrl
+  }
+
   private[controllers] def unprocessable(message: String) =
     throw new UnprocessableEntityException(message)
 
