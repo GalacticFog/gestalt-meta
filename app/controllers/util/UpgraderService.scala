@@ -22,7 +22,7 @@ import scala.util.{Success, Try}
 trait UpgraderService {
   import UpgraderService._
 
-  def deleteUpgrader(creator: AccountLike, status: UpgradeStatus)
+  def deleteUpgrader(creator: AccountLike)
                     (implicit ec: ExecutionContext): Future[UpgradeStatus]
 
   def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch)
@@ -48,7 +48,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
     )
   )
 
-  override def deleteUpgrader(creator: AccountLike, status: UpgradeStatus)
+  override def deleteUpgrader(creator: AccountLike)
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
     for {
       maybeProviderId <- (configActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]

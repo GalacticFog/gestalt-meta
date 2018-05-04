@@ -162,8 +162,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
 
       val Some(providerId) = await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]).map(UUID.fromString(_))
       ResourceFactory.findById(providerId) must beSome
-      val oldStatus = UpgraderService.UpgradeStatus(true, endpoint = Some("blah"))
-      val status = await(upgrader.deleteUpgrader(adminUser, oldStatus))
+      val status = await(upgrader.deleteUpgrader(adminUser))
       status.active must beFalse
       status.endpoint must beNone
       ResourceFactory.findById(providerId) must beNone
