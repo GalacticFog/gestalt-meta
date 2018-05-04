@@ -75,6 +75,14 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       contentAsString(result) must not /("endpoint")
     }
 
+    "bad payload POST returns 400 but does not lock the upgrader" in new TestUpgradeController {
+      val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj())
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must /("message" -> "invalid payload")
+      await(configActor ? SystemConfigActor.GetKey("upgrade_lock")).asInstanceOf[Option[String]] must beNone or beSome("false")
+    }
+
     "return 201 on POST" in new TestUpgradeController {
       mockUpgraderService.launchUpgrader(any, any)(any) returns {
         val s = UpgraderService.UpgradeStatus(

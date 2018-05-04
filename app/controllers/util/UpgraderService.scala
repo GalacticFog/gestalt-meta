@@ -202,6 +202,7 @@ case object UpgraderService {
             ),
             "volumes" -> Seq(Json.obj(
               "container_path" -> "persistence",
+              "mode" -> "RW",
               "persistent" -> Json.obj("size" -> launchPayload.persistenceSize.getOrElse[Long](1024))
             ))
           )
