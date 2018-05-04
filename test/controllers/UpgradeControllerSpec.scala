@@ -25,10 +25,6 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     val Success(_) = pristineDatabase()
   }
 
-  sequential
-
-  stopOnFail
-
   val testPayload = Json.obj(
     "image" -> "galacticfog/gestalt-upgrader:1.6.0",
     "dbProviderId" -> "48c24048-cb1d-45c4-806e-c888aed7ea42",
@@ -58,6 +54,10 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       t
     }
   }
+
+  sequential
+
+  stopOnFail
 
   "UpgradeController" should {
 
