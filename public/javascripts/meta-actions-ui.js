@@ -148,14 +148,16 @@
           const opts = {
             method: 'POST',
             headers: {
-              'Authorization': token
+              'Authorization': token,
+              'Origin': 'localhost',
+              'Accept': 'application/json'
             }
           }
           
         	const res = 
-          	fetch(_ctx.invoke_url, opts) 
-              .then(response => response ? response.json() : {})
-              .then(data => window.parent.postMessage(data, "*"))
+          	fetch(url, opts) 
+              .then(response => response)
+              .then(data => window.parent.postMessage("", "*"))
               .catch(error => console.error(error))
         	
         	event.preventDefault();        	

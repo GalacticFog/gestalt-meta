@@ -40,7 +40,7 @@ exports.entryPoint = function(event, context, callback) {
         console.log('Received [streamspec.stop]')
 
         const stopped = await start.actionStop(eventData, contextData, metaClient)
-        callback(null, util.pretty(translateProviderLink(stopped)))
+        callback(null, translateProviderLink(stopped))
 
         break
         case 'streamspec.view':
@@ -71,3 +71,12 @@ exports.entryPoint = function(event, context, callback) {
   }
   
 }
+
+
+
+
+
+
+
+
+
