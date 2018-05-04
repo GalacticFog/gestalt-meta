@@ -327,7 +327,7 @@ object GatewayMethods {
       kpcJson <- Try{Json.parse(kpc)}.toOption
       kongVhost <- (kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String]
       kongProto <- (kpcJson \ "external_protocol").asOpt[String]
-      publicUrl = s"${kongProto}://${kongVhost}/${api.name}/${resourcePath}"
+      publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
     } yield publicUrl
   }
 
