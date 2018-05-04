@@ -31,7 +31,6 @@ trait UpgraderService {
 
 class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configActor: ActorRef,
                                          providerManager: ProviderManager,
-                                         containerService: ContainerService,
                                          gatewayMethods: GatewayMethods )
   extends UpgraderService with JsonInput with AuthorizationMethods {
 
@@ -43,7 +42,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
   private[this] def wrapUnauthedHandler(f: (GestaltResourceInstance) => Try[Unit])(r: GestaltResourceInstance, a: AccountLike) = f(r)
   private val deleteMgr = new HardDeleteInstanceManager[AccountLike](
     external = Map(
-      ResourceIds.Container   -> wrapUnauthedHandler(containerService.deleteContainerHandler),
+      ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
       ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
       ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler)
     )
@@ -140,7 +139,7 @@ case object UpgraderService {
       "implementation_id" -> container.id.toString,
       "container_port_name" -> "api",
       "methods" -> Seq("GET", "POST"),
-      "resource" -> "upgrader",
+      "resource" -> "/upgrader",
       "provider" -> api.properties.get("provider")
     )
   )
