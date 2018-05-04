@@ -13,6 +13,7 @@ import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
 import controllers.DeleteController
+import play.api.Logger
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
 import play.api.mvc.RequestHeader
@@ -30,8 +31,6 @@ trait ContainerService extends JsonInput {
                    secretSpec: SecretSpec,
                    userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
 
-  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
-
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance, Seq[ContainerInstance])]]
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance, Seq[ContainerInstance])]]
@@ -45,13 +44,11 @@ trait ContainerService extends JsonInput {
 
   def updateContainer(context: ProviderContext, container: GestaltResourceInstance, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
-  def deleteSecretHandler(res: GestaltResourceInstance): Try[Unit]
-
-  def deleteContainerHandler(res: GestaltResourceInstance): Try[Unit]
-
 }
 
 object ContainerService {
+
+  val log = Logger(this.getClass)
 
   def upsertProperties(resource: GestaltResourceInstance, values: (String, String)*): Instance = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -258,6 +255,28 @@ object ContainerService {
       case JsError(_)      => None
     }
   } yield prop
+
+  def deleteSecretHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+    val provider = containerProvider(res)
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroySecret(res), 10.seconds)
+    }
+  }
+
+  def deleteContainerHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+    val result = for {
+      provider <- Try{containerProvider(res)}
+      service <-  providerManager.getProviderImpl(provider.typeId)
+      result <- Try {
+        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+        Await.result(service.destroy(res), 5 seconds)
+      }
+    } yield result
+    result recoverWith {
+      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+    }
+  }
+
 
 }
 
@@ -485,11 +504,6 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   }
 
-  override def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
-    // just a convenient interface for testing... we'll let DeleteController do this for us
-    deleteController.deleteResource(container, identity)(request)
-  }
-
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {
       patched <- PatchInstance.applyPatch(origContainer, patch) match {
@@ -503,27 +517,6 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
       updated <- service.update(context, patched)
     } yield updated
-  }
-
-  override def deleteSecretHandler(res: Instance): Try[Unit] = {
-    val provider = containerProvider(res)
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroySecret(res), 10.seconds)
-    }
-  }
-
-  override def deleteContainerHandler(res: Instance): Try[Unit] = {
-    val result = for {
-      provider <- Try{containerProvider(res)}
-      service <-  providerManager.getProviderImpl(provider.typeId)
-      result <- Try {
-        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
-        Await.result(service.destroy(res), 5 seconds)
-      }
-    } yield result
-    result recoverWith {
-      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
-    }
   }
 
 }

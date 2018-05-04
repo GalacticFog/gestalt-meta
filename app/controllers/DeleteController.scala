@@ -35,8 +35,7 @@ class DeleteController @Inject()(
     gatewayMethods: GatewayMethods,
     lambdaMethods: LambdaMethods,
     skuberFactory: SkuberFactory,
-    genericResourceMethods: GenericResourceMethods,
-    containerService: ContainerService
+    genericResourceMethods: GenericResourceMethods
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
    
   /*
@@ -53,8 +52,8 @@ class DeleteController @Inject()(
       ResourceIds.Org         -> deleteExternalOrg,
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
-      ResourceIds.Container   -> wrapUnauthedHandler(containerService.deleteContainerHandler),
-      ResourceIds.Secret      -> wrapUnauthedHandler(containerService.deleteSecretHandler),
+      ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
+      ResourceIds.Secret      -> wrapUnauthedHandler(ContainerService.deleteSecretHandler(providerManager,_)),
       ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
       ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler),
       ResourceIds.Lambda      -> wrapUnauthedHandler(lambdaMethods.deleteLambdaHandler)
