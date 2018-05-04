@@ -1,28 +1,25 @@
 package services
 
 import java.security.spec.{PKCS8EncodedKeySpec, X509EncodedKeySpec}
-import java.security.{Key, KeyFactory, PrivateKey, PublicKey}
+import java.security.{KeyFactory, PrivateKey, PublicKey}
 import java.util.UUID
 
-import akka.actor.{Actor, ActorLogging, Props}
+import akka.actor.{Actor, Props}
+import akka.pattern.ask
+import com.google.inject.name.Named
 import com.google.inject.{Inject, Singleton}
 import io.jsonwebtoken.{Jwts, SignatureAlgorithm}
 import org.apache.commons.codec.binary.Base64
+import play.api.Logger
 import play.api.libs.json.Json
 import play.api.libs.ws.WSClient
 
-import scala.util.{Failure, Success, Try}
-import collection.JavaConverters._
+import scala.collection.JavaConverters._
 import scala.collection.mutable
-import akka.pattern.ask
-import com.google.inject.name.Named
-import com.ning.http.client.AsyncHttpClientConfigBean
-import play.api.Logger
-import play.api.libs.ws.ning.NingWSClient
-
 import scala.concurrent.Future
 import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 @Singleton
 class DCOSAuthTokenActor @Inject() (client: WSClient, @Named("permissive-wsclient") permissiveClient: WSClient) extends Actor {

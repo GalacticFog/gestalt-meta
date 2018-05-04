@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch._
-import controllers.util.{GatewayMethods, GestaltProviderMocking, LambdaMethods}
+import controllers.util._
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
@@ -99,7 +99,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use LambdaMethods for external lambda delete" in new TestApplication {
 
-      mockLambdaMethods.deleteLambdaHandler(any,any) returns Try(())
+      mockLambdaMethods.deleteLambdaHandler(any) returns Try(())
 
       val Some(result) = route(fakeAuthRequest(
         DELETE,
@@ -109,16 +109,13 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockLambdaMethods).deleteLambdaHandler(
-        r = argThat(
-          (r: GestaltResourceInstance) => r.id == testLambda.id
-        ),
-        user = any
+        r = argThat( (r: GestaltResourceInstance) => r.id == testLambda.id )
       )
     }
 
     "use GatewayMethods for external apiendpoint delete" in new TestApplication {
 
-      mockGatewayMethods.deleteEndpointHandler(any, any) returns Try(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Try(())
 
       val Some(result) = route(fakeAuthRequest(
         DELETE,
@@ -128,16 +125,13 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteEndpointHandler(
-        r = argThat(
-          (r: GestaltResourceInstance) => r.id == testEndpoint.id
-        ),
-        user = any
+        r = argThat( (r: GestaltResourceInstance) => r.id == testEndpoint.id )
       )
     }
 
     "use GatewayMethods for external api delete" in new TestApplication {
 
-      mockGatewayMethods.deleteApiHandler(any, any) returns Try(())
+      mockGatewayMethods.deleteApiHandler(any) returns Try(())
 
       val Some(result) = route(fakeAuthRequest(
         DELETE,
@@ -147,10 +141,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteApiHandler(
-        r = argThat(
-          (r: GestaltResourceInstance) => r.id == testApi.id
-        ),
-        user = any
+        r = argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
       )
     }
 

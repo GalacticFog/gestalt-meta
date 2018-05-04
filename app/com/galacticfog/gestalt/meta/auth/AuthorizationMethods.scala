@@ -142,12 +142,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
    * 
    * @param resource the resource to set entitlements on
    * @param creator the user that is setting the entitlements (caller)
-   * @param parent the parent of the new Resource
+   * @param parent the parent of the new Resource, used for entitlement inheritance
    */
   def setNewResourceEntitlements(
       org: UUID,
       resource: UUID, 
-      creator: AuthAccountWithCreds,
+      creator: AccountLike,
       parent: Option[UUID]) = {
 
     // Get the target resource so we can learn its type
@@ -163,7 +163,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       val actions = getNewResourceActionSet(res.typeId).toSeq
       
       //if (log.isDebugEnabled) debugLogActions(res, actions)
-      val ents = entitlements(creator.account.id, org, resource, actions)
+      val ents = entitlements(creator.id, org, resource, actions)
       
       {
         if (parent.isEmpty) ents 

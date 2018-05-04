@@ -713,18 +713,12 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
 
 
     "delete against GatewayMethods deletes apis" in new TestApplication {
-      val Success(_) = gatewayMethods.deleteApiHandler(
-        r = testApi,
-        user = user
-      )
+      val Success(_) = gatewayMethods.deleteApiHandler(testApi)
       routeDeleteApi.timeCalled must_== 1
     }
 
     "delete against GatewayMethods deletes apiendpoints" in new TestApplication {
-      val Success(_) = gatewayMethods.deleteEndpointHandler(
-        r = testEndpoint,
-        user = user
-      )
+      val Success(_) = gatewayMethods.deleteEndpointHandler(testEndpoint)
       routeDeleteEndpoint.timeCalled must_== 1
     }
 

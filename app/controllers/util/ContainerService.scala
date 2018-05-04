@@ -2,30 +2,27 @@ package controllers.util
 
 import java.util.UUID
 
-import play.api.libs.json._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
-import scala.util.{Failure, Success, Try}
-import scala.concurrent.Future
-import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.patch.PatchInstance
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.policy
-import com.galacticfog.gestalt.meta.policy.{Continue, Halt}
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, ResourceNotFoundException}
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
 import controllers.DeleteController
 import play.api.Logger
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json._
 import play.api.mvc.RequestHeader
 import services.{FakeURI, ProviderContext}
 
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
 import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 trait ContainerService extends JsonInput {
 
@@ -33,8 +30,6 @@ trait ContainerService extends JsonInput {
                    user: AuthAccountWithCreds,
                    secretSpec: SecretSpec,
                    userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
-
-  def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit]
 
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance, Seq[ContainerInstance])]]
 
@@ -52,6 +47,8 @@ trait ContainerService extends JsonInput {
 }
 
 object ContainerService {
+
+  val log = Logger(this.getClass)
 
   def upsertProperties(resource: GestaltResourceInstance, values: (String, String)*): Instance = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -228,7 +225,7 @@ object ContainerService {
   /**
    * Lookup and return the Provider configured for the given Container.
    */
-  def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+  def containerProvider(container: ResourceLike): GestaltResourceInstance = {
     val providerId = containerProviderId(container)
     caasProvider(providerId)
   }
@@ -258,6 +255,28 @@ object ContainerService {
       case JsError(_)      => None
     }
   } yield prop
+
+  def deleteSecretHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+    val provider = containerProvider(res)
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroySecret(res), 10.seconds)
+    }
+  }
+
+  def deleteContainerHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+    val result = for {
+      provider <- Try{containerProvider(res)}
+      service <-  providerManager.getProviderImpl(provider.typeId)
+      result <- Try {
+        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
+        Await.result(service.destroy(res), 5 seconds)
+      }
+    } yield result
+    result recoverWith {
+      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+    }
+  }
+
 
 }
 
@@ -483,11 +502,6 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     }
 
-  }
-
-  override def deleteContainer(container: GestaltResourceInstance, identity: AuthAccountWithCreds, request: RequestHeader): Future[Unit] = {
-    // just a convenient interface for testing... we'll let DeleteController do this for us
-    deleteController.deleteResource(container, identity)(request)
   }
 
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {

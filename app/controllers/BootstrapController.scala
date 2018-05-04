@@ -75,7 +75,7 @@ class BootstrapController @Inject()(
           case Success(_) => {
             log.info("Setting entitlements for admin-user on root-org...")
             setNewResourceEntitlements(org.id, org.id, caller, None)
-    
+
             log.info("Stashing credentials in gestalt-security...")
             initGestaltSecurityCreds(org.id, caller)
             
@@ -104,7 +104,7 @@ class BootstrapController @Inject()(
               log.info("Performing Meta-Schema migrations...")
               
               val result = {
-                val migrations = Seq("V1", "V2", "V3")
+                val migrations = Seq("V1", "V2", "V3", "V4")
                 migrations.map { v =>
                     migration.executeMigration(v, caller.account.id) match {
                     case Left(e) => {
@@ -117,18 +117,7 @@ class BootstrapController @Inject()(
                     }
                   }
                 }
-//                migration.executeMigration("V1", caller.account.id) match {
-//                  case Left(e) => {
-//                    log.error("There was an error during meta-schema migration.")
-//                    e
-//                  }
-//                  case Right(s) => {
-//                    log.info("Meta-Schema migration complete.")
-//                    s
-//                  }
-//                }
               }
-              //Some(result.)
               result.lastOption
             } else None
             

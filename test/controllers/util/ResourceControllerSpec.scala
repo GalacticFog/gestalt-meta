@@ -61,12 +61,13 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
   }
 
   abstract class testAppMocks extends WithApplication(application(additionalBindings = Seq(
-    bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
-    bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
-    bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),
-    bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
-    bind(classOf[GenericProviderManager]).toInstance(mock[GenericProviderManager]),
-    bind(classOf[Security]).toInstance(mock[Security])
+    bind[UpgraderService].toInstance(mock[UpgraderService]),
+    bind[ContainerService].toInstance(mock[ContainerService]),
+    bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
+    bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
+    bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+    bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
+    bind[Security].toInstance(mock[Security])
   )))
 
   trait testApp extends testAppMocks {

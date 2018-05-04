@@ -1,38 +1,39 @@
 package controllers.util
 
-import play.api.Logger
-import com.galacticfog.gestalt.data._
-import scala.util.Try
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import java.util.UUID
+
+import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.errors._
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import play.api.Logger
+import play.api.libs.json._
+
+import scala.util.Try
 
 
 /**
  * This trait applies primarily to creating new resources.
  */
 trait JsonInput {
-  
+
   val log = Logger(this.getClass)
-  
-  def CreateNewResource(
-      org: UUID,
-      creator: AuthAccountWithCreds,
-      json: JsValue,
-      typeId: Option[UUID],
-      parent: Option[UUID]): Try[GestaltResourceInstance] = {
+
+  def CreateNewResource( org: UUID,
+                         creator: AccountLike,
+                         json: JsValue,
+                         typeId: Option[UUID],
+                         parent: Option[UUID]): Try[GestaltResourceInstance] = {
     
     // This version of safeGetInputJson can be replaced with Js.parse[GestaltResourceInput](resourceJson)
     
     toInput(json) flatMap { input =>
       val tid = Option(assertValidTypeId(input, typeId))
       val newResource = resourceWithDefaults(org, input, creator, tid)
-      ResourceFactory.create(ResourceIds.User, creator.account.id)(newResource, parent)
+      ResourceFactory.create(ResourceIds.User, creator.id)(newResource, parent)
     }
   }
   
@@ -73,7 +74,7 @@ trait JsonInput {
    */
   def jsonToResource(
       org: UUID, 
-      creator: AuthAccountWithCreds,
+      creator: AccountLike,
       json: JsValue,
       typeId: Option[UUID] = None): Try[GestaltResourceInstance] = {
 
@@ -89,7 +90,7 @@ trait JsonInput {
   def resourceWithDefaults(
       org: UUID, 
       input: GestaltResourceInput,  
-      creator: AuthAccountWithCreds,
+      creator: AccountLike,
       typeId: Option[UUID] = None): GestaltResourceInstance = {
     
     inputToInstance(org, input.copy(
@@ -138,12 +139,12 @@ trait JsonInput {
   /**
    * Create a ResourceOwnerLink from AuthAccountWithCreds
    */
-  private[this] def ownerFromAccount(account: AuthAccountWithCreds): ResourceOwnerLink = {
+  private[this] def ownerFromAccount(account: AccountLike): ResourceOwnerLink = {
     toOwnerLink(
       ResourceIds.User,
-      account.account.id, 
-      name = Some(account.account.name), 
-      orgId = account.account.directory.orgId )  
+      account.id,
+      name = Some(account.name),
+      orgId = account.orgId )
   }
 
   /**

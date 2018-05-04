@@ -48,6 +48,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
   }
 
   abstract class testApp extends WithApplication(application(additionalBindings = Seq(
+    bind[UpgraderService].toInstance(mock[UpgraderService]),
     bind(classOf[ContainerService]).toInstance(mock[ContainerService]),
     bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
     bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),

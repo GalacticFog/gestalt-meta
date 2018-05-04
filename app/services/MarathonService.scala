@@ -5,7 +5,6 @@ import java.util.UUID
 
 import akka.actor.ActorRef
 import play.api.libs.ws.WSClient
-import play.api.Play.current
 
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
@@ -165,7 +164,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  def destroy(container: GestaltResourceInstance): Future[Unit] = {
+  def destroy(container: ResourceLike): Future[Unit] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
@@ -367,7 +366,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def destroySecret(secret: Instance): Future[Unit] = {
+  override def destroySecret(secret: ResourceLike): Future[Unit] = {
     val providerId = Json.parse(secret.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)

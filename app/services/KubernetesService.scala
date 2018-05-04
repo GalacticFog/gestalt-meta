@@ -11,7 +11,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -93,7 +93,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  override def destroySecret(secret: GestaltResourceInstance): Future[Unit] = {
+  override def destroySecret(secret: ResourceLike): Future[Unit] = {
     val provider = ContainerService.containerProvider(secret)
     /*
      * TODO: Change signature of deleteSecret to take a ProviderContext - providers
@@ -350,7 +350,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def destroy(container: GestaltResourceInstance): Future[Unit] = {
+  def destroy(container: ResourceLike): Future[Unit] = {
 
     val provider = ContainerService.containerProvider(container)
     /*

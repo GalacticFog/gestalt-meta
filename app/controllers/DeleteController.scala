@@ -2,32 +2,28 @@ package controllers
 
 import java.util.UUID
 
-import scala.language.postfixOps
-import scala.concurrent.Future
-import scala.concurrent.duration._
-import scala.concurrent.Await
-import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api._
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
-
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import controllers.util._
-import services._
-import play.api.mvc.RequestHeader
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.i18n.MessagesApi
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
+import controllers.util._
 import javax.inject.Singleton
-import play.api.libs.json._
+import play.api.i18n.MessagesApi
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.mvc.RequestHeader
+import services._
 import skuber.Namespace
-import skuber.api.client.K8SException
-import com.galacticfog.gestalt.json.Js
+
+import scala.concurrent.{Await, Future}
+import scala.concurrent.duration._
+import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
 
 
 @Singleton
@@ -42,24 +38,25 @@ class DeleteController @Inject()(
     genericResourceMethods: GenericResourceMethods
  ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
    
-  // TODO: change to dynamic, provide a ContainerService impl, off-load deleteExternalContainer contents to the ContainerService
-  
   /*
    * Each of the types named by the keys in this map have representations both in
    * Meta and in some external system. When delete is called on any of these types
    * the given function is called to delete the resource (and whatever else) in the
    * external system before the resource is deleted from Meta.
    */
+
+  private[this] def wrapUnauthedHandler(f: (GestaltResourceInstance) => Try[Unit])(r: GestaltResourceInstance, a: AuthAccountWithCreds) = f(r)
+
   private[controllers] val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
     external = Map(
       ResourceIds.Org         -> deleteExternalOrg,
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
-      ResourceIds.Container   -> deleteExternalContainer,
-      ResourceIds.Secret      -> deleteExternalSecret,
-      ResourceIds.Api         -> gatewayMethods.deleteApiHandler,
-      ResourceIds.ApiEndpoint -> gatewayMethods.deleteEndpointHandler,
-      ResourceIds.Lambda      -> lambdaMethods.deleteLambdaHandler
+      ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
+      ResourceIds.Secret      -> wrapUnauthedHandler(ContainerService.deleteSecretHandler(providerManager,_)),
+      ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
+      ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler),
+      ResourceIds.Lambda      -> wrapUnauthedHandler(lambdaMethods.deleteLambdaHandler)
     )
   )
 
@@ -147,20 +144,6 @@ class DeleteController @Inject()(
           case Success(_) => DeleteHandler.handle(resource, identity)
         }
       }
-    }
-  }
-
-  def deleteExternalContainer(res: GestaltResourceInstance, account: AuthAccountWithCreds): Try[Unit] = {
-    val result = for {
-      provider <- Try{containerProvider(res)}
-      service <-  providerManager.getProviderImpl(provider.typeId)
-      result <- Try {
-        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
-        Await.result(service.destroy(res), 5 seconds)
-      }
-    } yield result
-    result recoverWith {
-      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
     }
   }
 
@@ -254,12 +237,6 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
 
-  def deleteExternalSecret(res: GestaltResourceInstance, account: AuthAccountWithCreds) = {
-    val provider = containerProvider(res)
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroySecret(res), 10.seconds)
-    }
-  }
 
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
@@ -328,16 +305,7 @@ class DeleteController @Inject()(
     } else false
   }
   
-  
-  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerId = ContainerService.containerProviderId(container)
 
-    ResourceFactory.findById(providerId) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }
-  }
-  
   trait RequestHandler[A,B] {
     def handle(resource: A, account: AuthAccountWithCreds)(implicit request: RequestHeader): B
   }

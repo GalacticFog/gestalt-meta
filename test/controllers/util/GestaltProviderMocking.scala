@@ -5,11 +5,10 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import modules._
-import net.codingwell.scalaguice.ScalaModule
 import org.specs2.mock.Mockito
 import play.api.inject._
-import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
+import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.test.PlaySpecification
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
@@ -40,6 +39,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
 
     val sc: Seq[GuiceableModule] = Seq(
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
+      new SystemConfigModule,
       bind[SecureController].toInstance(mockSecureController),
       bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
       bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
@@ -62,6 +62,7 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[ContainerService].toInstance(mockContainerService),
       bind[ProviderManager].toInstance(mockProviderManager),
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[UpgraderService].toInstance(mock[UpgraderService]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
