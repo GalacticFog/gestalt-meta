@@ -106,7 +106,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     }
 
     "return 201 on DELETE and reset to inactive" in new TestUpgradeController {
-      mockUpgraderService.deleteUpgrader(any, any)(any) returns {
+      mockUpgraderService.deleteUpgrader(any)(any) returns {
         val s = UpgraderService.UpgradeStatus.inactive
         (configActor ? SystemConfigActor.SetKeys(adminUserId,
           Map(

@@ -71,14 +71,8 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
 
   def delete() = AsyncAuditedAny() { implicit request =>
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
-      getStatus flatMap { status =>
-        if (status.active) {
-          upgraderService.deleteUpgrader(request.identity, status)
-            .map {s => Accepted(Json.toJson(s))}
-        } else {
-          Future.successful(Accepted(Json.toJson(status)))
-        }
-      }
+      upgraderService.deleteUpgrader(request.identity)
+        .map {s => Accepted(Json.toJson(s))}
     }
   }
 
