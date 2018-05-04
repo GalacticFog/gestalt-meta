@@ -58,44 +58,23 @@ class ApiController @Inject()(
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(ResourceNotFound(ResourceIds.Environment, parent))
     }{ _ =>
-      
-      //val (payload, provider, location) = validateNewApi(json)
-      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")
-      
-      val lapi = GatewayMethods.toGatewayApi(payload.as[JsObject], location)
-      val client = providerMethods.configureWebClient(provider, Some(ws))
       val caller = request.identity
-      /*
-       * Create API resource in Meta - if successful, create in GatewayManager.
-       * If the create subsequently fails in GatewayManager, we set the status
-       * of the already created Meta resource to 'FAILED'.
-       */
-      
+      log.debug(s"GatewayManager: ${provider.id}, ${provider.name}, Location: $location")
+
       CreateWithEntitlements(org, caller, payload, ResourceIds.Api, Some(parent)) match {
         case Failure(e) => HandleExceptionsAsync(e)
         case Success(resource) => {
-          log.debug("Creating API in GatewayManager...")
-          client.post("/apis", Option(Json.toJson(lapi))) map { result =>
-            
-            if (Seq(200, 201).contains(result.status)) {
-              log.info("Successfully created API in GatewayManager.")
-              Created(RenderSingle(resource))
-            } else {
-              log.error("Error creating API in GatewayManager.")
-              updateFailedBackendCreate(caller, resource, ApiError(result.status, result.body).throwable)
+          log.info("API created in Meta... creating API in GatewayManager...")
+          val lapi = GatewayMethods.toGatewayApi(payload.as[JsObject], location)
+          gatewayMethods.createApi(provider, resource, lapi)
+            .map (api => Created(RenderSingle(api)))
+            .recover {
+              case e =>
+                log.error("Error creating API in GatewayManager")
+                updateFailedBackendCreate(caller, resource, e)
             }
-            
-          } recover {
-            case e: Throwable => {
-              log.error(s"Error creating API in GatewayManager.")
-              updateFailedBackendCreate(caller, resource, e)
-            }
-          }
         }
       }
-      
-      
-      
     }
   }
 
@@ -133,7 +112,7 @@ class ApiController @Inject()(
             endpointWithAuth = gatewayEndpoint.updateWithAuthorization(users,groups)
             result <- {
               log.info("Endpoint created in Meta... creating Endpoint in GatewayManager...")
-              gatewayMethods.createEndpoint(api, metaEndpoint, endpointWithAuth) map (_ => Created(RenderSingle(metaEndpoint)))
+              gatewayMethods.createEndpoint(api, metaEndpoint, endpointWithAuth) map (ep => Created(RenderSingle(ep)))
             } recover {
               case e =>
                 log.error("Error creating Endpoint in GatewayManager.")
