@@ -34,6 +34,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
 
   sequential
 
+  stopOnFail
+
   abstract class FakeUpgraderScope extends WithDb(
     containerApp(
       additionalBindings = Seq(

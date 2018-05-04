@@ -25,10 +25,6 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     val Success(_) = pristineDatabase()
   }
 
-  sequential
-
-  stopOnFail
-
   val testPayload = Json.obj(
     "image" -> "galacticfog/gestalt-upgrader:1.6.0",
     "dbProviderId" -> "48c24048-cb1d-45c4-806e-c888aed7ea42",
@@ -59,6 +55,10 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     }
   }
 
+  sequential
+
+  stopOnFail
+
   "UpgradeController" should {
 
     "return 409 for unauthorized user" in new TestUpgradeController {
@@ -73,6 +73,14 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       status(result) must equalTo(OK)
       contentAsString(result) must /("active" -> false)
       contentAsString(result) must not /("endpoint")
+    }
+
+    "bad payload POST returns 400 but does not lock the upgrader" in new TestUpgradeController {
+      val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj())
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must /("message" -> "invalid payload")
+      await(configActor ? SystemConfigActor.GetKey("upgrade_lock")).asInstanceOf[Option[String]] must beNone or beSome("false")
     }
 
     "return 201 on POST" in new TestUpgradeController {

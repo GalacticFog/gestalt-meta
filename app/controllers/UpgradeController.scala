@@ -39,7 +39,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     for {
       maybeLocked <- (configActor ? SystemConfigActor.SetKey(request.identity.account.id, "upgrade_lock",  Some("true")))
           .mapTo[Option[String]]
-      locked = maybeLocked.map(_.toBoolean).getOrElse(false)
+      locked = maybeLocked.flatMap(s => Try(s.toBoolean).toOption).getOrElse(false)
     } yield locked
   }
 
