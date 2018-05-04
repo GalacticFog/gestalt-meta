@@ -19,6 +19,7 @@ import org.specs2.specification.BeforeAll
 import play.api.inject.{BindingKey, bind}
 import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import services.CaasService
 
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.Success
@@ -47,7 +48,6 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
 
     val dbProviderId = uuid
     val secProviderId = uuid
-    val caasProviderId = uuid
     val gwmProviderId = uuid
     val kongProviderId = uuid
 
@@ -81,6 +81,10 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         |}
       """.stripMargin
     )))
+
+    var Success(testCaasProvider) = createKubernetesProvider(parent = dummyRootOrgId, name = "test-caas-provider")
+    val mockCaasService = mock[CaasService]
+    mockProviderManager.getProviderImpl(testCaasProvider.typeId) returns Success(mockCaasService)
 
   }
 
@@ -123,8 +127,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
                 )
               )).toString,
               "provider" -> Json.obj(
-                "id" -> UUID.randomUUID().toString,
-                "name" -> "nonexistent-provider-does-not-matter"
+                "id" -> testCaasProvider.id,
+                "name" -> testCaasProvider.name
               ).toString
             )),
             parent = Some(testProviderEnvId)
@@ -140,7 +144,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         image = "galacticfog/upgrader-image:version",
         dbProviderId = dbProviderId,
         secProviderId = secProviderId,
-        caasProviderId = caasProviderId,
+        caasProviderId = testCaasProvider.id,
         gwmProviderId = gwmProviderId,
         kongProviderId = kongProviderId
       )))
@@ -152,7 +156,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
     }
 
     "delete provider on launch and delete config" in new TestApplication {
-      mockContainerService.deleteContainerHandler(any) returns Success(())
+      mockCaasService.destroy(any) returns Future.successful(())
       mockGatewayMethods.deleteApiHandler(any) returns Success(())
       mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
 
@@ -167,7 +171,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]) must beNone
       await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_lock")).mapTo[Option[String]]) must beNone or beSome("false")
 
-      there was one(mockContainerService).deleteContainerHandler(any)
+      there was one(mockCaasService).destroy(any)
       there was one(mockGatewayMethods).deleteApiHandler(any)
       there was one(mockGatewayMethods).deleteEndpointHandler(any)
     }
