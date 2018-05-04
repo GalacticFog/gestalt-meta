@@ -61,7 +61,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
               "message" -> "upgrade is already active"
             )))
           } else {
-            upgraderService.launchUpgrader(request.identity.account.id, payload)
+            upgraderService.launchUpgrader(request.identity, payload)
               .map {s => Accepted(Json.toJson(s))}
           }
         }
@@ -73,7 +73,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     SafeRequest(upgradeOps, upgradeOptions(request)) ProtectAsync { _ =>
       getStatus flatMap { status =>
         if (status.active) {
-          upgraderService.deleteUpgrader(request.identity.account.id, status)
+          upgraderService.deleteUpgrader(request.identity, status)
             .map {s => Accepted(Json.toJson(s))}
         } else {
           Future.successful(Accepted(Json.toJson(status)))

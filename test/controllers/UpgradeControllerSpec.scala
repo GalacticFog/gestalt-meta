@@ -34,6 +34,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     "dbProviderId" -> "48c24048-cb1d-45c4-806e-c888aed7ea42",
     "secProviderId" -> "a26d8342-09c9-4395-bd4a-f18473de6f36",
     "caasProviderId" -> "6ee3af52-a36e-4153-a642-a1d282d17c46",
+    "gwmProviderId" -> "b22c704b-01d8-4bf0-b7d5-a8344119972c",
     "kongProviderId" -> "5b835edf-bc93-4ce8-b018-401dfd5bf903"
   )
 

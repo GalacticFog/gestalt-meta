@@ -2,10 +2,10 @@ package services
 import java.nio.ByteBuffer
 import java.security.MessageDigest
 import java.util.UUID
-import javax.inject.Inject
 
+import javax.inject.Inject
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec => MetaSecretSpec}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, ServiceAddress}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -59,7 +59,7 @@ object DockerService {
     envId.toString.replace("-","") + "-" + shortName
   }
 
-  def getExternalId(container: GestaltResourceInstance): Option[String] = {
+  def getExternalId(container: ResourceLike): Option[String] = {
     ContainerService.resourceExternalId(container) orElse {
       for {
         envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id)
@@ -226,7 +226,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
-  override def destroy(container: GestaltResourceInstance): Future[Unit] = {
+  override def destroy(container: ResourceLike): Future[Unit] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::create(...)")
     val provider = ContainerService.containerProvider(container)
@@ -366,7 +366,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     new BadRequestException("Docker Swarm CaaS provider does not support secrets")
   )
 
-  override def destroySecret(secret: Instance): Future[Unit] = Future.failed(
+  override def destroySecret(secret: ResourceLike): Future[Unit] = Future.failed(
     new BadRequestException("DCOS CaaS provider does not support secrets")
   )
 }

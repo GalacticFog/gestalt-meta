@@ -628,23 +628,7 @@ class ResourceController @Inject()(
                                                  user: AuthAccountWithCreds,
                                                  qs: Option[Map[String, Seq[String]]] = None) = Try {
 
-    val maybePublicUrl = for {
-      api <- ResourceFactory.findParent(ResourceIds.Api, res.id)
-      props <- res.properties
-      resourcePath <- props.get("resource")
-      provider <- props.get("provider")
-      providerJson <- Try{Json.parse(provider)}.toOption
-      locations <- (providerJson \ "locations").asOpt[Seq[String]]
-      location <- locations.headOption
-      kongId <- Try{UUID.fromString(location)}.toOption
-      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
-      kpp <- kongProvider.properties
-      kpc <- kpp.get("config")
-      kpcJson <- Try{Json.parse(kpc)}.toOption
-      kongVhost <- (kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String]
-      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
-      publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
-    } yield publicUrl
+    val maybePublicUrl = GatewayMethods.getPublicUrl(res)
 
     maybePublicUrl.fold(res) {public_url =>
       upsertProperties(res, "public_url" -> public_url)

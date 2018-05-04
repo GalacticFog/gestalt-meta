@@ -288,10 +288,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         mockResp.status returns 200
       })
 
-      val Success(_) = lambdaMethods.deleteLambdaHandler(
-        r = testLambda,
-        user = user
-      )
+      val Success(_) = lambdaMethods.deleteLambdaHandler(testLambda)
 
       there was one(mockJsonClient).delete(
         uri = meq(s"/lambdas/${testLambda.id}"),
