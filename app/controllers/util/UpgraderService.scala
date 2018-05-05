@@ -72,6 +72,10 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         r = providerProto,
         parentId = Some(rootId)
       ))
+      gwmProvider <- Future.fromTry(Try(
+        ResourceFactory.findById(ResourceIds.GatewayManager, payload.gwmProviderId)
+          .getOrElse(throw new RuntimeException(s"could not locate GatewayManager provider with id '${payload.gwmProviderId}'"))
+      ))
       _ <- Future.fromTry(
         // parent=None means no inheritance, granting entitlements only to creator
         Try(setNewResourceEntitlements(
@@ -83,28 +87,35 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
       )
       (_, Seq(container)) <- providerManager.processProvider(ProviderMap(provider))
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
+      // API
+      apiJson = getApiPayload(payload)
       apiProto <- Future.fromTry(
-        jsonToResource(rootId, creator, getApiPayload(payload), Some(ResourceIds.Api))
+        jsonToResource(rootId, creator, apiJson, Some(ResourceIds.Api))
       )
-      api <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
+      apiNative <- Future.fromTry(Try(
+        GatewayMethods.toGatewayApi(apiJson, payload.kongProviderId)
+      ))
+      metaApi <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
         r = apiProto,
         parentId = Some(env.id)
       ))
-      endpointJson = getEndpointPayload(api, container, payload)
+      createdApi <- gatewayMethods.createApi(gwmProvider, metaApi, apiNative)
+      // Endpoint
+      endpointJson = getEndpointPayload(createdApi, container, payload)
       endpointProto <- Future.fromTry(
         jsonToResource(rootId, creator, endpointJson, Some(ResourceIds.ApiEndpoint))
       )
-      endpointNative <- Future.fromTry(GatewayMethods.toGatewayEndpoint(endpointJson, api.id))
-      endpoint <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
+      endpointNative <- Future.fromTry(GatewayMethods.toGatewayEndpoint(endpointJson, createdApi.id))
+      metaEndpoint <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
         r = endpointProto,
-        parentId = Some(api.id)
+        parentId = Some(createdApi.id)
       ))
-      apiEndpoint <- gatewayMethods.createEndpoint(
-        api = api,
-        metaEndpoint = endpoint,
+      createdEndpoint <- gatewayMethods.createEndpoint(
+        api = createdApi,
+        metaEndpoint = metaEndpoint,
         gatewayEndpoint = endpointNative
       )
-      publicUrl = GatewayMethods.getPublicUrl(apiEndpoint)
+      publicUrl = GatewayMethods.getPublicUrl(createdEndpoint)
       newStatus = UpgradeStatus(
         active = true,
         endpoint = publicUrl

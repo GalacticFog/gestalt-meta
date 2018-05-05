@@ -138,8 +138,11 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
           Future.successful(pm -> Seq(testContainer))
       }
       val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+      mockGatewayMethods.createApi(any, apiCaptor.capture(), any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
+      }
       val endpointCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
-      mockGatewayMethods.createEndpoint(apiCaptor.capture(), endpointCaptor.capture(), any) answers {
+      mockGatewayMethods.createEndpoint(any, endpointCaptor.capture(), any) answers {
         (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
       }
       val status = await(upgrader.launchUpgrader(adminUser, UpgraderService.UpgradeLaunch(
@@ -150,6 +153,13 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         gwmProviderId = gwmProviderId,
         kongProviderId = kongProviderId
       )))
+
+      there was one(mockGatewayMethods).createApi(argThat(
+        (gwm: GestaltResourceInstance) => gwm.id must_== gwmProviderId
+      ), any, any)
+      there was one(mockGatewayMethods).createEndpoint(argThat(
+        (api: GestaltResourceInstance) => api.id must_== apiCaptor.getValue.id
+      ), any, any)
 
       val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
