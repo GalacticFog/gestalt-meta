@@ -5,19 +5,18 @@ import java.util.UUID
 import actors.SystemConfigActor
 import akka.actor.ActorRef
 import akka.pattern.ask
-import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, HardDeleteResourceDefault, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.providers.{ProviderManager, ProviderMap}
-import controllers.DeleteController
 import javax.inject.{Inject, Named}
 import play.api.libs.json.{Format, JsObject, Json}
 
 import scala.concurrent.duration._
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Success, Try}
+import scala.util.Try
 
 trait UpgraderService {
   import UpgraderService._
@@ -52,12 +51,21 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
     for {
       maybeProviderId <- (configActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
+      _ = log.info(s"upgrade_provider: ${maybeProviderId}")
       maybeProvider = maybeProviderId
         .flatMap(s => Try(UUID.fromString(s)).toOption)
         .flatMap(ResourceFactory.findById(ResourceIds.Provider, _))
-      _ <- maybeProvider.fold(Future.successful(()))({
-        provider => Future.fromTry(deleteMgr.delete(provider, creator, true).map(_ => ()))
-      })
+      _ <- maybeProvider match {
+        case None =>
+          log.info("upgrade_provider does not exist")
+          Future.successful(())
+        case Some(provider) =>
+          log.info("upgrade_provider exists; will delete")
+          Future.fromTry(
+            deleteMgr.delete(provider, creator, true)
+              .map(_ => ())
+          )
+      }
       newStatus <- updateStatus(creator.id, UpgradeStatus.inactive, None)
     } yield newStatus
   }

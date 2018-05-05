@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink, ResourceStates}
-import play.api.libs.json.{JsObject, Json}
+import play.api.libs.json.Json
 
 import scala.language.postfixOps
 import scala.concurrent.duration._
@@ -80,6 +80,7 @@ class ConfigDelegationActor extends Actor with ActorLogging {
   }
 
   def updateConfig(creator: UUID, data: Map[String,Option[String]]) = {
+    log.info("updating SystemConfig: {}", data.toString)
     ResourceFactory.findById(ResourceIds.SystemConfig) match {
       case None =>
         val initData = data collect {
