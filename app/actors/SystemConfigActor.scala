@@ -80,26 +80,26 @@ class ConfigDelegationActor extends Actor with ActorLogging {
   }
 
   def updateConfig(creator: UUID, data: Map[String,Option[String]]) = {
-    ResourceFactory.findById(ResourceIds.SystemConfig).fold {
-      val initData = data collect {
-        case (k, Some(v)) => k -> v
-      }
-      ResourceFactory.create(ResourceIds.Org, creator)(
-        GestaltResourceInstance(
-          id = ResourceIds.SystemConfig,
-          typeId = ResourceIds.Configuration,
-          state = ResourceState.id(ResourceStates.Active),
-          orgId = root.id,
-          owner = ResourceOwnerLink(ResourceIds.Org,root.id.toString),
-          name = "gestalt-system-config",
-          properties = Some(Map(
-            "data" -> Json.toJson(initData).toString
-          ))
-        )
-      ).get
-      data.keys.map(_ -> Option.empty[String]).toMap
-    } {
-      sc =>
+    ResourceFactory.findById(ResourceIds.SystemConfig) match {
+      case None =>
+        val initData = data collect {
+          case (k, Some(v)) => k -> v
+        }
+        ResourceFactory.create(ResourceIds.Org, creator)(
+          GestaltResourceInstance(
+            id = ResourceIds.SystemConfig,
+            typeId = ResourceIds.Configuration,
+            state = ResourceState.id(ResourceStates.Active),
+            orgId = root.id,
+            owner = ResourceOwnerLink(ResourceIds.Org,root.id.toString),
+            name = "gestalt-system-config",
+            properties = Some(Map(
+              "data" -> Json.toJson(initData).toString
+            ))
+          )
+        ).get
+        data.keys.map(_ -> Option.empty[String]).toMap
+      case Some(sc) =>
         val props = sc.properties.getOrElse(Map.empty)
         val oldData = props.get("data").map(Json.parse(_)).map(_.as[Map[String,String]]).getOrElse(Map.empty)
         val removeKeys = data collect {
