@@ -72,30 +72,44 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
 
   override def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch)
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
+    val providerId = java.util.UUID.randomUUID()
     for {
-      providerProto <- Future.fromTry(
-        jsonToResource(rootId, creator, getProviderPayload(payload), Some(ResourceIds.Provider))
-      )
-      provider <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
-        r = providerProto,
-        parentId = Some(rootId)
-      ))
+      // get gwm provider
       gwmProvider <- Future.fromTry(Try(
         ResourceFactory.findById(ResourceIds.GatewayManager, payload.gwmProviderId)
           .getOrElse(throw new RuntimeException(s"could not locate GatewayManager provider with id '${payload.gwmProviderId}'"))
       ))
-      _ <- Future.fromTry(
-        // parent=None means no inheritance, granting entitlements only to creator
-        Try(setNewResourceEntitlements(
-          org = rootId,
-          resource = provider.id,
-          creator = creator,
-          parent = None
-        ).map(_.get))
+      // compute provider prototype
+      providerProto <- Future.fromTry(
+        jsonToResource(rootId, creator, getProviderPayload(payload), Some(ResourceIds.Provider))
       )
+      // save providerId, just in case it gets a partial create
+      _ <- updateStatus(
+        creator = creator.id,
+        newStatus = UpgradeStatus(
+          active = true,
+          endpoint = None
+        ),
+        providerId = Some(providerId)
+      )
+      // create provider (i.e., environment and container)
+      provider <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
+        r = providerProto.copy(
+          id = providerId
+        ),
+        parentId = Some(rootId)
+      ))
+      // set entitlements on the provider
+      _ <- Future.fromTry(Try(setNewResourceEntitlements(
+        org = rootId,
+        resource = provider.id,
+        creator = creator,
+        parent = None  // parent=None means no inheritance, granting entitlements only to creator
+      ).map(_.get)))
+      // load the provider to create the upgrader service container
       (_, Seq(container)) <- providerManager.processProvider(ProviderMap(provider))
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
-      // API
+      // create the API
       apiJson = getApiPayload(payload)
       apiProto <- Future.fromTry(
         jsonToResource(rootId, creator, apiJson, Some(ResourceIds.Api))
@@ -108,7 +122,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         parentId = Some(env.id)
       ))
       createdApi <- gatewayMethods.createApi(gwmProvider, metaApi, apiNative)
-      // Endpoint
+      // create the Endpoint
       endpointJson = getEndpointPayload(createdApi, container, payload)
       endpointProto <- Future.fromTry(
         jsonToResource(rootId, creator, endpointJson, Some(ResourceIds.ApiEndpoint))
@@ -124,11 +138,13 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         gatewayEndpoint = endpointNative
       )
       publicUrl = GatewayMethods.getPublicUrl(createdEndpoint)
-      newStatus = UpgradeStatus(
-        active = true,
-        endpoint = publicUrl
-      )
-      status <- updateStatus(creator.id, newStatus, Some(provider.id))
+      status <- updateStatus(
+        creator = creator.id,
+        newStatus = UpgradeStatus(
+          active = true,
+          endpoint = publicUrl
+        ),
+        providerId = Some(provider.id))
     } yield status
   }
 
