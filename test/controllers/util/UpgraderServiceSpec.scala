@@ -7,6 +7,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.laser
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderMap
@@ -157,9 +158,15 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       there was one(mockGatewayMethods).createApi(argThat(
         (gwm: GestaltResourceInstance) => gwm.id must_== gwmProviderId
       ), any, any)
-      there was one(mockGatewayMethods).createEndpoint(argThat(
-        (api: GestaltResourceInstance) => api.id must_== apiCaptor.getValue.id
-      ), any, any)
+      there was one(mockGatewayMethods).createEndpoint(
+        api = argThat(
+          (api: GestaltResourceInstance) => api.id must_== apiCaptor.getValue.id
+        ),
+        metaEndpoint = any,
+        gatewayEndpoint = argThat(
+          (le: laser.LaserEndpoint) => le.methods must beSome(containTheSameElementsAs(Seq("OPTIONS", "GET", "POST")))
+        )
+      )
 
       val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
