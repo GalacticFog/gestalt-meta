@@ -173,7 +173,7 @@ case object UpgraderService {
       "implementation_type" -> "container",
       "implementation_id" -> container.id.toString,
       "container_port_name" -> "api",
-      "methods" -> Seq("GET", "POST"),
+      "methods" -> Seq("GET", "POST", "OPTIONS"),
       "resource" -> "/upgrader",
       "provider" -> api.properties.get("provider")
     )
