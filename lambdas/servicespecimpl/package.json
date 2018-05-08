@@ -1,0 +1,12 @@
+{
+  "name": "wstest",
+  "version": "1.0.0",
+  "main": "index2.js",
+  "license": "MIT",
+  "dependencies": {
+    "axios": "^0.17.1",
+    "concat-stream": "^1.6.0",
+    "debug": "^3.1.0",
+    "util": "^0.10.3"
+  }
+}
