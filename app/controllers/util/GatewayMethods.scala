@@ -39,6 +39,21 @@ class GatewayMethods @Inject() ( ws: WSClient,
 
   val GATEWAY_PROVIDER_TIMEOUT_MS = 5000
 
+  def createApi(provider: GestaltResourceInstance,
+                resource: GestaltResourceInstance,
+                lapi: LaserApi): Future[GestaltResourceInstance] = {
+    val client = providerMethods.configureWebClient(provider, Some(ws))
+    client.post("/apis", Option(Json.toJson(lapi))) flatMap { result =>
+      if (Seq(200, 201).contains(result.status)) {
+        log.info("Successfully created API in GatewayManager.")
+        Future.successful(resource)
+      } else {
+        log.error("Error creating API in GatewayManager.")
+        Future.failed(ApiError(result.status, result.body).throwable)
+      }
+    }
+  }
+
   def createEndpoint( api: GestaltResourceInstance,
                       metaEndpoint: GestaltResourceInstance,
                       gatewayEndpoint: LaserEndpoint ): Future[GestaltResourceInstance] = {

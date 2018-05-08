@@ -711,7 +711,6 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       updatedPlugins must beNone or beSome(not /("gestaltSecurity") /("groups"))
     }
 
-
     "delete against GatewayMethods deletes apis" in new TestApplication {
       val Success(_) = gatewayMethods.deleteApiHandler(testApi)
       routeDeleteApi.timeCalled must_== 1

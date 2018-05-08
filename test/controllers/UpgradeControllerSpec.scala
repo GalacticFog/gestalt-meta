@@ -10,24 +10,20 @@ import com.galacticfog.gestalt.meta.test._
 import controllers.util.{ContainerService, UpgraderService}
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
+import org.specs2.specification.BeforeEach
 import play.api.inject.{BindingKey, bind}
 import play.api.libs.json.Json
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{MarathonClientFactory, SkuberFactory}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.Success
 
 class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
-  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
-
-  override def beforeAll(): Unit = {
-    val Success(_) = pristineDatabase()
-  }
-
   sequential
 
-  stopOnFail
+  object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   val testPayload = Json.obj(
     "image" -> "galacticfog/gestalt-upgrader:1.6.0",
@@ -55,6 +51,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
+      val Success(_) = pristineDatabase()
       t
     }
   }
@@ -75,30 +72,16 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       contentAsString(result) must not /("endpoint")
     }
 
-    "return 201 on POST" in new TestUpgradeController {
-      mockUpgraderService.launchUpgrader(any, any)(any) returns {
-        val s = UpgraderService.UpgradeStatus(
-          active = true,
-          endpoint = Some(testEndpoint)
-        )
-        (configActor ? SystemConfigActor.SetKey(adminUserId,
-          "upgrade_status" , Some(Json.toJson(s).toString)
-        )).map { _ => s }
-      }
-
-      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
-      val Some(pResult) = route(pRequest)
-      status(pResult) must equalTo(ACCEPTED)
-      contentAsString(pResult) must /("active" -> true)
-      contentAsString(pResult) must /("endpoint" -> testEndpoint)
-
-      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-      val Some(gResult) = route(gRequest)
-      status(gResult) must equalTo(OK)
-      contentAsString(gResult) must_== contentAsString(pResult)
+    "bad payload POST returns 400 but does not lock the upgrader" in new TestUpgradeController {
+      val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj())
+      val Some(result) = route(request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must /("message" -> "invalid payload")
+      await(configActor ? SystemConfigActor.GetKey("upgrade_lock")).asInstanceOf[Option[String]] must beNone or beSome("false")
     }
 
     "return 400 on additional POST" in new TestUpgradeController {
+      await(configActor ? SystemConfigActor.SetKey(adminUserId, "upgrade_lock", Some("true")))
       val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
       val Some(result) = route(request)
       status(result) must equalTo(BAD_REQUEST)
@@ -128,28 +111,29 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       contentAsString(gResult) must_== contentAsString(dResult)
     }
 
-    "then return 201 on POST" in new TestUpgradeController {
-      mockUpgraderService.launchUpgrader(any, any)(any) returns {
-        val s = UpgraderService.UpgradeStatus(
-          active = true,
-          endpoint = Some(testEndpoint)
-        )
-        (configActor ? SystemConfigActor.SetKey(adminUserId,
-          "upgrade_status" , Some(Json.toJson(s).toString)
-        )).map { _ => s }
-      }
+//    "return 201 on POST" in new TestUpgradeController {
+//      mockUpgraderService.launchUpgrader(any, any)(any) returns {
+//        val s = UpgraderService.UpgradeStatus(
+//          active = true,
+//          endpoint = Some(testEndpoint)
+//        )
+//        (configActor ? SystemConfigActor.SetKey(adminUserId,
+//          "upgrade_status" , Some(Json.toJson(s).toString)
+//        )).map { _ => s }
+//      }
+//
+//      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
+//      val Some(pResult) = route(pRequest)
+//      status(pResult) must equalTo(ACCEPTED)
+//      contentAsString(pResult) must /("active" -> true)
+//      contentAsString(pResult) must /("endpoint" -> testEndpoint)
+//
+//      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
+//      val Some(gResult) = route(gRequest)
+//      status(gResult) must equalTo(OK)
+//      contentAsString(gResult) must_== contentAsString(pResult)
+//    }
 
-      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
-      val Some(pResult) = route(pRequest)
-      status(pResult) must equalTo(ACCEPTED)
-      contentAsString(pResult) must /("active" -> true)
-      contentAsString(pResult) must /("endpoint" -> testEndpoint)
-
-      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-      val Some(gResult) = route(gRequest)
-      status(gResult) must equalTo(OK)
-      contentAsString(gResult) must_== contentAsString(pResult)
-    }
 
   }
 

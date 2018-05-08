@@ -7,6 +7,7 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.laser
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderMap
@@ -33,6 +34,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
   }
 
   sequential
+
+  stopOnFail
 
   abstract class FakeUpgraderScope extends WithDb(
     containerApp(
@@ -136,8 +139,11 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
           Future.successful(pm -> Seq(testContainer))
       }
       val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+      mockGatewayMethods.createApi(any, apiCaptor.capture(), any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
+      }
       val endpointCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
-      mockGatewayMethods.createEndpoint(apiCaptor.capture(), endpointCaptor.capture(), any) answers {
+      mockGatewayMethods.createEndpoint(any, endpointCaptor.capture(), any) answers {
         (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
       }
       val status = await(upgrader.launchUpgrader(adminUser, UpgraderService.UpgradeLaunch(
@@ -148,6 +154,19 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         gwmProviderId = gwmProviderId,
         kongProviderId = kongProviderId
       )))
+
+      there was one(mockGatewayMethods).createApi(argThat(
+        (gwm: GestaltResourceInstance) => gwm.id must_== gwmProviderId
+      ), any, any)
+      there was one(mockGatewayMethods).createEndpoint(
+        api = argThat(
+          (api: GestaltResourceInstance) => api.id must_== apiCaptor.getValue.id
+        ),
+        metaEndpoint = any,
+        gatewayEndpoint = argThat(
+          (le: laser.LaserEndpoint) => le.methods must beSome(containTheSameElementsAs(Seq("OPTIONS", "GET", "POST")))
+        )
+      )
 
       val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
