@@ -93,17 +93,24 @@ case class HttpGenericProvider(client: WSClient,
     }
   }
   
+  import controllers.util.QueryString
+  
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
     println(s"***** invokeAction(...${invocation.action}...)")
-    val request = authHeader.foldLeft( client.url(url) ) {
+
+    val params = QueryString.asFlatSeq(invocation.queryParams)
+
+    println("URL : " + url)
+    println("PARAMS : " + params)
+    
+    val request = authHeader.foldLeft(client.url(url)) {
       case (req, header) => {
-        log.debug("Adding header to external request config: " + AUTHORIZATION + " : " + header)
+        log.debug("Adding AUTHORIZATION header to external request config: " + AUTHORIZATION + " : " + header)
         req.withHeaders(AUTHORIZATION -> header)
       }
     }
     
-    request.post(invocation.toJson()).flatMap { resp => 
-      
+    request.withHeaders(params:_*).post(invocation.toJson()).flatMap { resp => 
       Future.fromTry(processResponse(invocation.resource, resp))
     }.recover {
       case e: Throwable => {
