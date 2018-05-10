@@ -170,6 +170,14 @@
             
         const triggerModal = (id) => $(id).modal().modal('open');
 
+        
+        console.log("WINDOW.LOCATION : " + window.location)
+        console.log("WINDOW.LOCATION.SEARCH : " + window.location.search)
+        const qparams = new URLSearchParams(window.location.search)
+        
+        console.log("HAS-RESOURCE : " + qparams.has('resource'))
+        console.log("RESOURCE : " + qparams.get('resource'))
+        
         /**
          *  
          */

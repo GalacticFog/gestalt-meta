@@ -45,7 +45,7 @@ module.exports = {
     }
 
     console.log('Found Process ID : ' + processId)
-    const stopUrl = `/streams/${processId}/stop`
+    const stopUrl = `streams/${processId}/stop`
     const laserClient = new MetaClient(laser.getAddress(event), laser.getAuth(context))
     const stopStatus = laserClient.post(stopUrl, {}).then(r => {
       console.log('Stream instance STOPPED: ' + util.pretty(r.data))
