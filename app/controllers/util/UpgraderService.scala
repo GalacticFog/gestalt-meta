@@ -224,6 +224,9 @@ case object UpgraderService {
             "force_pull" -> true,
             "image" -> launchPayload.image,
             "memory" -> 512,
+            "env" -> Json.obj(
+              "META_CALLBACK_URL" -> sys.env.get("META_POLICY_CALLBACK_URL")
+            ),
             "network" -> "BRIDGE",
             "num_instances" -> 1,
             "port_mappings" -> Seq(Json.obj(
