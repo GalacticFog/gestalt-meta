@@ -414,7 +414,10 @@ class ResourceController @Inject()(
       val output = Assembler.assemble(
           fqon,
           metaAddress,
-          act, resource.get, request.identity)
+          act, 
+          resource.get, 
+          request.identity,
+          request.queryString)
       Ok(output).as("text/html")
     }
   }

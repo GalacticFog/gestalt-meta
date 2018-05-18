@@ -386,7 +386,8 @@ object Assembler {
       meta: String,
       action: GestaltResourceInstance,
       target: GestaltResourceInstance,
-      user: AuthAccountWithCreds): String = {
+      user: AuthAccountWithCreds,
+      qs: Map[String, Seq[String]]): String = {
       
       val spec = ProviderActionSpec.fromResource(action)
   
