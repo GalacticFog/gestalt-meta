@@ -52,7 +52,7 @@ trait GenericResourceMethods {
                                     resourceType: UUID,
                                     providerType: UUID,
                                     actionVerb: String = "create" )
-                                  ( implicit request: RequestHeader ) : Future[Result]
+                                  ( implicit request: RequestHeader ) : Future[GestaltResourceInstance]
 
   def updateProviderBackedResource( org: GestaltResourceInstance,
                                     identity: AuthAccountWithCreds,
@@ -267,7 +267,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         resourceType: UUID,
         providerType: UUID,
         actionVerb: String = "create")
-        (implicit request: RequestHeader) : Future[Result] = {
+        (implicit request: RequestHeader) : Future[GestaltResourceInstance] = {
     
     
     def newMetaRequest() = for {
@@ -276,16 +276,15 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     } yield (operations, options, metaRequest)
     
     
-    val response = for {
-
+    for {
 			//Find the provider backing the current resource
       backingProvider <- lookupProvider(body, resourceType, providerType)
       
       (operations, options, metaRequest) <- newMetaRequest()
       
-      response <- SafeRequest(operations, options).ExecuteAsync {
+      response <- SafeRequest(operations, options).ExecuteAsyncT {
         input => for {
-        
+
           // Execute provider action function if one exists, return result if there is one.
           actionResult <- {
             invokeProviderAction(
@@ -299,14 +298,15 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
              * TODO: Using actionResult OR input here is not a good idea. By the time we get here
              * any policy checks have already been run against 'input' - allowing the substitution
              * at this point gives function authors a very clear way to circumvent policy.
+             *
+             * TODO: ^^^ then run the policy check again. at a certain point in time, authors of provider implementations
+             * have to be trusted a certain amount.
              */
-            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input),/*input,*/ Some(parent.id))
+            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input),Some(parent.id))
           }
-        } yield Created(Output.renderInstance(metaResult, Some(META_URL)))
+        } yield metaResult
       }
     } yield response
-    
-    response recover { case e => HandleExceptions(e) }
   }
   
   import com.galacticfog.gestalt.data.TypeFactory
