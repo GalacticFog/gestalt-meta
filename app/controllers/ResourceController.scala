@@ -203,7 +203,7 @@ class ResourceController @Inject()(
   
   
   def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    log.debug(s"genericResourceCreate(${fqon},${path})")
+    log.debug(s"genericResourcePost(${fqon},${path})")
     val rp = new ResourcePath(fqon, path)
     log.debug(rp.info.toString)
 

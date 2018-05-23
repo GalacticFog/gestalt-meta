@@ -14,13 +14,15 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
+import com.galacticfog.gestalt.meta.genericactions.{GenericProvider, GenericProviderManager}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.{ContainerService, UpgraderService}
+import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
+import controllers.util._
+import modules._
 import org.specs2.execute.{AsResult, Result}
-import play.api.inject.guice.GuiceableModule
+import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsObject, JsString, Json}
@@ -47,14 +49,38 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
   sequential
 
-  def appWithMocks() = application(additionalBindings = Seq(
-    bind[UpgraderService].toInstance(mock[UpgraderService]),
-    bind[ContainerService].toInstance(mock[ContainerService]),
-    bind[ProviderManager].toInstance(mock[ProviderManager]),
-    bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-    bind[SkuberFactory].toInstance(mock[SkuberFactory]),
-    bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
-  ))
+  def appWithMocks() = {
+    val defaultDisabled = Seq(
+      classOf[MetaDefaultDocker],
+      classOf[MetaDefaultDCOS],
+      classOf[MetaDefaultSkuber],
+      classOf[ProdSecurityModule],
+      classOf[MetaDefaultServices],
+      classOf[HealthModule]
+    )
+
+    val sc: Seq[GuiceableModule] = Seq(
+      FakeGestaltSecurityModule(fakeSecurityEnvironment()),
+      new SystemConfigModule,
+      bind[SecureController].toInstance(mockSecureController),
+      bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
+      bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
+      bind[MetaHealth].toInstance(mock[MetaHealth]),
+      bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
+      bind[UpgraderService].toInstance(mock[UpgraderService]),
+      bind[ContainerService].toInstance(mock[ContainerService]),
+      bind[ProviderManager].toInstance(mock[ProviderManager]),
+      bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
+      bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
+      bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods])
+    )
+
+    new GuiceApplicationBuilder()
+      .disable(defaultDisabled: _*)
+      .bindings(sc: _*)
+      .build
+  }
 
   abstract class TestContainerController extends WithApplication(appWithMocks()) {
     var testWork: GestaltResourceInstance = null
@@ -104,8 +130,6 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
   def hasId(id: => UUID): Matcher[GestaltResourceInstance] =
     ((_: GestaltResourceInstance).id) ^^ be_==(id)
 
-    stopOnFail
-    
   "ContainerController" should {
 
     import com.galacticfog.gestalt.data.EnvironmentType
@@ -249,10 +273,6 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         val env = createInstance(ResourceIds.Environment, uuid.toString, 
             properties = Some(Map("environment_type" -> EnvironmentType.id("development").toString)))
         env must beSuccessfulTry
-        
-//        val prv = createInstance(ResourceIds.KubeProvider, uuid.toString, 
-//            properties = Some(Map("environment_types" -> Json.stringify(Json.arr("development", "test")))))        
-//        prv must beSuccessfulTry
         
         val payload = Json.parse(
             s"""
@@ -877,6 +897,73 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         numInstances = meq(4)
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
+    }
+
+    "import containers using the GenericResourceMethods interface" in new TestContainerController {
+      val testContainerName = "test-container"
+      val testProps = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp",Some(80),None,None,None,None)),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+      val extId = s"/${testEnv.id}/test-container"
+      val Success(createdResource) = createInstance(ResourceIds.Container, testContainerName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "disk" -> testProps.disk.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> s"${extId}"
+        ))
+      )
+
+      val genericMethods = app.injector.instanceOf[GenericResourceMethods]
+      genericMethods.createProviderBackedResource(any,any,any,any,any,any,any)(any) returns Future.successful(createdResource)
+
+      val request = fakeAuthRequest(POST,
+        s"/root/environments/${testEnv.id}/containers?action=import",
+        testCreds
+      ).withBody(Json.obj(
+        "name" -> "imported-container",
+        "properties" -> Json.obj(
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ),
+          "external_id" -> extId
+        )
+      ))
+
+      val Some(result) = route(request)
+      println(contentAsString(result))
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "name").asOpt[String] must beSome(testContainerName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Container")
+      (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
     }
 
     "create secrets with missing provider payload should 400" in new TestContainerController {
