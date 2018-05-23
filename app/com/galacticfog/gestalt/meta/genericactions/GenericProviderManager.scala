@@ -136,7 +136,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
       }
     }
     
-    matchingEp match {
+    (matchingEp orElse defaultEp) match {
       case None => Success(None)
       case Some(ep) => {
         // Ensure the endpoint is of a supported type
