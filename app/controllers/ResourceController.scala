@@ -202,17 +202,14 @@ class ResourceController @Inject()(
   }
   
   
-  def genericResourceCreate(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    log.debug(s"genericResourceCreate(${fqon},${path})")
+  def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"genericResourcePost(${fqon},${path})")
     val rp = new ResourcePath(fqon, path)
     log.debug(rp.info.toString)
 
     if (rp.isList) {
-      // create
-      
-      /*
-       *  Lookup  parent resource
-       */
+      // create semantics
+
       val tryParent = ResourceFactory.findById(
         typeId = rp.parentTypeId getOrElse ResourceIds.Org,
         id = rp.parentId getOrElse fqid(fqon)
@@ -227,16 +224,16 @@ class ResourceController @Inject()(
         jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
         jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
         /*
-         * Determine if the resource-we're creating is backed by a provider.
+         * Determine if the resource we're creating is backed by a provider.
          */
         result <- getBackingProviderType(rp.targetTypeId) match {
           case None =>
             log.debug("request to create non-provider-backed resource")
             newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
-            
+
           case Some(backingProviderType) =>
             log.debug(s"request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
-            genericResourceMethods.createProviderBackedResource(
+            val result = genericResourceMethods.createProviderBackedResource(
               org = org,
               identity = request.identity,
               body = jsonRequest.body,
@@ -245,6 +242,9 @@ class ResourceController @Inject()(
               providerType = backingProviderType,
               actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
             )
+            result
+              .map (r => Created(Output.renderInstance(r, Some(META_URL))))
+              .recover { case e => HandleExceptions(e) }
         }
       } yield result
       

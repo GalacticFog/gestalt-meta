@@ -43,6 +43,7 @@ class ContainerController @Inject()(
      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
      containerService: ContainerService,
      providerManager: ProviderManager,
+     genericResourceMethods: GenericResourceMethods,
      db: play.api.db.Database)
     extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -145,25 +146,62 @@ class ContainerController @Inject()(
     assertCompatibleEnvType(provider, env)
 
     // Inject `provider` object into container.properties
-    val properties = Js.find(payload, "/properties").get.as[JsObject]
+    val oldProperties = Js.find(payload, "/properties").flatMap(_.asOpt[JsObject]).getOrElse(Json.obj())
     payload ++ Json.obj(
-      "properties" -> (properties ++ Json.obj(
-          "provider" -> Json.obj(
-            "name"          -> provider.name,
-            "id"            -> provider.id,
-            "resource_type" -> sdk.ResourceName(provider.typeId)
-          )
-        ))
+      "properties" -> (oldProperties ++ Json.obj(
+        "provider" -> Json.obj(
+          "name"          -> provider.name,
+          "id"            -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        )
+      ))
     )
   }
 
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
+    val action = request.getQueryString("action").getOrElse("create")
     val created = for {
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
-      proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputContainer(payload), None))
-      spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
-      context   = ProviderContext(request, spec.provider.id, None)
-      container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
+      container <- action match {
+        //
+        // CREATE
+        case "create" =>
+          for {
+            proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputContainer(payload), None))
+            spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
+            context   = ProviderContext(request, spec.provider.id, None)
+            container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
+          } yield container
+        //
+        // IMPORT
+        case "import" =>
+          log.info("request to import container against GenericResourceMethods")
+          for {
+            org <- Future.fromTry(Try(orgFqon(fqon).getOrElse(
+              throw new InternalErrorException("could not locate org resource after authentication")
+            )))
+            env <- Future.fromTry(Try(ResourceFactory.findById(ResourceIds.Environment, environment).getOrElse(
+              throw new ResourceNotFoundException(s"environment with id '$environment' not found")
+            )))
+            providerId = (payload \ "properties" \ "provider" \ "id").as[UUID]
+            provider <- Future.fromTry(Try(ResourceFactory.findById(providerId).getOrElse(
+              throw new ResourceNotFoundException(s"provider with id '$providerId' not found")
+            )))
+            r <- genericResourceMethods.createProviderBackedResource(
+              org = org,
+              identity = request.identity,
+              body = payload,
+              parent = env,
+              resourceType = ResourceIds.Container,
+              providerType = provider.typeId,
+              actionVerb = action
+            )
+          } yield r
+        //
+        // default
+        case _=>
+          Future.failed(new BadRequestException("invalid 'action' on container create: must be 'create' or 'import'"))
+      }
     } yield Created(RenderSingle(container))
     
     created recover { case e => HandleExceptions(e) }
@@ -349,7 +387,9 @@ class ContainerController @Inject()(
   private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
     val defaults = containerWithDefaults(inputJson)
     val newprops = Json.toJson(defaults).as[JsObject] ++ (inputJson \ "properties").as[JsObject]
-    (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
+    inputJson.as[JsObject] ++
+      Json.obj("resource_type" -> ResourceIds.Container.toString) ++
+      Json.obj("properties" -> newprops)
   }
 
   /**
