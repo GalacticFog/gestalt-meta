@@ -129,11 +129,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     }
 
     val matchingEp = endpoints.find {
-      _.asOpt[EndpointProperties] match {
-        case Some(EndpointProperties(isDefault, actions)) =>
-          isDefault || actions.contains(action)
-        case _ => false
-      }
+      _.asOpt[EndpointProperties].exists(_.actions.contains(action))
     }
     
     (matchingEp orElse defaultEp) match {
