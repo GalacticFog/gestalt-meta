@@ -101,7 +101,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         metaAddress = META_URL,
         context = GenericActionContext.fromParent(org, parent),
         provider = providerResource,
-        resource = Some(resource)
+        resource = Some(resource),
+        queryParams = request.queryString
       ))
       provider <- Future.fromTry(
         genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue)
@@ -137,7 +138,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         metaAddress = META_URL,
         context = GenericActionContext.fromParent(org, parent),
         provider = providerResource,
-        resource = Some(updatedResource)
+        resource = Some(updatedResource),
+        queryParams = request.queryString
       ))
       provider <- Future.fromTry(
         genericProviderManager.getProvider(providerResource, action, identity.creds.headerValue)
@@ -356,12 +358,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                         ( implicit request: RequestHeader ): Future[Option[GestaltResourceInstance]] = {
 
     for {
-      providerImpl <- {
-        Future.fromTry(
-          genericProviderManager.getProvider(backingProvider, metaRequest.action, callerAuth)
-        )
-      }
-
       invocation <- {
 
         println("***REQUEST-URL : " + request.uri)
@@ -379,14 +375,19 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         ))
       }
 
-      maybeOutputResource <- {
-        providerImpl.fold {
+      providerImpl <- {
+        Future.fromTry(
+          genericProviderManager.getProvider(backingProvider, metaRequest.action, callerAuth)
+        )
+      }
+
+      maybeOutputResource <- providerImpl match {
+        case None =>
           Future.successful(Option.empty[GestaltResourceInstance])
-        }{ p =>
+        case Some(p) =>
           p.invokeAction(invocation).map { response =>
             response.left.toOption
           }
-        }
       }
     } yield maybeOutputResource
   }
