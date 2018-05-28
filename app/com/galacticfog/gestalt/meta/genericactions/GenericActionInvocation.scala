@@ -9,13 +9,11 @@ import play.api.mvc.RequestHeader
 
 case class GenericActionContext(org: GestaltResourceInstance,
                                 workspace: Option[GestaltResourceInstance],
-                                environment: Option[GestaltResourceInstance],
-                                queryParams: Map[String,Seq[String]]) {
+                                environment: Option[GestaltResourceInstance]) {
   def toJson(): JsObject = Json.obj(
     "org" -> Output.renderInstance(org),
     "workspace" -> workspace.map(Output.renderInstance(_)),
-    "environment" -> environment.map(Output.renderInstance(_)),
-    "queryParams" -> Json.toJson(queryParams)
+    "environment" -> environment.map(Output.renderInstance(_))
   )
 }
 
@@ -35,8 +33,7 @@ case object GenericActionContext {
         case ResourceIds.Environment => ResourceFactory.findParent(ResourceIds.Workspace, parent.id)
         case _ => None
       },
-      environment = if (parent.typeId == ResourceIds.Environment) Some(parent) else None,
-      queryParams = request.queryString - "action"
+      environment = if (parent.typeId == ResourceIds.Environment) Some(parent) else None
     )
   }
 }

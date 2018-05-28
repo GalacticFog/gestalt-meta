@@ -519,7 +519,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beSome(testWork)
       invocation.context.environment must beSome(testEnv)
-      invocation.context.queryParams must_== Map(
+      invocation.queryParams must_== Map(
+        "action" -> Seq(verb1),
         "qp1" -> Seq("v1"),
         "qp2" -> Seq("v2.1", "v2.2")
       )
@@ -580,7 +581,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beSome(testWork)
       invocation.context.environment must beSome(testEnv)
-      invocation.context.queryParams must_==(Map(
+      invocation.queryParams must_==(Map(
+        "action" -> Seq(verb1),
         "p1" -> Seq("v1")
       ))
       invocation.provider must_== testProvider
@@ -631,7 +633,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beSome(testWork)
       invocation.context.environment must beSome(testEnv)
-      invocation.context.queryParams must_==(Map(
+      invocation.queryParams must_==(Map(
+        "action" -> Seq(verb2),
         "p1" -> Seq("v1")
       ))
       invocation.provider must_== testProvider
@@ -691,7 +694,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beSome(testWork)
       invocation.context.environment must beSome(testEnv)
-      invocation.context.queryParams must_==(Map(
+      invocation.queryParams must_==(Map(
         "p1" -> Seq("v1")
       ))
       invocation.provider must_== testProvider
@@ -726,7 +729,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       invocation.context.org.id must_== testOrg.id
       invocation.context.workspace must beSome(testWork)
       invocation.context.environment must beSome(testEnv)
-      invocation.context.queryParams must_==(Map(
+      invocation.queryParams must_==(Map(
+        "action" -> Seq(verb2),
         "p1" -> Seq("v1")
       ))
       invocation.provider must_== testProvider
