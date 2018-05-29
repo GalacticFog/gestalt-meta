@@ -36,8 +36,12 @@ exports.entryPoint = function(event, context, callback) {
       case 'servicespec.publish':
         console.log("[handle-action]: 'servicespec.publish'")
         let out = await publish.eventPublish(eventData, contextData)
+        console.log("OUT:\n" + JSON.stringify(out, null, 2))
         let finalResponse = publish.makePublishResponse('DUMMY_FQON', eventData.metaAddress, out)
 
+        console.log("FINAL-RESPONSE:\n" + JSON.stringify(finalResponse, null, 2))
+
+        callback(null, JSON.stringify({status: 'ok'}))
         /*
          * This is the updated ServiceSpec with the 'published' property inserted.
          * The current action-invoker in Meta will update the resource if we return
@@ -47,13 +51,13 @@ exports.entryPoint = function(event, context, callback) {
         // updatePublishSpec(eventData.resource, contextData.user)
 
       
-        callback(null, JSON.parse(JSON.stringify(finalResponse)))
+        //callback(null, JSON.parse(JSON.stringify(finalResponse)))
 
         break
       case 'servicespec.deploy':
-        console.log("[handle-action]: 'servicespec.publish")
+        console.log("[handle-action]: 'servicespec.deploy")
 
-        let response = deploy.eventDeploy(eventData, contextData)
+        let response = await deploy.eventDeploy(eventData, contextData)
         callback(null, response)
         break
         

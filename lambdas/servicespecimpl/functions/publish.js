@@ -29,7 +29,8 @@ module.exports = {
     
     const publishUrl = `${publishTarget}/resourcetypes`
     const testUrl = `${publishUrl}?test=true`
-    
+    console.log('*META-URL : ' + metaUrl)
+    console.log('TEST-URL : ' + testUrl)
     /*
       * Test the type information we've been given against meta to rule
       * out schema/validation errors before we attempt to create them.
@@ -37,7 +38,7 @@ module.exports = {
     return this.testCreateTypes(testUrl, providerDefinition, resourceDefinitions, client)
       .then(a => {
         debug("TEST WENT GREAT - NEXT...")
-        return this.createOnPublish(publishUrl, providerDefinition, resourceDefinitions, client)
+        return this.createOnPublish3(publishUrl, providerDefinition, resourceDefinitions, client)
       })
       .catch(e => {
         debug("!!!!!!!!!PUBLISH POPPED!!!!!!!!!!" + e.message) 
@@ -72,7 +73,7 @@ module.exports = {
       throw e 
       })  
   },
-  
+/*
   createOnPublish(url, provider, resources, client) {
     const fs = resources.map(r => () => client.post(url, r))
 
@@ -88,7 +89,18 @@ module.exports = {
         return results
       })
   },
-  
+  */
+  async createOnPublish3(url, provider, resources, client) {
+    const results = await client.post(url, provider).then(p => 
+      resources.map(r => client.post(url, injectProviderId(r, p)))
+    )
+    console.log("RESULTS : " + results)
+    return results
+  },
+
+
+
+
   /**
    * Update a ServiceSpec instance as 'published'
    * @param {*} url 
@@ -107,7 +119,23 @@ module.exports = {
       properties: newProperties
     }
   },
-
+  makePublishResponse(fqon, metaUrl, data) {
+    console.log(`makePublishResponse(${fqon}, ...)`)
+    const envelope = {
+      status: 'SUCCESS',
+      pusblished: {
+        publisher: {},
+        timestamp: {}
+      }
+    }
+    const typeData = data.map(r => {
+      const id = r.id 
+      const href = this.getPublishUrl(fqon, metaUrl, id)
+      return Object.assign({}, { id: id, name: r.name, href: href })
+    })
+    return Object.assign(envelope, { typesCreated: typeData })
+  },
+  /*
   makePublishResponse(fqon, metaUrl, data) {
     console.log(`makePublishResponse(${fqon}, ...)`)
     const envelope = {
@@ -124,9 +152,33 @@ module.exports = {
     })
     return Object.assign(envelope, { typesCreated: typeData })
   },
-
+*/
   getPublishUrl(fqon, metaUrl, uuid) {
     const publishUrl = `${fqon}/resourcetypes`
     return `${metaUrl}/${publishUrl}/${uuid}`
   }
 };
+
+/**
+ * Add 'provider' reference property to a new resource type.
+ * @param {*} resource 
+ * @param {*} provider 
+ */
+function injectProviderId(resource, provider) {
+  return {
+    ...resource,
+    property_defs: [
+      ...resource.property_defs,
+      {
+        name: 'provider',
+        data_type: 'resource::uuid::link',
+        requirement_type: 'required',
+        refers_to: provider.data.id
+      }
+    ]
+  }
+}
+
+
+
+
