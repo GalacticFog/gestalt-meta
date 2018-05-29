@@ -3,9 +3,11 @@ package com.galacticfog.gestalt.meta.genericactions
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
+import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.{InvocationResponse, RawInvocationResponse}
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
+import org.clapper.scalasti.ST
 import play.api.libs.json._
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
@@ -14,6 +16,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.http.HeaderNames.{AUTHORIZATION, CONTENT_TYPE}
 
 import scala.concurrent.Future
+import scala.util.parsing.json.JSON
 import scala.util.{Failure, Success, Try}
 
 trait GenericProviderManager {
@@ -39,6 +42,7 @@ object GenericProvider {
 
 case class HttpGenericProvider(client: WSClient,
                                url: String,
+                               method: String,
                                authHeader: Option[String] = None) extends GenericProvider with JsonInput {
 
   private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): Try[InvocationResponse] = {
@@ -96,70 +100,112 @@ case class HttpGenericProvider(client: WSClient,
   import controllers.util.QueryString
   
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
-    println(s"***** invokeAction(...${invocation.action}...)")
-
     val params = QueryString.asFlatSeq(invocation.queryParams)
 
-    println("URL : " + url)
-    println("PARAMS : " + params)
-    
-    val request = authHeader.foldLeft(client.url(url)) {
-      case (req, header) => {
-        log.debug("Adding AUTHORIZATION header to external request config: " + AUTHORIZATION + " : " + header)
-        req.withHeaders(AUTHORIZATION -> header)
+    def resourceToMap(r: GestaltResourceInstance) = {
+      def convertObj(j: JsObject) = {
+        j.fields.map({
+          case (k,v) => k -> convert(v)
+        }).toMap
       }
+      def convert(j: JsValue): Any = {
+        j match {
+          case JsArray(a) => a.map(convert)
+          case j: JsObject => convertObj(j)
+          case JsString(s) => s
+          case JsBoolean(b) => b
+          case JsNull => "null"
+          case JsNumber(n) => n
+        }
+      }
+      convertObj(Output.renderInstance(r).as[JsObject])
     }
-    
-    request.withHeaders(params:_*).post(invocation.toJson()).flatMap { resp => 
-      Future.fromTry(processResponse(invocation.resource, resp))
-    }.recover {
+
+    val context = Seq(
+      "org" -> Some(invocation.context.org),
+      "workspace" -> invocation.context.workspace,
+      "environment" -> invocation.context.environment
+    ).collect({
+      case (lbl,Some(r)) => lbl -> resourceToMap(r)
+    }).toMap
+
+    val st = invocation.resource.foldLeft(
+      ST(url)
+        .add("metaAddress", invocation.metaAddress)
+        .addMappedAggregate("provider", resourceToMap(invocation.provider))
+        .addMappedAggregate("context", context)
+    ) {
+      case (st, resource) => st.addMappedAggregate(
+        "resource", resourceToMap(resource)
+      )
+    }
+
+    val resp = for {
+      expandedUrl <- Future.fromTry(st.render())
+      request = authHeader.foldLeft( 
+          client.url(expandedUrl)
+            .withHeaders(params:_*)
+            .withMethod(method)
+            .withBody(invocation.toJson()) 
+          ) {
+        case (req, header) => req.withHeaders(AUTHORIZATION -> header)
+      }
+      rawResp <- request.execute()
+      processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
+    } yield processed
+
+    resp recover {
       case e: Throwable => {
         log.error("Failed calling external action endpoint : " + e.getMessage)
         throw new RuntimeException("Failed calling external action endpoint : " + e.getMessage)
       }
     }
-  }
-  
+  }  
 }
 
-class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
-  
-  override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String): Try[Option[GenericProvider]] = {
-    
-    // Parse config.endpoints from provider resource properties.
 
+class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
+
+  override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String): Try[Option[GenericProvider]] = {
+
+    // Parse config.endpoints from provider resource properties.
     val endpoints: Seq[JsObject] = ContainerService.getProviderConfig(provider).flatMap {
       c => (c \ "endpoints").asOpt[Seq[JsObject]] 
     }.getOrElse(Seq.empty)
 
-     // Find an endpoint that matches the given 'action' (or endpoint labeled 'default')
-
-    val e1 = endpoints.find {
-      _.asOpt[EndpointProperties] match {
-        case Some(EndpointProperties(isDefault, actions)) =>
-          isDefault || actions.contains(action)
-        case _ => false
-      }
+    // Find an endpoint that matches the given 'action' (or endpoint labeled 'default')
+    // Prefer the exact match over the 'default'
+    val matchingEp = endpoints.find {
+      _.asOpt[EndpointProperties].exists(_.actions.contains(action))
     }
-    
-    e1 match {
-      case None => Success(None)
-      case Some(ep) => {
-        // Ensure the endpoint is of a supported type
-        parseEndpointType(ep, callerAuth,
-            msg = s"Provider ${provider.id} endpoint configuration did not match supported types.").map(Some(_))
-      }
+    val defaultEp = endpoints.find {
+      _.asOpt[EndpointProperties].exists(_.default)
+    }
+
+    // Resolve to an implementation
+    (matchingEp orElse defaultEp) match {
+      case None =>
+        Success(None)
+      case Some(ep) =>
+        parseEndpointType(ep, provider, callerAuth) map (Some(_))
     }
   }
-  
-  private[this] def parseEndpointType(endpoint: JsObject, callerAuth: String, msg: => String): Try[GenericProvider] = {
+
+  private[this] def parseEndpointType(endpoint: JsObject, provider: GestaltResourceInstance, callerAuth: String): Try[GenericProvider] = {
     // only support a single endpoint type right now, pretty simple
-    val url = (for {
+    val http = for {
       http <- (endpoint \ "http").asOpt[JsObject]
+      method = (http \ "method").asOpt[String].getOrElse("POST")
       url  <- (http \ "url").asOpt[String]
       authHeader = ((http \ "authentication").asOpt[String] orElse Some(callerAuth))
-    } yield HttpGenericProvider(wsclient, url, authHeader = authHeader))
-    url map (Success(_)) getOrElse Failure(ConflictException(msg))
+    } yield HttpGenericProvider(wsclient, url, method, authHeader = authHeader)
+
+    http match {
+      case Some(p) =>
+        Success(p)
+      case None =>
+        Failure(ConflictException(s"Provider '${provider.id}' endpoint configuration did not match supported types."))
+    }
   }
 
 }

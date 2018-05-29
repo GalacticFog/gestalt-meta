@@ -398,7 +398,46 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
   }
 
 
-  def ExecuteAsync[T](f: GestaltResourceInstance => Future[Result]): Future[Result] = {
+  def ExecuteAsyncT[T](f: GestaltResourceInstance => Future[T]): Future[T] = {
+
+    @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
+      os match {
+        case Nil => proceed
+        case op :: tail => op.proceed(options) match {
+          case Continue => evaluate(tail, Continue)
+          case Accepted => evaluate(tail, Accepted)
+          case e: Halt  => e
+        }
+      }
+    }
+
+    /*
+     * Separate operations list into pre and post ops.
+     */
+    val (beforeOps, afterOps) = sansPost(operations)
+
+    val result = evaluate(beforeOps, Continue).toTry match {
+      case Success(state) => {
+        val resource = {
+          val res = options.policyTarget.get
+          state.fold(res)(st => res.copy(state = st))
+        }
+        f( resource )
+      }
+      case Failure(error) => Future.failed(error)
+    }
+
+    if (afterOps.isDefined) {
+      log.debug(s"Found *.post events: ${afterOps.get}")
+    } else {
+      log.debug("No *.post events found.")
+    }
+
+    afterOps map( _.proceed(options) )
+    result
+  }
+
+  def ExecuteAsync(f: GestaltResourceInstance => Future[Result]): Future[Result] = {
 
     @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
       os match {

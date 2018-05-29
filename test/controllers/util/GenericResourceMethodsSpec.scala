@@ -71,6 +71,22 @@ class GenericResourceMethodsSpec extends PlaySpecification
     val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
     val Success(providerWithDefaultEndpoint) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
       "config" -> Json.obj(
+        "env" -> Json.obj(
+          "public" -> Json.obj(
+            "SERVICE_HOST" -> "some-laser.some-domain",
+            "SERVICE_PORT" -> "9000"
+          )
+        ),
+        "services" -> Seq(
+          Json.obj(
+            "container_spec" -> Json.obj(
+              "name" -> "some-service",
+              "properties" -> Json.obj(
+                "image" -> "some:image"
+              )
+            )
+          )
+        ),
         "endpoints" -> Json.arr(
           Json.obj(
             "default" -> true,
@@ -164,6 +180,43 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
+    "use default when present (reverse order)" in new TestApplication {
+      val defaultUrl = "http://default-url"
+      val overrideUrl = "http://override-url"
+      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+        "config" -> Json.obj(
+          "endpoints" -> Json.arr(
+            Json.obj(
+              "default" -> true,
+              "http" -> Json.obj(
+                "url" -> defaultUrl
+              )
+            ),
+            Json.obj(
+              "actions" -> Seq("action1", "action2"),
+              "http" -> Json.obj(
+                "url" -> overrideUrl
+              )
+            )
+          )
+        ).toString
+      )))
+
+      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+      ))
+      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+      ))
+      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+      ))
+    }
+
     "return None when there is no match or default" in new TestApplication {
       val overrideUrl = "http://override-url"
       val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
@@ -208,7 +261,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         }
       }
       val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
@@ -216,8 +269,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None,
-          queryParams = Map.empty
+          environment = None
         ),
         provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource),
@@ -257,7 +309,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         }
       }
       val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl, authHeader = Some(testHeader))
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST", authHeader = Some(testHeader))
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
@@ -265,14 +317,79 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None,
-          queryParams = Map.empty
+          environment = None
         ),
         provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource)
       )
 
       await(httpProvider.invokeAction(inv)) must beLeft[GestaltResourceInstance]
+    }
+
+    "abide by provider 'method'" in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+
+      val testHeader = "Bearer some-magic-token"
+      val routeInvoke = Route {
+        case (GET, testUrl) => Action { request =>
+          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+            Ok("got")
+          }
+          else Unauthorized("")
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "GET", authHeader = Some(testHeader))
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        metaAddress = "http://example.com",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource)
+      )
+
+      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+      ))
+    }
+
+    "expand url template" in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+
+      val templateUrl = "http://<provider.properties.config.env.public.SERVICE_HOST>:<provider.properties.config.env.public.SERVICE_PORT>/streams/<resource.id>/status"
+
+      val testHeader = "Bearer some-magic-token"
+      val routeInvoke = Route {
+        case (GET, url) if url == s"http://some-laser.some-domain:9000/streams/${dummyResource.id}/status" => Action { request =>
+          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+            Ok("got")
+          }
+          else Unauthorized("")
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        metaAddress = "http://example.com",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource)
+      )
+
+      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+      ))
     }
 
     "40x errors from endpoints should result in BadRequestException" in new TestApplication {
@@ -284,7 +401,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         }
       }
       val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
@@ -292,8 +409,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None,
-          queryParams = Map.empty
+          environment = None
         ),
         provider = providerWithDefaultEndpoint
       )
@@ -322,7 +438,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         }
       }
       val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
@@ -330,8 +446,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None,
-          queryParams = Map.empty
+          environment = None
         ),
         provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource),
@@ -357,7 +472,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         case (POST, testUrl) => Action(parse.json) { response => Ok(customResponse) }
       }
       val ws = MockWS(routeInvoke)
-      val httpProvider = new HttpGenericProvider(ws, testUrl)
+      val httpProvider = new HttpGenericProvider(ws, testUrl, "POST")
 
       val inv = GenericActionInvocation(
         action = "noun.verb",
@@ -365,8 +480,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         context = GenericActionContext(
           org = rootOrg,
           workspace = None,
-          environment = None,
-          queryParams = Map.empty
+          environment = None
         ),
         provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource),
@@ -380,26 +494,6 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
   }
 
-  "GenericActionContext" should {
-
-    "render query parameters" in new TestApplication {
-      val json = GenericActionContext(
-        org = rootOrg,
-        workspace = None,
-        environment = None,
-        queryParams = Map(
-          "q1" -> Seq("1"),
-          "q2" -> Seq("2a", "2b")
-        )
-      ).toJson
-      (json \ "queryParams" \ "q1").as[Seq[String]] must containTheSameElementsAs(Seq("1"))
-      (json \ "queryParams" \ "q2").as[Seq[String]] must containTheSameElementsAs(Seq("2a", "2b"))
-    }
-
-  }
-
-  
-  
   import com.galacticfog.gestalt.data.bootstrap.{SystemType, TypeProperty}
   import com.galacticfog.gestalt.data.TypeFactory
   import scala.concurrent.Future

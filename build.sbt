@@ -80,6 +80,7 @@ libraryDependencies += "com.lihaoyi" %% "scalatags" % "0.6.7"
 
 libraryDependencies ++= Seq(
 
+    "org.clapper" %% "scalasti" % "3.0.1",
 	"org.jtwig" 	   	 % "jtwig-core" 					 			 		% "5.86.0.RELEASE",
 	"com.galacticfog" %% "gestalt-meta-repository" 		 		% "0.6.77" withSources(),
 	"com.galacticfog" %% "gestalt-play-json" 			 		 		% "0.3.0" withSources(),

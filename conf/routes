@@ -290,8 +290,8 @@ PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>			controllers.PatchController.pa
 ### Update any system resource
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  	controllers.PatchController.patchResource(fqon, path)
 
-### Create any system resource without a specific creation route above
-POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.genericResourceCreate(fqon: String, path: String)
+### Create any system resource without a specific creation route above or perform Resource action
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceController.genericResourcePost(fqon: String, path: String)
 
 ### CORS support
 OPTIONS  /                           controllers.InfoController.options(path="")
