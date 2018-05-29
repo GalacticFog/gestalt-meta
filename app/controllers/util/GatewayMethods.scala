@@ -184,7 +184,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
           ps
       }
       patchedEP = gotEndpoint.copy(
-        path = updatedProps.get("resource") getOrElse gotEndpoint.path,
+        path = updatedProps.get("resource") orElse gotEndpoint.path,
         methods = updatedMethods orElse gotEndpoint.methods,
         plugins = Some(newPlugins),
         upstreamUrl = updatedUrl
@@ -256,9 +256,7 @@ object GatewayMethods {
       apiId <- Try{Js.find(json, "/id").flatMap(_.asOpt[String]).getOrElse(
         throw BadRequestException("ApiEndpoint did not contain \"id\"")
       )}
-      path  <- Try{ Js.find(json, "/properties/resource").flatMap(_.asOpt[String]).getOrElse(
-        throw BadRequestException("ApiEndpoint did not contain \"/properties/resource\"")
-      )}
+      path = Js.find(json, "/properties/resource").flatMap(_.asOpt[String])
       implId <- Try{ Js.find(json, "/properties/implementation_id").flatMap(_.asOpt[UUID]).getOrElse(
         throw BadRequestException("ApiEndpoint did not contain properly-formatted \"/properties/implementation_id\"")
       )}
@@ -277,6 +275,7 @@ object GatewayMethods {
       portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
       upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
       methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
+      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]])
       plugins = Js.find(json, "/properties/plugins")
     } yield LaserEndpoint(
       id = Some(apiId),
@@ -284,7 +283,8 @@ object GatewayMethods {
       upstreamUrl = upstreamUrl,
       path        = path,
       methods     = methods,
-      plugins     = plugins
+      plugins     = plugins,
+      hosts       = hosts
     )
   }
 
@@ -327,7 +327,24 @@ object GatewayMethods {
   }
 
   def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
-    for {
+    val byHost = for {
+      props <- endpointResource.properties
+      hostsStr <- props.get("hosts")
+      firstHost <- Try{Json.parse(hostsStr)}.toOption.flatMap(_.asOpt[Seq[String]]).flatMap(_.headOption)
+      provider <- props.get("provider")
+      providerJson <- Try{Json.parse(provider)}.toOption
+      locations <- (providerJson \ "locations").asOpt[Seq[String]]
+      location <- locations.headOption
+      kongId <- Try{UUID.fromString(location)}.toOption
+      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
+      kpp <- kongProvider.properties
+      kpc <- kpp.get("config")
+      kpcJson <- Try{Json.parse(kpc)}.toOption
+      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
+      publicUrl = s"$kongProto://$firstHost"
+    } yield publicUrl
+
+    lazy val byPath = for {
       api <- ResourceFactory.findParent(ResourceIds.Api, endpointResource.id)
       props <- endpointResource.properties
       resourcePath <- props.get("resource")
@@ -344,6 +361,8 @@ object GatewayMethods {
       kongProto <- (kpcJson \ "external_protocol").asOpt[String]
       publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
     } yield publicUrl
+
+    byHost orElse byPath
   }
 
   private[controllers] def unprocessable(message: String) =

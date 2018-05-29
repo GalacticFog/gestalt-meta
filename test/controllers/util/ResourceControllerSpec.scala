@@ -977,6 +977,23 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           "memory" -> "2048"
         ))
       )
+      val Success(lambda2) = createInstance(
+        ResourceIds.Lambda,
+        name = "test-lambda-2",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Json.obj(
+            "id" -> uuid()
+          ).toString,
+          "public" -> "true",
+          "cpus" -> "1.0",
+          "code_type" -> "inline",
+          "timeout" -> "120",
+          "handler" -> "whatever",
+          "runtime" -> "whatever",
+          "memory" -> "2048"
+        ))
+      )
       val Success(container) = createInstance(
         ResourceIds.Container,
         name = "test-container",
@@ -990,6 +1007,22 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         ))
       )
       val lambdaEndpointPath = "/endpoint/lambda"
+      val Success(lambdaEndpointWithHosts) = createInstance(
+        ResourceIds.ApiEndpoint,
+        name = "lambda-endpoint-with-hosts",
+        parent = Some(api.id),
+        properties = Some(Map(
+          "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+          "methods" -> Json.toJson(Seq("GET")).toString,
+          "implementation_type" -> "lambda",
+          "implementation_id" -> lambda2.id.toString,
+          "hosts" -> Json.toJson(Seq("first.some-domain.com", "second.some-domain.com")).toString,
+          "provider" -> Json.obj(
+            "id" -> gtw.id,
+            "locations" -> Seq(kongProviderWithAbsentVhost.id)
+          ).toString
+        ))
+      )
       val Success(lambdaEndpoint) = createInstance(
         ResourceIds.ApiEndpoint,
         name = "lambda-endpoint",
@@ -1028,7 +1061,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       containerService.listEnvironmentContainers(testOrg.name, testEnv.id) returns Future.successful(Seq(container -> Seq.empty))
     }
 
-    "render apiendpoints with .properties.upstream_url if present in kong provider" in new testEndpoint {
+    "render apiendpoints with .properties.public_url if present in kong provider" in new testEndpoint {
 
       "protocol" | "vhost"                  | "expected_url"                                              |>
       "https"    ! "kong.mycompany.com"     ! s"https://kong.mycompany.com/${api.name}${lambdaEndpointPath}"    |
@@ -1057,7 +1090,35 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
     }
 
-    "not render apiendpoints with .properties.upstream_url if not present in kong provider" in new testEndpoint {
+    "render apiendpoints with .properties.public_url from .properties.hosts if present" in new testEndpoint {
+
+      "protocol" | "vhost"           | "expected_url"                   |>
+        "https"  ! "does-not-matter" ! s"https://first.some-domain.com" |
+        "http"   ! "does-not-matter" ! s"http://first.some-domain.com"  |
+        {
+          (testProto,testVhost,expectedUrl) =>
+            val Success(_) = ResourceFactory.update(kongProviderWithAbsentVhost.copy(
+              properties = Some(Map(
+                "config" -> Json.obj(
+                  "env" -> Json.obj(
+                    "public" -> Json.obj(
+                      "PUBLIC_URL_VHOST_0" -> testVhost
+                    )
+                  ),
+                  "external_protocol" -> testProto
+                ).toString
+              ))
+            ), user.account.id)
+            val Some(result) = route(fakeAuthRequest(GET,
+              s"/${testOrg.name}/apiendpoints/${lambdaEndpointWithHosts.id}", testCreds
+            ))
+            status(result) must equalTo(OK)
+            val json = contentAsJson(result)
+            (json \ "properties" \ "public_url").asOpt[String] must beSome(expectedUrl)
+        }
+    }
+
+    "not render apiendpoints with .properties.public_url if not present in kong provider" in new testEndpoint {
       val Some(result) = route(fakeAuthRequest(GET,
         s"/${testOrg.name}/apiendpoints/${lambdaEndpoint.id}", testCreds
       ))
@@ -1106,8 +1167,11 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      ((json(0) \ "properties" \ "apiendpoints")(0) \ "id").asOpt[UUID] must beSome(lambdaEndpoint.id)
-      ((json(0) \ "properties" \ "apiendpoints")(0) \ "properties" \ "public_url").asOpt[String] must beSome(s"https://kong.mycompany.com/${api.name}${lambdaEndpointPath}")
+      json.as[Seq[JsObject]] must contain(
+        (json: JsObject) =>
+          (((json \ "properties" \ "apiendpoints") (0) \ "id").asOpt[UUID] must beSome(lambdaEndpoint.id)) and
+            (((json \ "properties" \ "apiendpoints") (0) \ "properties" \ "public_url").asOpt[String] must beSome(s"https://kong.mycompany.com/${api.name}${lambdaEndpointPath}"))
+      ).exactly(1)
     }
 
     "not render lambdas with .properties.apiendpoints if missing embed=apiendpoints" in new testEndpoint {

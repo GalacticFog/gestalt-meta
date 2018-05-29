@@ -31,14 +31,16 @@ package object laser {
   case class LaserEndpoint( id: Option[String],
                             apiId: String,
                             upstreamUrl: String,
-                            path: String,
+                            path: Option[String],
                             domain: Option[JsValue] = None,
                             url: Option[String] = None,
                             provider: Option[JsValue] = None,
                             endpointInfo: Option[JsValue] = None,
                             authentication: Option[JsValue] = None,
                             methods: Option[Seq[String]] = None,
-                            plugins: Option[JsValue] = None ) {
+                            plugins: Option[JsValue] = None,
+                            hosts: Option[Seq[String]] = None) {
+
 
     def updateWithAuthorization(users: Seq[UUID], groups: Seq[UUID]): LaserEndpoint = {
       val updated = for {
