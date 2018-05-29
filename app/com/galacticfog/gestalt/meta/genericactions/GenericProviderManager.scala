@@ -3,6 +3,7 @@ package com.galacticfog.gestalt.meta.genericactions
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
+import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.{InvocationResponse, RawInvocationResponse}
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
@@ -15,6 +16,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.http.HeaderNames.{AUTHORIZATION, CONTENT_TYPE}
 
 import scala.concurrent.Future
+import scala.util.parsing.json.JSON
 import scala.util.{Failure, Success, Try}
 
 trait GenericProviderManager {
@@ -97,11 +99,24 @@ case class HttpGenericProvider(client: WSClient,
   
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
 
-    def resourceToMap(r: GestaltResourceInstance) = Map(
-      "id" -> r.id,
-      "name" -> r.name,
-      "properties" -> r.properties.getOrElse(Map.empty)
-    )
+    def resourceToMap(r: GestaltResourceInstance) = {
+      def convertObj(j: JsObject) = {
+        j.fields.map({
+          case (k,v) => k -> convert(v)
+        }).toMap
+      }
+      def convert(j: JsValue): Any = {
+        j match {
+          case JsArray(a) => a.map(convert)
+          case j: JsObject => convertObj(j)
+          case JsString(s) => s
+          case JsBoolean(b) => b
+          case JsNull => "null"
+          case JsNumber(n) => n
+        }
+      }
+      convertObj(Output.renderInstance(r).as[JsObject])
+    }
 
     val context = Seq(
       "org" -> Some(invocation.context.org),

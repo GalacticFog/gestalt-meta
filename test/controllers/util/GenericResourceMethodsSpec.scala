@@ -71,6 +71,22 @@ class GenericResourceMethodsSpec extends PlaySpecification
     val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
     val Success(providerWithDefaultEndpoint) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
       "config" -> Json.obj(
+        "env" -> Json.obj(
+          "public" -> Json.obj(
+            "SERVICE_HOST" -> "some-laser.some-domain",
+            "SERVICE_PORT" -> "9000"
+          )
+        ),
+        "services" -> Seq(
+          Json.obj(
+            "container_spec" -> Json.obj(
+              "name" -> "some-service",
+              "properties" -> Json.obj(
+                "image" -> "some:image"
+              )
+            )
+          )
+        ),
         "endpoints" -> Json.arr(
           Json.obj(
             "default" -> true,
@@ -345,11 +361,11 @@ class GenericResourceMethodsSpec extends PlaySpecification
     "expand url template" in new TestApplication {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
 
-      val templateUrl = "http://laser:9000/streams/<resource.id>/status"
+      val templateUrl = "http://<provider.properties.config.env.public.SERVICE_HOST>:<provider.properties.config.env.public.SERVICE_PORT>/streams/<resource.id>/status"
 
       val testHeader = "Bearer some-magic-token"
       val routeInvoke = Route {
-        case (GET, url) if url == s"http://laser:9000/streams/${dummyResource.id}/status" => Action { request =>
+        case (GET, url) if url == s"http://some-laser.some-domain:9000/streams/${dummyResource.id}/status" => Action { request =>
           if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
             Ok("got")
           }
