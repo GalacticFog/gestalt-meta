@@ -189,7 +189,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
             id = Some(testEndpoint.id.toString),
             apiId = testApi.id.toString,
             upstreamUrl = "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
-            path = "/original/path"
+            path = Some("/original/path")
           ))
         )
       }
@@ -304,6 +304,24 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
         (e: LaserEndpoint) => (e.upstreamUrl must_== s"http://my-nginx.service-address:80") and
           (e.id must beSome(endpointId.toString)) and
           (e.apiId must_== apiId.toString)
+      )
+    }
+
+    "properly create with /properties/hosts given" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+      val hosts = Seq("host1.com", "host2.company.com")
+
+      GatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web",
+          "hosts" -> hosts
+        )
+      ), apiId) must beSuccessfulTry(
+        (e: LaserEndpoint) => (e.hosts must beSome(hosts)) and (e.path must beNone)
       )
     }
 
