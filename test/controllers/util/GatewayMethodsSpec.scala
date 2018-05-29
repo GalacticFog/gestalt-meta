@@ -325,6 +325,20 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
       )
     }
 
+    "throw if missing both /properties/hosts and /properties/resources" in new TestApplication {
+      val endpointId = UUID.randomUUID()
+      val apiId = UUID.randomUUID()
+
+      GatewayMethods.toGatewayEndpoint(Json.obj(
+        "id" -> endpointId.toString,
+        "properties" -> Json.obj(
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainer.id.toString,
+          "container_port_name" -> "web"
+        )
+      ), apiId) must beFailedTry.withThrowable[BadRequestException]("ApiEndpoint must contain exactly one of '/properties/resource' or non-empty '/properties/hosts'")
+    }
+
     "properly create with /properties/methods given" in new TestApplication {
       val endpointId = UUID.randomUUID()
       val apiId = UUID.randomUUID()

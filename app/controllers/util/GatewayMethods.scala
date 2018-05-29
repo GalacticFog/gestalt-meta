@@ -257,6 +257,10 @@ object GatewayMethods {
         throw BadRequestException("ApiEndpoint did not contain \"id\"")
       )}
       path = Js.find(json, "/properties/resource").flatMap(_.asOpt[String])
+      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]])
+      _ <- Try {
+        if (path.isEmpty && !hosts.exists(_.nonEmpty)) throw new BadRequestException("ApiEndpoint must contain exactly one of '/properties/resource' or non-empty '/properties/hosts'")
+      }
       implId <- Try{ Js.find(json, "/properties/implementation_id").flatMap(_.asOpt[UUID]).getOrElse(
         throw BadRequestException("ApiEndpoint did not contain properly-formatted \"/properties/implementation_id\"")
       )}
@@ -275,7 +279,6 @@ object GatewayMethods {
       portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
       upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
       methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
-      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]])
       plugins = Js.find(json, "/properties/plugins")
     } yield LaserEndpoint(
       id = Some(apiId),
