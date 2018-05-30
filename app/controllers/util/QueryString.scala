@@ -60,7 +60,38 @@ object QueryString {
     }
   }
   
+  def expandSeq[V](param: (String, Seq[V])): String = {
+    param._2.size match {
+      case 0 => ""
+      case 1 => ("&%s=%s".format(param._1, param._2.head))
+      case _ => param._2.foldLeft("") { (acc, next) =>
+        acc +("&%s=%s".format(param._1, next))
+      }
+    }
+  }
+  
+  def expandMapSeq[V](param: (String, Seq[V])): Seq[(String, V)] = {
+    param._2.foldLeft(Seq.empty[(String, V)]) { (acc, next) =>
+      (param._1 -> next) +: acc
+    }
+  }
+  
+  def asFlatSeq[V](qs: Map[String, Seq[V]]): Seq[(String, V)] = {
+    qs.foldLeft(Seq.empty[(String, V)]) { (acc, tuple) =>
+      expandMapSeq(tuple) ++ acc
+    }
+  }
+  
+  def asString[V](qs: Map[String, Seq[V]]): String = {
+    val out = qs.foldLeft(""){ case (acc, (k, v)) =>
+      acc + expandSeq((k,v))
+    }
+    if (out.size > 0) out.drop(1) else out
+  }
+  
+  
   private def badRequest(message: String) = new BadRequestException(message)
+  
   
   private def errorNoValue(param: String) =
     throw badRequest(s"Given param '$param' must have a value")

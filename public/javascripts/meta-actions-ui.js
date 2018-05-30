@@ -143,18 +143,41 @@
           //const form = document.getElementById(GF_CONTROLS_FORM);             
           //form.addEventListener("submit", invokeAction);     
             
-        const testInvoke = function(event, url) {
-        	alert("POST : " + _ctx.invoke_url);
-        	event.preventDefault()
+        const testInvoke = function(url, token, event) {
+
+          const opts = {
+            method: 'POST',
+            headers: {
+              'Authorization': token,
+              'Origin': 'localhost',
+              'Accept': 'application/json'
+            }
+          }
+          
+        	const res = 
+          	fetch(url, opts) 
+              .then(response => response)
+              .then(data => window.parent.postMessage("", "*"))
+              .catch(error => console.error(error))
+        	
+        	event.preventDefault();        	
         }
 
-        const __bindSubmit = function(url) {
+        const __bindSubmit = function(url, token) {
           const form = document.getElementById(GF_CONTROLS_FORM); 
-          form.addEventListener("submit", testInvoke.bind(this, url), true);    
+          form.addEventListener("submit", testInvoke.bind(this, url, token), true);    
         }
             
-          const triggerModal = (id) => $(id).modal().modal('open');
+        const triggerModal = (id) => $(id).modal().modal('open');
 
+        
+        console.log("WINDOW.LOCATION : " + window.location)
+        console.log("WINDOW.LOCATION.SEARCH : " + window.location.search)
+        const qparams = new URLSearchParams(window.location.search)
+        
+        console.log("HAS-RESOURCE : " + qparams.has('resource'))
+        console.log("RESOURCE : " + qparams.get('resource'))
+        
         /**
          *  
          */

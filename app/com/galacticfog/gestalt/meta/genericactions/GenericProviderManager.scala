@@ -97,7 +97,10 @@ case class HttpGenericProvider(client: WSClient,
     }
   }
   
+  import controllers.util.QueryString
+  
   override def invokeAction(invocation: GenericActionInvocation): Future[InvocationResponse] = {
+    val params = QueryString.asFlatSeq(invocation.queryParams)
 
     def resourceToMap(r: GestaltResourceInstance) = {
       def convertObj(j: JsObject) = {
@@ -139,7 +142,12 @@ case class HttpGenericProvider(client: WSClient,
 
     val resp = for {
       expandedUrl <- Future.fromTry(st.render())
-      request = authHeader.foldLeft( client.url(expandedUrl).withMethod(method).withBody(invocation.toJson()) ) {
+      request = authHeader.foldLeft( 
+          client.url(expandedUrl)
+            .withHeaders(params:_*)
+            .withMethod(method)
+            .withBody(invocation.toJson()) 
+          ) {
         case (req, header) => req.withHeaders(AUTHORIZATION -> header)
       }
       rawResp <- request.execute()
@@ -152,9 +160,9 @@ case class HttpGenericProvider(client: WSClient,
         throw new RuntimeException("Failed calling external action endpoint : " + e.getMessage)
       }
     }
-  }
-  
+  }  
 }
+
 
 class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
 

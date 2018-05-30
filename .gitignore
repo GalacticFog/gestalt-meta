@@ -24,3 +24,4 @@ sec-init.sh
 ********.log
 node_modules/
 .vscode
+*.zip
