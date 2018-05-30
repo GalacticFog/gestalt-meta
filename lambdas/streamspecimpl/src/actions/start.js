@@ -10,12 +10,7 @@ module.exports = {
     const specId = event.resource.id
     const startUrl = `streamDefinitions/${specId}/start`
 
-    console.log("LASER-ADDRESS : " + laser.getAddress(event))
-    console.log("LASER-AUTH    : " + laser.getAuth(context))
-
     const laserClient = new MetaClient(laser.getAddress(event), laser.getAuth(context))
-    
-    console.log("Calling laser...")
 
     const streamInstance = await laserClient.post(startUrl, {}).then(r => {
       console.log('Stream instance STARTED: ' + util.pretty(r.data))
@@ -31,9 +26,9 @@ module.exports = {
   async actionStop(event, context, client) {
     console.log('Entered start::actionStop(_)...')
 
-    //const specId = event.resource.id
-    //const startUrl = `streams/${specId}/stop`
-    //const spec = event.resource
+    const specId = event.resource.id
+    const startUrl = `streams/${specId}/stop`
+    const spec = event.resource
 
     console.log("Checking for PROCESS-ID...")
     
@@ -45,9 +40,9 @@ module.exports = {
     }
 
     console.log('Found Process ID : ' + processId)
-    const stopUrl = `streams/${processId}/stop`
+
     const laserClient = new MetaClient(laser.getAddress(event), laser.getAuth(context))
-    const stopStatus = laserClient.post(stopUrl, {}).then(r => {
+    const stopStatus = laserClient.post(startUrl, {}).then(r => {
       console.log('Stream instance STOPPED: ' + util.pretty(r.data))
       return r.data
     }).catch(err => {
