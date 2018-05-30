@@ -44,6 +44,9 @@ async function makeLaserDescriptionMessage(event, client) {
   const inputFeed = await metaGetDataFeed(configs.input.feedID, client)
   const outputFeed = await metaGetDataFeed(configs.output.feedID, client)
 
+  console.log('INPUT-FEED:\n' + util.pretty(inputFeed))
+  console.log('OUTPUT-FEED:\n' + util.pretty(outputFeed))
+
   // Merge data from the meta feeds and configurations into the Laser format.
   const laserInputStream = toLaserInputStream(inputFeed, configs.input)
   const laserOutputStream = toLaserOutputStream(outputFeed, configs.output)
@@ -73,6 +76,7 @@ async function makeLaserDescriptionMessage(event, client) {
  * @param {*} event 
  */
 function toLaserInputStream(feed, config) {
+  console.log('Entered toLaserInputStream()...')
   return Object.assign(
     {name: config.name},
     {type: feed.properties.kind},
@@ -87,6 +91,7 @@ function toLaserInputStream(feed, config) {
  * Convert a Meta DataFeed and StreamSpec.outputStreamConfig to a Laser outputStreamConfig
  */
 function toLaserOutputStream(feed, config) {
+  console.log('Entered toLaserOutputStream()...')
   return Object.assign(
     {name: config.name},
     {type: feed.properties.kind},
@@ -106,6 +111,7 @@ async function metaGetDataFeed(id, client) {
     .then(feed => feed.data)
     .catch(err => {
       console.error("ERROR : " + err.stack)
+      throw err
     })
 }
 
