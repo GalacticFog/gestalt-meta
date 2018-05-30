@@ -177,10 +177,6 @@ class ApiController @Inject()(
     val json = js.as[JsObject]
     val id = Js.find(json, "/id") map (_.toString) getOrElse UUID.randomUUID.toString
     
-    val _ = Js.find(json, "/properties/resource") map (_.toString) getOrElse {
-      unprocessable("Invalid payload: [apiendpoint.properties.resource] is missing.")
-    }
-    
     val location = {
       api.properties.fold {
         unprocessable(s"Parent API [${api.id}] does not have properties. This resource is invalid.")
