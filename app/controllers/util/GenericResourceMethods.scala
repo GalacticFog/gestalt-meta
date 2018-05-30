@@ -159,7 +159,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                   providerType: UUID,
                                   actionVerb: String )
                                  ( implicit request: RequestHeader ) : Future[Result] = {
-
+                                 
+    val metaAddress = {
+      EnvironmentVars.get(org.id, org.id).getOrElse("META_ASSET_BASE", META_URL)
+    }    
+    
     val response = for {
       /*
        * Resource we're performing the action against.
@@ -201,7 +205,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         policyOwner  = Option(parent.id),
         policyTarget = Option(resource),
         data = Option(Map(
-          "host"     -> META_URL,
+          "host"     -> metaAddress,
           "parentId" -> parent.id.toString,
           "typeId"   -> resource.typeId.toString))
       )
@@ -211,7 +215,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
           invocation <- fTry(GenericActionInvocation(
             action = action,
-            metaAddress = META_URL,
+            metaAddress = metaAddress,
             context = GenericActionContext.fromParent(org, parent),
             provider = providerResource,
             resource = Some(input),
@@ -234,7 +238,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           response = output.fold(
             { resourceResponse =>
               ResourceFactory.update(resourceResponse, identity.account.id, updateTimestamp = true) match {
-                case Success(r) => Ok(Output.renderInstance(r, Some(META_URL)))
+                case Success(r) => Ok(Output.renderInstance(r, Some(metaAddress)))
                 case Failure(ex) => HandleExceptions(ex)
               }
             }, {
@@ -347,16 +351,21 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     } yield request
   }
 
-
-  private[util] def invokeProviderAction( backingProvider: GestaltResourceInstance,
-                                          org: GestaltResourceInstance,
-                                          parent: GestaltResourceInstance,
-                                          metaRequest: MetaRequest,
-                                          resource: GestaltResourceInstance,
-                                          payload: JsValue,
-                                          callerAuth: String )
-                                        ( implicit request: RequestHeader ): Future[Option[GestaltResourceInstance]] = {
-
+  private[util] def invokeProviderAction(
+      backingProvider: GestaltResourceInstance, 
+      org: GestaltResourceInstance, 
+      parent: GestaltResourceInstance,
+      metaRequest: MetaRequest,
+      resource: GestaltResourceInstance,
+      payload: JsValue,
+      callerAuth: String)
+        (implicit request: RequestHeader): Future[Option[GestaltResourceInstance]] = {
+    
+    val metaAddress = {
+      EnvironmentVars.get(org.id, org.id).getOrElse("META_ASSET_BASE", META_URL)
+    }
+    log.debug("Using Meta Address*: " + metaAddress)
+    
     for {
       invocation <- {
 
@@ -365,7 +374,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
         fTry(GenericActionInvocation(
           action   = metaRequest.action,
-          metaAddress = META_URL,
+          metaAddress = metaAddress,
           context  = GenericActionContext.fromParent(org, parent),
           provider = backingProvider,
           resource = Some(resource),
