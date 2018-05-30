@@ -201,7 +201,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       )
 
       options = RequestOptions(identity,
-        authTarget   = Option(parent.id),
+        authTarget   = Option(resource.id),
         policyOwner  = Option(parent.id),
         policyTarget = Option(resource),
         data = Option(Map(
