@@ -47,45 +47,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
 
-  def getLambdaStreams(streamSpec: GestaltResourceInstance, user: AuthAccountWithCreds) = {
-    /*
-     * Get lambda from stream to get provider.
-     */
-    val provider = {
-      val processor = Json.parse(streamSpec.properties.get("processor"))
-      val lambdaId = Js.find(processor.as[JsObject], "/lambdaId") getOrElse {
-        throw new RuntimeException("Could not find lambdaId in StreamSpec properties.")
-      }
-      log.debug("Found Lambda ID : " + lambdaId)
-      ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(lambdaId.as[String])).fold {
-        throw new ResourceNotFoundException(s"Lambda with ID '${lambdaId}' not found.")
-      }{ lam =>
-        getLambdaProvider(lam)
-      }
-    }
-
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-    val streamUrl = s"/streamDefinitions/${streamSpec.id.toString}/streams"
-    log.debug("Stream URL : " + streamUrl)
-    
-    val f = client.get(streamUrl) map { result =>
-      result.body
-    } recover {
-      case e: Throwable => {
-        log.error(s"Error looking up streams: " + e.getMessage)
-        throw e
-      }      
-    }
-    
-    import scala.util.{Success,Failure}
-      
-    Try {
-      Await.result(f, LAMBDA_PROVIDER_TIMEOUT_MS millis)
-    }.map { Json.parse(_) }
-  }
-  
   def deleteLambdaHandler( r: ResourceLike ): Try[Unit] = {
-
     log.debug("Finding lambda in backend system...")
     val provider = getLambdaProvider(r)
     val client = providerMethods.configureWebClient(provider, Some(ws))
@@ -102,7 +64,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     Try {
       Await.result(fdelete, LAMBDA_PROVIDER_TIMEOUT_MS millis)
       ()
-    } 
+    }
   }
 
   def patchLambdaHandler( r: GestaltResourceInstance,
