@@ -257,7 +257,7 @@ object GatewayMethods {
         throw BadRequestException("ApiEndpoint did not contain \"id\"")
       )}
       path = Js.find(json, "/properties/resource").flatMap(_.asOpt[String])
-      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]])
+      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]]).filter(_.nonEmpty)
       _ <- Try {
         if (path.isEmpty && !hosts.exists(_.nonEmpty)) throw new BadRequestException("ApiEndpoint must contain exactly one of '/properties/resource' or non-empty '/properties/hosts'")
       }
