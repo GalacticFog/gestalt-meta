@@ -420,7 +420,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
         provider = providerWithDefaultEndpoint,
         resource = Some(dummyResource),
         queryParams = Map(
-          "p1" -> Seq("v1"),
+          "p1" -> Seq("v1","v1.2"),
           "p2" -> Seq("v2")
         )
       )
