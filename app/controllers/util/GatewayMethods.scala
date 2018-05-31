@@ -150,6 +150,14 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }
       methods <- js.asOpt[Seq[String]]
     } yield methods
+    val updatedHosts = for {
+      str <- updatedProps.get("hosts")
+      js = Try{Json.parse(str)} match {
+        case Success(js) => js
+        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.hosts", t)
+      }
+      hosts <- js.asOpt[Seq[String]].filter(_.nonEmpty)
+    } yield hosts
 
     log.debug("Finding endpoint in gateway provider system...")
     val parentApi = ResourceFactory.findParent(ResourceIds.Api, endpoint.id) getOrElse(throw new RuntimeException(s"Could not find API parent of ApiEndpoint ${endpoint.id}"))
@@ -184,8 +192,8 @@ class GatewayMethods @Inject() ( ws: WSClient,
           ps
       }
       patchedEP = gotEndpoint.copy(
-        path = updatedProps.get("resource") orElse gotEndpoint.path,
-        hosts = updatedProps.get("hosts").flatMap(s => Try{Json.parse(s).as[Seq[String]]}.toOption) orElse gotEndpoint.hosts,
+        path = updatedProps.get("resource"),
+        hosts = updatedHosts,
         methods = updatedMethods orElse gotEndpoint.methods,
         plugins = Some(newPlugins),
         upstreamUrl = updatedUrl
