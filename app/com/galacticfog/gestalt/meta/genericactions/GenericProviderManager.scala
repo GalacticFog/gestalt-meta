@@ -132,7 +132,9 @@ case class HttpGenericProvider(client: WSClient,
     val st = invocation.resource.foldLeft(
       ST(url)
         .add("metaAddress", invocation.metaAddress)
-        .add("queryParams", invocation.queryParams)
+        .addMappedAggregate("queryParams", invocation.queryParams.collect({
+          case (p, s) if s.nonEmpty => p -> s.head
+        }))
         .addMappedAggregate("provider", resourceToMap(invocation.provider))
         .addMappedAggregate("context", context)
     ) {
@@ -141,9 +143,11 @@ case class HttpGenericProvider(client: WSClient,
       )
     }
 
+    log.debug(st.attributes.toString)
+
     val resp = for {
       expandedUrl <- Future.fromTry(st.render())
-      request = authHeader.foldLeft( 
+      request = authHeader.foldLeft(
           client.url(expandedUrl)
             .withHeaders(params:_*)
             .withMethod(method)
