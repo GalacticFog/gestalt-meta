@@ -132,6 +132,7 @@ case class HttpGenericProvider(client: WSClient,
     val st = invocation.resource.foldLeft(
       ST(url)
         .add("metaAddress", invocation.metaAddress)
+        .add("queryParams", invocation.queryParams)
         .addMappedAggregate("provider", resourceToMap(invocation.provider))
         .addMappedAggregate("context", context)
     ) {
