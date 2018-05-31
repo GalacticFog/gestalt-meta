@@ -1011,6 +1011,23 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         ))
       )
       val lambdaEndpointPath = "/endpoint/lambda"
+      val Success(lambdaEndpointWithHostsAndPath) = createInstance(
+        ResourceIds.ApiEndpoint,
+        name = "lambda-endpoint-with-hosts",
+        parent = Some(api.id),
+        properties = Some(Map(
+          "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+          "methods" -> Json.toJson(Seq("GET")).toString,
+          "implementation_type" -> "lambda",
+          "implementation_id" -> lambda2.id.toString,
+          "resource" -> "/some/path",
+          "hosts" -> Json.toJson(Seq("first.some-domain.com", "second.some-domain.com")).toString,
+          "provider" -> Json.obj(
+            "id" -> gtw.id,
+            "locations" -> Seq(kongProviderWithAbsentVhost.id)
+          ).toString
+        ))
+      )
       val Success(lambdaEndpointWithHosts) = createInstance(
         ResourceIds.ApiEndpoint,
         name = "lambda-endpoint-with-hosts",
@@ -1115,6 +1132,34 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
             ), user.account.id)
             val Some(result) = route(fakeAuthRequest(GET,
               s"/${testOrg.name}/apiendpoints/${lambdaEndpointWithHosts.id}", testCreds
+            ))
+            status(result) must equalTo(OK)
+            val json = contentAsJson(result)
+            (json \ "properties" \ "public_url").asOpt[String] must beSome(expectedUrl)
+        }
+    }
+
+    "render apiendpoints with .properties.public_url from .properties.hosts and .properties.resource if both present" in new testEndpoint {
+
+      "protocol" | "vhost"           | "expected_url"                   |>
+        "https"  ! "does-not-matter" ! s"https://first.some-domain.com/test-api/some/path" |
+        "http"   ! "does-not-matter" ! s"http://first.some-domain.com/test-api/some/path"  |
+        {
+          (testProto,testVhost,expectedUrl) =>
+            val Success(_) = ResourceFactory.update(kongProviderWithAbsentVhost.copy(
+              properties = Some(Map(
+                "config" -> Json.obj(
+                  "env" -> Json.obj(
+                    "public" -> Json.obj(
+                      "PUBLIC_URL_VHOST_0" -> testVhost
+                    )
+                  ),
+                  "external_protocol" -> testProto
+                ).toString
+              ))
+            ), user.account.id)
+            val Some(result) = route(fakeAuthRequest(GET,
+              s"/${testOrg.name}/apiendpoints/${lambdaEndpointWithHostsAndPath.id}", testCreds
             ))
             status(result) must equalTo(OK)
             val json = contentAsJson(result)

@@ -331,8 +331,10 @@ object GatewayMethods {
 
   def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
     val byHost = for {
+      api <- ResourceFactory.findParent(ResourceIds.Api, endpointResource.id)
       props <- endpointResource.properties
       hostsStr <- props.get("hosts")
+      maybePath = props.get("resource").map("/" + api.name + _).getOrElse("")
       firstHost <- Try{Json.parse(hostsStr)}.toOption.flatMap(_.asOpt[Seq[String]]).flatMap(_.headOption)
       provider <- props.get("provider")
       providerJson <- Try{Json.parse(provider)}.toOption
@@ -344,7 +346,7 @@ object GatewayMethods {
       kpc <- kpp.get("config")
       kpcJson <- Try{Json.parse(kpc)}.toOption
       kongProto <- (kpcJson \ "external_protocol").asOpt[String]
-      publicUrl = s"$kongProto://$firstHost"
+      publicUrl = s"$kongProto://$firstHost$maybePath"
     } yield publicUrl
 
     lazy val byPath = for {
