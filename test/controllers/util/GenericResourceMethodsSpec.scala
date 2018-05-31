@@ -392,6 +392,44 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
+    "expand url template (query params)" in new TestApplication {
+      val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
+
+      val templateUrl = "http://host/resources/<queryParams.p1>"
+
+      val testHeader = "Bearer some-magic-token"
+      val routeInvoke = Route {
+        case (GET, url) if url == s"http://host/resources/v1" => Action { request =>
+          if (request.headers.get(HeaderNames.AUTHORIZATION).contains(testHeader)) {
+            Ok("got")
+          }
+          else Unauthorized("")
+        }
+      }
+      val ws = MockWS(routeInvoke)
+      val httpProvider = new HttpGenericProvider(ws, templateUrl, "GET", authHeader = Some(testHeader))
+
+      val inv = GenericActionInvocation(
+        action = "noun.verb",
+        metaAddress = "http://example.com",
+        context = GenericActionContext(
+          org = rootOrg,
+          workspace = None,
+          environment = None
+        ),
+        provider = providerWithDefaultEndpoint,
+        resource = Some(dummyResource),
+        queryParams = Map(
+          "p1" -> Seq("v1"),
+          "p2" -> Seq("v2")
+        )
+      )
+
+      await(httpProvider.invokeAction(inv)) must beRight(RawInvocationResponse(
+        Some(200), Some("text/plain; charset=utf-8"), Some("got")
+      ))
+    }
+
     "40x errors from endpoints should result in BadRequestException" in new TestApplication {
       var status: Int = 398
       val routeInvoke = Route {
