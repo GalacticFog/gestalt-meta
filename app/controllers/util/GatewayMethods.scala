@@ -185,6 +185,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
       }
       patchedEP = gotEndpoint.copy(
         path = updatedProps.get("resource") orElse gotEndpoint.path,
+        hosts = updatedProps.get("hosts").flatMap(s => Try{Json.parse(s).as[Seq[String]]}.toOption) orElse gotEndpoint.hosts,
         methods = updatedMethods orElse gotEndpoint.methods,
         plugins = Some(newPlugins),
         upstreamUrl = updatedUrl
