@@ -65,11 +65,11 @@ class MarathonClientSpec extends PlaySpecification with Mockito with JsonMatcher
     }
 
     "listApplicationsInEnvironment should use specified auth token" in new FakeWS(clientToken = Some(expectedToken), testRoute = marathonWithAuth(Json.obj("apps" -> Json.arr()))) {
-      await(marClient.listApplicationsInEnvironment(None,"blah","blah","blah")) must_== Seq.empty
+      await(marClient.listApplicationsInEnvironment("blah")) must_== Seq.empty
     }
 
     "listApplicationsInEnvironment should not use auth header if token not specified" in new FakeWS(clientToken = None, testRoute = marathonWithoutAuth(Json.obj("apps" -> Json.arr()))) {
-      await(marClient.listApplicationsInEnvironment(None,"blah","blah","blah")) must_== Seq.empty
+      await(marClient.listApplicationsInEnvironment("blah")) must_== Seq.empty
     }
 
     "updateApplication should use specified auth token" in new FakeWS(clientToken = Some(expectedToken), testRoute = marathonWithAuth(Json.obj())) {
@@ -106,14 +106,6 @@ class MarathonClientSpec extends PlaySpecification with Mockito with JsonMatcher
 
     "getInfo should not use auth header if token not specified" in new FakeWS(clientToken = None, testRoute = marathonWithoutAuth(Json.obj())) {
       await(marClient.getInfo()) must_== Json.obj()
-    }
-
-    "listDeploymentsAffectingEnvironment should use specified auth token" in new FakeWS(clientToken = Some(expectedToken), testRoute = marathonWithAuth(Json.obj())) {
-      await(marClient.listDeploymentsAffectingEnvironment("blah","blah","blah")) must_== Json.arr(Json.arr())
-    }
-
-    "listDeploymentsAffectingEnvironment should not use auth header if token not specified" in new FakeWS(clientToken = None, testRoute = marathonWithoutAuth(Json.obj())) {
-      await(marClient.listDeploymentsAffectingEnvironment("blah","blah","blah")) must_== Json.arr(Json.arr())
     }
 
   }

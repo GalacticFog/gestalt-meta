@@ -10,13 +10,6 @@ trait GestaltProviderService
 
 trait CaasService extends GestaltProviderService {
 
-  type *** = Any
-
-  type CaasContainer = ***
-  type CaasPod = ***
-  type CaasService = ***
-  type CaasDeployment = ***
-
   def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]]
 
   def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]]

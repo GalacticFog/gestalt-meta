@@ -1,7 +1,7 @@
 package services
 
 import com.galacticfog.gestalt.marathon.{AppInfo, AppUpdate, MarathonClient}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
@@ -24,6 +24,7 @@ import com.galacticfog.gestalt.marathon.AppInfo.EnvVarString
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import org.joda.time.DateTime
 import org.mockito.ArgumentCaptor
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
@@ -185,13 +186,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         cmd  map ("cmd" -> _)
       ).flatten.toMap)
     ).get
-
-    lazy val containerLbls   = Map(
-//      .META_ENVIRONMENT_KEY -> testEnv.id.toString,
-//      .META_WORKSPACE_KEY -> testWork.id.toString,
-//      .META_FQON_KEY -> "root",
-//      .META_PROVIDER_KEY -> testProvider.id.toString
-    )
 
    lazy val marAppCreateResponse = Json.parse(
       s"""
@@ -1262,6 +1256,216 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       await(fDeleted)
 
       there was one(testSetup.client).deleteApplication(meq("/some/marathon/app"))(any)
+    }
+
+    "listInEnvironment using loose prefix from existing container ids" in new FakeDCOS {
+      val testProps = ContainerSpec(
+        name = "",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        "test-container-1",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> "/base/application-1/group/native-container-1"
+        ))
+      )
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        "test-container-2",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> "/base/application-2/group/native-container-2"
+        ))
+      )
+
+      testSetup.client.listApplicationsInEnvironment(any)(any) returns
+        Future.successful(Seq(ContainerStats(
+          external_id = "/non-standard/application/group/native-container-1",
+          containerType = testProps.container_type,
+          status = "RUNNING",
+          cpus = testProps.cpus,
+          memory = testProps.memory,
+          image = testProps.image,
+          age = DateTime.now(),
+          numInstances = testProps.num_instances,
+          tasksStaged = 0,
+          tasksRunning = 1,
+          tasksHealthy = 0,
+          tasksUnhealthy = 0,
+          taskStats = None
+        ), ContainerStats(
+          external_id = "/non-standard/application/group/native-container-2",
+          containerType = testProps.container_type,
+          status = "RUNNING",
+          cpus = testProps.cpus,
+          memory = testProps.memory,
+          image = testProps.image,
+          age = DateTime.now(),
+          numInstances = testProps.num_instances,
+          tasksStaged = 0,
+          tasksRunning = 1,
+          tasksHealthy = 0,
+          tasksUnhealthy = 0,
+          taskStats = None
+        )))
+
+      await(testSetup.svc.listInEnvironment(
+        ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      )) must haveSize(2)
+
+      there was one(testSetup.client).listApplicationsInEnvironment(
+        meq("/base")
+      )(any)
+    }
+
+    "listInEnvironment using tight prefix from existing container ids" in new FakeDCOS {
+      val testProps = ContainerSpec(
+        name = "",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        "test-container-1",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> "/non-standard/application/group/native-container-1"
+        ))
+      )
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        "test-container-2",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> "/non-standard/application/group/native-container-2"
+        ))
+      )
+
+      testSetup.client.listApplicationsInEnvironment(any)(any) returns
+        Future.successful(Seq(ContainerStats(
+          external_id = "/non-standard/application/group/native-container-1",
+          containerType = testProps.container_type,
+          status = "RUNNING",
+          cpus = testProps.cpus,
+          memory = testProps.memory,
+          image = testProps.image,
+          age = DateTime.now(),
+          numInstances = testProps.num_instances,
+          tasksStaged = 0,
+          tasksRunning = 1,
+          tasksHealthy = 0,
+          tasksUnhealthy = 0,
+          taskStats = None
+        ), ContainerStats(
+          external_id = "/non-standard/application/group/native-container-2",
+          containerType = testProps.container_type,
+          status = "RUNNING",
+          cpus = testProps.cpus,
+          memory = testProps.memory,
+          image = testProps.image,
+          age = DateTime.now(),
+          numInstances = testProps.num_instances,
+          tasksStaged = 0,
+          tasksRunning = 1,
+          tasksHealthy = 0,
+          tasksUnhealthy = 0,
+          taskStats = None
+        )))
+
+      await(testSetup.svc.listInEnvironment(
+        ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      )) must haveSize(2)
+
+      there was one(testSetup.client).listApplicationsInEnvironment(
+        meq("/non-standard/application/group")
+      )(any)
+    }
+
+    "listInEnvironment uses default prefix if no existing containers" in new FakeDCOS {
+      testSetup.client.listApplicationsInEnvironment(any)(any) returns Future.successful(Seq.empty)
+
+      await(testSetup.svc.listInEnvironment(
+        ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      )) must beEmpty
+
+      there was one(testSetup.client).listApplicationsInEnvironment(
+        meq("/root/test-workspace/test-environment")
+      )(any)
     }
 
     "not attempt to reconstruct missing external_id on container delete, just proceed" in new FakeDCOS {

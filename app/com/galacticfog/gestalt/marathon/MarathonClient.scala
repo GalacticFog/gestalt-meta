@@ -40,9 +40,9 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
     }
   }
 
-  def listApplicationsInEnvironment(groupPrefix: Option[String], fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
-    val groupId = metaContextToMarathonAppGroup(groupPrefix, fqon, wrkName, envName).stripPrefix("/").stripSuffix("/")
-    val url = s"/v2/groups/${groupId}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks"
+  def listApplicationsInEnvironment(appGroup: String)
+                                   (implicit ex: ExecutionContext): Future[Seq[ContainerStats]] = {
+    val url = s"/v2/groups/${appGroup.stripPrefix("/").stripSuffix("/")}?embed=group.apps&embed=group.apps.counts&embed=group.apps.tasks&embed=group.groups"
     log.debug(s"GETing $url from Marathon")
     val allApps = genRequest(url).get()
     allApps map { marResp =>
@@ -52,7 +52,8 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
           Seq.empty
         case 200 =>
           log.trace(s"received 200 from Marathon $url: ${Json.prettyPrint(marResp.json)}")
-          (marResp.json \ "apps").as[Seq[JsObject]]
+          (marResp.json \\ "apps")
+            .flatMap(_.as[Seq[JsObject]])
         case _ => throw otherError(marResp)
       }
     } map (_.flatMap{js =>
@@ -72,19 +73,6 @@ case class MarathonClient(client: WSClient, marathonBaseUrl: String, acsToken: O
         case 404 => throw new ResourceNotFoundException(response.body)
         case 200 => (response.json \ "app").asOpt[JsObject].getOrElse(throw new RuntimeException("could not extract/transform app from Marathon REST response"))
         case _ => throw otherError(response)
-      }
-    }
-  }
-
-  def listDeploymentsAffectingEnvironment(fqon: String, wrkName: String, envName: String)(implicit ex: ExecutionContext): Future[JsValue] = {
-    val allDeployments = genRequest("/v2/deployments?embed=group.apps&embed=group.apps.deployments").get()
-    allDeployments map { marResp =>
-      marResp.status match {
-        case 200 =>
-          val allApp = (marResp.json \ "apps").asOpt[Seq[JsObject]].getOrElse(Seq.empty)
-          val allDeps = allApp flatMap {app => (app \ "deployments").asOpt[Seq[JsObject]].getOrElse(Seq.empty)}
-          Json.arr(allDeps)
-        case _ => throw otherError(marResp)
       }
     }
   }
