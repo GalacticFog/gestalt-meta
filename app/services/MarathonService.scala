@@ -23,7 +23,7 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec._
 import com.google.inject.name.Named
 import akka.pattern.ask
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import play.api.Logger
 
 import scala.concurrent.duration._
@@ -200,10 +200,22 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    val prefix = MarathonService.getAppGroupPrefix(context.provider)
+    val externalIds = for {
+      cts <- ResourceFactory.findChildrenOfType(typeId = ResourceIds.Container, parentId = context.environmentId)
+      eid <- cts.properties.flatMap(_.get("external_id"))
+    } yield eid
+    val sharedPrefix = externalIds.map({
+      eid => eid.stripPrefix("/").split("/").scanLeft("/")(_ + _ + "/").toSet
+    }) match {
+      case Nil =>
+        val prefix = MarathonService.getAppGroupPrefix(context.provider)
+        metaContextToMarathonAppGroup(prefix, context.fqon, context.workspace.name, context.environment.name)
+      case nonempty =>
+        nonempty.reduce(_ intersect _ ).max.stripSuffix("/")
+    }
     for {
       marClient <- marathonClientFactory.getClient(context.provider)
-      list <- marClient.listApplicationsInEnvironment(prefix, context.fqon, context.workspace.name, context.environment.name)
+      list <- marClient.listApplicationsInEnvironment(sharedPrefix)
     } yield list
   }
 
