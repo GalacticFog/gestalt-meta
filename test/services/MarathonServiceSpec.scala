@@ -1456,6 +1456,74 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )(any)
     }
 
+    "listInEnvironment works with one container" in new FakeDCOS {
+      val testProps = ContainerSpec(
+        name = "",
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        port_mappings = Seq(),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = None,
+        constraints = Seq(),
+        accepted_resource_roles = None,
+        args = None,
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = None
+      )
+
+      val Success(_) = createInstance(
+        ResourceIds.Container,
+        "test-container-1",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> testProps.container_type,
+          "image" -> testProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> testProps.cpus.toString,
+          "memory" -> testProps.memory.toString,
+          "num_instances" -> testProps.num_instances.toString,
+          "force_pull" -> testProps.force_pull.toString,
+          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
+          "network" -> testProps.network.get,
+          "external_id" -> "/non-standard/application/group/native-container-1"
+        ))
+      )
+
+      testSetup.client.listApplicationsInEnvironment(any)(any) returns
+        Future.successful(Seq(ContainerStats(
+          external_id = "/non-standard/application/group/native-container-1",
+          containerType = testProps.container_type,
+          status = "RUNNING",
+          cpus = testProps.cpus,
+          memory = testProps.memory,
+          image = testProps.image,
+          age = DateTime.now(),
+          numInstances = testProps.num_instances,
+          tasksStaged = 0,
+          tasksRunning = 1,
+          tasksHealthy = 0,
+          tasksUnhealthy = 0,
+          taskStats = None
+        )))
+
+      await(testSetup.svc.listInEnvironment(
+        ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      )) must haveSize(1)
+
+      there was one(testSetup.client).listApplicationsInEnvironment(
+        meq("/non-standard/application/group")
+      )(any)
+    }
+
     "listInEnvironment uses default prefix if no existing containers" in new FakeDCOS {
       testSetup.client.listApplicationsInEnvironment(any)(any) returns Future.successful(Seq.empty)
 

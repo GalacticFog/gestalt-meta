@@ -205,7 +205,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       eid <- cts.properties.flatMap(_.get("external_id"))
     } yield eid
     val sharedPrefix = externalIds.map({
-      eid => eid.stripPrefix("/").split("/").scanLeft("/")(_ + _ + "/").toSet
+      eid => eid.stripPrefix("/").split("/").dropRight(1).scanLeft("/")(_ + _ + "/").toSet
     }) match {
       case Nil =>
         val prefix = MarathonService.getAppGroupPrefix(context.provider)
