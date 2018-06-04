@@ -1,38 +1,32 @@
 package services
 
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.marathon
+import com.galacticfog.gestalt.marathon.AppInfo.EnvVarString
 import com.galacticfog.gestalt.marathon.{AppInfo, AppUpdate, MarathonClient}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, ServiceAddress}
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.google.inject.AbstractModule
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.{ContainerService, GestaltSecurityMocking}
+import org.joda.time.DateTime
 import org.junit.runner.RunWith
+import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.mock.Mockito
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
-import play.api.inject.guice.GuiceApplicationBuilder
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json.JsValueWrapper
 import play.api.libs.json.{JsObject, Json}
 import play.api.test.{FakeRequest, PlaySpecification}
-import com.galacticfog.gestalt.marathon
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import MarathonService.Properties
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.marathon.AppInfo.EnvVarString
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
-import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import org.joda.time.DateTime
-import org.mockito.ArgumentCaptor
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import ContainerSpec.{PortMapping, ServiceAddress}
+import services.MarathonService.Properties
 
 import scala.concurrent.Future
 import scala.util.Success
-import play.api.inject.bind
-import play.api.libs.json.Json.JsValueWrapper
 
 @RunWith(classOf[JUnitRunner])
 class MarathonServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -47,12 +41,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
   override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
-  sequential
-
-  def inNamespace[R <: skuber.ObjectResource](name: String): Matcher[R] = { r: R =>
-    (r.metadata.namespace == name,  r.name+" in namespace "+name, r.name+" not in namespace "+name)
-  }
-
   def hasExactlyContainerPorts(ps: marathon.Container.Docker.PortMapping*) = {
     (((_: JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beSome) and
       (((_: JsObject).\("container").\("docker").\("portMappings").as[Seq[marathon.Container.Docker.PortMapping]]) ^^ containTheSameElementsAs(Seq(ps:_*)))
@@ -62,10 +50,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     (((_: JsObject).\("portDefinitions").toOption) ^^ beSome) and
       (((_: JsObject).\("portDefinitions").as[Seq[marathon.AppUpdate.PortDefinition]]) ^^ containTheSameElementsAs(Seq(ps:_*)))
   }
-
-  def hasPair(p: (String,String)) = ((_: skuber.ObjectResource).metadata.labels) ^^ havePair(p)
-
-  def hasSelector(p: (String,String)) = ((_: skuber.Service).spec.map(_.selector).getOrElse(Map.empty)) ^^ havePair(p)
 
   // this could probably be done with a Fragments.foreach, but it's more in line with the other suites and i think more flexible
   abstract class FakeDCOS extends Scope {
