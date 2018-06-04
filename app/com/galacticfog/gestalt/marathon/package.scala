@@ -9,7 +9,7 @@ import org.joda.time.DateTimeZone
 import play.api.data.validation.ValidationError
 
 import scala.concurrent.duration.FiniteDuration
-import scala.util.Try
+import scala.util.{Success, Try}
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
@@ -446,10 +446,51 @@ package object marathon {
     )
   }
 
+  def siblingMarathonNamespace(context: ProviderContext): Option[String] = {
+    ResourceFactory.findChildrenOfType(ResourceIds.Container, context.environmentId)
+      .flatMap(ContainerService.resourceExternalId)
+      .map(
+        s => s.split("/").dropRight(1).mkString("/")
+      )
+      .distinct match {
+      case List(wellDefined) => Some(wellDefined)
+      case _ => None // no siblings or agreements on siblings, fall-back on standard behavior
+    }
+  }
+
+  def defaultMarathonNamespace(context: ProviderContext): Try[String] = {
+    for {
+      fqon <- Try{validate(context.fqon) getOrElse {
+        invalid("'fqon'")
+      }}
+      wrkName <- Try{validate(context.workspace.name) getOrElse {
+        invalid("'workspace.name'")
+      }}
+      envName <- Try{validate(context.environment.name) getOrElse {
+        invalid("'environment.name'")
+      }}
+      appPrefix <- Try{
+        val f = for {
+          prefix <- MarathonService.getAppGroupPrefix(context.provider)
+          cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
+          splitPrefix = cleanPrefix.split("/")
+          fields = splitPrefix.map {
+            validate(_).map(Success(_)).getOrElse(Try(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'")))
+          }
+        } yield fields
+        f match {
+          case None => "/"
+          case Some(arrTry) => "/" + arrTry.map(_.get).mkString("/") + "/"
+        }
+      }
+      namespace = appPrefix + (fqon.split('.') ++ Array(wrkName, envName)).mkString("/")
+    } yield namespace
+  }
+
   /**
    * Convert Meta Container JSON to Marathon App object.
    */
-  def toMarathonLaunchPayload(uncheckedFQON: String, workspace: ResourceLike, environment: ResourceLike, props: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
+  def toMarathonLaunchPayload(uncheckedFQON: String, namespace: String, environment: ResourceLike, props: ContainerSpec, provider: ResourceLike): AppUpdate = {
 
     def makeVhostLabels(mappings: Seq[ContainerSpec.PortMapping]): Map[String,String] = {
       mappings
@@ -466,16 +507,7 @@ package object marathon {
         .flatten.toMap
     }
 
-    val fqon = validate(uncheckedFQON) getOrElse {invalid("'fqon'")}
-    val wrkName = validate(workspace.name) getOrElse {invalid("'workspace.name'")}
-    val envName = validate(environment.name) getOrElse {invalid("'environment.name'")}
     val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
-    val appPrefix = for {
-      prefix <- MarathonService.getAppGroupPrefix(provider)
-      cleanPrefix <- Option(prefix.stripPrefix("/").stripSuffix("/")).filter(_.trim.nonEmpty)
-      splitPrefix = cleanPrefix.split("/")
-      validatedAppPrefix = splitPrefix.map(validate(_).getOrElse(invalid(s"provider '${APP_GROUP_PREFIX_PROP}'"))).mkString("/")
-    } yield validatedAppPrefix
 
     val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
 
@@ -507,9 +539,8 @@ package object marathon {
       } yield Map("VIP_0" -> s"${vip}:${lbport}")) getOrElse Map.empty
     )
 
-    val nameComponents = appPrefix.map(_.split("/")).getOrElse(Array()) ++ fqon.split('.') ++ Array(wrkName,envName,cntrName)
-    val namedVIP = "/" + cntrName + "." + environment.id.toString
-    val appId = "/" + nameComponents.mkString("/")
+    val namedVIP = "/" + cntrName + "." + environment.id
+    val appId = "/" + namespace.stripPrefix("/").stripSuffix("/") + "/" + cntrName
 
     val vhostLabels = makeVhostLabels(props.port_mappings)
 
@@ -692,11 +723,5 @@ package object marathon {
       provider = prv
     )
   }
-
-//  def requiredJsString(name: String, value: JsValue) = value match {
-//    case u: JsUndefined => throw new IllegalArgumentException(s"'$name' is missing.")
-//    case v => v.as[String]
-//  }
-
 
 }

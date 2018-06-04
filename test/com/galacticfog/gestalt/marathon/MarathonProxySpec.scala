@@ -11,6 +11,7 @@ import org.specs2.mock._
 import org.specs2.mutable._
 import org.specs2.specification.{BeforeAfterEach, BeforeAll}
 import play.api.libs.json._
+import services.ProviderContext
 
 
 class MarathonProxySpec extends Specification with Mockito with JsonMatchers with ResourceScope with BeforeAll with BeforeAfterEach {
@@ -27,12 +28,18 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
 
   def marPayload(spec: ContainerSpec, provider: GestaltResourceInstance): AppUpdate = {
     val fqon = "org"
-    val mockW = mock[ResourceLike]
+    val mockW = mock[GestaltResourceInstance]
     mockW.name returns "wrk"
-    val mockE = mock[ResourceLike]
+    val mockE = mock[GestaltResourceInstance]
     mockE.name returns "env"
     mockE.id returns UUID.randomUUID()
-    toMarathonLaunchPayload(fqon, mockW, mockE, spec, provider)
+    val ctx = mock[ProviderContext]
+    ctx.workspace returns mockW
+    ctx.environment returns mockE
+    ctx.fqon returns fqon
+    ctx.provider returns provider
+    ctx.providerId returns provider.id
+    toMarathonLaunchPayload(fqon, defaultMarathonNamespace(ctx).get, mockE, spec, provider)
   }
 
   def marathonProviderWithNetworks = {
@@ -253,13 +260,19 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
     }
 
     def prefixedPayload(prefix: Option[String], org: String, wrk: String, env: String, network: Option[String] = None, name: Option[String] = None) = {
-      val mockW = mock[ResourceLike]
+      val mockW = mock[GestaltResourceInstance]
       mockW.name returns wrk
-      val mockE = mock[ResourceLike]
+      val mockE = mock[GestaltResourceInstance]
       mockE.name returns env
       mockE.id returns UUID.randomUUID()
       val provider = providerWithPrefix(prefix)
-      toMarathonLaunchPayload(org,mockW,mockE,ContainerSpec(
+      val ctx = mock[ProviderContext]
+      ctx.workspace returns mockW
+      ctx.environment returns mockE
+      ctx.fqon returns org
+      ctx.provider returns provider
+      ctx.providerId returns provider.id
+      toMarathonLaunchPayload(org,defaultMarathonNamespace(ctx).get,mockE,ContainerSpec(
         name = name.getOrElse("name"),
         container_type = "DOCKER",
         image = "nginx:latest",

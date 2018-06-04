@@ -134,10 +134,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
 
     def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
-      // TODO: this has no side-effect
-      // val updatedResource = upsertProperties(resource,
-      //   "status" -> "LAUNCH_FAILED"
-      // )
       BadRequestException(s"launch failed: ${t.getMessage}")
     }
 
@@ -147,7 +143,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case Success(spec) =>
         val marathonApp = toMarathonLaunchPayload(
           uncheckedFQON = context.fqon,
-          workspace = context.workspace,
+          namespace = siblingMarathonNamespace(context).getOrElse(defaultMarathonNamespace(context).get),
           environment = context.environment,
           props = spec,
           provider = context.provider
@@ -314,9 +310,6 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       case None =>
         Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
-        val previousName = external_id.split("/").lastOption
-        if (previousName.exists(_ != container.name)) return Future.failed(BadRequestException("renaming containers is not supported"))
-
         val provider = ContainerService.caasProvider(ContainerService.containerProviderId(container))
         val fMarClient = marathonClientFactory.getClient(provider)
         ContainerSpec.fromResourceInstance(container) match {
@@ -325,7 +318,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
           case Success(spec) =>
             val marathonApp = toMarathonLaunchPayload(
               uncheckedFQON = context.fqon,
-              workspace = context.workspace,
+              namespace = "/ignore",
               environment = context.environment,
               props = spec,
               provider = context.provider
