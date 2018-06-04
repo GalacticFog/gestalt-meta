@@ -16,7 +16,7 @@ import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -430,6 +430,67 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             "HAPROXY_0_VHOST" -> "web.test.com",
             "USERVAR" -> "USERVAL"
           )))
+      )(any)
+    }
+
+    "create container should use default namespace if there are no sibling containers" in new FakeDCOS {
+      val Success(newContainer) = createInstance(
+        ResourceIds.Container,
+        "new-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString
+        ))
+      )
+
+      val fupdatedMetaContainer = testSetup.svc.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = newContainer
+      )
+
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+      updatedContainerProps must havePair("external_id" -> "/root/test-workspace/test-environment/new-container")
+
+      there was one(testSetup.client).launchApp(
+        ( ((_:JsObject).\("id").asOpt[String]) ^^ beSome("/root/test-workspace/test-environment/new-container"))
+      )(any)
+    }
+
+    "create container should use namespace from sibling containers" in new FakeDCOS {
+      val Success(existingContainer) = createInstance(
+        ResourceIds.Container,
+        "existing-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> "/non-standard/application/group/native-container-1"
+        ))
+      )
+      val Success(newContainer) = createInstance(
+        ResourceIds.Container,
+        "new-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString
+        ))
+      )
+
+      val fupdatedMetaContainer = testSetup.svc.create(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = newContainer
+      )
+
+      val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
+      updatedContainerProps must havePair("external_id" -> "/non-standard/application/group/new-container")
+
+      there was one(testSetup.client).launchApp(
+        ( ((_:JsObject).\("id").asOpt[String]) ^^ beSome("/non-standard/application/group/new-container"))
       )(any)
     }
 
@@ -931,29 +992,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ContainerSpec.PortMapping("tcp", Some(443),  None, None, Some("https"), None, Some(true),  Some(ContainerSpec.ServiceAddress(s"test-container.${testEnv.id}.marathon.l4lb.thisdcos.directory",8443,Some("tcp"))), None, Some(8443)),
         ContainerSpec.PortMapping("tcp", Some(9999), None, None, Some("debug"), None, Some(false), None)
       ))
-    }
-
-    "throw a 400 on container rename" in new FakeDCOS {
-      val origExtId = "/some/marathon/app"
-
-      val Success(metaContainer) = createInstance(
-        ResourceIds.Container,
-        name = baseTestProps.name,
-        parent = Some(testEnv.id),
-        properties = Some(Map[String,String](
-          "container_type" -> baseTestProps.container_type,
-          "image" -> baseTestProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "external_id" -> origExtId
-        ))
-      )
-
-      await(testSetup.svc.update(
-        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
-        container = metaContainer.copy(
-          name = "updated-name"
-        )
-      )) must throwAn[BadRequestException]("renaming containers is not supported")
     }
 
     "throw 400 on multi-part secret" in new FakeDCOS {
