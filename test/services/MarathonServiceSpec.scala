@@ -27,6 +27,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import org.joda.time.DateTime
 import org.mockito.ArgumentCaptor
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import ContainerSpec.{PortMapping, ServiceAddress}
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -80,10 +81,28 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     lazy val testProvider = createMarathonProvider(testEnv.id, "test-provider").get
 
+    lazy val baseTestProps = ContainerSpec(
+      name = "test-container",
+      container_type = "DOCKER",
+      image = "nginx",
+      provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      port_mappings = Seq.empty,
+      cpus = 1.0,
+      memory = 128,
+      disk = 0.0,
+      num_instances = 1,
+      network = None
+    )
+
     lazy val testSetup = {
       val mockMarClient = mock[MarathonClient]
       val mockMCF = mock[MarathonClientFactory]
+      mockMarClient.launchApp(any)(any) answers { (a: Any) =>
+        val payload = a.asInstanceOf[Array[AnyRef]](0).asInstanceOf[JsObject]
+        Future.successful(payload)
+      }
       mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
+
       val svc = new MarathonService(mockMCF)
       TestSetup(mockMCF, mockMarClient, svc)
     }
@@ -113,15 +132,15 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       (tw,te)
     }
 
-    lazy val testProvider = createMarathonProvider(testEnv.id, "test-provider",
+    lazy val Success(testProvider) = createMarathonProvider(testEnv.id, "test-provider",
       Seq[(String,JsValueWrapper)](MarathonService.Properties.SECRET_SUPPORT -> true) ++ providerConfig
-    ).get
+    )
 
     lazy val metaSecretItems = Seq(
       SecretSpec.Item("part-a", Some("dmFsdWUtYQ=="))
     )
 
-    lazy val metaSecret = createInstance(
+    lazy val Success(metaSecret) = createInstance(
       ResourceIds.Secret,
       "test-secret",
       parent = Some(testEnv.id),
@@ -130,7 +149,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "items" -> Json.toJson(metaSecretItems.map(_.copy(value = None))).toString,
         "external_id" -> "root/test-workspace/test-environment/test-secret"
       ))
-    ).get
+    )
 
     val secretsWithId = secrets.collect {
       case env: SecretEnvMount  => env.copy(secret_id = metaSecret.id)
@@ -162,7 +181,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       secrets = secretsWithId
     )
 
-    lazy val metaContainer = createInstance(
+    lazy val Success(metaContainer) = createInstance(
       ResourceIds.Container,
       "test-container",
       parent = Some(testEnv.id),
@@ -185,89 +204,16 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         args map ("args" -> Json.toJson(_).toString),
         cmd  map ("cmd" -> _)
       ).flatten.toMap)
-    ).get
-
-   lazy val marAppCreateResponse = Json.parse(
-      s"""
-         |{
-         |    "acceptedResourceRoles": null,
-         |    "args": null,
-         |    "backoffFactor": 1.15,
-         |    "backoffSeconds": 1,
-         |    "cmd": null,
-         |    "constraints": [],
-         |    "container": {
-         |        "docker": {
-         |            "forcePullImage": false,
-         |            "image": "nginx",
-         |            "network": "HOST",
-         |            "parameters": [],
-         |            "portMappings": null,
-         |            "privileged": false
-         |        },
-         |        "type": "DOCKER",
-         |        "volumes": []
-         |    },
-         |    "cpus": 1,
-         |    "dependencies": [],
-         |    "deployments": [
-         |        {
-         |            "id": "a9d9b165-6d43-4df7-877a-5b53963534fe"
-         |        }
-         |    ],
-         |    "disk": 0,
-         |    "env": {},
-         |    "executor": "",
-         |    "fetch": [],
-         |    "gpus": 0,
-         |    "healthChecks": [],
-         |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-         |    "instances": 1,
-         |    "ipAddress": null,
-         |    "labels": {},
-         |    "maxLaunchDelaySeconds": 3600,
-         |    "mem": 128,
-         |    "portDefinitions": [
-         |        {
-         |            "labels": {
-         |                "VIP_0": "/test-container.${testEnv.id}:80"
-         |            },
-         |            "name": "web",
-         |            "port": 10010,
-         |            "protocol": "tcp"
-         |        }
-         |    ],
-         |    "ports": [
-         |        10010
-         |    ],
-         |    "readinessChecks": [],
-         |    "requirePorts": false,
-         |    "residency": null,
-         |    "secrets": {},
-         |    "storeUrls": [],
-         |    "taskKillGracePeriodSeconds": null,
-         |    "tasks": [],
-         |    "tasksHealthy": 0,
-         |    "tasksRunning": 0,
-         |    "tasksStaged": 0,
-         |    "tasksUnhealthy": 0,
-         |    "upgradeStrategy": {
-         |        "maximumOverCapacity": 1,
-         |        "minimumHealthCapacity": 1
-         |    },
-         |    "uris": [],
-         |    "user": null,
-         |    "version": "2017-03-27T17:10:12.005Z"
-         |}
-        """.stripMargin
     )
 
     lazy val testSetup = {
       val mockMarClient = mock[MarathonClient]
       val mockMCF = mock[MarathonClientFactory]
+      mockMarClient.launchApp(any)(any) answers { (a: Any) =>
+        val payload = a.asInstanceOf[Array[AnyRef]](0).asInstanceOf[JsObject]
+        Future.successful(payload)
+      }
       mockMCF.getClient(testProvider) returns Future.successful(mockMarClient)
-
-      mockMarClient.launchApp(any)(any) returns Future.successful(marAppCreateResponse)
 
       val svc = new MarathonService(mockMCF)
       TestSetup(mockMCF, mockMarClient, svc)
@@ -279,11 +225,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     "set labels for exposed port mappings and set service addresses (bridged networking)" in new FakeDCOS {
       // - one exposure has default container_port==lb_port, the other overrides the lb_port
       // - one port has a required host port
-      val testProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      val testProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -307,10 +249,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             expose_endpoint = None
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("BRIDGE")
       )
 
@@ -334,129 +272,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
-        s"""
-           |{
-           |    "acceptedResourceRoles": null,
-           |    "args": null,
-           |    "backoffFactor": 1.15,
-           |    "backoffSeconds": 1,
-           |    "cmd": null,
-           |    "constraints": [],
-           |    "container": {
-           |        "docker": {
-           |            "forcePullImage": false,
-           |            "image": "nginx",
-           |            "network": "BRIDGE",
-           |            "parameters": [],
-           |            "portMappings": [
-           |                {
-           |                    "containerPort": 80,
-           |                    "hostPort": 0,
-           |                    "labels": {
-           |                        "VIP_0": "/test-container.${testEnv.id}:80"
-           |                    },
-           |                    "name": "http",
-           |                    "protocol": "tcp",
-           |                    "servicePort": 0
-           |                },
-           |                {
-           |                    "containerPort": 443,
-           |                    "hostPort": 0,
-           |                    "labels": {
-           |                        "VIP_0": "/test-container.${testEnv.id}:8443"
-           |                    },
-           |                    "name": "https",
-           |                    "protocol": "tcp",
-           |                    "servicePort": 0
-           |                },
-           |                {
-           |                    "containerPort": 9999,
-           |                    "hostPort": 9999,
-           |                    "labels": {},
-           |                    "name": "debug",
-           |                    "protocol": "udp",
-           |                    "servicePort": 0
-           |                }
-           |            ],
-           |            "privileged": false
-           |        },
-           |        "type": "DOCKER",
-           |        "volumes": []
-           |    },
-           |    "cpus": 1,
-           |    "dependencies": [],
-           |    "deployments": [
-           |        {
-           |            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
-           |        }
-           |    ],
-           |    "disk": 0,
-           |    "env": {},
-           |    "executor": "",
-           |    "fetch": [],
-           |    "gpus": 0,
-           |    "healthChecks": [],
-           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-           |    "instances": 1,
-           |    "ipAddress": null,
-           |    "labels": {
-           |       "HAPROXY_0_GROUP": "external",
-           |       "HAPROXY_0_VHOST": "web.test.com",
-           |       "USERVAR": "USERVAL"
-           |    },
-           |    "maxLaunchDelaySeconds": 3600,
-           |    "mem": 128,
-           |    "portDefinitions": [
-           |        {
-           |            "labels": {},
-           |            "name": "http",
-           |            "port": 0,
-           |            "protocol": "tcp"
-           |        },
-           |        {
-           |            "labels": {
-           |                "VIP_0": "/test-container.${testEnv.id}:8443"
-           |            },
-           |            "name": "https",
-           |            "port": 8443,
-           |            "protocol": "tcp"
-           |        },
-           |        {
-           |            "labels": {},
-           |            "name": "debug",
-           |            "port": 0,
-           |            "protocol": "udp"
-           |        }
-           |    ],
-           |    "ports": [
-           |        0,
-           |        8443,
-           |        0
-           |    ],
-           |    "readinessChecks": [],
-           |    "requirePorts": false,
-           |    "residency": null,
-           |    "secrets": {},
-           |    "storeUrls": [],
-           |    "taskKillGracePeriodSeconds": null,
-           |    "tasks": [],
-           |    "tasksHealthy": 0,
-           |    "tasksRunning": 0,
-           |    "tasksStaged": 0,
-           |    "tasksUnhealthy": 0,
-           |    "upgradeStrategy": {
-           |        "maximumOverCapacity": 1,
-           |        "minimumHealthCapacity": 1
-           |    },
-           |    "uris": [],
-           |    "user": null,
-           |    "version": "2017-03-27T17:07:03.684Z"
-           |}
-        """.stripMargin
-      ))
-
-
       val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -479,8 +294,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             "USERVAR" -> "USERVAL"
           )))
       )(any)
-
-      import ContainerSpec.{PortMapping, ServiceAddress}
 
       val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
@@ -497,11 +310,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     "set labels for exposed port mappings and set service addresses (marathon 1.5 networking)" in new FakeDCOS {
       // - one exposure has default container_port==lb_port, the other overrides the lb_port
       // - one port has a required host port
-      val testProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      val testProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -525,10 +334,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             expose_endpoint = None
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("BRIDGE")
       )
 
@@ -552,133 +357,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
-        s"""
-           |{
-           |  "acceptedResourceRoles": null,
-           |  "args": null,
-           |  "backoffFactor": 1.15,
-           |  "backoffSeconds": 1,
-           |  "cmd": null,
-           |  "constraints": [],
-           |  "container": {
-           |    "docker": {
-           |      "forcePullImage": false,
-           |      "image": "nginx",
-           |      "parameters": [],
-           |      "privileged": false
-           |    },
-           |    "portMappings": [
-           |      {
-           |        "containerPort": 80,
-           |        "hostPort": 0,
-           |        "labels": {
-           |          "VIP_0": "/test-container.${testEnv.id}:80"
-           |        },
-           |        "name": "http",
-           |        "protocol": "tcp",
-           |        "servicePort": 0
-           |      },
-           |      {
-           |        "containerPort": 443,
-           |        "hostPort": 0,
-           |        "labels": {
-           |          "VIP_0": "/test-container.${testEnv.id}:8443"
-           |        },
-           |        "name": "https",
-           |        "protocol": "tcp",
-           |        "servicePort": 0
-           |      },
-           |      {
-           |        "containerPort": 9999,
-           |        "hostPort": 9999,
-           |        "labels": {},
-           |        "name": "debug",
-           |        "protocol": "udp",
-           |        "servicePort": 0
-           |      }
-           |    ],
-           |    "type": "DOCKER",
-           |    "volumes": []
-           |  },
-           |  "cpus": 1,
-           |  "dependencies": [],
-           |  "deployments": [
-           |    {
-           |      "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
-           |    }
-           |  ],
-           |  "disk": 0,
-           |  "env": {},
-           |  "executor": "",
-           |  "fetch": [],
-           |  "gpus": 0,
-           |  "healthChecks": [],
-           |  "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-           |  "instances": 1,
-           |  "ipAddress": null,
-           |  "labels": {
-           |    "HAPROXY_0_GROUP": "external",
-           |    "HAPROXY_0_VHOST": "web.test.com",
-           |    "USERVAR": "USERVAL"
-           |  },
-           |  "maxLaunchDelaySeconds": 3600,
-           |  "mem": 128,
-           |  "networks": [
-           |    {
-           |      "mode": "container/bridge"
-           |    }
-           |  ],
-           |  "portDefinitions": [
-           |    {
-           |      "labels": {},
-           |      "name": "http",
-           |      "port": 0,
-           |      "protocol": "tcp"
-           |    },
-           |    {
-           |      "labels": {
-           |        "VIP_0": "/test-container.${testEnv.id}:8443"
-           |      },
-           |      "name": "https",
-           |      "port": 8443,
-           |      "protocol": "tcp"
-           |    },
-           |    {
-           |      "labels": {},
-           |      "name": "debug",
-           |      "port": 0,
-           |      "protocol": "udp"
-           |    }
-           |  ],
-           |  "ports": [
-           |    0,
-           |    8443,
-           |    0
-           |  ],
-           |  "readinessChecks": [],
-           |  "requirePorts": false,
-           |  "residency": null,
-           |  "secrets": {},
-           |  "storeUrls": [],
-           |  "taskKillGracePeriodSeconds": null,
-           |  "tasks": [],
-           |  "tasksHealthy": 0,
-           |  "tasksRunning": 0,
-           |  "tasksStaged": 0,
-           |  "tasksUnhealthy": 0,
-           |  "upgradeStrategy": {
-           |    "maximumOverCapacity": 1,
-           |    "minimumHealthCapacity": 1
-           |  },
-           |  "uris": [],
-           |  "user": null,
-           |  "version": "2017-03-27T17:07:03.684Z"
-           |}
-        """.stripMargin
-      ))
-
-
       val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -701,8 +379,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             "USERVAR" -> "USERVAL"
           )))
       )(any)
-
-      import ContainerSpec.{PortMapping, ServiceAddress}
 
       val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
@@ -721,11 +397,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider", Seq(marathon.HAPROXY_EXP_GROUP_PROP -> customHaproxyGroup)).get
       // "register" this provider to the client factory
       testSetup.mcf.getClient(testProviderWithCustomExposure) returns Future.successful(testSetup.client)
-      val testProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProviderWithCustomExposure.name)),
+      val testProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -736,10 +408,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             virtual_hosts = Some(Seq("web.test.com"))
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("BRIDGE")
       )
       val Success(metaContainer) = createInstance(
@@ -761,93 +429,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           ).toString
         ))
       )
-      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
-        s"""
-           |{
-           |    "acceptedResourceRoles": null,
-           |    "args": null,
-           |    "backoffFactor": 1.15,
-           |    "backoffSeconds": 1,
-           |    "cmd": null,
-           |    "constraints": [],
-           |    "container": {
-           |        "docker": {
-           |            "forcePullImage": false,
-           |            "image": "nginx",
-           |            "network": "BRIDGE",
-           |            "parameters": [],
-           |            "portMappings": [
-           |                {
-           |                    "containerPort": 80,
-           |                    "hostPort": 0,
-           |                    "labels": {
-           |                        "VIP_0": "/test-container.test-environment.test-workspace.root:80"
-           |                    },
-           |                    "name": "http",
-           |                    "protocol": "tcp",
-           |                    "servicePort": 0
-           |                }
-           |            ],
-           |            "privileged": false
-           |        },
-           |        "type": "DOCKER",
-           |        "volumes": []
-           |    },
-           |    "cpus": 1,
-           |    "dependencies": [],
-           |    "deployments": [
-           |        {
-           |            "id": "abbc0eee-b7bb-44b3-9c8d-e7fb10d0a434"
-           |        }
-           |    ],
-           |    "disk": 0,
-           |    "env": {},
-           |    "executor": "",
-           |    "fetch": [],
-           |    "gpus": 0,
-           |    "healthChecks": [],
-           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-           |    "instances": 1,
-           |    "ipAddress": null,
-           |    "labels": {
-           |       "HAPROXY_0_GROUP": "${customHaproxyGroup}",
-           |       "HAPROXY_0_VHOST": "web.test.com",
-           |       "USERVAR": "USERVAL"
-           |    },
-           |    "maxLaunchDelaySeconds": 3600,
-           |    "mem": 128,
-           |    "portDefinitions": [
-           |        {
-           |            "labels": {},
-           |            "name": "http",
-           |            "port": 0,
-           |            "protocol": "tcp"
-           |        }
-           |    ],
-           |    "ports": [
-           |        0
-           |    ],
-           |    "readinessChecks": [],
-           |    "requirePorts": false,
-           |    "residency": null,
-           |    "secrets": {},
-           |    "storeUrls": [],
-           |    "taskKillGracePeriodSeconds": null,
-           |    "tasks": [],
-           |    "tasksHealthy": 0,
-           |    "tasksRunning": 0,
-           |    "tasksStaged": 0,
-           |    "tasksUnhealthy": 0,
-           |    "upgradeStrategy": {
-           |        "maximumOverCapacity": 1,
-           |        "minimumHealthCapacity": 1
-           |    },
-           |    "uris": [],
-           |    "user": null,
-           |    "version": "2017-03-27T17:07:03.684Z"
-           |}
-        """.stripMargin
-      ))
+
       val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderWithCustomExposure.id, None),
         container = metaContainer
@@ -872,11 +454,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       // - another exposure is missing lb_port, so it won't work
       // - a third isn't exposed
       // also, verify that host_port isn't used
-      val testProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      val testProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -897,10 +475,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             expose_endpoint = None
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("HOST")
       )
 
@@ -921,95 +495,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
-        s"""
-           |{
-           |    "acceptedResourceRoles": null,
-           |    "args": null,
-           |    "backoffFactor": 1.15,
-           |    "backoffSeconds": 1,
-           |    "cmd": null,
-           |    "constraints": [],
-           |    "container": {
-           |        "docker": {
-           |            "forcePullImage": false,
-           |            "image": "nginx",
-           |            "network": "HOST",
-           |            "parameters": [],
-           |            "portMappings": null,
-           |            "privileged": false
-           |        },
-           |        "type": "DOCKER",
-           |        "volumes": []
-           |    },
-           |    "cpus": 1,
-           |    "dependencies": [],
-           |    "deployments": [
-           |        {
-           |            "id": "a9d9b165-6d43-4df7-877a-5b53963534fe"
-           |        }
-           |    ],
-           |    "disk": 0,
-           |    "env": {},
-           |    "executor": "",
-           |    "fetch": [],
-           |    "gpus": 0,
-           |    "healthChecks": [],
-           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-           |    "instances": 1,
-           |    "ipAddress": null,
-           |    "labels": {},
-           |    "maxLaunchDelaySeconds": 3600,
-           |    "mem": 128,
-           |    "portDefinitions": [
-           |        {
-           |            "labels": {
-           |                "VIP_0": "/test-container.${testEnv.id}:80"
-           |            },
-           |            "name": "http",
-           |            "port": 81,
-           |            "protocol": "tcp"
-           |        },
-           |        {
-           |            "labels": {},
-           |            "name": "https",
-           |            "port": 1235,
-           |            "protocol": "tcp"
-           |        },
-           |        {
-           |            "labels": {},
-           |            "name": "debug",
-           |            "port": 1236,
-           |            "protocol": "udp"
-           |        }
-           |    ],
-           |    "ports": [
-           |        1234,
-           |        1235,
-           |        1236
-           |    ],
-           |    "readinessChecks": [],
-           |    "requirePorts": false,
-           |    "residency": null,
-           |    "secrets": {},
-           |    "storeUrls": [],
-           |    "taskKillGracePeriodSeconds": null,
-           |    "tasks": [],
-           |    "tasksHealthy": 0,
-           |    "tasksRunning": 0,
-           |    "tasksStaged": 0,
-           |    "tasksUnhealthy": 0,
-           |    "upgradeStrategy": {
-           |        "maximumOverCapacity": 1,
-           |        "minimumHealthCapacity": 1
-           |    },
-           |    "uris": [],
-           |    "user": null,
-           |    "version": "2017-03-27T17:10:12.005Z"
-           |}
-        """.stripMargin
-      ))
-
       val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1026,8 +511,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           marathon.AppUpdate.PortDefinition( 0, "udp", Some("debug"), Map.empty)
         ) and ( ((_:JsObject).\("container").\("docker").\("portMappings").toOption) ^^ beNone )
       )(any)
-
-      import ContainerSpec.{PortMapping, ServiceAddress}
 
       val svcHost = s"${metaContainer.name}.${testEnv.id}.marathon.l4lb.thisdcos.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
@@ -1057,11 +540,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )
 
       testSetup.mcf.getClient(testProviderLcl) returns Future.successful(testSetup.client)
-      val testProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProviderLcl.id, name = Some(testProviderLcl.name)),
+      val testProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -1072,10 +551,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             expose_endpoint = Some(true)
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("HOST")
       )
 
@@ -1096,81 +571,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )
 
-      testSetup.client.launchApp(any)(any) returns Future.successful(Json.parse(
-        s"""
-           |{
-           |    "acceptedResourceRoles": null,
-           |    "args": null,
-           |    "backoffFactor": 1.15,
-           |    "backoffSeconds": 1,
-           |    "cmd": null,
-           |    "constraints": [],
-           |    "container": {
-           |        "docker": {
-           |            "forcePullImage": false,
-           |            "image": "nginx",
-           |            "network": "HOST",
-           |            "parameters": [],
-           |            "portMappings": null,
-           |            "privileged": false
-           |        },
-           |        "type": "DOCKER",
-           |        "volumes": []
-           |    },
-           |    "cpus": 1,
-           |    "dependencies": [],
-           |    "deployments": [
-           |        {
-           |            "id": "a9d9b165-6d43-4df7-877a-5b53963534fe"
-           |        }
-           |    ],
-           |    "disk": 0,
-           |    "env": {},
-           |    "executor": "",
-           |    "fetch": [],
-           |    "gpus": 0,
-           |    "healthChecks": [],
-           |    "id": "/root/${testWork.name}/${testEnv.name}/test-container",
-           |    "instances": 1,
-           |    "ipAddress": null,
-           |    "labels": {},
-           |    "maxLaunchDelaySeconds": 3600,
-           |    "mem": 128,
-           |    "portDefinitions": [
-           |        {
-           |            "labels": {
-           |                "VIP_0": "/test-container.${testEnv.id}:80"
-           |            },
-           |            "name": "web",
-           |            "port": 10010,
-           |            "protocol": "tcp"
-           |        }
-           |    ],
-           |    "ports": [
-           |        10010
-           |    ],
-           |    "readinessChecks": [],
-           |    "requirePorts": false,
-           |    "residency": null,
-           |    "secrets": {},
-           |    "storeUrls": [],
-           |    "taskKillGracePeriodSeconds": null,
-           |    "tasks": [],
-           |    "tasksHealthy": 0,
-           |    "tasksRunning": 0,
-           |    "tasksStaged": 0,
-           |    "tasksUnhealthy": 0,
-           |    "upgradeStrategy": {
-           |        "maximumOverCapacity": 1,
-           |        "minimumHealthCapacity": 1
-           |    },
-           |    "uris": [],
-           |    "user": null,
-           |    "version": "2017-03-27T17:10:12.005Z"
-           |}
-        """.stripMargin
-      ))
-
       val fupdatedMetaContainer = testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProviderLcl.id, None),
         container = metaContainer
@@ -1186,8 +586,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         )
       )(any)
 
-      import ContainerSpec.{PortMapping, ServiceAddress}
-
       val svcHost = s"${metaContainer.name}.${testEnv.id}.${marathonFrameworkName}.l4lb.${dcosClusterName}.directory"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
@@ -1201,43 +599,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "delete service on container delete using external_id" in new FakeDCOS {
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/some/marathon/app"
         ))
       )
@@ -1251,51 +620,19 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         """.stripMargin
       ))
 
-      val fDeleted = testSetup.svc.destroy( metaContainer )
-
-      await(fDeleted)
-
+      await(testSetup.svc.destroy(metaContainer))
       there was one(testSetup.client).deleteApplication(meq("/some/marathon/app"))(any)
     }
 
     "listInEnvironment using loose prefix from existing container ids" in new FakeDCOS {
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
       val Success(_) = createInstance(
         ResourceIds.Container,
         "test-container-1",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/base/application-1/group/native-container-1"
         ))
       )
@@ -1304,15 +641,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "test-container-2",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/base/application-2/group/native-container-2"
         ))
       )
@@ -1320,13 +651,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       testSetup.client.listApplicationsInEnvironment(any)(any) returns
         Future.successful(Seq(ContainerStats(
           external_id = "/non-standard/application/group/native-container-1",
-          containerType = testProps.container_type,
+          containerType = baseTestProps.container_type,
           status = "RUNNING",
-          cpus = testProps.cpus,
-          memory = testProps.memory,
-          image = testProps.image,
+          cpus = baseTestProps.cpus,
+          memory = baseTestProps.memory,
+          image = baseTestProps.image,
           age = DateTime.now(),
-          numInstances = testProps.num_instances,
+          numInstances = baseTestProps.num_instances,
           tasksStaged = 0,
           tasksRunning = 1,
           tasksHealthy = 0,
@@ -1334,13 +665,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           taskStats = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
-          containerType = testProps.container_type,
+          containerType = baseTestProps.container_type,
           status = "RUNNING",
-          cpus = testProps.cpus,
-          memory = testProps.memory,
-          image = testProps.image,
+          cpus = baseTestProps.cpus,
+          memory = baseTestProps.memory,
+          image = baseTestProps.image,
           age = DateTime.now(),
-          numInstances = testProps.num_instances,
+          numInstances = baseTestProps.num_instances,
           tasksStaged = 0,
           tasksRunning = 1,
           tasksHealthy = 0,
@@ -1358,43 +689,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "listInEnvironment using tight prefix from existing container ids" in new FakeDCOS {
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
       val Success(_) = createInstance(
         ResourceIds.Container,
         "test-container-1",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/non-standard/application/group/native-container-1"
         ))
       )
@@ -1403,15 +705,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         "test-container-2",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/non-standard/application/group/native-container-2"
         ))
       )
@@ -1419,13 +715,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       testSetup.client.listApplicationsInEnvironment(any)(any) returns
         Future.successful(Seq(ContainerStats(
           external_id = "/non-standard/application/group/native-container-1",
-          containerType = testProps.container_type,
+          containerType = baseTestProps.container_type,
           status = "RUNNING",
-          cpus = testProps.cpus,
-          memory = testProps.memory,
-          image = testProps.image,
+          cpus = baseTestProps.cpus,
+          memory = baseTestProps.memory,
+          image = baseTestProps.image,
           age = DateTime.now(),
-          numInstances = testProps.num_instances,
+          numInstances = baseTestProps.num_instances,
           tasksStaged = 0,
           tasksRunning = 1,
           tasksHealthy = 0,
@@ -1433,13 +729,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           taskStats = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
-          containerType = testProps.container_type,
+          containerType = baseTestProps.container_type,
           status = "RUNNING",
-          cpus = testProps.cpus,
-          memory = testProps.memory,
-          image = testProps.image,
+          cpus = baseTestProps.cpus,
+          memory = baseTestProps.memory,
+          image = baseTestProps.image,
           age = DateTime.now(),
-          numInstances = testProps.num_instances,
+          numInstances = baseTestProps.num_instances,
           tasksStaged = 0,
           tasksRunning = 1,
           tasksHealthy = 0,
@@ -1457,43 +753,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "listInEnvironment works with one container" in new FakeDCOS {
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
       val Success(_) = createInstance(
         ResourceIds.Container,
         "test-container-1",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get,
           "external_id" -> "/non-standard/application/group/native-container-1"
         ))
       )
@@ -1501,13 +768,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       testSetup.client.listApplicationsInEnvironment(any)(any) returns
         Future.successful(Seq(ContainerStats(
           external_id = "/non-standard/application/group/native-container-1",
-          containerType = testProps.container_type,
+          containerType = baseTestProps.container_type,
           status = "RUNNING",
-          cpus = testProps.cpus,
-          memory = testProps.memory,
-          image = testProps.image,
+          cpus = baseTestProps.cpus,
+          memory = baseTestProps.memory,
+          image = baseTestProps.image,
           age = DateTime.now(),
-          numInstances = testProps.num_instances,
+          numInstances = baseTestProps.num_instances,
           tasksStaged = 0,
           tasksRunning = 1,
           tasksHealthy = 0,
@@ -1537,51 +804,19 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "not attempt to reconstruct missing external_id on container delete, just proceed" in new FakeDCOS {
-      val testProps = ContainerSpec(
-        name = "",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
-        port_mappings = Seq(),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
-        network = Some("BRIDGE"),
-        cmd = None,
-        constraints = Seq(),
-        accepted_resource_roles = None,
-        args = None,
-        force_pull = false,
-        health_checks = Seq(),
-        volumes = Seq(),
-        labels = Map(),
-        env = Map(),
-        user = None
-      )
-
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test-container",
         parent = Some(testEnv.id),
         properties = Some(Map(
-          "container_type" -> testProps.container_type,
-          "image" -> testProps.image,
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> testProps.cpus.toString,
-          "memory" -> testProps.memory.toString,
-          "num_instances" -> testProps.num_instances.toString,
-          "force_pull" -> testProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
-          "network" -> testProps.network.get
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
+          "provider" -> Output.renderInstance(testProvider).toString
           // Missing in this test: "external_id" -> "/some/marathon/app"
         ))
       )
 
-      val fDeleted = testSetup.svc.destroy( metaContainer )
-
-      await(fDeleted)
-
+      await(testSetup.svc.destroy(metaContainer))
       there were no(testSetup.client).deleteApplication(any)(any)
     }
 
@@ -1629,11 +864,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "update support using Marathon PUT" in new FakeDCOS {
-      val initProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+      val initProps = baseTestProps.copy(
         port_mappings = Seq(
           ContainerSpec.PortMapping(
             protocol = "tcp",
@@ -1655,10 +886,6 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
             expose_endpoint = Some(false)
           )
         ),
-        cpus = 1.0,
-        memory = 128,
-        disk = 0.0,
-        num_instances = 1,
         network = Some("BRIDGE")
       )
 
@@ -1723,29 +950,16 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "throw a 400 on container rename" in new FakeDCOS {
-      val initProps = ContainerSpec(
-        name = "test-container",
-        container_type = "DOCKER",
-        image = "nginx",
-        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name))
-      )
-
       val origExtId = "/some/marathon/app"
 
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
-        name = initProps.name,
+        name = baseTestProps.name,
         parent = Some(testEnv.id),
         properties = Some(Map[String,String](
-          "container_type" -> initProps.container_type,
-          "image" -> initProps.image,
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
           "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> initProps.cpus.toString,
-          "memory" -> initProps.memory.toString,
-          "num_instances" -> initProps.num_instances.toString,
-          "force_pull" -> initProps.force_pull.toString,
-          "port_mappings" -> Json.toJson(initProps.port_mappings).toString,
-          "network" -> initProps.network.getOrElse(""),
           "external_id" -> origExtId
         ))
       )
@@ -1935,7 +1149,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         Seq(MarathonService.Properties.SECRET_SUPPORT -> true)
       ).get
 
-      val cntr2 = createInstance(
+      val Success(cntr2) = createInstance(
         ResourceIds.Container,
         "test-container",
         parent = Some(testEnv.id),
@@ -1953,7 +1167,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           "volumes" -> Json.toJson(initProps.volumes).toString,
           "secrets" -> Json.toJson(initProps.secrets).toString
         ))
-      ).get
+      )
 
       await(testSetup.svc.create(
         context = ProviderContext(FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), differentProvider.id, None),
