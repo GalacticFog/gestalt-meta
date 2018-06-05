@@ -404,7 +404,7 @@ object Assembler {
       val userScript = Ascii.decode64Opt(input.script)
   
       log.info("Building Action Context...")
-      val actionContext = buildActionContext(target, user, action, meta)
+      val actionContext = buildActionContext(target, user, action, meta, qs)
 
       log.info("Constructing UI Template...")
       val context = Json.prettyPrint(actionContext)
