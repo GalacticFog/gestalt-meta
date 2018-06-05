@@ -28,10 +28,6 @@ package object ui {
     def encode64(s: String, charset: Charset = DEFAULT_CHARSET): String =
       Base64.getEncoder.encodeToString(s.getBytes(charset))
 
-//    def decode64(s: String): String = if (!isBase64(s))
-//      throw new IllegalArgumentException("Argument is not Base64 encoded.")
-//    else new String(Base64.getDecoder.decode(s))
-
     def decode64(s: String): String = new String(Base64.getDecoder.decode(s))    
     
     def decode64Opt(opt: Option[String]): Option[String] = {
@@ -65,7 +61,7 @@ package object ui {
       val model = JtwigModel.newModel(jvars)
       templ.render(model)
     }
-
+    
     private def mkTemplate(s: String): JtwigTemplate = {
       JtwigTemplate.inlineTemplate(s)
     }
@@ -81,25 +77,22 @@ package object ui {
     r: GestaltResourceInstance,
     user: AuthAccountWithCreds,
     action: GestaltResourceInstance,
-    metaUrl: String): JsObject = {
-
-    //get token replacer from caas-kube
-
+    metaUrl: String,
+    qs: Map[String,Seq[String]]): JsObject = {
+    
     /*
      * TODO: Temporary - this needs to come from the TypeCache
      */
     val tpe = TypeFactory.findById(r.typeId).get
-
+    
     val jsonUser = Json.obj(
       "id" -> user.account.id,
       "name" -> user.account.name,
       "email" -> user.account.email,
       "phone" -> user.account.phoneNumber)
-
+    
     val jsonAction = Output.renderLink(action)
-    
-    val jsonRes = Output.renderInstance(r)     
-    
+    val jsonRes = Output.renderInstance(r)
     val resourceFqon = {
       ResourceFactory.findById(r.orgId).get.properties.get("fqon")
     }
@@ -108,21 +101,27 @@ package object ui {
       val act = ProviderActionSpec.fromResource(action)
       if(act.implementation.kind.trim.toLowerCase == "metacallback") {
         val uri = act.implementation.uri.get.replace("{resource_id}", r.id.toString)
-        JsString("%s/%s/%s".format(metaUrl, resourceFqon, uri.stripPrefix("/")))
+        val output = "%s/%s/%s".format(metaUrl, resourceFqon, uri.stripPrefix("/"))
+        if (qs.isEmpty) {
+          JsString(output) 
+        } else {
+          val token = if (uri.contains("?")) "&" else "?"
+          JsString("%s%s%s".format(output, token, controllers.util.QueryString.asString(qs)))
+        }
       } else {
         throw new RuntimeException("Only 'implementation.kind == MetaCallback' is implemented at this time.")
-      } 
+      }
     }
-
+    
     log.debug("INVOKE_URL : " + invokeUrl)
     
     Json.obj(
         "action" -> jsonAction, 
         "user" -> jsonUser, 
         "resource" -> jsonRes,
-        "invoke_url" -> invokeUrl)
+        "invoke_url" -> invokeUrl
+    )
   }
-
 
   object TemplateKeys {
     val GESTALT_ACTION_CONTEXT = "GESTALT_ACTION_CONTEXT"
