@@ -433,7 +433,20 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )(any)
     }
 
-    "create container should use default namespace if there are no sibling containers" in new FakeDCOS {
+    "create container should use default namespace if there are no provider-env sibling containers" in new FakeDCOS {
+      val Success(anotherProvider) = createMarathonProvider(testEnv.id, "another-provider")
+      val Success(notAProviderSibling) = createInstance(
+        ResourceIds.Container,
+        "existing-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> baseTestProps.container_type,
+          "image" -> baseTestProps.image,
+          "provider" -> Output.renderInstance(anotherProvider).toString,
+          "external_id" -> "/non-standard/application/group/native-container-1"
+        ))
+      )
+
       val Success(newContainer) = createInstance(
         ResourceIds.Container,
         "new-container",
@@ -449,16 +462,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = newContainer
       )
-
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
       updatedContainerProps must havePair("external_id" -> "/root/test-workspace/test-environment/new-container")
-
       there was one(testSetup.client).launchApp(
         ( ((_:JsObject).\("id").asOpt[String]) ^^ beSome("/root/test-workspace/test-environment/new-container"))
       )(any)
     }
 
-    "create container should use namespace from sibling containers" in new FakeDCOS {
+    "create container should use namespace from provider-env sibling containers" in new FakeDCOS {
       val Success(existingContainer) = createInstance(
         ResourceIds.Container,
         "existing-container",
@@ -485,10 +496,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = newContainer
       )
-
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
       updatedContainerProps must havePair("external_id" -> "/non-standard/application/group/new-container")
-
       there was one(testSetup.client).launchApp(
         ( ((_:JsObject).\("id").asOpt[String]) ^^ beSome("/non-standard/application/group/new-container"))
       )(any)
