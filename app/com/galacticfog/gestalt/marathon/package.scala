@@ -448,6 +448,9 @@ package object marathon {
 
   def siblingMarathonNamespace(context: ProviderContext): Option[String] = {
     ResourceFactory.findChildrenOfType(ResourceIds.Container, context.environmentId)
+      .filter(
+        r => Try{ContainerService.containerProviderId(r)}.toOption.contains(context.providerId)
+      )
       .flatMap(ContainerService.resourceExternalId)
       .map(
         s => s.split("/").dropRight(1).mkString("/")
