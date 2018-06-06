@@ -71,6 +71,7 @@ class ResourceController @Inject()(
     ResourceIds.ProviderAction -> lookupProviderActions
   )
   
+  
   def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val parent = mapPathData(Resource.ParentId)
@@ -81,6 +82,7 @@ class ResourceController @Inject()(
       ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, UUID.fromString(parent))
     }
   }
+  
   
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
@@ -430,12 +432,35 @@ class ResourceController @Inject()(
   def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
     log.debug("Looking up applicable actions...")
     
+//    val actions = ResourceFactory.findById(target).fold {
+//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
+//    }{ _ => 
+//      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer/*ResourceIds.ActionProvider*/, target) 
+//      rs flatMap { p => 
+//        ResourceFactory.findChildrenOfType(org, p.id, ResourceIds.ProviderAction) 
+//      }
+//    }
+    
     val actions = ResourceFactory.findById(target).fold {
       throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-    }{ _ => 
-      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ActionProvider, target) 
-      rs flatMap { p => 
-        ResourceFactory.findChildrenOfType(org, p.id, ResourceIds.ProviderAction) 
+    }{ _ =>
+      val prvs = for {
+        anc <- {
+          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
+          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
+          
+          rs.reverse ++ root
+        }
+        prv <- {
+          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.ActionProvider, anc.id)
+          rs
+        }
+      } yield prv
+      
+      val acts = ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))
+      
+      acts.foldLeft(Seq.empty[GestaltResourceInstance]) { (acc, next) =>
+        if (acc.exists(_.typeId == next.typeId)) acc else (acc :+ next)
       }
     }
     
