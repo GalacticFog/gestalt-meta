@@ -10,4 +10,7 @@ abstract class MetaMigration() {
   
   def migrate(identity: UUID, payload: Option[JsValue]): Either[JsValue,JsValue]
   
+  def test(payload: Option[JsValue]): Option[JsValue] = {
+    payload
+  }
 }
