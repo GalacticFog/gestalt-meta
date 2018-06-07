@@ -72,7 +72,10 @@ class MigrationController @Inject()(
       case "V4" => new V4()
       case "V5" => new V5()
       case "V6" => new V6()
-      case _ => throw new BadRequestException(s"No migration found for version '$version'")
+      case "V7" => new V7()
+      case "V8" => new V8()
+      case _ => 
+        throw new BadRequestException(s"No migration found for version '$version'")
     }
   }
   
