@@ -18,6 +18,10 @@ import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
+import com.galacticfog.gestalt.meta.auth._
+import controllers.util.JsonInput
+
+import controllers.util.TypeMethods
 
 /*
  * Add DataFeed Resource Type
@@ -25,7 +29,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
  * Add StreamSpec Resource Type
  */
 
-class V7 extends MetaMigration() {
+class V7 extends MetaMigration with AuthorizationMethods {
 
   private val acc = new MessageAccumulator()
   
@@ -40,25 +44,148 @@ class V7 extends MetaMigration() {
   
   private val ENTITLEMENTS = Option(Seq(ResourceIds.Entitlement))
   
+  private val SYSTEM_WORKSPACE_NAME = "gestalt-system-workspace"
+  private val SYSTEM_ENVIRONMENT_NAME = "gestalt-system-environment"
+  
+  
+  def newWorkspace(rootId: UUID, creator: GestaltResourceInstance) = {
+    for {
+      wrk <- CreateNewResource(
+          org = rootId,
+          creator = creator,
+          json = Json.obj("name" -> SYSTEM_WORKSPACE_NAME),
+          typeId = Option(ResourceIds.Workspace),
+          parent = Option(rootId))
+      _ = setNewResourceEntitlements(rootId, wrk.id, creator, Some(rootId))
+    } yield wrk
+  }
+  
+  def newEnvironment(rootId: UUID, workspaceId: UUID, envType: UUID, creator: GestaltResourceInstance) = {
+    for { 
+      env <- CreateNewResource(
+        org = rootId,
+        creator = creator,
+        json = Json.obj(
+            "name" -> SYSTEM_ENVIRONMENT_NAME,
+            "properties" -> Json.obj(
+                "environment_type" -> envType)
+            ),
+        typeId = Option(ResourceIds.Environment),
+        parent = Option(workspaceId))
+      _ = setNewResourceEntitlements(rootId, env.id, creator, Some(workspaceId))
+    } yield env
+  }
+  
+  /**
+   * Lookup or create the 'system' environment where the Stream Provider lambda will go.
+   * /root/gestalt-system-workspace/gestalt-system-environment
+   */
+  private[migrations] def getLambdaEnvironment(
+      rootId: UUID, creator: GestaltResourceInstance): Try[GestaltResourceInstance] = {
+    for {
+      w <- ResourceFactory.findChildByName(rootId, ResourceIds.Workspace, SYSTEM_WORKSPACE_NAME).fold {
+        acc push "gestalt-system Workspace not found. Creating."
+          newWorkspace(rootId, creator)
+        
+        }{ workspace => Try(workspace) }
+        
+      e <- ResourceFactory.findChildByName(w.id, ResourceIds.Environment, SYSTEM_ENVIRONMENT_NAME).fold {
+        
+        acc push "gestalt-system Environment not found. Creating."
+        val envType = ReferenceFactory.findByName(ResourceIds.EnvironmentType, "production").get        
+        newEnvironment(rootId, w.id, envType.id, creator)
+        
+      }{ environment => Try(environment) }
+    } yield e
+  }
+  
+  private[migrations] def createStreamProviderLambda(
+      orgId: UUID, 
+      envId: UUID, 
+      creator: GestaltResourceInstance, 
+      payload: JsValue): Try[GestaltResourceInstance] = {
+    
+    log.debug("****PAYLOAD : " + Json.prettyPrint(payload))
+    
+    val providerId = {
+      val jsId = Js.find(payload.as[JsObject], "/lambda/properties/provider/id") getOrElse {
+        throw new BadRequestException("Bad migration payload. Missing: 'V7/lambda/properties/provider/id'")
+      }
+      UUID.fromString(jsId.as[String])
+    }
+    
+    acc push s"Looking up given Lambda Provider: ${providerId}"
+    
+    // Ensure given Lambda Provider Exists
+    ResourceFactory.findById(providerId) getOrElse {
+      throw new BadRequestException(s"Lambda Provider with ID '${providerId}' not found.")
+    }
+    
+//    CreateNewResource(
+//      org = orgId,
+//      creator = creator,
+//      json = payload,
+//      typeId = Option(ResourceIds.Lambda),
+//      parent = Option(envId)
+//    )
+    
+    for {
+      lam <- CreateNewResource(
+          org = orgId,
+          creator = creator,
+          json = payload,
+          typeId = Option(ResourceIds.Lambda),
+          parent = Option(envId))
+      _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
+    } yield lam
+  }
+  
+  
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
-    
-    val owner = ResourceOwnerLink(ResourceIds.User, identity)
-    
-    val process = for {
-      org <- ResourceFactory.findRootOrg.map(_.id)
-      _ <- {
-        acc push "Adding DataFeed Resource Type to /root/resourcetypes"
-        addDataFeedType(org, owner)
-      }
-      _ <- {
-        acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
-        addStreamProviderType(org, owner)
-      }
-      x <- {
-        acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
-        addStreamSpecType(org, owner)
-      }
-    } yield x
+
+    /*
+     * Need to create lambda before stream-provider
+     */
+
+    val process = if (payload.isEmpty) {
+      
+      Failure(new RuntimeException("Must provide payload!!!"))
+        
+    } else { 
+        for {
+          root <- {
+            acc push "Looking up 'root' org"
+            ResourceFactory.findRootOrg
+          }
+          creator <- Try {
+            acc push "Looking up creator"
+            ResourceFactory.findById(ResourceIds.User, identity) getOrElse {
+              throw new RuntimeException(s"Could not locate creator with id '${identity}'")
+            }
+          }
+          _ <- {
+            acc push "Adding DataFeed Resource Type to /root/resourcetypes"
+            addDataFeedType(root.id, root)
+          }
+          env <- {
+            acc push "Looking up environment for Stream Provider lambda"
+            getLambdaEnvironment(root.id, creator)
+          }
+          _ <- {
+            // Create lambda
+            acc push "Creating StreamProvier Lambda"
+            createStreamProviderLambda(root.id, env.id, creator, payload.get)
+          }
+          _ <- {
+            acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
+            addStreamProviderType(root.id, creator)
+          }
+          x <- {
+            acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
+            addStreamSpecType(root.id, creator)
+          }
+      } yield x
+    }
     
     process match {
       case Success(_) => {
@@ -79,8 +206,9 @@ class V7 extends MetaMigration() {
     }    
   }
   
-  def addDataFeedType(org: UUID, owner: ResourceOwnerLink) = Try {
-    
+
+  def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
+    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = DATA_FEED_TYPE_ID, 
       typeName    = DATA_FEED_TYPE_NAME,
@@ -106,13 +234,16 @@ class V7 extends MetaMigration() {
     
     ).save()
     
-    TypeFactory.findById(DATA_FEED_TYPE_ID) getOrElse {
-      new RuntimeException("Failed creating DataFeed Resource Type")
+    val newtype = TypeFactory.findById(DATA_FEED_TYPE_ID) getOrElse {
+      throw new RuntimeException("Failed creating DataFeed Resource Type")
     }
+
+    setTypeLineage(newtype, creator)
   }
   
-  
-  def addStreamProviderType(org: UUID, owner: ResourceOwnerLink) = Try {
+
+  def addStreamProviderType(org: UUID, creator: GestaltResourceInstance) = Try {
+    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = STREAM_PROVIDER_TYPE_ID, 
       typeName    = STREAM_PROVIDER_TYPE_NAME,
@@ -138,12 +269,14 @@ class V7 extends MetaMigration() {
     
     ).save()
     
-    TypeFactory.findById(STREAM_PROVIDER_TYPE_ID) getOrElse {
-      new RuntimeException("Failed creating StreamProvider Resource Type")
-    }    
+    val newtype = TypeFactory.findById(STREAM_PROVIDER_TYPE_ID) getOrElse {
+      throw new RuntimeException("Failed creating StreamProvider Resource Type")
+    }
+    setTypeLineage(newtype, creator)
   }
   
-  def addStreamSpecType(org: UUID, owner: ResourceOwnerLink) = Try {
+  def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = Try {
+    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = STREAM_SPEC_TYPE_ID, 
       typeName    = STREAM_SPEC_TYPE_NAME,
@@ -179,10 +312,59 @@ class V7 extends MetaMigration() {
     
     ).save()
    
-    TypeFactory.findById(STREAM_SPEC_TYPE_ID) getOrElse {
-      new RuntimeException("Failed creating StreamSpec Resource Type")
+    val newtype = TypeFactory.findById(STREAM_SPEC_TYPE_ID) getOrElse {
+      throw new RuntimeException("Failed creating StreamSpec Resource Type")
     }    
-    
+    setTypeLineage(newtype, creator)
   }
+ 
+  
+  private[migrations] def setTypeLineage(newType: GestaltResourceType, creator: GestaltResourceInstance) = {
+    val newParentTypes = TypeMethods.getParentTypes(newType)
+    val results = for {
+      _ <- {
+        acc push s"Updating parent lineage for type ${newType.name}"
+        updateParentLineage(creator.id, newType, newParentTypes)
+      }
+      a <- {
+        acc push s"Updating parent entitlements for type ${newType.name}"
+        updateParentEntitlements(creator, creator.id, newType.id, newParentTypes)
+      }
+    } yield a    
+  }  
+  
+  /**
+   * Add a new child type to a parent at the type level. This enables child-type to be a 'childOf'
+   * the parent type in the schema (child-type is now a child of each given parent-type).
+   */
+  private[migrations] def updateParentLineage(
+      caller: UUID, 
+      childType: GestaltResourceType, 
+      parents: Seq[UUID]): Try[Unit] = Try {
+
+    // Update the parent-types with this new child type
+    val results = TypeMethods.makeNewParents(caller, childType.id, parents)
+    val errors = results.collect { case Failure(e) => e.getMessage }
+    
+    if (errors.nonEmpty) {
+      val msg = errors.flatten.mkString(",")
+      throw new RuntimeException(s"There were errors updating parent-type schemas: " + msg )
+    }
+  }  
+
+  private[migrations] def updateParentEntitlements(
+      rootUser: GestaltResourceInstance,
+      callerId: UUID, 
+      childType: UUID, 
+      parents: Seq[UUID]): Try[Unit] = Try {
+    
+    val t = parents.foldLeft(Try(())) { (_, parent) =>
+      TypeMethods.updateInstanceEntitlementsUserId(parent, childType, rootUser, callerId, None) match {
+        case Left(errs) => 
+          throw new RuntimeException("There were errors setting instance entitlements: " + errs.mkString(","))
+        case Right(_) => Success(())
+      }      
+    }
+  }  
   
 }

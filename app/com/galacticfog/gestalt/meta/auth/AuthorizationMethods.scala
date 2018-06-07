@@ -237,6 +237,58 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     
   }
 
+  def setEntitlements(
+      org: UUID, 
+      creator: GestaltResourceInstance, 
+      target: GestaltResourceInstance, 
+      entitlements: Seq[Entitlement]) = {
+    
+    /*
+     *  List of all entitlements that are already set on the target resource
+     */
+    val existing = findEntitlementsByResource(target.id).map { ent =>
+      (ent.properties.get("action") -> ent)
+    }.toMap
+    
+    
+    entitlements.map { ent =>
+
+      val parentJs = Json.obj("id" -> target.id, "name" -> target.name)
+      val action = ent.properties.action
+      
+      if (existing.contains(action)) {
+        log.debug("Attempting to create existing entitlement - merging...")
+       /*
+        * The target already has an entitlement for the current action. In this case
+        * we merge in the new identities, update the resource in meta, and return
+        * the updated resource. 
+        */
+        val mergeIds = ent.properties.identities getOrElse Seq.empty[UUID]
+        updateAndSave(creator.id, existing(action), mergeIds, parentJs)
+        
+      } else {
+        /*
+         * The target resource does NOT have an entitlement for the current action - create
+         * a new one as specified
+         */
+        val payload = {
+          Js.transform(Json.toJson(ent).as[JsObject],
+            PatchOp.Add("/properties", 
+                Json.obj("parent" -> parentJs))).get
+        }
+        
+        CreateNewResource(
+          org, 
+          creator, 
+          json   = payload,  
+          typeId = Option(ResourceIds.Entitlement), 
+          parent = Option(target.id))
+        }
+    }
+    
+  }  
+  
+  
   def updateAndSave(caller: UUID, ent: GestaltResourceInstance, ids: Seq[UUID], parentLink: JsValue) = {
     
     // Inject 'parent' object to properties

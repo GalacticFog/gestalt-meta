@@ -139,6 +139,59 @@ object TypeMethods extends AuthorizationMethods {
   }
   
   
+  def updateInstanceEntitlementsUserId(
+      targetType: UUID,
+      forType: UUID,
+      rootUser: GestaltResourceInstance, //Account: AuthAccountWithCreds,
+      userId: UUID, //AuthAccountWithCreds,
+      startingOrg: Option[UUID] = None): Either[List[String], Unit]/*: Seq[Seq[Try[GestaltResourceInstance]]]*/ = {
+    
+    val instances = startingOrg.fold {
+      ResourceFactory.findAll(targetType)
+    }{ 
+      org => ResourceFactory.findAll(targetType, org) 
+    }
+    
+    /*
+     * Set each entitlement for root
+     * If the caller is the owner of a resource, add caller identity to entitlement
+     */
+
+    val rootId = rootUser.id
+//    val userId = callerAccount.account.id
+    
+    val actions = getSelfActions(forType)
+    val actionList = actions.mkString(",")
+    
+    val results = instances.map { instance =>
+      log.debug(s"Creating new entitlements on : ${instance.id} [$actionList]")
+      /*
+       * If the caller is the owner of the target instance set the 'owner' var which
+       * will cause them to be added to the entitlement along with 'root'
+       */
+      val owner = if (instance.owner.id == userId) Some(userId) else None
+      
+      /*
+       * This is the 'owning org' (Org where the entitlement will be created). If the target
+       * instance *is* an Org, we use that ID. If it is any other type, we use its parent org ID
+       */
+      val orgId = if (instance.typeId == ResourceIds.Org) instance.id else instance.orgId
+      
+      val ents = entitlements2(rootId, orgId, instance.id, Seq.empty, actions, owner)
+
+      setEntitlements(orgId, rootUser, instance, ents).collect { case Failure(e) => e.getMessage }
+    }
+    
+    /*
+     * If any errors occurred setting entitlements the error messages will be in results. We just
+     * flatten the messages and return the error state.
+     */
+    val test = results.flatten
+    if (test.nonEmpty) Left(test) else Right(())
+  }  
+  
+  
+  
   import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
   import com.galacticfog.gestalt.security.api.GestaltOrg
   
