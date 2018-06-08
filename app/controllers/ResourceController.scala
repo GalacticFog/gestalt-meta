@@ -457,12 +457,15 @@ class ResourceController @Inject()(
         }
       } yield prv
       
-      val acts = ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))
+      //val acts = ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))
+      val acts = (ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))).zip(prvs.map(_.typeId))
       
-      acts.foldLeft(Seq.empty[GestaltResourceInstance]) { (acc, next) =>
-        if (acc.exists(_.typeId == next.typeId)) acc else (acc :+ next)
-      }
+      (acts.foldLeft(Seq.empty[(GestaltResourceInstance, UUID)]) { (acc, next) =>
+        if (acc.exists(_._2 == next._2)) acc else (acc :+ next)
+      }).map(_._1)
     }
+    
+
     
     log.debug("Checking for prefix-filter...")
     log.debug("Prefix-Filter : " + prefixFilter)
