@@ -114,26 +114,26 @@ class V7 extends MetaMigration with AuthorizationMethods {
       UUID.fromString(jsId.as[String])
     }
     
+    val lambdaJson = {
+      Js.find(payload.as[JsObject], "/lambda") getOrElse {
+        throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
+      }
+    }
+    
+    log.debug("LAMBDA-JSON:\n" + Json.prettyPrint(lambdaJson))
+    
     acc push s"Looking up given Lambda Provider: ${providerId}"
     
     // Ensure given Lambda Provider Exists
     ResourceFactory.findById(providerId) getOrElse {
       throw new BadRequestException(s"Lambda Provider with ID '${providerId}' not found.")
     }
-    
-//    CreateNewResource(
-//      org = orgId,
-//      creator = creator,
-//      json = payload,
-//      typeId = Option(ResourceIds.Lambda),
-//      parent = Option(envId)
-//    )
-    
+
     for {
       lam <- CreateNewResource(
           org = orgId,
           creator = creator,
-          json = payload,
+          json = lambdaJson,
           typeId = Option(ResourceIds.Lambda),
           parent = Option(envId))
       _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
