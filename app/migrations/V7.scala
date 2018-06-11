@@ -173,7 +173,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           }
           _ <- {
             // Create lambda
-            acc push "Creating StreamProvier Lambda"
+            acc push "Creating StreamProvider Lambda"
             createStreamProviderLambda(root.id, env.id, creator, payload.get)
           }
           _ <- {
