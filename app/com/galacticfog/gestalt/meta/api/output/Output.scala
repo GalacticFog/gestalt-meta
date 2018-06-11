@@ -168,12 +168,47 @@ object Output {
   }  
   
   def renderResourceTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None): JsValue = {
-    val res = mkTypeOutput(r)    
+    val res = mkTypeOutput(r)
     val props = res.properties.get.validate[Map[String,String]].get
     val renderedProps = renderTypeProperties(/*ResourceIds.ResourceType*/r.id, Some(props))
     
     Json.toJson(res.copy(properties = renderedProps))
   }
+  
+  def renderTypeProperties(typeId: UUID, properties: Option[Hstore]): Option[JsValue] = {
+    /* Get a Map of the properties defined for the current ResourceType. */
+    
+    val givenProps = properties getOrElse Map()
+    val templateProps = {
+      val ps = Properties.getPrototype(typeId)
+      //val ps = Properties.getTypePropertyMap(typeId)
+      //val remove = ps.keySet.diff(givenProps.keySet)
+      ps //-- remove
+    }
+
+    @tailrec
+    def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
+      propKeys match {
+        case Nil    => Option(acc)
+        case property :: tail => {
+
+          if (skipRender(templateProps(property), given)) {
+            loop(tail, given, acc)
+          }
+          else if (templateProps.contains(property) && given.contains(property)) {
+            val renderedValue = renderDataType(templateProps( property ), given( property ))
+            loop( tail, given, acc + (property -> renderedValue) )            
+          }
+          else {
+            loop(tail, given, acc)
+          }
+        }
+      }
+    }
+    loop(templateProps.keys.toList, givenProps, Map[String, JsValue]()) map {
+      Json.toJson(_)
+    }
+  }  
   
   
   private def mkTypeOutput(r: GestaltResourceType, baseUri: Option[String] = None) = {
@@ -288,41 +323,7 @@ object Output {
     }
   }
   
-  def renderTypeProperties(typeId: UUID, properties: Option[Hstore]): Option[JsValue] = {
-    /* Get a Map of the properties defined for the current ResourceType. */
-    
-    val givenProps = properties getOrElse Map()
 
-    val templateProps = {
-      //val ps = Properties.getPrototype(typeId)
-      val ps = Properties.getTypePropertyMap(typeId)
-      val remove = ps.keySet.diff(givenProps.keySet)
-      ps -- remove
-    }
-    
-    @tailrec
-    def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
-      propKeys match {
-        case Nil    => Option(acc)
-        case property :: tail => {
-
-          if (skipRender(templateProps(property), given)) {
-            loop(tail, given, acc)
-          }
-          else if (templateProps.contains(property) && given.contains(property)) {
-            val renderedValue = renderDataType(templateProps( property ), given( property ))
-            loop( tail, given, acc + (property -> renderedValue) )            
-          }
-          else {
-            loop(tail, given, acc)
-          }
-        }
-      }
-    }
-    loop(templateProps.keys.toList, givenProps, Map[String, JsValue]()) map {
-      Json.toJson(_)
-    }
-  }
   
   /*
    * TODO: This is a hack just to get something out the door.
