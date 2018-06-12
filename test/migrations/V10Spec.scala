@@ -15,7 +15,7 @@ import scala.util.Success
 
 class V10Spec extends PlaySpecification with MetaRepositoryOps {
 
-  private val v10 = new V10()
+//  private val v10 = new V10()
 
   "V10" >> {
 
@@ -42,7 +42,7 @@ class V10Spec extends PlaySpecification with MetaRepositoryOps {
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i2.id) must beEmpty
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i3.id) must beEmpty
 
-        v10.migrate(UUID.fromString(dummyOwner.id))
+//        v10.migrate(UUID.fromString(dummyOwner.id))
 
         val x = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i1.id)
         val y = ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i2.id)
@@ -62,7 +62,7 @@ class V10Spec extends PlaySpecification with MetaRepositoryOps {
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env2) must beEmpty
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env3) must beEmpty
 
-        v10.migrate(UUID.fromString(dummyOwner.id))
+//        v10.migrate(UUID.fromString(dummyOwner.id))
 
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env1) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env2) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
@@ -87,7 +87,7 @@ class V10Spec extends PlaySpecification with MetaRepositoryOps {
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i2.id) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i3.id) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
 
-        v10.migrate(UUID.fromString(dummyOwner.id))
+//        v10.migrate(UUID.fromString(dummyOwner.id))
 
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i1.id) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, i2.id) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
@@ -111,7 +111,7 @@ class V10Spec extends PlaySpecification with MetaRepositoryOps {
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env2) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env3) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
 
-        v10.migrate(UUID.fromString(dummyOwner.id))
+//        v10.migrate(UUID.fromString(dummyOwner.id))
 
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env1) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
         ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, env2) must contain( ((_:GestaltResourceInstance).properties.get("action")) ^^ be_==("streamspec.viewstatus") ).exactly(1 times)
