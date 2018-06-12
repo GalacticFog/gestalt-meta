@@ -141,6 +141,8 @@ class V7 extends MetaMigration with AuthorizationMethods {
         
     val providerPayload = mkProviderPayload("default-streamspec", endpoints)
     
+    log.debug("PROVIDER-PAYLOAD : " + Json.prettyPrint(providerPayload))
+    
     for {
       prv <- CreateNewResource(
           org = rootId,
