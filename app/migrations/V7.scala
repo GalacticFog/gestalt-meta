@@ -134,7 +134,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
      * Map Lambda IDs/Actions to JSON Endpoints for Provider payload.
      */
     val endpoints = lambdaActions.map { case (lambdaId, actions) =>
-      val upstream = GatewayMethods.mkUpstreamUrl(ResourceIds.Lambda, lambdaId, None, true)
+      val upstream = GatewayMethods.mkUpstreamUrl("lambda", lambdaId, None, true)
       log.debug(s"UPSTREAM-URL FOR LAMBDA [$lambdaId]: ${upstream}")
       mkEndpoint(actions, upstream.get)
     }
