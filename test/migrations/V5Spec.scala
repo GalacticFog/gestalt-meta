@@ -17,7 +17,7 @@ class V5Spec extends PlaySpecification with MetaRepositoryOps {
 
   private val v5 = new V5()
 
-  "V2" >> {
+  "V5" >> {
 
     "add 'import' to Container resource type" >> {
       val container = TypeFactory.findById(ResourceIds.Container)

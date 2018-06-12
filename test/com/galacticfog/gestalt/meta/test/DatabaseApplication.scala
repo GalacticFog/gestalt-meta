@@ -40,7 +40,7 @@ abstract class WithDbController[A <: Controller : ClassTag](application: Applica
  * This pulls several traits together for easier test class declaration
  */
 trait MetaRepositoryOps extends GestaltProviderMocking with ResourceScope with BeforeAll {
-  override def beforeAll(): Unit = pristineDatabase()
+  override def beforeAll(): Unit = pristineDatabase().get
 }
 
 
