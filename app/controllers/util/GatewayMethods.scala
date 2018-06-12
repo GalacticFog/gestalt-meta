@@ -219,7 +219,11 @@ object GatewayMethods {
 
   def mkUpstreamUrl(implType: String, implId: UUID, maybePortName: Option[String], sync: Boolean): Try[String] = {
     (implType,maybePortName.map(_.trim).filter(_.nonEmpty)) match {
-      case ("lambda",_) =>
+      case ("lambda",_) => {
+        log.debug("ENTERED LAMBDA CASE...")
+        log.debug("impltType : " + implType)
+        log.debug("implId: " + implId)
+        
         ResourceFactory.findById(ResourceIds.Lambda, implId) match {
           case None => Failure(new BadRequestException("no lambda with id matching ApiEndpoint \"implementation_id\""))
           case Some(l) =>
@@ -238,6 +242,7 @@ object GatewayMethods {
               }
             } yield s"http://${svcHost}:${svcPort}/lambdas/${l.id}/${invoke}"
         }
+      }
       case ("container",None) =>
         Failure(new BadRequestException("""ApiEndpoint with "implementation_type" == "container" must also provide non-empty "container_port_name""""))
       case ("container",Some(portName)) =>
