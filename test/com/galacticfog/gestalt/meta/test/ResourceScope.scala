@@ -113,6 +113,12 @@ trait ResourceScope extends Scope with Mockito {
           case Left(x) => throw new GenericApiException(500, "Error running migration 'V6'", Some(x))
           case Right(y) => y
         }
+
+        val m9 = new V9()
+        m9.migrate(adminUserId) match {
+          case Left(x) => throw new GenericApiException(500, "Error running migration 'V9'", Some(x))
+          case Right(y) => y
+        }
       }
     } yield g
   }
