@@ -17,7 +17,7 @@ import org.specs2.specification.Scope
 import play.api.libs.json.Json
 import play.api.libs.json.Json.JsValueWrapper
 
-import scala.util.Try
+import scala.util.{Failure, Success, Try}
 import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
@@ -47,12 +47,12 @@ trait ResourceScope extends Scope with Mockito {
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
     
     for {
-      a <- db.clean
-      b <- db.migrate
-      c <- db.loadReferenceData
-      d <- db.loadSystemTypes
-      e <- db.initialize("root")
-      f <- {
+      _ <- db.clean
+      _ <- db.migrate
+      _ <- db.loadReferenceData
+      _ <- db.loadSystemTypes
+      _ <- db.initialize("root")
+      admin <- {
         val gestaltAdmin = GestaltResourceInstance(
           id     = adminUserId,
           typeId = ResourceIds.User,
@@ -69,7 +69,7 @@ trait ResourceScope extends Scope with Mockito {
         )
         ResourceFactory.create(ResourceIds.User, adminUserId)(gestaltAdmin, Some(dummyRootOrgId))
       }
-      g <- Try {
+      _ <- {
         println("*** Applying migrations ***")
         /*
          * 
@@ -78,49 +78,32 @@ trait ResourceScope extends Scope with Mockito {
          * need to follow the final pattern once that's established.
          * 
          */
-        val m = new V1()
-        m.migrate(dummyRootOrgId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V1'", Some(x))
-          case Right(y) => y
-        }
-        
-        val m2 = new V2()
-        m2.migrate(dummyRootOrgId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V2'", Some(x))
-          case Right(y) => y
+
+        val migrations = Seq(
+          new V1(),
+          new V2(),
+          new V3(),
+          new V4(),
+          new V5(),
+          new V6(),
+//          new V7(),
+//          new V8(),
+          new V9(),
+          new V10()
+        )
+
+        val tries = migrations.map {
+          m => m.migrate(admin.id, None) match {
+            case Left(x) => Failure(new GenericApiException(500, s"Error running migration '${m.getClass.getSimpleName}': ${x}"))
+            case Right(y) => Success(y)
+          }
         }
 
-        val m3 = new V3()
-        m3.migrate(dummyRootOrgId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V3'", Some(x))
-          case Right(y) => y
-        }
-
-        val m4 = new V4()
-        m4.migrate(adminUserId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V4'", Some(x))
-          case Right(y) => y
-        }
-
-        val m5 = new V5()
-        m5.migrate(adminUserId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V5'", Some(x))
-          case Right(y) => y
-        }
-
-        val m6 = new V6()
-        m6.migrate(adminUserId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V6'", Some(x))
-          case Right(y) => y
-        }
-
-        val m9 = new V9()
-        m9.migrate(adminUserId) match {
-          case Left(x) => throw new GenericApiException(500, "Error running migration 'V9'", Some(x))
-          case Right(y) => y
+        Try {
+          tries.map(_.get)
         }
       }
-    } yield g
+    } yield ()
   }
   
   def newOrg(

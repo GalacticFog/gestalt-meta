@@ -19,7 +19,7 @@ class V9Spec extends PlaySpecification with MetaRepositoryOps {
 
   "V9" >> {
 
-    "add 'viewmetrics' to Provider::Lambda resource type" >> {
+    "add 'viewmetrics' action to Provider::Lambda resource type" >> {
       val Some(lambdaProvider) = TypeFactory.findById(ResourceIds.LambdaProvider)
 
       val Success(actionInfo) = {

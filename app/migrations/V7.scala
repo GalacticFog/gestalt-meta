@@ -31,16 +31,9 @@ import controllers.util.TypeMethods
 
 class V7 extends MetaMigration with AuthorizationMethods {
 
+  import V7._
+
   private val acc = new MessageAccumulator()
-  
-  private val DATA_FEED_TYPE_ID = UUID.fromString("8f875ffc-69ff-48c8-9d6d-f3622b7b1062")
-  private val DATA_FEED_TYPE_NAME = "Gestalt::Resource::Configuration::DataFeed"
-  
-  private val STREAM_PROVIDER_TYPE_ID = UUID.fromString("b7f764be-9ae6-4f70-9c42-849cc881125f")
-  private val STREAM_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::StreamProvider"
-  
-  private val STREAM_SPEC_TYPE_ID = UUID.fromString("e9e90e0a-4f87-492e-afcc-2cd84057f226")
-  private val STREAM_SPEC_TYPE_NAME = "Gestalt::Resource::Spec::StreamSpec"
   
   private val ENTITLEMENTS = Option(Seq(ResourceIds.Entitlement))
   
@@ -147,11 +140,10 @@ class V7 extends MetaMigration with AuthorizationMethods {
      * Need to create lambda before stream-provider
      */
 
-    val process = if (payload.isEmpty) {
-      
-      Failure(new RuntimeException("Must provide payload!!!"))
-        
-    } else { 
+    val process = payload match {
+      case None =>
+        Failure(new RuntimeException("Must provide payload!!!"))
+      case Some(payload) =>
         for {
           root <- {
             acc push "Looking up 'root' org"
@@ -174,7 +166,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           _ <- {
             // Create lambda
             acc push "Creating StreamProvider Lambda"
-            createStreamProviderLambda(root.id, env.id, creator, payload.get)
+            createStreamProviderLambda(root.id, env.id, creator, payload)
           }
           _ <- {
             acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
@@ -367,4 +359,15 @@ class V7 extends MetaMigration with AuthorizationMethods {
     }
   }  
   
+}
+
+object V7 {
+  val DATA_FEED_TYPE_ID = UUID.fromString("8f875ffc-69ff-48c8-9d6d-f3622b7b1062")
+  val DATA_FEED_TYPE_NAME = "Gestalt::Resource::Configuration::DataFeed"
+
+  val STREAM_PROVIDER_TYPE_ID = UUID.fromString("b7f764be-9ae6-4f70-9c42-849cc881125f")
+  val STREAM_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::StreamProvider"
+
+  val STREAM_SPEC_TYPE_ID = UUID.fromString("e9e90e0a-4f87-492e-afcc-2cd84057f226")
+  val STREAM_SPEC_TYPE_NAME = "Gestalt::Resource::Spec::StreamSpec"
 }
