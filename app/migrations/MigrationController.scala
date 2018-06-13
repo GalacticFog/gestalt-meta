@@ -93,6 +93,7 @@ class MigrationController @Inject()(
       }
     }
 
+    log.debug(Json.prettyPrint(JsArray(results)))
     Future(Ok(JsArray(results)))
   }  
   

@@ -22,6 +22,8 @@ import com.galacticfog.gestalt.meta.auth._
 import controllers.util.JsonInput
 
 import controllers.util.TypeMethods
+import controllers.util.GatewayMethods
+
 
 /*
  * Add DataFeed Resource Type
@@ -40,8 +42,190 @@ class V7 extends MetaMigration with AuthorizationMethods {
   private val SYSTEM_WORKSPACE_NAME = "gestalt-system-workspace"
   private val SYSTEM_ENVIRONMENT_NAME = "gestalt-system-environment"
   
+  // (Lambda-UUID, Seq-of-Actions)
+  private type LambdaAction = (UUID, Seq[String])
   
-  def newWorkspace(rootId: UUID, creator: GestaltResourceInstance) = {
+  def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
+
+    val process = if (payload.isEmpty) {
+      
+      Failure(new RuntimeException("Must provide payload!!!"))
+        
+    } else { 
+        for {
+          root <- {
+            acc push "Looking up 'root' org"
+            ResourceFactory.findRootOrg
+          }
+          creator <- Try {
+            acc push "Looking up creator"
+            ResourceFactory.findById(ResourceIds.User, identity) getOrElse {
+              throw new RuntimeException(s"Could not locate creator with id '${identity}'")
+            }
+          }
+          _ <- {
+            acc push "Adding DataFeed Resource Type to /root/resourcetypes"
+            addDataFeedType(root.id, root)
+          }
+          env <- {
+            acc push "Looking up environment for Stream Provider lambda"
+            getLambdaEnvironment(root.id, creator)
+          }
+          lamProvider <- {
+            lookupLambdaProvider(payload.get)
+          }
+          lam <- {
+            // Create lambda
+            acc push "Creating StreamProvider Lambda"
+            createStreamProviderLambda(root.id, env.id, creator, payload.get)
+          }
+          _ <- {
+            acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
+            addStreamProviderType(root.id, creator)
+          }
+          _ <- {
+            acc push "Creating StreamProvider instance in /root/providers"
+            val lambdaActions = Seq(
+                (lam.id -> Seq(
+                  "streamspec.create", 
+                  "streamspec.update", 
+                  "streamspec.delete", 
+                  "streamspec.start", 
+                  "streamspec.stop", 
+                  "streamspec.restart"))
+            )
+            createStreamProviderInstance(root.id, env.id, lambdaActions, creator, payload.get, lamProvider)
+          }
+          x <- {
+            acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
+            addStreamSpecType(root.id, creator)
+          }
+      } yield x
+    }
+    
+    process match {
+      case Success(_) => {
+        acc push "Meta update successful."
+        Right(MigrationStatus(
+            status = "SUCCESS",
+            message = s"Upgrade successfully applied",
+            succeeded = Some(acc.messages),
+            None).toJson)
+      }
+      case Failure(e) => {
+        Left(MigrationStatus(
+            status = "FAILURE",
+            message = s"There were errors performing this upgrade: ${e.getMessage}",
+            succeeded = Some(acc.messages),
+            errors = Some(Seq(e.getMessage))).toJson)
+      }
+    }    
+  }  
+  
+  private[migrations] def createStreamProviderInstance(
+      rootId: UUID, envId: UUID, lambdaActions: Seq[LambdaAction], 
+      creator: GestaltResourceInstance, 
+      payload: JsValue,
+      lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
+    
+    /*
+     * Map Lambda IDs/Actions to JSON Endpoints for Provider payload.
+     */
+    val endpoints = lambdaActions.map { case (lambdaId, actions) =>
+      val upstream = GatewayMethods.mkUpstreamUrl("lambda", lambdaId, None, true)
+      
+      log.debug(s"UPSTREAM-URL FOR LAMBDA [$lambdaId]: ${upstream}")
+      
+      val lambdaJson = {
+        Js.find(payload.as[JsObject], "/lambda") getOrElse {
+          throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
+        }
+      }
+      mkEndpoint(actions, upstream.get)
+    }
+    val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
+    
+    val providerPayload = mkProviderPayload("default-streamspec", (endpoints :+ viewstatusEndpoint))
+    
+    log.debug("PROVIDER-PAYLOAD : " + Json.prettyPrint(providerPayload))
+    
+    for {
+      prv <- CreateNewResource(
+          org = rootId,
+          creator = creator,
+          json = providerPayload,
+          typeId = Option(STREAM_PROVIDER_TYPE_ID),
+          parent = Option(rootId))
+      _ = setNewResourceEntitlements(rootId, prv.id, creator, Some(rootId))
+    } yield prv    
+  }  
+  
+  private[migrations] def mkStatusEndpoint(lambdaProvider: GestaltResourceInstance): JsValue = {
+    val actionUrl = mkActionUrl(lambdaProvider)
+    val output = Json.obj(
+      "actions" -> Json.toJson(Seq("streamspec.viewstatus")),
+      "http" -> Json.obj(
+        "url" -> actionUrl
+      )
+    )
+    log.debug("VIEW-STATUS ENDPOINT JSON:\n" + Json.prettyPrint(output))
+    output
+  }
+  
+  private[migrations] def mkActionUrl(laserProvider: GestaltResourceInstance): String = {
+    val config = Json.parse {
+      laserProvider.properties.fold {
+        throw new RuntimeException("Laser provider '/properties' not found.")
+      }{ ps =>
+        ps.get("config") getOrElse {
+          throw new RuntimeException("Laser provider '/properties/config' not found.")
+        }
+      }
+    }.as[JsObject]
+  
+    val actionUrl = {
+      val host = Js.find(config, "/env/public/SERVICE_HOST").getOrElse {
+        throw new RuntimeException("/properties/config/env/public/SERVICE_HOST not found.")
+      }.as[String]
+      val port = Js.find(config, "/env/public/SERVICE_PORT").getOrElse {
+        throw new RuntimeException("/properties/config/env/public/SERVICE_PORT not found.")
+      }.as[String]
+      
+      /*
+       * TODO: Hard-coding protocol like this is bad - but we don't currently have 
+       * metadata to lookup...SERVICE_PROTOCOL is set to 'tcp'.
+       */
+      "http://%s:%s/streams/<queryParams.persistenceId>/status".format(host, port)
+    }    
+    actionUrl
+  }  
+  
+  private[migrations] def mkEndpoint(actions: Seq[String], url: String): JsValue = {
+    Json.obj(
+      "actions" -> Json.toJson(actions),
+      "http" -> Json.obj(
+        "url" -> url
+      )
+    )
+  }
+  
+  private[migrations] def mkProviderPayload(name: String, endpoints: Seq[JsValue]): JsValue = {
+    Json.obj(
+        "name" -> "default-stream-provider",
+        "resource_type" -> STREAM_PROVIDER_TYPE_ID,
+        "properties" -> Json.obj(
+            "config" -> Json.obj(
+                "endpoints" -> Json.toJson(endpoints)
+            )
+        )
+    )  
+  }
+  
+  
+  /**
+   * Create a new Workspace in the root Org
+   */
+  private[migrations] def newWorkspace(rootId: UUID, creator: GestaltResourceInstance) = {
     for {
       wrk <- CreateNewResource(
           org = rootId,
@@ -53,7 +237,10 @@ class V7 extends MetaMigration with AuthorizationMethods {
     } yield wrk
   }
   
-  def newEnvironment(rootId: UUID, workspaceId: UUID, envType: UUID, creator: GestaltResourceInstance) = {
+  /**
+   * Create a new Environment in the given Workspace
+   */
+  private[migrations] def newEnvironment(rootId: UUID, workspaceId: UUID, envType: UUID, creator: GestaltResourceInstance) = {
     for { 
       env <- CreateNewResource(
         org = rootId,
@@ -92,41 +279,40 @@ class V7 extends MetaMigration with AuthorizationMethods {
     } yield e
   }
   
-  private[migrations] def createStreamProviderLambda(
-      orgId: UUID, 
-      envId: UUID, 
-      creator: GestaltResourceInstance, 
-      payload: JsValue): Try[GestaltResourceInstance] = {
-    
-    log.debug("****PAYLOAD : " + Json.prettyPrint(payload))
-    
+  
+  private[migrations] def lookupLambdaProvider(payload: JsValue) = Try {
     val providerId = {
       val jsId = Js.find(payload.as[JsObject], "/lambda/properties/provider/id") getOrElse {
         throw new BadRequestException("Bad migration payload. Missing: 'V7/lambda/properties/provider/id'")
       }
       UUID.fromString(jsId.as[String])
     }
-    
-    acc push s"Looking up given Lambda Provider: ${providerId}"
-    
+
     // Ensure given Lambda Provider Exists
     ResourceFactory.findById(providerId) getOrElse {
       throw new BadRequestException(s"Lambda Provider with ID '${providerId}' not found.")
     }
+  }
+  
+  private[migrations] def createStreamProviderLambda(
+      orgId: UUID, 
+      envId: UUID, 
+      creator: GestaltResourceInstance, 
+      payload: JsValue): Try[GestaltResourceInstance] = {
+
+    val lambdaJson = {
+      Js.find(payload.as[JsObject], "/lambda") getOrElse {
+        throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
+      }
+    }
     
-//    CreateNewResource(
-//      org = orgId,
-//      creator = creator,
-//      json = payload,
-//      typeId = Option(ResourceIds.Lambda),
-//      parent = Option(envId)
-//    )
-    
+    log.debug("LAMBDA-JSON:\n" + Json.prettyPrint(lambdaJson))
+
     for {
       lam <- CreateNewResource(
           org = orgId,
           creator = creator,
-          json = payload,
+          json = lambdaJson,
           typeId = Option(ResourceIds.Lambda),
           parent = Option(envId))
       _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
@@ -134,72 +320,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
   }
   
   
-  def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
-
-    /*
-     * Need to create lambda before stream-provider
-     */
-
-    val process = payload match {
-      case None =>
-        Failure(new RuntimeException("Must provide payload!!!"))
-      case Some(payload) =>
-        for {
-          root <- {
-            acc push "Looking up 'root' org"
-            ResourceFactory.findRootOrg
-          }
-          creator <- Try {
-            acc push "Looking up creator"
-            ResourceFactory.findById(ResourceIds.User, identity) getOrElse {
-              throw new RuntimeException(s"Could not locate creator with id '${identity}'")
-            }
-          }
-          _ <- {
-            acc push "Adding DataFeed Resource Type to /root/resourcetypes"
-            addDataFeedType(root.id, root)
-          }
-          env <- {
-            acc push "Looking up environment for Stream Provider lambda"
-            getLambdaEnvironment(root.id, creator)
-          }
-          _ <- {
-            // Create lambda
-            acc push "Creating StreamProvider Lambda"
-            createStreamProviderLambda(root.id, env.id, creator, payload)
-          }
-          _ <- {
-            acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
-            addStreamProviderType(root.id, creator)
-          }
-          x <- {
-            acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
-            addStreamSpecType(root.id, creator)
-          }
-      } yield x
-    }
-    
-    process match {
-      case Success(_) => {
-        acc push "Meta update successful."
-        Right(MigrationStatus(
-            status = "SUCCESS",
-            message = s"Upgrade successfully applied",
-            succeeded = Some(acc.messages),
-            None).toJson)
-      }
-      case Failure(e) => {
-        Left(MigrationStatus(
-            status = "FAILURE",
-            message = s"There were errors performing this upgrade: ${e.getMessage}",
-            succeeded = Some(acc.messages),
-            errors = Some(Seq(e.getMessage))).toJson)
-      }
-    }    
-  }
-  
-
-  def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
+  private[migrations] def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
     val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = DATA_FEED_TYPE_ID, 
@@ -234,7 +355,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
   }
   
 
-  def addStreamProviderType(org: UUID, creator: GestaltResourceInstance) = Try {
+  private[migrations] def addStreamProviderType(org: UUID, creator: GestaltResourceInstance) = Try {
     val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = STREAM_PROVIDER_TYPE_ID, 
@@ -267,7 +388,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
     setTypeLineage(newtype, creator)
   }
   
-  def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = Try {
+  private[migrations] def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = Try {
     val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = STREAM_SPEC_TYPE_ID, 
@@ -292,7 +413,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
     ).withActionInfo (
       ActionInfo(
         prefix = "streamspec", 
-        verbs  = Seq("start", "stop", "restart"))
+        verbs  = Seq("start", "stop", "restart", "viewstatus"))
         
     ).withLineageInfo (    
        LineageInfo(
