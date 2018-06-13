@@ -836,10 +836,11 @@ class Meta @Inject()( messagesApi: MessagesApi,
         org = org,
         identity = request.identity,
         body = request.body,
-        resourceType = provider.id,
+        resourceType = provider.typeId,
         providerType = provider.typeId,
         actionVerb = action,
-        resourceId = id
+        resourceId = provider.id,
+        specificProviderId = Some(provider.id)
       )
     } yield result
   }
