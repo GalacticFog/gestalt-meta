@@ -140,12 +140,12 @@ class V7 extends MetaMigration with AuthorizationMethods {
         Js.find(payload.as[JsObject], "/lambda") getOrElse {
           throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
         }
-      }      
-      val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
+      }
       mkEndpoint(actions, upstream.get)
     }
-        
-    val providerPayload = mkProviderPayload("default-streamspec", endpoints)
+    val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
+    
+    val providerPayload = mkProviderPayload("default-streamspec", (endpoints :+ viewstatusEndpoint))
     
     log.debug("PROVIDER-PAYLOAD : " + Json.prettyPrint(providerPayload))
     
