@@ -169,7 +169,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
   private[migrations] def mkProviderPayload(name: String, endpoints: Seq[JsValue]): JsValue = {
     Json.obj(
         "name" -> "default-stream-provider",
-        "resource_type" -> STREAM_PROVIDER_TYPE_NAME,
+        "resource_type" -> STREAM_PROVIDER_TYPE_ID,
         "properties" -> Json.obj(
             "config" -> Json.obj(
                 "endpoints" -> Json.toJson(endpoints)
