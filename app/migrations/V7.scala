@@ -94,7 +94,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
                   "streamspec.stop", 
                   "streamspec.restart"))
             )
-            createStreamProviderInstance(root.id, env.id, lambdaActions, creator, payload.get)
+            createStreamProviderInstance(root.id, env.id, lambdaActions, creator, payload.get, lamProvider)
           }
           x <- {
             acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
@@ -124,7 +124,9 @@ class V7 extends MetaMigration with AuthorizationMethods {
   
   private[migrations] def createStreamProviderInstance(
       rootId: UUID, envId: UUID, lambdaActions: Seq[LambdaAction], 
-      creator: GestaltResourceInstance, payload: JsValue): Try[GestaltResourceInstance] = {
+      creator: GestaltResourceInstance, 
+      payload: JsValue,
+      lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
     
     /*
      * Map Lambda IDs/Actions to JSON Endpoints for Provider payload.
@@ -139,7 +141,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
         }
       }      
-      val viewstatusEndpoint = mkStatusEndpoint(lambdaJson)
+      val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
       mkEndpoint(actions, upstream.get)
     }
         
@@ -157,25 +159,9 @@ class V7 extends MetaMigration with AuthorizationMethods {
       _ = setNewResourceEntitlements(rootId, prv.id, creator, Some(rootId))
     } yield prv    
   }  
-  private[migrations] def mkStatusEndpoint(lambdaJson: JsValue): JsValue = {
-    
-    val lambda = lambdaJson.as[JsObject]
-    
-    val actionUrl = {
-      val host = Js.find(lambda, "/properties/config/env/publis/SERVICE_HOST").getOrElse {
-        throw new BadRequestException("/env/public/SERVICE_HOST not found.")
-      }
-      val port = Js.find(lambda, "/properties/config/env/public/SERVICE_PORT").getOrElse {
-        throw new BadRequestException("/env/public/SERVICE_PORT not found.")
-      }
-      
-      /*
-       * TODO: Hard-coding protocol like this is bad - but we don't currently have 
-       * metadata to lookup...SERVICE_PROTOCOL is set to 'tcp'.
-       */
-      "http://${host}:${port}/streams/<queryParams.persistenceId>/status".format(host, port)
-    }
-    
+  
+  private[migrations] def mkStatusEndpoint(lambdaProvider: GestaltResourceInstance): JsValue = {
+    val actionUrl = mkActionUrl(lambdaProvider)
     val output = Json.obj(
       "actions" -> Json.toJson(Seq("streamspec.viewstatus")),
       "http" -> Json.obj(
@@ -185,6 +171,34 @@ class V7 extends MetaMigration with AuthorizationMethods {
     log.debug("VIEW-STATUS ENDPOINT JSON:\n" + Json.prettyPrint(output))
     output
   }
+  
+  private[migrations] def mkActionUrl(laserProvider: GestaltResourceInstance): String = {
+    val config = Json.parse {
+      laserProvider.properties.fold {
+        throw new RuntimeException("Laser provider '/properties' not found.")
+      }{ ps =>
+        ps.get("config") getOrElse {
+          throw new RuntimeException("Laser provider '/properties/config' not found.")
+        }
+      }
+    }.as[JsObject]
+  
+    val actionUrl = {
+      val host = Js.find(config, "/env/public/SERVICE_HOST").getOrElse {
+        throw new RuntimeException("/properties/config/env/public/SERVICE_HOST not found.")
+      }.as[String]
+      val port = Js.find(config, "/env/public/SERVICE_PORT").getOrElse {
+        throw new RuntimeException("/properties/config/env/public/SERVICE_PORT not found.")
+      }.as[String]
+      
+      /*
+       * TODO: Hard-coding protocol like this is bad - but we don't currently have 
+       * metadata to lookup...SERVICE_PROTOCOL is set to 'tcp'.
+       */
+      "http://%s:%s/streams/<queryParams.persistenceId>/status".format(host, port)
+    }    
+    actionUrl
+  }  
   
   private[migrations] def mkEndpoint(actions: Seq[String], url: String): JsValue = {
     Json.obj(
