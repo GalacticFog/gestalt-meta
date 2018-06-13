@@ -56,9 +56,11 @@ class Meta @Inject()( messagesApi: MessagesApi,
                       securitySync: SecuritySync,
                       lambdaMethods: LambdaMethods,
                       actionMethods: ProviderActionMethods,
-                      providerManager: ProviderManager )
+                      providerManager: ProviderManager,
+                      genericResourceMethods: GenericResourceMethods )
 
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+      extends SecureController(messagesApi = messagesApi, env = env)
+        with Authorization with MetaControllerUtils {
   
   // --------------------------------------------------------------------------
   // ORGS
@@ -819,6 +821,27 @@ class Meta @Inject()( messagesApi: MessagesApi,
       case Success(org) => org.id
       case Failure(ex)  => throw ex
     }
+  }
+
+  def postProviderAction(fqon: String, id: java.util.UUID, action: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"postProviderAction(${fqon},${id},${action})")
+    for {
+      org <- findOrgOrFail(fqon)
+      provider <- ResourceFactory.findById(id) match {
+        case Some(p) if ResourceFactory.isSubTypeOf(p.typeId, ResourceIds.Provider) => Future.successful(p)
+        case Some(np) => Future.failed(new ResourceNotFoundException(s"Resource '${id}' is not a subtype of Provider"))
+        case None => Future.failed(new ResourceNotFoundException(s"Resource '${id}' not found"))
+      }
+      result <- genericResourceMethods.performProviderBackedAction(
+        org = org,
+        identity = request.identity,
+        body = request.body,
+        resourceType = provider.id,
+        providerType = provider.typeId,
+        actionVerb = action,
+        resourceId = id
+      )
+    } yield result
   }
 
 }

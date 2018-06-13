@@ -4,6 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.auth.{Entitlement, EntitlementProps}
 import controllers.util.JsonInput
 import play.api.libs.json._
 
@@ -38,30 +39,22 @@ class V4() extends MetaMigration() with JsonInput {
       acc push "Location 'root' org"
       ResourceFactory.findRootOrg
     }
-    creator <- Try {
-      acc push "Looking up creator"
-      ResourceFactory.findById(ResourceIds.User, identity) getOrElse {throw new RuntimeException(s"Could not locate creator with id '${identity}'")}
-    }
     _ = acc push "Looking for existing 'gestalt.upgrade' entitlement on org 'root'"
     r <- ResourceFactory.findAllByPropertyValue(ResourceIds.Entitlement, "action", "gestalt.upgrade").headOption.fold {
       acc push s"Did not find existing entitlement for 'gestalt.upgrade', will create under org 'root'"
-      CreateNewResource(
+      val ent = Entitlement(
+        id = UUID.randomUUID(),
         org = root.id,
-        creator = creator,
-        json = Json.obj(
-          "name" -> s"${root.id}.gestalt.upgrade",
-          "properties" -> Json.obj(
-            "action" -> "gestalt.upgrade",
-            "identities" -> Seq(identity),
-            "parent" -> Json.obj(
-              "id" -> root.id,
-              "name" -> root.name
-            )
-          )
-        ),
-        typeId = Option(ResourceIds.Entitlement),
-        parent = Option(root.id)
+        name = s"${root.id}.gestalt.upgrade",
+        properties = EntitlementProps("gestalt.upgrade", None, Some(Seq(identity)))
       )
+      val e = ResourceFactory.create(ResourceIds.User, identity)(
+        Entitlement.toGestalt(identity, ent), parentId = Some(root.id)
+      )
+      if (e.isSuccess) {
+        acc push s"Entitlement added to ${ResourceLabel(root.typeId)} '${root.id}'"
+      }
+      e
     } { ent =>
       acc push s"Founding existing entitlement '${ent.name}'"
       Success(ent)
