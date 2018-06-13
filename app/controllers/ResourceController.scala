@@ -36,7 +36,8 @@ class ResourceController @Inject()(
     genericResourceMethods: GenericResourceMethods,
     lambdaMethods: LambdaMethods )
     
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, env = env)
+    with Authorization with MetaControllerUtils {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], Map[String, Seq[String]]) => Seq[ResourceLike])
@@ -189,15 +190,7 @@ class ResourceController @Inject()(
     }    
   }
 
-  private[this] def fTry[T](t: => T): Future[T] =
-    Future.fromTry(Try{t})
 
-  private[this] def findOrgOrFail(fqon: String): Future[GestaltResourceInstance] =
-    fTry(orgFqon(fqon) getOrElse {
-      throw new InternalErrorException("could not locate org resource after authentication")
-    })
-
-    
   def findResourceGlobal(typeName: String, id: UUID) = Audited() { implicit request =>
     GlobalResource.getResource(typeName, id) match {
       case Failure(e) => HandleExceptions(e)
