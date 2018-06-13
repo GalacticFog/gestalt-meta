@@ -43,7 +43,8 @@ trait GenericResourceMethods {
                                    resourceType: UUID,
                                    resourceId: UUID,
                                    providerType: UUID,
-                                   actionVerb: String )
+                                   actionVerb: String,
+                                   specificProviderId: Option[UUID] = None )
                                  ( implicit request: RequestHeader ) : Future[Result]
 
   def createProviderBackedResource( org: GestaltResourceInstance,
@@ -157,7 +158,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                   resourceType: UUID,
                                   resourceId: UUID,
                                   providerType: UUID,
-                                  actionVerb: String )
+                                  actionVerb: String,
+                                  specificProviderId: Option[UUID] = None)
                                  ( implicit request: RequestHeader ) : Future[Result] = {
                                  
     val metaAddress = {
@@ -173,7 +175,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"Resource of type ${sdk.ResourceLabel(resourceType)} with id '${resourceId}' does not exist"
       )
 
-      providerId <- getOrFail(
+      providerId <- getOrFail(specificProviderId orElse
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
         s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
       )

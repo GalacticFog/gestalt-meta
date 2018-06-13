@@ -51,6 +51,15 @@ trait MetaControllerUtils extends AuthorizationMethods {
     Resource.findFqon(fqon)
   }
 
+  protected[controllers] def fTry[T](t: => T): Future[T] =
+    Future.fromTry(Try{t})
+
+  protected[controllers] def findOrgOrFail(fqon: String): Future[GestaltResourceInstance] =
+    fTry(orgFqon(fqon) getOrElse {
+      throw new InternalErrorException("could not locate org resource after authentication")
+    })
+
+
   /**
    * Convert a string to a resource-state UUID. If state is empty, state = Active.
    */
@@ -200,7 +209,7 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
   private[this] val log = Logger(this.getClass)
   
   private type RenderFunction = (GestaltResourceInstance, Option[String]) => JsValue
-  
+
   /**
    * Render a single GestaltResourceInstance to JSON
    */
