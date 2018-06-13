@@ -83,16 +83,19 @@ class MigrationController @Inject()(
         executeMigration(v, caller, args) match {
           case Left(e) => {
             log.error("There was an error during meta-schema migration.")
+            log.debug(Json.prettyPrint(e))
             Json.obj(v -> e)
           }
           case Right(s) => {
             log.info("Meta-Schema migration complete.")
+            log.debug(Json.prettyPrint(s))
             Json.obj(v -> s)
           }
         }
       }
     }
 
+    log.debug(Json.prettyPrint(JsArray(results)))
     Future(Ok(JsArray(results)))
   }  
   
