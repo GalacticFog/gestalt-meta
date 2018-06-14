@@ -17,17 +17,6 @@ import play.api.libs.json._
 import scala.language.postfixOps
 import scala.util.Try
 import com.galacticfog.gestalt.json.Js
-  
-/**
- * WIP: Allow administrators to manually run a meta-schema migration of a specific version.
- * Currently handles a single route:
- * 
- * ```POST /migrate?version={version}```
- * 
- * - Calling user MUST be 'root' (not yet enforced)
- * - `version` querystring param MUST be present and non-null
- * - Payload is currently empty
- */
 
 class MigrationController @Inject()( 
     messagesApi: MessagesApi,
