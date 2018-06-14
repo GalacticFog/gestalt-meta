@@ -25,3 +25,4 @@ sec-init.sh
 node_modules/
 .vscode
 *.zip
+!/public/system/lambdas/*.zip

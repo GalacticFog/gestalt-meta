@@ -404,9 +404,9 @@ class V7 extends MetaMigration with AuthorizationMethods {
       TypeProperty("parallelization", "int", require = "required"),
       TypeProperty("processor", "json", require = "required"),
     	TypeProperty("streams", "json::list", require = "required"),
-  		TypeProperty("persistence_ids", "uuid::list", require = "required"),
-  		TypeProperty("lambda_provider", "json", require = "required"),
-  		TypeProperty("laser_url", "string", require = "required"),
+  		TypeProperty("persistence_ids", "uuid::list", require = "optional"),
+  		TypeProperty("lambda_provider", "json", require = "optional"),
+  		TypeProperty("laser_url", "string", require = "optional"),
       TypeProperty("provider", "resource::uuid::link", require = "required", 
             refersTo = Some(STREAM_PROVIDER_TYPE_ID))
    
