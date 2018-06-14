@@ -23,13 +23,13 @@ import controllers.util.JsonInput
 
 import controllers.util.TypeMethods
 import controllers.util.GatewayMethods
+import controllers.util.ProviderMethods
+import controllers.util.JsonUtil
+import com.galacticfog.gestalt.laser._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 
-
-/*
- * Add DataFeed Resource Type
- * Add StreamProvider Resource Type
- * Add StreamSpec Resource Type
- */
 
 class V7 extends MetaMigration with AuthorizationMethods {
 
@@ -41,6 +41,8 @@ class V7 extends MetaMigration with AuthorizationMethods {
   
   private val SYSTEM_WORKSPACE_NAME = "gestalt-system-workspace"
   private val SYSTEM_ENVIRONMENT_NAME = "gestalt-system-environment"
+  val LAMBDA_PROVIDER_TIMEOUT_MS = 20000  
+  
   
   // (Lambda-UUID, Seq-of-Actions)
   private type LambdaAction = (UUID, Seq[String])
@@ -63,7 +65,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
               throw new RuntimeException(s"Could not locate creator with id '${identity}'")
             }
           }
-          _ <- {
+          x <- {
             acc push "Adding DataFeed Resource Type to /root/resourcetypes"
             addDataFeedType(root.id, root)
           }
@@ -77,7 +79,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           lam <- {
             // Create lambda
             acc push "Creating StreamProvider Lambda"
-            createStreamProviderLambda(root.id, env.id, creator, payload.get)
+            createStreamProviderLambda(root.id, env.id, creator, payload.get, lamProvider)
           }
           _ <- {
             acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
@@ -294,30 +296,104 @@ class V7 extends MetaMigration with AuthorizationMethods {
     }
   }
   
+  
+  
+  
   private[migrations] def createStreamProviderLambda(
       orgId: UUID, 
       envId: UUID, 
       creator: GestaltResourceInstance, 
-      payload: JsValue): Try[GestaltResourceInstance] = {
-
+      payload: JsValue,      
+      lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
+    
+    
     val lambdaJson = {
-      Js.find(payload.as[JsObject], "/lambda") getOrElse {
+      val js = Js.find(payload.as[JsObject], "/lambda") getOrElse {
         throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
       }
-    }
+      injectParentLink(js.as[JsObject], lambdaProvider)
+    }    
     
-    log.debug("LAMBDA-JSON:\n" + Json.prettyPrint(lambdaJson))
+    val providerMethods = new ProviderMethods()
+    val metaCreate = for {
+      metalambda <- CreateNewResource(
+                org = orgId,
+                creator = creator,
+                json = lambdaJson,
+                typeId = Option(ResourceIds.Lambda),
+                parent = Option(envId))
+      laserlambda = toLaserLambda(metalambda, lambdaProvider.id.toString)
+    } yield (metalambda, laserlambda)
+    
+    metaCreate match {
+      case Failure(e) => {
+        log.error("Failed to create Lambda in Meta: " + e.getMessage)
+        throw e
+      }
+      case Success((meta,laser)) => {
+    
+        val client = providerMethods.configureWebClient(lambdaProvider, None)
+        
+        log.debug("Creating lambda in Laser...")  
+        log.debug("POSTING:\n")
+        log.debug(Json.prettyPrint(Json.toJson(laser)))
+        
+        val fout = client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
 
-    for {
-      lam <- CreateNewResource(
-          org = orgId,
-          creator = creator,
-          json = lambdaJson,
-          typeId = Option(ResourceIds.Lambda),
-          parent = Option(envId))
-      _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
-    } yield lam
+          if (Seq(200, 201).contains(result.status)) {
+            log.info("Successfully created Lambda in backend system.")
+            setNewResourceEntitlements(orgId, meta.id, creator, Some(envId))
+            meta
+          } else {
+            log.error("Error creating Lambda in backend system: " + result.statusText)
+            // TODO: DELETE THE LAMBDA FROM META
+          }
+          
+        } recover {
+          case e: Throwable => {
+           log.error(s"Error creating Lambda in backend system.")
+           // TODO: DELETE THE LAMBDA FROM META
+          }
+        }
+        
+        Try(Await.result(fout, LAMBDA_PROVIDER_TIMEOUT_MS.millis)).map(_ => meta)      
+        
+      }
+    }
+
   }
+  
+  
+  def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
+    val parentLink = toLink(parent, None)
+    json ++ Json.obj("properties" -> 
+      JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
+  }
+  
+//  private[migrations] def createStreamProviderLambda(
+//      orgId: UUID, 
+//      envId: UUID, 
+//      creator: GestaltResourceInstance, 
+//      payload: JsValue): Try[GestaltResourceInstance] = {
+//
+//    val lambdaJson = {
+//      Js.find(payload.as[JsObject], "/lambda") getOrElse {
+//        throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
+//      }
+//    }
+//    
+//    log.debug("LAMBDA-JSON:\n" + Json.prettyPrint(lambdaJson))
+//
+//    for {
+//      lam <- CreateNewResource(
+//          org = orgId,
+//          creator = creator,
+//          json = lambdaJson,
+//          typeId = Option(ResourceIds.Lambda),
+//          parent = Option(envId))
+//      _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
+//    } yield lam
+//  }
   
   
   private[migrations] def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
@@ -403,7 +479,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
       TypeProperty("mem", "int", require = "required"),
       TypeProperty("parallelization", "int", require = "required"),
       TypeProperty("processor", "json", require = "required"),
-    	TypeProperty("streams", "json::list", require = "required"),
+    	TypeProperty("streams", "json::list", require = "optional"),
   		TypeProperty("persistence_ids", "uuid::list", require = "optional"),
   		TypeProperty("lambda_provider", "json", require = "optional"),
   		TypeProperty("laser_url", "string", require = "optional"),

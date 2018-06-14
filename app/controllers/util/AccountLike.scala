@@ -19,7 +19,7 @@ trait AccountLike {
 object AccountLike {
 
   implicit def resource2AccountLike(r: GestaltResourceInstance): AccountLike = r.typeId match {
-    case ResourceIds.User => new AccountLike {
+    case ResourceIds.User | ResourceIds.Org => new AccountLike {
       override def id: UUID = r.id
       override def name: String = r.name
       override def orgId: UUID = r.orgId
