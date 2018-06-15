@@ -79,7 +79,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           lam <- {
             // Create lambda
             acc push "Creating StreamProvider Lambda"
-            createStreamProviderLambda(root.id, env.id, creator, payload.get, lamProvider)
+            createStreamProviderLambda(root.id, env, creator, payload.get, lamProvider)
           }
           _ <- {
             acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
@@ -301,7 +301,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
   
   private[migrations] def createStreamProviderLambda(
       orgId: UUID, 
-      envId: UUID, 
+      env: GestaltResourceInstance,
       creator: GestaltResourceInstance, 
       payload: JsValue,      
       lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
@@ -311,7 +311,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
       val js = Js.find(payload.as[JsObject], "/lambda") getOrElse {
         throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
       }
-      injectParentLink(js.as[JsObject], lambdaProvider)
+      injectParentLink(js.as[JsObject], env)
     }    
     
     val providerMethods = new ProviderMethods()
@@ -321,7 +321,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
                 creator = creator,
                 json = lambdaJson,
                 typeId = Option(ResourceIds.Lambda),
-                parent = Option(envId))
+                parent = Option(env.id))
       laserlambda = toLaserLambda(metalambda, lambdaProvider.id.toString)
     } yield (metalambda, laserlambda)
     
@@ -342,7 +342,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
 
           if (Seq(200, 201).contains(result.status)) {
             log.info("Successfully created Lambda in backend system.")
-            setNewResourceEntitlements(orgId, meta.id, creator, Some(envId))
+            setNewResourceEntitlements(orgId, meta.id, creator, Some(env.id))
             meta
           } else {
             log.error("Error creating Lambda in backend system: " + result.statusText)
