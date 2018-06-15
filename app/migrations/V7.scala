@@ -147,7 +147,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
     }
     val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
     
-    val providerPayload = mkProviderPayload("default-streamspec", (endpoints :+ viewstatusEndpoint))
+    val providerPayload = mkProviderPayload("default-streamspec", (endpoints :+ viewstatusEndpoint), lambdaProvider)
     
     log.debug("PROVIDER-PAYLOAD : " + Json.prettyPrint(providerPayload))
     
@@ -211,19 +211,28 @@ class V7 extends MetaMigration with AuthorizationMethods {
     )
   }
   
-  private[migrations] def mkProviderPayload(name: String, endpoints: Seq[JsValue]): JsValue = {
+  private[migrations] def mkProviderPayload(name: String, endpoints: Seq[JsValue], lambdaProvider: GestaltResourceInstance): JsValue = {
+    val lambdaProviderUrl = for {
+      props <- lambdaProvider.properties
+      config <- Try{Json.parse(props("config")).as[JsObject]}.toOption
+      host <- Js.find(config, "/env/public/SERVICE_HOST_OVERRIDE").flatMap(_.asOpt[String])
+        .orElse(Js.find(config, "/env/public/SERVICE_HOST").flatMap(_.asOpt[String]))
+      port <- Js.find(config, "/env/public/SERVICE_PORT_OVERRIDE").flatMap(_.asOpt[String])
+          .orElse(Js.find(config, "/env/public/SERVICE_PORT").flatMap(_.asOpt[String]))
+    } yield s"http://$host:$port"
+
     Json.obj(
-        "name" -> "default-stream-provider",
-        "resource_type" -> STREAM_PROVIDER_TYPE_ID,
-        "properties" -> Json.obj(
-            "config" -> Json.obj(
-                "endpoints" -> Json.toJson(endpoints)
-            )
+      "name" -> "default-stream-provider",
+      "resource_type" -> STREAM_PROVIDER_TYPE_ID,
+      "properties" -> Json.obj(
+        "config" -> Json.obj(
+          "endpoints" -> Json.toJson(endpoints),
+          "lambda_provider_url" -> lambdaProviderUrl
         )
-    )  
+      )
+    )
   }
-  
-  
+
   /**
    * Create a new Workspace in the root Org
    */
