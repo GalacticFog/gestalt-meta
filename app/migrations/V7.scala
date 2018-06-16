@@ -2,33 +2,22 @@ package migrations
 
 import java.util.UUID
 
-import scala.util.{Either, Left, Right}
-import scala.util.{Try, Success, Failure}
-
-import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.json._
-import com.galacticfog.gestalt.data.session
-import play.api.libs.json._
-import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
-import com.galacticfog.gestalt.meta.auth._
-import controllers.util.JsonInput
-
-import controllers.util.TypeMethods
-import controllers.util.GatewayMethods
-import controllers.util.ProviderMethods
-import controllers.util.JsonUtil
 import com.galacticfog.gestalt.laser._
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
+import com.galacticfog.gestalt.meta.auth._
+import controllers.util.{JsonUtil, ProviderMethods, TypeMethods}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json._
+
+import scala.concurrent.Await
 import scala.concurrent.duration._
-import scala.concurrent.{Await, Future}
+import scala.util.{Either, Failure, Left, Right, Success, Try}
 
 
 class V7 extends MetaMigration with AuthorizationMethods {
@@ -134,7 +123,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
      * Map Lambda IDs/Actions to JSON Endpoints for Provider payload.
      */
     val endpoints = lambdaActions.map { case (lambdaId, actions) =>
-      val upstream = GatewayMethods.mkUpstreamUrl("lambda", lambdaId, None, true)
+      val upstream = s"<provider.properties.config.lambda_provider_url>/lambdas/$lambdaId/invokeSync"
       
       log.debug(s"UPSTREAM-URL FOR LAMBDA [$lambdaId]: ${upstream}")
       
@@ -143,7 +132,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
           throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
         }
       }
-      mkEndpoint(actions, upstream.get)
+      mkEndpoint(actions, upstream)
     }
     val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
     
@@ -163,45 +152,16 @@ class V7 extends MetaMigration with AuthorizationMethods {
   }  
   
   private[migrations] def mkStatusEndpoint(lambdaProvider: GestaltResourceInstance): JsValue = {
-    val actionUrl = mkActionUrl(lambdaProvider)
     val output = Json.obj(
       "actions" -> Json.toJson(Seq("streamspec.viewstatus")),
       "http" -> Json.obj(
-        "url" -> actionUrl
+        "url" -> "<provider.properties.config.lambda_provider_url>/streams/<queryParams.persistenceId>/status"
       )
     )
     log.debug("VIEW-STATUS ENDPOINT JSON:\n" + Json.prettyPrint(output))
     output
   }
-  
-  private[migrations] def mkActionUrl(laserProvider: GestaltResourceInstance): String = {
-    val config = Json.parse {
-      laserProvider.properties.fold {
-        throw new RuntimeException("Laser provider '/properties' not found.")
-      }{ ps =>
-        ps.get("config") getOrElse {
-          throw new RuntimeException("Laser provider '/properties/config' not found.")
-        }
-      }
-    }.as[JsObject]
-  
-    val actionUrl = {
-      val host = Js.find(config, "/env/public/SERVICE_HOST").getOrElse {
-        throw new RuntimeException("/properties/config/env/public/SERVICE_HOST not found.")
-      }.as[String]
-      val port = Js.find(config, "/env/public/SERVICE_PORT").getOrElse {
-        throw new RuntimeException("/properties/config/env/public/SERVICE_PORT not found.")
-      }.as[String]
-      
-      /*
-       * TODO: Hard-coding protocol like this is bad - but we don't currently have 
-       * metadata to lookup...SERVICE_PROTOCOL is set to 'tcp'.
-       */
-      "http://%s:%s/streams/<queryParams.persistenceId>/status".format(host, port)
-    }    
-    actionUrl
-  }  
-  
+
   private[migrations] def mkEndpoint(actions: Seq[String], url: String): JsValue = {
     Json.obj(
       "actions" -> Json.toJson(actions),
@@ -489,10 +449,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
       TypeProperty("parallelization", "int", require = "required"),
       TypeProperty("processor", "json", require = "required"),
     	TypeProperty("streams", "json::list", require = "optional"),
-  		TypeProperty("persistence_ids", "uuid::list", require = "optional"),
-  		TypeProperty("lambda_provider", "json", require = "optional"),
-  		TypeProperty("laser_url", "string", require = "optional"),
-      TypeProperty("provider", "resource::uuid::link", require = "required", 
+      TypeProperty("provider", "resource::uuid::link", require = "required",
             refersTo = Some(STREAM_PROVIDER_TYPE_ID))
    
     ).withActionInfo (
@@ -507,7 +464,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
            
     ).withApiInfo (
           TypeApiInfo(rest_name = "streamspecs")
-    
+
     ).save()
    
     val newtype = TypeFactory.findById(STREAM_SPEC_TYPE_ID) getOrElse {
