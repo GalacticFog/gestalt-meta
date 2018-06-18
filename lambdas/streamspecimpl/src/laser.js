@@ -3,11 +3,12 @@ const MetaClient = require('./client')
 module.exports = {
   getAddress(event) {
     
-    if (event.resource.properties.lambda_provider) {
-      console.log("Found existing lambda_provider.url")
-      return event.resource.properties.lambda_provider.url
+    const providerUrl = event.resource.properties.config.lambda_provider_url
+    if (providerUrl) {
+      console.log("Found lambda_provider_url : " + providerUrl)
+      return providerUrl
     } else {
-      return 'http://laser.test.galacticfog.com'
+      throw new Error("Missing lambda_provider_url. Could not find /properties/config/lambda_provider_url")
     }
   },
   getAuth(context) {
