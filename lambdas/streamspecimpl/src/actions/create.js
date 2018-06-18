@@ -14,17 +14,14 @@ module.exports = {
     // Create the payload we need to create the StreamDescription in Laser.
     const description = await makeLaserDescriptionMessage(event, client)
     
-/* -----
- * Check Meta for 'Sampling Lambda' - if exists, continue else create Lambda and continue.
- */
-
     console.log("...ABOUT TO CREATE DESCRIPTION IN LASER...")
    /*
     * Create Description in Laser
     */ 
     const laserClient = new MetaClient(laser.getAddress(event), laser.getAuth(context))
-    const laserResult = await laserClient.post(`/streamDefinitions`, util.pretty(description)).then(des =>
-      des.data
+    const laserResult = await laserClient.post(
+      `/streamDefinitions`, util.pretty(description)).then(des =>
+        des.data
     ).catch(err => {
       console.error("ERROR : ")
       console.log(err)

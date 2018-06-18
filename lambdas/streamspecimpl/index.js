@@ -22,7 +22,7 @@ exports.entryPoint = function(event, context, callback) {
         console.log('Received [streamspec.create]')
         
         const result = await create.actionCreate(eventData, contextData, metaClient)
-        callback(null, result)
+        callback(null, util.pretty(result))
 
         break
       case 'streamspec.start':
@@ -30,8 +30,6 @@ exports.entryPoint = function(event, context, callback) {
 
         const started = await start.actionStart(eventData, contextData, metaClient)
         const sendback = translateProviderLink(started)
-
-        console.log('RETURN-VALUE : ' + util.pretty(sendback))
 
         callback(null, sendback)
 
