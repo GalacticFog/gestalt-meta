@@ -3,7 +3,7 @@ const MetaClient = require('./client')
 module.exports = {
   getAddress(event) {
     
-    const providerUrl = event.resource.properties.config.lambda_provider_url
+    const providerUrl = event.provider.properties.config.lambda_provider_url
     if (providerUrl) {
       console.log("Found lambda_provider_url : " + providerUrl)
       return providerUrl
