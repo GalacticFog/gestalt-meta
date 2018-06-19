@@ -60,16 +60,14 @@ async function makeLaserDescriptionMessage(event, client) {
     {outputStreamConfig: laserOutputStream}
   )
 
-  const description = Object.assign(
-    {id: event.resource.id},
-    {name: event.resource.name},
-    {cpus: event.resource.properties.cpus},
-    {mem: event.resource.properties.mem},
-    {parallelization: event.resource.properties.parallelization},
-    {processor: streamProcessor}
-  )
-
-  return description
+  return {
+      id: event.resource.id,
+      name: event.resource.name,
+      cpus: event.resource.properties.cpus,
+      mem: event.resource.properties.mem,
+      parallelization: event.resource.properties.parallelization,
+      processor: streamProcessor
+  }
 }
 
 /**
@@ -78,14 +76,14 @@ async function makeLaserDescriptionMessage(event, client) {
  */
 function toLaserInputStream(feed, config) {
   console.log('Entered toLaserInputStream()...')
-  return Object.assign(
-    {name: config.name},
-    {type: feed.properties.kind},
-    {broker: feed.properties.data.endpoint},
-    {topic: feed.properties.data.topic},
-    {group: feed.properties.data.group},
-    {credentials: feed.properties.data.credentials},
-    {partitions: config.partitions})
+  return {
+    type: feed.properties.kind,
+    broker: feed.properties.data.endpoint,
+    topic: feed.properties.data.topic,
+    group: feed.properties.data.group,
+    credentials: feed.properties.data.credentials,
+    partitions: config.partitions
+  }
 }
 
 /**
@@ -93,13 +91,12 @@ function toLaserInputStream(feed, config) {
  */
 function toLaserOutputStream(feed, config) {
   console.log('Entered toLaserOutputStream()...')
-  return Object.assign(
-    {name: config.name},
-    {type: feed.properties.kind},
-    {broker: feed.properties.data.endpoint},
-    {topic: feed.properties.data.topic},
-    {credentials: feed.properties.data.credentials}
-  )
+  return {
+      type: feed.properties.kind,
+      broker: feed.properties.data.endpoint,
+      topic: feed.properties.data.topic,
+      credentials: feed.properties.data.credentials
+  }
 }
 
 /**
