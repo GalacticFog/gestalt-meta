@@ -121,9 +121,6 @@ async function metaGetDataFeed(id, client) {
  * @param {*} event 
  */
 function injectLaserProviderInfo(event) {
-  const lambdaId = event.resource.properties.processor.lambdaId  
-  const providerUrl = laser.getAddress(event)
-
   const props = event.resource.properties
   /* 
     * streamspec.properties.provider is a reference UUID in the schema. That means
@@ -131,9 +128,7 @@ function injectLaserProviderInfo(event) {
     */
   const providerId = event.resource.properties.provider.id
 
-  const nprops = Object.assign(
-    Object.assign(props, { provider : providerId}), 
-      { lambda_provider: { id: '12345', url: providerUrl}})
+  const nprops = Object.assign(props, { provider : providerId})
 
   return Object.assign(event.resource, { properties : nprops })
 }
