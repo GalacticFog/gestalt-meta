@@ -113,22 +113,7 @@ GET 	/lambdas/:id/env													controllers.ResourceController.getTopLevelLamb
 # ENTITLEMENTS
 ############################
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements								controllers.AuthorizationController.postEntitlementOrgFqon(fqon: String)
-
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id							controllers.AuthorizationController.putEntitlementOrgFqon(fqon: String, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/entitlements/:id  		controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:parent/entitlements/:id  	controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/lambdas/:parent/entitlements/:id  		controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "e3a463fc-e51f-4166-8cec-3d9a54f7babd", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:parent/entitlements/:id  		controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "28cbf0e0-2c48-4589-85d5-df97a3a1f318", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/streamspecs/:parent/entitlements/:id  	controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "e9e90e0a-4f87-492e-afcc-2cd84057f226", parent: java.util.UUID, id: java.util.UUID)
-
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apis/:parent/entitlements/:id  			controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "df4bf8b5-170f-453e-9526-c37c898d96c9", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/apiendpoints/:parent/entitlements/:id  	controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "f3f1ad01-73f1-48a8-9d24-e41d8a202545", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/policies/:parent/entitlements/:id  		controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "c3c05a39-acb3-4a45-97a8-5696ad1b4214", parent: java.util.UUID, id: java.util.UUID)
-PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/secrets/:parent/entitlements/:id  		controllers.AuthorizationController.putEntitlementFqon(fqon: String, parentTypeId: String = "98d8a6d6-e3db-488f-b32d-8b00b3fce472", parent: java.util.UUID, id: java.util.UUID)
-
-#PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/rules
-
-
+PUT		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/entitlements/:id							controllers.AuthorizationController.putEntitlement(fqon: String, id: java.util.UUID)
 
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/entitlements				controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343", id: java.util.UUID)
 POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/entitlements				controllers.AuthorizationController.postEntitlementFqon(fqon: String, typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c", id: java.util.UUID)
