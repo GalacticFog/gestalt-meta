@@ -421,19 +421,9 @@ class ResourceController @Inject()(
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
 
-  
   def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
     log.debug("Looking up applicable actions...")
-    
-//    val actions = ResourceFactory.findById(target).fold {
-//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-//    }{ _ => 
-//      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer/*ResourceIds.ActionProvider*/, target) 
-//      rs flatMap { p => 
-//        ResourceFactory.findChildrenOfType(org, p.id, ResourceIds.ProviderAction) 
-//      }
-//    }
-    
+
     val actions = ResourceFactory.findById(target).fold {
       throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
     }{ _ =>
@@ -441,7 +431,6 @@ class ResourceController @Inject()(
         anc <- {
           val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
           val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
-          
           rs.reverse ++ root
         }
         prv <- {
@@ -449,24 +438,14 @@ class ResourceController @Inject()(
           rs
         }
       } yield prv
-      
-      //val acts = ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))
-      val acts = (ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id))).zip(prvs.map(_.typeId))
-      
-      (acts.foldLeft(Seq.empty[(GestaltResourceInstance, UUID)]) { (acc, next) =>
-        if (acc.exists(_._2 == next._2)) acc else (acc :+ next)
-      }).map(_._1)
+      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
     }
-    
 
-    
-    log.debug("Checking for prefix-filter...")
-    log.debug("Prefix-Filter : " + prefixFilter)
-    
+    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
+
     if (prefixFilter.isEmpty) actions
     else actions filter { act =>
       val spec = ProviderActionSpec.fromResource(act)
-      //(spec.ui_locations.map(_.name.takeWhile { c => c != '.' }) intersect prefixFilter).nonEmpty
       (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
     }
   }
