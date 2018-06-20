@@ -3,8 +3,7 @@ package migrations
 import java.util.UUID
 
 import scala.util.{Either, Left, Right}
-import scala.util.{Try, Success, Failure}
-
+import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
@@ -17,10 +16,12 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.auth._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
 import com.galacticfog.gestalt.meta.auth._
+import com.galacticfog.gestalt.meta.providers.ProviderManager
+import controllers.Meta
 import controllers.util.JsonInput
 import controllers.util.TypeMethods
+import javax.inject.Inject
 
 /*
  * Add DataFeed Resource Type
@@ -28,7 +29,7 @@ import controllers.util.TypeMethods
  * Add StreamSpec Resource Type
  */
 
-class V8 extends MetaMigration with AuthorizationMethods {
+class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaMigration with AuthorizationMethods {
 
   private val acc = new MessageAccumulator()
   
@@ -39,27 +40,25 @@ class V8 extends MetaMigration with AuthorizationMethods {
   private val STOP_PROVIDER_TYPE_NAME = "Gestalt::Action::StopStream"
   
   private val ENTITLEMENTS = Option(Seq(ResourceIds.Entitlement))
-  
-  
-  
-  def newActionInstance(rootId: UUID, typeId: UUID, creator: GestaltResourceInstance, payload: JsValue) = {
+
+  def newActionProviderInstance(rootId: UUID, typeId: UUID, creator: GestaltResourceInstance, payload: JsObject) = {
     for {
-      act <- CreateNewResource(
+      actionProvider <- CreateNewResource(
           org = rootId,
           creator = creator,
           json = payload,
           typeId = Option(typeId),
           parent = Option(rootId))
-      _ = setNewResourceEntitlements(rootId, act.id, creator, Some(rootId))
-    } yield act    
-  }  
-  
+      providerEnv = providerManager.getOrCreateProviderEnvironment(actionProvider, creator)
+      _ = meta.createProviderActions(actionProvider, payload, creator, providerEnv)
+      _ = setNewResourceEntitlements(rootId, actionProvider.id, creator, Some(rootId))
+    } yield actionProvider
+  }
+
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
-    
-    //val owner = ResourceOwnerLink(ResourceIds.User, identity)
-   
+
     val process = for {
-      
+
       root <- {
         acc push "Looking up 'root' org"
         ResourceFactory.findRootOrg
@@ -69,7 +68,7 @@ class V8 extends MetaMigration with AuthorizationMethods {
         ResourceFactory.findById(ResourceIds.User, identity) getOrElse {
           throw new RuntimeException(s"Could not locate creator with id '${identity}'")
         }
-      }      
+      }
       _ <- {
         acc push "Adding Start Stream Provider Type to /root/resourcetypes"
         addStartProviderType(root.id, creator)
@@ -81,14 +80,24 @@ class V8 extends MetaMigration with AuthorizationMethods {
       _ <- {
         // Create start instance
         acc push "Creating Start Provider instance in /root"
-        val payload = Json.obj("name" -> "start-stream-default")
-        newActionInstance(root.id, START_PROVIDER_TYPE_ID, creator, payload)
+        val payload = Json.obj(
+          "name" -> "start-stream-default",
+          "properties" -> Json.obj(
+            "provider_actions" -> providerStartActions
+          )
+        )
+        newActionProviderInstance(root.id, START_PROVIDER_TYPE_ID, creator, payload)
       }
       _ <- {
         // Create stop instance
         acc push "Creating Stop Provider instance in /root"
-        val payload = Json.obj("name" -> "stop-stream-default")
-        newActionInstance(root.id, STOP_PROVIDER_TYPE_ID, creator, payload)
+        val payload = Json.obj(
+          "name" -> "stop-stream-default",
+          "properties" -> Json.obj(
+            "provider_actions" -> providerStopActions
+          )
+        )
+        newActionProviderInstance(root.id, STOP_PROVIDER_TYPE_ID, creator, payload)
       }
     } yield x
     
@@ -110,30 +119,21 @@ class V8 extends MetaMigration with AuthorizationMethods {
       }
     }      
   }
-  
-  def addRootStartInstance() = {
-    
-  }
-  
-  def addRootStopInstance() = {
-    
-  }
-  
+
   def addStartProviderType(org: UUID, creator: GestaltResourceInstance) = Try {
     val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
       typeId      = START_PROVIDER_TYPE_ID, 
       typeName    = START_PROVIDER_TYPE_NAME,
       desc        = Some("Start stream provider action."),
-      extend      = Some(ResourceIds.ActionProvider),
-      selfProps   = Map("provider_actions" -> providerStartActions)
+      extend      = Some(ResourceIds.ActionProvider)
 
     ).withActionInfo (
       ActionInfo(
         prefix = "providers", 
         verbs  = Seq.empty)
         
-    ).withLineageInfo (    
+    ).withLineageInfo (
        LineageInfo(
            parent_types = Seq(
                ResourceIds.Org,
@@ -161,9 +161,8 @@ class V8 extends MetaMigration with AuthorizationMethods {
       typeId      = STOP_PROVIDER_TYPE_ID, 
       typeName    = STOP_PROVIDER_TYPE_NAME,
       desc        = Some("Stop stream provider action."),
-      extend      = Some(ResourceIds.ActionProvider),
-      selfProps   = Map("provider_actions" -> providerStopActions)
-      
+      extend      = Some(ResourceIds.ActionProvider)
+
     ).withActionInfo (
       ActionInfo(
         prefix = "providers", 

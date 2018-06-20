@@ -640,15 +640,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
                    */
                   val providerEnv = providerManager.getOrCreateProviderEnvironment(newprovider, user)
                   log.debug("Creating Provider Actions...")
-
-                  val acts   = createProviderActions(newprovider, payload, user, providerEnv, parentId)
-                  val json   = Output.renderLinks(acts, Some(META_URL))
-                  val props  = newprovider.properties map { ps =>
-                    ps ++ Map("provider_actions" -> Json.stringify(json))
-                  }
-                  newprovider.copy(properties = props)
+                  val _ = createProviderActions(newprovider, payload, user, providerEnv)
                   ProviderMethods.injectProviderActions(newprovider)
                 }
+
               }
 
               Created(RenderSingle(output))
@@ -702,36 +697,33 @@ class Meta @Inject()( messagesApi: MessagesApi,
   
   /**
    * 
-   * @param r the Provider instance to create actions for
+   * @param provider the Provider instance to create actions for
    * @param payload the JSON used to create the Provider
    * @param creator the user who initiated this call
    * @param providerEnv the new environment where action lambdas will be created
-   * @param parentId UUID of Provider parent resource
    */
-  def createProviderActions(
-        r: GestaltResourceInstance, 
-        payload: JsObject, 
-        creator: AuthAccountWithCreds, 
-        providerEnv: GestaltResourceInstance,
-        parentId: UUID) = {
-    
+  def createProviderActions( provider: GestaltResourceInstance,
+                             payload: JsObject,
+                             creator: AccountLike,
+                             providerEnv: GestaltResourceInstance) = {
+
     // Parse the ActionSpec JSON from the Provider type definition.
 
     val actionSpecs = for {
-      s <- TypeFactory.findById(r.typeId)
+      s <- TypeFactory.findById(provider.typeId)
       p <- s.properties
       a <- p.get("provider_actions")
       jsv  = Json.parse(a)
       acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_)(providerActionFormat) }
     } yield acts
-    
+
     val (failedParse, successfulParse) = (actionSpecs getOrElse Seq.empty) partition { _.isFailure }
-    
+
     if (failedParse.nonEmpty) {
       // TODO: There were errors parsing ProviderActions - DO SOMETHING!
       throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
     }
-    
+
     val fActions = successfulParse.map { spec =>
       /*
        * TODO: Idea is that we can use a pre-existing lambda or create a new one
@@ -740,22 +732,22 @@ class Meta @Inject()( messagesApi: MessagesApi,
        */
       log.debug("Creating Action Lambda...")
       log.debug(Json.prettyPrint(Json.toJson(spec.get)))
-      
+
       log.info("Attempting to resolve action-implementation...")
-      
+
       val impl = spec.get.implementation
-      
+
       val action = impl.kind.trim.toLowerCase match {
         case "lambda" => {
-          actionMethods.resolveLambdaImplementation(r.orgId, impl, providerEnv, creator).map { lam =>
-            spec.get.toResource(r.orgId, r.id, r.owner, implId = Some(lam.id))
+          actionMethods.resolveLambdaImplementation(provider.orgId, impl, providerEnv, creator).map { lam =>
+            spec.get.toResource(provider.orgId, provider.id, provider.owner, implId = Some(lam.id))
           }
         }
-        case "metacallback" => Future(spec.get.toResource(r.orgId, r.id, r.owner))
-      }      
+        case "metacallback" => Future(spec.get.toResource(provider.orgId, provider.id, provider.owner))
+      }
 
       action map { act =>
-        CreateWithEntitlements(r.orgId, creator, act, Some(r.id)) match {
+        CreateWithEntitlements(provider.orgId, creator, act, Some(provider.id)) match {
           case Success(res) => res
           case Failure(err) => throw new RuntimeException("Failed creating ProviderAction: " + err.getMessage)
         }        

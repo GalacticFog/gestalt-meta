@@ -151,7 +151,7 @@ class LambdaMethods @Inject()( ws: WSClient,
     org: UUID, 
     parent: GestaltResourceInstance,
     payload: JsValue,
-    caller: AuthAccountWithCreds): Future[GestaltResourceInstance] = {
+    caller: AccountLike): Future[GestaltResourceInstance] = {
     
     val input    = toInput(payload, Some(ResourceIds.Lambda)).get
     val lambdaId = input.id.getOrElse(UUID.randomUUID)
@@ -203,11 +203,11 @@ class LambdaMethods @Inject()( ws: WSClient,
   import controllers.LambdaProviderInfo
   import com.galacticfog.gestalt.data.parseUUID
   
-  def updateFailedBackendCreateResource(caller: AuthAccountWithCreds, metaResource: GestaltResourceInstance, ex: Throwable)
+  def updateFailedBackendCreateResource(caller: AccountLike, metaResource: GestaltResourceInstance, ex: Throwable)
       : Try[GestaltResourceInstance]= {
     log.error(s"Setting state of resource '${metaResource.id}' to FAILED")
     val failstate = ResourceState.id(ResourceStates.Failed)
-    ResourceFactory.update(metaResource.copy(state = failstate), caller.account.id)
+    ResourceFactory.update(metaResource.copy(state = failstate), caller.id)
   }
   
   def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
@@ -274,14 +274,14 @@ import com.galacticfog.gestalt.meta.providers._
   
   protected[controllers] def CreateResource(
     org: UUID,
-    caller: AuthAccountWithCreds,
+    caller: AccountLike,
     resourceJson: JsValue,
     typeId: UUID,
     parentId: Option[UUID]): Try[GestaltResourceInstance] = {
     
     toInput(resourceJson) flatMap { input =>
       val tid = assertValidTypeId(input, Option(typeId))
-      ResourceFactory.create(ResourceIds.User, caller.account.id)(
+      ResourceFactory.create(ResourceIds.User, caller.id)(
         resourceWithDefaults(org, input, caller, Option(tid)), parentId) map { res =>
           setNewResourceEntitlements(org, res.id, caller, parentId)
           res
