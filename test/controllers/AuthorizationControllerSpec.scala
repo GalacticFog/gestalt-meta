@@ -474,7 +474,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
       }
 
       val body = Output.renderInstance(Entitlement.toGestalt(user.account.id, updated)).as[JsObject] - "resource_type"
-      val resp = controller.putEntitlementFqon("root", ResourceIds.ApiEndpoint.toString, testEndpoint.id, ent.id)(fakeAuthRequest(
+      val resp = controller.putEntitlement("root", ent.id)(fakeAuthRequest(
         PUT, s"/root/apiendpoints/${testEndpoint.id}/entitlements/${ent.id}", testCreds
       ).withBody(body))
       status(resp) must_== OK

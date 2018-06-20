@@ -91,14 +91,10 @@ class AuthorizationController @Inject()(
      newent.copy(created = old.created)
   }
   
-  def putEntitlementOrgFqon(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
+  def putEntitlement(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
     putEntitlementCommon(fqid(fqon), id)
   }
   
-  def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    putEntitlementCommon(fqid(fqon), id)
-  }
-
   private[controllers] def reconcile[A](base: Seq[A], adds: Seq[A], deletes: Seq[A]): Seq[A] = {
     (base filter { !deletes.contains(_) }) ++ adds
   }  
