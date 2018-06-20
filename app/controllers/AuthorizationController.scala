@@ -92,17 +92,11 @@ class AuthorizationController @Inject()(
   }
   
   def putEntitlementOrgFqon(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    val org = fqid(fqon)
-    putEntitlementCommon(org, org, id)
+    putEntitlementCommon(fqid(fqon), id)
   }
   
   def putEntitlementFqon(fqon: String, parentTypeId: String, parentId: UUID, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    ResourceFactory.findById(parentTypeId, parentId) match {
-      case None => Future.successful(NotFoundResult(s"${ResourceLabel(parentId)} with ID '$id' not found."))
-      case Some(parent) => {
-        putEntitlementCommon(fqid(fqon), parent.id, id)
-      }
-    }
+    putEntitlementCommon(fqid(fqon), id)
   }
 
   private[controllers] def reconcile[A](base: Seq[A], adds: Seq[A], deletes: Seq[A]): Seq[A] = {
@@ -129,9 +123,9 @@ class AuthorizationController @Inject()(
   }
 
   
-  private[controllers] def putEntitlementCommon(org: UUID, parent: UUID, id: UUID)(
+  private[controllers] def putEntitlementCommon(org: UUID, id: UUID)(
       implicit request: SecuredRequest[JsValue]) = Future {
-    
+
     val user = request.identity
     val json = request.body
 
@@ -139,24 +133,24 @@ class AuthorizationController @Inject()(
       throw ResourceNotFoundException(s"Entitlement with ID '$id' not found")
     }
 
-    val _ = ResourceFactory.findById(parent) getOrElse {
-      throw ResourceNotFoundException(s"Resource with ID '$parent' not found")
-    }
-
-    ResourceFactory.findParent(targetEntitlement.id).foreach {
-      p => log.debug(s"entitlement ${id} has parent /${ResourceLabel(p.typeId)}/${p.id}")
+    val parent = ResourceFactory.findParent(targetEntitlement.id) match {
+      case Some(p) =>
+        log.debug(s"entitlement ${id} has parent /${ResourceLabel(p.typeId)}/${p.id}")
+        p
+      case None =>
+        throw ResourceNotFoundException(s"Could not find parent of Entitlement '$id'")
     }
 
     val options = this.standardRequestOptions(user, id, targetEntitlement)
     val operations = this.standardRequestOperations("entitlement.update")
-    
+
     SafeRequest(operations, options) Protect { _ =>
-      
+
       val modified = for {
-        r1   <- validateEntitlementPayload(org, parent, user, json, "update")
+        r1   <- validateEntitlementPayload(org, parent.id, user, json, "update")
         r2   <- validateEntitlementUpdate(targetEntitlement, r1)
         r3   <- copyEntitlementForUpdate(targetEntitlement, r2)
-        updates = cascadeEntitlementIdentities(parent, targetEntitlement, r3)
+        updates = cascadeEntitlementIdentities(parent.id, targetEntitlement, r3)
       } yield updates    
     
       modified match {
