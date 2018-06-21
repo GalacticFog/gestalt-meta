@@ -162,10 +162,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                   specificProviderId: Option[UUID] = None)
                                  ( implicit request: RequestHeader ) : Future[Result] = {
                                  
-    val metaAddress = {
-      EnvironmentVars.get(org.id, org.id).getOrElse("META_ASSET_BASE", META_URL)
-    }    
-    
+    val metaAddress = META_URL
+
     val response = for {
       /*
        * Resource we're performing the action against.
