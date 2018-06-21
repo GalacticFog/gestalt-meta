@@ -22,6 +22,7 @@ class MigrationController @Inject()(
     messagesApi: MessagesApi,
     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
     security: Security,
+    v8: V8,
     genericResourceMethods: GenericResourceMethods )
       extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
   
@@ -109,7 +110,7 @@ class MigrationController @Inject()(
       case "V5" => new V5()
       case "V6" => new V6()
       case "V7" => new V7()
-      case "V8" => new V8()
+      case "V8" => v8
       case "V9" => new V9()
       case _ =>
         throw new BadRequestException(s"No migration found for version '$version'")

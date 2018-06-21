@@ -5,7 +5,6 @@ import java.util.UUID
 import scala.concurrent.Future
 import scala.language.implicitConversions
 import scala.util.Try
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._
@@ -14,8 +13,7 @@ import com.galacticfog.gestalt.meta.providers.ProviderActionSpec
 import com.galacticfog.gestalt.meta.providers.ProviderEnv
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
-
-import controllers.util.LambdaMethods
+import controllers.util.{AccountLike, LambdaMethods}
 import javax.inject.Singleton
 import play.api.Logger
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -44,7 +42,7 @@ class ProviderActionMethods @Inject()(lambdaMethods: LambdaMethods) {
       org: UUID, 
       impl: ActionImplSpec, 
       env: GestaltResourceInstance, 
-      user: AuthAccountWithCreds) = {
+      user: AccountLike) = {
     
     log.info(s"Implementation Type: ${impl.kind} - looking up implementation-resource...")
     
