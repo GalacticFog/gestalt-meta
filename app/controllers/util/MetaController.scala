@@ -183,11 +183,12 @@ trait MetaControllerUtils extends AuthorizationMethods {
     * Get the base URL for this Meta instance
     */
   def META_URL(implicit requestHeader: RequestHeader): String = {
-    val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
+    lazy val protocol = (requestHeader.headers.get(HeaderNames.X_FORWARDED_PROTO) getOrElse {
       if (requestHeader.secure) "https" else "http"
     }).toLowerCase
-    val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
-    "%s://%s".format(protocol, host)
+    lazy val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
+    lazy val inferredUrl = "%s://%s".format(protocol, host)
+    requestHeader.headers.get("GESTALT_META_BASE_URL").getOrElse(inferredUrl)
   }
 
   def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
