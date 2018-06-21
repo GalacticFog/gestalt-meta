@@ -399,10 +399,7 @@ class ResourceController @Inject()(
       
       import com.galacticfog.gestalt.meta.providers.ui._
 
-      val metaAddress = {
-        val org = fqid(fqon)
-        EnvironmentVars.get(org, org).getOrElse("META_ASSET_BASE", META_URL)
-      }
+      val metaAddress = META_URL
 
       log.debug("using META_ADDRESS : " + metaAddress)
       

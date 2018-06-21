@@ -188,7 +188,7 @@ trait MetaControllerUtils extends AuthorizationMethods {
     }).toLowerCase
     lazy val host = requestHeader.headers.get(HeaderNames.X_FORWARDED_HOST) getOrElse requestHeader.host
     lazy val inferredUrl = "%s://%s".format(protocol, host)
-    requestHeader.headers.get("GESTALT_META_BASE_URL").getOrElse(inferredUrl)
+    requestHeader.headers.get("GESTALT-META-BASE-URL").getOrElse(inferredUrl)
   }
 
   def normalizeResourceType(obj: JsValue, expectedType: UUID) = Try {
