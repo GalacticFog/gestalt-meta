@@ -185,54 +185,55 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
     }    
     
     //setTypeLineage(newtype, creator)
-  }  
-  
+  }
+
   private val providerStartActions = Json.stringify(Json.parse(s"""
   [
-        {
-          "name": "Start Stream",
-          "implementation": {
-          	"kind": "MetaCallback",
-          	"method": "POST",
-          	"uri": "/streamspecs/{resource_id}?action=start",
-  	        "input": {
-  			  "kind": "inlineHtml",
-  			  "style": "",
-  			  "script": "d2l0aEhlYWRlcignU3RhcnQgU3RyZWFtU3BlYycpCndpdGhJbnN0cnVjdGlvbnMoJ0FyZSB5b3Ugc3VyZSB5b3Ugd2FudCB0byBzdGFydCB0aGlzIFN0cmVhbVNwZWMnKQp3aXRoRm9ybVRpdGxlKCdTcGVjIElEJykKCmdldCgnc3BlY19pZCcpLnZhbHVlID0gX2N0eC5yZXNvdXJjZS5pZAoKY29uc3QgZm9ybSA9IGdldChHRl9DT05UUk9MU19GT1JNKTsKY29uc3QgZXhlY3V0ZUFjdGlvbiA9IChldmVudCkgPT4gewoJYWxlcnQoX2N0eC5pbnZva2VfdXJsKTsKICAgIGV2ZW50LnByZXZlbnREZWZhdWx0KCk7Cn0gCgpmb3JtLmFkZEV2ZW50TGlzdGVuZXIoInN1Ym1pdCIsIGV4ZWN1dGVBY3Rpb24pOwoKCgoKCgo=",
-  			  "data": "PGRpdiBjbGFzcz0icm93Ij4KICA8ZGl2IGNsYXNzPSJpbnB1dC1maWVsZCBjb2wgczEyIj4KCTxpbnB1dCByZXF1aXJlZCBkaXNhYmxlZAogICAgICAgICAgIGlkPSJzcGVjX2lkIgogICAgICAgICAgIHR5cGU9InRleHQiCiAgICAgICAgICAvPgogIDwvZGl2Pgo8L2Rpdj4K"
-  	        }
-          },
-          "ui_locations": [
-            {
-              "name": "streamspec.edit"
-            }
-          ]
+    {
+      "name": "Start Stream",
+      "implementation": {
+        "kind": "MetaCallback",
+        "method": "POST",
+        "uri": "/streamspecs/{resource_id}?action=start",
+        "input": {
+          "kind": "inlineHtml",
+          "style": "",
+          "script": "d2l0aEhlYWRlcignU3RhcnQgU3RyZWFtU3BlYycpCndpdGhJbnN0cnVjdGlvbnMoJ0FyZSB5b3Ugc3VyZSB5b3Ugd2FudCB0byBzdGFydCB0aGlzIFN0cmVhbVNwZWMnKQp3aXRoRm9ybVRpdGxlKCdTcGVjIElEJykKCmdldCgnc3BlY19pZCcpLnZhbHVlID0gX2N0eC5yZXNvdXJjZS5pZCAKCl9fYmluZFN1Ym1pdChfY3R4Lmludm9rZV91cmwsIGdldFRva2VuKCkpCg==",
+          "data": "PGRpdiBjbGFzcz0icm93Ij4KICA8ZGl2IGNsYXNzPSJpbnB1dC1maWVsZCBjb2wgczEyIj4KICAgIDxpbnB1dCByZXF1aXJlZCBkaXNhYmxlZAogICAgICAgICAgIHR5cGU9InRleHQiIGlkPSJzcGVjX2lkIj4KICA8L2Rpdj4KPC9kaXY+Cg=="
         }
-  	  ]  
+      },
+      "ui_locations": [
+        {
+          "name": "streamspec.edit"
+        }
+      ]
+    }
+  ]
   """))
 
 
   private val providerStopActions = Json.stringify(Json.parse(s"""
   [
-      {
-        "name": "Stop Stream",
-        "implementation": {
-        	"kind": "MetaCallback",
-        	"method": "POST",
-        	"uri": "/streamspecs/{resource_id}?action=stop",
-	        "input": { 
-	        	"kind": "inlineHtml", 
-	        	"style": "", 
-	        	"script": "d2l0aEhlYWRlcignU3RvcCBTdHJlYW0nKQp3aXRoSW5zdHJ1Y3Rpb25zKCdBcmUgeW91IHN1cmUgeW91IHdhbnQgdG8gc3RvcCB0aGlzIFN0cmVhbSBQcm9jZXNzJykKd2l0aEZvcm1UaXRsZSgnU3RyZWFtIElEJykKCmdldCgnc3RyZWFtX2lkJykudmFsdWUgPSBfY3R4LnJlc291cmNlLmlkCgpfX2JpbmRTdWJtaXQoX2N0eC5pbnZva2VfdXJsLCBnZXRUb2tlbigpKQo=", "data": "PGRpdiBjbGFzcz0icm93Ij4KICA8ZGl2IGNsYXNzPSJpbnB1dC1maWVsZCBjb2wgczEyIj4KCTxpbnB1dCByZXF1aXJlZCBkaXNhYmxlZAogICAgICAgICAgIGlkPSJzdHJlYW1faWQiCiAgICAgICAgICAgdHlwZT0idGV4dCIKICAgICAgICAgIC8+CiAgPC9kaXY+CjwvZGl2Pg=="
-	        }
-        },
-        "ui_locations": [
-          {
-            "name": "streamspec.instances"
-          }
-        ]
-      }
-	]  
+    {
+      "name": "Stop Stream",
+      "implementation": {
+        "kind": "MetaCallback",
+        "method": "POST",
+        "uri": "/streamspecs/{resource_id}?action=stop",
+        "input": {
+          "kind": "inlineHtml",
+          "style": "",
+          "script": "d2l0aEhlYWRlcignU3RvcCBTdHJlYW0nKQp3aXRoSW5zdHJ1Y3Rpb25zKCdBcmUgeW91IHN1cmUgeW91IHdhbnQgdG8gc3RvcCB0aGlzIFN0cmVhbSBQcm9jZXNzJykKd2l0aEZvcm1UaXRsZSgnU3RyZWFtIElEJykKCmdldCgnc3RyZWFtX2lkJykudmFsdWUgPSBfY3R4LnJlc291cmNlLmlkCgpfX2JpbmRTdWJtaXQoX2N0eC5pbnZva2VfdXJsLCBnZXRUb2tlbigpKQo=",
+          "data": "PGRpdiBjbGFzcz0icm93Ij4KICA8ZGl2IGNsYXNzPSJpbnB1dC1maWVsZCBjb2wgczEyIj4KCTxpbnB1dCByZXF1aXJlZCBkaXNhYmxlZAogICAgICAgICAgIGlkPSJzdHJlYW1faWQiCiAgICAgICAgICAgdHlwZT0idGV4dCIKICAgICAgICAgIC8+CiAgPC9kaXY+CjwvZGl2Pg=="
+        }
+      },
+      "ui_locations": [
+        {
+          "name": "streamspec.instances"
+        }
+      ]
+    }
+  ]
   """))
   
   private[migrations] def setTypeLineage(newType: GestaltResourceType, creator: GestaltResourceInstance) = {
