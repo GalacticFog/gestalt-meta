@@ -640,7 +640,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                    */
                   val providerEnv = providerManager.getOrCreateProviderEnvironment(newprovider, user)
                   log.debug("Creating Provider Actions...")
-                  val _ = createProviderActions(newprovider, payload, user, providerEnv)
+                  val _ = createProviderActions(newprovider, user, providerEnv)
                   ProviderMethods.injectProviderActions(newprovider)
                 }
 
@@ -698,12 +698,10 @@ class Meta @Inject()( messagesApi: MessagesApi,
   /**
    * 
    * @param provider the Provider instance to create actions for
-   * @param payload the JSON used to create the Provider
    * @param creator the user who initiated this call
    * @param providerEnv the new environment where action lambdas will be created
    */
   def createProviderActions( provider: GestaltResourceInstance,
-                             payload: JsObject,
                              creator: AccountLike,
                              providerEnv: GestaltResourceInstance) = {
 

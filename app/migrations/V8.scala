@@ -50,7 +50,7 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
           typeId = Option(typeId),
           parent = Option(rootId))
       providerEnv = providerManager.getOrCreateProviderEnvironment(actionProvider, creator)
-      _ = meta.createProviderActions(actionProvider, payload, creator, providerEnv)
+      _ = meta.createProviderActions(actionProvider, creator, providerEnv)
       _ = setNewResourceEntitlements(rootId, actionProvider.id, creator, Some(rootId))
     } yield actionProvider
   }
@@ -82,9 +82,7 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
         acc push "Creating Start Provider instance in /root"
         val payload = Json.obj(
           "name" -> "start-stream-default",
-          "properties" -> Json.obj(
-            "provider_actions" -> providerStartActions
-          )
+          "properties" -> Json.obj()
         )
         newActionProviderInstance(root.id, START_PROVIDER_TYPE_ID, creator, payload)
       }
@@ -93,9 +91,7 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
         acc push "Creating Stop Provider instance in /root"
         val payload = Json.obj(
           "name" -> "stop-stream-default",
-          "properties" -> Json.obj(
-            "provider_actions" -> providerStopActions
-          )
+          "properties" -> Json.obj()
         )
         newActionProviderInstance(root.id, STOP_PROVIDER_TYPE_ID, creator, payload)
       }
@@ -126,7 +122,8 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
       typeId      = START_PROVIDER_TYPE_ID, 
       typeName    = START_PROVIDER_TYPE_NAME,
       desc        = Some("Start stream provider action."),
-      extend      = Some(ResourceIds.ActionProvider)
+      extend      = Some(ResourceIds.ActionProvider),
+      selfProps   = Map("provider_actions" -> providerStartActions)
 
     ).withActionInfo (
       ActionInfo(
@@ -161,7 +158,8 @@ class V8 @Inject()( meta: Meta, providerManager: ProviderManager ) extends MetaM
       typeId      = STOP_PROVIDER_TYPE_ID, 
       typeName    = STOP_PROVIDER_TYPE_NAME,
       desc        = Some("Stop stream provider action."),
-      extend      = Some(ResourceIds.ActionProvider)
+      extend      = Some(ResourceIds.ActionProvider),
+      selfProps   = Map("provider_actions" -> providerStopActions)
 
     ).withActionInfo (
       ActionInfo(
