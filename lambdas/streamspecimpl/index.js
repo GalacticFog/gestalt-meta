@@ -7,12 +7,11 @@ exports.entryPoint = function(event, context, callback) {
 
   const contextData = JSON.parse(context)
   const eventData = JSON.parse(event)
-  const metaUrl = eventData.metaAddress
+  const metaUrl = `${process.env.META_PROTOCOL}://${process.env.META_HOSTNAME}:${process.env.META_PORT}`
   const authorization = contextData.headers.Authorization
   const metaClient = new MetaClient(metaUrl, authorization) 
   
   console.log("META-URL  : " + metaUrl)
-  console.log("META-AUTHORIZATION : " + authorization)
   console.log('Query-Params : ' + util.pretty(eventData.queryParams))
 
   const handleEvents = async () => {
@@ -29,16 +28,17 @@ exports.entryPoint = function(event, context, callback) {
         console.log('Received [streamspec.start]')
 
         const started = await start.actionStart(eventData, contextData, metaClient)
-        const sendback = translateProviderLink(started)
+        const response = translateProviderLink(started)
 
-        callback(null, sendback)
+        callback(null, util.pretty(response))
 
         break
       case 'streamspec.stop':
         console.log('Received [streamspec.stop]')
 
         const stopped = await start.actionStop(eventData, contextData, metaClient)
-        callback(null, translateProviderLink(stopped))
+        const response = translateProviderLink(stopped)
+        callback(null, util.pretty(response))
 
         break
         case 'streamspec.view':
@@ -46,10 +46,12 @@ exports.entryPoint = function(event, context, callback) {
         break
       case 'streamspec.update':
         console.log('STREAMSPEC.UPDATE')
+        callback("streamspec.update not supported", "streamspec.update not supported")
         break
       case 'streamspec.delete':
         console.log('STREAMSPEC.DELETE')
-        break        
+        callback("streamspec.delete not supported", "streamspec.delete not supported")
+        break
       default:
         console.log(`ERROR : Unknown event - ${eventData.action}`)  
         throw new Error(
@@ -62,10 +64,8 @@ exports.entryPoint = function(event, context, callback) {
   function translateProviderLink(spec) {
     const props = spec.properties
     const providerId = props.provider.id
-    
-    const nprops = Object.assign(Object.assign(props, { provider : providerId}))
-
-    return Object.assign(spec, { properties : nprops })    
+    const newProps = Object.assign(props, {provider : providerId})
+    return Object.assign(spec, {properties : newProps})
   }
   
 }
