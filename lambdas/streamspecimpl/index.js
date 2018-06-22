@@ -7,12 +7,11 @@ exports.entryPoint = function(event, context, callback) {
 
   const contextData = JSON.parse(context)
   const eventData = JSON.parse(event)
-  const metaUrl = eventData.metaAddress
+  const metaUrl = `${process.env.META_PROTOCOL}://${process.env.META_HOSTNAME}:${process.env.META_PORT}`
   const authorization = contextData.headers.Authorization
   const metaClient = new MetaClient(metaUrl, authorization) 
   
   console.log("META-URL  : " + metaUrl)
-  console.log("META-AUTHORIZATION : " + authorization)
   console.log('Query-Params : ' + util.pretty(eventData.queryParams))
 
   const handleEvents = async () => {
@@ -62,10 +61,8 @@ exports.entryPoint = function(event, context, callback) {
   function translateProviderLink(spec) {
     const props = spec.properties
     const providerId = props.provider.id
-    
-    const nprops = Object.assign(Object.assign(props, { provider : providerId}))
-
-    return Object.assign(spec, { properties : nprops })    
+    const newProps = Object.assign(props, {provider : providerId})
+    return Object.assign(spec, {properties : newProps})
   }
   
 }
