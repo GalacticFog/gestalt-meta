@@ -19,39 +19,36 @@ exports.entryPoint = function(event, context, callback) {
     switch(eventData.action) {
       case 'streamspec.create':
         console.log('Received [streamspec.create]')
-        
         const result = await create.actionCreate(eventData, contextData, metaClient)
         callback(null, util.pretty(result))
-
         break
+
       case 'streamspec.start':
         console.log('Received [streamspec.start]')
-
         const started = await start.actionStart(eventData, contextData, metaClient)
-        const response = translateProviderLink(started)
-
-        callback(null, util.pretty(response))
-
+        callback(null, util.pretty(translateProviderLink(started)))
         break
+
       case 'streamspec.stop':
         console.log('Received [streamspec.stop]')
-
         const stopped = await start.actionStop(eventData, contextData, metaClient)
-        const response = translateProviderLink(stopped)
-        callback(null, util.pretty(response))
-
+        callback(null, util.pretty(translateProviderLink(stopped)))
         break
-        case 'streamspec.view':
+
+      case 'streamspec.view':
         console.log('STREAMSPEC.VIEW')
         break
+
       case 'streamspec.update':
         console.log('STREAMSPEC.UPDATE')
         callback("streamspec.update not supported", "streamspec.update not supported")
         break
+
       case 'streamspec.delete':
         console.log('STREAMSPEC.DELETE')
         callback("streamspec.delete not supported", "streamspec.delete not supported")
         break
+
       default:
         console.log(`ERROR : Unknown event - ${eventData.action}`)  
         throw new Error(
