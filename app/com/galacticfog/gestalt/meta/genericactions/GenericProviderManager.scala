@@ -147,6 +147,7 @@ case class HttpGenericProvider(client: WSClient,
 
     val resp = for {
       expandedUrl <- Future.fromTry(st.render())
+      _ = log.debug(s"template url: ${url} expanded url: ${expandedUrl}")
       request = authHeader.foldLeft(
           client.url(expandedUrl)
             .withHeaders(params:_*)
