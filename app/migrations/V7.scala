@@ -155,6 +155,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
     val output = Json.obj(
       "actions" -> Json.toJson(Seq("streamspec.viewstatus")),
       "http" -> Json.obj(
+        "method" -> "GET",
         "url" -> "<provider.properties.config.lambda_provider_url>/streams/<queryParams.persistenceId>/status"
       )
     )
