@@ -4,9 +4,10 @@ package migrations
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.bootstrap.{ActionInfo, SystemType, _}
+import com.galacticfog.gestalt.data.models.{GestaltResourceType, GestaltTypeProperty}
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, session, _}
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel, ResourceStates}
 import com.galacticfog.gestalt.meta.auth.{Entitlement, EntitlementProps}
 import play.api.libs.json.{JsValue, Json}
 
@@ -72,6 +73,24 @@ abstract class MetaMigration() {
     }
   }
 
+  private[migrations] def addPropertyTypeToResourceType(tpe: GestaltResourceType,
+                                                        prop: GestaltTypeProperty)
+                                                       (implicit acc: MessageAccumulator) = Try {
+    PropertyFactory.findByName(tpe.id, prop.name) match {
+      case Some(t) =>
+        acc push s"Type ${tpe.id} already had '${prop.name}' property"
+        Success(t)
+      case None =>
+        PropertyFactory.create(tpe.owner.id)(prop) match {
+          case Success(t) =>
+            acc push s"Added '${prop.name}' to Type ${tpe.id}"
+            Success(t)
+          case Failure(e) =>
+            acc push s"ERROR adding '${prop.name}' to Type ${tpe.id}: ${e.getMessage}"
+            Failure(e)
+        }
+    }
+  }
 
   private[migrations] def addVerbToResourceType(identity: UUID, payload: Option[JsValue], verb: String, typeId: UUID)
                                                (implicit acc: MessageAccumulator) = Try {
