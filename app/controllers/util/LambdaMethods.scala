@@ -110,36 +110,21 @@ class LambdaMethods @Inject()( ws: WSClient,
                           user: AuthAccountWithCreds,
                           request: RequestHeader ): Future[GestaltResourceInstance] = {
 
-
-    log.debug("Finding lambda in backend system...")
     val provider = getLambdaProvider(r)
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
     for {
-      // Get lambda from gestalt-lambda
       updatedLambda <- Future.fromTry{PatchInstance.applyPatch(r, patch).map(_.asInstanceOf[GestaltResourceInstance])}
-      getReq <- client.get(s"/lambdas/${r.id}") flatMap { response => response.status match {
-        case 200 => Future.successful(response)
-        case 404 => Future.failed(new ResourceNotFoundException(s"No Lambda with ID '${r.id}' was found in gestalt-lambda"))
-        case _   => Future.failed(new RuntimeException(s"received $response response from Lambda provider on lambda GET"))
-      } }
-      gotLaserLambda <- getReq.json.validate[LaserLambda] match {
-        case JsSuccess(l, _) => Future.successful(l)
-        case e: JsError => Future.failed(new RuntimeException(
-          "could not parse lambda GET response from lambda provider: " + e.toString
-        ))
-      }
-      _ = log.debug("Lambda found in lambda provider.")
-      patchedLaserLambda = toLaserLambda(updatedLambda, provider.id.toString)
-      updatedLaserLambdaReq = client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
-      _ <- updatedLaserLambdaReq flatMap { response => response.status match {
+      patchedLaserLambda <- Future.fromTry(toLaserLambda(updatedLambda, provider.id))
+      response <- client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
+      _ <- response.status match {
         case 200 =>
           log.info(s"Successfully PUT Lambda in lambda provider.")
           Future.successful(response)
         case _   =>
           log.error(s"Error PUTting Lambda in lambda provider: ${response}")
           Future.failed(new RuntimeException(s"Error updating Lambda in lambda provider: ${response}"))
-      }}
+      }
       updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
     } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
   }
@@ -147,7 +132,7 @@ class LambdaMethods @Inject()( ws: WSClient,
   import scala.util.{Try, Success, Failure}
   import com.galacticfog.gestalt.data.ResourceState
   
-  def createLambdaCommon2(
+  def createLambdaCommon(
     org: UUID, 
     parent: GestaltResourceInstance,
     payload: JsValue,
@@ -165,18 +150,18 @@ class LambdaMethods @Inject()( ws: WSClient,
 
     val metaCreate = for {
       metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-      laserlambda = toLaserLambda(metalambda, provider.id.toString)
+      laserlambda <- toLaserLambda(metalambda, provider.id)
     } yield (metalambda, laserlambda)
-    
+
     metaCreate match {
       case Failure(e) => {
         log.error("Failed to create Lambda in Meta: " + e.getMessage)
         Future(throw e)
       }
       case Success((meta,laser)) => {
-    
+
         val client = providerMethods.configureWebClient(provider, Some(ws))
-        
+
         log.debug("Creating lambda in Laser...")
         client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
 
@@ -188,7 +173,7 @@ class LambdaMethods @Inject()( ws: WSClient,
             log.error("Error creating Lambda in backend system.")
             updateFailedBackendCreateResource(caller, meta, ApiError(result.status, result.body).throwable).get
           }
-          
+
         } recover {
           case e: Throwable => {
            log.error(s"Error creating Lambda in backend system.")

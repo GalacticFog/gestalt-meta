@@ -6,6 +6,7 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
 
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.Logger
@@ -76,32 +77,35 @@ package object laser {
       code: Option[String] = None,
       periodicInfo : Option[JsValue] = None,
       headers : Map[String,String] = Map.empty)
-  
+
   case class LaserLambda(
       id: Option[String], 
       eventFilter: Option[String],
       public: Boolean,
       provider: Option[JsValue],
-      artifactDescription: LaserArtifactDescription)
+      artifactDescription: LaserArtifactDescription,
+      computePathOverride: Option[String] = None,
+      secrets: Option[Seq[JsObject]] = None)
 
-  /*
-   * TODO: This may translate into multiple LaserLambdas
-   *       What does that mean? ^^^^
-   */
-  def toLaserLambda(lambda: ResourceLike, providerId: String): LaserLambda = {
+  def toLaserLambda(lambda: ResourceLike, providerId: UUID): Try[LaserLambda] = Try {
 
     def maybeToBool(s: String): Option[Boolean] = Try{s.toBoolean}.toOption
     def maybeToJson(s: String): Option[JsValue] = Try{Json.parse(s)}.toOption
 
     log.debug("toLaserLambda(...)")
 
-    val props = lambda.properties.get
+    val props = lambda.properties.getOrElse(Map.empty)
 
     val handler = props("handler")
     val isPublic = props.get("public").flatMap(maybeToBool) getOrElse false
     val compressed = props.get("compressed").flatMap(maybeToBool) getOrElse false
     val artifactUri = props.get("package_url")
     val periodic = props.get("periodic_info").flatMap(maybeToJson)
+
+    val secretMounts = (for {
+      secrets <- props.get("secrets")
+      mounts = Json.parse(secrets).as[Seq[ContainerSpec.SecretMount]]
+    } yield mounts).getOrElse(Seq.empty)
 
     LaserLambda(
       id          = Some(lambda.id.toString),
@@ -126,7 +130,9 @@ package object laser {
         periodicInfo= periodic,
         code        = props.get("code"),
         headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty
-      ))
+      ),
+      secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject]))
+    )
   }
 
 }

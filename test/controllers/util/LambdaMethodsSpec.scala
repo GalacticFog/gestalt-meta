@@ -27,6 +27,7 @@ import play.api.http.HttpVerbs._
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.ws.WSResponse
 import com.galacticfog.gestalt.laser._
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import play.api.http.HttpVerbs
 
 import scala.concurrent.Future
@@ -108,12 +109,38 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
     ), any) returns mockJsonClient
   }
 
-  trait TestApplication extends FakeLambdaScope {
+  "toLaserLambda" should {
+
+    "include all secret mounts" in new FakeLambdaScope {
+      val testSecretMounts = Seq(
+        SecretDirMount(UUID.randomUUID(), "/mnt/dir"),
+        SecretFileMount(UUID.randomUUID(), "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(UUID.randomUUID(), "ENV_VAR", "secret_key")
+      )
+      val Success(testLambdaWithSecrets) = createInstance(ResourceIds.Lambda, "test-lambda-with-secrets", properties = Some(Map(
+        "public" -> "true",
+        "cpus" -> "0.1",
+        "memory" -> "128",
+        "code_type" -> "inline",
+        "timeout" -> "30",
+        "handler" -> "blah;blah",
+        "runtime" -> "custom",
+        "periodic_info" -> "{}",
+        "provider" -> Json.obj(
+          "name" -> testLambdaProvider.name,
+          "id" -> testLambdaProvider.id.toString
+        ).toString,
+        "secrets" -> Json.toJson(testSecretMounts).toString
+      )))
+      val Success(laserLambda) = toLaserLambda(testLambdaWithSecrets, testLambdaProvider.id)
+      laserLambda.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
+    }
+
   }
 
   "LambdaMethods" should {
 
-    "deep patch against headers should propagate to laser" in new TestApplication {
+    "deep patch against headers should propagate to laser" in new FakeLambdaScope {
       mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
         val mockResp = mock[WSResponse]
         mockResp.status returns 200
@@ -163,7 +190,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       )(any)
     }
 
-    "patch against url lambda provider" in new TestApplication {
+    "patch against url lambda provider" in new FakeLambdaScope {
       mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
         val mockResp = mock[WSResponse]
         mockResp.status returns 200
@@ -245,7 +272,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       )(any)
     }
 
-    "patch against code lambda provider removing periodic_info" in new TestApplication {
+    "patch against code lambda provider removing periodic_info" in new FakeLambdaScope {
       mockJsonClient.get(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
         val mockResp = mock[WSResponse]
         mockResp.status returns 200
@@ -282,7 +309,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       )(any)
     }
 
-    "delete against LambdaMethods deletes lambdas" in new TestApplication {
+    "delete against LambdaMethods deletes lambdas" in new FakeLambdaScope {
       mockJsonClient.delete(meq(s"/lambdas/${testLambda.id}"), any, any)(any) returns Future.successful({
         val mockResp = mock[WSResponse]
         mockResp.status returns 200

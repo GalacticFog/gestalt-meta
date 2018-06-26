@@ -56,15 +56,15 @@ class MigrationController @Inject()(
     val caller = request.identity.account.id
     
     
-    val effectiveMigrations = if (version.isEmpty) {
-      log.debug("No version given - running all migrations")
-      ALL_MIGRATIONS
-    } else {
-      log.debug(s"Running migration version '${version.get}'")
-      Seq(version.get)
+    val effectiveMigrations = version match {
+      case None =>
+        log.debug("No version given - running all migrations")
+        ALL_MIGRATIONS
+      case Some(v) =>
+        log.debug(s"Running migration version '${version.get}'")
+        Seq(v)
     }
 
-    
     val results = {
       effectiveMigrations.map { v =>
         

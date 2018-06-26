@@ -107,9 +107,8 @@ class LambdaController @Inject()(
         val client = providerMethods.configureWebClient(provider, Some(ws))
         
         for {
-          r <- newDefaultResourceResult(org, ResourceIds.Lambda, parent.id, newjson)
-          meta = ResourceFactory.findById(lambdaId).get
-          laser = toLaserLambda(meta, provider.id.toString)
+          meta <- newDefaultResource(org, ResourceIds.Lambda, parent.id, newjson)
+          laser <- Future.fromTry(toLaserLambda(meta, provider.id))
           result <- client.post("/lambdas", Option(Json.toJson(laser)))
           response = {
             if (Seq(200, 201, 202).contains(result.status)) {

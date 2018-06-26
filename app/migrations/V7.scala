@@ -292,7 +292,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
                 json = lambdaJson,
                 typeId = Option(ResourceIds.Lambda),
                 parent = Option(env.id))
-      laserlambda = toLaserLambda(metalambda, lambdaProvider.id.toString)
+      laserlambda <- toLaserLambda(metalambda, lambdaProvider.id.toString)
     } yield (metalambda, laserlambda)
     
     metaCreate match {
