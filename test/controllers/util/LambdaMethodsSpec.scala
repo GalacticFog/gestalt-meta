@@ -53,7 +53,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
   sequential
 
   abstract class FakeLambdaScope extends Scope {
-    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    val Success(testOrg) = createOrg(name = uuid().toString)
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = uuid().toString, envName = uuid().toString, org = testOrg.id)
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val mockProviderMethods = mock[ProviderMethods]
@@ -87,7 +88,20 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           |  }
           |}""".stripMargin
     )))
-    val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
+
+    def createLambda(name: String,
+                     props: Map[String,String],
+                     orgId: UUID = testOrg.id,
+                     envId: UUID = testEnv.id) =
+      createInstance(ResourceIds.Lambda, name = name, properties = Some(props), org = orgId, parent = Some(envId))
+
+    def createSecret(name: String,
+                     props: Map[String,String],
+                     orgId: UUID = testOrg.id,
+                     envId: UUID = testEnv.id) =
+      createInstance(ResourceIds.Secret, name = name, properties = Some(props), org = orgId, parent = Some(envId))
+
+    val Success(testLambda) = createLambda("test-lambda", Map(
       "public" -> "true",
       "cpus" -> "0.1",
       "memory" -> "128",
@@ -104,7 +118,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         "name" -> testLambdaProvider.name,
         "id" -> testLambdaProvider.id.toString
       ).toString
-    )))
+    ))
 
     val mockJsonClient = mock[JsonClient]
     mockProviderMethods.configureWebClient(argThat(
@@ -115,21 +129,21 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
   "toLaserLambda" should {
 
     "include all secret mounts" in new FakeLambdaScope {
-      val Success(s1) = createInstance(ResourceIds.Secret, "s1", properties = Some(Map(
+      val Success(s1) = createSecret( "s1", Map(
         "provider" -> Json.obj("id" -> caasProviderId).toString
-      )))
-      val Success(s2) = createInstance(ResourceIds.Secret, "s2", properties = Some(Map(
+      ))
+      val Success(s2) = createSecret("s2", Map(
         "provider" -> Json.obj("id" -> caasProviderId).toString
-      )))
-      val Success(s3) = createInstance(ResourceIds.Secret, "s3", properties = Some(Map(
+      ))
+      val Success(s3) = createSecret("s3", Map(
         "provider" -> Json.obj("id" -> caasProviderId).toString
-      )))
+      ))
       val testSecretMounts = Seq(
         SecretDirMount(s1.id, "/mnt/dir"),
         SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
         SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
       )
-      val Success(testLambdaWithSecrets) = createInstance(ResourceIds.Lambda, "test-lambda-with-secrets", properties = Some(Map(
+      val Success(testLambdaWithSecrets) = createLambda("test-lambda-with-secrets", Map(
         "public" -> "true",
         "cpus" -> "0.1",
         "memory" -> "128",
@@ -143,14 +157,9 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           "id" -> testLambdaProvider.id.toString
         ).toString,
         "secrets" -> Json.toJson(testSecretMounts).toString
-      )))
+      ))
       val Success(laserLambda) = toLaserLambda(testLambdaWithSecrets, testLambdaProvider.id)
       laserLambda.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
-    }
-
-    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
-      val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
-      laserLambda.computePathOverride must beNone
     }
 
     "fail if lambda provider references a non-existent secret" in new FakeLambdaScope {
@@ -162,16 +171,101 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
     }
 
     "fail if lambda provider is not conformant with secrets provider" in new FakeLambdaScope {
-      val Success(secret) = createInstance(ResourceIds.Secret, "nonconformant-secret", properties = Some(Map(
+      val Success(secret) = createSecret( "nonconformant-secret", Map(
         "provider" -> Json.obj(
           "id" -> uuid().toString
         ).toString
-      )))
+      ))
       toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(Seq(SecretEnvMount(secret.id, "ENV_VAR", "secret_key"))).toString
         ))
-      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*did not have same CaaS provider as mounted secrets.*")
+      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*did not have same CaaS provider as mounted Secrets.*")
+    }
+
+    "fail if secrets aren't mutual siblings" in new FakeLambdaScope {
+      val Success(testOrg2) = createOrg(name = uuid().toString)
+      val Success((testWork2, testEnv2)) = createWorkEnv(wrkName = uuid().toString, envName = uuid().toString, org = testOrg2.id)
+      val Success(testOrg3) = createOrg(name = uuid().toString)
+      val Success((testWork3, testEnv3)) = createWorkEnv(wrkName = uuid().toString, envName = uuid().toString, org = testOrg3.id)
+
+      val Success(s1) = createSecret("s1", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val Success(s2) = createSecret("s2", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ), orgId = testOrg2.id, envId = testEnv2.id)
+      val Success(s3) = createSecret("s3", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ), orgId = testOrg3.id, envId = testEnv3.id)
+      val testSecretMounts = Seq(
+        SecretDirMount(s1.id, "/mnt/dir"),
+        SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
+      )
+
+      toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "secrets" -> Json.toJson(testSecretMounts).toString
+        ))
+      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Secrets must belong to the same Environment.*")
+    }
+
+    "fail if secrets aren't siblings with lambda" in new FakeLambdaScope {
+      val Success(testOrg2) = createOrg(name = uuid().toString)
+      val Success((testWork2, testEnv2)) = createWorkEnv(wrkName = uuid().toString, envName = uuid().toString, org = testOrg2.id)
+
+      val Success(s1) = createSecret("s1", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ), orgId = testOrg2.id, envId = testEnv2.id)
+      val Success(s2) = createSecret("s2", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ), orgId = testOrg2.id, envId = testEnv2.id)
+      val Success(s3) = createSecret("s3", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ), orgId = testOrg2.id, envId = testEnv2.id)
+      val testSecretMounts = Seq(
+        SecretDirMount(s1.id, "/mnt/dir"),
+        SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
+      )
+
+      toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "secrets" -> Json.toJson(testSecretMounts).toString
+        ))
+      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
+    }
+
+    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
+      val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
+      laserLambda.computePathOverride must beNone
+    }
+
+    "return computePathOverride from Secrets" in new FakeLambdaScope {
+      val Success(s1) = createSecret("s1", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val Success(s2) = createSecret("s2", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val Success(s3) = createSecret("s3", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val testSecretMounts = Seq(
+        SecretDirMount(s1.id, "/mnt/dir"),
+        SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
+      )
+
+      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "secrets" -> Json.toJson(testSecretMounts).toString
+        ))
+      ), testLambdaProvider.id)
+      laserLambda.computePathOverride must beSome(
+        s"/${testOrg.name}/environments/${testEnv.id}/containers"
+      )
     }
 
   }
