@@ -159,7 +159,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         "secrets" -> Json.toJson(testSecretMounts).toString
       ))
       val Success(laserLambda) = toLaserLambda(testLambdaWithSecrets, testLambdaProvider.id)
-      laserLambda.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
+      laserLambda.artifactDescription.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
     }
 
     "fail if lambda provider references a non-existent secret" in new FakeLambdaScope {
@@ -239,7 +239,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
     "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
       val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
-      laserLambda.computePathOverride must beNone
+      laserLambda.artifactDescription.computePathOverride must beNone
     }
 
     "return computePathOverride from Secrets" in new FakeLambdaScope {
@@ -263,7 +263,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           "secrets" -> Json.toJson(testSecretMounts).toString
         ))
       ), testLambdaProvider.id)
-      laserLambda.computePathOverride must beSome(
+      laserLambda.artifactDescription.computePathOverride must beSome(
         s"/${testOrg.name}/environments/${testEnv.id}/containers"
       )
     }
@@ -391,6 +391,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
                 publish = false,
                 role = "none",
                 periodicInfo = Some(Json.obj("new" -> "periodicity")),
+                secrets = Some(Seq.empty),
                 headers = Map(
                   "Existing-Header" -> "ExistingHeaderValue",
                   "Remove-Header" -> "Nobody Cares What's Here"

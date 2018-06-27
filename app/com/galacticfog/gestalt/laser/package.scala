@@ -78,16 +78,16 @@ package object laser {
       timeoutSecs: Int = 180,
       code: Option[String] = None,
       periodicInfo : Option[JsValue] = None,
-      headers : Map[String,String] = Map.empty)
+      headers : Map[String,String] = Map.empty,
+      computePathOverride: Option[String] = None,
+      secrets: Option[Seq[JsObject]] = None)
 
   case class LaserLambda(
       id: Option[String], 
       eventFilter: Option[String],
       public: Boolean,
       provider: Option[JsValue],
-      artifactDescription: LaserArtifactDescription,
-      computePathOverride: Option[String] = None,
-      secrets: Option[Seq[JsObject]] = None)
+      artifactDescription: LaserArtifactDescription)
 
   def toLaserLambda(lambda: ResourceLike, providerId: UUID): Try[LaserLambda] = Try {
 
@@ -172,10 +172,10 @@ package object laser {
         compressed  = compressed,
         periodicInfo= periodic,
         code        = props.get("code"),
-        headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty
-      ),
-      secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject])),
-      computePathOverride = computePath
+        headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty,
+        secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject])),
+        computePathOverride = computePath
+      )
     )
   }
 
