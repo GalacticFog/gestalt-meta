@@ -6,6 +6,7 @@ import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.auth.Entitlement
@@ -106,6 +107,29 @@ package object laser {
       secrets <- props.get("secrets")
       mounts = Json.parse(secrets).as[Seq[ContainerSpec.SecretMount]]
     } yield mounts).getOrElse(Seq.empty)
+
+    val secrets = secretMounts.map {
+      sm => ResourceFactory.findById(ResourceIds.Secret, sm.secret_id).getOrElse(throw new BadRequestException(s"Secret '${sm.secret_id}' does not exist'"))
+    }
+
+    val secretProviders = secrets.map({
+      s => Try{(Json.parse(s.properties.get("provider")) \ "id").as[UUID]}.getOrElse(
+        throw new BadRequestException(s"Secret '${s.id}' did not have valid 'provider' block")
+      )
+    }).distinct
+
+    val lambdaProviderId = Try{(Json.parse(props("provider")) \ "id").as[UUID]}.getOrElse(
+      throw new BadRequestException(s"Lambda '${lambda.id}' did not have valid 'provider' block")
+    )
+    val lambdaProvider = ResourceFactory.findById(ResourceIds.LambdaProvider, lambdaProviderId).getOrElse(
+      throw new BadRequestException(s"Lambda '${lambda.id}' provider did not exist")
+    )
+    val lambdaCaasProvider = Try{(Json.parse(lambdaProvider.properties.get("config")) \ "env" \ "public" \ "META_COMPUTE_PROVIDER_ID").as[UUID]}.getOrElse(
+      throw new BadRequestException((s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'"))
+    )
+
+    if (secretProviders.length > 1) throw new BadRequestException("Secrets must have the same CaaS provider")
+    else if (secretProviders.headOption.exists(_ != lambdaCaasProvider)) throw new BadRequestException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have same CaaS provider as mounted secrets")
 
     LaserLambda(
       id          = Some(lambda.id.toString),
