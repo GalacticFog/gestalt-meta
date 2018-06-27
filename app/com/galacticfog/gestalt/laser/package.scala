@@ -8,7 +8,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.Logger
 
@@ -97,7 +97,7 @@ package object laser {
 
     val props = lambda.properties.getOrElse(Map.empty)
 
-    val handler = props("handler")
+    val handler = props.get("handler").getOrElse(throw new BadRequestException("Lambda was missing property: 'handler'"))
     val isPublic = props.get("public").flatMap(maybeToBool) getOrElse false
     val compressed = props.get("compressed").flatMap(maybeToBool) getOrElse false
     val artifactUri = props.get("package_url")
@@ -112,24 +112,34 @@ package object laser {
       sm => ResourceFactory.findById(ResourceIds.Secret, sm.secret_id).getOrElse(throw new BadRequestException(s"Secret '${sm.secret_id}' does not exist'"))
     }
 
-    val secretProviders = secrets.map({
-      s => Try{(Json.parse(s.properties.get("provider")) \ "id").as[UUID]}.getOrElse(
-        throw new BadRequestException(s"Secret '${s.id}' did not have valid 'provider' block")
-      )
-    }).distinct
-
     val lambdaProviderId = Try{(Json.parse(props("provider")) \ "id").as[UUID]}.getOrElse(
       throw new BadRequestException(s"Lambda '${lambda.id}' did not have valid 'provider' block")
     )
     val lambdaProvider = ResourceFactory.findById(ResourceIds.LambdaProvider, lambdaProviderId).getOrElse(
       throw new BadRequestException(s"Lambda '${lambda.id}' provider did not exist")
     )
+
     val lambdaCaasProvider = Try{(Json.parse(lambdaProvider.properties.get("config")) \ "env" \ "public" \ "META_COMPUTE_PROVIDER_ID").as[UUID]}.getOrElse(
-      throw new BadRequestException((s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'"))
+      throw new ConflictException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'")
     )
 
+    val lambdaEnvironment = ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=lambda.id).getOrElse(
+      throw new ConflictException(s"Could not locate parent Environment for Secret '${lambda.id}'")
+    )
+
+    val secretProviders = secrets.map({
+      s => Try{(Json.parse(s.properties.get("provider")) \ "id").as[UUID]}.getOrElse(
+        throw new ConflictException(s"Secret '${s.id}' did not have valid 'provider' block")
+      )
+    }).distinct
     if (secretProviders.length > 1) throw new BadRequestException("Secrets must have the same CaaS provider")
-    else if (secretProviders.headOption.exists(_ != lambdaCaasProvider)) throw new BadRequestException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have same CaaS provider as mounted secrets")
+    else if (secretProviders.headOption.exists(_ != lambdaCaasProvider)) throw new BadRequestException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have same CaaS provider as mounted Secrets")
+
+    val secretEnvs = secrets.map({
+      s => ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=s.id).map(_.id).getOrElse(throw new ConflictException(s"Could not locate parent Environment for Secret '${s.id}'"))
+    }).distinct
+    if (secretEnvs.length > 1) throw new BadRequestException("All mounted Secrets must belong to the same Environment")
+    else if (secretEnvs.headOption.exists(_ != lambdaEnvironment.id)) throw new BadRequestException(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets")
 
     LaserLambda(
       id          = Some(lambda.id.toString),
