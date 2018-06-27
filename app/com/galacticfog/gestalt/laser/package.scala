@@ -9,6 +9,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
+import com.galacticfog.gestalt.meta.api.output.OrgCache
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.Logger
 
@@ -112,6 +113,10 @@ package object laser {
       sm => ResourceFactory.findById(ResourceIds.Secret, sm.secret_id).getOrElse(throw new BadRequestException(s"Secret '${sm.secret_id}' does not exist'"))
     }
 
+    val fqon = OrgCache.getFqon(lambda.orgId).getOrElse(
+      throw new ConflictException("Could not determine FQON for lambda.")
+    )
+
     val lambdaProviderId = Try{(Json.parse(props("provider")) \ "id").as[UUID]}.getOrElse(
       throw new BadRequestException(s"Lambda '${lambda.id}' did not have valid 'provider' block")
     )
@@ -141,6 +146,10 @@ package object laser {
     if (secretEnvs.length > 1) throw new BadRequestException("All mounted Secrets must belong to the same Environment")
     else if (secretEnvs.headOption.exists(_ != lambdaEnvironment.id)) throw new BadRequestException(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets")
 
+    val computePath = secretEnvs.headOption.map {
+      envId => controllers.routes.ContainerController.postContainer(fqon, envId).url
+    }
+
     LaserLambda(
       id          = Some(lambda.id.toString),
       eventFilter = Some(UUID.randomUUID.toString),
@@ -165,7 +174,8 @@ package object laser {
         code        = props.get("code"),
         headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty
       ),
-      secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject]))
+      secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject])),
+      computePathOverride = computePath
     )
   }
 

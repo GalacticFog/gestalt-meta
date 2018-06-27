@@ -162,11 +162,6 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       laserLambda.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
     }
 
-    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
-      val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
-      laserLambda.computePathOverride must beNone
-    }
-
     "fail if lambda provider references a non-existent secret" in new FakeLambdaScope {
       toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
@@ -240,6 +235,37 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           "secrets" -> Json.toJson(testSecretMounts).toString
         ))
       ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
+    }
+
+    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
+      val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
+      laserLambda.computePathOverride must beNone
+    }
+
+    "return computePathOverride from Secrets" in new FakeLambdaScope {
+      val Success(s1) = createSecret("s1", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val Success(s2) = createSecret("s2", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val Success(s3) = createSecret("s3", Map(
+        "provider" -> Json.obj("id" -> caasProviderId).toString
+      ))
+      val testSecretMounts = Seq(
+        SecretDirMount(s1.id, "/mnt/dir"),
+        SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
+        SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
+      )
+
+      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "secrets" -> Json.toJson(testSecretMounts).toString
+        ))
+      ), testLambdaProvider.id)
+      laserLambda.computePathOverride must beSome(
+        s"/${testOrg.name}/environments/${testEnv.id}/containers"
+      )
     }
 
   }
