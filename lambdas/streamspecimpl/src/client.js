@@ -10,6 +10,9 @@ module.exports = class MetaClient {
         'Accept': 'application/json',
         post: {
           'Content-Type': 'application/json'
+        },
+        put: {
+          'Content-Type': 'application/json'
         }
       }
     })
@@ -23,20 +26,9 @@ module.exports = class MetaClient {
     }
   
     const Failure = (error) => {
-      //console.error('Request Failed:', error.config)
-  
-      if (error.response) {
-        /*
-        console.error('Status: ', error.response.status)
-        console.error('Body: '  , error.response.data)
-        console.error('Headers: ', err.response.headers)
-        */
-      } else {
-        console.error('Error : ', error.message)
-      }
+      console.error('Error : ', error.message)
       return Promise.reject(
-        error.response ? error.response.data : error.message ||
-        { code: 500, data: error.message }
+        error.response ? error.response.data : error.message || { code: 500, data: error.message }
       )
     }
   
@@ -44,15 +36,24 @@ module.exports = class MetaClient {
   }
 
   get(uri) {
-    console.log(`Executing GET /${uri}`)
+    console.log(`Executing GET ${uri}`);
     return this.request({
       method: 'GET',
       url: uri
     })
   }
 
+  put(uri, payload) {
+    console.log(`Executing PUT ${uri}`);
+    return this.request({
+      method: 'PUT',
+      data: payload,
+      url: uri
+    })
+  }
+
   post(uri, payload) {
-    console.log(`Executing POST /${uri}`)
+    console.log(`Executing POST ${uri}`);
     return this.request({
       method: 'POST',
       data: payload,
@@ -61,7 +62,7 @@ module.exports = class MetaClient {
   }
   
   postEmpty(uri) {
-    console.log(`Executing POST /${uri}`)
+    console.log(`Executing POST ${uri}`);
     return this.request({
       method: 'POST',
       url: uri
@@ -69,6 +70,7 @@ module.exports = class MetaClient {
   }
 
   patch(uri, payload) {
+    console.log(`Executing PATCH ${uri}`);
     return this.request({
       method: 'PATCH',
       data: payload,
@@ -77,9 +79,13 @@ module.exports = class MetaClient {
   }
 
   delete(uri) {
+    console.log(`Executing DELETE ${uri}`);
     return this.request({
       method: 'DELETE',
-      url: uri
+      url: uri,
+      validateStatus: function (status) {
+        return (status >= 200 && status < 300) || (status == 404);
+      }
     })
   }
 }
