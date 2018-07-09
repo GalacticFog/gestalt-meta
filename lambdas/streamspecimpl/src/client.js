@@ -78,10 +78,11 @@ module.exports = class MetaClient {
     })
   }
 
-  delete(uri) {
+  delete(uri, qs) {
     console.log(`Executing DELETE ${uri}`);
     return this.request({
       method: 'DELETE',
+      params: qs,
       url: uri,
       validateStatus: function (status) {
         return (status >= 200 && status < 300) || (status == 404);

@@ -44,7 +44,10 @@ module.exports = {
     console.log("...ABOUT TO DELETE StreamProcessDefinition IN LASER...");
     const laserClient = new MetaClient(laser.getAddress(event), laser.getAuth(context));
     const laserResult = await laserClient.delete(
-      `/streamDefinitions/${event.resource.id}`
+      `/streamDefinitions/${event.resource.id}`,
+      {
+        cascade: true
+      }
     ).then(des => des.data).catch(err => {
       console.error("ERROR : " + err.stack);
       throw err
