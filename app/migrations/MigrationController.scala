@@ -28,25 +28,6 @@ class MigrationController @Inject()(
   
   private[this] val log = Logger(this.getClass)
   
-  /**
-   * Perform a meta-schema migration. Expects querystring param '?version={version}'
-   */
-//  def migrate() = Audited() { implicit request =>
-//    log.debug("migrate()")
-//    
-//    /*
-//     * `?version={version} querystring parameter must be present and it must have a value.
-//     */
-//    val version = QueryString.single(request.queryString, "version", strict = true) getOrElse {
-//      throw new BadRequestException("You must supply 'version' in the query string.")
-//    }
-//    
-//    executeMigration(version, request.identity.account.id) match {
-//      case Left(e) => InternalServerError(e)
-//      case Right(m) => Ok(m)
-//    }
-//  }
-
   def migrate() = AsyncAudited() { implicit request =>
     log.debug("migrate()")
     
