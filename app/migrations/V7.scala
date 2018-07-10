@@ -340,32 +340,6 @@ class V7 extends MetaMigration with AuthorizationMethods {
       JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }
   
-//  private[migrations] def createStreamProviderLambda(
-//      orgId: UUID, 
-//      envId: UUID, 
-//      creator: GestaltResourceInstance, 
-//      payload: JsValue): Try[GestaltResourceInstance] = {
-//
-//    val lambdaJson = {
-//      Js.find(payload.as[JsObject], "/lambda") getOrElse {
-//        throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
-//      }
-//    }
-//    
-//    log.debug("LAMBDA-JSON:\n" + Json.prettyPrint(lambdaJson))
-//
-//    for {
-//      lam <- CreateNewResource(
-//          org = orgId,
-//          creator = creator,
-//          json = lambdaJson,
-//          typeId = Option(ResourceIds.Lambda),
-//          parent = Option(envId))
-//      _ = setNewResourceEntitlements(orgId, lam.id, creator, Some(envId))
-//    } yield lam
-//  }
-  
-  
   private[migrations] def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
     val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
     SystemType(org, owner,
