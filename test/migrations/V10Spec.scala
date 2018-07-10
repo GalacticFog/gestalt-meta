@@ -22,6 +22,14 @@ class V10Spec extends PlaySpecification with MetaRepositoryOps {
       )
     }
 
+    "add 'credentials' to DataFeed resource type" >> {
+      val tpe = TypeFactory.findById(V7.DATA_FEED_TYPE_ID)
+      tpe must beSome
+      PropertyFactory.findByName(tpe.get.id, "credentials") must beSome(
+        haveName("credentials") and haveDatatype("json") and haveRequirement("optional")
+      )
+    }.pendingUntilFixed("the v7 migration doesn't run in these tests, so that DataFeed doesn't even exist for us to test")
+
   }
 
 }
