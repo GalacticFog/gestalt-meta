@@ -35,8 +35,7 @@ class MigrationController @Inject()(
     
     val version = QueryString.single(request.queryString, "version", strict = true)
     val caller = request.identity.account.id
-    
-    
+
     val effectiveMigrations = version match {
       case None =>
         log.debug("No version given - running all migrations")
@@ -46,26 +45,28 @@ class MigrationController @Inject()(
         Seq(v)
     }
 
-    val results = {
-      effectiveMigrations.map { v =>
-        
-        val args = getMigrationArgs(v, request.body)
-        
-        executeMigration(v, caller, args) match {
-          case Left(e) => {
-            log.error("There was an error during meta-schema migration.")
-            Json.obj(v -> e)
-          }
-          case Right(s) => {
-            log.info("Meta-Schema migration complete.")
-            Json.obj(v -> s)
-          }
-        }
+    var failed = false
+    val results = effectiveMigrations.map { v =>
+      val args = getMigrationArgs(v, request.body)
+      executeMigration(v, caller, args) match {
+        case Left(j) =>
+          failed = true
+          Json.obj(v -> j)
+        case Right(j) =>
+          Json.obj(v -> j)
       }
     }
 
+    val resp = if (failed) {
+      log.error("There was an error during meta-schema migration.")
+      Conflict(JsArray(results))
+    } else {
+      log.info("Meta-Schema migration complete.")
+      Ok(JsArray(results))
+    }
+
     log.debug(Json.prettyPrint(JsArray(results)))
-    Future(Ok(JsArray(results)))
+    Future(resp)
   }  
   
   private[migrations] def getMigrationArgs(version: String, payload: JsValue): Option[JsObject] = {
