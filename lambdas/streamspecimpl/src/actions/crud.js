@@ -99,8 +99,8 @@ async function makeLaserDescriptionMessage(event, client) {
   console.log('OUTPUT-FEED:\n' + util.pretty(outputFeed))
 
   // Merge data from the meta feeds and configurations into the Laser format.
-  const laserInputStream = toLaserInputStream(inputFeed, configs.input, null);
-  const laserOutputStream = toLaserOutputStream(outputFeed, configs.output, null);
+  const laserInputStream = toLaserInputStream(inputFeed, configs.input, {});
+  const laserOutputStream = toLaserOutputStream(outputFeed, configs.output, {});
 
   return {
       id: event.resource.id,
