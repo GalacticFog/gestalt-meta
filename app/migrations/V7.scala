@@ -338,112 +338,127 @@ class V7 extends MetaMigration with AuthorizationMethods {
       JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }
   
-  private[migrations] def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = Try {
-    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
-    SystemType(org, owner,
-      typeId      = DATA_FEED_TYPE_ID, 
-      typeName    = DATA_FEED_TYPE_NAME,
-      desc        = Some("Configuration for arbitrary data-feeds."),
-      extend      = Some(ResourceIds.Configuration)
-    
-    ).withTypeProperties (
+  private[migrations] def addDataFeedType(org: UUID, creator: GestaltResourceInstance) = {
+    if (TypeFactory.findById(DATA_FEED_TYPE_ID).isDefined) {
+      acc push s"ResourceType '${DATA_FEED_TYPE_NAME}' already exists"
+      Success(())
+    } else Try {
+      val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
+      SystemType(org, owner,
+        typeId = DATA_FEED_TYPE_ID,
+        typeName = DATA_FEED_TYPE_NAME,
+        desc = Some("Configuration for arbitrary data-feeds."),
+        extend = Some(ResourceIds.Configuration)
+
+      ).withTypeProperties(
         TypeProperty("kind", "string", require = "required"),
         TypeProperty("provider", "json", require = "optional")
-        
-    ).withActionInfo (
-      ActionInfo(
-        prefix = "datafeed", 
-        verbs  = Seq.empty)
-        
-    ).withLineageInfo (    
-       LineageInfo(
-           parent_types = Seq(ResourceIds.Environment),
-           child_types  = ENTITLEMENTS)
-           
-    ).withApiInfo (
-          TypeApiInfo(rest_name = "datafeeds")
-    
-    ).save()
-    
-    val newtype = TypeFactory.findById(DATA_FEED_TYPE_ID) getOrElse {
-      throw new RuntimeException("Failed creating DataFeed Resource Type")
-    }
 
-    setTypeLineage(newtype, creator)
+      ).withActionInfo(
+        ActionInfo(
+          prefix = "datafeed",
+          verbs = Seq.empty)
+
+      ).withLineageInfo(
+        LineageInfo(
+          parent_types = Seq(ResourceIds.Environment),
+          child_types = ENTITLEMENTS)
+
+      ).withApiInfo(
+        TypeApiInfo(rest_name = "datafeeds")
+
+      ).save()
+
+      val newtype = TypeFactory.findById(DATA_FEED_TYPE_ID) getOrElse {
+        throw new RuntimeException("Failed creating DataFeed Resource Type")
+      }
+
+      setTypeLineage(newtype, creator)
+    }
   }
   
 
-  private[migrations] def addStreamProviderType(org: UUID, creator: GestaltResourceInstance) = Try {
-    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
-    SystemType(org, owner,
-      typeId      = STREAM_PROVIDER_TYPE_ID, 
-      typeName    = STREAM_PROVIDER_TYPE_NAME,
-      desc        = Some("Implements Gestalt data streams."),
-      extend      = Some(ResourceIds.Provider)
+  private[migrations] def addStreamProviderType(org: UUID, creator: GestaltResourceInstance) = {
+    if (TypeFactory.findById(STREAM_PROVIDER_TYPE_ID).isDefined) {
+      acc push s"ResourceType '${STREAM_PROVIDER_TYPE_NAME}' already exists"
+      Success(())
+    } else Try {
+      val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
+      SystemType(org, owner,
+        typeId = STREAM_PROVIDER_TYPE_ID,
+        typeName = STREAM_PROVIDER_TYPE_NAME,
+        desc = Some("Implements Gestalt data streams."),
+        extend = Some(ResourceIds.Provider)
 
-    ).withActionInfo (
-      ActionInfo(
-        prefix = "providers", 
-        verbs  = Seq.empty)
-        
-    ).withLineageInfo (    
-       LineageInfo(
-           parent_types = Seq(
-               ResourceIds.Org,
-               ResourceIds.Workspace,
-               ResourceIds.Environment
-           ),
-           child_types  = ENTITLEMENTS)
-           
-    ).withApiInfo (
-          TypeApiInfo(rest_name = "providers")
-    
-    ).save()
-    
-    val newtype = TypeFactory.findById(STREAM_PROVIDER_TYPE_ID) getOrElse {
-      throw new RuntimeException("Failed creating StreamProvider Resource Type")
+      ).withActionInfo(
+        ActionInfo(
+          prefix = "providers",
+          verbs = Seq.empty)
+
+      ).withLineageInfo(
+        LineageInfo(
+          parent_types = Seq(
+            ResourceIds.Org,
+            ResourceIds.Workspace,
+            ResourceIds.Environment
+          ),
+          child_types = ENTITLEMENTS)
+
+      ).withApiInfo(
+        TypeApiInfo(rest_name = "providers")
+
+      ).save()
+
+      val newtype = TypeFactory.findById(STREAM_PROVIDER_TYPE_ID) getOrElse {
+        throw new RuntimeException("Failed creating StreamProvider Resource Type")
+      }
+      setTypeLineage(newtype, creator)
     }
-    setTypeLineage(newtype, creator)
   }
   
-  private[migrations] def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = Try {
-    val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
-    SystemType(org, owner,
-      typeId      = STREAM_SPEC_TYPE_ID, 
-      typeName    = STREAM_SPEC_TYPE_NAME,
-      desc        = Some("Gestalt Stream Specification."),
-      extend      = Some(ResourceIds.Configuration),
-      selfProps   = Map("is_provider_backed" -> "true")
-    
-    ).withTypeProperties (    
-    
-      TypeProperty("cpus", "float", require = "required"),
-      TypeProperty("mem", "int", require = "required"),
-      TypeProperty("parallelization", "int", require = "required"),
-      TypeProperty("processor", "json", require = "required"),
-    	TypeProperty("streams", "json::list", require = "optional"),
-      TypeProperty("provider", "resource::uuid::link", require = "required",
-            refersTo = Some(STREAM_PROVIDER_TYPE_ID))
-   
-    ).withActionInfo (
-      ActionInfo(
-        prefix = "streamspec", 
-        verbs  = Seq("start", "stop", "restart", "viewstatus"))
-        
-    ).withLineageInfo (    
-       LineageInfo(
-           parent_types = Seq(ResourceIds.Environment),
-           child_types  = ENTITLEMENTS)
-           
-    ).withApiInfo (
-          TypeApiInfo(rest_name = "streamspecs")
+  private[migrations] def addStreamSpecType(org: UUID, creator: GestaltResourceInstance) = {
+    if (TypeFactory.findById(STREAM_SPEC_TYPE_ID).isDefined) {
+      acc push s"ResourceType '${STREAM_SPEC_TYPE_NAME}' already exists"
+      Success(())
+    } else Try {
+      val owner = ResourceOwnerLink(ResourceIds.User, creator.id)
+      SystemType(org, owner,
+        typeId = STREAM_SPEC_TYPE_ID,
+        typeName = STREAM_SPEC_TYPE_NAME,
+        desc = Some("Gestalt Stream Specification."),
+        extend = Some(ResourceIds.Configuration),
+        selfProps = Map("is_provider_backed" -> "true")
 
-    ).save()
-   
-    val newtype = TypeFactory.findById(STREAM_SPEC_TYPE_ID) getOrElse {
-      throw new RuntimeException("Failed creating StreamSpec Resource Type")
-    }    
-    setTypeLineage(newtype, creator)
+      ).withTypeProperties(
+
+        TypeProperty("cpus", "float", require = "required"),
+        TypeProperty("mem", "int", require = "required"),
+        TypeProperty("parallelization", "int", require = "required"),
+        TypeProperty("processor", "json", require = "required"),
+        TypeProperty("streams", "json::list", require = "optional"),
+        TypeProperty("provider", "resource::uuid::link", require = "required",
+          refersTo = Some(STREAM_PROVIDER_TYPE_ID))
+
+      ).withActionInfo(
+        ActionInfo(
+          prefix = "streamspec",
+          verbs = Seq("start", "stop", "restart", "viewstatus"))
+
+      ).withLineageInfo(
+        LineageInfo(
+          parent_types = Seq(ResourceIds.Environment),
+          child_types = ENTITLEMENTS)
+
+      ).withApiInfo(
+        TypeApiInfo(rest_name = "streamspecs")
+
+      ).save()
+
+      val newtype = TypeFactory.findById(STREAM_SPEC_TYPE_ID) getOrElse {
+        throw new RuntimeException("Failed creating StreamSpec Resource Type")
+      }
+      setTypeLineage(newtype, creator)
+    }
   }
  
   
