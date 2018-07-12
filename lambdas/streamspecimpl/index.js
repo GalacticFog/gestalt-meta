@@ -47,7 +47,7 @@ exports.entryPoint = function(event, context, callback) {
       case 'streamspec.delete':
         console.log('STREAMSPEC.DELETE');
         const deleted = await crud.actionDelete(eventData, contextData, metaClient);
-        callback(null, {});
+        callback(null, '{}');
         break;
 
       default:

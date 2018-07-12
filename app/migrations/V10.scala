@@ -52,6 +52,22 @@ class V10() extends MetaMigration() {
         requirementType = RequirementType.id("optional"),
         visibilityType = VisibilityType.id("plain")
       ))
+      datafeed <- Try{TypeFactory.findById(V7.DATA_FEED_TYPE_ID) getOrElse {
+        throw new RuntimeException(s"Type ${V7.DATA_FEED_TYPE_ID} not found. Ensure database has been initialize.")
+      }}
+      t <- addPropertyTypeToResourceType(datafeed, GestaltTypeProperty(
+        typeId = ResourceIds.TypeProperty,
+        state = ResourceState.id(ResourceStates.Active),
+        owner = datafeed.owner,
+        orgId = datafeed.orgId,
+        name = "credentials",
+        appliesTo = datafeed.id,
+        datatype = DataType.id("json"),
+        isSealed = false,
+        isSystem = true,
+        requirementType = RequirementType.id("optional"),
+        visibilityType = VisibilityType.id("plain")
+      ))
       _ = acc push "Migration complete"
     } yield t
   }
