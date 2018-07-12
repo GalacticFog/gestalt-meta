@@ -327,8 +327,28 @@ class AuthorizationMethodsSpec extends GestaltSecurityMocking with ResourceScope
 
       (a.sorted == b.sorted) must beTrue   
     }
+  }
+  
+  "All Entitlements" should {
     
-    
+    "be owned by the Root Org, with no exceptions" >> {
+      val ents = ResourceFactory.findAll(ResourceIds.Entitlement)
+      val rootid = com.galacticfog.gestalt.meta.api.Resource.findFqon("root").get.id
+      
+      println("///////////")
+      println("ENTS.SIZE : " + ents.size)
+      ents.foreach { en => 
+        val e = Entitlement.make(en)
+        println(s"type: ${en.owner.typeId}, id: ${en.owner.id}, p: ${e.name}") 
+      }
+      println("///////////")
+      println("DUMMY-ORG : " + dummyRootOrgId)
+      println("ROOT : " + rootid)
+      
+      val fails = ents.filter(ent => ent.owner.id != rootid.toString)
+      println("fails.size : " + fails.size)
+      fails.isEmpty must beTrue
+    }
   }
 
 }
