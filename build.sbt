@@ -17,8 +17,7 @@ resolvers ++= Seq(
     "snapshots" at "http://scala-tools.org/repo-snapshots",
     "releases"  at "http://scala-tools.org/repo-releases",
     "Atlassian Releases" at "https://maven.atlassian.com/public/",
-    "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
-)
+    "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases")
 
 dockerBaseImage := "openjdk:8-jre-alpine"
 

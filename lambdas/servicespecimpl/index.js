@@ -48,17 +48,19 @@ exports.entryPoint = function(event, context, callback) {
          * it in the callback - but then we can't send back the 'publish-response'
          * message that tells you what was created (and gives you the IDs)
          */
-        // updatePublishSpec(eventData.resource, contextData.user)
-
-      
+        //updatePublishSpec(eventData.resource, contextData.user)
         //callback(null, JSON.parse(JSON.stringify(finalResponse)))
 
         break
       case 'servicespec.deploy':
         console.log("[handle-action]: 'servicespec.deploy")
 
-        let response = await deploy.eventDeploy(eventData, contextData)
-        callback(null, response)
+        try {
+          let response = await deploy.eventDeploy(eventData, contextData)
+          callback(null, response)
+        } catch(err) {
+          callback(err)
+        }
         break
         
       default:

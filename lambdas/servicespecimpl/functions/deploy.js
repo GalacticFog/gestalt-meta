@@ -22,19 +22,21 @@ module.exports = {
     const location = event.actionPayload.location_uri
     const provider = event.resource.properties.provider_def
 
-    const serviceEndpoints = await createImplementation(metaUrl, location, provider, client)
+    try {
+      const serviceEndpoints = await createImplementation(metaUrl, location, provider, client)
+      
+      console.log('Endpoints created...')
+      console.log('Creating Service Provider...')
+      console.log(JSON.stringify("*****SECOND-EPS : " + serviceEndpoints, null, 2))
 
+      const definition = event.actionPayload.definition
+      const serviceProvider = await createServiceProvider(metaUrl, location, definition, serviceEndpoints, client)
     
-
-    console.log('Endpoints created...')
-    console.log('Creating Service Provider...')
-    console.log(JSON.stringify("*****SECOND-EPS : " + serviceEndpoints, null, 2))
-
-    const definition = event.actionPayload.definition
-    const serviceProvider = await createServiceProvider(metaUrl, location, definition, serviceEndpoints, client)
-  
-    console.log('Service-Provider created...')
-
+      console.log('Service-Provider created...')
+    } catch(err) {
+      console.error("ERROR : " + err.message)
+      
+    }
     return JSON.stringify(serviceProvider, null, 2)
     return JSON.stringify({ status: 'OK', message: 'Testing'}, null, 2)
   }
@@ -46,9 +48,11 @@ async function createImplementation(metaUrl, location, provider, client) {
   // TODO: Move all these conditionals to a validation function.
   //
 
+  console.log(JSON.stringify(provider, null, 2))
+
   if (!provider.api) {
     // There is no implementation given
-    return { message: "'provider_def.api' not found."}
+    throw new Error("'provider_def.api' not found.")
   }
 
   const api = provider.api
@@ -106,9 +110,7 @@ async function createImplementation(metaUrl, location, provider, client) {
       await createApiEndpoint(metaUrl, location, Object.assign(endpointData, { path: ep.path }), client)
         .then(p => {
           // TODO: use metaEndpoint.properties.public_url!!!
-          //console.log('P : ' + JSON.stringify(p, null, 2))
-          
-          
+        //console.log('P : ' + JSON.stringify(p, null, 2))
 
           const providerEndpoint = providerEndpointConfig(ep, p.properties.public_url)
           console.log("*****PUBLIC-URL : " + p.properties.public_url)
@@ -244,8 +246,8 @@ async function createLambda(meta, location, spec, client) {
 }
 
 async function createServiceProvider(meta, location, providerDefinition, serviceEndpoints, client) {
-  console.log("*****THIRD-EPS : " + serviceEndpoints)
   
+  console.log("*****THIRD-EPS : " + serviceEndpoints)
   console.log("*****INSPECT : " + u.inspect(serviceEndpoints))
 
   const url = `${meta}/${trimLeading(location)}/providers`
@@ -289,9 +291,7 @@ async function fetchGatewayProvider(meta, location, metaClient) {
   return ps[0]
 }
 
-
 /*
-
 651310cd-92b7-4cc6-bf89-1ed0f66adcfd
 
 https://meta.test.galacticfog.com/engineering/apiendpoints/651310cd-92b7-4cc6-bf89-1ed0f66adcfd?force=true
@@ -406,7 +406,6 @@ POST .../apis/{id}/apiendpoints
 
 After create endpoint - take 'properties.public_url' for provider endpoint.
 
-
 {
   "kind": "http",
   "actions": [
@@ -428,13 +427,7 @@ After create endpoint - take 'properties.public_url' for provider endpoint.
   }
 }          
 
-
-
-
 POSTING : https://meta.test.galacticfog.com/engineering/environments/58b13c79-ef24-4ee8-8f5a-b081f2e3fc63/apis/ae96b6a4-ee6c-4f61-8f31-245b6bf519ea/apiendpoints
-
-
-
 {
   name: "/invoke",
   description: "",
