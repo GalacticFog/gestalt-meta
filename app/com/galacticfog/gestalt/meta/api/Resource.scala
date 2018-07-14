@@ -107,7 +107,7 @@ object Resource {
     }  
   }
   
-  private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {
+  private[api] def isValidSubType(typeName: String, typeId: UUID): Boolean = {    
     typeName match {
       case "providers" => ResourceFactory.isSubTypeOf(typeId, ResourceIds.Provider)
       case "rules"     => ResourceFactory.isSubTypeOf(typeId, ResourceIds.Rule)

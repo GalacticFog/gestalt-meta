@@ -57,13 +57,13 @@ class SearchController @Inject()(
   def getGroupByPropertyGlobal() = Audited() { implicit request =>
     getResourcesByProperty(ResourceIds.Group)(validateGroupSearchCriteria)
   }
-
+  
   // GET /{fqon}/users/search?{name}={value}  
   def getUserByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
       ResourceIds.User, Option(fqid(fqon)))(validateUserSearchCriteria)
   }
-
+  
   // GET /{fqon}/groups/search?{name}={value}
   def getGroupByPropertyFqon(fqon: String) = Audited(fqon) { implicit request =>
     getResourcesByProperty(
@@ -75,7 +75,10 @@ class SearchController @Inject()(
   import com.galacticfog.gestalt.security.api.GestaltResource
   import scala.concurrent.ExecutionContext.Implicits.global
   import play.api.mvc.Request
-
+  
+  
+  
+  
   def findUsers(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
     findSecurityPassThrough(
       fqon,
@@ -83,7 +86,7 @@ class SearchController @Inject()(
       ResourceIds.User)(
       ResourceFactory.findAllIn, security.searchAccounts)
   }
-
+  
   def findGroups(fqon: String) = AsyncAuditedAny(fqon) { implicit request =>
     findSecurityPassThrough(
       fqon,
@@ -122,7 +125,15 @@ class SearchController @Inject()(
     }
   }
 
+import controllers.util.QueryString
 
+  def findByDescriptor(typeId: String) = Audited() { implicit request =>
+    val descriptor = QueryString.single(request.queryString, "name", true)
+    val tid = UUID.fromString(typeId)
+    
+    RenderList(ResourceFactory.findDescriptorStartsWith(tid, descriptor.get))//(request.asInstanceOf[play.api.mvc.Request[_]])
+    
+  }
 
   private[controllers] def getResourcesByProperty(typeId: UUID, org: Option[UUID] = None)
                                                  (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: SecuredRequest[_]) = {
@@ -146,7 +157,7 @@ class SearchController @Inject()(
       }
     }
   }
-
+  
   private def validateUserSearchCriteria(qs: Map[String, Seq[String]]) = Try {
     val good = List("name", "email", "phoneNumber")
     val key = qs.keys.toList
