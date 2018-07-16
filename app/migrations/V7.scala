@@ -392,7 +392,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
 
       ).withActionInfo(
         ActionInfo(
-          prefix = "providers",
+          prefix = "provider",
           verbs = Seq.empty)
 
       ).withLineageInfo(
