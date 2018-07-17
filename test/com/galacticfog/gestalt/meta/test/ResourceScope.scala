@@ -106,6 +106,18 @@ trait ResourceScope extends Scope with Mockito {
     } yield ()
   }
   
+  
+  import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+  import com.galacticfog.gestalt.meta.api.Resource
+  
+  def rootOwnerLink() = {
+    val rootid = Resource.findFqon("root").fold {
+      throw new RuntimeException("Could not find Root Org.")
+    }{ r => r.id }
+    
+    ResourceOwnerLink(ResourceIds.Org, rootid)
+  }
+  
   def newOrg(
       id: UUID = uuid(), 
       name: String = uuid.toString, 

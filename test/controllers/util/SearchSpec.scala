@@ -35,7 +35,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
   override def beforeAll(): Unit = {
     object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
     pristineDatabase()
-    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, rootOwnerLink(), user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,

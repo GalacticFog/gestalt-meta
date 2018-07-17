@@ -48,6 +48,7 @@ import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
 import play.api.Logger
+import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
@@ -86,7 +87,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     Authorize(parentOrg, "org.create", request.identity) {
       
-      CreateSynchronized(parentOrg, ResourceIds.Org, json)(security.createOrg, createNewMetaOrg[JsValue]) match {
+      CreateSynchronized(user, parentOrg, ResourceIds.Org, json)(security.createOrg, createNewMetaOrg[JsValue]) match {
         case Failure(err) => HandleExceptions(err)
         case Success(res) => {
 
@@ -112,7 +113,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     
     Authorize(org, "group.create", request.identity) {
       
-      CreateSynchronized(org, ResourceIds.Group, request.body)(
+      CreateSynchronized(request.identity, org, ResourceIds.Group, request.body)(
           security.createGroup, createNewMetaGroup[JsValue]) match {
         
         case Failure(err) => HandleExceptions(err)
@@ -249,7 +250,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
       
       val userJson = upsertProperty(request.body.as[JsObject], "gestalt_home", /*JsString(root)*/ home)
       
-      CreateSynchronized(org, ResourceIds.User, userJson.get)(
+      CreateSynchronized(request.identity, org, ResourceIds.User, userJson.get)(
         security.createAccount, createNewMetaUser[JsValue]) match {
           case Failure(err) => {
             log.error("Response from security.createAccount() : " + err.getMessage)
@@ -764,7 +765,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   //
   // --------------------------------------------------------------------------
 
-  private def CreateSynchronized[T](org: UUID, typeId: UUID, json: JsValue)
+  private def CreateSynchronized[T](caller: AuthAccountWithCreds, org: UUID, typeId: UUID, json: JsValue)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
     (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
     
@@ -772,20 +773,26 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
     for {
       input    <- toInput(json, Option(typeId))
-      resource <- syncWithSecurity(org, typeId, input)(sc, mc)
+      resource <- syncWithSecurity(caller, org, typeId, input)(sc, mc)
     } yield resource
   }
   
-  private def syncWithSecurity[T](org: UUID, typeId: UUID, input: GestaltResourceInput)
+  private def syncWithSecurity[T](caller: AuthAccountWithCreds, org: UUID, typeId: UUID, input: GestaltResourceInput)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
     (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
 
     val stringprops = stringmap(input.properties)
     val creator = request.identity//.account.id
-    
+    val owner = {
+      if (typeId == ResourceIds.User || typeId == ResourceIds.Group) {
+        val rootid = security.getRootOrg(caller).get
+        ResourceOwnerLink(ResourceIds.Org, rootid.id)
+      } else ResourceOwnerLink(ResourceIds.User, creator.account.id)
+    }
+     
     for {
       sr <- sc(org, request.identity, input)
-      mr <- mc(creator, org,  sr, stringprops, input.description)
+      mr <- mc(creator, org,  owner, sr, stringprops, input.description)
     } yield mr
   }
   

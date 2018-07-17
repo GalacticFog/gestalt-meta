@@ -78,6 +78,11 @@ GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrati
 ############################
 
 ### NOTE: These will be taken over by elastic or similar
+
+GET     /orgs/search            controllers.SearchController.findByDescriptor(typeId: String = "23ba3299-b04e-4c5c-9b3d-64939b22944e")
+GET     /workspaces/search      controllers.SearchController.findByDescriptor(typeId: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343")
+GET     /environments/search    controllers.SearchController.findByDescriptor(typeId: String = "46b28076-9d94-4860-9aca-e8483a56d32c")
+
 GET 	/groups/search  																	  controllers.SearchController.getGroupByPropertyGlobal()
 GET 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/groups/search								  controllers.SearchController.findGroups(fqon)  							  
 

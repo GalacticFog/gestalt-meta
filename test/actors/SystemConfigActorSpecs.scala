@@ -18,7 +18,7 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, rootOwnerLink(), user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,

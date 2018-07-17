@@ -30,6 +30,11 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   //private val log = Logger(this.getClass)
   
+  import com.galacticfog.gestalt.meta.api._
+  
+
+  
+
   /**
    * Ensure an identity has entitlements for the given actions on a resource.
    * First looks at the existing entitlements on a resource ensuring the identity is included. If there
@@ -150,6 +155,13 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       creator: AccountLike,
       parent: Option[UUID]) = {
 
+  val rootid = Resource.findFqon("root").fold {
+    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+  }{ r => 
+    r.id 
+  }    
+    
+    
     // Get the target resource so we can learn its type
     val res = ResourceFactory.findById(resource) getOrElse {
       throw new IllegalArgumentException(s"Resource with ID '$resource' not found.")
@@ -171,13 +183,20 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
       } map { ent =>
         
-        //log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        
+        val ownerLink = ResourceOwnerLink(ResourceIds.Org, rootid)
+        
+        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+        log.debug(s"Entitlement Owner : " + ownerLink.id)
         
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],
             PatchOp.Add("/properties", 
-                Json.obj("parent" -> Json.obj("id" -> res.id, "name" -> res.name)))).get
+              Json.obj("parent" -> Json.obj("id" -> res.id, "name" -> res.name))),
+            PatchOp.Add("/owner", Json.toJson(ownerLink).as[JsObject]) 
+          ).get
         }
+
         CreateNewResource(org, creator, 
           json   = payload,  
           typeId = Option(ResourceIds.Entitlement), 
@@ -185,6 +204,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       }
     }
   }
+  
   
   def setEntitlements(
       org: UUID, 
@@ -199,6 +219,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       (ent.properties.get("action") -> ent)
     }.toMap
     
+    
+  val rootid = Resource.findFqon("root").fold {
+    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+  }{ r => 
+    r.id 
+  }    
     
     entitlements.map { ent =>
 
@@ -220,10 +246,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
          * The target resource does NOT have an entitlement for the current action - create
          * a new one as specified
          */
+        val ownerLink = ResourceOwnerLink(ResourceIds.Org, rootid)
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],
-            PatchOp.Add("/properties", 
-                Json.obj("parent" -> parentJs))).get
+            PatchOp.Add("/properties", Json.obj("parent" -> parentJs)),
+            PatchOp.Add("/owner", Json.toJson(ownerLink).as[JsObject]) 
+          ).get
         }
         
         CreateNewResource(
@@ -251,6 +279,13 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     }.toMap
     
     
+  val rootid = Resource.findFqon("root").fold {
+    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+  }{ r => 
+    r.id 
+  }    
+    
+    
     entitlements.map { ent =>
 
       val parentJs = Json.obj("id" -> target.id, "name" -> target.name)
@@ -271,10 +306,12 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
          * The target resource does NOT have an entitlement for the current action - create
          * a new one as specified
          */
+        val ownerLink = ResourceOwnerLink(ResourceIds.Org, rootid)
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],
-            PatchOp.Add("/properties", 
-                Json.obj("parent" -> parentJs))).get
+            PatchOp.Add("/properties", Json.obj("parent" -> parentJs)),
+            PatchOp.Add("/owner", Json.toJson(ownerLink).as[JsObject])      
+          ).get
         }
         
         CreateNewResource(
@@ -285,7 +322,6 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
           parent = Option(target.id))
         }
     }
-    
   }  
   
   

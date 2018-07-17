@@ -102,9 +102,11 @@ class SecuritySync @Inject()(
   def createOrgs(creatorType: UUID, creator: UUID, rs: Iterable[GestaltOrg], account: AuthAccountWithCreds) = {
     for (org <- rs) {
       log.debug(s"Creating Org : ${org.name}")
-
+      
+      val rootorgid = security.getRootOrg(account).get.id
       val parent = parentOrgId(org, account)
-      createNewMetaOrg(account, parent, org, properties = None, None) match {
+      val owner = ResourceOwnerLink(ResourceIds.User, creator)
+      createNewMetaOrg(account, parent, owner, org, properties = None, None) match {
         case Failure(err) => throw err
         case Success(org) => {
           setNewResourceEntitlements(org.id, org.id, account, parent = Option(parent))
@@ -135,7 +137,10 @@ class SecuritySync @Inject()(
       log.debug(s"Creating Group: ${group.name}")
       
       val org = group.directory.orgId
-      createNewMetaGroup(account, org, group, 
+      val rootorgid = security.getRootOrg(account).get.id
+      val owner = ResourceOwnerLink(ResourceIds.Org, rootorgid)
+      
+      createNewMetaGroup(account, org, owner, group, 
           properties = None, group.description) match {
         case Failure(err) => throw err
         case Success(group) => setNewResourceEntitlements(org, group.id, account, parent = Option(org))
@@ -144,10 +149,16 @@ class SecuritySync @Inject()(
   }
   
   def updateGroups(creator: UUID, rs: Iterable[GestaltGroup], account: AuthAccountWithCreds) = {
+    val rootOrg = security.getRootOrg(account).get
+    val owner = ResourceOwnerLink(ResourceIds.Org, rootOrg.id)
     for (group <- rs) {
       log.debug(s"Updating Group : ${group.name}")
       ResourceFactory.findById(group.id) foreach { g =>
-        ResourceFactory.update(g.copy(name = group.name, description = group.description), creator,
+        ResourceFactory.update(
+            g.copy(
+                name = group.name,
+                owner = owner,
+                description = group.description), creator,
             updateTimestamp = false)  
       }
     }
@@ -158,7 +169,10 @@ class SecuritySync @Inject()(
       log.debug(s"Creating User : ${acc.name}")
       
       val org = acc.directory.orgId
-      createNewMetaUser(account, org, acc,
+      val rootorgid = security.getRootOrg(account).get.id
+      val owner = ResourceOwnerLink(ResourceIds.Org, rootorgid)
+      
+      createNewMetaUser(account, org, owner, acc,
           properties = Some(
             (userProps(acc) ++ Seq("gestalt_home" -> security.getRootOrg(account).get.fqon)).toMap),
           description = acc.description ) match {
@@ -171,12 +185,12 @@ class SecuritySync @Inject()(
           log.debug("Setting new user entitlements on root Org.")
           val rootorgid = security.getRootOrg(account).get.id
           
-          def grantNewUserPermissions(caller: UUID, user: UUID, homeOrg: UUID) = {
-            // Allow users to view their home-org
-            grant(caller, user, homeOrg, "org.view")
-            // Allow users to view themselves
-            grant(caller, user, user, "user.view")
-          }
+//          def grantNewUserPermissions(caller: UUID, user: UUID, homeOrg: UUID) = {
+//            // Allow users to view their home-org
+//            grant(caller, user, homeOrg, "org.view")
+//            // Allow users to view themselves
+//            grant(caller, user, user, "user.view")
+//          }
           grantNewUserPermissions(creator, usr.id, rootorgid)
         }
       }
@@ -192,6 +206,9 @@ class SecuritySync @Inject()(
   }  
   
   def updateUsers(creator: UUID, rs: Iterable[GestaltAccount], account: AuthAccountWithCreds) = {
+    val rootOrg = security.getRootOrg(account).get
+    val owner = ResourceOwnerLink(ResourceIds.Org, rootOrg.id)
+    
     for (acc <- rs) {
       log.debug(s"Updating User : ${acc.name}")
       
@@ -200,6 +217,7 @@ class SecuritySync @Inject()(
         ResourceFactory.update(
           a.copy(
             name = acc.name, // name/username
+            owner = owner,
             // update properties
             properties = a.properties map {
               _ ++ userProps(acc)
@@ -266,33 +284,55 @@ class SecuritySync @Inject()(
 trait SecurityResources {
   
   type SecurityResourceFunction = (UUID, AuthAccountWithCreds, GestaltResourceInput) => Try[SecurityResource]
-  type MetaResourceFunction     = (AuthAccountWithCreds, UUID, SecurityResource,  Option[Hstore], Option[String]) => Try[GestaltResourceInstance]
+  type MetaResourceFunction     = (AuthAccountWithCreds, UUID, ResourceOwnerLink, SecurityResource,  Option[Hstore], Option[String]) => Try[GestaltResourceInstance]
   type SecurityDelete           = (UUID, AuthAccountWithCreds) => Try[Boolean]
   
-  def createNewMetaOrg[T](creator: AuthAccountWithCreds, owningOrg: UUID, org: SecurityResource, properties: Option[Hstore], description: Option[String]) = { //(implicit securedRequest: SecuredRequest[T]) = {
+  def createNewMetaOrg[T](
+      creator: AuthAccountWithCreds, 
+      owningOrg: UUID,
+      owner: ResourceOwnerLink,
+      org: SecurityResource, 
+      properties: Option[Hstore], 
+      description: Option[String]) = {
+    
     Try {
       val o = org.asInstanceOf[GestaltOrg]
       val parent = o.parent map { _.id }
       val props = Some(Map("fqon" -> o.fqon) ++ properties.getOrElse(Map()))
       ResourceFactory.create(ResourceIds.User, creator.account.id)(
-        fromSecurityResource(org, ResourceIds.Org, owningOrg, creator, props, description), parent).get
+        fromSecurityResource(org, ResourceIds.Org, owningOrg, owner, props, description), parent).get
     }
   }
   
-  def createNewMetaGroup[T](creator: AuthAccountWithCreds, owningOrg: UUID, group: SecurityResource, properties: Option[Hstore], description: Option[String]) = {
+  def createNewMetaGroup[T](
+      creator: AuthAccountWithCreds,
+      owningOrg: UUID,
+      owner: ResourceOwnerLink,
+      group: SecurityResource, 
+      properties: Option[Hstore], 
+      description: Option[String]) = {
+    
     Try {
       val g = group.asInstanceOf[GestaltGroup]
       ResourceFactory.create(ResourceIds.Group, creator.account.id)(
-        fromSecurityResource(g, ResourceIds.Group, owningOrg, creator, properties, description),
+        fromSecurityResource(g, ResourceIds.Group, owningOrg, owner, properties, description),
         Option(owningOrg)).get
     }
   }
   
-  def createNewMetaUser[T](creator: AuthAccountWithCreds, owningOrg: UUID, account: SecurityResource, properties: Option[Hstore], description: Option[String]) = {//(implicit securedRequest: SecuredRequest[T]) = {
+  def createNewMetaUser[T](
+      creator: AuthAccountWithCreds,
+      owningOrg: UUID, 
+      owner: ResourceOwnerLink,
+      account: SecurityResource, 
+      properties: Option[Hstore], 
+      description: Option[String]) = {
+    
     Try {
       val a = account.asInstanceOf[GestaltAccount]
+      
       ResourceFactory.create(ResourceIds.User, creator.account.id)(
-        fromSecurityResource(a, ResourceIds.User, owningOrg, creator, properties, description),
+        fromSecurityResource(a, ResourceIds.User, owningOrg, owner, properties, description),
         Option(owningOrg)).get
     }
   }
@@ -312,15 +352,21 @@ trait SecurityResources {
       sr: SecurityResource, 
       typeId: UUID, 
       org: UUID, 
-      creator: AuthAccountWithCreds, properties: Option[Hstore] = None, description: Option[String] = None) = {
+      owner: ResourceOwnerLink /*AuthAccountWithCreds*/, 
+      properties: Option[Hstore] = None, 
+      description: Option[String] = None) = {
     
-    val ownerLink = SecurityResources.ownerFromAccount(creator)
-    
+    //val ownerLink = SecurityResources.ownerFromAccount(creator)
+    /*
+     * 
+     * TODO: creator needs to be changed to a ResourceOwnerLink
+     * 
+     */
     GestaltResourceInstance(
       id = sr.id,
       typeId = typeId,
       orgId = org, // this needs to be org from URI
-      owner = SecurityResources.ownerFromAccount(creator),
+      owner = owner, //SecurityResources.ownerFromAccount(creator),
       name = sr.name,
       description = description,
       state = ResourceState.id(ResourceStates.Active),

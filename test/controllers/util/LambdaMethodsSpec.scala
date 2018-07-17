@@ -39,7 +39,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
   override def beforeAll(): Unit = {
     pristineDatabase()
-    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, user.account,
+    val Success(createdUser) = Ents.createNewMetaUser(user, dummyRootOrgId, rootOwnerLink(), user.account,
       Some(Map(
         "firstName" -> user.account.firstName,
         "lastName" -> user.account.lastName,
