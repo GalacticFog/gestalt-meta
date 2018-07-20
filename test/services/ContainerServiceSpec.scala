@@ -4,7 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -120,6 +120,17 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
   }
 
   "ContainerSpec.PortMapping" should {
+
+    "have optional `type`" in {
+      Json.obj("protocol" -> "tcp").as[PortMapping].`type` must beNone
+    }
+
+    "parse only valid types" in {
+      Json.obj("protocol" -> "tcp", "type" -> "nodePort").as[PortMapping].`type` must beSome("nodePort")
+      Json.obj("protocol" -> "tcp", "type" -> "loadBalancer").as[PortMapping].`type` must beSome("loadBalancer")
+      Json.obj("protocol" -> "tcp", "type" -> "clusterIP").as[PortMapping].`type` must beSome("clusterIP")
+      Json.obj("protocol" -> "tcp", "type" -> "literallyAnythingElse").validate[PortMapping] must beAnInstanceOf[JsError]
+    }
 
     "be optional in ContainerSpec" in {
       Json.obj(

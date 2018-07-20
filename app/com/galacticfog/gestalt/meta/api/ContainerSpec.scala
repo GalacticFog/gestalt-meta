@@ -82,7 +82,8 @@ case object ContainerSpec extends Spec {
                          expose_endpoint: Option[Boolean] = None,
                          service_address: Option[ServiceAddress] = None,
                          virtual_hosts: Option[Seq[String]] = None,
-                         lb_port: Option[Int] = None)
+                         lb_port: Option[Int] = None,
+                         `type`: Option[String] = None)
                          
   case class Volume(container_path: String,
                     host_path: Option[String],
@@ -278,7 +279,8 @@ case object ContainerSpec extends Spec {
       (__ \ "expose_endpoint").readNullable[Boolean] and
       (__ \ "service_address").readNullable[ServiceAddress] and
       (__ \ "virtual_hosts").readNullable[Seq[String]] and
-      (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0))
+      (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0)) and
+      (__ \ "type").readNullable[String](verifying(Set("clusterIP","nodePort","loadBalancer").contains(_)))
     )(ContainerSpec.PortMapping.apply _)
 
   implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
