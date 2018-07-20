@@ -256,7 +256,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * if empty, delete any existing service
      * if not empty, update or create
      */
-    val maybeNewSvc = mkServiceSpec(containerId, spec, namespace, context)
+    val maybeNewSvc = mkServiceSpec("nodePort", containerId, spec, namespace, context)
     for {
       maybeExistingSvc <- fExistingSvc
       maybeUpdatedSvc <- (maybeExistingSvc, maybeNewSvc) match {
@@ -274,7 +274,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def createService(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
-    val maybeService = mkServiceSpec(containerId, spec, namespace, context)
+    val maybeService = mkServiceSpec("nodePort", containerId, spec, namespace, context)
     for {
       maybeCreatedSvc <- maybeService match {
         case Some(svc) => kube.create[Service](svc) map Some.apply
@@ -551,15 +551,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  private[services] def mkServiceSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): Option[Service] = {
+  private[services] def mkServiceSpec(serviceType: String, containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): Option[Service] = {
     val svcName = containerSpec.name
-    val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true))
+    val exposedPorts = containerSpec.port_mappings.filter(_.expose_endpoint.contains(true)).filter(_.`type`.getOrElse("nodePort") == serviceType)
     if (exposedPorts.isEmpty) {
       None
     } else {
       val srv = exposedPorts.foldLeft[Service](
         Service(metadata = ObjectMeta(name = svcName, namespace = namespace))
-          .withType(Service.Type.NodePort)
+          .withType(
+            serviceType match {
+              case "nodePort" => Service.Type.NodePort
+              case "loadBalancer" => Service.Type.LoadBalancer
+              case _ => Service.Type.ClusterIP
+            }
+          )
           .withSelector(
             META_CONTAINER_KEY -> containerId.toString
           )

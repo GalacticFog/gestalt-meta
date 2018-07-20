@@ -2,6 +2,7 @@ package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.Base64
+import scala.collection.JavaConversions._
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -391,6 +392,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
   }
 
   def hasExactlyContainerPorts(ps: skuber.Container.Port*) = ((_: skuber.ext.Deployment).getPodSpec.map(_.containers.flatMap(_.ports)).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
+
+  def hasServiceType(tp: Service.Type.Value) = ((_: skuber.Service).spec.map(_._type) must beSome(tp))
 
   def hasExactlyServicePorts(ps: skuber.Service.Port*) = ((_: skuber.Service).spec.map(_.ports).getOrElse(List())) ^^ containTheSameElementsAs(Seq(ps:_*))
 
@@ -1132,6 +1135,49 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
       ))(any,meq(Deployment.deployDef))
       there were two(testSetup.kubeClient).close
+    }
+
+    "orchestrate multiple Services of different types" in new FakeKubeCreate(port_mappings = Seq(
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"), `type` = None),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(8443), expose_endpoint = Some(true), name = Some("https"), `type` = Some("nodePort")),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("clusterIP")),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer")),
+      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(10000),                       expose_endpoint = Some(false), name = Some("not-exposed") )
+    )) {
+      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
+      there were three(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef))
+      val createdServices = serviceCaptor.getAllValues.toSeq
+      createdServices.size must_== 3
+      createdServices must contain(
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name) and
+          hasServiceType(Service.Type.ClusterIP) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("http",    skuber.Protocol.TCP,   80, Some(Left(80)),     0),
+            skuber.Service.Port("https",   skuber.Protocol.TCP,  443, Some(Left(443)), 8443)
+          ) and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      )
+      createdServices must contain(
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name) and
+          hasServiceType(Service.Type.ClusterIP) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("https2",   skuber.Protocol.TCP,  444, Some(Left(444)), 0) // clusterIP has no node port
+          ) and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      )
+      createdServices must contain(
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name) and
+          hasServiceType(Service.Type.ClusterIP) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("https3",   skuber.Protocol.TCP,  445, Some(Left(445)), 8445)
+          )  and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      )
     }
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
