@@ -594,23 +594,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   private[services] def mkServiceSpecs(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): ContainerServices = {
 
-    // nodePort and loadBalancer are always counted as a clusterIp
+    // nodePort and loadBalancer are always counted as a clusterIP
     // likewise, loadBalancer is always counted as a nodePort
-    // therefore, we have clusterIp superset nodePort superset loadBalancer
+    // therefore, we have clusterIP superset nodePort superset loadBalancer
 
-    def mkSvc(svcName: String, serviceType: String, pms: Seq[ContainerSpec.PortMapping]): Option[Service] = {
+    def mkSvc(svcName: String, serviceType: Service.Type.ServiceType, pms: Seq[ContainerSpec.PortMapping]): Option[Service] = {
       if (pms.isEmpty) {
         None
       } else {
         Some(pms.foldLeft[Service](
           Service(metadata = ObjectMeta(name = svcName, namespace = namespace))
-            .withType(
-              serviceType match {
-                case "nodePort"     => Service.Type.NodePort
-                case "loadBalancer" => Service.Type.LoadBalancer
-                case              _ => Service.Type.ClusterIP
-              }
-            )
+            .withType(serviceType)
             .withSelector(
               META_CONTAINER_KEY -> containerId.toString
             )
@@ -629,7 +623,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               protocol = pm.protocol,
               port = pm.lb_port.filter(_ != 0).getOrElse(cp),
               targetPort = Some(Left(cp)),
-              nodePort = pm.service_port.filter(_ => serviceType != "clusterIp").getOrElse(0)
+              nodePort = pm.service_port.filter(_ => serviceType != Service.Type.ClusterIP).getOrElse(0)
             ))
         })
       }
@@ -639,19 +633,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       pm => pm.expose_endpoint.contains(true)
     }
     val npPMs = containerSpec.port_mappings.filter {
-      pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(t => t == "nodePort" || t == "loadBalancer")
+      pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)
     }
     val lbPMs = containerSpec.port_mappings.filter {
-      pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(t => t == "loadBalancer")
+      pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")
     }
 
     if (cipPMs.isEmpty) {
       ContainerServices(None,None,None)
     } else {
       ContainerServices(
-        mkSvc(containerSpec.name, "clusterIp", cipPMs),
-        mkSvc(containerSpec.name + "-ext", "nodePort", npPMs),
-        mkSvc(containerSpec.name + "-lb", "loadBalancer", lbPMs)
+        mkSvc(containerSpec.name,          Service.Type.ClusterIP,    cipPMs),
+        mkSvc(containerSpec.name + "-ext", Service.Type.NodePort,     npPMs),
+        mkSvc(containerSpec.name + "-lb",  Service.Type.LoadBalancer, lbPMs)
       )
     }
   }

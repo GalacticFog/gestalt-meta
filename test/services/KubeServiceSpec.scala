@@ -540,10 +540,15 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "deploy services for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
       port_mappings = Seq(
+        // automatically assigned lb_port, default type == "clusterIP"
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"),   `type` = None),
+        // automatically assigned lb_port, test type == nodePort, user-specified nodePort/service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(0),    expose_endpoint = Some(true), name = Some("https"),  `type` = Some("nodePort"),     service_port = Some(32000)),
+        // user-specified lb_port for type == "clusterIP", ignore and nerf the nodePort/service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("clusterIP"),    service_port = Some(32001)),
+        // test type ==  "loadBalancer", test that assigned nodePort is set on service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer"), service_port = None),
+        // non-exposed port, with host_port and "udp". test that lb_port is nerfed.
         ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("clusterIP"),    host_port = Some(10000))
       )
     ) {
@@ -1744,7 +1749,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )) {
 
-      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
+      testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(skuber.ext.Ingress(metaContainer.name)))
       testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
       testSetup.kubeClient.delete(metaContainer.name,0)(Ingress.ingDef) returns Future.successful(())
       testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockSvc())))
