@@ -133,26 +133,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def create(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
-    val t = ContainerSpec.fromResourceInstance(container) match {
-      case Failure(e) => Future.failed(e)
-      case Success(spec) => for {
-        namespace  <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-        updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( createDeploymentEtAl(_, container.id, spec, namespace.name, context) )
-      } yield upsertProperties(
-        container,
-        "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
-        "status" -> "LAUNCHED",
-        "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
-      )
-    }
-
-    t.onComplete {
-      case Success(value) => println(s"Got the callback, meaning = $value")
-      case Failure(e) => e.printStackTrace
-    }
-    log.debug("***EXITING KubernetesService::create()")
-
-    t
+    for {
+      spec <- Future.fromTry(ContainerSpec.fromResourceInstance(container))
+      namespace  <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
+      updatedContainerSpec <- cleanly(context.provider.id, namespace.name)( createDeploymentEtAl(_, container.id, spec, namespace.name, context) )
+    } yield upsertProperties(
+      container,
+      "external_id" -> s"/namespaces/${namespace.name}/deployments/${container.name}",
+      "status" -> "LAUNCHED",
+      "port_mappings" -> Json.toJson(updatedContainerSpec.port_mappings).toString()
+    )
   }
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
