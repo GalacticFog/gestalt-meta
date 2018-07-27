@@ -551,6 +551,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       pm.name.contains(sp.name) || (pm.lb_port.filter(_ != 0) orElse pm.container_port).contains(sp.port)
     }
 
+    log.debug("svcExt: " + services.extSvc.toString)
     services.intSvc match {
       case None =>
         log.debug(s"updateContainerSpecPortMappings: No Service(ClusterIP)")
@@ -567,6 +568,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   _.ports.find( svcMatch(pm, _) )
                 )
               ) map (_.nodePort)
+              log.debug(s"nodePort from svcExt for ${pm.name.get}: ${nodePort}")
               pm.copy(
                 service_port = nodePort,
                 service_address = Some(ContainerSpec.ServiceAddress(
@@ -574,14 +576,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   port = sp.port,
                   protocol = Some(pm.protocol)
                 )),
-                lb_port = Some(sp.port)
+                lb_port = Some(sp.port),
+                `type` = pm.`type` orElse(Some("clusterIP"))
               )
             case _ =>
               log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
               pm.copy(
                 service_address = None,
                 lb_port = None,
-                expose_endpoint = Some(false)
+                expose_endpoint = Some(false),
+                `type` = None
               )
           }
         }

@@ -275,8 +275,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     import skuber.portNumToNameablePort
     lazy val baseNodePort = 31000
-    lazy val assignedNodePorts = port_mappings.filter(_.expose_endpoint.contains(true)).zipWithIndex.map({
+    lazy val assignedNodePortsNP = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)).zipWithIndex.map({
       case (pm,i) => (pm.name.getOrElse("") , pm.service_port.filter(_ != 0).getOrElse(31000+i))
+    }) toMap
+    lazy val assignedNodePortsLB = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).zipWithIndex.map({
+      case (pm,i) => (pm.name.getOrElse("") , pm.service_port.filter(_ != 0).getOrElse(32000+i))
     }) toMap
     lazy val mockService = skuber.Service(
       name = metaContainer.name,
@@ -288,10 +291,42 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
             protocol = skuber.Protocol.TCP,
             port = pm.lb_port.filter(_ != 0).getOrElse(pm.container_port.get),
             targetPort = Some(pm.container_port.get),
-            nodePort = assignedNodePorts(pm.name.getOrElse(""))
+            nodePort = 0
+          )
+        ).toList,
+        _type = skuber.Service.Type.ClusterIP
+      )
+    ).addLabels(containerLbls)
+    lazy val mockService2 = skuber.Service(
+      name = metaContainer.name+"-ext",
+      spec = skuber.Service.Spec(
+        clusterIP = "10.0.161.84",
+        ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)).map(
+          pm => skuber.Service.Port(
+            name = pm.name.getOrElse(""),
+            protocol = skuber.Protocol.TCP,
+            port = pm.lb_port.filter(_ != 0).getOrElse(pm.container_port.get),
+            targetPort = Some(pm.container_port.get),
+            nodePort = assignedNodePortsNP(pm.name.getOrElse(""))
           )
         ).toList,
         _type = skuber.Service.Type.NodePort
+      )
+    ).addLabels(containerLbls)
+    lazy val mockService3 = skuber.Service(
+      name = metaContainer.name+"-lb",
+      spec = skuber.Service.Spec(
+        clusterIP = "10.0.161.85",
+        ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).map(
+          pm => skuber.Service.Port(
+            name = pm.name.getOrElse(""),
+            protocol = skuber.Protocol.TCP,
+            port = pm.lb_port.filter(_ != 0).getOrElse(pm.container_port.get),
+            targetPort = Some(pm.container_port.get),
+            nodePort = assignedNodePortsLB(pm.name.getOrElse(""))
+          )
+        ).toList,
+        _type = skuber.Service.Type.LoadBalancer
       )
     ).addLabels(containerLbls)
 
@@ -372,7 +407,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any,meq(skuber.PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
       mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
       mockSkuber.list(any)(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      mockSkuber.list()(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockService)))
+
+      val nonEmptySvcs = List( mockService, mockService2, mockService3 ).filter(_.spec.map(_.ports.nonEmpty).contains(true))
+      mockSkuber.list()(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
       mockSkuber.list(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockService)))
       mockSkuber.list()(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
       mockSkuber.list(any)(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
@@ -380,7 +417,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
-      mockSkuber.create(any)(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService)
+      mockSkuber.create(argThat( (_:Service).name == metaContainer.name        ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService)
+      mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-ext" ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService2)
+      mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-lb"  ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService3)
       mockSkuber.create(any)(any,meq(skuber.Secret.secDef)) returns Future.successful(mockSecret)
 
       mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.Service.svcDef)) returns Future.successful(Some(mockService))
@@ -499,34 +538,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "deploy service for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
+    "deploy services for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
       port_mappings = Seq(
-        ContainerSpec.PortMapping(
-          name = Some("http"), protocol = "tcp",
-          container_port = Some(9000),
-          lb_port = Some(80),
-          service_port = None,       // auto-assigned
-          expose_endpoint = Some(true)
-        ),
-        ContainerSpec.PortMapping(
-          name = Some("https"), protocol = "tcp",
-          container_port = Some(9443),
-          service_port = Some(5000),   // manually requested, but ignored, because this is a Service(clusterIP)
-          lb_port = Some(443),
-          expose_endpoint = Some(true)
-        ),
-        ContainerSpec.PortMapping(
-          name = Some("health"), protocol = "tcp",
-          container_port = Some(9001),
-          service_port = Some(0), // auto-assigned
-          lb_port = Some(0),      // auto-assigned
-          expose_endpoint = Some(true)
-        ),
-        ContainerSpec.PortMapping(
-          name = Some("debug"), protocol = "udp",
-          container_port = Some(9999),
-          host_port = Some(9999)     // host port exposure requested
-        )
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"),   `type` = None),
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(0),    expose_endpoint = Some(true), name = Some("https"),  `type` = Some("nodePort"),     service_port = Some(32000)),
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("clusterIP"),    service_port = Some(32001)),
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer"), service_port = None),
+        ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("clusterIP"),    host_port = Some(10000))
       )
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -539,24 +557,15 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         inNamespace(testSetup.testNS.name)
           and
         hasExactlyContainerPorts(
-          skuber.Container.Port(9000, skuber.Protocol.TCP, "http"),
-          skuber.Container.Port(9443, skuber.Protocol.TCP, "https"),
-          skuber.Container.Port(9001, skuber.Protocol.TCP, "health"),
-          skuber.Container.Port(9999, skuber.Protocol.UDP, "debug", hostPort = Some(9999))
+          skuber.Container.Port(80,    skuber.Protocol.TCP, "http"),
+          skuber.Container.Port(443,   skuber.Protocol.TCP, "https"),
+          skuber.Container.Port(444,   skuber.Protocol.TCP, "https2"),
+          skuber.Container.Port(445,   skuber.Protocol.TCP, "https3"),
+          skuber.Container.Port(10000, skuber.Protocol.UDP, "debug", hostPort = Some(10000))
         )
       ))(any,meq(skuber.ext.Deployment.deployDef))
 
-      val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-      there was one(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef))
-      val createdService = serviceCaptor.getValue
-      createdService must inNamespace(testSetup.testNS.name) and
-        hasExactlyServicePorts(
-          skuber.Service.Port("http",    skuber.Protocol.TCP,   80, Some(Left(9000)), 0),
-          skuber.Service.Port("https",   skuber.Protocol.TCP,  443, Some(Left(9443)), 0),
-          skuber.Service.Port("health",  skuber.Protocol.TCP, 9001, Some(Left(9001)), 0)
-        )  and hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and
-        (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
-      createdService.metadata.labels must havePairs(
+      val haveExpectedLabels = ((_:skuber.ObjectResource).metadata.labels) ^^ havePairs(
         KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
         KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
         KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
@@ -564,17 +573,49 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
       )
 
+      val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
+      there were three(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef))
+      val createdServices = serviceCaptor.getAllValues.toSeq
+      createdServices.size must_== 3
+      createdServices must contain(eachOf(
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name) and
+          hasServiceType(Service.Type.ClusterIP) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("http",    skuber.Protocol.TCP,    80, Some(Left(80)),  0),
+            skuber.Service.Port("https",   skuber.Protocol.TCP,   443, Some(Left(443)), 0),
+            skuber.Service.Port("https2",  skuber.Protocol.TCP,  8444, Some(Left(444)), 0),
+            skuber.Service.Port("https3",  skuber.Protocol.TCP,  8445, Some(Left(445)), 0)
+          ) and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and haveExpectedLabels,
+        //
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-ext") and
+          hasServiceType(Service.Type.NodePort) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("https",  skuber.Protocol.TCP,  443, Some(Left(443)), 32000),
+            skuber.Service.Port("https3", skuber.Protocol.TCP, 8445, Some(Left(445)), 0)
+          ) and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString),
+        //
+        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-lb") and
+          hasServiceType(Service.Type.LoadBalancer) and
+          hasExactlyServicePorts(
+            skuber.Service.Port("https3",   skuber.Protocol.TCP, 8445, Some(Left(445)), 0)
+          )  and
+          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+      ))
+
       import ContainerSpec.PortMapping
       import ContainerSpec.ServiceAddress
 
-      val svcHost = s"${createdService.name}.${testEnv.id}.svc.cluster.local"
+      val svcHost = s"${metaContainer.name}.${testEnv.id}.svc.cluster.local"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
-        PortMapping("tcp", Some(9000),       None, Some(assignedNodePorts("http")),    Some("http"),    None, Some(true), Some(ServiceAddress(svcHost,  80, Some("tcp"), None)), None, Some(80)),
-        PortMapping("tcp", Some(9443),       None, Some(5000),                         Some("https"),   None, Some(true), Some(ServiceAddress(svcHost, 443, Some("tcp"), None)), None, Some(443)),
-        PortMapping("tcp", Some(9001),       None, Some(assignedNodePorts("health")),  Some("health"),  None, Some(true), Some(ServiceAddress(svcHost, 9001, Some("tcp"), None)), None, Some(9001)),
-        PortMapping("udp", Some(9999), Some(9999), None,                               Some("debug"),   None, Some(false), None, None)
+        PortMapping("tcp", name = Some("http"),   container_port = Some(80),    lb_port = Some(80),   host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("clusterIP"),    service_address = Some(ServiceAddress(svcHost,   80, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https"),  container_port = Some(443),   lb_port = Some(443),  host_port = None,        service_port = Some(32000),                         expose_endpoint = Some(true),  `type` = Some("nodePort"),     service_address = Some(ServiceAddress(svcHost,  443, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https2"), container_port = Some(444),   lb_port = Some(8444), host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("clusterIP"),    service_address = Some(ServiceAddress(svcHost, 8444, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https3"), container_port = Some(445),   lb_port = Some(8445), host_port = None,        service_port = Some(assignedNodePortsNP("https3")), expose_endpoint = Some(true),  `type` = Some("loadBalancer"), service_address = Some(ServiceAddress(svcHost, 8445, Some("tcp"), None))),
+        PortMapping("udp", name = Some("debug"),  container_port = Some(10000), lb_port = None,       host_port = Some(10000), service_port = None,                                expose_endpoint = Some(false), `type` = None,                 service_address = None)
       ))
       there were two(testSetup.kubeClient).close
     }
@@ -1135,50 +1176,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ((_:skuber.ext.Deployment).spec.flatMap(_.template).flatMap(_.spec).flatMap(_.containers.headOption).map(_.command)) ^^ beSome(empty)
       ))(any,meq(Deployment.deployDef))
       there were two(testSetup.kubeClient).close
-    }
-
-    "orchestrate multiple Services of different types" in new FakeKubeCreate(port_mappings = Seq(
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"), `type` = None),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(8443), expose_endpoint = Some(true), name = Some("https"), `type` = Some("nodePort"), service_port = Some(32000)),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("clusterIP"), service_port = Some(32001)),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer"), service_port = Some(32002)),
-      ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(10000),                       expose_endpoint = Some(false), name = Some("not-exposed") )
-    )) {
-      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-      there were three(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef))
-      val createdServices = serviceCaptor.getAllValues.toSeq
-      createdServices.size must_== 3
-      createdServices must contain(eachOf(
-        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name) and
-          hasServiceType(Service.Type.ClusterIP) and
-          hasExactlyServicePorts(
-            skuber.Service.Port("http",    skuber.Protocol.TCP,   80, Some(Left(80)),   0),
-            skuber.Service.Port("https",   skuber.Protocol.TCP,  8443, Some(Left(443)), 0),
-            skuber.Service.Port("https2",  skuber.Protocol.TCP,  8444, Some(Left(444)), 0),
-            skuber.Service.Port("https3",  skuber.Protocol.TCP,  8445, Some(Left(445)), 0)
-          ) and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString),
-        //
-        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-ext") and
-          hasServiceType(Service.Type.NodePort) and
-          hasExactlyServicePorts(
-            skuber.Service.Port("https",  skuber.Protocol.TCP, 8443, Some(Left(443)), 32000),
-            skuber.Service.Port("https3", skuber.Protocol.TCP, 8445, Some(Left(445)), 32002)
-          ) and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString),
-        //
-        inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-lb") and
-          hasServiceType(Service.Type.LoadBalancer) and
-          hasExactlyServicePorts(
-            skuber.Service.Port("https3",   skuber.Protocol.TCP, 8445, Some(Left(445)), 32002)
-          )  and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
-      ))
     }
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
