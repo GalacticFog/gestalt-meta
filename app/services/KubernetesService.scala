@@ -365,7 +365,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           ()
       }
 
-      dep <- fDepl
+      _ <- fDepl
       _ <- fIngress
       updatedPMs <- fUpdatedPMsFromService
     } yield spec.copy(
@@ -408,7 +408,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         rses <- deleteAllWithLabel[ReplicaSet](kube, targetLabel)
         pods <- deleteAllWithLabel[Pod](kube, targetLabel) recover {
           case e: K8SException =>
-            log.warn(s"K8S error listing/deleting Pods associated with container ${container.id}", e)
+            log.warn(s"K8S error listing/deleting Pods associated with container ${container.id}")
             List(())
         }
       } yield pods.headOption.getOrElse({
@@ -423,7 +423,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ()
       })) recover {
         case e: K8SException =>
-          log.warn(s"K8S error listing/deleting Services associated with container ${container.id}", e)
+          log.warn(s"K8S error listing/deleting Services associated with container ${container.id}")
           ()
       }
 
@@ -434,7 +434,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ()
       })) recover {
         case e: K8SException =>
-          log.warn(s"K8S error listing/deleting Ingresses associated with container ${container.id}", e)
+          log.warn(s"K8S error listing/deleting Ingresses associated with container ${container.id}")
           ()
       }
 
@@ -551,7 +551,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       pm.name.contains(sp.name) || (pm.lb_port.filter(_ != 0) orElse pm.container_port).contains(sp.port)
     }
 
-    log.debug("svcExt: " + services.extSvc.toString)
     services.intSvc match {
       case None =>
         log.debug(s"updateContainerSpecPortMappings: No Service(ClusterIP)")
@@ -568,7 +567,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   _.ports.find( svcMatch(pm, _) )
                 )
               ) map (_.nodePort)
-              log.debug(s"nodePort from svcExt for ${pm.name.get}: ${nodePort}")
               pm.copy(
                 service_port = nodePort,
                 service_address = Some(ContainerSpec.ServiceAddress(

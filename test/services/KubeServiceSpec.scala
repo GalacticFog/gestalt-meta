@@ -65,6 +65,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       .withResourceVersion(resourceVersion)
   }
 
+  // A scope for testing with a mocked skuber client and the necessary namespaces for a test environment
   abstract class FakeKube() extends Scope {
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
     lazy val testCreds = testAuthResponse.creds
@@ -95,6 +96,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
   }
 
+  //
   abstract class FakeKubeWithPrexistingContainer(pms: Seq[ContainerSpec.PortMapping]) extends Scope {
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
     lazy val testCreds = testAuthResponse.creds
@@ -209,7 +211,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     }
 
     lazy val initProps = ContainerSpec(
-      name = "",
+      name = "test-container",
       container_type = "DOCKER",
       image = "nginx",
       provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
@@ -232,6 +234,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       secrets = secretsWithId
     )
 
+    lazy val origExtId = s"/namespaces/${testEnv.id}/deployments/${initProps.name}"
+
     lazy val metaContainer = createInstance(
       ResourceIds.Container,
       "test-container",
@@ -249,7 +253,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         "labels" -> Json.toJson(labels).toString,
         "volumes" -> Json.toJson(initProps.volumes).toString,
         "secrets" -> Json.toJson(initProps.secrets).toString,
-        "health_checks" -> Json.toJson(initProps.health_checks).toString
+        "health_checks" -> Json.toJson(initProps.health_checks).toString,
+        "external_id" -> origExtId
       ) ++ Seq[Option[(String,String)]](
         args map ("args" -> Json.toJson(_).toString),
         cmd  map ("cmd" -> _)
@@ -408,21 +413,33 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
       mockSkuber.list(any)(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
 
+      def answerId[T](a: Any): Future[T] = Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[T])
+
+      mockSkuber.update(any)(any,meq(Deployment.deployDef)) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
+      mockSkuber.update(any)(any,meq(Ingress.ingDef)) answers {(x: Any) => answerId[skuber.ext.Ingress](x)}
+      mockSkuber.update(any)(any,meq(Service.svcDef)) answers {(x: Any) => answerId[skuber.Service](x)}
+
       val nonEmptySvcs = List( mockService, mockService2, mockService3 ).filter(_.spec.map(_.ports.nonEmpty).contains(true))
       mockSkuber.list()(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
-      mockSkuber.list(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockService)))
+      mockSkuber.list(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
       mockSkuber.list()(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
       mockSkuber.list(any)(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
       mockSkuber.list()(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
       mockSkuber.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
+
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name        ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-ext" ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService2)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-lb"  ))(any,meq(skuber.Service.svcDef)) returns Future.successful(mockService3)
+      mockSkuber.delete(meq(metaContainer.name       ), any)(meq(skuber.Service.svcDef)) returns Future.successful(())
+      mockSkuber.delete(meq(metaContainer.name+"-ext"), any)(meq(skuber.Service.svcDef)) returns Future.successful(())
+      mockSkuber.delete(meq(metaContainer.name+"-lb" ), any)(meq(skuber.Service.svcDef)) returns Future.successful(())
+
       mockSkuber.create(any)(any,meq(skuber.Secret.secDef)) returns Future.successful(mockSecret)
 
-      mockSkuber.getOption(meq(metaContainer.name))(any,meq(skuber.Service.svcDef)) returns Future.successful(Some(mockService))
+      mockSkuber.create(argThat( (_:Ingress).name == metaContainer.name))(any,meq(Ingress.ingDef)) answers {(x: Any) => answerId[skuber.ext.Ingress](x)}
+
       mockSkuber.getOption(meq(metaSecret.name))(any,meq(skuber.Secret.secDef)) returns Future.successful(Some(mockSecret))
 
       val ks = new KubernetesService(mockSkuberFactory)
@@ -1523,7 +1540,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).close
     }
 
-    "throw a 400 on container rename" in new FakeKubeWithPrexistingContainer(Seq.empty) {
+    "throw a 400 on container rename" in new FakeKubeCreate() {
       await(testSetup.kubeService.update(
         context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
         container = metaContainer.copy(
@@ -1532,7 +1549,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )) must throwAn[BadRequestException]("renaming containers is not supported")
     }
 
-    "update support using kube PUT" in new FakeKubeWithPrexistingContainer(Seq(
+    "update support using kube PUT" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
         container_port = Some(80),
@@ -1555,19 +1572,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         virtual_hosts = Some(Seq("port8443.test.com"))
       )
     )) {
-      import skuber.portNumToNameablePort
-
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.update(any)(any,meq(Ingress.ingDef)) returns Future.successful(mock[skuber.ext.Ingress])
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List.empty))
-      testSetup.kubeClient.update(any)(any,meq(Service.svcDef)) returns Future.successful(
-        mockSvc().exposeOnPort(
-          skuber.Service.Port("add-service", skuber.Protocol.TCP, 80, Some(9000), 30000)
-        ).exposeOnPort(
-          skuber.Service.Port("add-port", skuber.Protocol.TCP, 444, Some(444), 30001)
-        )
-      )
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1793,13 +1798,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "delete empty service on container PUT" in new FakeKubeWithPrexistingContainer(Seq(
+    "delete empty services on container PUT" in new FakeKubeCreate(port_mappings = Seq(
         ContainerSpec.PortMapping(
           protocol = "tcp",
           container_port = Some(80),
-          name = Some("remove-service"),
+          name = Some("remove-services"),
           expose_endpoint = Some(true),
-          virtual_hosts = Some(Seq("port80.test.com"))
+          `type` = Some("loadBalancer"),  // this will create three Service objects
+          virtual_hosts = None
         ),
         ContainerSpec.PortMapping(
           protocol = "tcp",
@@ -1810,9 +1816,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(None)
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List(mockSvc())))
-      testSetup.kubeClient.delete(metaContainer.name,0)(Service.svcDef) returns Future.successful(())
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
@@ -1840,12 +1843,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       ))
       val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.kubeClient).delete(metaContainer.name,0)(Service.svcDef)
       there was one(testSetup.kubeClient).update(any)(any,meq(Deployment.deployDef))
+      there was one(testSetup.kubeClient).delete(metaContainer.name,       0)(Service.svcDef)
+      there was one(testSetup.kubeClient).delete(metaContainer.name+"-ext",0)(Service.svcDef)
+      there was one(testSetup.kubeClient).delete(metaContainer.name+"-lb", 0)(Service.svcDef)
       there were two(testSetup.kubeClient).close
     }
 
-    "create service and ingress on container update" in new FakeKubeWithPrexistingContainer(Seq(
+    "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping(
         protocol = "tcp",
         container_port = Some(80),
@@ -1856,10 +1861,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     )) {
 
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(None)
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mock[skuber.ext.Deployment])))
-      testSetup.kubeClient.create(any)(any,meq(Ingress.ingDef)) returns Future.successful(mock[skuber.ext.Ingress])
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,List.empty))
-      testSetup.kubeClient.create(any)(any,meq(Service.svcDef)) returns Future.successful(mockSvc())
 
       val newPortMappings = Seq(
         ContainerSpec.PortMapping(
