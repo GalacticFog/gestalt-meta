@@ -75,7 +75,8 @@ scalacOptions ++= Seq(
   //"-Xlint" 		// Enable recommended additional warnings.
 
 
-javaOptions in Test += "-Dconfig.file=test/resources/application.test.conf"
+javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
+                            "-Dlogger.file=test/resources/logback-test.xml")
 
 libraryDependencies += "com.lihaoyi" %% "scalatags" % "0.6.7"
 

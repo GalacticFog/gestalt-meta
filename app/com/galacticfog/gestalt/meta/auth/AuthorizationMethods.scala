@@ -31,9 +31,8 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   //private val log = Logger(this.getClass)
   
   import com.galacticfog.gestalt.meta.api._
-  
 
-  
+  override val log = Logger("AuthorizationMethods")
 
   /**
    * Ensure an identity has entitlements for the given actions on a resource.
@@ -478,7 +477,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
         log.debug("identities : " + allowed)
         log.debug("membership : " + membership)
-        log.debug("intersection : " + (allowed intersect membership))        
+        log.debug("intersection : " + (allowed intersect membership))
         
         //(allowed intersect membership).isDefinedAt(0)
         if (intersection.isDefinedAt(0)) {
