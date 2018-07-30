@@ -575,7 +575,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   protocol = Some(pm.protocol)
                 )),
                 lb_port = Some(sp.port),
-                `type` = pm.`type` orElse(Some("clusterIP"))
+                `type` = pm.`type` orElse(Some("internal"))
               )
             case _ =>
               log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
@@ -592,9 +592,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   private[services] def mkServiceSpecs(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): ContainerServices = {
 
-    // nodePort and loadBalancer are always counted as a clusterIP
-    // likewise, loadBalancer is always counted as a nodePort
-    // therefore, we have clusterIP superset nodePort superset loadBalancer
+    // external and loadBalancer are always counted as a internal
+    // likewise, loadBalancer is always counted as a external
+    // therefore, we have internal superset external superset loadBalancer
 
     def mkSvc(svcName: String, serviceType: Service.Type.ServiceType, pms: Seq[ContainerSpec.PortMapping]): Option[Service] = {
       if (pms.isEmpty) {
@@ -631,7 +631,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       pm => pm.expose_endpoint.contains(true)
     }
     val npPMs = containerSpec.port_mappings.filter {
-      pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)
+      pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("external","loadBalancer").contains)
     }
     val lbPMs = containerSpec.port_mappings.filter {
       pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")

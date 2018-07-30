@@ -213,7 +213,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     import skuber.portNumToNameablePort
     lazy val baseNodePort = 31000
-    lazy val assignedNodePortsNP = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)).zipWithIndex.map({
+    lazy val assignedNodePortsNP = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("external","loadBalancer").contains)).zipWithIndex.map({
       case (pm,i) => (pm.name.getOrElse("") , pm.service_port.filter(_ != 0).getOrElse(31000+i))
     }) toMap
     lazy val assignedNodePortsLB = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).zipWithIndex.map({
@@ -239,7 +239,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       name = metaContainer.name+"-ext",
       spec = skuber.Service.Spec(
         clusterIP = "10.0.161.84",
-        ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("nodePort","loadBalancer").contains)).map(
+        ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.exists(Set("external","loadBalancer").contains)).map(
           pm => skuber.Service.Port(
             name = pm.name.getOrElse(""),
             protocol = skuber.Protocol.TCP,
@@ -490,16 +490,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "deploy services for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
       port_mappings = Seq(
-        // automatically assigned lb_port, default type == "clusterIP"
+        // automatically assigned lb_port, default type == "internal"
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"),   `type` = None),
-        // automatically assigned lb_port, test type == nodePort, user-specified nodePort/service_port
-        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(0),    expose_endpoint = Some(true), name = Some("https"),  `type` = Some("nodePort"),     service_port = Some(32000)),
-        // user-specified lb_port for type == "clusterIP", ignore and nerf the nodePort/service_port
-        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("clusterIP"),    service_port = Some(32001)),
+        // automatically assigned lb_port, test type == external, user-specified nodePort/service_port
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(0),    expose_endpoint = Some(true), name = Some("https"),  `type` = Some("external"),     service_port = Some(32000)),
+        // user-specified lb_port for type == "internal", ignore and nerf the nodePort/service_port
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("internal"),    service_port = Some(32001)),
         // test type ==  "loadBalancer", test that assigned nodePort is set on service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer"), service_port = None),
         // non-exposed port, with host_port and "udp". test that lb_port is nerfed.
-        ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("clusterIP"),    host_port = Some(10000))
+        ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("internal"),    host_port = Some(10000))
       )
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -566,9 +566,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       updatedContainerProps.get("status") must beSome("LAUNCHED")
       val mappings = Json.parse(updatedContainerProps("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
       mappings must containTheSameElementsAs(Seq(
-        PortMapping("tcp", name = Some("http"),   container_port = Some(80),    lb_port = Some(80),   host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("clusterIP"),    service_address = Some(ServiceAddress(svcHost,   80, Some("tcp"), None))),
-        PortMapping("tcp", name = Some("https"),  container_port = Some(443),   lb_port = Some(443),  host_port = None,        service_port = Some(32000),                         expose_endpoint = Some(true),  `type` = Some("nodePort"),     service_address = Some(ServiceAddress(svcHost,  443, Some("tcp"), None))),
-        PortMapping("tcp", name = Some("https2"), container_port = Some(444),   lb_port = Some(8444), host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("clusterIP"),    service_address = Some(ServiceAddress(svcHost, 8444, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("http"),   container_port = Some(80),    lb_port = Some(80),   host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("internal"),    service_address = Some(ServiceAddress(svcHost,   80, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https"),  container_port = Some(443),   lb_port = Some(443),  host_port = None,        service_port = Some(32000),                         expose_endpoint = Some(true),  `type` = Some("external"),     service_address = Some(ServiceAddress(svcHost,  443, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https2"), container_port = Some(444),   lb_port = Some(8444), host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("internal"),    service_address = Some(ServiceAddress(svcHost, 8444, Some("tcp"), None))),
         PortMapping("tcp", name = Some("https3"), container_port = Some(445),   lb_port = Some(8445), host_port = None,        service_port = Some(assignedNodePortsNP("https3")), expose_endpoint = Some(true),  `type` = Some("loadBalancer"), service_address = Some(ServiceAddress(svcHost, 8445, Some("tcp"), None))),
         PortMapping("udp", name = Some("debug"),  container_port = Some(10000), lb_port = None,       host_port = Some(10000), service_port = None,                                expose_endpoint = Some(false), `type` = None,                 service_address = None)
       ))
@@ -1572,7 +1572,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "add service_port from kube Service on port_mappings update, ignore it on non-nodePort types" in new FakeKubeCreate() {
+    "add service_port from kube Service on port_mappings update, ignore it on non-external types" in new FakeKubeCreate() {
 
       val assignedNodePort81 = 33334
 
@@ -1610,7 +1610,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           container_port = Some(81),
           service_port = Some(0),     // assigned
           name = Some("api"),
-          `type` = Some("nodePort"),
+          `type` = Some("external"),
           expose_endpoint = Some(true)
         ),
         ContainerSpec.PortMapping(
@@ -1618,7 +1618,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           container_port = Some(443),
           service_port = Some(8443),
           name = Some("secure"),
-          `type` = Some("nodePort"),
+          `type` = Some("external"),
           expose_endpoint = Some(true)
         )
       )

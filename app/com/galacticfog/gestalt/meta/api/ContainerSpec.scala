@@ -280,7 +280,7 @@ case object ContainerSpec extends Spec {
       (__ \ "service_address").readNullable[ServiceAddress] and
       (__ \ "virtual_hosts").readNullable[Seq[String]] and
       (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0)) and
-      (__ \ "type").readNullable[String](verifying(Set("clusterIP","nodePort","loadBalancer").contains(_)))
+      (__ \ "type").readNullable[String](verifying(Set("internal","external","loadBalancer").contains(_)))
     )(ContainerSpec.PortMapping.apply _)
 
   implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
