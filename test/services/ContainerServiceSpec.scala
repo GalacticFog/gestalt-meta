@@ -126,9 +126,9 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
     }
 
     "parse only valid types" in {
-      Json.obj("protocol" -> "tcp", "type" -> "nodePort").as[PortMapping].`type` must beSome("nodePort")
+      Json.obj("protocol" -> "tcp", "type" -> "external").as[PortMapping].`type` must beSome("external")
       Json.obj("protocol" -> "tcp", "type" -> "loadBalancer").as[PortMapping].`type` must beSome("loadBalancer")
-      Json.obj("protocol" -> "tcp", "type" -> "clusterIP").as[PortMapping].`type` must beSome("clusterIP")
+      Json.obj("protocol" -> "tcp", "type" -> "internal").as[PortMapping].`type` must beSome("internal")
       Json.obj("protocol" -> "tcp", "type" -> "literallyAnythingElse").validate[PortMapping] must beAnInstanceOf[JsError]
     }
 
