@@ -83,7 +83,8 @@ case object ContainerSpec extends Spec {
                          service_address: Option[ServiceAddress] = None,
                          virtual_hosts: Option[Seq[String]] = None,
                          lb_port: Option[Int] = None,
-                         `type`: Option[String] = None)
+                         `type`: Option[String] = None,
+                         lb_address: Option[ServiceAddress] = None )
                          
   case class Volume(container_path: String,
                     host_path: Option[String],
@@ -199,7 +200,11 @@ case object ContainerSpec extends Spec {
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
       
-      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
+      port_mappings = props.get("port_mappings")
+        .map({json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]].map(
+          _.copy(service_address = None, lb_address = None)
+        )})
+
       user = props.get("user")
       image <- if (ctype.equalsIgnoreCase("DOCKER")) Try{props("image")} else Try("")
       network = props.get("network")
@@ -280,7 +285,8 @@ case object ContainerSpec extends Spec {
       (__ \ "service_address").readNullable[ServiceAddress] and
       (__ \ "virtual_hosts").readNullable[Seq[String]] and
       (__ \ "lb_port").readNullable[Int](max(65535) andKeep min(0)) and
-      (__ \ "type").readNullable[String](verifying(Set("internal","external","loadBalancer").contains(_)))
+      (__ \ "type").readNullable[String](verifying(Set("internal","external","loadBalancer").contains(_))) and
+      (__ \ "lb_address").readNullable[ServiceAddress]
     )(ContainerSpec.PortMapping.apply _)
 
   implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]

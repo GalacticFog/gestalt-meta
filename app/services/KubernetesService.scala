@@ -554,7 +554,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     services.intSvc match {
       case None =>
         log.debug(s"updateContainerSpecPortMappings: No Service(ClusterIP)")
-        pms.map(_.copy(service_address = None))
+        pms.map(_.copy(
+          service_address = None,
+          lb_address = None
+        ))
       case Some(cipSvc) =>
         val svcHost = s"${cipSvc.name}.${namespace}.svc.cluster.local"
         val cipPorts = cipSvc.spec.map(_.ports) getOrElse List.empty
@@ -567,6 +570,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   _.ports.find( svcMatch(pm, _) )
                 )
               ) map (_.nodePort)
+              val lbAddress = for {
+                lbSvc <- services.lbSvc
+                spec <- lbSvc.spec
+                pm <- spec.ports.find( svcMatch(pm, _) )
+                lbStatus <- lbSvc.status.flatMap(_.loadBalancer).flatMap(_.ingress.headOption)
+                addr <- lbStatus.hostName orElse lbStatus.ip
+              } yield (addr, pm.port, "http")
               pm.copy(
                 service_port = nodePort,
                 service_address = Some(ContainerSpec.ServiceAddress(
@@ -574,6 +584,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                   port = sp.port,
                   protocol = Some(pm.protocol)
                 )),
+                lb_address = lbAddress.map(
+                  a => ContainerSpec.ServiceAddress(
+                    host = a._1,
+                    port = a._2,
+                    protocol = Some(a._3)
+                  )
+                ),
                 lb_port = Some(sp.port),
                 `type` = pm.`type` orElse(Some("internal"))
               )
@@ -581,6 +598,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               log.debug(s"updateContainerSpecPortMappings: PortMapping ${pm} not matched")
               pm.copy(
                 service_address = None,
+                lb_address = None,
                 lb_port = None,
                 expose_endpoint = Some(false),
                 `type` = None

@@ -253,7 +253,7 @@ object GatewayMethods {
             (svcHost,svcPort) <- spec.port_mappings.find(pm => pm.name.contains(portName)) match {
               case None =>
                 Failure(new BadRequestException("no port mapping with the specified name on the specified container"))
-              case Some(ContainerSpec.PortMapping(_,_,_,_,_,_,Some(true),Some(ServiceAddress(svcHost,svcPort,_,_)),_,_,_)) =>
+              case Some(ContainerSpec.PortMapping(_,_,_,_,_,_,Some(true),Some(ServiceAddress(svcHost,svcPort,_,_)),_,_,_,_)) =>
                 Success((svcHost,svcPort))
               case Some(_) =>
                 Failure(new BadRequestException("port mapping with the specified name was not exposed or did not contain service address"))
