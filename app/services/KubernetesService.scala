@@ -985,19 +985,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    val lbl = META_CONTAINER_KEY -> container.id.toString
+    val lblSelector = LabelSelector(LabelSelector.IsEqualRequirement(META_CONTAINER_KEY, container.id.toString))
     cleanly(context.providerId, context.environment.id.toString)( kube =>
       for {
-        maybeDepl <- kube.list[DeploymentList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items.headOption)
+        maybeDepl <- kube.list[DeploymentList](lblSelector) map (_.items.headOption)
         pods <- maybeDepl match {
           case None    => Future.successful(Nil)
-          case Some(_) => kube.list[PodList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items)
+          case Some(_) => kube.list[PodList](lblSelector) map (_.items)
         }
-        maybeSvc <- maybeDepl match {
+        maybeLbSvc <- maybeDepl match {
           case None    => Future.successful(None)
-          case Some(_) => kube.list[ServiceList](LabelSelector(LabelSelector.IsEqualRequirement(lbl._1, lbl._2))) map (_.items.headOption)
+          case Some(_) => kube.list[ServiceList](lblSelector).map {
+            _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
+          }
         }
-        update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeSvc))
+        update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc))
       } yield update
     )
   }
@@ -1014,26 +1016,23 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       stats = depls.flatMap (depl =>
         depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
           val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
-          val theseSvcs = listByLabel[Service,ServiceList](allServices, META_CONTAINER_KEY -> id)
-          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods and ${theseSvcs.size} services")
-          val thisSvc = theseSvcs match {
-            case Nil => None
-            case head :: tail =>
-              if (tail.nonEmpty) log.warn("found multiple services corresponding to container, will use only the first one")
-              Some(head)
-          }
-          kubeDeplAndPodsToContainerStatus(depl, thesePods, thisSvc)
+          val maybeLbSvc = listByLabel[Service,ServiceList](allServices, META_CONTAINER_KEY -> id).filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
+          log.debug(s"deployment for container ${id} selected ${thesePods.size} pods and ${maybeLbSvc.size} service")
+          kubeDeplAndPodsToContainerStatus(depl, thesePods, maybeLbSvc)
         }
       )
     } yield stats
   }
 
-  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], service: Option[Service]): ContainerStats = {
+  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], maybeLbSvc: Option[Service]): ContainerStats = {
     // meta wants: SCALING, SUSPENDED, RUNNING, HEALTHY, UNHEALTHY
     // kube provides: waiting, running, terminated
     val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses.headOption).flatMap(_.state)
     val numRunning = containerStates.count(_.isInstanceOf[skuber.Container.Running])
     val numTarget  = depl.spec.flatMap(_.replicas).getOrElse(numRunning) // TODO: don't really know what to do if this doesn't exist
+    val lbAddress = maybeLbSvc.flatMap(_.status).flatMap(_.loadBalancer).flatMap(_.ingress.headOption).flatMap(
+      i => i.hostName orElse i.ip
+    )
     val status = if (numRunning != numTarget) "SCALING"
     else if (numRunning == 0 && 0 == numTarget) "SUSPENDED"
     else if (numRunning == numTarget) "RUNNING"
@@ -1078,7 +1077,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       tasksRunning = numRunning,
       tasksHealthy = 0,
       tasksUnhealthy = 0,
-      taskStats = Some(taskStats)
+      taskStats = Some(taskStats),
+      lb_address = lbAddress
     )
   }
 

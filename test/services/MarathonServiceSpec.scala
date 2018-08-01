@@ -716,7 +716,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
           containerType = baseTestProps.container_type,
@@ -730,7 +731,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(
@@ -780,7 +782,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
           containerType = baseTestProps.container_type,
@@ -794,7 +797,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(
@@ -833,7 +837,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(

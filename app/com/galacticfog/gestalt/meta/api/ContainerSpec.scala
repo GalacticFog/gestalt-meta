@@ -200,10 +200,7 @@ case object ContainerSpec extends Spec {
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
       
-      port_mappings = props.get("port_mappings")
-        .map({json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]].map(
-          _.copy(service_address = None, lb_address = None)
-        )})
+      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
 
       user = props.get("user")
       image <- if (ctype.equalsIgnoreCase("DOCKER")) Try{props("image")} else Try("")

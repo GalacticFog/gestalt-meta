@@ -263,6 +263,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
                 tasksRunning = 0, // tasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
                 tasksHealthy = 0,
                 tasksUnhealthy = 0,
+                lb_address = None,
                 taskStats = None /* Some(tasks.map(
                   t => ContainerStats.TaskStat(
                     id = t.id(),
@@ -317,7 +318,8 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
               tasksRunning = 0, // svcTasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
               tasksHealthy = 0,
               tasksUnhealthy = 0,
-              taskStats = None
+              taskStats = None,
+              lb_address = None
             )
           }
         } yield stats
