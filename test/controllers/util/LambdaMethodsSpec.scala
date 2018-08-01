@@ -353,7 +353,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           PatchOp.Replace("/properties/memory",        2048),
           PatchOp.Replace("/properties/code_type",     "package"),
           PatchOp.Replace("/properties/periodic_info", Json.obj("new" -> "periodicity")),
-          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
+          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env")),
+          PatchOp.Replace("/properties/pre_warm",      3)
         ),
         user = user,
         request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
@@ -370,6 +371,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       updatedLambda.properties.get("code_type") must_== "package"
       updatedLambda.properties.get("periodic_info") must_== Json.obj("new" -> "periodicity").toString
       updatedLambda.properties.get("env") must_== Json.obj("new" -> "env").toString
+      updatedLambda.properties.get("pre_warm") must_== "3"
 
       there was one(mockJsonClient).put(
         uri = meq(s"/lambdas/${testLambda.id}"),
@@ -392,6 +394,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
                 role = "none",
                 periodicInfo = Some(Json.obj("new" -> "periodicity")),
                 secrets = Some(Seq.empty),
+                preWarm = Some(3),
                 headers = Map(
                   "Existing-Header" -> "ExistingHeaderValue",
                   "Remove-Header" -> "Nobody Cares What's Here"

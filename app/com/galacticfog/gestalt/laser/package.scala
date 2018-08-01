@@ -80,7 +80,8 @@ package object laser {
       periodicInfo : Option[JsValue] = None,
       headers : Map[String,String] = Map.empty,
       computePathOverride: Option[String] = None,
-      secrets: Option[Seq[JsObject]] = None)
+      secrets: Option[Seq[JsObject]] = None,
+      preWarm: Option[Int] = None)
 
   case class LaserLambda(
       id: Option[String], 
@@ -93,6 +94,7 @@ package object laser {
 
     def maybeToBool(s: String): Option[Boolean] = Try{s.toBoolean}.toOption
     def maybeToJson(s: String): Option[JsValue] = Try{Json.parse(s)}.toOption
+    def maybeToInt(s: String): Option[Int] = Try{s.toInt}.toOption
 
     log.debug("toLaserLambda(...)")
 
@@ -103,6 +105,7 @@ package object laser {
     val compressed = props.get("compressed").flatMap(maybeToBool) getOrElse false
     val artifactUri = props.get("package_url")
     val periodic = props.get("periodic_info").flatMap(maybeToJson)
+    val preWarm = props.get("pre_warm").flatMap(maybeToInt)
 
     val secretMounts = (for {
       secrets <- props.get("secrets")
@@ -167,6 +170,7 @@ package object laser {
         cpus        = props("cpus").toDouble,
         publish     = false,     // <- currently not used
         role        = "none",    // <- currently not used
+        preWarm     = preWarm,
         runtime     = props("runtime"),
         timeoutSecs = props("timeout").toInt,
         compressed  = compressed,
