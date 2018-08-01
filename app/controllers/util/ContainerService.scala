@@ -370,26 +370,48 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   protected[controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
-    val newStats = stats match {
-      case None if metaCon.state == ResourceStates.Failed =>
+    val newProperties = stats match {
+      case Some(stats) =>
+        val pms = Try{
+          Json.parse(metaCon.properties.get("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+        }.getOrElse(Seq.empty).map {
+          _ match {
+            case lbPm if lbPm.expose_endpoint.contains(true) && lbPm.`type`.contains("loadBalancer") && lbPm.container_port.orElse(lbPm.lb_port).isDefined =>
+              lbPm.copy(
+                lb_address = stats.lb_address.map {
+                  a => ContainerSpec.ServiceAddress(
+                    host = a,
+                    protocol = Some("http"),
+                    port = lbPm.lb_port.orElse(lbPm.container_port).getOrElse(0)
+                  )
+                }
+              )
+            case other => other.copy(
+              lb_address = None
+            )
+          }
+        }
         Seq(
-          "status" -> "FAILED",
-          "num_instances" -> "0",
-          "tasks_running" -> "0",
-          "tasks_healthy" -> "0",
-          "tasks_unhealthy" -> "0",
-          "tasks_staged" -> "0",
-          "instances" -> "[]",
-          "service_addresses" -> "[]")
-      case Some(stats) => Seq(
-        "age" -> stats.age.toString,
-        "status" -> stats.status,
-        "num_instances" -> stats.numInstances.toString,
-        "tasks_running" -> stats.tasksRunning.toString,
-        "tasks_healthy" -> stats.tasksHealthy.toString,
-        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged" -> stats.tasksStaged.toString,
-        "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"))
+          "age" -> stats.age.toString,
+          "status" -> stats.status,
+          "num_instances" -> stats.numInstances.toString,
+          "tasks_running" -> stats.tasksRunning.toString,
+          "tasks_healthy" -> stats.tasksHealthy.toString,
+          "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+          "tasks_staged" -> stats.tasksStaged.toString,
+          "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"),
+          "port_mappings" -> Json.toJson(pms).toString
+        )
+      case None if metaCon.state == ResourceStates.Failed => Seq(
+        "status" -> "FAILED",
+        "num_instances" -> "0",
+        "tasks_running" -> "0",
+        "tasks_healthy" -> "0",
+        "tasks_unhealthy" -> "0",
+        "tasks_staged" -> "0",
+        "instances" -> "[]",
+        "service_addresses" -> "[]"
+      )
       case None => Seq(
         "status" -> "LOST",
         "num_instances" -> "0",
@@ -398,10 +420,12 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
         "tasks_unhealthy" -> "0",
         "tasks_staged" -> "0",
         "instances" -> "[]",
-        "service_addresses" -> "[]")
+        "service_addresses" -> "[]"
+      )
     }
     metaCon.copy(
-      properties = Some(metaCon.properties.getOrElse(Map.empty) ++ newStats.toMap))
+      properties = Some(metaCon.properties.getOrElse(Map.empty) ++ newProperties.toMap)
+    )
   }
 
   def updateContainer(context: ProviderContext,

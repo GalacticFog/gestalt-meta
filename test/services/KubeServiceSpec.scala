@@ -107,7 +107,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
                                  providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty,
                                  secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
                                  volumes: Seq[ContainerSpec.Volume] = Seq.empty,
-                                 health_checks: Seq[ContainerSpec.HealthCheck] = Seq.empty
+                                 health_checks: Seq[ContainerSpec.HealthCheck] = Seq.empty,
+                                 lb_address: Either[String,String] = Left("default-elb-address")
                                ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()
@@ -252,8 +253,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )
     ).addLabels(containerLbls)
     lazy val mockService3 = skuber.Service(
-      name = metaContainer.name+"-lb",
-      spec = skuber.Service.Spec(
+      metadata = skuber.ObjectMeta(name=metaContainer.name+"-lb"),
+      spec = Some(skuber.Service.Spec(
         clusterIP = "10.0.161.85",
         ports = port_mappings.filter(pm => pm.expose_endpoint.contains(true) && pm.`type`.contains("loadBalancer")).map(
           pm => skuber.Service.Port(
@@ -265,7 +266,15 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         ).toList,
         _type = skuber.Service.Type.LoadBalancer
-      )
+      )),
+      status = Some(Service.Status(
+        loadBalancer = Some(Service.LoadBalancer.Status(
+          ingress = List(Service.LoadBalancer.Ingress(
+            ip = lb_address.left.toOption,
+            hostName = lb_address.right.toOption
+          ))
+        ))
+      ))
     ).addLabels(containerLbls)
 
     lazy val mockDepl = skuber.ext.Deployment(
@@ -488,19 +497,20 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "deploy services for exposed port mappings and set service addresses and host port" in new FakeKubeCreate(
+    "deploy services for exposed port mappings and set service addresses, lb addresses and host ports" in new FakeKubeCreate(
       port_mappings = Seq(
         // automatically assigned lb_port, default type == "internal"
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"),   `type` = None),
         // automatically assigned lb_port, test type == external, user-specified nodePort/service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(443),   lb_port = Some(0),    expose_endpoint = Some(true), name = Some("https"),  `type` = Some("external"),     service_port = Some(32000)),
         // user-specified lb_port for type == "internal", ignore and nerf the nodePort/service_port
-        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("internal"),    service_port = Some(32001)),
+        ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(444),   lb_port = Some(8444), expose_endpoint = Some(true), name = Some("https2"), `type` = Some("internal"),     service_port = Some(32001)),
         // test type ==  "loadBalancer", test that assigned nodePort is set on service_port
         ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(445),   lb_port = Some(8445), expose_endpoint = Some(true), name = Some("https3"), `type` = Some("loadBalancer"), service_port = None),
         // non-exposed port, with host_port and "udp". test that lb_port is nerfed.
-        ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("internal"),    host_port = Some(10000))
-      )
+        ContainerSpec.PortMapping( protocol = "udp", container_port = Some(10000), lb_port = Some(0),    expose_endpoint = Some(false), name = Some("debug"), `type` = Some("internal"),     host_port = Some(10000))
+      ),
+      lb_address = Left("my-elb.my-cloud.com")
     ) {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -569,7 +579,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         PortMapping("tcp", name = Some("http"),   container_port = Some(80),    lb_port = Some(80),   host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("internal"),    service_address = Some(ServiceAddress(svcHost,   80, Some("tcp"), None))),
         PortMapping("tcp", name = Some("https"),  container_port = Some(443),   lb_port = Some(443),  host_port = None,        service_port = Some(32000),                         expose_endpoint = Some(true),  `type` = Some("external"),     service_address = Some(ServiceAddress(svcHost,  443, Some("tcp"), None))),
         PortMapping("tcp", name = Some("https2"), container_port = Some(444),   lb_port = Some(8444), host_port = None,        service_port = None,                                expose_endpoint = Some(true),  `type` = Some("internal"),    service_address = Some(ServiceAddress(svcHost, 8444, Some("tcp"), None))),
-        PortMapping("tcp", name = Some("https3"), container_port = Some(445),   lb_port = Some(8445), host_port = None,        service_port = Some(assignedNodePortsNP("https3")), expose_endpoint = Some(true),  `type` = Some("loadBalancer"), service_address = Some(ServiceAddress(svcHost, 8445, Some("tcp"), None))),
+        PortMapping("tcp", name = Some("https3"), container_port = Some(445),   lb_port = Some(8445), host_port = None,        service_port = Some(assignedNodePortsNP("https3")), expose_endpoint = Some(true),  `type` = Some("loadBalancer"), service_address = Some(ServiceAddress(svcHost, 8445, Some("tcp"), None)), lb_address = Some(ServiceAddress("my-elb.my-cloud.com", 8445, Some("http")))),
         PortMapping("udp", name = Some("debug"),  container_port = Some(10000), lb_port = None,       host_port = Some(10000), service_port = None,                                expose_endpoint = Some(false), `type` = None,                 service_address = None)
       ))
       there were two(testSetup.kubeClient).close

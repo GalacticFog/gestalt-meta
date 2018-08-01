@@ -15,7 +15,8 @@ case class ContainerStats(external_id: String,
                           tasksRunning: Int,
                           tasksHealthy: Int,
                           tasksUnhealthy: Int,
-                          taskStats: Option[Seq[ContainerStats.TaskStat]] )
+                          taskStats: Option[Seq[ContainerStats.TaskStat]],
+                          lb_address: Option[String])
 
 case object ContainerStats {
   case class TaskStat( id: String,

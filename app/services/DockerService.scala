@@ -159,7 +159,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
             .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
             .ports(
               containerSpec.port_mappings.collect({
-                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _) =>
+                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _, _) =>
                   PortConfig.builder()
                     .name(portName)
                     .protocol(protocol)
@@ -189,7 +189,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       config <- Future.fromTry(mkServiceSpec(containerId, externalId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
       newPortMappings = spec.port_mappings map {
-        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _) =>
+        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _, _) =>
           pm.copy(service_address = Some(ServiceAddress(
             host = externalId,
             port = cp,
@@ -263,6 +263,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
                 tasksRunning = 0, // tasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
                 tasksHealthy = 0,
                 tasksUnhealthy = 0,
+                lb_address = None,
                 taskStats = None /* Some(tasks.map(
                   t => ContainerStats.TaskStat(
                     id = t.id(),
@@ -317,7 +318,8 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
               tasksRunning = 0, // svcTasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
               tasksHealthy = 0,
               tasksUnhealthy = 0,
-              taskStats = None
+              taskStats = None,
+              lb_address = None
             )
           }
         } yield stats
