@@ -639,7 +639,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               protocol = pm.protocol,
               port = pm.lb_port.filter(_ != 0).getOrElse(cp),
               targetPort = Some(Left(cp)),
-              nodePort = pm.service_port.filter(_ => serviceType != Service.Type.ClusterIP).getOrElse(0)
+              nodePort = pm.service_port.filter(_ => serviceType == Service.Type.NodePort).getOrElse(0)
             ))
         })
       }

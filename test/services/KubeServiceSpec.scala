@@ -1513,6 +1513,13 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         name = Some("remove-port"),
         expose_endpoint = Some(true),
         virtual_hosts = Some(Seq("port8443.test.com"))
+      ),
+      ContainerSpec.PortMapping(
+        protocol = "tcp",
+        container_port = Some(9999),
+        name = Some("upgrade-port"),
+        expose_endpoint = Some(true),
+        `type` = Some("external")
       )
     )) {
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef)) returns Future.successful(Some(mock[skuber.ext.Ingress]))
@@ -1539,6 +1546,14 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           name = Some("add-port"),
           expose_endpoint = Some(true),
           virtual_hosts = Some(Seq("port8444.test.com"))
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(9999),
+          name = Some("upgrade-port"),
+          expose_endpoint = Some(true),
+          service_port = Some(1000),
+          `type` = Some("loadBalancer")
         )
       )
       val updatedContainer = await(testSetup.kubeService.update(
@@ -1570,6 +1585,12 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).update(argThat(
         inNamespace(testSetup.testNS.name)
           and (((_: skuber.Service).name) ^^ be_==(metaContainer.name))
+      ))(any,meq(Service.svcDef))
+      there was one(testSetup.kubeClient).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and (((_: skuber.Service).name) ^^ be_==(metaContainer.name+"-lb"))
+          and (((_: skuber.Service).spec.map(_._type)) ^^ beSome(Service.Type.LoadBalancer))
+          and (((_: skuber.Service).spec.flatMap(_.ports.headOption).map(_.nodePort)) ^^ beSome(0))
       ))(any,meq(Service.svcDef))
 
       updatedContainerProps must havePair(
