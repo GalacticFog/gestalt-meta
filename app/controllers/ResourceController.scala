@@ -26,6 +26,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
+import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
 
 @Singleton
 class ResourceController @Inject()( 
@@ -225,11 +226,11 @@ class ResourceController @Inject()(
          */
         result <- getBackingProviderType(rp.targetTypeId) match {
           case None =>
-            log.debug("request to create non-provider-backed resource")
+            log.debug("Request to create non-provider-backed resource")
             newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
 
           case Some(backingProviderType) =>
-            log.debug(s"request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
+            log.debug(s"Request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
             val result = genericResourceMethods.createProviderBackedResource(
               org = org,
               identity = request.identity,
@@ -882,6 +883,29 @@ class ResourceController @Inject()(
     }
   }
   
+  
+
+  
+  
+  def findDataTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(DataType.data) )
+  }
+  
+  def findEnvironmentTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(EnvironmentType.data) )
+  }
+  
+  def findVisibilityTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(VisibilityType.data) )
+  }
+  
+  def findResourceStates() = Audited() { implicit request =>
+    Ok( mapReferenceType(ResourceState.data) )
+  }
+  
+  private[controllers] def mapReferenceType(m: Map[String, String]): JsValue = {
+    Json.toJson(m.map( v => Json.obj("id" -> v._2, "name" -> v._1) ))
+  }
   
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,
