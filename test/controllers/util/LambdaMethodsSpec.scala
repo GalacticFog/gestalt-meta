@@ -237,9 +237,20 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
     }
 
-    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
+    "not specify computePathOverride in the absence of secrets" in new FakeLambdaScope {
       val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
       laserLambda.artifactDescription.computePathOverride must beNone
+    }
+
+    "specify computePathOverride if preWarm > 0" in new FakeLambdaScope {
+      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "pre_warm" -> "1"
+        ))
+      ), testLambdaProvider.id)
+      laserLambda.artifactDescription.computePathOverride must beSome(
+        s"/${testOrg.name}/environments/${testEnv.id}/containers"
+      )
     }
 
     "return computePathOverride from Secrets" in new FakeLambdaScope {
@@ -395,6 +406,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
                 periodicInfo = Some(Json.obj("new" -> "periodicity")),
                 secrets = Some(Seq.empty),
                 preWarm = Some(3),
+                computePathOverride = Some(s"/${testOrg.name}/environments/${testEnv.id}/containers"),
                 headers = Map(
                   "Existing-Header" -> "ExistingHeaderValue",
                   "Remove-Header" -> "Nobody Cares What's Here"
