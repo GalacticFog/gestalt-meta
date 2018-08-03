@@ -149,9 +149,9 @@ package object laser {
     if (secretEnvs.length > 1) throw new BadRequestException("All mounted Secrets must belong to the same Environment")
     else if (secretEnvs.headOption.exists(_ != lambdaEnvironment.id)) throw new BadRequestException(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets")
 
-    val computePath = secretEnvs.headOption.map {
-      envId => controllers.routes.ContainerController.postContainer(fqon, envId).url
-    }
+    val executorEnv = if (preWarm.exists(_ > 0)) Some(lambdaEnvironment.id) else secretEnvs.headOption
+
+    val computePath = executorEnv.map(controllers.routes.ContainerController.postContainer(fqon, _).url)
 
     LaserLambda(
       id          = Some(lambda.id.toString),
