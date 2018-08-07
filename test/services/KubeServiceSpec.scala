@@ -353,7 +353,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       mockSkuber.list()(any,meq(skuber.PersistentVolumeClaim.pvcListDef)) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
       mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      mockSkuber.list(any)(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      mockSkuber.listSelected(any)(any,meq(skuber.ext.Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
 
       def answerId[T](a: Any): Future[T] = Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[T])
 
@@ -363,11 +363,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       val nonEmptySvcs = List( mockService, mockService2, mockService3 ).filter(_.spec.map(_.ports.nonEmpty).contains(true))
       mockSkuber.list()(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
-      mockSkuber.list(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
+      mockSkuber.listSelected(any)(any,meq(skuber.Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,nonEmptySvcs))
       mockSkuber.list()(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
-      mockSkuber.list(any)(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
+      mockSkuber.listSelected(any)(any,meq(skuber.Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,List(mockPodA,mockPodB)))
       mockSkuber.list()(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
-      mockSkuber.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
+      mockSkuber.listSelected(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
 
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef)) returns Future.successful(mock[skuber.ext.Deployment])
 
@@ -1253,9 +1253,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1293,9 +1293,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1330,9 +1330,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           )
         )
       )
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
 
       val Some(containerStats) = await(testSetup.kubeService.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1375,11 +1375,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
 
       val mockService = skuber.Service(metaContainer.name).withSelector( label ).addLabel( label )
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,items = List(mockDep)))
-      testSetup.kubeClient.list(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,items = List(mockRS)))
-      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,items = List(mockService)))
-      testSetup.kubeClient.list(any)(any,meq(Ingress.ingListDef)) returns Future.successful(new skuber.ext.IngressList("","",None,items = List(mockIngress)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,items = List(mockDep)))
+      testSetup.kubeClient.listSelected(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,items = List(mockRS)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Pod.poListDef)) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.kubeClient.listSelected(any)(any,meq(Service.svcListDef)) returns Future.successful(new skuber.ServiceList("","",None,items = List(mockService)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Ingress.ingListDef)) returns Future.successful(new skuber.ext.IngressList("","",None,items = List(mockIngress)))
       testSetup.kubeClient.delete(mockDep.name,0)(Deployment.deployDef) returns Future.successful(())
       testSetup.kubeClient.delete(mockRS.name,0)(ReplicaSet.rsDef) returns Future.successful(())
       testSetup.kubeClient.delete(mockService.name,0)(Service.svcDef) returns Future.successful(())
@@ -1418,11 +1418,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
       val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
-      testSetup.kubeClient.list(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
-      testSetup.kubeClient.list(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))
-      testSetup.kubeClient.list(any)(any,meq(Pod.poListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.kubeClient.list(any)(any,meq(Service.svcListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.kubeClient.list(any)(any,meq(Ingress.ingListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.listSelected(any)(any,meq(Deployment.deployListDef)) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
+      testSetup.kubeClient.listSelected(any)(any,meq(ReplicaSet.rsListDef)) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))
+      testSetup.kubeClient.listSelected(any)(any,meq(Pod.poListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.listSelected(any)(any,meq(Service.svcListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.kubeClient.listSelected(any)(any,meq(Ingress.ingListDef)) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
       testSetup.kubeClient.delete(mockDep.name,0)(Deployment.deployDef) returns Future.successful(())
       testSetup.kubeClient.delete(mockRS.name,0)(ReplicaSet.rsDef) returns Future.successful(())
 
@@ -1909,7 +1909,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         labels = Map(label)
       ))
 
-      testSetup.kubeClient.list(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.Secret.secListDef)) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
       testSetup.kubeClient.delete(mockSecret.name,0)(skuber.Secret.secDef) returns Future.successful(())
 
       await(testSetup.kubeService.destroySecret(metaSecret))
