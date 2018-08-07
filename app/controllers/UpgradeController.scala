@@ -3,7 +3,7 @@ package controllers
 import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
@@ -13,6 +13,7 @@ import play.api.libs.json.Json
 
 import scala.concurrent.Future
 import akka.pattern.ask
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
 import scala.util.Try
 import scala.concurrent.duration._
@@ -20,10 +21,10 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 @Singleton
 class UpgradeController @Inject()( messagesApi: MessagesApi,
-                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                   sec: GestaltFrameworkSecurity,
                                    upgraderService: UpgraderService,
                                    @Named(SystemConfigActor.name) configActor: ActorRef )
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
 
   implicit val askTimeout: akka.util.Timeout = 15.seconds
 
@@ -35,7 +36,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
     }
   }
 
-  def setAndTest()(implicit request: SecuredRequest[_]): Future[Boolean] = {
+  def setAndTest()(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Future[Boolean] = {
     for {
       maybeLocked <- (configActor ? SystemConfigActor.SetKey(request.identity.account.id, "upgrade_lock",  Some("true")))
           .mapTo[Option[String]]
@@ -80,7 +81,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
 
   private[this] def upgradeOps() = List(controllers.util.Authorize("gestalt.upgrade"))
 
-  private[this] def upgradeOptions(req: SecuredRequest[_]) = RequestOptions(
+  private[this] def upgradeOptions(req: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = RequestOptions(
     user = req.identity,
     authTarget = Some(rootId),
     policyOwner = None,

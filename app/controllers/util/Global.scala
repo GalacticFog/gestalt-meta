@@ -1,17 +1,11 @@
 package controllers.util
 
-import controllers._
-import play.api.Logger
-import play.api._
-import play.api.mvc._
-import play.api.mvc.Results._
-import scala.concurrent.Future
+import play.api.{Logger, _}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.mvc.Results._
+import play.api.mvc._
 
-import play.api.libs.json._
-import filters.LoggingFilter
-
-import filters.LoggingFilter
+import scala.concurrent.Future
 
 object Global extends GlobalSettings  {
 

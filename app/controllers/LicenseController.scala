@@ -3,41 +3,38 @@ package controllers
 
 import java.util.UUID
 
-import scala.util.{Try, Success, Failure}
+import scala.util.{Failure, Success, Try}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.concurrent.Future
 
+import scala.concurrent.Future
 import play.api.libs.json.JsObject
 import play.api.{Logger => log}
-import play.api.libs.json.{JsObject, JsArray, JsValue, Json}
-
+import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.ResourceFactory.{findAll, findById, hardDeleteResource}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.keymgr._
-
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, ResourceNotFoundException}
-
 import play.api.libs.json.{JsArray, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
-
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import play.api.{Logger => log}
 
 @Singleton
 class LicenseController @Inject()(
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+    sec: GestaltFrameworkSecurity)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   /**
    * POST /{fqon}/licenses
@@ -191,7 +188,7 @@ class LicenseController @Inject()(
    * @param org UUID of Org that owns the License
    * @param json JSON body of the new License
    */
-  private[controllers] def newLicense(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {    
+  private[controllers] def newLicense(org: UUID, json: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     log.info(s"Posting new license in Meta.")
 
     (for {
@@ -243,7 +240,7 @@ class LicenseController @Inject()(
    * @param org UUID of the Org that owns the License
    * @param request the
    */
-  private[controllers] def createLicense(org: UUID)(implicit request: SecuredRequest[JsValue]) = {
+  private[controllers] def createLicense(org: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     CreateWithEntitlements(org, request.identity, request.body, ResourceIds.License, Some(org))
   }
 

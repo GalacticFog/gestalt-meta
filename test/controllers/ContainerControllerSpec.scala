@@ -342,7 +342,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val path = s"/root/environments/${testEnv.id}/containers/${testContainer.id}"
       val request = fakeAuthRequest(GET, path, testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       contentAsString(result) must /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
@@ -397,7 +397,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
     }
 
@@ -461,7 +461,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       there was one(containerService).updateContainer(
         any,
@@ -535,7 +535,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       there was one(containerService).updateContainer(
         any,
@@ -599,7 +599,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val path = s"/root/environments/${testEnv.id}/containers?expand=true"
       val request = fakeAuthRequest(GET, path, testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       contentAsString(result) must /#(0) / ("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
@@ -629,7 +629,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("not found")
@@ -683,7 +683,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(CREATED)
 
@@ -752,7 +752,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/containers", testCreds).withBody(
         Output.renderInstance(newResource)
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(userSpecificUUID)
@@ -821,7 +821,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(NO_CONTENT)
 
@@ -883,7 +883,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         s"/root/containers/${createdResource.id}/scale?numInstances=4", testCreds
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(ACCEPTED)
 
@@ -957,7 +957,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       ))
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
@@ -978,7 +978,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("/properties/provider/id")
     }
@@ -997,7 +997,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("CaasProvider") and contain("not found")
     }
@@ -1036,7 +1036,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(ACCEPTED)
 
       there was one(containerService).createSecret(
@@ -1092,7 +1092,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/secrets/${createdResource.id}", testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(NO_CONTENT)
 

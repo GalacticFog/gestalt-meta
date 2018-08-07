@@ -2,8 +2,8 @@ package controllers.util
 
 import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
@@ -27,6 +27,7 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+import com.galacticfog.gestalt.security.api.DIRECTORY_TYPE_INTERNAL
 
 object TypeMethods extends AuthorizationMethods {
 
@@ -197,7 +198,7 @@ object TypeMethods extends AuthorizationMethods {
   
   
   def makeAccount(directoryOrg: GestaltOrg, account: GestaltAccount) = {  
-    val directory = GestaltDirectory(uuid(), directoryOrg.name, None, orgId = directoryOrg.id)
+    val directory = GestaltDirectory(uuid(), directoryOrg.name, None, orgId = directoryOrg.id, directoryType = DIRECTORY_TYPE_INTERNAL.label)
     
     newAuthAccountWithCreds(Map(
         "id" -> account.id,

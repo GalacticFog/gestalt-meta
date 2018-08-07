@@ -2,31 +2,31 @@ package migrations
 
 
 import java.util.UUID
+
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import play.api.Logger
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
+
 import scala.language.postfixOps
 import scala.util.Try
 import com.galacticfog.gestalt.json.Js
 
 class MigrationController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     security: Security,
     v8: V8,
     genericResourceMethods: GenericResourceMethods )
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-  
-  private[this] val log = Logger(this.getClass)
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   def migrate() = AsyncAudited() { implicit request =>
     log.debug("migrate()")

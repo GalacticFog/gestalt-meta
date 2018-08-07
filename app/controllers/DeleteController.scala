@@ -9,9 +9,8 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import javax.inject.Singleton
 import play.api.i18n.MessagesApi
@@ -20,8 +19,8 @@ import play.api.mvc.RequestHeader
 import services._
 import skuber.Namespace
 
-import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
@@ -29,14 +28,14 @@ import scala.util.{Failure, Success, Try}
 @Singleton
 class DeleteController @Inject()(
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     security: Security,
     providerManager: ProviderManager,
     gatewayMethods: GatewayMethods,
     lambdaMethods: LambdaMethods,
     skuberFactory: SkuberFactory,
     genericResourceMethods: GenericResourceMethods
- ) extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+ ) extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
    
   /*
    * Each of the types named by the keys in this map have representations both in

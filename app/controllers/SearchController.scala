@@ -11,13 +11,13 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import controllers.util.{HandleExceptions, SecureController}
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
-
 import controllers.util.Security
+import play.api.mvc.RequestHeader
 
 import scala.collection.immutable
 import scala.concurrent.Future
@@ -25,10 +25,10 @@ import scala.concurrent.Future
 @Singleton
 class SearchController @Inject()(
                                   messagesApi: MessagesApi,
-                                  env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                                  sec: GestaltFrameworkSecurity,
                                   security: Security,
                                   securitySync: SecuritySync)
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
 
   private case class Criterion(name: String, value: String)
 
@@ -38,7 +38,7 @@ class SearchController @Inject()(
   }
 
   // GET /{fqon}/resourcetypes/{typeId}/resources/search?... 
-  def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = GestaltFrameworkAuthAction(Some(fqon)) { implicit request =>
+  def listAllResourcesByTypePropertyFqon(fqon: String, typeId: UUID) = Authenticate(fqon) { implicit request =>
     util.extractQueryParameters(request.queryString) match {
       case Failure(error) => HandleExceptions(error)
       case Success(Nil)   => HandleExceptions(BadRequestException("endpoint requires at least one query parameter"))
@@ -136,7 +136,7 @@ import controllers.util.QueryString
   }
 
   private[controllers] def getResourcesByProperty(typeId: UUID, org: Option[UUID] = None)
-                                                 (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: SecuredRequest[_]) = {
+                                                 (f: Map[String, Seq[String]] => Try[(String,String)])(implicit request: RequestHeader) = {
     f(request.queryString) match {
       case Failure(error)        => HandleExceptions(error)
       case Success((name,value)) => {

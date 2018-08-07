@@ -1,6 +1,7 @@
 package services
 
 
+import java.security.cert.X509Certificate
 import java.util.UUID
 
 import scala.language.postfixOps
@@ -93,6 +94,7 @@ case class FakeURI(url: String) extends RequestHeader {
   def secure: Boolean = false
   def tags: Map[String,String] = Map.empty
   def version: String = "foo"
+  override def clientCertificateChain: Option[Seq[X509Certificate]] = None
 }
 
 

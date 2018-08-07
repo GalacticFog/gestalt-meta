@@ -16,7 +16,7 @@ import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.galacticfog.gestalt.meta.auth.{Authorization, Entitlement}
 import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -24,6 +24,7 @@ import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch._
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import play.api.libs.ws.WSClient
 
 
@@ -32,10 +33,10 @@ class ApiController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
     gatewayMethods: GatewayMethods,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     providerMethods: ProviderMethods,
     db: play.api.db.Database )
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   import GatewayMethods.unprocessable
   
@@ -53,7 +54,7 @@ class ApiController @Inject()(
   }
   
   def createApi(org: UUID, payload: JsValue, parent: UUID, provider: GestaltResourceInstance, location: UUID)
-               (implicit request: SecuredRequest[JsValue]) = {
+               (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     
     ResourceFactory.findById(ResourceIds.Environment, parent).fold {
       Future(ResourceNotFound(ResourceIds.Environment, parent))

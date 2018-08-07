@@ -11,8 +11,9 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.JsonUtil._
 import controllers.util._
@@ -30,13 +31,13 @@ import scala.util.{Failure, Success, Try}
 @Singleton
 class ResourceController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     security: Security,
     containerService: ContainerService,
     genericResourceMethods: GenericResourceMethods,
     lambdaMethods: LambdaMethods )
     
-  extends SecureController(messagesApi = messagesApi, env = env)
+  extends SecureController(messagesApi = messagesApi, sec = sec)
     with Authorization with MetaControllerUtils {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Try[GestaltResourceInstance]
@@ -219,7 +220,7 @@ class ResourceController @Inject()(
         org <- findOrgOrFail(fqon)
         parent <- Future.fromTry(tryParent)
         jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
-        jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+        jsonSecuredRequest = SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue](request.identity, request.authenticator, jsonRequest)
         /*
          * Determine if the resource we're creating is backed by a provider.
          */
@@ -304,7 +305,7 @@ class ResourceController @Inject()(
   }  
   
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
-      (implicit request: SecuredRequest[_]): Result = {
+      (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
     
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, $action")
     
@@ -332,7 +333,7 @@ class ResourceController @Inject()(
   }
   
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: Map[String, Seq[String]])
-      (implicit request: SecuredRequest[_]): Result = {
+      (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
 
     log.debug(s"AuthorizedResourceList(${path.path}, $action)")
 

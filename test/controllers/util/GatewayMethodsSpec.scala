@@ -456,7 +456,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "post against api-gateway provider to create api" in new TestApplication {
       val testApiName = uuid().toString
       val testApiId   = uuid()
-      val Some(createdApiResponse) = route(fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/apis", testCreds).withBody(Json.obj(
+      val Some(createdApiResponse) = route(app,fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/apis", testCreds).withBody(Json.obj(
         "id" -> testApiId,
         "name" -> testApiName,
         "properties" -> Json.obj(
@@ -475,7 +475,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "post against api-gateway provider to create apiendpoint" in new TestApplication {
       val testEndpointName = uuid().toString
       val testEndpointId   = uuid()
-      val Some(createEndpointResult) = route(fakeAuthRequest(POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds).withBody(Json.obj(
+      val Some(createEndpointResult) = route(app,fakeAuthRequest(POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds).withBody(Json.obj(
         "id" -> testEndpointId,
         "name" -> testEndpointName,
         "properties" -> Json.obj(

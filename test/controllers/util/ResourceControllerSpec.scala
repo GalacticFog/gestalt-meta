@@ -121,7 +121,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must_== CREATED
       (contentAsJson(result) \ "id").as[UUID] must_== providerTypeId
       TypeFactory.findById(providerTypeId) must beSome
@@ -162,7 +162,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       (contentAsJson(result) \ "id").as[UUID] must_== resourceTypeId
       TypeFactory.findById(providerTypeId) must beSome
       def updateLineage(tid: UUID): Unit = {
@@ -196,7 +196,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       contentAsString(result) must contain("requires a provider")
       status(result) must equalTo(BAD_REQUEST)
     }
@@ -212,7 +212,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       contentAsString(result) must contain("not found")
       status(result) must equalTo(BAD_REQUEST)
     }
@@ -279,7 +279,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(CREATED)
       val id = (contentAsJson(result) \ "id").as[UUID]
       ResourceFactory.findById(id) must beSome(testProvider)
@@ -299,7 +299,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       (contentAsJson(result) \ "message").as[String] must contain("failure message from provider endpoint")
       status(result) must equalTo(BAD_REQUEST)
 
@@ -327,7 +327,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -385,7 +385,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -443,7 +443,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -501,7 +501,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome
@@ -568,7 +568,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(POST,
         s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb1}&p1=v1", testCreds
       ).withBody(payload)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(202)
       contentAsString(result) must_== "Hello, Chris"
       contentType(result) must beSome("text/plain")
@@ -620,7 +620,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(POST,
         s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
       ).withBody(payload)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(200)
       contentAsJson(result).toString must /("properties") /("string_prop" -> payload)
       contentAsJson(result).toString must /("properties") /("bool_prop" -> "true")
@@ -664,7 +664,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(POST,
         s"/${testOrg.name}/${resourcePrefix}s/${createdResource.id}?action=${verb1}", testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("failure message")
     }
@@ -683,7 +683,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(DELETE,
         s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?p1=v1", testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(204)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
@@ -718,7 +718,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(DELETE,
         s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(204)
 
       val invocationCaptor = ArgumentCaptor.forClass(classOf[GenericActionInvocation])
@@ -754,7 +754,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val request = fakeAuthRequest(DELETE,
         s"/${testOrg.name}/environments/${testEnv.id}/${resourcePrefix}s/${createdResource.id}?action=${verb2}&p1=v1", testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("the failure message")
 
@@ -791,7 +791,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           PatchOp.Replace("/properties/string_prop", "updated value")
         ).toJson
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(createdResource.id)
@@ -861,7 +861,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           PatchOp.Replace("/properties/string_prop", "updated value")
         ).toJson
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(createdResource.id)
@@ -920,7 +920,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           PatchOp.Replace("/properties/string_prop", "updated value")
         ).toJson
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
 
       ResourceFactory.findById(createdResource.id) must beSome
@@ -1101,7 +1101,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
               ).toString
             ))
           ), user.account.id)
-          val Some(result) = route(fakeAuthRequest(GET,
+          val Some(result) = route(app,fakeAuthRequest(GET,
             s"/${testOrg.name}/apiendpoints/${lambdaEndpoint.id}", testCreds
           ))
           status(result) must equalTo(OK)
@@ -1130,7 +1130,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
                 ).toString
               ))
             ), user.account.id)
-            val Some(result) = route(fakeAuthRequest(GET,
+            val Some(result) = route(app,fakeAuthRequest(GET,
               s"/${testOrg.name}/apiendpoints/${lambdaEndpointWithHosts.id}", testCreds
             ))
             status(result) must equalTo(OK)
@@ -1158,7 +1158,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
                 ).toString
               ))
             ), user.account.id)
-            val Some(result) = route(fakeAuthRequest(GET,
+            val Some(result) = route(app,fakeAuthRequest(GET,
               s"/${testOrg.name}/apiendpoints/${lambdaEndpointWithHostsAndPath.id}", testCreds
             ))
             status(result) must equalTo(OK)
@@ -1168,7 +1168,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     }
 
     "not render apiendpoints with .properties.public_url if not present in kong provider" in new testEndpoint {
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/apiendpoints/${lambdaEndpoint.id}", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1189,7 +1189,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/lambdas/${lambda.id}?embed=apiendpoints", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1211,7 +1211,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/lambdas?expand=true&embed=apiendpoints", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1236,7 +1236,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/lambdas/${lambda.id}", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1257,7 +1257,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/containers/${container.id}?embed=apiendpoints", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1279,7 +1279,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/containers?expand=true&embed=apiendpoints", testCreds
       ))
       status(result) must equalTo(OK)
@@ -1301,7 +1301,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           ).toString
         ))
       ), user.account.id)
-      val Some(result) = route(fakeAuthRequest(GET,
+      val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/containers/${container.id}", testCreds
       ))
       status(result) must equalTo(OK)

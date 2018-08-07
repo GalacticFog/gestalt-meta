@@ -3,8 +3,8 @@ package controllers
 
 import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
@@ -17,7 +17,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
@@ -29,26 +29,26 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
 import com.galacticfog.gestalt.meta.providers.ui.Assembler
 import com.galacticfog.gestalt.meta.providers._
-import scala.util.{Try,Success,Failure}
-import controllers.util.Security
 
+import scala.util.{Failure, Success, Try}
+import controllers.util.Security
 import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.api.GestaltOrg
 import com.galacticfog.gestalt.security.api.GestaltOrgSync
 import com.galacticfog.gestalt.security.api.GestaltResource
 import com.galacticfog.gestalt.security.api.json.JsonImports._
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
+import play.api.mvc.RequestHeader
 
 
 @Singleton
 class TypeController @Inject()(
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     security: Security)
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
-  private[this] val log = Logger(this.getClass)
-
-  case class SchemaEntry(name: String, datatype: String, required: Option[Boolean])  
+  case class SchemaEntry(name: String, datatype: String, required: Option[Boolean])
   object SchemaEntry {
     implicit lazy val schemaEntryFormat = Json.format[SchemaEntry]
   }
@@ -153,7 +153,7 @@ class TypeController @Inject()(
     qs("name").toSeq.flatMap(TypeFactory.findByName(_))     
   }  
   
-  private[controllers] def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+  private[controllers] def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
     Future {
       createTypeWithProperties(org, typeJson) match {
         case Failure(e) => HandleExceptions(e)
@@ -260,7 +260,7 @@ class TypeController @Inject()(
   
   private[controllers] def createTypeWithProperties[T](
       org: UUID, 
-      typeJson: JsValue)(implicit request: SecuredRequest[T]) = {
+      typeJson: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
     
     Try {
       val owner = request.identity.account.id
@@ -321,7 +321,7 @@ class TypeController @Inject()(
    * Get a single ResourceType by ID 
    */
   private def OkTypeByIdResult(org: UUID, id: UUID, qs: Map[String, Seq[String]])(
-      implicit request: SecuredRequest[_]) = {
+      implicit request: RequestHeader) = {
 
     TypeFactory.findById(id).fold(NotFoundResult(Errors.TYPE_NOT_FOUND(id.toString))) { typ =>
       TypeMethods.renderType(typ, request.queryString, META_URL) match {

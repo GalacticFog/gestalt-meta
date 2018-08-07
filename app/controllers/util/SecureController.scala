@@ -1,73 +1,65 @@
 package controllers.util
 
 
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecuredController
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
-
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-import com.galacticfog.gestalt.meta.api.errors.ApiException
-import com.galacticfog.gestalt.meta.api.audit._
-
-import scala.concurrent.Future
-import org.slf4j.LoggerFactory
 import java.util.UUID
-import scala.concurrent.ExecutionContext.Implicits.global
-import play.api.mvc._
-import play.api.i18n.MessagesApi
-import play.api.libs.json._
-
-import scala.util.{Try, Success, Failure}
 
 import com.galacticfog.gestalt.meta.api.audit.Audit
-abstract class SecureController(
-  messagesApi: MessagesApi,
-  env: GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator])
-    extends GestaltFrameworkSecuredController[DummyAuthenticator](messagesApi, env) {
+import com.galacticfog.gestalt.meta.api.errors.ApiException
+import com.galacticfog.gestalt.security.api.GestaltSecurityClient
+import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
+import play.api.i18n.MessagesApi
+import play.api.libs.json._
+import play.api.mvc._
+
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.Future
+import scala.util.Try
+abstract class SecureController( messagesApi: MessagesApi,
+                                 sec: GestaltFrameworkSecurity) extends Controller {
 
   protected val audit = Audit
   
-  implicit def getSecurityClient: GestaltSecurityClient = env.client
+  implicit def getSecurityClient: GestaltSecurityClient = sec.securityClient
 
-  private[controllers] def Authenticate() = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => None: Option[UUID] }))
-  private[controllers] def Authenticate(fqon: String) = new GestaltFrameworkAuthActionBuilder(Some({ rh: RequestHeader => Some(fqon) }))
-  private def Authenticate(org: UUID) = new GestaltFrameworkAuthActionBuilderUUID(Some({ rh: RequestHeader => Some(org) }))
+  private[controllers] def Authenticate(): ActionBuilder[({ type R[B] = SecuredRequest[GestaltFrameworkSecurityEnvironment, B] })#R] = sec.AuthAction()
+  private[controllers] def Authenticate(fqon: String): ActionBuilder[({ type R[B] = SecuredRequest[GestaltFrameworkSecurityEnvironment, B] })#R] = sec.AuthAction({ rh: RequestHeader => Some(fqon) })
+  private[controllers] def Authenticate(org: UUID): ActionBuilder[({ type R[B] = SecuredRequest[GestaltFrameworkSecurityEnvironment, B] })#R] = sec.AuthAction({ rh: RequestHeader => Some(org) })
   
-  def AsyncAudited()(block: SecuredRequest[JsValue] => Future[Result]) =
-      Authenticate().async(parse.json) { implicit request: SecuredRequest[JsValue] =>
+  def AsyncAudited()(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] => Future[Result]) =
+      Authenticate().async(parse.json) { implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] =>
     auditedActionAsync(request, System.currentTimeMillis)(block)
   }
   
-  def AsyncAudited(fqon: String)(block: SecuredRequest[JsValue] => Future[Result]) =
-      Authenticate(fqon).async(parse.json) { implicit request: SecuredRequest[JsValue] =>
+  def AsyncAudited(fqon: String)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] => Future[Result]) =
+      Authenticate(fqon).async(parse.json) { implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] =>
     auditedActionAsync(request, System.currentTimeMillis)(block)
   }
 
-  def AsyncAuditedAny()(block: SecuredRequest[AnyContent] => Future[Result]) =
-    Authenticate().async { implicit request: SecuredRequest[AnyContent] =>
+  def AsyncAuditedAny()(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] => Future[Result]) =
+    Authenticate().async { implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] =>
       auditedActionAsync(request, System.currentTimeMillis)(block)
     }
 
 
-  def AsyncAuditedAny(fqon: String)(block: SecuredRequest[AnyContent] => Future[Result]) =
-      Authenticate(fqon).async { implicit request: SecuredRequest[AnyContent] =>
+  def AsyncAuditedAny(fqon: String)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] => Future[Result]) =
+      Authenticate(fqon).async { implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] =>
     auditedActionAsync(request, System.currentTimeMillis)(block)
   }  
   
-  def Audited(fqon: String)(block: SecuredRequest[AnyContent] => Result) = Authenticate(fqon){ 
-      implicit request: SecuredRequest[AnyContent] =>  
+  def Audited(fqon: String)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] => Result) = Authenticate(fqon){
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] =>
     auditedAction(request, System.currentTimeMillis)(block)
   }
 
-  def Audited()(block: SecuredRequest[AnyContent] => Result) = Authenticate() { 
-      implicit request: SecuredRequest[AnyContent] =>
+  def Audited()(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] => Result) = Authenticate() {
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] =>
     auditedAction(request, System.currentTimeMillis)(block)
   }  
   
   private val FailureRange = Seq((400 to 599): _*)
   
-  private def auditedActionAsync[A](request: SecuredRequest[A], startTime: Long)(block: SecuredRequest[A] => Future[Result]) = {
+  private def auditedActionAsync[A](request: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], startTime: Long)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,A] => Future[Result]) = {
     Try {
       val result = block(request)
       result.map(r => logAction(request, r, startTime))
@@ -79,7 +71,7 @@ abstract class SecureController(
     }.get    
   }
   
-  private def auditedAction[A](request: SecuredRequest[A], startTime: Long)(block: SecuredRequest[A] => Result) = {
+  private def auditedAction[A](request: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], startTime: Long)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,A] => Result) = {
     Try {
       val result = block(request)
       logAction(request, result, startTime)
@@ -91,7 +83,7 @@ abstract class SecureController(
     }.get    
   }
   
-  private def logAction[A](request: SecuredRequest[A], result: Result, startTime: Long) = {
+  private def logAction[A](request: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], result: Result, startTime: Long) = {
     if (FailureRange.contains(result.header.status)) {
       audit.log(auditError(request, result.body.toString, result.header.status, startTime))
     } else {
@@ -102,19 +94,17 @@ abstract class SecureController(
   /**
    * Log an "uncaught" request thrown by the audited code block.
    */
-  private def logUnknown[A](request: SecuredRequest[A], ex: Throwable, startTime: Long) = {
+  private def logUnknown[A](request: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], ex: Throwable, startTime: Long) = {
     audit.log(auditError(request, ex, startTime))
     HandleExceptions(ex)    
   }
   
-  private def errorCode(e: Throwable): Int = {
-    if (e.isInstanceOf[ApiException])
-      e.asInstanceOf[ApiException].code else 500
+  private def errorCode(e: Throwable): Int = e match {
+    case api: ApiException => api.code
+    case _ => 500
   }
 
-  import play.api.routing.Router.Tags
-
-  private def auditError[A](sr: SecuredRequest[A], errorMessage: String, statusCode: Int, startTime: Long) = {
+  private def auditError[A](sr: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], errorMessage: String, statusCode: Int, startTime: Long) = {
     val u = sr.identity.account
     val time = s"${(System.currentTimeMillis() - startTime).toString}ms"
     val email = u.email getOrElse "N/A"
@@ -134,13 +124,13 @@ abstract class SecureController(
     template.format(sr.id, statusCode.toString, time, sr.method, sr.uri, u.id, u.name, email, errorMessage)
   }
 
-  private def auditError[A](sr: SecuredRequest[A], ex: Throwable, startTime: Long): String = {
+  private def auditError[A](sr: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], ex: Throwable, startTime: Long): String = {
     auditError(sr, ex.getMessage, errorCode(ex), startTime)
   }  
   
   
   
-  private def auditPost[A](sr: SecuredRequest[A], result: Result, startTime: Long) = {
+  private def auditPost[A](sr: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], result: Result, startTime: Long) = {
     val u = sr.identity.account
     val time = s"${(System.currentTimeMillis() - startTime).toString}ms"
     val email = u.email getOrElse "N/A"
@@ -157,7 +147,7 @@ abstract class SecureController(
       email)
   }
 
-  private def auditMessage[A](sr: SecuredRequest[A]) = {
+  private def auditMessage[A](sr: SecuredRequest[GestaltFrameworkSecurityEnvironment,A]) = {
     val u = sr.identity.account
     val template = " [ERROR] request.id=%s request.status=%s request.time=%s request.uri=%s user.id=%s, user.name=%s user.email=%s error.message='%s'"
     "(req=%d) %s %s, [user: %s, %s, %s]".format(

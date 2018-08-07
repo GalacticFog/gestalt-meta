@@ -3,10 +3,10 @@ package controllers
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.ResourceFactory.findById
 import com.galacticfog.gestalt.data.ResourceFactory.hardDeleteResource
@@ -15,11 +15,10 @@ import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
 import controllers.util.HandleExceptions
 import controllers.util.NotFoundResult
 import controllers.util.RequestOptions
@@ -29,11 +28,12 @@ import controllers.util.standardMethods
 import javax.inject.Singleton
 import play.api.i18n.MessagesApi
 import play.api.libs.json.JsValue
+import play.api.mvc.RequestHeader
 
 @Singleton
 class IntegrationController @Inject()(messagesApi: MessagesApi,
-                                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+                                      sec: GestaltFrameworkSecurity)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   /**
    * POST /{fqon}/environments/{envid}/integrations
@@ -54,7 +54,6 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   
   def postIntegration(fqon: String, envid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     Future {
-      
       // Ensure Environment exists and create Integration.
       findById(envid).fold( NotFoundResult(request.uri) ) { env =>
         createIntegrationResult(fqid(fqon), envid, request.body, request.identity, Some(META_URL))
@@ -67,7 +66,7 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
       parent: UUID,
       inputJson: JsValue, 
       user: AuthAccountWithCreds, 
-      baseUri: Option[String])(implicit request: SecuredRequest[JsValue]) = {
+      baseUri: Option[String])(implicit request: RequestHeader) = {
     
     val typeId     = ResourceIds.Integration
     val operations = standardMethods(typeId, "integration.create")
@@ -157,10 +156,10 @@ class IntegrationController @Inject()(messagesApi: MessagesApi,
   /**
    * Create a Gestalt::Resource::Integration
    * 
-   * @param org UUID of the Org that owns the Integration
+   * @param orgid UUID of the Org that owns the Integration
    * @param request the
    */
-  private[controllers] def createIntegration(orgid: UUID, envid: UUID)(implicit request: SecuredRequest[JsValue]) = {
+  private[controllers] def createIntegration(orgid: UUID, envid: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     log.info(s"INFO - creating integration resource in meta." + request.body.toString)
     CreateWithEntitlements(orgid, request.identity, request.body, ResourceIds.Integration, Some(envid))
   }

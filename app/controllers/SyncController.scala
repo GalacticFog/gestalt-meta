@@ -1,38 +1,22 @@
 package controllers
 
-import java.util.UUID
-
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.DeleteManager
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.session
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltGroup
-import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
-import controllers.util.{GenericErrorResult, SecureController, Security}
-import play.api.Logger
-import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
-
+import controllers.util.{HandleExceptions, SecureController}
 import javax.inject.Singleton
-import controllers.util.HandleExceptions
+import play.api.Logger
+import play.api.i18n.MessagesApi
+import play.api.libs.json.Json
+
+import scala.util.{Failure, Success}
 
 @Singleton
 class SyncController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     securitySync: SecuritySync)
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   private[this] val log = Logger(this.getClass)
 
@@ -42,7 +26,6 @@ class SyncController @Inject()(
    * method of performing diffs on the resource types, this can't be avoided.
    * 
    */
-  import controllers.{Stat, SyncStats}
   
   def sync() = Audited() { implicit request =>  
     securitySync.synchronize(request.identity) match {

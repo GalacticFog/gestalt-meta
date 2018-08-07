@@ -4,6 +4,7 @@ package controllers
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
@@ -24,19 +25,21 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
 import com.galacticfog.gestalt.meta.api.sdk.gestaltTypePropertyInputFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import com.galacticfog.gestalt.json.Js
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import javax.inject.Singleton
+import play.api.mvc.RequestHeader
 
 @Singleton
 class PropertyController @Inject()(messagesApi: MessagesApi,
-                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+                                   sec: GestaltFrameworkSecurity)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
 
   import PropertyController._
   
@@ -73,7 +76,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     CreateTypePropertyResult(fqid(fqon), typeId, request.body.as[JsObject])
   }
   
-  private def CreateTypePropertyResult[T](org: UUID, typeId: UUID, propertyJson: JsObject)(implicit request: SecuredRequest[T]) = {
+  private def CreateTypePropertyResult[T](org: UUID, typeId: UUID, propertyJson: JsObject)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
     Future {
       val user = request.identity.account.id
 
@@ -103,14 +106,10 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     }    
   }
   
-  def deleteTypeProperty(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  /** 
+  /**
    * Find a TypeProperty by ID or 404 Not Found 
    */
-  private def OkNotFoundProperty(id: UUID)(implicit request: SecuredRequest[_]) = {
+  private def OkNotFoundProperty(id: UUID)(implicit request: RequestHeader) = {
     PropertyFactory.findById(ResourceIds.TypeProperty, id).fold {
       NotFoundResult(Errors.PROPERTY_NOT_FOUND(id))
     }{ property =>
