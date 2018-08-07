@@ -199,93 +199,318 @@ class ResourceController @Inject()(
     }
   }
   
+  import play.api.mvc.{Request, RequestHeader}
+  import play.api.mvc.AnyContent
   
-  def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    log.debug(s"genericResourcePost(${fqon},${path})")
-    val rp = new ResourcePath(fqon, path)
-    log.debug(rp.info.toString)
+  
 
-    if (rp.isList) {
-      // create semantics
-
-      val tryParent = ResourceFactory.findById(
+  
+  /**
+   * Find the parent of a resource given it's path (default to given fqon)
+   */
+  def findResourceParent(rp: ResourcePath, fqon: String) = {
+    ResourceFactory.findById(
         typeId = rp.parentTypeId getOrElse ResourceIds.Org,
         id = rp.parentId getOrElse fqid(fqon)
       ) match {
         case Some(parent) => Success(parent)
         case None => Failure(new ConflictException("parent not specified/does not exist/does match type"))
       }
-
-      for {
-        org <- findOrgOrFail(fqon)
-        parent <- Future.fromTry(tryParent)
-        jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
-        jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
-        /*
-         * Determine if the resource we're creating is backed by a provider.
-         */
-        result <- getBackingProviderType(rp.targetTypeId) match {
-          case None =>
-            log.debug("Request to create non-provider-backed resource")
-            newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
-
-          case Some(backingProviderType) =>
-            log.debug(s"Request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
-            val result = genericResourceMethods.createProviderBackedResource(
-              org = org,
-              identity = request.identity,
-              body = jsonRequest.body,
-              parent = parent,
-              resourceType = rp.targetTypeId,
-              providerType = backingProviderType,
-              actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
-            )
-            result
-              .map (r => Created(Output.renderInstance(r, Some(META_URL))))
-              .recover { case e => HandleExceptions(e) }
-        }
-      } yield result
-      
-    } else {
-      
-      // perform action
-      for {
-        org <- findOrgOrFail(fqon)
-        
-        /*
-         *  Lookup action to be performed
-         */
-        action <- fTry{
-          request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
-        }
-        
-        /*
-         * Get resource target ID from request URL
-         */
-        targetId <- rp.targetId match {
-          case Some(targetId) => Future.successful(UUID.fromString(targetId))
-          case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
-        }
-        
-        /*
-         * 
-         */
-        result <- getBackingProviderType(rp.targetTypeId) match {
-          case None => 
-            Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
-          case Some(backingProviderType) => 
-            genericResourceMethods.performProviderBackedAction(
-              org = org,
-              identity = request.identity,
-              body = request.body,
-              resourceType = rp.targetTypeId,
-              providerType = backingProviderType,
-              actionVerb = action,
-              resourceId = targetId)
-        }
-      } yield result
+  }
+ 
+  /**
+   * Get JSON from a Request - fail if content-type isn't JSON.
+   */
+  def requireJsonRequest(request: SecuredRequest[AnyContent])= {
+    request.map { ac => 
+      ac.asJson.getOrElse {
+        throw new UnsupportedMediaTypeException("Expecting text/json or application/json")
+      }
     }
   }
+  
+  /**
+   * Execute a generic 'create' request. If the target resource is provider-backed,
+   * delegate creation to the appropriate provider. If not provider-backed, use the
+   * default 'create in Meta' function.
+   */
+//  def execGenericCreate(
+//      org: GestaltResourceInstance,
+//      targetTypeId: UUID,
+//      parent: GestaltResourceInstance,
+//      payload: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+//      
+//    /*
+//     * Determine if the resource we're creating is backed by a provider.
+//     */    
+//    getBackingProviderType(targetTypeId) match {
+//      case None => {
+//        log.debug("Request to create non-provider-backed resource")
+//        newDefaultResourceResult(org.id, targetTypeId, parent.id, payload)(request)
+//      }
+//      case Some(backingProviderType) => {
+//        val result = genericResourceMethods.createProviderBackedResource(
+//          org = org,
+//          identity = request.identity,
+//          body = payload,
+//          parent = parent,
+//          resourceType = targetTypeId,
+//          providerType = backingProviderType,
+//          actionVerb = "create")
+//        
+////        result
+////          .map (r => Created(Output.renderInstance(r, Some(META_URL))))
+////          .recover { case e => HandleExceptions(e) }             
+//      }
+//    }
+//  }
+  def execGenericCreate(
+      org: GestaltResourceInstance,
+      targetTypeId: UUID,
+      parent: GestaltResourceInstance,
+      payload: JsValue)(implicit request: SecuredRequest[JsValue])
+        : Future[GestaltResourceInstance] = {
+      
+    /*
+     * Determine if the resource we're creating is backed by a provider.
+     */    
+    getBackingProviderType(targetTypeId) match {
+      case None => {
+        log.debug("Request to create non-provider-backed resource")
+        newDefaultResource(org.id, targetTypeId, parent.id, payload)(request)
+      }
+      case Some(backingProviderType) => {
+        genericResourceMethods.createProviderBackedResource(
+          org = org,
+          identity = request.identity,
+          body = payload,
+          parent = parent,
+          resourceType = targetTypeId,
+          providerType = backingProviderType,
+          actionVerb = "create")       
+      }
+    }
+  }
+  /**
+   * Execute an arbitrary generic resource action. Action will fail if the 
+   * given resource is NOT provider-backed.
+   */
+  def execGenericAction(
+      org: GestaltResourceInstance,
+      targetTypeId: UUID,
+      targetId: UUID,
+      action: String)(implicit request: SecuredRequest[AnyContent]) = {
+    /*
+     * Ensure the target resource is backed by a provider.
+     */
+    getBackingProviderType(targetTypeId) match {
+      case None => {
+        Future.successful(
+            BadRequestResult("actions can only be performed against provider-backed resources"))
+      }
+      case Some(backingProviderType) => { 
+        genericResourceMethods.performProviderBackedAction(
+          org = org,
+          identity = request.identity,
+          body = request.body,
+          resourceType = targetTypeId,
+          providerType = backingProviderType,
+          actionVerb = action,
+          resourceId = targetId)
+      }
+    }    
+  }
+  
+  def requireActionParam(request: Request[AnyContent]) = {
+    request.getQueryString("action").getOrElse {
+      throwBadRequest("Missing parameter: action")
+    }    
+  }
+  
+  def requireTargetId(path: ResourcePath) = {
+    path.targetId match {
+      case Some(targetId) => Future.successful(UUID.fromString(targetId))
+      case None => Future.failed(
+        new ResourceNotFoundException("actions must be performed against a specific resource")
+      )
+    }    
+  }
+
+  
+  import com.galacticfog.gestalt.data.PropertyFactory
+  
+  def postCreateCheck(resource: GestaltResourceInstance)
+    (implicit request: SecuredRequest[JsValue]): Any = {
+
+    val given = resource.properties.getOrElse(Map.empty)
+    val specProps = PropertyFactory.findAll(resource.typeId).filter { t =>
+      t.datatype == ???
+    }.map { sp =>
+      if (given.contains(sp.name)) {
+        // We have a spec prop value
+        for {
+          r1 <- execGenericCreate(
+                  org = ???, 
+                  targetTypeId = sp.refersTo.get, 
+                  parent = resource,
+                  payload = Json.parse(given(sp.name)))
+          r2 = postCreateCheck(r1)
+        } yield r2
+      }
+      
+    }
+    // Filter properties of type 'spec'
+    
+    
+        
+  }  
+  
+  def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"genericResourcePost(${fqon},${path})")
+    
+    val rp = new ResourcePath(fqon, path)
+    log.debug(rp.info.toString)
+    
+    if (rp.isList) { // create semantics
+      val x = for {
+        org         <- findOrgOrFail(fqon)
+        parent      <- Future.fromTry(findResourceParent(rp, fqon))
+        jsonRequest <- fTry(requireJsonRequest(request))
+        securedRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+        
+        resource    <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
+      } yield resource
+      
+      x.map (r => Created(Output.renderInstance(r, Some(META_URL))))
+        .recover { case e => HandleExceptions(e) }  
+      
+    } else { // perform action
+      for {
+        org      <- findOrgOrFail(fqon)
+        action   <- fTry( requireActionParam(request) )
+        targetId <- requireTargetId(rp)
+        
+        result   <- execGenericAction(org, rp.targetTypeId, targetId, action)
+      } yield result
+    }
+  }      
+    
+//    /*
+//     * The path ends with a resource-type name (i.e. /environments). This can only mean 'create'
+//     */
+//    if (rp.isList) { // create semantics
+//      val x = for {
+//        org         <- findOrgOrFail(fqon)
+//        parent      <- Future.fromTry(findResourceParent(rp, fqon))
+//        jsonRequest <- fTry(requireJsonRequest(request))
+//        securedRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+//        
+//        result      <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
+//      } yield result
+//      
+//      x
+//        .map (r => Created(Output.renderInstance(r, Some(META_URL))))
+//        .recover { case e => HandleExceptions(e) }  
+//      
+//    } else { // perform action
+//      for {
+//        org      <- findOrgOrFail(fqon)
+//        action   <- fTry( requireActionParam(request) )
+//        targetId <- requireTargetId(rp)
+//        
+//        result   <- execGenericAction(org, rp.targetTypeId, targetId, action)
+//      } yield result
+//    }
+//  }  
+  
+
+  
+//  def genericResourcePost3(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+//    log.debug(s"genericResourcePost(${fqon},${path})")
+//    val rp = new ResourcePath(fqon, path)
+//    log.debug(rp.info.toString)
+//
+//    if (rp.isList) {
+//      // create semantics
+//
+//      val tryParent = ResourceFactory.findById(
+//        typeId = rp.parentTypeId getOrElse ResourceIds.Org,
+//        id = rp.parentId getOrElse fqid(fqon)
+//      ) match {
+//        case Some(parent) => Success(parent)
+//        case None => Failure(new ConflictException("parent not specified/does not exist/does match type"))
+//      }
+//
+//      for {
+//        org <- findOrgOrFail(fqon)
+//        parent <- Future.fromTry(tryParent)
+//        jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
+//        jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+//        /*
+//         * Determine if the resource we're creating is backed by a provider.
+//         */
+//        result <- getBackingProviderType(rp.targetTypeId) match {
+//          case None =>
+//            log.debug("Request to create non-provider-backed resource")
+//            newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
+//
+//          case Some(backingProviderType) =>
+//            log.debug(s"Request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
+//            val result = genericResourceMethods.createProviderBackedResource(
+//              org = org,
+//              identity = request.identity,
+//              body = jsonRequest.body,
+//              parent = parent,
+//              resourceType = rp.targetTypeId,
+//              providerType = backingProviderType,
+//              actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
+//            )
+//            result
+//              .map (r => Created(Output.renderInstance(r, Some(META_URL))))
+//              .recover { case e => HandleExceptions(e) }
+//        }
+//      } yield result
+//      
+//    } else {
+//      
+//      // perform action
+//      for {
+//        org <- findOrgOrFail(fqon)
+//        
+//        /*
+//         *  Lookup action to be performed
+//         */
+//        action <- fTry{
+//          request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
+//        }
+//        
+//        /*
+//         * Get resource target ID from request URL
+//         */
+//        targetId <- rp.targetId match {
+//          case Some(targetId) => Future.successful(UUID.fromString(targetId))
+//          case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
+//        }
+//        
+//        /*
+//         * 
+//         */
+//        result <- getBackingProviderType(rp.targetTypeId) match {
+//          case None => 
+//            Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
+//          case Some(backingProviderType) => 
+//            genericResourceMethods.performProviderBackedAction(
+//              org = org,
+//              identity = request.identity,
+//              body = request.body,
+//              resourceType = rp.targetTypeId,
+//              providerType = backingProviderType,
+//              actionVerb = action,
+//              resourceId = targetId)
+//        }
+//      } yield result
+//    }
+//  }
 
   /**
    * Get a Resource or list of Resources by path.

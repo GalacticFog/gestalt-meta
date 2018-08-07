@@ -85,7 +85,7 @@ case class HttpGenericProvider(client: WSClient,
           contentType = response.header(CONTENT_TYPE), 
           contentString = Try{response.bodyAsBytes}.toOption.map(bts => new String(bts)))
     ))
-    
+
     response.status match {
       case s if Range(200,299).contains(s) =>
         val r = maybeError orElse maybeResource getOrElse notResource
@@ -118,7 +118,7 @@ case class HttpGenericProvider(client: WSClient,
           case JsNumber(n) => n
         }
       }
-      convertObj(Output.renderInstance(r).as[JsObject])
+      convertObj(Output.renderInstanceInput(r).as[JsObject])
     }
 
     val context = Seq(
@@ -128,7 +128,7 @@ case class HttpGenericProvider(client: WSClient,
     ).collect({
       case (lbl,Some(r)) => lbl -> resourceToMap(r)
     }).toMap
-
+    
     val st = invocation.resource.foldLeft(
       ST(url)
         .add("metaAddress", invocation.metaAddress)
@@ -147,7 +147,7 @@ case class HttpGenericProvider(client: WSClient,
 
     val resp = for {
       expandedUrl <- Future.fromTry(st.render())
-      _ = log.debug(s"template url: ${url} expanded url: ${expandedUrl}")
+      _ = println(s"*****template url: ${url} expanded url: ${expandedUrl}")
       request = authHeader.foldLeft(
           client.url(expandedUrl)
             .withHeaders(params:_*)
@@ -156,8 +156,9 @@ case class HttpGenericProvider(client: WSClient,
           ) {
         case (req, header) => req.withHeaders(AUTHORIZATION -> header)
       }
-      rawResp <- request.execute()
+      rawResp   <- request.execute()
       processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
+
     } yield processed
 
     resp recover {

@@ -70,12 +70,33 @@ trait MetaControllerUtils extends AuthorizationMethods {
   protected[controllers] def throwBadRequest(message: String) =
     throw new BadRequestException(message)
 
+  
+  /*
+   * TODO: both newResourceResult and createProviderBackedResource call this method.
+   * This is the right place to prototype the new 'spec' datatype concept.
+   * 
+   * Get the Type corresponding to the instance we're trying to create.
+   * Check if it has any 'spec' properties.
+   * -- for each spec property, call CreateWithEntitlements
+   * 
+   * must be created top-down (parent of child spec must be created first)
+   * 1.) Add spec datatype to bootstrap
+   * 
+   * 
+   * Get specs from payload
+   * Create instance without specs
+   * Foreach spec:
+   *  - create, setting parent
+   *  - update parent with child
+   *  Recurse on the spec we just created.
+   */
+  
   private[controllers] def CreateWithEntitlements(
       owningOrgId: UUID,
       creator: AccountLike,
       resource: ResourceLike,
       parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-
+/* :) */
     val result = ResourceFactory.create(ResourceIds.User, creator.id)(
       resource.asInstanceOf[GestaltResourceInstance], parentId
     ) map { r =>
