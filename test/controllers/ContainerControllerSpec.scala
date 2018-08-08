@@ -2,34 +2,36 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
-
-import scala.concurrent.Future
-import scala.util.Success
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.matcher.ValueCheck.typedValueCheck
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.meta.genericactions.{GenericProvider, GenericProviderManager}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import controllers.util._
 import modules._
+import org.junit.runner.RunWith
+import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
+import org.specs2.matcher.ValueCheck.typedValueCheck
+import org.specs2.matcher.{JsonMatchers, Matcher}
+import org.specs2.runner.JUnitRunner
+import play.api.inject.bind
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, JsString, Json}
+import play.api.libs.json.{JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
-import play.api.inject.bind
 
+import scala.concurrent.Future
+import scala.util.Success
+
+@RunWith(classOf[JUnitRunner])
 class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources

@@ -2,6 +2,8 @@ package controllers.util
 
 import java.util.UUID
 
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.laser.LaserEndpoint
@@ -30,6 +32,9 @@ import scala.util.Success
 
 class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
 
+  implicit val actorSystem = ActorSystem("test-actor-system")
+  implicit val mat = ActorMaterializer()
+
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   override def beforeAll(): Unit = {
@@ -56,7 +61,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
   )
 
   trait TestApplication extends FakeGatewayScope {
-    
+
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     
