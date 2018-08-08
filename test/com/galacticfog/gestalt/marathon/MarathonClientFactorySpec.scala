@@ -3,27 +3,26 @@ package com.galacticfog.gestalt.marathon
 import java.util.UUID
 
 import akka.actor.{ActorRef, ActorSystem}
+import akka.pattern.ask
 import akka.testkit.{TestActor, TestActorRef, TestKit, TestProbe}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import mockws.{MockWS, Route}
 import org.junit.runner.RunWith
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
-import play.api.test.PlaySpecification
-import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory, MarathonService}
 import play.api.libs.json._
 import play.api.libs.ws.WSClient
-import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
-import play.api.mvc._
-import play.api.mvc.Results._
-import akka.pattern.ask
 import play.api.mvc.BodyParsers.parse
+import play.api.mvc.Results._
+import play.api.mvc._
+import play.api.test.PlaySpecification
+import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
+import services.MarathonService.Properties
+import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory, MarathonService}
 
-import scala.util.Success
 import scala.language.reflectiveCalls
-import MarathonService.Properties
+import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
 class MarathonClientFactorySpec extends PlaySpecification with ResourceScope with BeforeAll {

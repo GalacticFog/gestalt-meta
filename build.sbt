@@ -86,7 +86,7 @@ libraryDependencies ++= Seq(
 
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.7.1" withSources(),
+  "com.galacticfog" %% "gestalt-meta-repository"       % "0.7.2" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.0.1-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.0.1-SNAPSHOT" withSources(),
@@ -108,11 +108,11 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",
 
+  "de.leanovate.play-mockws"  %% "play-mockws" % "2.5.1" % Test,
   Library.Play.specs2          % Test,
   Library.Specs2.matcherExtra  % Test,
   Library.mockito              % Test,
-  Library.akkaTestkit          % Test,
-  "de.leanovate.play-mockws"  %% "play-mockws" % "2.5.1" % Test
+  Library.akkaTestkit          % Test
 )
 
 routesGenerator := InjectedRoutesGenerator
