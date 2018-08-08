@@ -20,6 +20,7 @@ import play.api.test.PlaySpecification
 import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
 import services.MarathonService.Properties
 import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory, MarathonService}
+import mockws.{MockWS, Route}
 
 import scala.language.reflectiveCalls
 import scala.util.Success

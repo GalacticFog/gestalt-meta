@@ -25,6 +25,7 @@ import play.api.mvc.Action
 import play.api.mvc.BodyParsers.parse
 import play.api.mvc.Results.{Ok, Status, Unauthorized}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
+import mockws.{MockWS, Route}
 
 import scala.util.Success
 
@@ -494,7 +495,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       routeInvoke.timeCalled must_== 1
 
       response must beRight(RawInvocationResponse(
-        Some(200), Some("application/json; charset=utf-8"), Some(customResponse.toString)
+        Some(200), Some("application/json"), Some(customResponse.toString)
       ))
     }
 
