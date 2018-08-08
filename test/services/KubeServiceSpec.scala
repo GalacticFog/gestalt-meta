@@ -539,7 +539,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       )
 
       val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
-      there were three(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef))
+      there were three(testSetup.kubeClient).create(serviceCaptor.capture())(any,meq(Service.svcDef),any)
       val createdServices = serviceCaptor.getAllValues.toSeq
       createdServices.size must_== 3
       createdServices must contain(eachOf(
@@ -719,7 +719,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.livenessProbe) ^^ beSome(
             skuber.Probe(skuber.HTTPGetAction(Left(8443), "", "/youGoodAndSecure", "HTTPS"), 31, 6)
           ))
-      ))(any,meq(Deployment.deployDef))
+      ))(any,meq(Deployment.deployDef),any)
     }
 
     "throw exception for invalid port_index in health checks" in new FakeKubeCreate(
@@ -1460,7 +1460,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
       val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
       testSetup.kubeClient.getOption(meq(metaContainer.name))(any,meq(skuber.ext.Deployment.deployDef),any) returns Future.successful(Some(testDepl))
-      testSetup.kubeClient.update(any)(any,meq(Deployment.deployDef)) answers {
+      testSetup.kubeClient.update(any)(any,meq(Deployment.deployDef),any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
           val depl = arr(0).asInstanceOf[skuber.ext.Deployment]
