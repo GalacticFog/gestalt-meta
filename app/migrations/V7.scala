@@ -2,6 +2,8 @@ package migrations
 
 import java.util.UUID
 
+import akka.actor.ActorSystem
+import akka.stream.Materializer
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.data.models._
@@ -11,6 +13,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
+import com.google.inject.Inject
 import controllers.util.{AccountLike, JsonUtil, ProviderMethods, TypeMethods}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
@@ -20,7 +23,7 @@ import scala.concurrent.duration._
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
 
-class V7 extends MetaMigration with AuthorizationMethods {
+class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration with AuthorizationMethods {
 
   import V7._
 

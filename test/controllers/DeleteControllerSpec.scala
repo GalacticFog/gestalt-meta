@@ -101,7 +101,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
       mockLambdaMethods.deleteLambdaHandler(any) returns Try(())
 
-      val Some(result) = route(fakeAuthRequest(
+      val Some(result) = route(app,fakeAuthRequest(
         DELETE,
         s"/root/environments/${testEnv.id}/lambdas/${testLambda.id}", testCreds
       ))
@@ -117,7 +117,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
       mockGatewayMethods.deleteEndpointHandler(any) returns Try(())
 
-      val Some(result) = route(fakeAuthRequest(
+      val Some(result) = route(app,fakeAuthRequest(
         DELETE,
         s"/root/environments/${testEnv.id}/apiendpoints/${testEndpoint.id}", testCreds
       ))
@@ -133,7 +133,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
       mockGatewayMethods.deleteApiHandler(any) returns Try(())
 
-      val Some(result) = route(fakeAuthRequest(
+      val Some(result) = route(app,fakeAuthRequest(
         DELETE,
         s"/root/environments/${testEnv.id}/apis/${testApi.id}?force=true", testCreds
       ))

@@ -2,10 +2,10 @@ package controllers
 
 
 import java.net.URL
-
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.{Either, Left, Right}
 import scala.util.{Failure, Success, Try}
@@ -16,7 +16,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk._
-
 import controllers.util._
 import controllers.util.JsonUtil._
 import controllers.util.db.EnvConfig
@@ -27,13 +26,12 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 
 import scala.util.Either
 import com.galacticfog.gestalt.keymgr.GestaltFeature
-
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import com.galacticfog.gestalt.json.Js
-
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import javax.inject.Singleton
 import play.api.libs.ws.WSClient
 
@@ -47,8 +45,8 @@ class LambdaController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
     providerMethods: ProviderMethods,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-      extends SecureController(messagesApi = messagesApi, env = env) with Authorization with JsonInput {
+    sec: GestaltFrameworkSecurity)
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with JsonInput {
   
   /*
    * This is the provider variable containing the provider host address.
@@ -83,7 +81,7 @@ class LambdaController @Inject()(
    * TODO: Overload this method - take payload JSON directly instead of from request.body
    */
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
-      (implicit request: SecuredRequest[JsValue]): Future[play.api.mvc.Result] = {
+      (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[play.api.mvc.Result] = {
     
     toInput(request.body) match {
       

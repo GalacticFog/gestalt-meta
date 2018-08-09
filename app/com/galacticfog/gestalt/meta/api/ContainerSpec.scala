@@ -354,8 +354,8 @@ case object ContainerSpec extends Spec {
       ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
       ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq.empty)) and
-      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map())) and
-      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map())) and
+      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
+      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
       (__ \ "user").readNullable[String] and
       ((__ \ "secrets").read[Seq[SecretMount]] orElse Reads.pure(Seq.empty))
     )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,_))

@@ -44,7 +44,7 @@ override def beforeAll(): Unit = ()
       
       val js = Json.arr()
       val request = fakeAuthRequest(GET, s"root/licenses", testCreds)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       
       status(result) must equalTo(OK)
       

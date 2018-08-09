@@ -83,7 +83,7 @@ case class HttpGenericProvider(client: WSClient,
       RawInvocationResponse(
           statusCode = Some(response.status), 
           contentType = response.header(CONTENT_TYPE), 
-          contentString = Try{response.bodyAsBytes}.toOption.map(bts => new String(bts)))
+          contentString = Try{response.bodyAsBytes}.toOption.map(_.utf8String))
     ))
     
     response.status match {

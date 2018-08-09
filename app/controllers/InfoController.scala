@@ -1,26 +1,23 @@
 package controllers
 
 import com.galacticfog.gestalt.meta.api.BuildInfo
-import controllers.util.{MetaHealth, SecureController}
-import controllers.util.db.EnvConfig
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-import play.api.mvc.Action
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
+import controllers.util.db.EnvConfig
+import controllers.util.{MetaHealth, SecureController}
 import javax.inject.Singleton
-import com.galacticfog.gestalt.meta.api.audit.Audit
+import play.api.i18n.MessagesApi
+import play.api.libs.json.{JsValue, Json}
+import play.api.mvc.Action
 
 @Singleton
 class InfoController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     metaHealth: MetaHealth)
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   case class AboutMeta(status: String,
                        url: String,
@@ -86,9 +83,6 @@ class InfoController @Inject()(
 
   def options(path: String) = Action {Ok("")}
   
-  
-  import com.galacticfog.gestalt.meta.api.audit._
-  
   def serviceCheck() = Audited() { implicit request =>
     request.queryString.get("feature").fold {
       throw new BadRequestException(s"Must supply value for `?feature` query param")
@@ -105,10 +99,12 @@ class InfoController @Inject()(
   }
 
   
-  import scala.io.Source
-  import controllers.util.QueryString
+  import java.nio.file.{Files, Paths}
+
   import com.galacticfog.gestalt.meta.api.errors._
-  import java.nio.file.{Paths,Files}
+  import controllers.util.QueryString
+
+  import scala.io.Source
   
   def readAuditLogs() = Audited() { implicit request =>
     val fileVar = "META_AUDIT_LOG_FILE"

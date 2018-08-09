@@ -38,11 +38,10 @@ class ProviderActionMethodsSpec extends PlaySpecification with MetaRepositoryOps
     additionalBindings = Seq(
       bind(classOf[LambdaMethods]).toInstance(mockLambdaMethods)
     )
-  ))
-  
-  val methods = injector.instanceOf[ProviderActionMethods]
-  
-  
+  )) {
+    lazy val methods = app.injector.instanceOf[ProviderActionMethods]
+  }
+
   "resolveActionImplementation" should {
 
     "with implementation.id" should {

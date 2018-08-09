@@ -2,6 +2,8 @@ package controllers.util
 
 import java.util.UUID
 
+import akka.actor.ActorSystem
+import akka.stream.ActorMaterializer
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.laser.LaserEndpoint
@@ -30,6 +32,9 @@ import scala.util.Success
 
 class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
 
+  implicit val actorSystem = ActorSystem("test-actor-system")
+  implicit val mat = ActorMaterializer()
+
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
   override def beforeAll(): Unit = {
@@ -56,7 +61,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
   )
 
   trait TestApplication extends FakeGatewayScope {
-    
+
     var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     
@@ -456,7 +461,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "post against api-gateway provider to create api" in new TestApplication {
       val testApiName = uuid().toString
       val testApiId   = uuid()
-      val Some(createdApiResponse) = route(fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/apis", testCreds).withBody(Json.obj(
+      val Some(createdApiResponse) = route(app,fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/apis", testCreds).withBody(Json.obj(
         "id" -> testApiId,
         "name" -> testApiName,
         "properties" -> Json.obj(
@@ -475,7 +480,7 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     "post against api-gateway provider to create apiendpoint" in new TestApplication {
       val testEndpointName = uuid().toString
       val testEndpointId   = uuid()
-      val Some(createEndpointResult) = route(fakeAuthRequest(POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds).withBody(Json.obj(
+      val Some(createEndpointResult) = route(app,fakeAuthRequest(POST, s"/root/apis/${testApi.id}/apiendpoints", testCreds).withBody(Json.obj(
         "id" -> testEndpointId,
         "name" -> testEndpointName,
         "properties" -> Json.obj(

@@ -21,28 +21,28 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.EnvironmentType
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.galacticfog.gestalt.data.ResourceFactory.update
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
-
 import com.galacticfog.gestalt.json.Js
 import play.api.mvc.{RequestHeader, Result}
 import com.galacticfog.gestalt.meta.api.output._
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
 @Singleton
 class PatchController @Inject()( 
      messagesApi: MessagesApi,
-     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+     sec: GestaltFrameworkSecurity,
      groupMethods: GroupMethods,
      gatewayMethods: GatewayMethods,
      lambdaMethods: LambdaMethods,
      containerService: ContainerService,
      genericResourceMethods: GenericResourceMethods,
      resourceController: ResourceController )
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   /*
    * Function to transform a PatchDocument
@@ -174,7 +174,7 @@ class PatchController @Inject()(
    * @param target the Resource to be modified
    */
   private[controllers] def applyPatch( target: GestaltResourceInstance )
-                                     ( implicit request: SecuredRequest[JsValue] ): Future[Result] = {
+                                     ( implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] ): Future[Result] = {
 
     val user = request.identity
     val action = actionInfo(target.typeId).prefix + ".update"
@@ -248,7 +248,7 @@ class PatchController @Inject()(
   }
   
   private[controllers] def Patch(resource: GestaltResourceInstance)(
-      implicit request: SecuredRequest[JsValue]): Future[GestaltResourceInstance] = {
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[GestaltResourceInstance] = {
     Patch(resource, request.body, request.identity, request)
   }
   

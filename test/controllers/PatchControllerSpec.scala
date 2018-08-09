@@ -211,7 +211,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         s"/root/lambdas/${testLambda.id}", testCreds
       ).withBody(patchDoc.toJson)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(OK)
 
@@ -237,7 +237,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           s"/root/users/${user.account.id}", testCreds
         ).withBody(patchDoc.toJson)
 
-        val Some(result) = route(request)
+        val Some(result) = route(app,request)
         status(result) must equalTo(OK)
 
         there was one(mockSecurity).updateAccount(
@@ -259,7 +259,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
           s"/root/users/${user.account.id}", testCreds
         ).withBody(patchDoc.toJson)
 
-        val Some(result) = route(request)
+        val Some(result) = route(app,request)
         status(result) must equalTo(OK)
 
         there was one(mockSecurity).updateAccount(
@@ -283,7 +283,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         s"/root/apiendpoints/${testEndpoint.id}", testCreds
       ).withBody(patchDoc.toJson)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(OK)
 
@@ -309,7 +309,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
         s"/root/environments/${testEnv.id}/containers/${testContainer.id}", testCreds
       ).withBody(patchDoc.toJson)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(OK)
       (contentAsJson(result) \ "properties" \ "image").as[String] must_== "nginx:upgrade"

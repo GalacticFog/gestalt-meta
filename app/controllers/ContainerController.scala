@@ -3,49 +3,38 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.PropertyValidator
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
-import com.galacticfog.gestalt.meta.api.output.Output
-
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.{EnvironmentType, PropertyValidator, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.json._
+import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
+import com.google.inject.Inject
 import controllers.util._
+import javax.inject.Singleton
+import play.api.i18n.MessagesApi
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
+import services._
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
-import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
-
 import scala.language.postfixOps
-import javax.inject.Singleton
-
-import services._
-import com.galacticfog.gestalt.json._
-import com.galacticfog.gestalt.data.EnvironmentType
+import scala.util.{Failure, Success, Try}
 
 
 @Singleton
 class ContainerController @Inject()( 
      messagesApi: MessagesApi,
-     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+     sec: GestaltFrameworkSecurity,
      containerService: ContainerService,
      providerManager: ProviderManager,
      genericResourceMethods: GenericResourceMethods,
      db: play.api.db.Database)
-    extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+    extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
@@ -56,9 +45,9 @@ class ContainerController @Inject()(
     UUID.fromString((Json.parse(c.properties.get("provider")) \ "id").as[String])
   }
   
+  import ContainerController._
   import com.galacticfog.gestalt.meta.api.errors._
   import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-  import ContainerController._
   
   private[controllers] def specToInstance(
       fqon: String, 

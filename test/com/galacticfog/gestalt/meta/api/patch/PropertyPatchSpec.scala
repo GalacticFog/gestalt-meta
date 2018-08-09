@@ -36,7 +36,7 @@ class PropertyPatchSpec extends Specification with ResourceScope with BeforeAll 
       val esc6 = "{\"typeId\":\"7\",\"id\":\"1\",\"name\":\"dev\",\"href\":\"http://example.com\"}"
       
       PropertyPatch.unescape(esc1) must haveClass[JsArray]
-      PropertyPatch.unescape(esc2) must haveClass[JsBoolean]
+      PropertyPatch.unescape(esc2) must_== JsFalse
       PropertyPatch.unescape(esc3) must haveClass[JsNumber]
       PropertyPatch.unescape(esc4) must haveClass[JsString]
       PropertyPatch.unescape(esc5) must haveClass[JsString]

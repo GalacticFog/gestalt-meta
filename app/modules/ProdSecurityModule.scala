@@ -6,14 +6,11 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
-import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkAuthProvider, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltSecurityEnvironment}
 import com.google.inject.AbstractModule
-import javax.inject.Named
-import com.mohiva.play.silhouette.api.services.{AuthenticatorService, IdentityService}
-import com.mohiva.play.silhouette.api.{EventBus, RequestProvider}
-import com.mohiva.play.silhouette.impl.authenticators.{DummyAuthenticator, DummyAuthenticatorService}
-import controllers.util.JsonInput
-import javax.inject.{Inject, Singleton}
+import com.mohiva.play.silhouette.api.EventBus
+import com.mohiva.play.silhouette.api.services.IdentityService
+import javax.inject.{Inject, Named, Singleton}
 import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
 import play.api.libs.ws.WSClient
@@ -25,7 +22,7 @@ class ProdSecurityModule extends AbstractModule with ScalaModule {
 
   override def configure(): Unit = {
     bind[SecurityClientProvider].to[GestaltLateInitSecurityEnvironment]
-    bind[GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator]].to[GestaltLateInitSecurityEnvironment]
+    bind[GestaltSecurityEnvironment[AuthAccountWithCreds]].to[GestaltLateInitSecurityEnvironment]
     bind[SecurityKeyInit].to[GestaltLateInitSecurityEnvironment]
     bind[EventBus].toInstance(EventBus())
     bind[IdentityService[AuthAccountWithCreds]].toInstance(new AccountServiceImplWithCreds())
@@ -34,7 +31,7 @@ class ProdSecurityModule extends AbstractModule with ScalaModule {
 }
 
 trait SecurityKeyInit {
-  def init(org: UUID, caller: AuthAccountWithCreds /*apiKey: String, apiSecret: String*/): Unit
+  def init(org: UUID, caller: AuthAccountWithCreds): Unit
 }
 
 trait SecurityClientProvider {
@@ -50,12 +47,10 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
                                                      appconfig: play.api.Configuration,
                                                      @Named(SystemConfigActor.name) configActor: ActorRef )
                                                    ( implicit ec: ExecutionContext )
-  extends GestaltSecurityEnvironment[AuthAccountWithCreds, DummyAuthenticator]
-    with SecurityClientProvider with SecurityKeyInit {
+  extends GestaltSecurityEnvironment[AuthAccountWithCreds] with SecurityClientProvider with SecurityKeyInit {
 
   private val logger = Logger(this.getClass)
 
-  private object jsonInput extends JsonInput {}
   private val KEY_NAME = "GESTALT_SECURITY_KEY"
   private val KEY_SECRET = "GESTALT_SECURITY_SECRET"  
   
@@ -86,23 +81,6 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
     )
   }
 
-  override def identityService: IdentityService[AuthAccountWithCreds] = identitySvc
-
-  override def authenticatorService: AuthenticatorService[DummyAuthenticator] = new DummyAuthenticatorService()(ec)
-
-  override def requestProviders: Seq[RequestProvider] = {
-    Try { client } match {
-      case Success(c) => Seq(new GestaltFrameworkAuthProvider(client))
-      case Failure(e) =>
-        logger.warn("could not instantiate authentication provider",e)
-        Seq.empty
-    }
-  }
-
-  override def eventBus: EventBus = bus
-
-  override implicit val executionContext: ExecutionContext = ec
-  
   override def init(org: UUID, caller: AuthAccountWithCreds) = {
 
     val creds = caller.creds.asInstanceOf[GestaltBasicCredentials]

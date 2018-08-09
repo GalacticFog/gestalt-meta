@@ -24,7 +24,7 @@ import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
@@ -40,7 +40,6 @@ import scala.language.implicitConversions
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import javax.inject.Singleton
-
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.data._
@@ -49,10 +48,11 @@ import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
 import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
 @Singleton
 class Meta @Inject()( messagesApi: MessagesApi,
-                      env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+                      sec: GestaltFrameworkSecurity,
                       security: Security,
                       securitySync: SecuritySync,
                       lambdaMethods: LambdaMethods,
@@ -60,7 +60,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
                       providerManager: ProviderManager,
                       genericResourceMethods: GenericResourceMethods )
 
-      extends SecureController(messagesApi = messagesApi, env = env)
+      extends SecureController(messagesApi = messagesApi, sec = sec)
         with Authorization with MetaControllerUtils {
   
   // --------------------------------------------------------------------------
@@ -80,7 +80,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     createOrgCommon(fqid(fqon))
   }
   
-  def createOrgCommon(parentOrg: UUID)(implicit request: SecuredRequest[JsValue]) = Future {
+  def createOrgCommon(parentOrg: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = Future {
     
     val json = request.body
     val user = request.identity
@@ -109,7 +109,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = {
+  def createGroupCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     
     Authorize(org, "group.create", request.identity) {
       
@@ -237,7 +237,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   }
   
 
-  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[JsValue]) = Future {
+  def createUserCommon(org: UUID, json: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = Future {
     log.debug(s"createUserCommon($org, ...) => JSON: ${json.toString}")
     
     Authorize(org, "user.create", request.identity) {
@@ -597,7 +597,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 //  }  
   
   def postProviderCommon(org: UUID, parentType: String, parentId: UUID, json: JsValue)(
-    implicit request: SecuredRequest[JsValue]) = {
+    implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
 
     val providerType = resolveProviderType(json)
     val parentTypeId = UUID.fromString(parentType)
@@ -767,7 +767,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
   private def CreateSynchronized[T](caller: AuthAccountWithCreds, org: UUID, typeId: UUID, json: JsValue)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
-    (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
+    (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]): Try[GestaltResourceInstance] = {
     
     log.debug(s"CreateSynchronized(org = $org, typeId = $typeId)")
 
@@ -779,7 +779,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   
   private def syncWithSecurity[T](caller: AuthAccountWithCreds, org: UUID, typeId: UUID, input: GestaltResourceInput)
     (sc: SecurityResourceFunction, mc: MetaResourceFunction)
-    (implicit request: SecuredRequest[T]): Try[GestaltResourceInstance] = {
+    (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]): Try[GestaltResourceInstance] = {
 
     val stringprops = stringmap(input.properties)
     val creator = request.identity//.account.id
@@ -813,7 +813,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
   /**
    * Unwrap the given UUID or get the root org_id if None.
    */
-  private def orgOrElseRoot[T](org: Option[UUID])(implicit request: SecuredRequest[T]) = org getOrElse {
+  private def orgOrElseRoot[T](org: Option[UUID])(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = org getOrElse {
     security.getRootOrg(request.identity) match {
       case Success(org) => org.id
       case Failure(ex)  => throw ex

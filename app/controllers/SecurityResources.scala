@@ -1,7 +1,5 @@
 package controllers
 
-
-
 import java.util.UUID
 import scala.util.{Try, Success, Failure}
 import com.galacticfog.gestalt.data.Hstore

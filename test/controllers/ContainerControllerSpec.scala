@@ -2,34 +2,36 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
-
-import scala.concurrent.Future
-import scala.util.Success
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.matcher.ValueCheck.typedValueCheck
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.meta.genericactions.{GenericProvider, GenericProviderManager}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
 import controllers.util._
 import modules._
+import org.junit.runner.RunWith
+import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
+import org.specs2.matcher.ValueCheck.typedValueCheck
+import org.specs2.matcher.{JsonMatchers, Matcher}
+import org.specs2.runner.JUnitRunner
+import play.api.inject.bind
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, JsString, Json}
+import play.api.libs.json.{JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
-import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
-import play.api.inject.bind
+import services._
 
+import scala.concurrent.Future
+import scala.util.Success
+
+@RunWith(classOf[JUnitRunner])
 class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
@@ -72,6 +74,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       bind[ProviderManager].toInstance(mock[ProviderManager]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
       bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods])
     )
@@ -82,31 +85,24 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       .build
   }
 
-  abstract class TestContainerController extends WithApplication(appWithMocks()) {
-    var testWork: GestaltResourceInstance = null
-    var testEnv: GestaltResourceInstance = null
-    var containerService: ContainerService = null
-    var providerManager: ProviderManager = null
+  abstract class TestContainerController extends WithDb(appWithMocks()) {
+    lazy val (testWork,testEnv) = {
+      val Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      Ents.setNewResourceEntitlements(dummyRootOrgId, tE.id, user, Some(tW.id))
+      (tW,tE)
+    }
+    lazy val containerService = app.injector.instanceOf[ContainerService]
+    lazy val providerManager = app.injector.instanceOf[ProviderManager]
 
-    var testProvider: GestaltResourceInstance = null
-    var mockCaasService: CaasService = null
+    lazy val testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
+    lazy val mockCaasService = {
+      val m = mock[CaasService]
+      providerManager.getProviderImpl(testProvider.typeId) returns Success(m)
+      m
+    }
 
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
-
-      val Success(wrkEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = wrkEnv._1
-      testEnv = wrkEnv._2
-
-      Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
-      val injector = app.injector
-      containerService = injector.instanceOf[ContainerService]
-      providerManager = injector.instanceOf[ProviderManager]
-
-      testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
-      mockCaasService = mock[CaasService]
-      providerManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
       t
     }
   }
@@ -342,7 +338,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val path = s"/root/environments/${testEnv.id}/containers/${testContainer.id}"
       val request = fakeAuthRequest(GET, path, testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       contentAsString(result) must /("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
@@ -397,7 +393,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
     }
 
@@ -461,7 +457,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       there was one(containerService).updateContainer(
         any,
@@ -535,7 +531,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       there was one(containerService).updateContainer(
         any,
@@ -599,7 +595,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val path = s"/root/environments/${testEnv.id}/containers?expand=true"
       val request = fakeAuthRequest(GET, path, testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       contentAsString(result) must /#(0) / ("id" -> testContainer.id.toString)
       status(result) must equalTo(OK)
@@ -629,7 +625,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("not found")
@@ -683,7 +679,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(CREATED)
 
@@ -752,7 +748,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/containers", testCreds).withBody(
         Output.renderInstance(newResource)
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "id").asOpt[UUID] must beSome(userSpecificUUID)
@@ -821,7 +817,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/containers/${createdResource.id}", testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(NO_CONTENT)
 
@@ -883,7 +879,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         s"/root/containers/${createdResource.id}/scale?numInstances=4", testCreds
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(ACCEPTED)
 
@@ -957,7 +953,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       ))
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
@@ -978,7 +974,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("/properties/provider/id")
     }
@@ -997,7 +993,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must contain("CaasProvider") and contain("not found")
     }
@@ -1036,7 +1032,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         Output.renderInstance(newResource)
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(ACCEPTED)
 
       there was one(containerService).createSecret(
@@ -1092,7 +1088,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val request = fakeAuthRequest(DELETE,
         s"/root/environments/${testEnv.id}/secrets/${createdResource.id}", testCreds)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(NO_CONTENT)
 

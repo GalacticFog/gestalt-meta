@@ -2,21 +2,22 @@ package services
 
 import java.util.UUID
 
-import scala.annotation.implicitNotFound
+import akka.actor.ActorSystem
+import akka.stream.Materializer
+
 import scala.concurrent.ExecutionContext
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.Future
 import scala.language.implicitConversions
 import scala.language.postfixOps
-
 import com.galacticfog.gestalt.caas.kube.Ascii
 import com.galacticfog.gestalt.caas.kube.KubeConfig
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-
+import com.google.inject.{Singleton,Inject}
+import play.api.Logger
 import skuber.api.client.RequestContext
-import skuber.api.client.log
 
 
 trait SkuberFactory {
@@ -24,7 +25,10 @@ trait SkuberFactory {
                     ( implicit ec: ExecutionContext ): Future[RequestContext]
 }
 
-class DefaultSkuberFactory extends SkuberFactory {
+@Singleton
+class DefaultSkuberFactory @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends SkuberFactory {
+
+  val log = Logger(this.getClass)
 
   /**
     *
@@ -41,7 +45,6 @@ class DefaultSkuberFactory extends SkuberFactory {
   private[services] def loadProviderConfiguration(provider: UUID)(
     implicit ec: ExecutionContext): Future[String] = Future {
 
-    log.debug("loadProviderConfiguration({})", provider.toString)
     val prv = ResourceFactory.findById(provider) getOrElse {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }

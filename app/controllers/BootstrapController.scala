@@ -3,33 +3,30 @@ package controllers
 import java.time.ZonedDateTime
 import java.util.UUID
 
-import scala.util.{Try,Success,Failure}
-
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.meta.api.errors.ForbiddenException
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.galacticfog.gestalt.security.api.{GestaltOrg,GestaltAccount,GestaltBasicCredentials}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.play.silhouette.GestaltSecurityEnvironment
+import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltBasicCredentials, GestaltOrg}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-
-import controllers.util.{Security,SecureController,HandleExceptions}
+import controllers.util.{HandleExceptions, SecureController, Security}
 import javax.inject.Singleton
+import migrations.MigrationController
 import modules.SecurityKeyInit
+import play.api.Logger
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
-import migrations.MigrationController
+import scala.util.{Failure, Success, Try}
 
 @Singleton
 class BootstrapController @Inject()( 
        messagesApi: MessagesApi,
-       env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+       sec: GestaltFrameworkSecurity,
        providerManager: ProviderManager,
        security: Security,
        securityInit: SecurityKeyInit,
@@ -37,8 +34,9 @@ class BootstrapController @Inject()(
        db: play.api.db.Database,
        appconfig: play.api.Configuration,
        migration: MigrationController)
-     extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
-  
+     extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
+
+  val logger = Logger(this.getClass)
   
   def initProviders() = Audited() { implicit request =>
     val results = providerManager.loadProviders()
@@ -131,11 +129,10 @@ class BootstrapController @Inject()(
     }
   }
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
-          
-  
+  import com.galacticfog.gestalt.data.ResourceState
+  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+  import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
+
   private[controllers] def createAdminUser(
       admin: GestaltAccount, org: GestaltOrg): Try[GestaltResourceInstance] = {
     

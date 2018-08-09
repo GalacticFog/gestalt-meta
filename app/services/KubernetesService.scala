@@ -247,7 +247,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   private def getContainerServices(kube: RequestContext, containerId: UUID): Future[ContainerServices] = {
-    kube.list[ServiceList](LabelSelector(LabelSelector.IsEqualRequirement(
+    kube.listSelected[ServiceList](LabelSelector(LabelSelector.IsEqualRequirement(
       META_CONTAINER_KEY, containerId.toString
     ))) map { svcList =>
       ContainerServices(
@@ -454,7 +454,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
                                                                   rd: skuber.ResourceDefinition[ListResource[O]] ) : Future[List[Unit]] = {
     val otype = typeOf[O]
     for {
-      foundResources <- kube.list[ListResource[O]](label._1 is label._2) map (_.items)
+      foundResources <- kube.listSelected[ListResource[O]](label._1 is label._2) map (_.items)
       _ = log.debug(s"found ${foundResources.size} ${otype} resources")
       deletes <- Future.traverse(foundResources){
         d =>
@@ -988,14 +988,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val lblSelector = LabelSelector(LabelSelector.IsEqualRequirement(META_CONTAINER_KEY, container.id.toString))
     cleanly(context.providerId, context.environment.id.toString)( kube =>
       for {
-        maybeDepl <- kube.list[DeploymentList](lblSelector) map (_.items.headOption)
+        maybeDepl <- kube.listSelected[DeploymentList](lblSelector) map (_.items.headOption)
         pods <- maybeDepl match {
           case None    => Future.successful(Nil)
-          case Some(_) => kube.list[PodList](lblSelector) map (_.items)
+          case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
         }
         maybeLbSvc <- maybeDepl match {
           case None    => Future.successful(None)
-          case Some(_) => kube.list[ServiceList](lblSelector).map {
+          case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
             _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
           }
         }
@@ -1005,9 +1005,9 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = cleanly(context.providerId, context.environment.id.toString) { kube =>
-    val fDepls = kube.list[DeploymentList]
+    val fDepls = kube.list[DeploymentList]()
     val fAllPods = kube.list[PodList]()
-    val fAllServices = kube.list[ServiceList]
+    val fAllServices = kube.list[ServiceList]()
     for {
       depls <- fDepls
       allPods <- fAllPods

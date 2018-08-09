@@ -11,22 +11,21 @@ import com.galacticfog.gestalt.meta.genericactions._
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
-import mockws.{MockWS, Route}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.{BeforeAll, Scope}
+import play.api.http.HeaderNames
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.libs.json.Reads._
+import play.api.libs.json.{JsObject, JsValue, Json, _}
 import play.api.libs.ws.WSClient
 import play.api.mvc.Action
+import play.api.mvc.BodyParsers.parse
 import play.api.mvc.Results.{Ok, Status, Unauthorized}
 import play.api.test.{DefaultAwaitTimeout, FutureAwaits, PlaySpecification}
-import play.api.mvc.BodyParsers.parse
-import play.api.libs.json._
-import play.api.libs.json.Reads._
-import play.api.http.HeaderNames
+import mockws.{MockWS, Route}
 
 import scala.util.Success
 
@@ -496,7 +495,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       routeInvoke.timeCalled must_== 1
 
       response must beRight(RawInvocationResponse(
-        Some(200), Some("application/json; charset=utf-8"), Some(customResponse.toString)
+        Some(200), Some("application/json"), Some(customResponse.toString)
       ))
     }
 
@@ -532,9 +531,8 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
   }
 
-  import com.galacticfog.gestalt.data.bootstrap.{SystemType, TypeProperty}
   import com.galacticfog.gestalt.data.TypeFactory
-  import scala.concurrent.Future
+  import com.galacticfog.gestalt.data.bootstrap.SystemType
   
   //lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID)
   "lookupProvider" should {
