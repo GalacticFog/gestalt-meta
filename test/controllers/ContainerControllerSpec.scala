@@ -26,7 +26,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsString, Json}
 import play.api.test.{PlaySpecification, WithApplication}
-import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
+import services._
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -74,6 +74,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       bind[ProviderManager].toInstance(mock[ProviderManager]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
       bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods])
     )
@@ -84,31 +85,24 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       .build
   }
 
-  abstract class TestContainerController extends WithApplication(appWithMocks()) {
-    var testWork: GestaltResourceInstance = null
-    var testEnv: GestaltResourceInstance = null
-    var containerService: ContainerService = null
-    var providerManager: ProviderManager = null
+  abstract class TestContainerController extends WithDb(appWithMocks()) {
+    lazy val (testWork,testEnv) = {
+      val Success((tW,tE)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+      Ents.setNewResourceEntitlements(dummyRootOrgId, tE.id, user, Some(tW.id))
+      (tW,tE)
+    }
+    lazy val containerService = app.injector.instanceOf[ContainerService]
+    lazy val providerManager = app.injector.instanceOf[ProviderManager]
 
-    var testProvider: GestaltResourceInstance = null
-    var mockCaasService: CaasService = null
+    lazy val testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
+    lazy val mockCaasService = {
+      val m = mock[CaasService]
+      providerManager.getProviderImpl(testProvider.typeId) returns Success(m)
+      m
+    }
 
     override def around[T: AsResult](t: => T): Result = super.around {
       scalikejdbc.config.DBs.setupAll()
-
-      val Success(wrkEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-      testWork = wrkEnv._1
-      testEnv = wrkEnv._2
-
-      Ents.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-
-      val injector = app.injector
-      containerService = injector.instanceOf[ContainerService]
-      providerManager = injector.instanceOf[ProviderManager]
-
-      testProvider = createKubernetesProvider(testEnv.id, "test-kube-provider").get
-      mockCaasService = mock[CaasService]
-      providerManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
       t
     }
   }
