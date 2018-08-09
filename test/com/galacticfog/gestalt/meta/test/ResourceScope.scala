@@ -38,7 +38,7 @@ trait ResourceScope extends Scope with Mockito {
     classOf[ProdSecurityModule],
     classOf[modules.MetaDefaultServices]
   )
-  lazy val injector = appBuilder.injector()
+  private[this] lazy val injector = appBuilder.injector()
  
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
