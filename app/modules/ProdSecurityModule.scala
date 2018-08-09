@@ -6,9 +6,9 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
-import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltSecurityEnvironment}
-import com.google.inject.AbstractModule
-import com.mohiva.play.silhouette.api.EventBus
+import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.google.inject.{AbstractModule, Provider}
+import com.mohiva.play.silhouette.api.{EventBus, Silhouette, SilhouetteProvider}
 import com.mohiva.play.silhouette.api.services.IdentityService
 import javax.inject.{Inject, Named, Singleton}
 import net.codingwell.scalaguice.ScalaModule
@@ -21,11 +21,11 @@ import scala.util.{Failure, Success, Try}
 class ProdSecurityModule extends AbstractModule with ScalaModule {
 
   override def configure(): Unit = {
+    bind[Silhouette[GestaltFrameworkSecurityEnvironment]].to[SilhouetteProvider[GestaltFrameworkSecurityEnvironment]]
     bind[SecurityClientProvider].to[GestaltLateInitSecurityEnvironment]
     bind[GestaltSecurityEnvironment[AuthAccountWithCreds]].to[GestaltLateInitSecurityEnvironment]
+    bind[GestaltSecurityConfig].toProvider[GestaltLateInitSecurityEnvironment]
     bind[SecurityKeyInit].to[GestaltLateInitSecurityEnvironment]
-    bind[EventBus].toInstance(EventBus())
-    bind[IdentityService[AuthAccountWithCreds]].toInstance(new AccountServiceImplWithCreds())
   }
 
 }
@@ -47,7 +47,7 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
                                                      appconfig: play.api.Configuration,
                                                      @Named(SystemConfigActor.name) configActor: ActorRef )
                                                    ( implicit ec: ExecutionContext )
-  extends GestaltSecurityEnvironment[AuthAccountWithCreds] with SecurityClientProvider with SecurityKeyInit {
+  extends GestaltSecurityEnvironment[AuthAccountWithCreds] with SecurityClientProvider with SecurityKeyInit with Provider[GestaltSecurityConfig] {
 
   private val logger = Logger(this.getClass)
 
@@ -80,6 +80,8 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
       None
     )
   }
+
+  override def get: GestaltSecurityConfig = config
 
   override def init(org: UUID, caller: AuthAccountWithCreds) = {
 
