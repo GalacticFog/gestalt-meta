@@ -10,6 +10,8 @@ version := "0.6.115"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
+testFrameworks := Seq(TestFrameworks.Specs2)
+
 resolvers ++= Seq(
   "jwtig" at  "https://jcenter.bintray.com/",
   "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
