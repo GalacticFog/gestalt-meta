@@ -21,6 +21,7 @@
   <logger name="com.galacticfog" level="INFO"/>
   <logger name="application"  level="INFO" />
   <logger name="org.flywaydb" level="INFO"/>
+  <logger name="org.asynchttpclient.netty" level="WARN"/>
   <logger name="scalikejdbc" level="ERROR"/>
   <logger name="com.ning" level="ERROR"/>
   <logger name="javax" level="ERROR"/>

@@ -2,33 +2,26 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserEndpoint, LaserLambda}
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.laser.{LaserLambda, _}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, HostConfig, JsonClient, ResourceIds, ResourceStates}
+import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.{BeforeAll, Scope}
+import play.api.http.HttpVerbs
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsBoolean, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.{FakeRequest, PlaySpecification}
-import play.api.mvc._
-import play.api.mvc.Results._
-import play.api.http.HttpVerbs._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.{JsValue, Json}
 import play.api.libs.ws.WSResponse
-import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
-import play.api.http.HttpVerbs
+import play.api.test.{FakeRequest, PlaySpecification}
 
 import scala.concurrent.Future
 import scala.util.Success
