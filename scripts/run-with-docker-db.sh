@@ -37,7 +37,7 @@ false)
 *)
   echo Starting DB container
   docker pull postgres:9.4
-  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e POSTGRES_USER=$DBUSER -e POSTGRES_PASSWORD=$DBPASS postgres:9.4)
+  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e POSTGRES_DB=$DBNAME -e POSTGRES_USER=$DBUSER -e POSTGRES_PASSWORD=$DBPASS postgres:9.4)
   ;;
 esac
 
@@ -99,5 +99,8 @@ Running gestalt-meta on http://localhost:14374
 
 "
 sbt -jvm-debug 10000 "run -Dhttp.port=14374 -Dlogger.application=TRACE $*"
+
+# prod
+# sbt testProd
 
 exit 0

@@ -6,10 +6,11 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
-import com.galacticfog.gestalt.security.play.silhouette.{AccountServiceImplWithCreds, AuthAccountWithCreds, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.{AbstractModule, Provider}
-import com.mohiva.play.silhouette.api.{EventBus, Silhouette, SilhouetteProvider}
 import com.mohiva.play.silhouette.api.services.IdentityService
+import com.mohiva.play.silhouette.api.{EventBus, Silhouette, SilhouetteProvider}
+import controllers.util.DataStore
 import javax.inject.{Inject, Named, Singleton}
 import net.codingwell.scalaguice.ScalaModule
 import play.api.Logger
@@ -41,9 +42,7 @@ trait SecurityClientProvider {
 
 @Singleton
 class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
-                                                     bus: EventBus,
-                                                     identitySvc: IdentityService[AuthAccountWithCreds],
-                                                     db: play.api.db.Database,
+                                                     dataStore: DataStore,
                                                      appconfig: play.api.Configuration,
                                                      @Named(SystemConfigActor.name) configActor: ActorRef )
                                                    ( implicit ec: ExecutionContext )
