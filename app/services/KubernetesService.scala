@@ -2,40 +2,33 @@ package services
 
 import java.util.{Base64, TimeZone, UUID}
 
-import org.slf4j.LoggerFactory
-import services.util.CommandParser
-
-import scala.language.implicitConversions
-import scala.language.reflectiveCalls
-import scala.concurrent.ExecutionContext.Implicits.global
-import scala.util.{Failure, Success, Try}
-import scala.concurrent.Future
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
+import controllers.util._
+import org.joda.time.{DateTime, DateTimeZone}
+import play.api.Logger
+import play.api.libs.json._
+import services.util.CommandParser
+import skuber.Container.Port
+import skuber.LabelSelector.dsl._
 import skuber._
 import skuber.api.client._
 import skuber.ext._
-import skuber.json.format._
 import skuber.json.ext.format._
-import skuber.Container.Port
-import skuber.LabelSelector.dsl._
-import com.galacticfog.gestalt.caas.kube._
-import controllers.util._
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount, VolumeSecretMount}
-import org.joda.time.{DateTime, DateTimeZone}
-
-import scala.concurrent.ExecutionContext
-import scala.reflect.runtime.universe._
-import scala.language.postfixOps
-import play.api.libs.json._
-import play.api.libs.functional.syntax._
+import skuber.json.format._
 
 import scala.annotation.tailrec
+import scala.concurrent.ExecutionContext.Implicits.global
+import scala.concurrent.{ExecutionContext, Future}
+import scala.language.{implicitConversions, postfixOps, reflectiveCalls}
+import scala.reflect.runtime.universe._
+import scala.util.{Failure, Success, Try}
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
@@ -62,7 +55,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   
   import KubernetesService._
 
-  private[this] val log = LoggerFactory.getLogger(this.getClass)
+  override private[this] val log = Logger(this.getClass)
+
   private[services] val DefaultNamespace = "default"
 
   def cleanly[T](providerId: UUID, namespace: String)(f: RequestContext => Future[T]): Future[T] = {
@@ -182,13 +176,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * @param create when set to true, a new Namespace will be created if and existing one is not found
    */
   private[services] def getNamespace(rc: RequestContext, pc: ProviderContext, create: Boolean = false): Future[Namespace] = {
-    log.debug("getNamespace(environment = {}, create = {}", pc.environmentId, create)
+    log.debug(s"getNamespace(environment = ${pc.environmentId}, create = ${create}")
     rc.getOption[Namespace](pc.environmentId.toString) flatMap {
       case Some(s) =>
-        log.debug("Found Kubernetes namespace: {}", pc.environmentId)
+        log.debug(s"Found Kubernetes namespace: ${pc.environmentId}")
         Future.successful(s)
       case None if create =>
-        log.debug("Creating new Kubernetes namespace: {}", pc.environmentId)
+        log.debug(s"Creating new Kubernetes namespace: ${pc.environmentId}")
         rc create[Namespace] Namespace(metadata = ObjectMeta(
           name = pc.environmentId.toString,
           labels = Map(
@@ -1102,6 +1096,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       container,
       "num_instances" -> s"${updatedNumInstances}"
     )
+  }
+
+  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    log.warn("NOT IMPLEMENTED")
+    Future.successful(metaResource)
+  }
+
+  override def destroyVolume(secret: ResourceLike): Future[Unit] = {
+    log.warn("NOT IMPLEMENTED")
+    Future.successful(())
+  }
+
+  override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    log.warn("NOT IMPLEMENTED")
+    Future.successful(metaResource)
   }
 
 }

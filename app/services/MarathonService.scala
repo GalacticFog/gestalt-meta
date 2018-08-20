@@ -391,6 +391,12 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
+  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = Future.successful(metaResource)
+
+  override def updateVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = Future.successful(metaResource)
+
+  override def destroyVolume(secret: ResourceLike): Future[Unit] = Future.successful(())
+
 }
 
 object MarathonService {

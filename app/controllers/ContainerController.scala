@@ -9,7 +9,7 @@ import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.marathon._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, sdk}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
@@ -27,7 +27,7 @@ import scala.util.{Failure, Success, Try}
 
 
 @Singleton
-class ContainerController @Inject()( 
+class ContainerController @Inject()(
      messagesApi: MessagesApi,
      sec: GestaltFrameworkSecurity,
      containerService: ContainerService,
@@ -118,13 +118,13 @@ class ContainerController @Inject()(
     val payload = payloadJson.as[JsObject]
 
     val (env, provider) = (for {
-      pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
+      pid <- Try(Js.find(payload, "/properties/provider/id").map(j => UUID.fromString(j.as[String])) getOrElse {
             throw new BadRequestException(s"`/properties/provider/id` not found.")
           })
       env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
             throw new BadRequestException(s"Environment with ID '$environment' not found.")
           })
-      prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
+      prv <- Try(ResourceFactory.findById(pid) getOrElse {
             throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
           })
     } yield (env, prv)).get
@@ -207,6 +207,17 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
+  def postVolume(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    val created = for {
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputVolume(payload), None))
+      spec      <- Future.fromTry(VolumeSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      secret <- containerService.createVolume(context, request.identity, spec, Some(proto.id))
+    } yield Accepted(RenderSingle(secret))
+    created recover { case e => HandleExceptions(e) }
+  }
+
   def updateContainer(fqon: String, cid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")
@@ -259,11 +270,11 @@ class ContainerController @Inject()(
         childId = c.id
       ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${c.id}")}
 
-      val operations = ContainerService.containerRequestOperations("container.scale")
-      val options    = ContainerService.containerRequestOptions(
+      val operations = ContainerService.caasObjectRequestOperations("container.scale")
+      val options    = ContainerService.caasObjectRequestOptions(
         user = request.identity,
         environment = environment.id,
-        container = c,
+        caasObject = c,
         data = Option(Map("scaleTo" -> numInstances.toString))
       )
 
@@ -388,6 +399,16 @@ class ContainerController @Inject()(
   private [this] def normalizeInputSecret(inputJson: JsValue): JsObject = {
     inputJson.as[JsObject] ++ Json.obj(
       "resource_type" -> ResourceIds.Secret.toString
+    )
+  }
+
+  /**
+    * Ensure Volume input JSON is well-formed and valid. Ensures that required properties
+    * are given and fills in default values where appropriate.
+    */
+  private [this] def normalizeInputVolume(inputJson: JsValue): JsObject = {
+    inputJson.as[JsObject] ++ Json.obj(
+      "resource_type" -> migrations.V13.VOLUME_TYPE_ID
     )
   }
 

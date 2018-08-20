@@ -227,6 +227,11 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/promote          
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/secrets  		            controllers.ContainerController.postSecret(fqon: String, envId: java.util.UUID)
 
 ############################
+# VOLUMES
+############################
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/volumes  		            controllers.ContainerController.postVolume(fqon: String, envId: java.util.UUID)
+
+############################
 # APIS
 ############################
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/apis 	controllers.ApiController.postResourceOpt(fqon: String, typ: Option[String] = Some("df4bf8b5-170f-453e-9526-c37c898d96c9"), id: java.util.UUID)

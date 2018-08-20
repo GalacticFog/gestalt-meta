@@ -53,6 +53,7 @@ class DeleteController @Inject()(
       ResourceIds.Group       -> deleteExternalGroup,
       ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
       ResourceIds.Secret      -> wrapUnauthedHandler(ContainerService.deleteSecretHandler(providerManager,_)),
+      migrations.V13.VOLUME_TYPE_ID -> wrapUnauthedHandler(ContainerService.deleteVolumeHandler(providerManager,_)),
       ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
       ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler),
       ResourceIds.Lambda      -> wrapUnauthedHandler(lambdaMethods.deleteLambdaHandler)

@@ -329,29 +329,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
-    ???
-//    import play.api.libs.concurrent.Execution.Implicits.defaultContext
-//    log.debug("DockerService::scale(...)")
-//    val provider = ContainerService.containerProvider(container)
-//    val externalId = ContainerService.containerExternalId(container) orElse {
-//      for {
-//        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString)
-//      } yield envId + "-" + container.name
-//    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
-//    for {
-//      docker    <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
-//      extantSvc <- getServiceOption(docker, externalId) flatMap {
-//        case Some(svc) => Future.successful(svc)
-//        case None => Future.failed(new RuntimeException(
-//          s"could not locate associated Service in Docker Swarm provider for container ${container.id}"
-//        ))
-//      }
-//      updatedSvc <- Future{
-//        val newSvc = extantSvc.spec().mode().replicated().replicas()
-//      }
-//    } yield ()
-  }
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -371,5 +349,14 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   override def destroySecret(secret: ResourceLike): Future[Unit] = Future.failed(
     new BadRequestException("DCOS CaaS provider does not support secrets")
   )
+
+  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
+
+  override def destroyVolume(secret: ResourceLike): Future[Unit] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
+
+  override def updateVolume(context: ProviderContext, container: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 }
 
