@@ -5,26 +5,25 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.policy
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import controllers.{ContainerController, DeleteController, SecurityResources}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking, Security}
+import controllers.{ContainerController, DeleteController, SecurityResources}
 import org.joda.time.DateTime
+import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.mutable.Specification
 import org.specs2.specification.{BeforeAll, ForEach}
-import org.mockito.Matchers.{eq => meq}
 import play.api.http.HttpVerbs
-import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.libs.json._
 import play.api.test.FakeRequest
 
 import scala.concurrent.Future
@@ -48,7 +47,6 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
     mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
     val mockDeleteController = mock[DeleteController]
     val containerService = new ContainerServiceImpl(mockProviderManager, mockDeleteController)
-    val security = mock[Security]
     try AsResult(f(TestScope(testWork, testEnv, testProvider, mockCaasService, containerService)))
     finally {
       scalikejdbc.config.DBs.closeAll()
@@ -581,7 +579,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
     "create secrets using CaaSService interface" >> { t : TestScope =>
       val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
-      val testSecretName = "test-container"
+      val testSecretName = "test-secret"
       val testItems = Seq(
         SecretSpec.Item("item-a", Some("c2hoaGho")),
         SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
@@ -621,6 +619,47 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
       val Some(metaSecret) = ResourceFactory.findById(ResourceIds.Secret, createdSecret.id)
       Json.parse(metaSecret.properties.get.get("items").get).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(testItems.map(_.copy(value = None)))
+    }
+
+    "create volumes using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testVolumeName = "test-volume"
+      val testSpec = VolumeSpec(
+        name = testVolumeName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        `type` = VolumeSpec.HostPath,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+
+      mockCaasService.createVolume(any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val createdVolume = await(containerService.createVolume(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        user = user,
+        volumeSpec = testSpec,
+        userRequestedId = None
+      ))
+
+      there was one(mockCaasService).createVolume(
+        context = argThat(matchesProviderContext(
+          provider = testProvider,
+          workspace = testWrk,
+          environment = testEnv
+        )),
+        metaResource = any
+      )(any)
+
+      ResourceFactory.findParent(createdVolume.id) must beSome(
+        (r: GestaltResourceInstance) => r.typeId == ResourceIds.Environment && r.id == testEnv.id
+      )
+
+      ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, createdVolume.id) must beSome
     }
 
     "throw 400 on bad provider during secret creation" >> { t : TestScope =>

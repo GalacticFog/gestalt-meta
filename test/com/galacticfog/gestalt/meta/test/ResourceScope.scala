@@ -90,7 +90,8 @@ trait ResourceScope extends Scope with Mockito {
 //          new V8(),
           new V9(),
           new V10(),
-          new V12()
+          new V12(),
+          new V13()
         )
 
         val tries = migrations.map {

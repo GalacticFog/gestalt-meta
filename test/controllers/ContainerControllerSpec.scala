@@ -6,7 +6,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, sdk}
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
@@ -24,7 +24,7 @@ import play.api.inject.bind
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsString, Json}
+import play.api.libs.json.{JsString, JsValue, Json}
 import play.api.test.{PlaySpecification, WithApplication}
 import services._
 
@@ -962,10 +962,14 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties").asOpt[ContainerSpec] must beSome(testProps.copy(name = ""))
     }
 
+    /************
+      *  Secrets
+      */
+
     "create secrets with missing provider payload should 400" in new TestContainerController {
       val newResource = newInstance(
         typeId = ResourceIds.Secret,
-        name = "test-container",
+        name = "test-secret",
         properties = Some(Map(
           // "provider" -> Json.toJson(testProps.provider).toString
         ))
@@ -982,7 +986,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
     "create secrets with non-existent provider should 400" in new TestContainerController {
       val newResource = newInstance(
         typeId = ResourceIds.Secret,
-        name = "test-container",
+        name = "test-secret",
         properties = Some(Map(
           "provider" -> Json.toJson(
             ContainerSpec.InputProvider(id = UUID.randomUUID())
@@ -1096,6 +1100,155 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         hasId(createdResource.id) and hasProperties("external_id" -> extId)
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
+    }
+
+    /************
+      *  Volumes
+      */
+
+    "create volumes with missing provider payload should 400" in new TestContainerController {
+      val newResource = newInstance(
+        typeId = migrations.V13.VOLUME_TYPE_ID,
+        name = "test-volume",
+        properties = Some(Map(
+          "type" -> "host_path",
+          "provider" -> "{}",
+          "config" -> "{}"
+        ))
+      )
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/volumes", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(app,request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("/properties/provider/id")
+    }
+
+    "create volumes with non-existent provider should 400" in new TestContainerController {
+      val newResource = newInstance(
+        typeId = migrations.V13.VOLUME_TYPE_ID,
+        name = "test-volume",
+        properties = Some(Map(
+          "type" -> "host_path",
+          "provider" -> Json.toJson(
+            ContainerSpec.InputProvider(id = UUID.randomUUID())
+          ).toString,
+          "config" -> "{}"
+        ))
+      )
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/volumes", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(app,request)
+      status(result) must equalTo(BAD_REQUEST)
+      contentAsString(result) must contain("CaasProvider") and contain("not found")
+    }
+
+    "create volumes using CaaSService interface" in new TestContainerController {
+      val testVolumeName = "test-volume"
+      val testProps = VolumeSpec(
+        name = testVolumeName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        `type` = VolumeSpec.HostPath,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+
+      val newResource = newInstance(
+        typeId = migrations.V13.VOLUME_TYPE_ID,
+        name = testVolumeName,
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "type" -> testProps.`type`.label,
+          "config" -> testProps.config.toString
+        ))
+      )
+
+      val extId = s"/${testEnv.id}/$testVolumeName"
+
+      val createdResource = newResource.copy(
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "type" -> testProps.`type`.label,
+          "config" -> testProps.config.toString,
+          "external_id" -> extId
+        ))
+      )
+
+      containerService.createVolume(any,any,any,any) returns Future.successful(createdResource)
+
+      val request = fakeAuthRequest(POST, s"/root/environments/${testEnv.id}/volumes", testCreds).withBody(
+        Output.renderInstance(newResource)
+      )
+
+      val Some(result) = route(app,request)
+      status(result) must equalTo(ACCEPTED)
+
+      there was one(containerService).createVolume(
+        context = matchesProviderContext(
+          provider = testProvider,
+          workspace = testWork,
+          environment = testEnv
+        ),
+        user = any,
+        volumeSpec = argThat(
+          ((_: VolumeSpec).name) ^^ be_==(testVolumeName)
+            and
+            ((_: VolumeSpec).config) ^^ be_==(testProps.config)
+            and
+            ((_: VolumeSpec).`type`) ^^ be_==(testProps.`type`)
+        ),
+        userRequestedId = any
+      )
+
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testVolumeName)
+      (json \ "resource_type").asOpt[String] must beSome(migrations.V13.VOLUME_TYPE_NAME)
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "type").as[VolumeSpec.Type] must_== VolumeSpec.HostPath
+      (json \ "properties" \ "config").as[JsValue] must_== testProps.config
+      (json \ "properties" \ "external_id").as[String] must_== extId
+    }
+
+    "delete volumes using the ContainerService interface" in new TestContainerController {
+      val testVolumeName = "test-volume"
+      val testProps = VolumeSpec(
+        name = testVolumeName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        `type` = VolumeSpec.HostPath,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+      val extId = s"/${testEnv.id}/$testVolumeName"
+      val Success(createdResource) = createInstance(migrations.V13.VOLUME_TYPE_ID, testVolumeName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "type" -> testProps.`type`.label,
+          "config" -> testProps.config.toString,
+          "external_id" -> s"${extId}"
+        ))
+      )
+
+      mockCaasService.destroyVolume(
+        hasId(createdResource.id)
+      ) returns Future(())
+
+      val request = fakeAuthRequest(DELETE,
+        s"/root/environments/${testEnv.id}/volumes/${createdResource.id}", testCreds)
+
+      val Some(result) = route(app,request)
+
+      status(result) must equalTo(NO_CONTENT)
+
+      there was one(mockCaasService).destroyVolume(
+        hasId(createdResource.id) and hasProperties("external_id" -> extId)
+      )
     }
 
   }
