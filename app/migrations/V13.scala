@@ -38,7 +38,9 @@ class V13() extends MetaMigration with AuthorizationMethods {
           TypeProperty("provider", "json", require = "required"),
           TypeProperty("config", "json", require = "required"),
           TypeProperty("reclamation_policy", "string", require = "optional"),
-          TypeProperty("external_id", "string", require = "optional")
+          TypeProperty("external_id", "string", require = "optional"),
+          TypeProperty("mount_path", "string", require = "optional"),
+          TypeProperty("container_id", "resource::uuid", require = "optional", refersTo = Some(ResourceIds.Container), system = true)
         ).withActionInfo(ActionInfo(
           prefix = "volume",
           verbs = Seq("import")

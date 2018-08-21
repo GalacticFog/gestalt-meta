@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLik
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, UnprocessableEntityException}
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.google.inject.Inject
 import play.api.libs.json._
 import controllers.util._
@@ -391,9 +391,20 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = Future.successful(metaResource)
+  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
+    Future.fromTry(for {
+      spec <- VolumeSpec.fromResourceInstance(metaResource)
+      v <- spec.config.as[VolumeSpec.VolumeConfig] match {
+        case VolumeSpec.HostPathVolume(_) | VolumeSpec.PersistentVolume(_) => Success(metaResource)
+        case _ => Failure(new BadRequestException("DC/OS only supports volumes of type 'host_path' and 'persistent'"))
+      }
+    } yield v)
+  }
 
-  override def updateVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = Future.successful(metaResource)
+  override def updateVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
+    log.warn("MarathonService::updateVolume is currently a no-op and is not expected to be called")
+    Future.successful(metaResource)
+  }
 
   override def destroyVolume(secret: ResourceLike): Future[Unit] = Future.successful(())
 
