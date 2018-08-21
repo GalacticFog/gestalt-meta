@@ -1109,7 +1109,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    log.warn("NOT IMPLEMENTED")
+    log.warn("KuberentesService::updateVolume is currently a no-op and is not expected to be called")
     Future.successful(metaResource)
   }
 

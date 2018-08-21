@@ -385,13 +385,30 @@ case object VolumeSpec {
       case HostPath.label => Success(HostPath)
       case External.label => Success(External)
       case Dynamic.label => Success(Dynamic)
-      case _ => Failure[Type](new BadRequestException(s"VolumeSpec.Type must be one of ${Seq(Persistent,HostPath,External,Dynamic).map("'" + _.label + "'").mkString(", ")}"))
+      case _ => Failure[Type](new BadRequestException(s"/properties/type must be one of ${Seq(Persistent,HostPath,External,Dynamic).map("'" + _.label + "'").mkString(", ")}"))
     }
   }
   final case object Persistent extends Type {val label = "persistent"}
   final case object HostPath extends Type {val label = "host_path"}
   final case object External extends Type {val label = "external"}
   final case object Dynamic extends Type {val label = "dynamic"}
+
+  sealed trait VolumeConfig
+  case class PersistentVolume(size: Long) extends VolumeConfig
+  case class HostPathVolume(host_path: String) extends VolumeConfig
+  case class DynamicVolume(storage_class: String) extends VolumeConfig
+  case class ExternalVolume(config: JsValue) extends VolumeConfig
+
+  val persistentVolumeRds = Json.reads[PersistentVolume]
+  val hostPathVolumeRds = Json.reads[HostPathVolume]
+  val dynamicVolumeRds = Json.reads[DynamicVolume]
+  val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
+
+  implicit val volumeConfigRds =
+    persistentVolumeRds.map( vc => vc : VolumeConfig) |
+    hostPathVolumeRds.map( vc => vc : VolumeConfig) |
+    dynamicVolumeRds.map( vc => vc : VolumeConfig) |
+    externalVolumeRds.map( vc => vc : VolumeConfig)
 
   def toResourcePrototype(spec: VolumeSpec): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
@@ -423,7 +440,7 @@ case object VolumeSpec {
 
   def fromResourceInstance(metaVolumeSpec: GestaltResourceInstance): Try[VolumeSpec] = {
     if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
-    val attempt = for {
+    for {
       props <- Try{metaVolumeSpec.properties.get}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       tpe <- Try{props("type")}.flatMap(Type.fromString)
@@ -437,9 +454,6 @@ case object VolumeSpec {
       reclamation_policy = props.get("reclamation_policy"),
       external_id = props.get("external_id")
     )
-    attempt.recoverWith {
-      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into VolumeSpec: ${e.getMessage}"))
-    }
   }
 
 }
