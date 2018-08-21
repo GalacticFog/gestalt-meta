@@ -9,6 +9,9 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "minio": "^6.0.0"
+    "axios": "^0.18.0",
+    "bull": "^3.4.4",
+    "minio": "^6.0.0",
+    "uuid4": "^1.0.0"
   }
 }

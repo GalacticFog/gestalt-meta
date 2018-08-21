@@ -2,52 +2,79 @@
 
 module.exports = {
 
-  async createBucket(event, context, client) {
-    /*
-      POST ?action=createBucket
-      {
-        "name": "test-bucket-1",
-        "region": "us-east-1"
-      }
-    */
-    const bucketName = event.payload.name
-    const region = event.payload.region ? event.payload.region : 'us-east-1'
+  /*
+    POST ?action=bucketCreate
+    {
+      "name": "test-bucket-1",
+      "region": "us-east-1"
+    }
+  */  
+  async bucketCreate(event, context, client, cb) {
+    const bucketName = event.actionPayload.name
+    const region = event.actionPayload.region ? event.actionPayload.region : 'us-east-1'
 
-    client.makeBucket(bucketName, region, function(err) {
-      if (err) return console.error(err)
-      console.log('Bucket created successfully in "us-east-1".')
-    })
-  },
-
-  async deleteBucket(event, context) {
-    /*
-      POST ?action=deleteBucket
-      {
-        "name": "test-bucket-1"
-      }
-    */
-    const bucketName = event.payload.name
-    minioClient.removeBucket(bucketName, function(err) {
-      if (err) return console.log('unable to remove bucket.')
-      console.log('Bucket removed successfully.')
-    })
-  },
-
-  async listBuckets(event, context) {
-    minioClient.listBuckets(function(err, buckets) {
-      if (err) return console.log(err)
-      console.log('buckets :', buckets)
-    })
-  },
-
-  async bucketExists(event, context) {
-    const bucketName = event.payload.name
-    minioClient.bucketExists(bucketName, function(err, exists) {
+    client.makeBucket(bucketName, region, function(err, bucket) {
       if (err) {
-        return console.log(err)
+        console.error(err)
+        return cb(errorResponse(err))
       }
-      if (exists) {
-        return console.log('Bucket exists.')
+      console.log(`Bucket "${bucketName}" created successfully in "${region}".`)
+      cb(null, 
+        output({ status: 'ok', message: `'${bucketName}' created successfully in '${region}'`}))
+    })
+  },
+
+  /*
+    POST ?action=bucketDelete
+    {
+      "name": "test-bucket-1"
+    }
+  */  
+  async bucketDelete(event, context, client, cb) {
+    const bucketName = event.actionPayload.name
+    client.removeBucket(bucketName, function(err) {
+      if (err) {
+        console.error('unable to remove bucket.')
+        
+        cb(errorResponse(err))
+      } else {
+        console.log('Bucket removed successfully.')
+        cb(null, 
+          output({ status: 'ok', message: `'${bucketName}' was successfully deleted`}))
+      }
+    })
+  },
+
+  /*
+    POST ?action=bucketExists
+    {
+      "name": "test-bucket-1"
+    }
+  */   
+  async bucketExists(event, context, client, cb) {
+    const bucketName = event.actionPayload.name
+    client.bucketExists(bucketName, function(err, exists) {
+      if (err) {
+        console.error(err)
+        cb(err)
+      } else {
+        cb(null, output({ bucket_exists: exists }))
+      }
+    })
+  },
+
+  /*
+    POST ?action=bucketList
+    [no payload]
+   */
+  async bucketsList(event, context, client, cb) {
+    client.listBuckets(function(err, buckets) {
+      if (err) {
+        console.error(err)
+        cb(err)
+      } else {
+        console.log('buckets :', buckets)
+        cb(err, output(buckets))
       }
     })
   },
@@ -66,4 +93,12 @@ module.exports = {
       console.log('Removed the object')
     })    
   }  
+}
+
+function errorResponse(err) {
+  return JSON.stringify({error: err.message}, null, 2)
+}
+
+function output(obj) {
+  return JSON.stringify(obj, null, 2)
 }

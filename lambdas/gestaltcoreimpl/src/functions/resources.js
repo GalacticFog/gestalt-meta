@@ -22,27 +22,31 @@ module.exports = {
 
 const dat = [
   {
-      "id": "4efe841f-9cee-4250-8cc5-e8c85a33d2e0",
+      "id": "81328db9-a773-426f-b857-ddb45a152d47",
       "name": "test"
   },
   {
-      "id": "96557d48-31b3-4429-86cf-49a02d84e882",
+      "id": "248088cd-8b84-4190-9af9-443a91efffff",
       "name": "production"
   },
   {
-      "id": "79cfdd04-1c60-494d-a727-9336b5f64e6d",
+      "id": "46b0688f-0469-4872-b6ac-0731c8c7f734",
       "name": "service"
   },
   {
-      "id": "21a502f2-a676-466c-a3ab-cf6a78b3d49d",
+      "id": "904b7c60-a716-45d1-8735-894eb9cc82b5",
       "name": "development"
   },
   {
-      "id": "950056de-ad8e-4c97-b690-15a875d545cf",
+      "id": "cbfe8f91-ede3-444e-9a75-9cb2bb4031b6",
       "name": "other"
   }
 ]
-
+/*
+    	"caas_provider": {
+    		"id": "{{kube-provider-1}}"
+      },
+      */
 function translateEnvType(typeName, client) {
   const target = dat.filter(el => el.name === typeName)
   if (target.length === 0) {

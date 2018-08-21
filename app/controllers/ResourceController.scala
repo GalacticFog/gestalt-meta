@@ -19,7 +19,7 @@ import controllers.util._
 import javax.inject.Singleton
 import play.api.i18n.MessagesApi
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.libs.json._
 import play.api.mvc.{Action, Result}
 
 import scala.concurrent.duration._
@@ -27,6 +27,7 @@ import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
+
 
 @Singleton
 class ResourceController @Inject()( 
@@ -191,7 +192,6 @@ class ResourceController @Inject()(
     }    
   }
 
-
   def findResourceGlobal(typeName: String, id: UUID) = Audited() { implicit request =>
     GlobalResource.getResource(typeName, id) match {
       case Failure(e) => HandleExceptions(e)
@@ -201,10 +201,7 @@ class ResourceController @Inject()(
   
   import play.api.mvc.{Request, RequestHeader}
   import play.api.mvc.AnyContent
-  
-  
 
-  
   /**
    * Find the parent of a resource given it's path (default to given fqon)
    */
@@ -276,7 +273,7 @@ class ResourceController @Inject()(
      */    
     getBackingProviderType(targetTypeId) match {
       case None => {
-        log.debug("Request to create non-provider-backed resource")
+        log.debug("**Request to create non-provider-backed resource")
         newDefaultResource(org.id, targetTypeId, parent.id, payload)(request)
       }
       case Some(backingProviderType) => {
@@ -291,6 +288,7 @@ class ResourceController @Inject()(
       }
     }
   }
+  
   /**
    * Execute an arbitrary generic resource action. Action will fail if the 
    * given resource is NOT provider-backed.
@@ -335,34 +333,406 @@ class ResourceController @Inject()(
       )
     }    
   }
-
   
   import com.galacticfog.gestalt.data.PropertyFactory
+  import com.galacticfog.gestalt.json._
+  import com.galacticfog.gestalt.marathon.containerWithDefaults
   
-  def postCreateCheck(resource: GestaltResourceInstance)
-    (implicit request: SecuredRequest[JsValue]): Any = {
+  import services.ProviderContext
+  
+  def createContainer(
+      org: UUID, 
+      environment: UUID)(implicit request: SecuredRequest[JsValue]) = {
+    
+    val created = for {
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      proto     <- Future.fromTry(jsonToResource(org, request.identity, normalizeInputContainer(payload), None))
+      spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
+    } yield container
+  }  
+  
 
-    val given = resource.properties.getOrElse(Map.empty)
-    val specProps = PropertyFactory.findAll(resource.typeId).filter { t =>
-      t.datatype == ???
-    }.map { sp =>
-      if (given.contains(sp.name)) {
-        // We have a spec prop value
-        for {
-          r1 <- execGenericCreate(
-                  org = ???, 
-                  targetTypeId = sp.refersTo.get, 
-                  parent = resource,
-                  payload = Json.parse(given(sp.name)))
-          r2 = postCreateCheck(r1)
-        } yield r2
+  /**
+   * Ensure Container input JSON is well-formed and valid. Ensures that required properties
+   * are given and fills in default values where appropriate.
+   */
+  private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
+    val defaults = containerWithDefaults(inputJson)
+    val newprops = Json.toJson(defaults).as[JsObject] ++ (inputJson \ "properties").as[JsObject]
+    inputJson.as[JsObject] ++
+      Json.obj("resource_type" -> ResourceIds.Container.toString) ++
+      Json.obj("properties" -> newprops)
+  }  
+  
+  private[controllers] def normalizeCaasPayload(payloadJson: JsValue, environment: UUID): Try[JsObject] = Try {
+
+    val payload = payloadJson.as[JsObject]
+
+    val (env, provider) = (for {
+      pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
+            throw new BadRequestException(s"`/properties/provider/id` not found.")
+          })
+      env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
+            throw new BadRequestException(s"Environment with ID '$environment' not found.")
+          })
+      prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
+            throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
+          })
+    } yield (env, prv)).get
+
+    /*
+     *  This throws an exception if the environment is incompatible with the provider.
+     */
+    assertCompatibleEnvType(provider, env)
+
+    // Inject `provider` object into container.properties
+    val oldProperties = Js.find(payload, "/properties").flatMap(_.asOpt[JsObject]).getOrElse(Json.obj())
+    payload ++ Json.obj(
+      "properties" -> (oldProperties ++ Json.obj(
+        "provider" -> Json.obj(
+          "name"          -> provider.name,
+          "id"            -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        )
+      ))
+    )
+  }  
+  
+  
+  /**
+   * Test that the given Provider is compatible with the given Environment. An
+   * exception is thrown if the given Environment is incompatible.
+   */
+  private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance) {
+    
+    // These are the values tha Meta will accept for 'environment_type'
+    val acceptableTypes = Set("development", "test", "production")
+    
+    provider.properties.get.get("environment_types").map { types =>
+      
+      // Environment types the provider is compatible with.
+      val allowedByProvider = Json.parse(types).as[Seq[String]]
+      
+      // Environment type of the given environment.
+      val envType = {
+        val typeId = env.properties.get.get("environment_type") getOrElse {
+          val msg = s"Environment with ID '${env.id}' does not contain 'environment_type' property. Data is corrupt"
+          throw new RuntimeException(msg)
+        }
+        val target = EnvironmentType.name(UUID.fromString(typeId))
+        if (acceptableTypes.contains(target.trim.toLowerCase)) target
+        else {
+          val msg = s"Invalid environment_type. Expected: one of (${acceptableTypes.mkString(",")}. found: '$target'"
+          throw new UnprocessableEntityException(msg)
+        }
+      }
+      
+      // Given MUST be in the allowed list.
+      if (allowedByProvider.nonEmpty && !allowedByProvider.contains(envType)) {
+        val msg = s"Incompatible Environment type. Expected one of (${allowedByProvider.mkString(",")}). found: '$envType'"
+        throw new ConflictException(msg)
+      }
+    }    
+  }  
+  
+  
+  private object StorageManager {
+
+    def createStorageProvider() = {
+      ???
+    }
+
+    def createStorageContainer(extraConfig: Option[JsValue]) = {
+      ???
+    }    
+    
+  }
+  
+  
+  private object StorageType {
+    
+    def mergeEnvironmentVars(res: GestaltResourceInstance, vars: Map[String, String]) = {
+      val ps = res.properties.getOrElse(Map.empty)
+      val newvars = {
+        Json.toJson {
+          ps.get("env").fold(Map.empty[String,String]){ env =>
+            val oldenv = Js.parse[Map[String,String]](Json.parse(env).as[JsObject]).get
+            oldenv ++ vars
+          }
+        }
+      }
+
+      val newprops = try {
+        ps ++ Map("env" -> Json.stringify(newvars))
+      } catch {
+        case e: Throwable => {
+          println("****ERRROR : " + e.getMessage)
+          throw e
+        }
+      }
+
+      res.copy(properties = Some(newprops))
+    }
+    
+    def getStorageProperty(res: GestaltResourceInstance): Option[String] = {
+      for {
+        ps <- res.properties
+        st <- ps.get("storage")
+      } yield st
+    }
+    
+    def getUpstreamStorageVar(res: GestaltResourceInstance): Option[String] = {
+      EnvironmentVars.get(res.orgId, res.id).get("GF_DEFAULT_OBJECT_STORAGE_ID")
+    }
+    
+    def isExisting(s: String): Boolean = {
+      test(s){ js => Js.find(js, "provider_id").isDefined }
+    }
+    
+    def isNone(s: String): Boolean = {
+      test(s){ js =>
+        Js.find(js, "/kind").fold(false){ k =>
+          k.as[String] == "none"}
+      }
+    }
+    
+    def isConfig(s: String): Boolean = {
+      test(s){ js =>
+        Js.find(js, "/provider_id").isEmpty &&
+        Js.find(js, "/kind").isEmpty
+      }
+    }
+    
+    private def test(s: String)(f: JsObject => Boolean): Boolean = {
+      try {
+        f(Json.parse(s).as[JsObject])
+      } catch {
+        case e: Throwable => {
+          throw new BadRequestException("Error parsing '/properties/storage': " + e.getMessage)
+        }
       }
       
     }
+    
+  }
+  
+  import java.math.BigInteger
+  import java.security.SecureRandom
+  
+  def randomAlphaNum(chars: Int = 24): String = {
+    new BigInteger(chars * 5, new SecureRandom()).toString(32)
+  }
+
+  def postCreateEnvironment(resource: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
+    
+    def addEnvVar(r: GestaltResourceInstance, pair: (String, String)) = {
+      val props = r.properties.getOrElse(Map.empty)
+      val envs = props.get("env").map(Json.parse(_).as[JsObject]).getOrElse(Json.obj())
+      
+      val newEnvs = envs + (pair._1 -> JsString(pair._2))
+      val newProps = props ++ Map("env" -> Json.stringify(newEnvs))
+      r.copy(properties = Some(newProps))
+    }
+    
+    def validateCaasProvider(providerString: String): Option[UUID] = {
+      /*
+       * TODO: Protect if can't parse as UUID
+       */
+      val pid = UUID.fromString(providerString)
+      
+      ResourceFactory.findById(pid).fold(Option.empty[UUID]) { prv =>
+        if (ResourceFactory.isSubTypeOf(prv.typeId, ResourceIds.CaasProvider)) {
+          Some(prv.id)
+        } else 
+          throw new BadRequestException(s"Invalid caas_provider property. found: '${providerString}'")
+      }
+    }
+    
+    // Check for CaaS provider property - set as env var if found
+    val updated = for {
+      ps     <- resource.properties
+      value  <- ps.get("caas_provider")
+      caas   <- validateCaasProvider(value)
+      update = addEnvVar(resource, "GF_DEFAULT_CAAS_PROVIDER_ID" -> caas)
+    } yield update
+
+    /*
+     * Evaluate storage creation
+     */
+    val updated2: Option[GestaltResourceInstance] = 
+      StorageType.getStorageProperty(resource) match {
+      
+      case Some(storage) => {
+        if (StorageType.isExisting(storage)) {
+          /*
+           * TODO: validate pointer and set env vars
+           * - (set storage_id, storage_address, storage_key, storage_secret, storage_protocol)
+           * 
+           */
+          val pid = Js.find(Json.parse(storage).as[JsObject], "/provider_id").get.as[String]
+          println(s"***[Storage]: FOUND existing storage pointer [$pid]...validating")          
+          updated
+          
+        } else if (StorageType.isNone(storage)) {
+          /*
+           * TODO: ???
+           * Leave storage property set to 'none'? That way we know the creator explicitly
+           * DID NOT want storage.
+           */
+          println("***[Storage]: Object Store creation has been SUPPRESSED.")
+          updated
+          
+        } else if (StorageType.isConfig(storage)) {
+          /*
+           * TODO: Merge configuration ???
+           * Remove storage property from map
+           */
+          println("***[Storage]: CONFIGURATION-ONLY storage object...merging config and provisioning.")
+          /*
+           * 1.) Get spec
+           * 2.) Merge in new config (spec ++ newConfig)
+           * 3.) Create the storage.
+           */
+          updated
+        } else {
+          /*
+           * TODO: Test if value is complete inline storage-specification!!!
+           */
+          updated
+        }
+      }
+      case None => {
+        /*
+         * We didn't find a storage configuration - check if there's
+         * an object store in upstream variables.
+         */
+        val upstream = StorageType.getUpstreamStorageVar(resource)
+        if (upstream.isDefined) {
+          /*
+           * TODO: We have an object store upstream that we're supposed 
+           * to use. I don't think there's anything to do in this case.
+           */
+          println("***[Storage]: Found upstream storage!")
+          updated
+        } else {
+          /*
+           * TODO: No upstream storage was found. Provision new...
+           */
+          println("***[Storage]: Provisioning new Object Store...")
+          val envs = Map(
+            "GF_DEFAULT_OBJECT_STORAGE_ID" -> "ebb9a4f9-5e01-4484-a2e0-81d8ddf7bf0c",
+            //"GF_DEFAULT_OBJECT_STORAGE_ADDRESS" -> "35.199.37.155",
+            "GF_DEFAULT_OBJECT_STORAGE_PORT" -> "9000", 
+            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_KEY" -> randomAlphaNum(),
+            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_SECRET" -> randomAlphaNum()
+          )
+
+          createContainer(resource.orgId, resource.id)
+          
+          val x = Some(StorageType.mergeEnvironmentVars(updated.getOrElse(resource), envs))
+          println("X : " + x)
+          x
+        }
+      }
+    }
+    
+    
+//    resource.properties.get.get("storage") match {
+//      case Some(storage) => {
+//        val pid = Js.find(Json.parse(storage).as[JsObject], "/provider_id")
+//        
+//        
+//        if (pid.isDefined) {
+//          // Found pointer to existing storage
+//          /*
+//           * TODO: Validate existing storage provider - use if good.
+//           */
+//          println("***FOUND existing storage pointer...validating for use...")
+//        } else if (Js.find(Json.parse(storage).as[JsObject], "/kind").isDefined) {
+//          // No pointer - merge in configuration and create new.
+//        }
+//      }
+//      case None => {
+//        // Auto-create new storage
+//        println("*** NO STORAGE INFO FOUND...")
+//        println("*** Checking for default object store in scope")
+//        /*
+//         * TODO: Rollup env vars and test for 'GF_DEFAULT_OBJECT_STORAGE_ID'
+//         */
+//        val sid = EnvironmentVars.get(resource.orgId, resource.id).get("GF_DEFAULT_OBJECT_STORAGE_ID")
+//        if (sid.isDefined) {
+//          /*
+//           * TODO: Found an existing default - nothing to do.
+//           */
+//        } else {
+//          /*
+//           * TODO: No storage given 
+//           */
+//        }
+//      }
+//    }
+    
+    updated2.getOrElse(updated.getOrElse(resource))
+    //updated.getOrElse(resource)
+  } 
+  
+  
+  def postCreateCheck(resource: GestaltResourceInstance, identity: UUID)
+    (implicit request: SecuredRequest[JsValue]): GestaltResourceInstance = {
+    
+    println("*****POST-CHECK resource of type : " + ResourceLabel(resource.typeId))
+    
+    /*
+    // List of all spec types allowed by the current resource schema
+    val allowedSpecs = PropertyFactory.findAll(resource.typeId).filter { t =>
+      t.datatype == DataType.id("spec::uuid::link")
+    }
+    
+    println("*****LOOKING for spec type properties...")
+    val given = resource.properties.getOrElse(Map.empty)
+    
+    //val newSpecs = given.filter { case (k,v) => allowedSpecs.map(_.name).contains(k) }
+    
+    val newSpecs = allowedSpecs.filter { p => given.keySet.contains(p.name) }
+    
+    println("*****SPEC properties found: " + newSpecs.size)
+    
+    newSpecs foreach { p => println("***Creating : [%s] %s".format(p.id, p.name)) }
+    */
+    
+    println("****Checking resource type for post-create...")
+    val outputResource = if (resource.typeId == ResourceIds.Environment) {
+      println("*****Type is Environment...checking for variable updates...")
+      val update = postCreateEnvironment(resource)
+      val x = ResourceFactory.update(update, identity)
+      println("UPDATE STATUS : " + x)
+      update
+    } else resource
+    
+    /*
+     * TODO: If specs are created we need to update the resource!
+     */
+     
+    outputResource
+    
+//    specProps.map { sp =>
+//      if (given.contains(sp.name)) {
+//        // We have a spec prop value
+//        for {
+//          r1 <- execGenericCreate(
+//                  org = ???, 
+//                  targetTypeId = sp.refersTo.get, 
+//                  parent = resource,
+//                  payload = Json.parse(given(sp.name)))
+//          r2 = postCreateCheck(r1)
+//        } yield r2
+//      }
+//      
+//    }
+    
     // Filter properties of type 'spec'
-    
-    
-        
   }  
   
   def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
@@ -379,7 +749,8 @@ class ResourceController @Inject()(
         securedRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
         
         resource    <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
-      } yield resource
+        r2 = postCreateCheck(resource, request.identity.account.id)(securedRequest)
+      } yield r2
       
       x.map (r => Created(Output.renderInstance(r, Some(META_URL))))
         .recover { case e => HandleExceptions(e) }  

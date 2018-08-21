@@ -85,52 +85,32 @@ package object api {
   
   def getBackingProviderType(resourceType: UUID): Option[UUID] = {
     TypeFactory.findById(resourceType).fold(Option.empty[UUID]) { tpe =>
-      if (isGestalt(tpe)) {
-        
-        println("***FOUND A GESTALT-RESOURCE!***")
-        val x = findGestaltProvider(tpe)
-        
-        println("****CORE-PROVIDER-ID : " + x)
-//        if (resourceType == ResourceIds.Environment) {
-//           throw new RuntimeException("Sorry - not creating Gestalt-types just yet...")
-//        }
-        x
-        
-      } else {
-        findCustomProvider(tpe)
-      }
+//      if (!isGestalt(tpe)) {
+//        findCustomProvider(tpe)
+//      } else {
+//        /*
+//         * TODO: If type 'is-gestalt', it is an ERROR if provider not found!!!
+//         */
+//        findGestaltProvider(tpe)
+//      }
+      findCustomProvider(tpe).orElse(findGestaltProvider(tpe))
     }
   }
   
   
-  def getBackingProviderType2(resourceType: UUID): Option[UUID] = {
-    
-//    if (isGestalt(resourceType)) {
-//      // Gestalt resource - lookup default Gestalt Provider
-//      println("***FOUND A GESTALT-RESOURCE!***")
-//    }
-//    
-//    TypeFactory.findById(resourceType).fold(Option.empty) { tpe =>
-//      if (isGestalt(tpe)) {
-//        // Gestalt resource - lookup default Gestalt Provider
-//        println("***FOUND A GESTALT-RESOURCE!***")        
-//      }
-//    }
-//    
-    
-    for {
-      // is the resourcetype marked as provider-backed?
-      rt <- TypeFactory.findById(resourceType)
-      props <- rt.properties
-      isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
-      if isProviderBacked
-      // what is the refers to type for the provider property?
-      pp <- PropertyFactory.findByName(resourceType, "provider")
-      if pp.datatype == DataType.id("resource::uuid::link")
-      refersTo <- pp.refersTo
-    } yield refersTo
-
-}
+//  def getBackingProviderType(resourceType: UUID): Option[UUID] = {
+//    for {
+//      // is the resourcetype marked as provider-backed?
+//      rt <- TypeFactory.findById(resourceType)
+//      props <- rt.properties
+//      isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
+//      if isProviderBacked
+//      // what is the refers to type for the provider property?
+//      pp <- PropertyFactory.findByName(resourceType, "provider")
+//      if pp.datatype == DataType.id("resource::uuid::link")
+//      refersTo <- pp.refersTo
+//    } yield refersTo
+//  }
 
   /**
     * Translate resource REST name to Resource Type ID
