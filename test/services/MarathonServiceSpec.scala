@@ -103,7 +103,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
                                           labels: Map[String,String] = Map.empty,
                                           providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty,
                                           secrets: Seq[ContainerSpec.SecretMount] = Seq.empty,
-                                          volumes: Seq[ContainerSpec.Volume] = Seq.empty
+                                          volumes: Seq[ContainerSpec.VolumeMountSpec] = Seq.empty
                                         ) extends Scope {
 
     lazy val testAuthResponse = GestaltSecurityMocking.dummyAuthResponseWithCreds()

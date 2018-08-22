@@ -254,6 +254,7 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta ContainerSpec
    */
+  // TODO: cgbaker REMOVE IMMEDIATELY
   def marathonToMetaContainerSpec(app: AppUpdate, provider: GestaltResourceInstance): Try[ContainerSpec] = Try {
     log.debug("Entered marathonToMetaContainerSpec...")
     log.debug("Received:\n" + app)
@@ -294,14 +295,14 @@ package object marathon {
         timeout_seconds = check.timeoutSeconds getOrElse AppUpdate.HealthCheck.DefaultTimeout.toSeconds.toInt,
         max_consecutive_failures = check.maxConsecutiveFailures getOrElse AppUpdate.HealthCheck.DefaultMaxConsecutiveFailures
       )}) getOrElse Seq(),
-      volumes = app.container.map(_.volumes.map(v =>
-        ContainerSpec.Volume(
-          container_path = v.containerPath,
-          host_path = v.hostPath,
-          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
-          mode = v.mode
-        )
-      )) getOrElse Seq(),
+//      volumes = app.container.map(_.volumes.map(v =>
+//        ContainerSpec.Volume(
+//          container_path = v.containerPath,
+//          host_path = v.hostPath,
+//          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
+//          mode = v.mode
+//        )
+//      )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
       env = app.env.getOrElse(Map.empty).collect({
         case (name, AppInfo.EnvVarString(value)) => name -> value
@@ -360,12 +361,12 @@ package object marathon {
     val container = Container(
       docker = if (spec.container_type.equalsIgnoreCase("DOCKER")) Some(docker) else None,
       `type` = spec.container_type,
-      volumes = spec.volumes.map(v => Container.Volume(
+      volumes = Seq.empty /* spec.volumes.map(v => Container.Volume(
         containerPath = v.container_path,
         hostPath = v.host_path,
         persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
         mode = v.mode
-      ))
+      )) */
     )
 
     val createdUTC = spec.created.map(_.toDateTime(DateTimeZone.UTC).toString)
@@ -602,12 +603,13 @@ package object marathon {
     val container = Container(
         docker = docker,
         `type` = props.container_type,
-        volumes = props.volumes.map(v => Container.Volume(
+        volumes = Seq.empty /* props.volumes.map(v => Container.Volume(
           containerPath = v.container_path,
           hostPath = v.host_path,
           mode = v.mode,
           persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size))
-        )))
+        )) */
+    )
 
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 
