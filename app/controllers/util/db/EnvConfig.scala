@@ -2,7 +2,6 @@ package controllers.util.db
 
 
 import com.galacticfog.gestalt.data.util._
-import controllers.util.AppConf
 import play.api.{ Logger => log }
 import play.api.libs.json._
 

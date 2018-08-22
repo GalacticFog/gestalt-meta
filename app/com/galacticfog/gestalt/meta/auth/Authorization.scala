@@ -3,21 +3,19 @@ package com.galacticfog.gestalt.meta.auth
 
 import java.util.UUID
 
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.errors.ForbiddenException
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurityEnvironment}
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
+import controllers.util._
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json._
+import play.api.mvc.Result
+
 import scala.concurrent.Future
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
-
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.errors.{ForbiddenException, InternalErrorException}
-
-import controllers.util._
-
-import play.api.libs.json._
-import play.api.mvc.Result
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 trait Authorization extends MetaController with ActionMethods with AuthorizationMethods { self: SecureController =>
 
@@ -31,7 +29,7 @@ trait Authorization extends MetaController with ActionMethods with Authorization
    * on the resource's parent.
    */
   def Entitle(org: UUID, resourceType: UUID, resourceId: UUID, parent: Option[UUID])
-      (entitlements: => Seq[Entitlement])(implicit request: SecuredRequest[_]): Seq[Try[GestaltResourceInstance]] = {
+      (entitlements: => Seq[Entitlement])(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Seq[Try[GestaltResourceInstance]] = {
     Entitle(org, resourceType, resourceId, request.identity, parent)(entitlements)
   }
   
@@ -46,7 +44,7 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     }
   }
   
-  def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): play.api.mvc.Result = {
+  def Authorize(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): play.api.mvc.Result = {
     Authorize(target, actionName, request.identity)(block)
   }
   
@@ -63,7 +61,7 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     }
   }
   
-  def AuthorizeAsync(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[_]): Future[Result] = {
+  def AuthorizeAsync(target: UUID, actionName: String)(block: => play.api.mvc.Result)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Future[Result] = {
     AuthorizeAsync(target, actionName, request.identity)(block)
   }
   
@@ -71,7 +69,7 @@ trait Authorization extends MetaController with ActionMethods with Authorization
     Future( Authorize(target, actionName, caller)(block) )
   } 
   
-  def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+  def AuthorizeList(action: String)(resources: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
     val caller = request.identity
     
     log.info(s"Authorizing resource listing : user=${caller.account.id}, ${action}")

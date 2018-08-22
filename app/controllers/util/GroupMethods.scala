@@ -1,31 +1,22 @@
 package controllers.util
 
 
+import java.util.UUID
+
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-import com.galacticfog.gestalt.meta.api.patch._
-import com.galacticfog.gestalt.patch._
-import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.patch._
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.patch._
+import com.galacticfog.gestalt.security.api.{GestaltAccountUpdate, GestaltGroupUpdate, GestaltPasswordCredential, GestaltSecurityClient, ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
-import com.galacticfog.gestalt.security.api.GestaltAccount
-import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
-import com.galacticfog.gestalt.security.api.GestaltGroupUpdate
-import com.galacticfog.gestalt.security.api.GestaltPasswordCredential
-
-import scala.util.Try
-import scala.util.{Either, Left, Right}
-import java.util.UUID
 import javax.inject.Inject
-
 import play.api.Logger
 import play.api.mvc.RequestHeader
 
 import scala.concurrent.Future
-
-import com.galacticfog.gestalt.security.api.json.JsonImports._
+import scala.util.{Either, Left, Right, Try}
 
 class GroupMethods @Inject()( security: Security ) {
   

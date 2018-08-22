@@ -11,8 +11,9 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.JsonUtil._
 import controllers.util._
@@ -32,13 +33,13 @@ import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,Visi
 @Singleton
 class ResourceController @Inject()( 
     messagesApi: MessagesApi,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     security: Security,
     containerService: ContainerService,
     genericResourceMethods: GenericResourceMethods,
     lambdaMethods: LambdaMethods )
     
-  extends SecureController(messagesApi = messagesApi, env = env)
+  extends SecureController(messagesApi = messagesApi, sec = sec)
     with Authorization with MetaControllerUtils {
   
   type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Try[GestaltResourceInstance]
@@ -218,7 +219,7 @@ class ResourceController @Inject()(
   /**
    * Get JSON from a Request - fail if content-type isn't JSON.
    */
-  def requireJsonRequest(request: SecuredRequest[AnyContent])= {
+  def requireJsonRequest(request: SecuredRequest[GestaltFrameworkSecurityEnvironment, AnyContent])= {
     request.map { ac => 
       ac.asJson.getOrElse {
         throw new UnsupportedMediaTypeException("Expecting text/json or application/json")
@@ -265,7 +266,7 @@ class ResourceController @Inject()(
       org: GestaltResourceInstance,
       targetTypeId: UUID,
       parent: GestaltResourceInstance,
-      payload: JsValue)(implicit request: SecuredRequest[JsValue])
+      payload: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue])
         : Future[GestaltResourceInstance] = {
       
     /*
@@ -297,7 +298,7 @@ class ResourceController @Inject()(
       org: GestaltResourceInstance,
       targetTypeId: UUID,
       targetId: UUID,
-      action: String)(implicit request: SecuredRequest[AnyContent]) = {
+      action: String)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent]) = {
     /*
      * Ensure the target resource is backed by a provider.
      */
@@ -342,7 +343,7 @@ class ResourceController @Inject()(
   
   def createContainer(
       org: UUID, 
-      environment: UUID)(implicit request: SecuredRequest[JsValue]) = {
+      environment: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
     
     val created = for {
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
@@ -525,7 +526,7 @@ class ResourceController @Inject()(
     new BigInteger(chars * 5, new SecureRandom()).toString(32)
   }
 
-  def postCreateEnvironment(resource: GestaltResourceInstance)(implicit request: SecuredRequest[JsValue]) = {
+  def postCreateEnvironment(resource: GestaltResourceInstance)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment, JsValue]) = {
     
     def addEnvVar(r: GestaltResourceInstance, pair: (String, String)) = {
       val props = r.properties.getOrElse(Map.empty)
@@ -680,7 +681,7 @@ class ResourceController @Inject()(
   
   
   def postCreateCheck(resource: GestaltResourceInstance, identity: UUID)
-    (implicit request: SecuredRequest[JsValue]): GestaltResourceInstance = {
+    (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment, JsValue]): GestaltResourceInstance = {
     
     println("*****POST-CHECK resource of type : " + ResourceLabel(resource.typeId))
     
@@ -746,7 +747,7 @@ class ResourceController @Inject()(
         org         <- findOrgOrFail(fqon)
         parent      <- Future.fromTry(findResourceParent(rp, fqon))
         jsonRequest <- fTry(requireJsonRequest(request))
-        securedRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
+        securedRequest = SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue](request.identity, request.authenticator, jsonRequest)
         
         resource    <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
         r2 = postCreateCheck(resource, request.identity.account.id)(securedRequest)
@@ -901,7 +902,7 @@ class ResourceController @Inject()(
   }  
   
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
-      (implicit request: SecuredRequest[_]): Result = {
+      (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
     
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, $action")
     
@@ -929,7 +930,7 @@ class ResourceController @Inject()(
   }
   
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: Map[String, Seq[String]])
-      (implicit request: SecuredRequest[_]): Result = {
+      (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
 
     log.debug(s"AuthorizedResourceList(${path.path}, $action)")
 

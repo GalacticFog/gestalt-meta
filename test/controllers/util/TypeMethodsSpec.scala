@@ -2,36 +2,17 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserEndpoint, LaserLambda}
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, HostConfig, JsonClient, ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
-import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
-import controllers.SecurityResources
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.JsonMatchers
-import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.specification.{BeforeAll, Scope}
-import play.api.inject.bind
-import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsBoolean, JsValue, Json, JsObject}
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.{FakeRequest, PlaySpecification}
-import play.api.mvc._
-import play.api.mvc.Results._
-import play.api.http.HttpVerbs._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.ws.WSResponse
-import com.galacticfog.gestalt.laser._
-import play.api.http.HttpVerbs
-
-import scala.concurrent.Future
-import scala.util.Success
+import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.bootstrap._
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.{errors, sdk}
+import com.galacticfog.gestalt.meta.api.sdk.{GestaltTypePropertyInput, ResourceIds}
+import com.galacticfog.gestalt.meta.test._
+import controllers.PropertyController
+import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.test.PlaySpecification
+import play.api.libs.json._
+import play.api.libs.json.Reads
 
 
 class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {
@@ -584,6 +565,87 @@ class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {
         TypeMethods.typeIsProvider(payload, Some("provider"), Some("providers")) === false      
     }    
     
+  }
+
+  "GestaltTypePropertyInput" should {
+
+    "parse refers_to as a valid typename" >> {
+      val json = Json.parse(
+        s"""{
+          |  "data_type": "resource::uuid",
+          |  "name": "container_id",
+          |  "public": true,
+          |  "refers_to": "${sdk.Resources.Container}",
+          |  "requirement_type": "optional",
+          |  "visibility_type": "plain"
+          |}
+        """.stripMargin
+      ).as[JsObject]
+      val JsSuccess(input, _) = PropertyController.normalizeInputProperty(uuid(), json).validate[GestaltTypePropertyInput]
+      input.refers_to must beSome(ResourceIds.Container)
+    }
+
+    "parse refers_to as a UUID" >> {
+      val json = Json.parse(
+        s"""{
+           |  "data_type": "resource::uuid",
+           |  "name": "container_id",
+           |  "public": true,
+           |  "refers_to": "${ResourceIds.Container}",
+           |  "requirement_type": "optional",
+           |  "visibility_type": "plain"
+           |}
+        """.stripMargin
+      ).as[JsObject]
+      val JsSuccess(input, _) = PropertyController.normalizeInputProperty(uuid(), json).validate[GestaltTypePropertyInput]
+      input.refers_to must beSome(ResourceIds.Container)
+    }
+
+    "return helpful message if refers_to parses to a non-existent type name" >> {
+      val json = Json.parse(
+        s"""{
+           |  "data_type": "resource::uuid",
+           |  "name": "container_id",
+           |  "public": true,
+           |  "refers_to": "Invalid::Type::Name",
+           |  "requirement_type": "optional",
+           |  "visibility_type": "plain"
+           |}
+        """.stripMargin
+      ).as[JsObject]
+      PropertyController.normalizeInputProperty(uuid(), json).validate[GestaltTypePropertyInput] must throwAn[BadRequestException]("error.expected.existing-resource-type-name")
+    }
+
+    "return helpful message if refers_to parses to a non-existent type id" >> {
+      val json = Json.parse(
+        s"""{
+           |  "data_type": "resource::uuid",
+           |  "name": "container_id",
+           |  "public": true,
+           |  "refers_to": "${uuid()}",
+           |  "requirement_type": "optional",
+           |  "visibility_type": "plain"
+           |}
+        """.stripMargin
+      ).as[JsObject]
+      PropertyController.normalizeInputProperty(uuid(), json).validate[GestaltTypePropertyInput] must throwAn[BadRequestException]("error.expected.existing-resource-type-id")
+    }
+
+    "return helpful message if refers_to does not parse as string or UUID" >> {
+      val json = Json.parse(
+        s"""{
+           |  "data_type": "resource::uuid",
+           |  "name": "container_id",
+           |  "public": true,
+           |  "refers_to": 0,
+           |  "requirement_type": "optional",
+           |  "visibility_type": "plain"
+           |}
+        """.stripMargin
+      ).as[JsObject]
+      PropertyController.normalizeInputProperty(uuid(), json).validate[GestaltTypePropertyInput] must throwAn[BadRequestException]("error.expected.uuid-type-id-or-string-type-name")
+    }
+
   }
   
 }

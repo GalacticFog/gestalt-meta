@@ -4,18 +4,13 @@ package controllers
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data.DataType
-import com.galacticfog.gestalt.data.PropertyFactory
-import com.galacticfog.gestalt.data.RequirementType
-import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.data.VisibilityType
+import com.galacticfog.gestalt.data.{DataType, PropertyFactory, RequirementType, ResourceState, TypeFactory, VisibilityType, session, uuid2string}
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-import com.galacticfog.gestalt.data.session
-import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.GestaltTypePropertyInput
@@ -24,19 +19,21 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.meta.api.sdk.ResourceStates
 import com.galacticfog.gestalt.meta.api.sdk.gestaltTypePropertyInputFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import com.galacticfog.gestalt.json.Js
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import javax.inject.Singleton
+import play.api.mvc.RequestHeader
 
 @Singleton
 class PropertyController @Inject()(messagesApi: MessagesApi,
-                                   env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+                                   sec: GestaltFrameworkSecurity)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
 
   import PropertyController._
   
@@ -73,7 +70,7 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     CreateTypePropertyResult(fqid(fqon), typeId, request.body.as[JsObject])
   }
   
-  private def CreateTypePropertyResult[T](org: UUID, typeId: UUID, propertyJson: JsObject)(implicit request: SecuredRequest[T]) = {
+  private def CreateTypePropertyResult[T](org: UUID, typeId: UUID, propertyJson: JsObject)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
     Future {
       val user = request.identity.account.id
 
@@ -91,26 +88,9 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
   } 
 
   /**
-   * Ensure we have a valid 'applies_to' value in the property input JSON.
-   */
-  private def normalizeInputProperty(parentTypeId: UUID, propertyJson: JsObject): JsObject = {
-    Js.find(propertyJson, "/applies_to").fold {
-      propertyJson ++ Json.obj("applies_to" -> Json.toJson(parentTypeId))
-    } { tid =>
-      if (UUID.fromString(tid.as[String]) == parentTypeId)
-        propertyJson ++ Json.obj("applies_to" -> Json.toJson(parentTypeId))
-      else throw new BadRequestException(s"Given 'applies_to' ID does not match parent resource type ID.")
-    }    
-  }
-  
-  def deleteTypeProperty(org: UUID, typeId: UUID) = GestaltFrameworkAuthAction(Some(org)).async(parse.json) { implicit request =>
-    ???
-  }
-  
-  /** 
    * Find a TypeProperty by ID or 404 Not Found 
    */
-  private def OkNotFoundProperty(id: UUID)(implicit request: SecuredRequest[_]) = {
+  private def OkNotFoundProperty(id: UUID)(implicit request: RequestHeader) = {
     PropertyFactory.findById(ResourceIds.TypeProperty, id).fold {
       NotFoundResult(Errors.PROPERTY_NOT_FOUND(id))
     }{ property =>
@@ -118,12 +98,13 @@ class PropertyController @Inject()(messagesApi: MessagesApi,
     }
   }
 
-  private def safeGetPropertyJson(json: JsValue): Try[GestaltTypePropertyInput] = Try {
-    json.validate[GestaltTypePropertyInput].map{
-      case resource: GestaltTypePropertyInput => resource
-    }.recoverTotal{
-      e => throw new BadRequestException(Js.errorString(e))
-    }      
+  private def safeGetPropertyJson(json: JsValue): Try[GestaltTypePropertyInput] = {
+    json.validate[GestaltTypePropertyInput] match {
+      case JsSuccess(resource, _) => Success(resource)
+      case e: JsError => Failure(
+        new BadRequestException(Js.errorString(e))
+      )
+    }
   }
   
 }
@@ -161,4 +142,58 @@ object PropertyController {
       properties = input.properties, variables = input.variables, tags = input.tags, auth = input.auth)
 
   }
+
+  /**
+    * Ensure we have a valid 'applies_to' value in the property input JSON.
+    * Also, optionally convert 'refers_to' from resource type name to resource type id
+    */
+  def normalizeInputProperty(parentTypeId: UUID, propertyJson: JsObject): JsObject = {
+
+    def validateUUIDRefersTo(id: UUID): JsResult[UUID] = {
+      TypeFactory.findById(id) match {
+        case Some(_) => JsSuccess(id)
+        case None => JsError(JsPath \ "refers_to", "error.expected.existing-resource-type-id")
+      }
+    }
+
+    def validateStringRefersTo(name: String): JsResult[UUID] = {
+      TypeFactory.findByName(name) match {
+        case Some(tpe) => JsSuccess(tpe.id)
+        case None => JsError(JsPath \ "refers_to", "error.expected.existing-resource-type-name")
+      }
+    }
+
+    val appliesTo = Js.find(propertyJson, "/applies_to").map(_.validate[UUID]) match {
+      case None =>
+        Json.obj("applies_to" -> parentTypeId)
+      case Some(JsSuccess(tid, _)) if tid == parentTypeId =>
+        Json.obj("applies_to" -> parentTypeId)
+      case _ =>
+        throw new BadRequestException(s"Given 'applies_to' ID does not match parent resource type ID.")
+    }
+    val maybeRefersTo = Js.find(propertyJson, "/refers_to").map {
+      nameOrUUID =>
+        nameOrUUID.validate[UUID] match {
+          case JsSuccess(id, _) =>
+            // if it parses as a UUID, it must refer to a valid resource type id
+            validateUUIDRefersTo(id)
+          case _ =>
+            // otherwise, must be a string which refers to a valid resource type name
+            nameOrUUID.validate[String] match {
+              case JsSuccess(name,_) => validateStringRefersTo(name)
+              case e: JsError => JsError(JsPath \ "refers_to", "error.expected.uuid-type-id-or-string-type-name")
+            }
+        }
+    }
+
+    maybeRefersTo match {
+      case Some(JsError(errs)) =>
+        throw new BadRequestException(Js.errorString(errs))
+      case Some(JsSuccess(refersTo, _)) =>
+        propertyJson ++ appliesTo ++ Json.obj("refers_to" -> refersTo)
+      case None =>
+        propertyJson ++ appliesTo
+    }
+  }
+
 }

@@ -20,12 +20,20 @@ trait CaasService extends GestaltProviderService {
   def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
 
+  def createVolume(context: ProviderContext, metaResource: Instance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
+
   def destroy(container: ResourceLike): Future[Unit]
 
   def destroySecret(secret: ResourceLike): Future[Unit]
 
+  def destroyVolume(secret: ResourceLike): Future[Unit]
+
   def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
+
+  def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance]
 
   def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance]
 

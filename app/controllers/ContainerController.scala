@@ -3,49 +3,38 @@ package controllers
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.PropertyValidator
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
-import com.galacticfog.gestalt.meta.api.output.Output
-
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.{EnvironmentType, PropertyValidator, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.json._
+import com.galacticfog.gestalt.marathon._
+import com.galacticfog.gestalt.meta.api.output.Output
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, sdk}
+import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
+import com.google.inject.Inject
 import controllers.util._
+import javax.inject.Singleton
+import play.api.i18n.MessagesApi
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
+import services._
 
 import scala.concurrent.Future
-import scala.concurrent.duration._
-import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
-
 import scala.language.postfixOps
-import javax.inject.Singleton
-
-import services._
-import com.galacticfog.gestalt.json._
-import com.galacticfog.gestalt.data.EnvironmentType
+import scala.util.{Failure, Success, Try}
 
 
 @Singleton
-class ContainerController @Inject()( 
+class ContainerController @Inject()(
      messagesApi: MessagesApi,
-     env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+     sec: GestaltFrameworkSecurity,
      containerService: ContainerService,
      providerManager: ProviderManager,
      genericResourceMethods: GenericResourceMethods,
      db: play.api.db.Database)
-    extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+    extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
 
@@ -56,9 +45,9 @@ class ContainerController @Inject()(
     UUID.fromString((Json.parse(c.properties.get("provider")) \ "id").as[String])
   }
   
+  import ContainerController._
   import com.galacticfog.gestalt.meta.api.errors._
   import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-  import ContainerController._
   
   private[controllers] def specToInstance(
       fqon: String, 
@@ -129,13 +118,13 @@ class ContainerController @Inject()(
     val payload = payloadJson.as[JsObject]
 
     val (env, provider) = (for {
-      pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
+      pid <- Try(Js.find(payload, "/properties/provider/id").map(j => UUID.fromString(j.as[String])) getOrElse {
             throw new BadRequestException(s"`/properties/provider/id` not found.")
           })
       env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
             throw new BadRequestException(s"Environment with ID '$environment' not found.")
           })
-      prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
+      prv <- Try(ResourceFactory.findById(pid) getOrElse {
             throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
           })
     } yield (env, prv)).get
@@ -218,6 +207,17 @@ class ContainerController @Inject()(
     created recover { case e => HandleExceptions(e) }
   }
 
+  def postVolume(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    val created = for {
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputVolume(payload), None))
+      spec      <- Future.fromTry(VolumeSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      secret <- containerService.createVolume(context, request.identity, spec, Some(proto.id))
+    } yield Accepted(RenderSingle(secret))
+    created recover { case e => HandleExceptions(e) }
+  }
+
   def updateContainer(fqon: String, cid: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
     val prevContainer = ResourceFactory.findById(ResourceIds.Container, cid) getOrElse {
       throw ResourceNotFoundException(s"Container with ID '$cid' not found")
@@ -270,11 +270,11 @@ class ContainerController @Inject()(
         childId = c.id
       ) getOrElse {throw new RuntimeException(s"could not find Environment parent for container ${c.id}")}
 
-      val operations = ContainerService.containerRequestOperations("container.scale")
-      val options    = ContainerService.containerRequestOptions(
+      val operations = ContainerService.caasObjectRequestOperations("container.scale")
+      val options    = ContainerService.caasObjectRequestOptions(
         user = request.identity,
         environment = environment.id,
-        container = c,
+        caasObject = c,
         data = Option(Map("scaleTo" -> numInstances.toString))
       )
 
@@ -399,6 +399,16 @@ class ContainerController @Inject()(
   private [this] def normalizeInputSecret(inputJson: JsValue): JsObject = {
     inputJson.as[JsObject] ++ Json.obj(
       "resource_type" -> ResourceIds.Secret.toString
+    )
+  }
+
+  /**
+    * Ensure Volume input JSON is well-formed and valid. Ensures that required properties
+    * are given and fills in default values where appropriate.
+    */
+  private [this] def normalizeInputVolume(inputJson: JsValue): JsObject = {
+    inputJson.as[JsObject] ++ Json.obj(
+      "resource_type" -> migrations.V13.VOLUME_TYPE_ID
     )
   }
 

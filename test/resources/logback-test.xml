@@ -10,7 +10,8 @@
     <logger name="javax.management.mbeanserver" level="WARN"/>
     <logger name="ch.qos.logback" level="WARN"/>
     <logger name="javax.management.misc" level="WARN"/>
-	
+    <logger name="org.asynchttpclient.netty" level="WARN"/>
+
   <appender name="STDOUT" class="ch.qos.logback.core.ConsoleAppender">
     <encoder>
  		<charset>UTF-8</charset> 

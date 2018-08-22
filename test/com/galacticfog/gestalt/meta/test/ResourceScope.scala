@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
+import com.galacticfog.gestalt.security.api.{DIRECTORY_TYPE_INTERNAL, GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import modules.ProdSecurityModule
 import org.specs2.specification.Scope
@@ -38,7 +38,7 @@ trait ResourceScope extends Scope with Mockito {
     classOf[ProdSecurityModule],
     classOf[modules.MetaDefaultServices]
   )
-  lazy val injector = appBuilder.injector()
+  private[this] lazy val injector = appBuilder.injector()
  
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
@@ -89,7 +89,9 @@ trait ResourceScope extends Scope with Mockito {
 //          new V7(),
 //          new V8(),
           new V9(),
-          new V10()
+          new V10(),
+          new V12(),
+          new V13()
         )
 
         val tries = migrations.map {
@@ -258,7 +260,7 @@ trait ResourceScope extends Scope with Mockito {
     val defaultStr  = "foo"
     val header      = authHeader getOrElse s"Bearer ${uuid()}"
     val credentials = GestaltAPICredentials.getCredentials(header).get    
-    val directory   = GestaltDirectory(uuid(), defaultStr, None, uuid())
+    val directory   = GestaltDirectory(uuid(), defaultStr, None, uuid(), directoryType = DIRECTORY_TYPE_INTERNAL.label)
 
     val account = GestaltAccount(
         userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),

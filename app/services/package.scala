@@ -34,8 +34,13 @@ package object services {
     val defaultStr  = "foo"
     val header      = authHeader getOrElse s"Bearer ${uuid()}"
     val credentials = GestaltAPICredentials.getCredentials(header).get    
-    val directory   = GestaltDirectory(uuid(), defaultStr, None, 
-        orgId = directoryInfo.get("org") map (UUID.fromString(_)) getOrElse uuid())
+    val directory   = GestaltDirectory(
+      id = uuid(),
+      name = defaultStr,
+      description = None,
+      orgId = directoryInfo.get("org") map (UUID.fromString(_)) getOrElse uuid(),
+      directoryType = DIRECTORY_TYPE_INTERNAL.label
+    )
 
     val account = GestaltAccount(
         userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),

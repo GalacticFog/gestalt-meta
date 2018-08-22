@@ -159,7 +159,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
             .mode(EndpointSpec.Mode.RESOLUTION_MODE_VIP)
             .ports(
               containerSpec.port_mappings.collect({
-                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _) =>
+                case PortMapping(protocol, Some(containerPort), _, maybeServicePort, Some(portName), _, Some(true), _, _, _, _, _) =>
                   PortConfig.builder()
                     .name(portName)
                     .protocol(protocol)
@@ -189,7 +189,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
       config <- Future.fromTry(mkServiceSpec(containerId, externalId, spec, providerId, fqon, workspaceId, environmentId))
       response <- Future{docker.createService(config)}
       newPortMappings = spec.port_mappings map {
-        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _) =>
+        case pm @ PortMapping(proto, Some(cp), _, _, _, _, Some(true), _, maybeVHosts, _, _, _) =>
           pm.copy(service_address = Some(ServiceAddress(
             host = externalId,
             port = cp,
@@ -263,6 +263,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
                 tasksRunning = 0, // tasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
                 tasksHealthy = 0,
                 tasksUnhealthy = 0,
+                lb_address = None,
                 taskStats = None /* Some(tasks.map(
                   t => ContainerStats.TaskStat(
                     id = t.id(),
@@ -317,7 +318,8 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
               tasksRunning = 0, // svcTasks.count( _.status().state() == TaskStatus.TASK_STATE_RUNNING ),
               tasksHealthy = 0,
               tasksUnhealthy = 0,
-              taskStats = None
+              taskStats = None,
+              lb_address = None
             )
           }
         } yield stats
@@ -327,29 +329,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
-    ???
-//    import play.api.libs.concurrent.Execution.Implicits.defaultContext
-//    log.debug("DockerService::scale(...)")
-//    val provider = ContainerService.containerProvider(container)
-//    val externalId = ContainerService.containerExternalId(container) orElse {
-//      for {
-//        envId <- ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString)
-//      } yield envId + "-" + container.name
-//    } getOrElse(throw new BadRequestException("Could not determine 'external_id' for container. Container resource may be corrupt."))
-//    for {
-//      docker    <- Future.fromTry(dockerClientFactory.getDockerClient(provider.id))
-//      extantSvc <- getServiceOption(docker, externalId) flatMap {
-//        case Some(svc) => Future.successful(svc)
-//        case None => Future.failed(new RuntimeException(
-//          s"could not locate associated Service in Docker Swarm provider for container ${container.id}"
-//        ))
-//      }
-//      updatedSvc <- Future{
-//        val newSvc = extantSvc.spec().mode().replicated().replicas()
-//      }
-//    } yield ()
-  }
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -369,5 +349,14 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   override def destroySecret(secret: ResourceLike): Future[Unit] = Future.failed(
     new BadRequestException("DCOS CaaS provider does not support secrets")
   )
+
+  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
+
+  override def destroyVolume(secret: ResourceLike): Future[Unit] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
+
+  override def updateVolume(context: ProviderContext, container: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+    Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 }
 

@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMou
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.{ContainerService, GestaltSecurityMocking}
@@ -716,7 +716,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
           containerType = baseTestProps.container_type,
@@ -730,7 +731,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(
@@ -780,7 +782,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         ), ContainerStats(
           external_id = "/non-standard/application/group/native-container-2",
           containerType = baseTestProps.container_type,
@@ -794,7 +797,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(
@@ -833,7 +837,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           tasksRunning = 1,
           tasksHealthy = 0,
           tasksUnhealthy = 0,
-          taskStats = None
+          taskStats = None,
+          lb_address = None
         )))
 
       await(testSetup.svc.listInEnvironment(
@@ -1218,6 +1223,57 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         context = ProviderContext(FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )) must throwA[UnprocessableEntityException]("provider.*is not configured with support for secrets")
+    }
+
+    "throw 400 on invalid volume type" in new FakeDCOS() {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "invalid-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "invalid-type",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}"
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwA[BadRequestException]("/properties/type must be one of")
+    }
+
+    "throw 400 on volume type 'external'" in new FakeDCOS() {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "unsupported-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}"
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwA[BadRequestException]("only supports volumes of type 'host_path' and 'persistent'")
+    }
+
+    "throw 400 on volume type 'dynamic'" in new FakeDCOS() {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "unsupported-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}"
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwA[BadRequestException]("only supports volumes of type 'host_path' and 'persistent'")
     }
 
   }

@@ -3,6 +3,7 @@ package controllers
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
@@ -19,20 +20,20 @@ import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.keymgr.GestaltLicense
 import com.galacticfog.gestalt.keymgr.GestaltFeature
-import play.api.mvc.Result
+import play.api.mvc.{RequestHeader, Result}
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
-
 import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
 @Singleton
 class PolicyController @Inject()(messagesApi: MessagesApi,
-                                 env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator])
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+                                 sec: GestaltFrameworkSecurity)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
 
   // --------------------------------------------------------------------------
@@ -79,7 +80,7 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
    * Filter a list of Rule resources based on the type names given in a querystring.
    * TODO: This only handles a single 'type' filter.
    */
-  protected [controllers] def filterRules(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {
+  protected [controllers] def filterRules(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: RequestHeader) = {
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
@@ -93,7 +94,7 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
     handleExpandResourceResult(outputRules.asInstanceOf[Seq[GestaltResourceInstance]], qs, Some(META_URL))
   }  
   
-  protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: SecuredRequest[_]) = {
+  protected [controllers] def typeFilter(rules: Seq[ResourceLike], qs: Map[String,Seq[String]])(implicit request: RequestHeader) = {
     val outputRules = {
       if (qs.contains("type")) {
         val typeName = "%s::%s".format(RULE_TYPE_NAME, qs("type")(0))
@@ -105,9 +106,5 @@ class PolicyController @Inject()(messagesApi: MessagesApi,
     }
     outputRules
   }    
-  
-  protected [controllers] def setupFilter(typeId: UUID)(implicit request: SecuredRequest[_]) = {
-    if (typeId == ResourceIds.Rule) (true, Some(typeFilter _)) else (false, None)
-  }
   
 }

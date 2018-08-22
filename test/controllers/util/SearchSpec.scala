@@ -91,7 +91,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id, r2.id))
@@ -116,7 +116,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -143,7 +143,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?name=${r1.name}&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -169,7 +169,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?name=${r1.name}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -182,7 +182,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?implementation_type=lambda&implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(BAD_REQUEST)
       contentAsString(result) must contain("included multiple search terms")
     }
@@ -192,7 +192,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/resourcetypes/${ResourceIds.ApiEndpoint}/resources/search?expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(BAD_REQUEST)
       contentAsString(result) must contain("endpoint requires at least one query parameter")
     }
@@ -224,7 +224,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/apiendpoints?implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
 
       val json = contentAsJson(result)
@@ -251,7 +251,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/apiendpoints?implementation_type=lambda&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -278,7 +278,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/apiendpoints?name=${r1.name}&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -304,7 +304,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/apiendpoints?name=${r1.name}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -317,7 +317,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/apiendpoints?implementation_type=lambda&implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(BAD_REQUEST)
       contentAsString(result) must contain("included multiple search terms")
     }
@@ -349,7 +349,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/environments/${testEnv.id}/apiendpoints?implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id, r2.id))
@@ -374,7 +374,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/environments/${testEnv.id}/apiendpoints?implementation_type=lambda&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -401,7 +401,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/environments/${testEnv.id}/apiendpoints?name=${r1.name}&implementation_id=${l1}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -427,7 +427,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/environments/${testEnv.id}/apiendpoints?name=${r1.name}&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(OK)
       val json = contentAsJson(result)
       json.as[Seq[JsObject]].flatMap(j => (j \ "id").asOpt[UUID]) must containTheSameElementsAs(Seq(r1.id))
@@ -440,7 +440,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
         s"/${testOrg.name}/environments/${testEnv.id}/apiendpoints?implementation_type=lambda&implementation_type=lambda&expand=true",
         testCreds
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must beEqualTo(BAD_REQUEST)
       contentAsString(result) must contain("included multiple search terms")
     }

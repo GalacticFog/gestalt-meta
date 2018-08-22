@@ -4,9 +4,11 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.ResourceFactory
-
 import play.api.libs.json._
 import java.util.UUID
+
+import org.joda.time.DateTime
+import org.joda.time.format.DateTimeFormat
 
 package object output {
   
@@ -14,6 +16,18 @@ package object output {
   implicit lazy val gestaltTypePropertyFormat = Json.format[GestaltTypeProperty]
   implicit lazy val gestaltResourceInstanceFormat = Json.format[GestaltResourceInstance]
   implicit lazy val gestaltResourceType = Json.format[GestaltResourceType]
+
+  val dateFormat = "yyyy-MM-dd'T'HH:mm:ss.SSSZ"
+  implicit val jodaDateReads = Reads[DateTime](js =>
+    js.validate[String].map[DateTime](dtString =>
+      DateTime.parse(dtString, DateTimeFormat.forPattern(dateFormat))
+    )
+  )
+
+  implicit val jodaDateWrites: Writes[DateTime] = new Writes[DateTime] {
+    def writes(d: DateTime): JsValue = JsString(d.toString())
+  }
+
   implicit lazy val gestaltTaskFormat = Json.format[GestaltTask]
   
   /* JSON PATCH */

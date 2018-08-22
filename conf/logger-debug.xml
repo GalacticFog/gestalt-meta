@@ -23,6 +23,7 @@
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="scalikejdbc" level="ERROR"/>
   <logger name="com.ning" level="ERROR"/>
+  <logger name="org.asynchttpclient.netty" level="INFO"/>
   <logger name="javax" level="ERROR"/>
   <logger name="skuber" level="WARN"/>
   <logger name="controllers.util.MetaController" level="DEBUG"/>

@@ -75,14 +75,6 @@ GET 	/users   		controllers.ResourceController.getGlobalResourceList(targetTypeI
 GET 	/users/self		controllers.ResourceController.getUserSelf
 
 ############################
-# INTEGRATIONS
-############################
-POST 	  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envid/integrations 	controllers.IntegrationController.postIntegration(fqon: String, envid: java.util.UUID)
-GET	      /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrations/:id  controllers.IntegrationController.getIntegration(fqon: String, envid: java.util.UUID, id: java.util.UUID)
-#GET 	  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envid/integrations   	 controllers.IntegrationController.getIntegrations(fqon: String, envid: java.util.UUID)
-#DELETE  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>environments/:envid/integrations/:id  controllers.IntegrationController.deleteIntegration(fqon: String, envid: java.util.UUID, id: java.util.UUID)
-
-############################
 # SEARCH ENDPOINTS
 ############################
 
@@ -242,6 +234,11 @@ POST	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:cid/promote          
 # SECRETS
 ############################
 POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/secrets  		            controllers.ContainerController.postSecret(fqon: String, envId: java.util.UUID)
+
+############################
+# VOLUMES
+############################
+POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:envId/volumes  		            controllers.ContainerController.postVolume(fqon: String, envId: java.util.UUID)
 
 ############################
 # APIS

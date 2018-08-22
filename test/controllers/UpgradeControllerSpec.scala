@@ -60,13 +60,13 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
     "return 409 for unauthorized user" in new TestUpgradeController {
       val request = fakeAuthRequest(GET, s"/upgrade", testCreds)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must throwA[ConflictException]
     }
 
     "return 200 with appropriate payload when there is no active upgrade" in new TestUpgradeController {
       val request = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(OK)
       contentAsString(result) must /("active" -> false)
       contentAsString(result) must not /("endpoint")
@@ -74,7 +74,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 
     "bad payload POST returns 400 but does not lock the upgrader" in new TestUpgradeController {
       val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(Json.obj())
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must /("message" -> "invalid payload")
       await(configActor ? SystemConfigActor.GetKey("upgrade_lock")).asInstanceOf[Option[String]] must beNone or beSome("false")
@@ -83,7 +83,7 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     "return 400 on additional POST" in new TestUpgradeController {
       await(configActor ? SystemConfigActor.SetKey(adminUserId, "upgrade_lock", Some("true")))
       val request = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
       contentAsString(result) must /("message" -> contain("upgrade is already active"))
     }
@@ -100,13 +100,13 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
       }
 
       val dRequest = fakeAuthRequest(DELETE, s"/upgrade", testAdminCreds)
-      val Some(dResult) = route(dRequest)
+      val Some(dResult) = route(app,dRequest)
       status(dResult) must equalTo(ACCEPTED)
       contentAsString(dResult) must /("active" -> false)
       contentAsString(dResult) must not /("endpoint")
 
       val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-      val Some(gResult) = route(gRequest)
+      val Some(gResult) = route(app,gRequest)
       status(gResult) must equalTo(OK)
       contentAsString(gResult) must_== contentAsString(dResult)
     }
@@ -123,13 +123,13 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
 //      }
 //
 //      val pRequest = fakeAuthRequest(POST, s"/upgrade", testAdminCreds).withBody(testPayload)
-//      val Some(pResult) = route(pRequest)
+//      val Some(pResult) = route(app,pRequest)
 //      status(pResult) must equalTo(ACCEPTED)
 //      contentAsString(pResult) must /("active" -> true)
 //      contentAsString(pResult) must /("endpoint" -> testEndpoint)
 //
 //      val gRequest = fakeAuthRequest(GET, s"/upgrade", testAdminCreds)
-//      val Some(gResult) = route(gRequest)
+//      val Some(gResult) = route(app,gRequest)
 //      status(gResult) must equalTo(OK)
 //      contentAsString(gResult) must_== contentAsString(pResult)
 //    }

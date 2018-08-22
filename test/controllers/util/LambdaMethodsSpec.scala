@@ -2,33 +2,26 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserEndpoint, LaserLambda}
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.laser.{LaserLambda, _}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, HostConfig, JsonClient, ResourceIds, ResourceStates}
+import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp, PatchOps}
+import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.{BeforeAll, Scope}
+import play.api.http.HttpVerbs
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
-import play.api.libs.json.{JsBoolean, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import play.api.test.{FakeRequest, PlaySpecification}
-import play.api.mvc._
-import play.api.mvc.Results._
-import play.api.http.HttpVerbs._
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.{JsValue, Json}
 import play.api.libs.ws.WSResponse
-import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
-import play.api.http.HttpVerbs
+import play.api.test.{FakeRequest, PlaySpecification}
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -237,9 +230,20 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
     }
 
-    "not derive computePathOverride in the absence of secrets" in new FakeLambdaScope {
+    "not specify computePathOverride in the absence of secrets" in new FakeLambdaScope {
       val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
       laserLambda.artifactDescription.computePathOverride must beNone
+    }
+
+    "specify computePathOverride if preWarm > 0" in new FakeLambdaScope {
+      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map(
+          "pre_warm" -> "1"
+        ))
+      ), testLambdaProvider.id)
+      laserLambda.artifactDescription.computePathOverride must beSome(
+        s"/${testOrg.name}/environments/${testEnv.id}/containers"
+      )
     }
 
     "return computePathOverride from Secrets" in new FakeLambdaScope {
@@ -353,7 +357,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           PatchOp.Replace("/properties/memory",        2048),
           PatchOp.Replace("/properties/code_type",     "package"),
           PatchOp.Replace("/properties/periodic_info", Json.obj("new" -> "periodicity")),
-          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env"))
+          PatchOp.Replace("/properties/env",           Json.obj("new" -> "env")),
+          PatchOp.Replace("/properties/pre_warm",      3)
         ),
         user = user,
         request = FakeRequest(HttpVerbs.PATCH, s"/root/lambdas/${testLambda.id}")
@@ -370,6 +375,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       updatedLambda.properties.get("code_type") must_== "package"
       updatedLambda.properties.get("periodic_info") must_== Json.obj("new" -> "periodicity").toString
       updatedLambda.properties.get("env") must_== Json.obj("new" -> "env").toString
+      updatedLambda.properties.get("pre_warm") must_== "3"
 
       there was one(mockJsonClient).put(
         uri = meq(s"/lambdas/${testLambda.id}"),
@@ -392,6 +398,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
                 role = "none",
                 periodicInfo = Some(Json.obj("new" -> "periodicity")),
                 secrets = Some(Seq.empty),
+                preWarm = Some(3),
+                computePathOverride = Some(s"/${testOrg.name}/environments/${testEnv.id}/containers"),
                 headers = Map(
                   "Existing-Header" -> "ExistingHeaderValue",
                   "Remove-Header" -> "Nobody Cares What's Here"

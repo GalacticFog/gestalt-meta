@@ -2,6 +2,8 @@ package migrations
 
 import java.util.UUID
 
+import akka.actor.ActorSystem
+import akka.stream.Materializer
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.data.models._
@@ -11,6 +13,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
+import com.google.inject.Inject
 import controllers.util.{AccountLike, JsonUtil, ProviderMethods, TypeMethods}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
@@ -20,11 +23,11 @@ import scala.concurrent.duration._
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
 
-class V7 extends MetaMigration with AuthorizationMethods {
+class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration with AuthorizationMethods {
 
   import V7._
 
-  private val acc = new MessageAccumulator()
+  private implicit val acc = new MessageAccumulator()
   
   private val ENTITLEMENTS = Option(Seq(ResourceIds.Entitlement))
   
@@ -462,54 +465,7 @@ class V7 extends MetaMigration with AuthorizationMethods {
   }
  
   
-  private[migrations] def setTypeLineage(newType: GestaltResourceType, creator: GestaltResourceInstance) = {
-    val newParentTypes = TypeMethods.getParentTypes(newType)
-    val results = for {
-      _ <- {
-        acc push s"Updating parent lineage for type ${newType.name}"
-        updateParentLineage(creator.id, newType, newParentTypes)
-      }
-      a <- {
-        acc push s"Updating parent entitlements for type ${newType.name}"
-        updateParentEntitlements(creator, creator.id, newType.id, newParentTypes)
-      }
-    } yield a    
-  }  
-  
-  /**
-   * Add a new child type to a parent at the type level. This enables child-type to be a 'childOf'
-   * the parent type in the schema (child-type is now a child of each given parent-type).
-   */
-  private[migrations] def updateParentLineage(
-      caller: UUID, 
-      childType: GestaltResourceType, 
-      parents: Seq[UUID]): Try[Unit] = Try {
 
-    // Update the parent-types with this new child type
-    val results = TypeMethods.makeNewParents(caller, childType.id, parents)
-    val errors = results.collect { case Failure(e) => e.getMessage }
-    
-    if (errors.nonEmpty) {
-      val msg = errors.flatten.mkString(",")
-      throw new RuntimeException(s"There were errors updating parent-type schemas: " + msg )
-    }
-  }  
-
-  private[migrations] def updateParentEntitlements(
-      rootUser: GestaltResourceInstance,
-      callerId: UUID, 
-      childType: UUID, 
-      parents: Seq[UUID]): Try[Unit] = Try {
-    
-    val t = parents.foldLeft(Try(())) { (_, parent) =>
-      TypeMethods.updateInstanceEntitlementsUserId(parent, childType, rootUser, callerId, None) match {
-        case Left(errs) => 
-          throw new RuntimeException("There were errors setting instance entitlements: " + errs.mkString(","))
-        case Right(_) => Success(())
-      }      
-    }
-  }  
-  
 }
 
 object V7 {

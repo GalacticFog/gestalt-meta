@@ -6,7 +6,6 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec}
 import org.joda.time.DateTimeZone
-import play.api.data.validation.ValidationError
 
 import scala.concurrent.duration.FiniteDuration
 import scala.util.{Success, Try}
@@ -99,7 +98,7 @@ package object marathon {
     (__ \ "docker").readNullable[Container.Docker] and
       ((__ \ "type").read[String] orElse Reads.pure("DOCKER")) and
       (__ \ "volumes").readNullable[Seq[Container.Volume]].map(_.getOrElse(Seq.empty[Container.Volume]))
-    )( Container.apply _ ).filterNot(ValidationError("container volume must contain one of hostPath or persistent")) {
+    )( Container.apply _ ).filterNot(JsonValidationError("container volume must contain one of hostPath or persistent")) {
       container =>
     container.volumes.exists { vol =>
       !(vol.hostPath.isDefined ^ vol.persistent.isDefined)
@@ -108,7 +107,7 @@ package object marathon {
 
   private[this] lazy val ValidPortName: Reads[String] = {
     implicitly[Reads[String]]
-      .filter(ValidationError(s"Port name must fully match regular expression ${PortAssignment.PortNamePattern}"))(
+      .filter(JsonValidationError(s"Port name must fully match regular expression ${PortAssignment.PortNamePattern}"))(
         PortAssignment.PortNamePattern.pattern.matcher(_).matches()
       )
   }
@@ -123,15 +122,15 @@ package object marathon {
     }
 
     implicitly[Reads[Seq[DiscoveryInfo.Port]]]
-      .filter(ValidationError("Port names are not unique."))(hasUniquePortNames)
-      .filter(ValidationError("There may be only one port with a particular port number/protocol combination."))(
+      .filter(JsonValidationError("Port names are not unique."))(hasUniquePortNames)
+      .filter(JsonValidationError("There may be only one port with a particular port number/protocol combination."))(
         hasUniquePortNumberProtocol
       )
   }
 
   lazy val ValidPortProtocol: Reads[String] = {
     implicitly[Reads[String]]
-      .filter(ValidationError("Invalid protocol. Only 'udp' or 'tcp' are allowed."))(
+      .filter(JsonValidationError("Invalid protocol. Only 'udp' or 'tcp' are allowed."))(
         DiscoveryInfo.Port.AllowedProtocols
       )
   }

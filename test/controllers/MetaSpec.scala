@@ -257,7 +257,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       )
 
       val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload1)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val providerId = (contentAsJson(result) \ "id").as[UUID]
 
@@ -270,7 +270,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         ))).toJson
       )
 
-      val Some(result2) = route(request2)
+      val Some(result2) = route(app,request2)
       status(result2) must equalTo(OK)
       val lps = (contentAsJson(result2) \ "properties" \ "linked_providers").as[Seq[JsObject]]
       lps must haveSize(1)
@@ -337,7 +337,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       )
 
       val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload1)
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
       status(result) must equalTo(CREATED)
       val providerId = (contentAsJson(result) \ "id").as[UUID]
 
@@ -368,7 +368,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
 
 
       val request2 = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload2)
-      val Some(result2) = route(request2)
+      val Some(result2) = route(app,request2)
       status(result2) must equalTo(CREATED)
       val lps = (contentAsJson(result2) \ "properties" \ "linked_providers").as[Seq[JsObject]]
       lps must haveSize(1)
@@ -404,7 +404,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
 
       val request = fakeAuthRequest(POST, s"/root/providers", testCreds).withBody(kubeProviderPayload)
 
-      val Some(result) = route(request)
+      val Some(result) = route(app,request)
 
       status(result) must equalTo(CREATED)
 

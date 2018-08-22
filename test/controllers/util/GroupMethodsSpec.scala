@@ -28,10 +28,11 @@ class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecu
   lazy val mockSecurityClient = mock[GestaltSecurityClient]   
   
 
-  lazy val fakeSecurity = FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
+  lazy val fakeSecurity = FakeGestaltFrameworkSecurityEnvironment(
       identities = Seq(testCreds -> testAuthResponse),
-      config = mock[GestaltSecurityConfig],
-      client = mock[GestaltSecurityClient])
+      securityConfig = mock[GestaltSecurityConfig],
+      securityClient = mock[GestaltSecurityClient]
+  )
 
   val gm = new GroupMethods(mock[Security])
   

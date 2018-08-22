@@ -8,7 +8,7 @@ import scala.reflect.ClassTag
 import scala.reflect.runtime.universe
 import org.specs2.mock.Mockito
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltOrg, GestaltOrgSync, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
+import com.galacticfog.gestalt.security.api.{DIRECTORY_TYPE_INTERNAL, GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltOrg, GestaltOrgSync, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
@@ -62,11 +62,11 @@ trait GestaltSecurityMocking extends PlaySpecification with Mockito with Resourc
   def fakeSecurityEnvironment( auth: Seq[GestaltAuthResponseWithCreds] = Seq(testAuthResponse, testAdminAuthResponse),
                                config: GestaltSecurityConfig = mock[GestaltSecurityConfig],
                                client: GestaltSecurityClient = mock[GestaltSecurityClient]) = {
-
-    FakeGestaltFrameworkSecurityEnvironment[DummyAuthenticator](
+    FakeGestaltFrameworkSecurityEnvironment(
       identities = auth.map(a => a.creds -> a),
-      config = config,
-      client = client)
+      securityConfig = config,
+      securityClient = client
+    )
   }
 
   def fakeAuthRequest(method: String, path: String, creds: GestaltAPICredentials) =
@@ -80,7 +80,7 @@ object GestaltSecurityMocking {
 
   def dummyAuthResponse(userInfo: Map[String,String] = Map(), groups: Seq[SecurityLink] = Seq(), orgId: UUID = uuid()): GestaltAuthResponse = {
     val defaultStr = "foo"
-    val directory = GestaltDirectory(uuid(), defaultStr, None, uuid())
+    val directory = GestaltDirectory(uuid(), defaultStr, None, uuid(), directoryType = DIRECTORY_TYPE_INTERNAL.label)
     val account = GestaltAccount(
       userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),
       userInfo.getOrElse("username", defaultStr),
@@ -110,7 +110,7 @@ object GestaltSecurityMocking {
                                   creds:  GestaltAPICredentials = dummyCreds(),
                                   userInfo: Map[String,String] = Map()
                                 ): GestaltAuthResponseWithCreds = {
-    val directory = GestaltDirectory(uuid(), "test-directory", None, orgId)
+    val directory = GestaltDirectory(uuid(), "test-directory", None, orgId, directoryType = DIRECTORY_TYPE_INTERNAL.label)
     val account = GestaltAccount(
       userInfo.get("id") map (UUID.fromString(_)) getOrElse uuid(),
       userInfo.getOrElse("username", "someUser"),

@@ -6,12 +6,14 @@ import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import java.net.URL
-import javax.inject.Inject
 
+import javax.inject.Inject
 import play.api.libs.ws._
 import com.galacticfog.gestalt.data.ResourceFactory
-
 import java.util.UUID
+
+import akka.actor.ActorSystem
+import akka.stream.Materializer
 import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.libs.json.Json
@@ -37,8 +39,7 @@ object ActionInvokeEvent {
  */
 case class ActionResponseEvent(eventName : String, data : String)
   
-  
-class ProviderMethods() {
+class ProviderMethods @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) {
   
   private[this] val log = Logger(this.getClass)
   

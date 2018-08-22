@@ -2,6 +2,7 @@ package controllers.util
 
 import java.util.UUID
 
+import akka.util.ByteString
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -15,6 +16,7 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
 import javax.inject.Singleton
 import play.api.http.HeaderNames._
+import play.api.http.HttpEntity
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.iteratee.Enumerator
 import play.api.libs.json.{JsString, JsValue}
@@ -243,8 +245,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
               }
             }, {
               case RawInvocationResponse(status,contentType,contentBody) => Result(
-                ResponseHeader(status.getOrElse(200), contentType.map(ct => Map(CONTENT_TYPE -> ct)).getOrElse(Map.empty)),
-                Enumerator(contentBody.getOrElse("").getBytes)
+                ResponseHeader(status.getOrElse(200)),
+                HttpEntity.Strict(ByteString(contentBody.getOrElse("")), contentType)
               )
             }
           )

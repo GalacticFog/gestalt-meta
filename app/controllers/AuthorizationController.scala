@@ -13,7 +13,9 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.session
 import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.io.util.patch
+import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.mohiva.play.silhouette.api.actions.SecuredRequest
+//import com.galacticfog.gestalt.io.util.patch
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
@@ -46,9 +48,9 @@ import javax.inject.Singleton
 class AuthorizationController @Inject()(
     messagesApi: MessagesApi,
     gatewayMethods: GatewayMethods,
-    env: GestaltSecurityEnvironment[AuthAccountWithCreds,DummyAuthenticator],
+    sec: GestaltFrameworkSecurity,
     db: play.api.db.Database)
-  extends SecureController(messagesApi = messagesApi, env = env) with Authorization {
+  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   // --------------------------------------------------------------------------
   // POST
@@ -120,7 +122,7 @@ class AuthorizationController @Inject()(
 
   
   private[controllers] def putEntitlementCommon(org: UUID, id: UUID)(
-      implicit request: SecuredRequest[JsValue]) = Future {
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = Future {
 
     val user = request.identity
     val json = request.body
@@ -170,7 +172,7 @@ class AuthorizationController @Inject()(
   }
 
   private[controllers] def updateApiEndpointByEntitlement(entitlement: GestaltResourceInstance)
-                                                         (implicit request: SecuredRequest[JsValue]): Future[Unit] = {
+                                                         (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[Unit] = {
     val pair = for {
       ent <- Option(Entitlement.make(entitlement))
       if ent.properties.action == "apiendpoint.invoke"
@@ -226,7 +228,7 @@ class AuthorizationController @Inject()(
       org: UUID, 
       typeId: UUID, 
       resourceId: UUID)(
-      implicit request: SecuredRequest[JsValue]) = Future {
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = Future {
     
     // This is the resource we're creating the Entitlement for.
   
@@ -254,14 +256,14 @@ class AuthorizationController @Inject()(
   /**
    * This currently only gets entitlements that are set DIRECTLY on the target Resource (resourceId)
    */
-  private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[_]) = {
+  private[controllers] def getEntitlementsCommon(org: UUID, typeId: UUID, resourceId: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
     AuthorizeList("entitlement.view") {
       ResourceFactory.findChildrenOfType(ResourceIds.Entitlement, resourceId)
     }
   }
   
   private[controllers] def getEntitlementByIdCommon(org: UUID, typeId: UUID, resourceId: UUID, id: UUID)(
-      implicit request: SecuredRequest[_]) = {
+      implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
 
     ResourceFactory.findChildOfType(ResourceIds.Entitlement, resourceId, id) match {
       case Some(res) => Ok(transformEntitlement(res, org, Some(META_URL)))
@@ -330,7 +332,7 @@ class AuthorizationController @Inject()(
    * from a Seq[UUID] to a Seq[ResourceLink]. This is necessary because 'identity' is a polymorphic reference
    * (either a User or a Group), and the type system has no way to indicate this fact for reference properties.
    */
-  private[this] def transformEntitlements(org: UUID)(entitlements: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[_]) = {
+  private[this] def transformEntitlements(org: UUID)(entitlements: => Seq[GestaltResourceInstance])(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
     entitlements map { transformEntitlement(_, org, Some(META_URL)) }
   }
   

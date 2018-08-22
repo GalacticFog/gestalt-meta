@@ -40,7 +40,14 @@ trait ContainerService extends JsonInput {
                       containerSpec: ContainerSpec,
                       userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance]
 
+  def createVolume(context: ProviderContext,
+                   user: AuthAccountWithCreds,
+                   volumeSpec: VolumeSpec,
+                   userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance]
+
   def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
+
+  def patchVolume(volume: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
   def updateContainer(context: ProviderContext, container: GestaltResourceInstance, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
@@ -56,36 +63,20 @@ object ContainerService {
 
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({ case x => Failure(x) })
 
-  def containerRequestOperations(action: String) = List(
+  def caasObjectRequestOperations(action: String) = List(
     controllers.util.Authorize(action),
     controllers.util.EventsPre(action),
     controllers.util.PolicyCheck(action),
     controllers.util.EventsPost(action))
 
-  def containerRequestOptions(user: AuthAccountWithCreds,
-                              environment: UUID,
-                              container: GestaltResourceInstance,
-                              data: Option[Map[String, String]] = None) = RequestOptions(
+  def caasObjectRequestOptions(user: AuthAccountWithCreds,
+                               environment: UUID,
+                               caasObject: GestaltResourceInstance,
+                               data: Option[Map[String, String]] = None) = RequestOptions(
     user = user,
     authTarget = Option(environment),
     policyOwner = Option(environment),
-    policyTarget = Option(container),
-    data = data)
-
-  def secretRequestOperations(action: String) = List(
-    controllers.util.Authorize(action),
-    controllers.util.EventsPre(action),
-    controllers.util.PolicyCheck(action),
-    controllers.util.EventsPost(action))
-
-  def secretRequestOptions(user: AuthAccountWithCreds,
-                           environment: UUID,
-                           secret: GestaltResourceInstance,
-                           data: Option[Map[String, String]] = None) = RequestOptions(
-    user = user,
-    authTarget = Option(environment),
-    policyOwner = Option(environment),
-    policyTarget = Option(secret),
+    policyTarget = Option(caasObject),
     data = data)
 
   def setupPromoteRequest(fqon: String,
@@ -263,6 +254,13 @@ object ContainerService {
     }
   }
 
+  def deleteVolumeHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+    val provider = containerProvider(res)
+    providerManager.getProviderImpl(provider.typeId) map { service =>
+      Await.result(service.destroyVolume(res), 10.seconds)
+    }
+  }
+
   def deleteContainerHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
     val result = for {
       provider <- Try{containerProvider(res)}
@@ -300,11 +298,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
       stats = saasProvider.find(ctx, metaContainer)
     } yield stats).getOrElse(Future.successful(None)) recover {
-      
+
       case ce: java.net.ConnectException =>
         log.error("Error connecting to CaaS provider", ce)
         None
-        
+
       case e: Throwable =>
         log.warn(s"error fetching stats for container ${containerId} from provider", e)
         None
@@ -370,26 +368,48 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   protected[controllers] def updateMetaContainerWithStats(metaCon: GestaltResourceInstance, stats: Option[ContainerStats]): Instance = {
     // TODO: do not overwrite status if currently MIGRATING: https://gitlab.com/galacticfog/gestalt-meta/issues/117
-    val newStats = stats match {
-      case None if metaCon.state == ResourceStates.Failed =>
+    val newProperties = stats match {
+      case Some(stats) =>
+        val pms = Try{
+          Json.parse(metaCon.properties.get("port_mappings")).as[Seq[ContainerSpec.PortMapping]]
+        }.getOrElse(Seq.empty).map {
+          _ match {
+            case lbPm if lbPm.expose_endpoint.contains(true) && lbPm.`type`.contains("loadBalancer") && lbPm.container_port.orElse(lbPm.lb_port).isDefined =>
+              lbPm.copy(
+                lb_address = stats.lb_address.map {
+                  a => ContainerSpec.ServiceAddress(
+                    host = a,
+                    protocol = Some("http"),
+                    port = lbPm.lb_port.orElse(lbPm.container_port).getOrElse(0)
+                  )
+                }
+              )
+            case other => other.copy(
+              lb_address = None
+            )
+          }
+        }
         Seq(
-          "status" -> "FAILED",
-          "num_instances" -> "0",
-          "tasks_running" -> "0",
-          "tasks_healthy" -> "0",
-          "tasks_unhealthy" -> "0",
-          "tasks_staged" -> "0",
-          "instances" -> "[]",
-          "service_addresses" -> "[]")
-      case Some(stats) => Seq(
-        "age" -> stats.age.toString,
-        "status" -> stats.status,
-        "num_instances" -> stats.numInstances.toString,
-        "tasks_running" -> stats.tasksRunning.toString,
-        "tasks_healthy" -> stats.tasksHealthy.toString,
-        "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
-        "tasks_staged" -> stats.tasksStaged.toString,
-        "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"))
+          "age" -> stats.age.toString,
+          "status" -> stats.status,
+          "num_instances" -> stats.numInstances.toString,
+          "tasks_running" -> stats.tasksRunning.toString,
+          "tasks_healthy" -> stats.tasksHealthy.toString,
+          "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
+          "tasks_staged" -> stats.tasksStaged.toString,
+          "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"),
+          "port_mappings" -> Json.toJson(pms).toString
+        )
+      case None if metaCon.state == ResourceStates.Failed => Seq(
+        "status" -> "FAILED",
+        "num_instances" -> "0",
+        "tasks_running" -> "0",
+        "tasks_healthy" -> "0",
+        "tasks_unhealthy" -> "0",
+        "tasks_staged" -> "0",
+        "instances" -> "[]",
+        "service_addresses" -> "[]"
+      )
       case None => Seq(
         "status" -> "LOST",
         "num_instances" -> "0",
@@ -398,18 +418,20 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
         "tasks_unhealthy" -> "0",
         "tasks_staged" -> "0",
         "instances" -> "[]",
-        "service_addresses" -> "[]")
+        "service_addresses" -> "[]"
+      )
     }
     metaCon.copy(
-      properties = Some(metaCon.properties.getOrElse(Map.empty) ++ newStats.toMap))
+      properties = Some(metaCon.properties.getOrElse(Map.empty) ++ newProperties.toMap)
+    )
   }
 
   def updateContainer(context: ProviderContext,
                       container: Instance,
                       user: AuthAccountWithCreds,
                       request: RequestHeader): Future[Instance] = {
-    val operations = containerRequestOperations("container.update")
-    val options = containerRequestOptions(user, context.environmentId, container)
+    val operations = caasObjectRequestOperations("container.update")
+    val options = caasObjectRequestOptions(user, context.environmentId, container)
     SafeRequest(operations, options) ProtectAsync { _ =>
       for {
         service <- Future.fromTry {
@@ -432,12 +454,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     val input = ContainerSpec.toResourcePrototype(containerSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.workspace.orgId, input, user, None)
-    val operations = containerRequestOperations("container.create")
-    val options = containerRequestOptions(user, context.environmentId, proto)
+    val operations = caasObjectRequestOperations("container.create")
+    val options = caasObjectRequestOptions(user, context.environmentId, proto)
 
     SafeRequest(operations, options) ProtectAsync { _ =>
 
-      // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
       val provider = caasProvider(containerSpec.provider.id)
       val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
         "name" -> provider.name,
@@ -469,12 +490,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     val input = SecretSpec.toResourcePrototype(secretSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
-    val operations = secretRequestOperations("secret.create")
-    val options = secretRequestOptions(user, context.environmentId, proto)
+    val operations = caasObjectRequestOperations("secret.create")
+    val options = caasObjectRequestOptions(user, context.environmentId, proto)
 
     SafeRequest(operations, options) ProtectAsync { _ =>
 
-      // TODO: we need an entitlement check (for now: Read; later: Execute/Launch) before allowing the user to use this provider
       val provider = caasProvider(secretSpec.provider.id)
       val secretResourcePre = upsertProperties(
         resource = proto,
@@ -504,6 +524,46 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   }
 
+  override def createVolume(context: ProviderContext, user: AuthAccountWithCreds, volumeSpec: VolumeSpec, userRequestedId: Option[UUID]): Future[Instance] = {
+
+    val input = VolumeSpec.toResourcePrototype(volumeSpec).copy(id = userRequestedId)
+    val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
+    val operations = caasObjectRequestOperations("volume.create")
+    val options = caasObjectRequestOptions(user, context.environmentId, proto)
+
+    SafeRequest(operations, options) ProtectAsync { _ =>
+
+      val provider = caasProvider(volumeSpec.provider.id)
+      val volumeResourcePre = upsertProperties(
+        resource = proto,
+        "provider" -> Json.obj(
+          "name" -> provider.name,
+          "id" -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        ).toString
+      )
+
+      for {
+        metaResource <- Future.fromTry {
+          log.debug("Creating volume resource in Meta")
+          ResourceFactory.create(ResourceIds.User, user.account.id)(volumeResourcePre, Some(context.environmentId))
+        }
+        _ = log.info("Meta volume created: " + metaResource.id)
+        service <- Future.fromTry {
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Creating volume in backend CaaS...")
+          service.createVolume(context, metaResource)
+        }
+        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstance
+
+    }
+
+  }
+
   override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {
       patched <- PatchInstance.applyPatch(origContainer, patch) match {
@@ -518,5 +578,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       updated <- service.update(context, patched)
     } yield updated
   }
+
+  override def patchVolume(volume: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[Instance] = ???
 
 }
