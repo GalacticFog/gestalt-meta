@@ -60,15 +60,12 @@ case object ContainerSpec extends Spec {
   sealed trait VolumeSecretMount {
     def path: String
   }
-
   case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
     override def mount_type: String = "env"
   }
-
   case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "file"
   }
-
   case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "directory"
   }
@@ -86,13 +83,39 @@ case object ContainerSpec extends Spec {
                          `type`: Option[String] = None,
                          lb_address: Option[ServiceAddress] = None )
 
+  sealed trait VolumeAccessMode
+  case object ReadWriteOnce extends VolumeAccessMode
+  case object ReadWriteMany extends VolumeAccessMode
+  case object ReadOnlyMany  extends VolumeAccessMode
+  object VolumeAccessMode {
+    val values = Seq(ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
+    def fromString(s: String) =
+      values.find(_.toString == s).map(Success(_)).getOrElse(
+        Failure[VolumeAccessMode](new BadRequestException(s"Volume Access Mode type must be one of ${values.map("'" + _.toString + "'").mkString(", ")}"))
+      )
+
+    implicit val volumeAccessModeRds = Reads[VolumeAccessMode] {
+      _.validate[String].map(VolumeAccessMode.fromString).flatMap{_ match {
+        case Success(vam) => JsSuccess(vam)
+        case Failure(err) => JsError(err.getMessage)
+      }}
+    }
+
+    implicit val volumeAccessModeWrts = Writes[VolumeAccessMode] { vam => JsString(vam.toString) }
+  }
+
+
+
   sealed trait VolumeMountSpec {
     def mount_path: String
+    def mode: VolumeAccessMode
   }
 
   case class InlineVolumeMountSpec( mount_path: String,
+                                    mode: VolumeAccessMode,
                                     volume_spec: VolumeSpec ) extends VolumeMountSpec
   case class ExistingVolumeMountSpec( mount_path: String,
+                                      mode: VolumeAccessMode,
                                       volume_id: UUID ) extends VolumeMountSpec
 
   case object Volume {

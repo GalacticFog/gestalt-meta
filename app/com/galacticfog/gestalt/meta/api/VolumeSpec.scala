@@ -27,30 +27,26 @@ case object VolumeSpec {
   sealed trait Type {
     def label: String
   }
+  case object Persistent extends Type {val label = "persistent"}
+  case object HostPath extends Type {val label = "host_path"}
+  case object External extends Type {val label = "external"}
+  case object Dynamic extends Type {val label = "dynamic"}
   object Type {
-    def fromString = (s: String) => s match {
-      case Persistent.label => Success(Persistent)
-      case HostPath.label => Success(HostPath)
-      case External.label => Success(External)
-      case Dynamic.label => Success(Dynamic)
-      case _ => Failure[Type](new BadRequestException(s"/properties/type must be one of ${Seq(Persistent,HostPath,External,Dynamic).map("'" + _.label + "'").mkString(", ")}"))
-    }
-  }
-  final case object Persistent extends Type {val label = "persistent"}
-  final case object HostPath extends Type {val label = "host_path"}
-  final case object External extends Type {val label = "external"}
-  final case object Dynamic extends Type {val label = "dynamic"}
-
-  implicit val volumeTypeReads = new Reads[VolumeSpec.Type] {
-    override def reads(json: JsValue): JsResult[VolumeSpec.Type] = {
-      json.validate[String].map(VolumeSpec.Type.fromString).flatMap(_ match {
-        case Success(t) => JsSuccess(t)
-        case Failure(f) => JsError(f.getMessage)
-      })
-    }
+    val values = Seq(Persistent,HostPath,External,Dynamic)
+    def fromString(s: String) =
+      values.find(_.label == s).map(Success(_)).getOrElse(
+        Failure[Type](new BadRequestException(s"/properties/type was '$s', must be one of ${values.map("'" + _.label + "'").mkString(", ")}"))
+      )
   }
 
-  implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { (o: VolumeSpec.Type) => JsString(o.label) }
+  implicit val volumeTypeReads = Reads[VolumeSpec.Type] {
+    _.validate[String].map(VolumeSpec.Type.fromString).flatMap(_ match {
+      case Success(t) => JsSuccess(t)
+      case Failure(f) => JsError(f.getMessage)
+    })
+  }
+
+  implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { t => Json.toJson(t.label) }
 
   implicit val volumeSpecFmt = Json.format[VolumeSpec]
 

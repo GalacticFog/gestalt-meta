@@ -10,7 +10,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, UnprocessableEntityException}
 import com.galacticfog.gestalt.marathon._
@@ -30,7 +30,7 @@ import scala.concurrent.duration._
 import scala.language.postfixOps
 
 trait MarathonClientFactory {
-  def getClient(provider: GestaltResourceInstance): Future[MarathonClient]
+  def getClient(provider: Instance): Future[MarathonClient]
 }
 
 class DefaultMarathonClientFactory @Inject() ( defaultClient: WSClient,
@@ -118,11 +118,11 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   import scala.language.implicitConversions
   implicit def jsval2obj(jsv: JsValue): JsObject = jsv.as[JsObject]
 
-  def create( context: ProviderContext, container: GestaltResourceInstance )
-            ( implicit ec: ExecutionContext ): Future[GestaltResourceInstance] = {
+  def create( context: ProviderContext, container: Instance )
+            ( implicit ec: ExecutionContext ): Future[Instance] = {
     log.debug("Entered create(...)")
 
-    def updateSuccessfulLaunch(resource: GestaltResourceInstance)(marathonResponse: JsValue): GestaltResourceInstance = {
+    def updateSuccessfulLaunch(resource: Instance)(marathonResponse: JsValue): Instance = {
       log.debug("Entered updateSuccessfulLaunch(...)")
       val marathonAppId = (marathonResponse \ "id").as[String]
       // This parses the marathon VIP labels into meta port_mapping.service_address
@@ -133,7 +133,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
       )
     }
 
-    def updateFailedLaunch(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
+    def updateFailedLaunch(resource: Instance)(t: Throwable): Throwable = {
       BadRequestException(s"launch failed: ${t.getMessage}")
     }
 
@@ -182,7 +182,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+  override def find(context: ProviderContext, container: Instance): Future[Option[ContainerStats]] = {
     // Lookup container in marathon, convert to ContainerStats
     ContainerService.resourceExternalId(container) match {
       case None => Future.successful(None)
@@ -215,7 +215,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     } yield list
   }
 
-  private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
+  private[services] def upsertProperties(resource: Instance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
@@ -230,7 +230,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     * @param origResource the resource for the container being updated
     * @return a resource for the container, potentially updated with ServiceAddress info for the port mappings
     */
-  private[services] def updateServiceAddresses(provider: GestaltResourceInstance, marApp: JsValue, origResource: GestaltResourceInstance): GestaltResourceInstance = {
+  private[services] def updateServiceAddresses(provider: Instance, marApp: JsValue, origResource: Instance): Instance = {
     val providerConfig = ContainerService.getProviderConfig(provider) getOrElse Json.obj()
     val marathonFrameworkName = (providerConfig \ Properties.MARATHON_FRAMEWORK_NAME).asOpt[String].getOrElse("marathon")
     val dcosClusterName = (providerConfig \ Properties.DCOS_CLUSTER_NAME).asOpt[String].getOrElse("thisdcos")
@@ -345,13 +345,13 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
                            (implicit ec: ExecutionContext): Future[Instance] = {
     log.debug("Entered createSecret(...)")
 
-    def updateSuccessfulLaunch(id: String, resource: GestaltResourceInstance)(marathonResponse: Unit): GestaltResourceInstance = {
+    def updateSuccessfulLaunch(id: String, resource: Instance)(marathonResponse: Unit): Instance = {
       upsertProperties(resource.copy(
         state = ResourceState.id(ResourceStates.Active)
       ), "external_id" -> id)
     }
 
-    def createFailed(resource: GestaltResourceInstance)(t: Throwable): Throwable = {
+    def createFailed(resource: Instance)(t: Throwable): Throwable = {
       ResourceFactory.hardDeleteResource(resource.id)
       UnprocessableEntityException(s"secret creation failed: ${t.getMessage}")
     }
