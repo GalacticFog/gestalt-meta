@@ -611,7 +611,7 @@ package object marathon {
                   containerPath = vms.mount_path,
                   hostPath = Some(host_path),
                   persistent = None,
-                  mode = None
+                  mode = Some(if (vms.mode == ContainerSpec.ReadOnlyMany) "RO" else "RW")
                 )
               case (VolumeSpec.Persistent, JsSuccess(VolumeSpec.PersistentVolume(size), _)) =>
                 Container.Volume(
@@ -620,7 +620,7 @@ package object marathon {
                   persistent = Some(Container.PersistentVolumeInfo(
                     size = size
                   )),
-                  mode = None
+                  mode = Some("RW")
                 )
               case (_, JsError(errs)) => throw new InternalErrorException(s"error parsing volume config: ${Js.errorString(errs)}")
               case (_, _) => throw new BadRequestException("unsupported valume type")
