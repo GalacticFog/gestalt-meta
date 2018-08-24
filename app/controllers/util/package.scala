@@ -128,12 +128,11 @@ package object util {
   }
   
   def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
-    m map { _ map { case (k,v) =>
-        (k -> (v match {
-          case JsString(value) => value
-          case other => other.toString
-        }))  
-      }
+    m map {
+      _ mapValues { _ match {
+        case JsString(value) => value
+        case other => other.toString
+      } }
     }
   }
   

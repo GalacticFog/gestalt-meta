@@ -48,23 +48,7 @@ class ContainerController @Inject()(
   import ContainerController._
   import com.galacticfog.gestalt.meta.api.errors._
   import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-  
-  private[controllers] def specToInstance(
-      fqon: String, 
-      user: AuthAccountWithCreds, 
-      containerSpec: ContainerSpec, 
-      containerId: Option[UUID]): Try[GestaltResourceInstance] = Try {
-    
-    val org = orgFqon(fqon)
-      .map(_.id)
-      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-      
-    val containerResourceInput: GestaltResourceInput = 
-      ContainerSpec.toResourcePrototype(containerSpec).copy( id = containerId )
-      
-    resourceWithDefaults(org, containerResourceInput, user, None)
-  }  
-  
+
   type MetaCreate = (AuthAccountWithCreds, GestaltResourceInstance, UUID) => Try[GestaltResourceInstance]
   type BackendCreate = (ProviderContext, GestaltResourceInstance) => Future[GestaltResourceInstance]
   

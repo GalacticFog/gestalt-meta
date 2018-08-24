@@ -311,23 +311,18 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
+    val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
+    val fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
+        spec.port_mappings
+    }
+    val fIngress = createIngress(kube, namespace, containerId, spec, context) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
+        ()
+    }
     for {
-    /*
-     * This creates any volume claims that may not exist and tests each creation
-     * for failure. If a failure is detected, processing stops and an exception is thrown.
-     */
-      _ <- reconcileVolumeClaims(kube, namespace, spec.volumes)
-      fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
-      fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
-        case e: Throwable =>
-          log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
-          spec.port_mappings
-      }
-      fIngress = createIngress(kube, namespace, containerId, spec, context) recover {
-        case e: Throwable =>
-          log.error(s"error creating Kubernetes Ingress for container ${containerId}; assuming that it was not created",e)
-          ()
-      }
       dep <- fDeployment
       _   <- fIngress
       updatedPMs <- fUpdatedPMsFromService
@@ -340,25 +335,18 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
    * Update a Deployment in Kubernetes, updating/creating/deleting Services/Ingresses as needed
    */
   private[services] def updateDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
+    val fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
+    val fUpdatedPMsFromService = updateServices(kube, namespace, containerId, spec, context) recover {
+      case e: Throwable =>
+        log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
+        spec.port_mappings
+    }
+    val fIngress = updateIngress(kube, namespace, containerId, spec, context) recover {
+      case e: Throwable =>
+        log.error(s"error updating Kubernetes Ingress for container ${containerId}; assuming that is in an invalid state",e)
+        ()
+    }
     for {
-    /*
-     * This creates any volume claims that may not exist and tests each creation
-     * for failure. If a failure is detected, processing stops and an exception is thrown.
-     */
-      _ <- reconcileVolumeClaims(kube, namespace, spec.volumes)
-
-      fDepl = kube.update[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
-      fUpdatedPMsFromService = updateServices(kube, namespace, containerId, spec, context) recover {
-        case e: Throwable =>
-          log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
-          spec.port_mappings
-      }
-      fIngress = updateIngress(kube, namespace, containerId, spec, context) recover {
-        case e: Throwable =>
-          log.error(s"error updating Kubernetes Ingress for container ${containerId}; assuming that is in an invalid state",e)
-          ()
-      }
-
       _ <- fDepl
       _ <- fIngress
       updatedPMs <- fUpdatedPMsFromService
@@ -456,25 +444,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           kube.delete[O](d.name)
       }
     } yield deletes
-  }
-
-  /**
-   * Convert a ContainerSpec to a GestaltResourceInstance
-   */
-  private[services] def specToInstance(
-      fqon: String,
-      user: AuthAccountWithCreds,
-      containerSpec: ContainerSpec,
-      containerId: Option[UUID]): Try[GestaltResourceInstance] = Try {
-
-    val org = orgFqon(fqon)
-      .map(_.id)
-      .getOrElse(throw new BadRequestException("launchContainer called with invalid fqon"))
-
-    val containerResourceInput: GestaltResourceInput =
-      ContainerSpec.toResourcePrototype(containerSpec).copy(id = containerId)
-
-    resourceWithDefaults(org, containerResourceInput, user, None)
   }
 
   private[services] def mkSecret(id: UUID, secret: SecretSpec, namespace: String, context: ProviderContext): Secret = {
@@ -660,27 +629,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-
-  def reconcileVolumeClaims(kube: RequestContext, namespace: String, volumes: Seq[ContainerSpec.Volume]): Future[Seq[PersistentVolumeClaim]] = {
-    for {
-      pvcs <- kube.list[PersistentVolumeClaimList]
-      volumeClaims = volumes flatMap {v => KubeVolume(v).asVolumeClaim(namespace)}
-      out <- Future.sequence(volumeClaims map { pvc =>
-        pvcs.items.find(_.name.equalsIgnoreCase(pvc.name)) match {
-          case Some(matchingPvc) =>
-            log.debug(s"Found existing volume claim with name '${matchingPvc.name}'")
-            Future.successful(matchingPvc)
-          case None =>
-            log.info(s"Creating new Persistent Volume Claim '${pvc.name}'")
-            kube.create[PersistentVolumeClaim](pvc) recoverWith {
-              case e: K8SException =>
-                unprocessable(s"Failed creating PVC for volume '${pvc.name}': " + e.status.message)
-            }
-        }
-      })
-    } yield out
-  }
-  
   private[services] def mkKubernetesContainer(spec: ContainerSpec, provider: GestaltResourceInstance): skuber.Container = {
     val cpuRequest = ContainerService.getProviderProperty[String](provider, CPU_REQ_TYPE).getOrElse(DEFAULT_CPU_REQ).split(",")
     val memRequest = ContainerService.getProviderProperty[String](provider, MEM_REQ_TYPE).getOrElse(DEFAULT_MEM_REQ).split(",")
@@ -744,7 +692,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       /*
        * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
        */
-      val volMounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
+      // val volMounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
 
       /*
        * each kube volume needs a name, used for reference internal to the deployment, generate a uuid to use
@@ -920,14 +868,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         affinity = affinity
       )
         .addContainer(container.copy(
-          volumeMounts = (volMounts ++ secDirMounts ++ secretFileMounts).toList,
+          volumeMounts = (/* volMounts ++ */ secDirMounts ++ secretFileMounts).toList,
           env = container.env ++ envSecrets
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
       val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](context.provider, "host_volume_whitelist").getOrElse(Seq.empty)
 
-      val storageVolumes = containerSpec.volumes map { v =>
+      val storageVolumes = Seq.empty /* containerSpec.volumes map { v =>
         val name = v.name getOrElse {
           unprocessable("Malformed volume specification. Must supply 'name'")
         }
@@ -953,7 +901,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           case _ =>
             unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
         }
-      }
+      } */
 
       val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)

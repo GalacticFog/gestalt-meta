@@ -7,12 +7,12 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
 import play.api.Logger
-import play.api.libs.json._
-import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
+import play.api.libs.json.Reads._
+import play.api.libs.json._
 
-import scala.util.{Failure, Success, Try}
 import scala.language.implicitConversions
+import scala.util.{Failure, Success, Try}
 
 case class ContainerSpec(name: String = "",
                          description: Option[String] = None,
@@ -31,7 +31,7 @@ case class ContainerSpec(name: String = "",
                          args: Option[Seq[String]] = None,
                          force_pull: Boolean = false,
                          health_checks: Seq[ContainerSpec.HealthCheck] = Seq(),
-                         volumes: Seq[ContainerSpec.Volume] = Seq(),
+                         volumes: Seq[ContainerSpec.VolumeMountSpec] = Seq(),
                          labels: Map[String,String] = Map(),
                          env: Map[String,String] = Map(),
                          user: Option[String] = None,
@@ -60,15 +60,12 @@ case object ContainerSpec extends Spec {
   sealed trait VolumeSecretMount {
     def path: String
   }
-
   case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
     override def mount_type: String = "env"
   }
-
   case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "file"
   }
-
   case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount with VolumeSecretMount {
     override def mount_type: String = "directory"
   }
@@ -85,15 +82,42 @@ case object ContainerSpec extends Spec {
                          lb_port: Option[Int] = None,
                          `type`: Option[String] = None,
                          lb_address: Option[ServiceAddress] = None )
-                         
-  case class Volume(container_path: String,
-                    host_path: Option[String],
-                    persistent: Option[Volume.PersistentVolumeInfo],
-                    mode: Option[String],
-                    name: Option[String] = None) {
-    def isPersistent: Boolean = persistent.isDefined
+
+  sealed trait VolumeAccessMode
+  case object ReadWriteOnce extends VolumeAccessMode
+  case object ReadWriteMany extends VolumeAccessMode
+  case object ReadOnlyMany  extends VolumeAccessMode
+  object VolumeAccessMode {
+    val values = Seq(ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
+    def fromString(s: String) =
+      values.find(_.toString == s).map(Success(_)).getOrElse(
+        Failure[VolumeAccessMode](new BadRequestException(s"Volume Access Mode type must be one of ${values.map("'" + _.toString + "'").mkString(", ")}"))
+      )
+
+    implicit val volumeAccessModeRds = Reads[VolumeAccessMode] {
+      _.validate[String].map(VolumeAccessMode.fromString).flatMap{_ match {
+        case Success(vam) => JsSuccess(vam)
+        case Failure(err) => JsError(err.getMessage)
+      }}
+    }
+
+    implicit val volumeAccessModeWrts = Writes[VolumeAccessMode] { vam => JsString(vam.toString) }
   }
-  
+
+
+
+  sealed trait VolumeMountSpec {
+    def mount_path: String
+    def mode: VolumeAccessMode
+  }
+
+  case class InlineVolumeMountSpec( mount_path: String,
+                                    mode: VolumeAccessMode,
+                                    volume_spec: VolumeSpec ) extends VolumeMountSpec
+  case class ExistingVolumeMountSpec( mount_path: String,
+                                      mode: VolumeAccessMode,
+                                      volume_id: UUID ) extends VolumeMountSpec
+
   case object Volume {
   
     case class PersistentVolumeInfo(size: Long)
@@ -181,7 +205,6 @@ case object ContainerSpec extends Spec {
       parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
     } yield parsedTimestamp
 
-    
     val attempt = for {
       props <- Try{metaContainerSpec.properties.get}
       ctype <- Try{props("container_type")}
@@ -195,7 +218,7 @@ case object ContainerSpec extends Spec {
       acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
       args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
       health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.Volume]]}
+      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.VolumeMountSpec]]}
       secrets = props.get("secrets") map {json => Json.parse(json).as[Seq[ContainerSpec.SecretMount]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
       env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
@@ -240,15 +263,17 @@ case object ContainerSpec extends Spec {
     }
   }
 
-  lazy val secretDirMountReads = Json.reads[SecretDirMount]
-  lazy val secretFileMountReads = Json.reads[SecretFileMount]
-  lazy val secretEnvMountReads = Json.reads[SecretEnvMount]
+  implicit val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
 
-  lazy val secretDirMountWrites = Json.writes[SecretDirMount]
-  lazy val secretFileMountWrites = Json.writes[SecretFileMount]
-  lazy val secretEnvMountWrites = Json.writes[SecretEnvMount]
+  val secretDirMountReads = Json.reads[SecretDirMount]
+  val secretFileMountReads = Json.reads[SecretFileMount]
+  val secretEnvMountReads = Json.reads[SecretEnvMount]
 
-  implicit lazy val secretMountReads = new Reads[SecretMount] {
+  val secretDirMountWrites = Json.writes[SecretDirMount]
+  val secretFileMountWrites = Json.writes[SecretFileMount]
+  val secretEnvMountWrites = Json.writes[SecretEnvMount]
+
+  implicit val secretMountReads = new Reads[SecretMount] {
     override def reads(json: JsValue): JsResult[SecretMount] = (json \ "mount_type").asOpt[String] match {
       case Some("directory") => secretDirMountReads.reads(json)
       case Some("file")      => secretFileMountReads.reads(json)
@@ -257,21 +282,19 @@ case object ContainerSpec extends Spec {
     }
   }
 
-  implicit lazy val secretMountWrites = new Writes[SecretMount] {
+  implicit val secretMountWrites = new Writes[SecretMount] {
     override def writes(sm: SecretMount): JsValue = (sm match {
       case env: SecretEnvMount   => secretEnvMountWrites.writes(env)
       case file: SecretFileMount => secretFileMountWrites.writes(file)
       case dir: SecretDirMount   => secretDirMountWrites.writes(dir)
-    }).asInstanceOf[JsObject] ++ Json.obj("mount_type" -> sm.mount_type)
+    }) ++ Json.obj("mount_type" -> sm.mount_type)
   }
 
-  implicit lazy val inputProviderFmt = Json.format[ContainerSpec.InputProvider]
+  implicit val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
 
-  implicit lazy val metaHealthCheckFmt = Json.format[ContainerSpec.HealthCheck]
+  implicit val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
 
-  implicit lazy val metaPersistentVolumeFmt = Json.format[ContainerSpec.Volume.PersistentVolumeInfo]
-
-  implicit lazy val metaPortMappingSpecReads: Reads[ContainerSpec.PortMapping] = (
+  implicit val metaPortMappingSpecReads: Reads[ContainerSpec.PortMapping] = (
     (__ \ "protocol").read[String] and
       (__ \ "container_port").readNullable[Int](max(65535) andKeep min(1)) and
       (__ \ "host_port").readNullable[Int](max(65535) andKeep min(0)) and
@@ -286,11 +309,20 @@ case object ContainerSpec extends Spec {
       (__ \ "lb_address").readNullable[ServiceAddress]
     )(ContainerSpec.PortMapping.apply _)
 
-  implicit lazy val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
+  implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
+  implicit val existingVMSFmt = Json.format[ContainerSpec.ExistingVolumeMountSpec]
+  implicit val volSpec: Format[VolumeSpec] = VolumeSpec.volumeSpecFmt
+  implicit val inlineVMSFmt = Json.format[ContainerSpec.InlineVolumeMountSpec]
 
-  implicit lazy val metaVolumeSpecFmt = Json.format[ContainerSpec.Volume]
+  implicit val metaVMCSpecRds =
+    Json.reads[ContainerSpec.ExistingVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec ) |
+      Json.reads[ContainerSpec.InlineVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec)
+  implicit val metaVMCSpecWrts = Writes[ContainerSpec.VolumeMountSpec] {
+    case evmc : ContainerSpec.ExistingVolumeMountSpec => Json.toJson(evmc)
+    case ivmc : ContainerSpec.InlineVolumeMountSpec   => Json.toJson(ivmc)
+  }
 
-  lazy val containerSpecWrites: Writes[ContainerSpec] = (
+  val containerSpecWrites: Writes[ContainerSpec] = (
     (__ \ "container_type").write[String] and
       (__ \ "image").write[String] and
       (__ \ "provider").write[ContainerSpec.InputProvider] and
@@ -306,7 +338,7 @@ case object ContainerSpec extends Spec {
       (__ \ "args").writeNullable[Seq[String]] and
       (__ \ "force_pull").write[Boolean] and
       (__ \ "health_checks").write[Seq[ContainerSpec.HealthCheck]] and
-      (__ \ "volumes").write[Seq[ContainerSpec.Volume]] and
+      (__ \ "volumes").write[Seq[ContainerSpec.VolumeMountSpec]] and
       (__ \ "secrets").write[Seq[ContainerSpec.SecretMount]] and
       (__ \ "labels").write[Map[String,String]] and
       (__ \ "env").write[Map[String,String]] and
@@ -335,7 +367,7 @@ case object ContainerSpec extends Spec {
     )
   )
 
-  lazy val containerSpecReads: Reads[ContainerSpec] = (
+  val containerSpecReads: Reads[ContainerSpec] = (
     ((__ \ "name").read[String] orElse Reads.pure[String]("")) and
       (__ \ "description").readNullable[String] and
       (__ \ "container_type").read[String] and
@@ -353,173 +385,21 @@ case object ContainerSpec extends Spec {
       (__ \ "args").readNullable[Seq[String]] and
       ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
       ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq.empty)) and
-      ((__ \ "volumes").read[Seq[ContainerSpec.Volume]] orElse Reads.pure(Seq.empty)) and
+      ((__ \ "volumes").read[Seq[ContainerSpec.VolumeMountSpec]] orElse Reads.pure(Seq.empty)) and
       ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
       ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
       (__ \ "user").readNullable[String] and
       ((__ \ "secrets").read[Seq[SecretMount]] orElse Reads.pure(Seq.empty))
     )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,_))
 
-  implicit lazy val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
+  implicit val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
 
 }
 
-case class VolumeSpec(name: String = "",
-                      description: Option[String] = None,
-                      provider: ContainerSpec.InputProvider,
-                      `type`: VolumeSpec.Type,
-                      config: JsValue,
-                      reclamation_policy: Option[String] = None,
-                      external_id: Option[String] = None
-                     ) extends Spec {
-
-}
-
-case object VolumeSpec {
-  sealed trait Type {
-    def label: String
-  }
-  object Type {
-    def fromString = (s: String) => s match {
-      case Persistent.label => Success(Persistent)
-      case HostPath.label => Success(HostPath)
-      case External.label => Success(External)
-      case Dynamic.label => Success(Dynamic)
-      case _ => Failure[Type](new BadRequestException(s"/properties/type must be one of ${Seq(Persistent,HostPath,External,Dynamic).map("'" + _.label + "'").mkString(", ")}"))
-    }
-  }
-  final case object Persistent extends Type {val label = "persistent"}
-  final case object HostPath extends Type {val label = "host_path"}
-  final case object External extends Type {val label = "external"}
-  final case object Dynamic extends Type {val label = "dynamic"}
-
-  sealed trait VolumeConfig
-  case class PersistentVolume(size: Long) extends VolumeConfig
-  case class HostPathVolume(host_path: String) extends VolumeConfig
-  case class DynamicVolume(storage_class: String) extends VolumeConfig
-  case class ExternalVolume(config: JsValue) extends VolumeConfig
-
-  val persistentVolumeRds = Json.reads[PersistentVolume]
-  val hostPathVolumeRds = Json.reads[HostPathVolume]
-  val dynamicVolumeRds = Json.reads[DynamicVolume]
-  val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
-
-  implicit val volumeConfigRds =
-    persistentVolumeRds.map( vc => vc : VolumeConfig) |
-    hostPathVolumeRds.map( vc => vc : VolumeConfig) |
-    dynamicVolumeRds.map( vc => vc : VolumeConfig) |
-    externalVolumeRds.map( vc => vc : VolumeConfig)
-
-  def toResourcePrototype(spec: VolumeSpec): GestaltResourceInput = GestaltResourceInput(
-    name = spec.name,
-    resource_type = Some(migrations.V13.VOLUME_TYPE_ID),
-    description = spec.description,
-    resource_state = None,
-    properties = Some(Map[String,JsValue](
-      "provider" -> Json.toJson(spec.provider),
-      "type" -> JsString(spec.`type`.label),
-      "config" -> spec.config
-    ) ++ Seq[Option[(String,JsValue)]](
-      spec.reclamation_policy map ("reclamation_policy" -> JsString(_)),
-      spec.external_id map ("external_id" -> JsString(_))
-    ).flatten.toMap)
-  )
-
-  implicit val volumeTypeReads = new Reads[VolumeSpec.Type] {
-    override def reads(json: JsValue): JsResult[Type] = {
-      json.validate[String].map(VolumeSpec.Type.fromString).flatMap(_ match {
-        case Success(t) => JsSuccess(t)
-        case Failure(f) => JsError(f.getMessage)
-      })
-    }
-  }
-
-  implicit val volumeTypeWrites = new Writes[VolumeSpec.Type] {
-    override def writes(o: Type): JsValue = JsString(o.label)
-  }
-
-  def fromResourceInstance(metaVolumeSpec: GestaltResourceInstance): Try[VolumeSpec] = {
-    if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
-    for {
-      props <- Try{metaVolumeSpec.properties.get}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      tpe <- Try{props("type")}.flatMap(Type.fromString)
-      config <- Try{Json.parse(props("config"))}
-    } yield VolumeSpec(
-      name = metaVolumeSpec.name,
-      description = metaVolumeSpec.description,
-      provider = provider,
-      `type` = tpe,
-      config = config,
-      reclamation_policy = props.get("reclamation_policy"),
-      external_id = props.get("external_id")
-    )
-  }
-
-}
-
-case class SecretSpec( name: String,
-                       description: Option[String] = None,
-                       provider: ContainerSpec.InputProvider,
-                       items: Seq[SecretSpec.Item] = Seq.empty )
-
-case object SecretSpec {
-
-  case class Item(key: String, value: Option[String])
-
-  val log = Logger(this.getClass)
-
-  def toResourcePrototype(spec: SecretSpec): GestaltResourceInput = GestaltResourceInput(
-    name = spec.name,
-    resource_type = Some(ResourceIds.Secret),
-    description = spec.description,
-    resource_state = None,
-    properties = Some(Map[String,JsValue](
-      "provider" -> Json.toJson(spec.provider),
-      "items" -> Json.toJson(spec.items.map(_.copy(value = None))) // values do not get persisted to meta
-    ))
-  )
-
-  def fromResourceInstance(metaSecretSpec: GestaltResourceInstance): Try[SecretSpec] = {
-    if (metaSecretSpec.typeId != ResourceIds.Secret) return Failure(new RuntimeException("cannot convert non-Secret resource into SecretSpec"))
-    val attempt = for {
-      props <- Try{metaSecretSpec.properties.get}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      items = props.get("items") map {json => Json.parse(json).as[Seq[SecretSpec.Item]]}
-    } yield SecretSpec(
-      name = metaSecretSpec.name,
-      description = metaSecretSpec.description,
-      provider = provider,
-      items = items.getOrElse(Seq.empty)
-    )
-    attempt.recoverWith {
-      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into SecretSpec: ${e.getMessage}"))
-    }
-  }
 
 
-  lazy val secretNameRegex = "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*".r
 
-  lazy val secretItemKeyRegex = "[-._a-zA-Z0-9]+".r
 
-  lazy val secretItemReads: Reads[SecretSpec.Item] = (
-    (__ \ "key").read[String](Reads.pattern(secretItemKeyRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
-      (__ \ "value").readNullable[String]
-  )(SecretSpec.Item.apply _)
 
-  lazy val secretItemWrites = Json.writes[SecretSpec.Item]
 
-  implicit lazy val secretItemFmt = Format(secretItemReads, secretItemWrites)
 
-  lazy val secretSpecReads: Reads[SecretSpec] = (
-    (__ \ "name").read[String](Reads.pattern(secretNameRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
-      (__ \ "description").readNullable[String] and
-      (__ \ "provider").read[ContainerSpec.InputProvider] and
-      (__ \ "items").read[Seq[SecretSpec.Item]]
-    )(SecretSpec.apply(_,_,_,_))
-
-  lazy val secretSpecWrites = Json.writes[SecretSpec]
-
-  implicit lazy val metaContainerSpec = Format(secretSpecReads, secretSpecWrites)
-
-}
