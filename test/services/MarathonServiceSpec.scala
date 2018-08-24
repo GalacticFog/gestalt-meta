@@ -131,7 +131,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           Json.obj("name" -> "BRIDGE"),
           Json.obj("name" -> "default")
         ))
-      )
+      ) ++ providerConfig
+
     )
 
     lazy val metaSecretItems = Seq(
@@ -1217,7 +1218,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           MarathonService.Properties.SECRET_SUPPORT -> true,
           "networks" -> Json.toJson(Seq(
             Json.obj("name" -> "HOST"),
-            Json.obj("name" -> "BRIDGE")
+            Json.obj("name" -> "BRIDGE"),
+            Json.obj("name" -> "default")
           ))
         )
       ).get
@@ -1276,7 +1278,7 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       await(testSetup.svc.createVolume(
         context = ProviderContext(FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
         metaResource = metaVolume
-      )) must throwA[BadRequestException]("/properties/type must be one of")
+      )) must throwA[BadRequestException]("/properties/type.*must be one of")
     }
 
     "throw 400 on volume type 'external'" in new FakeDCOS() {
