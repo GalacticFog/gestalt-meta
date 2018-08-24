@@ -516,7 +516,7 @@ package object marathon {
       networks <- ContainerService.getProviderProperty[Seq[JsObject]](provider, "networks")
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
-    log.debug("found provider networks" + providerNetworkNames)
+    log.debug("found provider networks: " + providerNetworkNames.mkString(","))
 
     def portMapping(vip: String, pm: ContainerSpec.PortMapping) = Container.Docker.PortMapping(
       protocol = Some(pm.protocol),
@@ -577,7 +577,7 @@ package object marathon {
               )
             }
           } else throw new BadRequestException(
-            message = "invalid network name: container network was not among list of provider networks",
+            message = s"invalid network name: container network '$requestedNetwork' was not among list of provider networks: ${providerNetworkNames.map("'" + _ + "'").mkString(",")}",
             payload = Some(Json.toJson(props))
           )
         case None =>

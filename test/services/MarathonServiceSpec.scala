@@ -63,7 +63,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       (tw,te)
     }
 
-    lazy val testProvider = createMarathonProvider(testEnv.id, "test-provider").get
+    lazy val Success(testProvider) = createMarathonProvider(
+      parent = testEnv.id,
+      name = "test-provider",
+      config = Seq("networks" -> Json.toJson(Seq(
+        Json.obj("name" -> "HOST"),
+        Json.obj("name" -> "BRIDGE")
+      )))
+    )
 
     lazy val baseTestProps = ContainerSpec(
       name = "test-container",
@@ -117,7 +124,14 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     lazy val Success(testProvider) = createMarathonProvider(testEnv.id, "test-provider",
-      Seq[(String,JsValueWrapper)](MarathonService.Properties.SECRET_SUPPORT -> true) ++ providerConfig
+      Seq[(String,JsValueWrapper)](
+        MarathonService.Properties.SECRET_SUPPORT -> true,
+        "networks" -> Json.toJson(Seq(
+          Json.obj("name" -> "HOST"),
+          Json.obj("name" -> "BRIDGE"),
+          Json.obj("name" -> "default")
+        ))
+      )
     )
 
     lazy val metaSecretItems = Seq(
@@ -378,7 +392,15 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
 
     "set non-default labels for HAPROXY exposure" in new FakeDCOS {
       val customHaproxyGroup = "custom-haproxy-exposure-group"
-      var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider", Seq(marathon.HAPROXY_EXP_GROUP_PROP -> customHaproxyGroup)).get
+      var testProviderWithCustomExposure = createMarathonProvider(testEnv.id, "test-provider",
+        Seq(
+          marathon.HAPROXY_EXP_GROUP_PROP -> customHaproxyGroup,
+          "networks" -> Json.toJson(Seq(
+            Json.obj("name" -> "HOST"),
+            Json.obj("name" -> "BRIDGE")
+          ))
+        )
+      ).get
       // "register" this provider to the client factory
       testSetup.mcf.getClient(testProviderWithCustomExposure) returns Future.successful(testSetup.client)
       val testProps = baseTestProps.copy(
@@ -434,7 +456,12 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
     }
 
     "create container should use default namespace if there are no provider-env sibling containers" in new FakeDCOS {
-      val Success(anotherProvider) = createMarathonProvider(testEnv.id, "another-provider")
+      val Success(anotherProvider) = createMarathonProvider(testEnv.id, "another-provider",
+        config = Seq("networks" -> Json.toJson(Seq(
+          Json.obj("name" -> "HOST"),
+          Json.obj("name" -> "BRIDGE")
+        )))
+      )
       val Success(notAProviderSibling) = createInstance(
         ResourceIds.Container,
         "existing-container",
@@ -588,7 +615,11 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
           "parent" -> "{}",
           "config" -> Json.obj(
             Properties.MARATHON_FRAMEWORK_NAME -> marathonFrameworkName,
-            Properties.DCOS_CLUSTER_NAME -> dcosClusterName
+            Properties.DCOS_CLUSTER_NAME -> dcosClusterName,
+            "networks" -> Json.toJson(Seq(
+              Json.obj("name" -> "HOST"),
+              Json.obj("name" -> "BRIDGE")
+            ))
           ).toString
         ))
       )
@@ -1182,7 +1213,13 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       )
     ) {
       val differentProvider = createMarathonProvider(testEnv.id, "test-provider",
-        Seq(MarathonService.Properties.SECRET_SUPPORT -> true)
+        Seq(
+          MarathonService.Properties.SECRET_SUPPORT -> true,
+          "networks" -> Json.toJson(Seq(
+            Json.obj("name" -> "HOST"),
+            Json.obj("name" -> "BRIDGE")
+          ))
+        )
       ).get
 
       val Success(cntr2) = createInstance(

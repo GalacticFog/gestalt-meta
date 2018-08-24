@@ -208,8 +208,8 @@ trait ResourceScope extends Scope with Mockito {
                               name: String = uuid.toString,
                               config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(ResourceIds.DcosProvider, name,
-      parent = Option(parent),
-      properties = Option(Map(
+      parent = Some(parent),
+      properties = Some(Map(
         "parent" -> "{}",
         "config" -> Json.obj(config:_*).toString
       )))
