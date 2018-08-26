@@ -53,14 +53,14 @@ case object VolumeSpec {
   sealed trait VolumeConfig
   case class PersistentVolume(size: Long) extends VolumeConfig
   case class HostPathVolume(host_path: String) extends VolumeConfig
-  case class DynamicVolume(storage_class: String) extends VolumeConfig
+  case class DynamicVolume(storage_class: String, access_mode: ContainerSpec.VolumeAccessMode) extends VolumeConfig
   case class ExternalVolume(config: JsValue) extends VolumeConfig
 
-  val persistentVolumeFmt = Json.format[PersistentVolume]
-  val hostPathVolumeFmt = Json.format[HostPathVolume]
-  val dynamicVolumeFmt = Json.format[DynamicVolume]
-  val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
-  val externalVolumeWrts = Writes[ExternalVolume] { v: ExternalVolume => v.config }
+  implicit val persistentVolumeFmt = Json.format[PersistentVolume]
+  implicit val hostPathVolumeFmt = Json.format[HostPathVolume]
+  implicit val dynamicVolumeFmt = Json.format[DynamicVolume]
+  implicit val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
+  implicit val externalVolumeWrts = Writes[ExternalVolume] { v: ExternalVolume => v.config }
 
   implicit val volumeConfigFmt =
     persistentVolumeFmt.map( vc => vc : VolumeConfig) |

@@ -6,9 +6,8 @@ import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLik
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.{GestaltResourceInput, ResourceIds}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.google.inject.Inject
 import controllers.util._
 import org.joda.time.{DateTime, DateTimeZone}
@@ -17,6 +16,7 @@ import play.api.libs.json._
 import services.util.CommandParser
 import skuber.Container.Port
 import skuber.LabelSelector.dsl._
+import skuber.Volume.GenericVolumeSource
 import skuber._
 import skuber.api.client._
 import skuber.ext._
@@ -28,7 +28,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 import scala.language.{implicitConversions, postfixOps, reflectiveCalls}
 import scala.reflect.runtime.universe._
-import scala.util.{Failure, Success, Try}
+import scala.util.{Failure, Success}
 
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
@@ -47,7 +47,17 @@ object KubernetesService {
   val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
   val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
 
+  val HOST_VOLUME_WHITELIST = "host_volume_whitelist"
+  val STORAGE_CLASSES = "storage_classes"
+
   def unprocessable(message: String) = throw UnprocessableEntityException(message)
+
+  def isAllowedHostPath(provider: ResourceLike, hostPath: String): Boolean = {
+    val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](provider, HOST_VOLUME_WHITELIST).getOrElse(Seq.empty)
+    val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
+    hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))
+  }
+
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
@@ -668,8 +678,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       args      = spec.args.getOrElse(Seq.empty).toList,
       command   = commands.getOrElse(Nil))    
   }
-  
-  
+
+
   /**
    * Create a Kubernetes Deployment object in memory.
    *
@@ -873,8 +883,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
-      val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](context.provider, "host_volume_whitelist").getOrElse(Seq.empty)
-
       val storageVolumes = Seq.empty /* containerSpec.volumes map { v =>
         val name = v.name getOrElse {
           unprocessable("Malformed volume specification. Must supply 'name'")
@@ -1047,8 +1055,48 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    log.warn("NOT IMPLEMENTED")
-    Future.successful(metaResource)
+    for {
+      spec <- Future.fromTry(VolumeSpec.fromResourceInstance(metaResource))
+      v <- spec.config.as[VolumeSpec.VolumeConfig] match {
+        case VolumeSpec.HostPathVolume(hostPath)     =>
+          if (isAllowedHostPath(context.provider, hostPath)) Future.successful(metaResource)
+          else Future.failed(new UnprocessableEntityException("host_path is not in provider's white-list"))
+        case VolumeSpec.PersistentVolume(_)          =>
+          Future.failed(???)
+        case VolumeSpec.ExternalVolume(config)       =>
+          for {
+            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
+            output    <- cleanly(context.provider.id, namespace.name  )(
+              _.create[PersistentVolume](
+                PersistentVolume(
+                  metadata = ObjectMeta(
+                    name = metaResource.name,
+                    namespace = namespace.name,
+                    labels = Map(
+                      META_SECRET_KEY      -> metaResource.id.toString,
+                      META_ENVIRONMENT_KEY -> context.environmentId.toString,
+                      META_WORKSPACE_KEY   -> context.workspace.id.toString,
+                      META_FQON_KEY        -> context.fqon,
+                      META_PROVIDER_KEY    -> context.providerId.toString
+                    )
+                  ),
+                  spec = Some(PersistentVolume.Spec(
+                    capacity = Map.empty,
+                    source = GenericVolumeSource(config.toString)
+                  ))
+                )
+              ) recoverWith { case e: K8SException =>
+                Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+              }
+            )
+          } yield upsertProperties(
+            metaResource,
+            "external_id" -> s"/namespaces/${namespace.name}/persistentvolumes/${metaResource.name}"
+          )
+        case VolumeSpec.DynamicVolume(storage_class, access_mode) =>
+          Future.failed(BadRequestException("volumes of type 'dynamic' not supported at this time"))
+      }
+    } yield v
   }
 
   override def destroyVolume(secret: ResourceLike): Future[Unit] = {
@@ -1062,5 +1110,4 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
 }
-
 
