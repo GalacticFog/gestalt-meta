@@ -36,14 +36,6 @@ async function handlePost(request, response) {
     console.log('TYPEOF CALLBACK : ' + (typeof callback))
     
     lambda.entryPoint(JSON.stringify(event), JSON.stringify(context), callback)
-
-    //console.log('Data: ', JSON.stringify(event, null, 2));
-    //console.log('\nCONTEXT : ' + JSON.stringify(fakeLambdaContext(request.method, request.headers), null, 2))
-    
-//determine if response is "still open" ???
-
-    //response.end()
-    //doend(response)
   })
 }
 
@@ -70,17 +62,6 @@ function responseCallback(response, error, data) {
   response.end(output)
 }
 
-/*
-function responseCallback(response, error, data) {
-  console.log(">>> INSIDE RESPONSE-CALLBACK...")
-  if (error) {
-    console.error("An error occurred: " + error)
-    response.end(error)
-  } else {
-    response.end(JSON.stringify(data, null, 2))
-  }
-}
-*/
 function fakeLambdaContext(method, headers) {
   return {
     executionId: {},
