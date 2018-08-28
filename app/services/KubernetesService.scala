@@ -1085,33 +1085,35 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    for {
-      spec <- Future.fromTry(VolumeSpec.fromResourceInstance(metaResource))
-      v <- spec.parseConfig.get match {
-        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(context.provider, hostPath) =>
-          Future.successful(metaResource)
-        case VolumeSpec.HostPathVolume(hostPath) =>
-          Future.failed(new UnprocessableEntityException(s"host_path '$hostPath' is not in provider's white-list"))
-        case VolumeSpec.PersistentVolume       =>
-          Future.failed(???)
-        case VolumeSpec.ExternalVolume(config) =>
-          for {
-            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-            output    <- cleanly(context.provider.id, namespace.name  )( kube =>
-              kube.create[PersistentVolume](
-                mkPV(namespace, metaResource, spec.size, spec.access_mode, context, GenericVolumeSource(config.toString) )
-              ) recoverWith { case e: K8SException =>
-                Future.failed(new RuntimeException(s"Failed creating PersistentVolume '${spec.name}': " + e.status.message))
-              }
-            )
-          } yield upsertProperties(
-            metaResource,
-            "external_id" -> s"/namespaces/${namespace.name}/persistentvolumes/${metaResource.name}"
-          )
-        case VolumeSpec.DynamicVolume(storage_class) =>
-          Future.successful(metaResource)
-      }
-    } yield v
+    log.warn("NOT IMPLEMENTED")
+    Future.successful(metaResource)
+//    for {
+//      spec <- Future.fromTry(VolumeSpec.fromResourceInstance(metaResource))
+//      v <- spec.parseConfig.get match {
+//        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(context.provider, hostPath) =>
+//          Future.successful(metaResource)
+//        case VolumeSpec.HostPathVolume(hostPath) =>
+//          Future.failed(new UnprocessableEntityException(s"host_path '$hostPath' is not in provider's white-list"))
+//        case VolumeSpec.PersistentVolume       =>
+//          Future.failed(???)
+//        case VolumeSpec.ExternalVolume(config) =>
+//          for {
+//            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
+//            output    <- cleanly(context.provider.id, namespace.name  )( kube =>
+//              kube.create[PersistentVolume](
+//                mkPV(namespace, metaResource, spec.size, spec.access_mode, context, GenericVolumeSource(config.toString) )
+//              ) recoverWith { case e: K8SException =>
+//                Future.failed(new RuntimeException(s"Failed creating PersistentVolume '${spec.name}': " + e.status.message))
+//              }
+//            )
+//          } yield upsertProperties(
+//            metaResource,
+//            "external_id" -> s"/namespaces/${namespace.name}/persistentvolumes/${metaResource.name}"
+//          )
+//        case VolumeSpec.DynamicVolume(storage_class) =>
+//          Future.successful(metaResource)
+//      }
+//    } yield v
   }
 
   override def destroyVolume(secret: ResourceLike): Future[Unit] = {
