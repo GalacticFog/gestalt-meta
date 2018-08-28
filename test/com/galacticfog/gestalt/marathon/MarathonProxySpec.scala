@@ -3,7 +3,7 @@ package com.galacticfog.gestalt.marathon
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.ReadWriteOnce
+import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadWriteOnce
 import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -80,9 +80,9 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
     p
   }
 
-  def createVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue): GestaltResourceInstance = {
+  def createVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue, size: Int = 10, mode: VolumeSpec.VolumeAccessMode = VolumeSpec.ReadWriteOnce): GestaltResourceInstance = {
     val id = uuid()
-    val spec = VolumeSpec(id.toString, None, ContainerSpec.InputProvider(provider.id), tpe, config)
+    val spec = VolumeSpec(id.toString, None, ContainerSpec.InputProvider(provider.id), tpe, config, size = size, access_mode = mode)
     val props = controllers.util.stringmap(VolumeSpec.toResourcePrototype(spec).properties)
     createInstance(migrations.V13.VOLUME_TYPE_ID, id.toString, id, properties = props).get
   }
@@ -621,9 +621,9 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
 
     "add default upgradeStrategy for persistent volumes" in {
       val p = marathonProviderWithStdNetworks
-      val vol1 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1"))
-      val vol2 = createVolume(p,VolumeSpec.Persistent, Json.obj("size" -> 1000))
-      val vol3 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath3"))
+      val vol1 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
+      val vol2 = createVolume(p,VolumeSpec.Persistent, Json.obj("access_mode" -> "ReadWriteOnce", "size" -> 1000))
+      val vol3 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath3", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
       val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -636,9 +636,9 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         network = Some("HOST"),
         num_instances = 1,
         volumes = Seq(
-          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath1", ReadWriteOnce, vol1.id),
-          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath2", ReadWriteOnce, vol2.id),
-          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath3", ReadWriteOnce, vol3.id)
+          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath1", vol1.id),
+          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath2", vol2.id),
+          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath3", vol3.id)
         )
       ), p)
       marApp.upgradeStrategy must beSome(UpgradeStrategy(
@@ -663,8 +663,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
         network = Some("HOST"),
         num_instances = 1,
         volumes = Seq(
-          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath1", ReadWriteOnce, vol1.id),
-          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath2", ReadWriteOnce, vol2.id)
+          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath1", vol1.id),
+          ContainerSpec.ExistingVolumeMountSpec(mount_path = "cpath2", vol2.id)
         )
       ), p)
       marApp.upgradeStrategy must beNone

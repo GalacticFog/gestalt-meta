@@ -1042,7 +1042,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       }
       updatedDepl <- {
         val newDepl = extantDepl.withReplicas(numInstances)
-        log.debug("updating deployment to scale:\n" + Json.prettyPrint(Json.toJson(newDepl)))
+        log.debug(s"updating deployment to scale: ${Json.toJson(newDepl)}")
         kube.update(newDepl)
       }
       updatedNumInstances = updatedDepl.spec.flatMap(_.replicas).getOrElse(
@@ -1054,47 +1054,62 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
+  def mkPV( namespace: Namespace,
+                     metaResource: ResourceLike,
+                     size: Long,
+                     mode: VolumeSpec.VolumeAccessMode,
+                     context: ProviderContext,
+                     source: Volume.PersistentSource ): PersistentVolume = {
+    PersistentVolume(
+      metadata = ObjectMeta(
+        name = metaResource.name,
+        namespace = "",
+        labels = Map(
+          META_SECRET_KEY      -> metaResource.id.toString,
+          META_ENVIRONMENT_KEY -> context.environmentId.toString,
+          META_WORKSPACE_KEY   -> context.workspace.id.toString,
+          META_FQON_KEY        -> context.fqon,
+          META_PROVIDER_KEY    -> context.providerId.toString
+        )
+      ),
+      spec = Some(PersistentVolume.Spec(
+        capacity = Map(Resource.storage -> Resource.Quantity(s"${size}Mi")),
+        source = source,
+        accessModes = List(PersistentVolume.AccessMode.withName(mode.toString)),
+        claimRef = Some(skuber.ObjectReference(
+          namespace = namespace.name,
+          name = metaResource.id.toString
+        ))
+      ))
+    )
+  }
+
   override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     for {
       spec <- Future.fromTry(VolumeSpec.fromResourceInstance(metaResource))
-      v <- spec.config.as[VolumeSpec.VolumeConfig] match {
-        case VolumeSpec.HostPathVolume(hostPath)     =>
-          if (isAllowedHostPath(context.provider, hostPath)) Future.successful(metaResource)
-          else Future.failed(new UnprocessableEntityException("host_path is not in provider's white-list"))
-        case VolumeSpec.PersistentVolume(_)          =>
+      v <- spec.parseConfig.get match {
+        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(context.provider, hostPath) =>
+          Future.successful(metaResource)
+        case VolumeSpec.HostPathVolume(hostPath) =>
+          Future.failed(new UnprocessableEntityException(s"host_path '$hostPath' is not in provider's white-list"))
+        case VolumeSpec.PersistentVolume       =>
           Future.failed(???)
-        case VolumeSpec.ExternalVolume(config)       =>
+        case VolumeSpec.ExternalVolume(config) =>
           for {
             namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-            output    <- cleanly(context.provider.id, namespace.name  )(
-              _.create[PersistentVolume](
-                PersistentVolume(
-                  metadata = ObjectMeta(
-                    name = metaResource.name,
-                    namespace = namespace.name,
-                    labels = Map(
-                      META_SECRET_KEY      -> metaResource.id.toString,
-                      META_ENVIRONMENT_KEY -> context.environmentId.toString,
-                      META_WORKSPACE_KEY   -> context.workspace.id.toString,
-                      META_FQON_KEY        -> context.fqon,
-                      META_PROVIDER_KEY    -> context.providerId.toString
-                    )
-                  ),
-                  spec = Some(PersistentVolume.Spec(
-                    capacity = Map.empty,
-                    source = GenericVolumeSource(config.toString)
-                  ))
-                )
+            output    <- cleanly(context.provider.id, namespace.name  )( kube =>
+              kube.create[PersistentVolume](
+                mkPV(namespace, metaResource, spec.size, spec.access_mode, context, GenericVolumeSource(config.toString) )
               ) recoverWith { case e: K8SException =>
-                Future.failed(new RuntimeException(s"Failed creating Secret '${spec.name}': " + e.status.message))
+                Future.failed(new RuntimeException(s"Failed creating PersistentVolume '${spec.name}': " + e.status.message))
               }
             )
           } yield upsertProperties(
             metaResource,
             "external_id" -> s"/namespaces/${namespace.name}/persistentvolumes/${metaResource.name}"
           )
-        case VolumeSpec.DynamicVolume(storage_class, access_mode) =>
-          Future.failed(BadRequestException("volumes of type 'dynamic' not supported at this time"))
+        case VolumeSpec.DynamicVolume(storage_class) =>
+          Future.successful(metaResource)
       }
     } yield v
   }
@@ -1105,7 +1120,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    log.warn("KuberentesService::updateVolume is currently a no-op and is not expected to be called")
+    log.warn("KubernetesService::updateVolume is currently a no-op and is not expected to be called")
     Future.successful(metaResource)
   }
 

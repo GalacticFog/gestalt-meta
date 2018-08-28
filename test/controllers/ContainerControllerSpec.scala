@@ -1152,6 +1152,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         name = testVolumeName,
         provider = ContainerSpec.InputProvider(id = testProvider.id),
         `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
         config = Json.obj(
           "host_path" -> "/tmp"
         )
@@ -1220,6 +1222,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         name = testVolumeName,
         provider = ContainerSpec.InputProvider(id = testProvider.id),
         `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
         config = Json.obj(
           "host_path" -> "/tmp"
         )

@@ -3,36 +3,37 @@ package services
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.Base64
 
-import scala.collection.JavaConversions._
-import scala.concurrent.Future
-import scala.util.Success
-import scala.language.implicitConversions
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.ContainerSpec.HealthCheck._
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
+import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolume}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
+import org.specs2.matcher.{JsonMatchers, Matcher}
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAfterEach, BeforeAll, Scope}
-import org.specs2.matcher.{JsonMatchers, Matcher}
-import play.api.libs.json.Json
-import play.api.test.PlaySpecification
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
+import play.api.libs.json.Json
 import play.api.libs.json.Json.JsValueWrapper
-import skuber.{PersistentVolumeClaim, Pod, Secret, Service}
+import play.api.test.PlaySpecification
 import skuber.api.client
 import skuber.ext.{Deployment, Ingress, ReplicaSet}
 import skuber.json.format._
-import ContainerSpec.HealthCheck._
-import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolume}
+import skuber.{PersistentVolumeClaim, Pod, Secret, Service}
+
+import scala.collection.JavaConversions._
+import scala.concurrent.Future
+import scala.language.implicitConversions
+import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
 class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -569,8 +570,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
       ))
 
-      import ContainerSpec.PortMapping
-      import ContainerSpec.ServiceAddress
+      import ContainerSpec.{PortMapping, ServiceAddress}
 
       val svcHost = s"${metaContainer.name}.${testEnv.id}.svc.cluster.local"
       updatedContainerProps.get("status") must beSome("LAUNCHED")
@@ -760,8 +760,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "create and mount white-listed host_path volumes" in new FakeKubeCreate(
       volumes= Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath1", ContainerSpec.ReadOnlyMany, uuid()), // Some("/mnt/for_containers/someHostPath"), None, Some("RO"), Some("my-volume-1")),
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath2", ContainerSpec.ReadOnlyMany, uuid())  // Some("/mnt/also_for_containers/wow/someReallyDeepHostPath"), None, Some("RW"), Some("my-volume-2"))
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath1", uuid()), // Some("/mnt/for_containers/someHostPath"), None, Some("RO"), Some("my-volume-1")),
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath2", uuid())  // Some("/mnt/also_for_containers/wow/someReallyDeepHostPath"), None, Some("RW"), Some("my-volume-2"))
       ),
       providerConfig = Seq(
         "host_volume_whitelist" -> Json.arr("/mnt/for_containers", "/mnt/also_for_containers")
@@ -800,7 +800,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "create and mount persistent volume claims when mounting into container" in new FakeKubeCreate(
       volumes = Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", ContainerSpec.ReadOnlyMany, uuid() )  // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", uuid() )  // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
       )
     ) {
       testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
@@ -828,7 +828,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "fail to create container if persistent volume claim creation fails" in new FakeKubeCreate(
       volumes = Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", ContainerSpec.ReadOnlyMany, uuid() ) // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", uuid() ) // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1"))
       )
     ) {
       testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
@@ -848,8 +848,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     "using existing persistent volume claims when mounting into container" in new FakeKubeCreate(
       volumes = Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", ContainerSpec.ReadOnlyMany, uuid() ), // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1")),
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path2", ContainerSpec.ReadOnlyMany, uuid() )  // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadWriteOnce"), Some("my-volume-2"))
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", uuid() ), // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1")),
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path2", uuid() )  // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadWriteOnce"), Some("my-volume-2"))
       )
     ) {
 
@@ -2167,7 +2167,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       await(testSetup.kubeService.createVolume(
         context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
         metaResource = metaVolume
-      )) must throwAn[UnprocessableEntityException]("host_path is not in provider's white-list")
+      )) must throwAn[UnprocessableEntityException]("is not in provider's white-list")
       there were no(testSetup.kubeClient).create(any)(any,any,any)
     }
 
@@ -2205,6 +2205,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "type" -> "persistent",
           "provider" -> Output.renderInstance(testProvider).toString,
           "config" -> Json.obj(
+            "size" -> 1000
           ).toString
         ))
       )
@@ -2256,7 +2257,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         properties = Some(Map(
           "type" -> "dynamic",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(DynamicVolume("unsupported-storage-class", ContainerSpec.ReadWriteOnce)).toString
+          "config" -> Json.toJson(DynamicVolume("unsupported-storage-class")).toString
         ))
       )
       await(testSetup.kubeService.createVolume(
@@ -2278,7 +2279,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         properties = Some(Map(
           "type" -> "dynamic",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(DynamicVolume("storage-class-a", ContainerSpec.ReadWriteOnce)).toString
+          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
         ))
       )
       val newVolume = await(testSetup.kubeService.createVolume(

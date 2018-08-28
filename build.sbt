@@ -93,7 +93,7 @@ libraryDependencies ++= Seq(
   "com.galacticfog" %% "gestalt-security-play"         % "4.0.1-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.0.1-SNAPSHOT" withSources(),
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
-  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.1" withSources(),
+  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.3" withSources(),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
   "net.codingwell"  %% "scala-guice"                   % "4.2.1",
   "org.slf4j"        % "slf4j-api"                     % "1.7.21",
