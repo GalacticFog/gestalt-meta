@@ -1113,6 +1113,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         properties = Some(Map(
           "type" -> "host_path",
           "provider" -> "{}",
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce",
           "config" -> "{}"
         ))
       )
@@ -1134,6 +1136,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "provider" -> Json.toJson(
             ContainerSpec.InputProvider(id = UUID.randomUUID())
           ).toString,
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce",
           "config" -> "{}"
         ))
       )
@@ -1152,6 +1156,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         name = testVolumeName,
         provider = ContainerSpec.InputProvider(id = testProvider.id),
         `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
         config = Json.obj(
           "host_path" -> "/tmp"
         )
@@ -1163,6 +1169,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         properties = Some(Map(
           "provider" -> Json.toJson(testProps.provider).toString,
           "type" -> testProps.`type`.label,
+          "size" -> testProps.size.toString,
+          "access_mode" -> testProps.access_mode.toString,
           "config" -> testProps.config.toString
         ))
       )
@@ -1174,6 +1182,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "provider" -> Json.toJson(testProps.provider).toString,
           "type" -> testProps.`type`.label,
           "config" -> testProps.config.toString,
+          "size" -> testProps.size.toString,
+          "access_mode" -> testProps.access_mode.toString,
           "external_id" -> extId
         ))
       )
@@ -1220,6 +1230,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         name = testVolumeName,
         provider = ContainerSpec.InputProvider(id = testProvider.id),
         `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
         config = Json.obj(
           "host_path" -> "/tmp"
         )
@@ -1230,6 +1242,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         properties = Some(Map(
           "provider" -> Json.toJson(testProps.provider).toString,
           "type" -> testProps.`type`.label,
+          "size" -> testProps.size.toString,
+          "access_mode" -> testProps.access_mode.toString,
           "config" -> testProps.config.toString,
           "external_id" -> s"${extId}"
         ))

@@ -605,25 +605,27 @@ package object marathon {
           case None => throw new InternalErrorException("ContainerSpec referenced non-existent volume id")
           case Some(volumeRes) =>
             val volume = VolumeSpec.fromResourceInstance(volumeRes).get
-            (volume.`type`, volume.config.validate[VolumeSpec.VolumeConfig]) match {
+            (volume.`type`, volume.parseConfig) match {
               case (VolumeSpec.HostPath, JsSuccess(VolumeSpec.HostPathVolume(host_path), _)) =>
                 Container.Volume(
                   containerPath = vms.mount_path,
                   hostPath = Some(host_path),
                   persistent = None,
-                  mode = Some(if (vms.mode == ContainerSpec.ReadOnlyMany) "RO" else "RW")
+                  mode = Some(if (volume.access_mode == VolumeSpec.ReadOnlyMany) "RO" else "RW")
                 )
-              case (VolumeSpec.Persistent, JsSuccess(VolumeSpec.PersistentVolume(size), _)) =>
+              case (VolumeSpec.Persistent, JsSuccess(VolumeSpec.PersistentVolume, _)) =>
                 Container.Volume(
                   containerPath = vms.mount_path,
                   hostPath = None,
                   persistent = Some(Container.PersistentVolumeInfo(
-                    size = size
+                    size = volume.size
                   )),
                   mode = Some("RW")
                 )
               case (_, JsError(errs)) => throw new InternalErrorException(s"error parsing volume config: ${Js.errorString(errs)}")
-              case (_, _) => throw new BadRequestException("unsupported valume type")
+              case (tpe, cfg) =>
+                log.debug(s"$tpe -> $cfg")
+                throw new BadRequestException("unsupported volume type")
             }
         }
       }
