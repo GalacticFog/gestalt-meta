@@ -15,14 +15,48 @@ case class VolumeSpec(name: String = "",
                       provider: ContainerSpec.InputProvider,
                       `type`: VolumeSpec.Type,
                       config: JsValue,
+                      size: Int,
+                      access_mode: VolumeSpec.VolumeAccessMode,
                       reclamation_policy: Option[String] = None,
                       external_id: Option[String] = None,
                       mount_path: Option[String] = None
                      ) extends Spec {
 
+  import VolumeSpec._
+
+  def parseConfig: JsResult[VolumeConfig] = {
+    `type` match {
+      case Persistent => JsSuccess(PersistentVolume)
+      case HostPath   => config.validate[HostPathVolume](hostPathVolumeFmt)
+      case Dynamic    => config.validate[DynamicVolume](dynamicVolumeFmt)
+      case External   => config.validate[ExternalVolume](externalVolumeRds)
+    }
+  }
+
 }
 
 case object VolumeSpec {
+
+  sealed trait VolumeAccessMode
+  case object ReadWriteOnce extends VolumeAccessMode
+  case object ReadWriteMany extends VolumeAccessMode
+  case object ReadOnlyMany  extends VolumeAccessMode
+  object VolumeAccessMode {
+    val values = Seq(ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
+    def fromString(s: String) =
+      values.find(_.toString == s).map(Success(_)).getOrElse(
+        Failure[VolumeAccessMode](new BadRequestException(s"Volume Access Mode type must be one of ${values.map("'" + _.toString + "'").mkString(", ")}"))
+      )
+
+    implicit val volumeAccessModeRds = Reads[VolumeAccessMode] {
+      _.validate[String].map(VolumeAccessMode.fromString).flatMap{_ match {
+        case Success(vam) => JsSuccess(vam)
+        case Failure(err) => JsError(err.getMessage)
+      }}
+    }
+
+    implicit val volumeAccessModeWrts = Writes[VolumeAccessMode] { vam => JsString(vam.toString) }
+  }
 
   sealed trait Type {
     def label: String
@@ -51,22 +85,15 @@ case object VolumeSpec {
   implicit val volumeSpecFmt = Json.format[VolumeSpec]
 
   sealed trait VolumeConfig
-  case class PersistentVolume(size: Long) extends VolumeConfig
+  case object PersistentVolume extends VolumeConfig
   case class HostPathVolume(host_path: String) extends VolumeConfig
   case class DynamicVolume(storage_class: String) extends VolumeConfig
   case class ExternalVolume(config: JsValue) extends VolumeConfig
 
-  val persistentVolumeFmt = Json.format[PersistentVolume]
-  val hostPathVolumeFmt = Json.format[HostPathVolume]
-  val dynamicVolumeFmt = Json.format[DynamicVolume]
-  val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
-  val externalVolumeWrts = Writes[ExternalVolume] { v: ExternalVolume => v.config }
-
-  implicit val volumeConfigFmt =
-    persistentVolumeFmt.map( vc => vc : VolumeConfig) |
-    hostPathVolumeFmt.map( vc => vc : VolumeConfig) |
-    dynamicVolumeFmt.map( vc => vc : VolumeConfig) |
-    Format[ExternalVolume](externalVolumeRds, externalVolumeWrts).map(vc => vc : VolumeConfig )
+  implicit val hostPathVolumeFmt = Json.format[HostPathVolume]
+  implicit val dynamicVolumeFmt = Json.format[DynamicVolume]
+  implicit val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
+  implicit val externalVolumeWrts = Writes[ExternalVolume] { v: ExternalVolume => v.config }
 
   def toResourcePrototype(spec: VolumeSpec): GestaltResourceInput = GestaltResourceInput(
     name = spec.name,
@@ -76,7 +103,9 @@ case object VolumeSpec {
     properties = Some(Map[String,JsValue](
       "provider" -> Json.toJson(spec.provider),
       "type" -> JsString(spec.`type`.label),
-      "config" -> spec.config
+      "config" -> spec.config,
+      "size" -> JsNumber(spec.size),
+      "access_mode" -> JsString(spec.access_mode.toString)
     ) ++ Seq[Option[(String,JsValue)]](
       spec.reclamation_policy map ("reclamation_policy" -> JsString(_)),
       spec.external_id map ("external_id" -> JsString(_))
@@ -89,6 +118,8 @@ case object VolumeSpec {
       props <- Try{metaVolumeSpec.properties.get}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       tpe <- Try{props("type")}.flatMap(Type.fromString)
+      mode <- Try{props("access_mode")}.flatMap(VolumeAccessMode.fromString)
+      size <- Try{props("size").toInt}
       config <- Try{Json.parse(props("config"))}
     } yield VolumeSpec(
       name = metaVolumeSpec.name,
@@ -97,7 +128,9 @@ case object VolumeSpec {
       `type` = tpe,
       config = config,
       reclamation_policy = props.get("reclamation_policy"),
-      external_id = props.get("external_id")
+      external_id = props.get("external_id"),
+      access_mode = mode,
+      size = size
     )
   }
 

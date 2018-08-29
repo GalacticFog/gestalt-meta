@@ -628,6 +628,8 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         name = testVolumeName,
         provider = ContainerSpec.InputProvider(id = testProvider.id),
         `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
         config = Json.obj(
           "host_path" -> "/tmp"
         )

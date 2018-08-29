@@ -1272,7 +1272,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         properties = Some(Map(
           "type" -> "invalid-type",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}"
+          "config" -> "{}",
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce"
         ))
       )
       await(testSetup.svc.createVolume(
@@ -1289,7 +1291,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         properties = Some(Map(
           "type" -> "external",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}"
+          "config" -> "{}",
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce"
         ))
       )
       await(testSetup.svc.createVolume(
@@ -1306,7 +1310,9 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         properties = Some(Map(
           "type" -> "dynamic",
           "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}"
+          "config" -> "{}",
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce"
         ))
       )
       await(testSetup.svc.createVolume(

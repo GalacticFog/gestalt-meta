@@ -394,8 +394,8 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
   override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
     Future.fromTry(for {
       spec <- VolumeSpec.fromResourceInstance(metaResource)
-      v <- spec.config.as[VolumeSpec.VolumeConfig] match {
-        case VolumeSpec.HostPathVolume(_) | VolumeSpec.PersistentVolume(_) => Success(metaResource)
+      v <- spec.`type` match {
+        case VolumeSpec.HostPath | VolumeSpec.Persistent => Success(metaResource)
         case _ => Failure(new BadRequestException("DC/OS only supports volumes of type 'host_path' and 'persistent'"))
       }
     } yield v)

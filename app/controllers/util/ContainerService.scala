@@ -241,10 +241,7 @@ object ContainerService {
 
   def getProviderProperty[T](provider: ResourceLike, propName: String)(implicit rds: Reads[T]): Option[T] = for {
     config <- getProviderConfig(provider)
-    prop <- (config \ propName).validate[T] match {
-      case JsSuccess(p, _) => Some(p)
-      case JsError(_)      => None
-    }
+    prop <- (config \ propName).validate[T].asOpt
   } yield prop
 
   def deleteSecretHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
