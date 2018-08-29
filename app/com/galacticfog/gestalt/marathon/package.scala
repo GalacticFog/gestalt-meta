@@ -4,7 +4,7 @@ import java.util.{Base64, UUID}
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerInstance, ContainerSpec, SecretSpec, VolumeSpec}
 import org.joda.time.DateTimeZone
 
 import scala.concurrent.duration.FiniteDuration
@@ -17,7 +17,7 @@ import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.marathon.AppInfo.{EnvVarSecretRef, EnvVarString}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec, SecretDirMount, SecretEnvMount, SecretFileMount}
 import controllers.util.ContainerService
 import services.{MarathonService, ProviderContext}
 
@@ -254,6 +254,7 @@ package object marathon {
   /**
    * Convert Marathon App JSON to Meta ContainerSpec
    */
+  // TODO: cgbaker REMOVE IMMEDIATELY
   def marathonToMetaContainerSpec(app: AppUpdate, provider: GestaltResourceInstance): Try[ContainerSpec] = Try {
     log.debug("Entered marathonToMetaContainerSpec...")
     log.debug("Received:\n" + app)
@@ -294,14 +295,14 @@ package object marathon {
         timeout_seconds = check.timeoutSeconds getOrElse AppUpdate.HealthCheck.DefaultTimeout.toSeconds.toInt,
         max_consecutive_failures = check.maxConsecutiveFailures getOrElse AppUpdate.HealthCheck.DefaultMaxConsecutiveFailures
       )}) getOrElse Seq(),
-      volumes = app.container.map(_.volumes.map(v =>
-        ContainerSpec.Volume(
-          container_path = v.containerPath,
-          host_path = v.hostPath,
-          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
-          mode = v.mode
-        )
-      )) getOrElse Seq(),
+//      volumes = app.container.map(_.volumes.map(v =>
+//        ContainerSpec.Volume(
+//          container_path = v.containerPath,
+//          host_path = v.hostPath,
+//          persistent = v.persistent.map(p => ContainerSpec.Volume.PersistentVolumeInfo(size = p.size)),
+//          mode = v.mode
+//        )
+//      )) getOrElse Seq(),
       labels = app.labels getOrElse Map(),
       env = app.env.getOrElse(Map.empty).collect({
         case (name, AppInfo.EnvVarString(value)) => name -> value
@@ -360,12 +361,12 @@ package object marathon {
     val container = Container(
       docker = if (spec.container_type.equalsIgnoreCase("DOCKER")) Some(docker) else None,
       `type` = spec.container_type,
-      volumes = spec.volumes.map(v => Container.Volume(
+      volumes = Seq.empty /* spec.volumes.map(v => Container.Volume(
         containerPath = v.container_path,
         hostPath = v.host_path,
         persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size)),
         mode = v.mode
-      ))
+      )) */
     )
 
     val createdUTC = spec.created.map(_.toDateTime(DateTimeZone.UTC).toString)
@@ -511,15 +512,13 @@ package object marathon {
 
     val cntrName = validate(props.name.stripPrefix("/").stripSuffix("/")) getOrElse {invalid("'container.name'")}
 
-    val isDocker = props.container_type.equalsIgnoreCase("DOCKER")
-
     val providerNetworkNames = (for {
       networks <- ContainerService.getProviderProperty[Seq[JsObject]](provider, "networks")
       names = networks flatMap {n => (n \ "name").asOpt[String]}
     } yield names) getOrElse Seq.empty
-    log.debug("found provider networks" + providerNetworkNames)
+    log.debug("found provider networks: " + providerNetworkNames.mkString(","))
 
-    def portMapping(vip: String, exposeHost: Boolean, pm: ContainerSpec.PortMapping) = Container.Docker.PortMapping(
+    def portMapping(vip: String, pm: ContainerSpec.PortMapping) = Container.Docker.PortMapping(
       protocol = Some(pm.protocol),
       containerPort = Some(pm.container_port.getOrElse(0)),
       hostPort = pm.host_port,
@@ -547,67 +546,94 @@ package object marathon {
     val vhostLabels = makeVhostLabels(props.port_mappings)
 
     def toDocker(props: ContainerSpec): (Option[Container.Docker], Option[AppUpdate.IPPerTaskInfo], Option[Seq[AppUpdate.PortDefinition]]) = {
-      val requestedNetwork = props.network.map(_.trim) getOrElse ""
-      val dockerParams = props.user.filter(_.trim.nonEmpty).map(u => Seq(Container.Docker.Parameter("user",u)))
-      // TODO: (cgbaker) DRY-clean this
-      if (providerNetworkNames.isEmpty || requestedNetwork.isEmpty ) {
-        (Some(Container.Docker(
-          image = props.image,
-          network = if (requestedNetwork.nonEmpty) Some(requestedNetwork) else None,
-          forcePullImage = Some(props.force_pull),
-          portMappings = if (requestedNetwork.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
-          parameters = dockerParams,
-          privileged = Some(false)
-        )),
-          None,
-          if (requestedNetwork.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(hostPortDefinition(namedVIP, _))) else None
-        )
-      } else {
-        providerNetworkNames.find(_.equalsIgnoreCase(requestedNetwork)) match {
-          case None => throw new BadRequestException(
-            message = "invalid network name: container network was not among list of provider networks",
+      if ( !props.container_type.equalsIgnoreCase("DOCKER") ) return (None,None,None)
+
+      val maybeRequestedNetwork = props.network.map(_.trim).filter(_.nonEmpty)
+
+      val baseDocker = Container.Docker(
+        image = props.image,
+        forcePullImage = Some(props.force_pull),
+        parameters = props.user.filter(_.trim.nonEmpty).map(u => Seq(Container.Docker.Parameter("user", u))),
+        privileged = Some(false),
+        network = None,
+        portMappings = None
+      )
+
+      // TODO: this should be simplified by moving our orchestration to the Marathon 1.5.x standard
+      val docker = maybeRequestedNetwork match {
+        case Some(requestedNetwork) =>
+          if (providerNetworkNames.contains(requestedNetwork)) {
+            requestedNetwork.toUpperCase match {
+              case "HOST" => baseDocker.copy(
+                network = Some("HOST")
+              )
+              case "BRIDGE" => baseDocker.copy(
+                network = Some("BRIDGE"),
+                portMappings = Some(props.port_mappings.map(portMapping(namedVIP, _)))
+              )
+              case _ => baseDocker.copy(
+                network = Some("USER"),
+                portMappings = Some(props.port_mappings.map(portMapping(namedVIP, _)))
+              )
+            }
+          } else throw new BadRequestException(
+            message = s"invalid network name: container network '$requestedNetwork' was not among list of provider networks: ${providerNetworkNames.map("'" + _ + "'").mkString(",")}",
             payload = Some(Json.toJson(props))
           )
-          case Some(stdNet) if stdNet.equalsIgnoreCase("HOST") || stdNet.equalsIgnoreCase("BRIDGE") =>
-            (Some(Container.Docker(
-              image = props.image,
-              network = Some(stdNet),
-              forcePullImage = Some(props.force_pull),
-              portMappings = if (stdNet.equalsIgnoreCase("BRIDGE")) Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = true, _))) else None,
-              parameters = dockerParams,
-              privileged = Some(false)
-            )),
-              None,
-              if (stdNet.equalsIgnoreCase("HOST")) Some(props.port_mappings.map(hostPortDefinition(namedVIP, _))) else None
-            )
-          case Some(userNetwork) =>
-            val docker = Container.Docker(
-              image = props.image,
-              network = Some("USER"),
-              forcePullImage = Some(props.force_pull),
-              portMappings = Some(props.port_mappings.map(portMapping(vip = namedVIP, exposeHost = false, _))),
-              parameters = dockerParams,
-              privileged = Some(false)
-            )
-            val ippertask = AppUpdate.IPPerTaskInfo( discovery = None, networkName = Some(userNetwork) )
-            (Some(docker), Some(ippertask), None)
+        case None =>
+          baseDocker
+      }
+
+      val maybePortDefs = if (maybeRequestedNetwork.contains("HOST")) {
+        Some(props.port_mappings.map(hostPortDefinition(namedVIP, _)))
+      } else None
+
+      val maybeIpPerTask = maybeRequestedNetwork match {
+        case Some("BRIDGE") | Some("HOST") | None => None
+        case Some(userNetwork) => Some(AppUpdate.IPPerTaskInfo(discovery = None, networkName = Some(userNetwork)))
+      }
+
+      (Some(docker), maybeIpPerTask, maybePortDefs)
+    }
+
+    val (docker,ipPerTask,portDefs) = toDocker(props)
+
+    val volumes = props.volumes map { vms =>
+      vms match {
+        case _: InlineVolumeMountSpec => throw new InternalErrorException("cannot construct marathon launch payload with InlineVolumeMountSpec")
+        case e: ExistingVolumeMountSpec => ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, e.volume_id) match {
+          case None => throw new InternalErrorException("ContainerSpec referenced non-existent volume id")
+          case Some(volumeRes) =>
+            val volume = VolumeSpec.fromResourceInstance(volumeRes).get
+            (volume.`type`, volume.config.validate[VolumeSpec.VolumeConfig]) match {
+              case (VolumeSpec.HostPath, JsSuccess(VolumeSpec.HostPathVolume(host_path), _)) =>
+                Container.Volume(
+                  containerPath = vms.mount_path,
+                  hostPath = Some(host_path),
+                  persistent = None,
+                  mode = Some(if (vms.mode == ContainerSpec.ReadOnlyMany) "RO" else "RW")
+                )
+              case (VolumeSpec.Persistent, JsSuccess(VolumeSpec.PersistentVolume(size), _)) =>
+                Container.Volume(
+                  containerPath = vms.mount_path,
+                  hostPath = None,
+                  persistent = Some(Container.PersistentVolumeInfo(
+                    size = size
+                  )),
+                  mode = Some("RW")
+                )
+              case (_, JsError(errs)) => throw new InternalErrorException(s"error parsing volume config: ${Js.errorString(errs)}")
+              case (_, _) => throw new BadRequestException("unsupported valume type")
+            }
         }
       }
     }
 
-    val (docker,ipPerTask,portDefs) =
-      if (isDocker) toDocker(props)
-      else (None,None,None) // no support for non-docker ipPerTask right now
-
     val container = Container(
-        docker = docker,
-        `type` = props.container_type,
-        volumes = props.volumes.map(v => Container.Volume(
-          containerPath = v.container_path,
-          hostPath = v.host_path,
-          mode = v.mode,
-          persistent = v.persistent.map(p => Container.PersistentVolumeInfo(size = p.size))
-        )))
+      docker = docker,
+      `type` = props.container_type,
+      volumes = volumes
+    )
 
     val upgradeStrategy = if( container.volumes.exists(_.isPersistent) ) Some(DEFAULT_UPGRADE_STRATEGY_WITH_PERSISTENT_VOLUMES) else None
 

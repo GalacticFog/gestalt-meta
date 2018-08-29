@@ -460,16 +460,18 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     SafeRequest(operations, options) ProtectAsync { _ =>
 
       val provider = caasProvider(containerSpec.provider.id)
-      val containerResourcePre = upsertProperties(proto, "provider" -> Json.obj(
-        "name" -> provider.name,
-        "id" -> provider.id,
-        "resource_type" -> sdk.ResourceName(provider.typeId)).toString)
+      val containerResourcePre = upsertProperties(
+        proto,
+        "provider" -> Json.obj(
+          "name" -> provider.name,
+          "id" -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        ).toString
+      )
 
       for {
         metaResource <- Future.fromTry {
           log.debug("Creating container resource in Meta")
-          //ResourceFactory.create(ResourceIds.User, user.account.id)(containerResourcePre, Some(context.environmentId))
-          
           CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta container created: " + metaResource.id)
