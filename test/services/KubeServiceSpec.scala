@@ -376,6 +376,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name        ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-ext" ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService2)
       mockSkuber.create(argThat( (_:Service).name == metaContainer.name+"-lb"  ))(any,meq(skuber.Service.svcDef),any) returns Future.successful(mockService3)
+      mockSkuber.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      mockSkuber.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
       mockSkuber.delete(meq(metaContainer.name       ), any)(meq(skuber.Service.svcDef),any) returns Future.successful(())
       mockSkuber.delete(meq(metaContainer.name+"-ext"), any)(meq(skuber.Service.svcDef),any) returns Future.successful(())
       mockSkuber.delete(meq(metaContainer.name+"-lb" ), any)(meq(skuber.Service.svcDef),any) returns Future.successful(())
@@ -2190,18 +2192,106 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       there was one(testSetup.kubeClient).create(argThat(
         haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
-        (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.GenericVolumeSource(extVolumeConfig.toString))) and
-        (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
-          (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
-          (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
-        ))
+          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.GenericVolumeSource(extVolumeConfig.toString))) and
+          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
+            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
+              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
+          ))
       ))(any, meq(skuber.PersistentVolume.pvDef), any)
 
       there was one(testSetup.kubeClient).create(argThat(
         haveName(metaVolume.name) and
-        inNamespace(testEnv.id.toString) and
-        (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
+          inNamespace(testEnv.id.toString) and
+          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
       ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PV and PVC deletion on volume of type 'external' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() {
+      val extVolumeConfig = Json.obj(
+        "gcePersistentDisk" -> Json.obj(
+          "pdName" -> "my-data-disk",
+          "fsType" -> "ext4"
+        )
+      )
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "reclamation_policy" -> "delete_persistent_volume",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> extVolumeConfig.toString
+        ))
+      )
+
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeList("","",None,List(
+          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
+            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.kubeService.destroyVolume(metaVolume))
+
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion only on volume of type 'external' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() {
+      val extVolumeConfig = Json.obj(
+        "gcePersistentDisk" -> Json.obj(
+          "pdName" -> "my-data-disk",
+          "fsType" -> "ext4"
+        )
+      )
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> extVolumeConfig.toString
+        ))
+      )
+
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.kubeService.destroyVolume(metaVolume))
+
+      there were no(testSetup.kubeClient).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
     "throw 400 on volume type 'persistent'" in new FakeKube() {
@@ -2278,12 +2368,48 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       there was one(testSetup.kubeClient).create(argThat(
         haveName(metaVolume.name) and
-          inNamespace(testEnv.id.toString) and
-          (((_: skuber.PersistentVolumeClaim).spec) ^^ beSome(
-            (((_:skuber.PersistentVolumeClaim.Spec).accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce))) and
-            (((_:skuber.PersistentVolumeClaim.Spec).storageClassName) ^^ beSome("storage-class-a"))
-          ))
+        inNamespace(testEnv.id.toString) and
+        (((_: skuber.PersistentVolumeClaim).spec) ^^ beSome(
+          (((_:skuber.PersistentVolumeClaim.Spec).accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce))) and
+          (((_:skuber.PersistentVolumeClaim.Spec).storageClassName) ^^ beSome("storage-class-a"))
+        ))
       ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion on volume of type 'dynamic'" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+      )
+    ) {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "dynamic-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/dynamic-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
+        ))
+      )
+
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.kubeService.destroyVolume(metaVolume))
+
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
   }

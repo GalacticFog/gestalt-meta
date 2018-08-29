@@ -34,6 +34,7 @@ import scala.util.{Failure, Success}
 object KubernetesService {
   val META_CONTAINER_KEY = "meta/container"
   val META_SECRET_KEY = "meta/secret"
+  val META_VOLUME_KEY = "meta/volume"
   val META_ENVIRONMENT_KEY = "meta/environment"
   val META_WORKSPACE_KEY = "meta/workspace"
   val META_FQON_KEY = "meta/fqon"
@@ -1071,7 +1072,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         name = metaResource.name.substring(0, 8) + "-" + metaResource.id.toString,
         namespace = "",
         labels = Map(
-          META_SECRET_KEY      -> metaResource.id.toString,
+          META_VOLUME_KEY      -> metaResource.id.toString,
           META_ENVIRONMENT_KEY -> context.environmentId.toString,
           META_WORKSPACE_KEY   -> context.workspace.id.toString,
           META_FQON_KEY        -> context.fqon,
@@ -1100,7 +1101,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         name = metaResource.name,
         namespace = namespace.name,
         labels = Map(
-          META_SECRET_KEY      -> metaResource.id.toString,
+          META_VOLUME_KEY      -> metaResource.id.toString,
           META_ENVIRONMENT_KEY -> context.environmentId.toString,
           META_WORKSPACE_KEY   -> context.workspace.id.toString,
           META_FQON_KEY        -> context.fqon,
@@ -1172,9 +1173,58 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield v
   }
 
-  override def destroyVolume(secret: ResourceLike): Future[Unit] = {
-    log.warn("NOT IMPLEMENTED")
-    Future.successful(())
+  override def destroyVolume(volume: ResourceLike): Future[Unit] = {
+
+    def doTheDelete: Future[Unit] = {
+      val provider = ContainerService.containerProvider(volume)
+      /*
+       * TODO: Change signature of deleteVolume to take a ProviderContext - providers
+       * must never user ResourceFactory directly.
+       */
+      val environment: String = {
+        ResourceFactory.findParent(ResourceIds.Environment, volume.id).map(_.id.toString) orElse {
+          val namespaceGetter = "/namespaces/([^/]+)/persistentvolumeclaims/.*".r
+          for {
+            eid <- ContainerService.resourceExternalId(volume)
+            ns <- eid match {
+              case namespaceGetter(namespace) => Some(namespace)
+              case _ => None
+            }
+          } yield ns
+        } getOrElse {
+          throw new RuntimeException(s"Could not find Environment for volume '${volume.id}' in Meta.")
+        }
+      }
+
+      val deletePVs = volume.properties.getOrElse(Map.empty).get("reclamation_policy").contains("delete_persistent_volume")
+
+      val targetLabel = META_VOLUME_KEY -> volume.id.toString
+      cleanly(provider.id, environment) { kube =>
+        val fVolumeDels = for {
+          pvcs <- deleteAllWithLabel[PersistentVolumeClaim](kube, targetLabel)
+          _    <- if (deletePVs) deleteAllWithLabel[PersistentVolume](kube, targetLabel) else Future.successful(Seq.empty)
+        } yield pvcs.headOption.getOrElse({
+          log.debug("deleted no PersistentVolumeClaims")
+          ()
+        })
+
+        fVolumeDels map {_ =>
+          log.debug(s"finished deleting PersistentVolumes and PersistentVolumeClaims for volume ${volume.id}")
+          ()
+        }
+      }
+    }
+
+    for {
+      spec <- Future.fromTry(VolumeSpec.fromResourceInstance(volume))
+      d <- spec.`type` match {
+        case VolumeSpec.External | VolumeSpec.Dynamic =>
+          doTheDelete
+        case other =>
+          log.info(s"destroyVolume(): nothing to do for type ${other}")
+          Future.successful(())
+      }
+    } yield d
   }
 
   override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
