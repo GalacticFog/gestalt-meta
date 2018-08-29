@@ -59,6 +59,12 @@ object KubernetesService {
     hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))
   }
 
+  def isConfiguredStorageClass(provider: Instance, storageClass: String): Boolean = {
+    val configuredStorageClasses = ContainerService.getProviderProperty[Seq[String]](provider, STORAGE_CLASSES).getOrElse(Seq.empty)
+    configuredStorageClasses.contains(storageClass)
+  }
+
+
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
@@ -1062,7 +1068,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             source: Volume.PersistentSource ): PersistentVolume = {
     PersistentVolume(
       metadata = ObjectMeta(
-        name = metaResource.name,
+        name = metaResource.name.substring(0, 8) + "-" + metaResource.id.toString,
         namespace = "",
         labels = Map(
           META_SECRET_KEY      -> metaResource.id.toString,
@@ -1078,7 +1084,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         accessModes = List(spec.access_mode),
         claimRef = Some(skuber.ObjectReference(
           namespace = namespace.name,
-          name = metaResource.id.toString
+          name = metaResource.name.toString
         ))
       ))
     )
@@ -1129,21 +1135,39 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           for {
             namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
             pvc       <- cleanly(context.provider.id, namespace.name  ){ kube =>
-              kube.create[PersistentVolume](
-                mkPV(namespace, metaResource, spec, context, GenericVolumeSource(config.toString) )
-              ) recoverWith { case e: K8SException =>
-                Future.failed(new RuntimeException(s"Failed creating PersistentVolume '${spec.name}': " + e.status.message))
-              }
-              kube.create[PersistentVolumeClaim](
-                mkPVC(namespace, metaResource, spec, context)
-              )
+              for {
+                pv <-  kube.create[PersistentVolume](
+                  mkPV(namespace, metaResource, spec, context, GenericVolumeSource(config.toString) )
+                ) recoverWith { case e: K8SException =>
+                  Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${spec.name}': " + e.status.message))
+                }
+                pvc <- kube.create[PersistentVolumeClaim](
+                  mkPVC(namespace, metaResource, spec, context)
+                ) recoverWith { case e: K8SException =>
+                  Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${spec.name}': " + e.status.message))
+                }
+              } yield pvc
             }
           } yield upsertProperties(
             metaResource,
             "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
           )
-        case VolumeSpec.DynamicVolume(storage_class) =>
-          Future.successful(metaResource)
+        case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(context.provider, storageClass) =>
+          for {
+            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
+            pvc       <- cleanly(context.provider.id, namespace.name  ){ kube =>
+              kube.create[PersistentVolumeClaim](
+                mkPVC(namespace, metaResource, spec, context, maybeStorageClass = Some(storageClass))
+              ) recoverWith { case e: K8SException =>
+                Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${spec.name}': " + e.status.message))
+              }
+            }
+          } yield upsertProperties(
+            metaResource,
+            "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
+          )
+        case VolumeSpec.DynamicVolume(storageClass) =>
+          Future.failed(new UnprocessableEntityException(s"storage_class '$storageClass' is not in provider's white-list"))
       }
     } yield v
   }
