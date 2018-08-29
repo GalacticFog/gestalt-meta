@@ -1151,7 +1151,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             }
           } yield upsertProperties(
             metaResource,
-            "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
+            "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}",
+            "reclamation_policy" -> "delete_persistent_volume"
           )
         case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(context.provider, storageClass) =>
           for {

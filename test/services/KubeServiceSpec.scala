@@ -2188,7 +2188,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         metaResource = metaVolume
       ))
       val newProps = newVolume.properties.get
-      newProps must havePair("external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}")
+      newProps must havePairs(
+        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
+        "reclamation_policy" -> "delete_persistent_volume"
+      )
 
       there was one(testSetup.kubeClient).create(argThat(
         haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
