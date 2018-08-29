@@ -1,6 +1,6 @@
 package com.galacticfog.gestalt.meta.api
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import play.api.libs.functional.syntax._
@@ -16,7 +16,7 @@ case class VolumeSpec(name: String = "",
                       `type`: VolumeSpec.Type,
                       config: JsValue,
                       size: Int,
-                      access_mode: VolumeSpec.VolumeAccessMode,
+                      access_mode: VolumeSpec.AccessMode,
                       reclamation_policy: Option[String] = None,
                       external_id: Option[String] = None,
                       mount_path: Option[String] = None
@@ -37,28 +37,28 @@ case class VolumeSpec(name: String = "",
 
 case object VolumeSpec {
 
-  sealed trait VolumeAccessMode
-  case object ReadWriteOnce extends VolumeAccessMode
-  case object ReadWriteMany extends VolumeAccessMode
-  case object ReadOnlyMany  extends VolumeAccessMode
-  object VolumeAccessMode {
+  sealed trait AccessMode
+  case object ReadWriteOnce extends AccessMode
+  case object ReadWriteMany extends AccessMode
+  case object ReadOnlyMany  extends AccessMode
+  object AccessMode {
     val values = Seq(ReadWriteOnce, ReadWriteMany, ReadOnlyMany)
     def fromString(s: String) =
       values.find(_.toString == s).map(Success(_)).getOrElse(
-        Failure[VolumeAccessMode](new BadRequestException(s"Volume Access Mode type must be one of ${values.map("'" + _.toString + "'").mkString(", ")}"))
+        Failure[AccessMode](new BadRequestException(s"Volume Access Mode type must be one of ${values.map("'" + _.toString + "'").mkString(", ")}"))
       )
 
-    implicit val volumeAccessModeRds = Reads[VolumeAccessMode] {
-      _.validate[String].map(VolumeAccessMode.fromString).flatMap{_ match {
+    implicit val volumeAccessModeRds = Reads[AccessMode] {
+      _.validate[String].map(AccessMode.fromString).flatMap{_ match {
         case Success(vam) => JsSuccess(vam)
         case Failure(err) => JsError(err.getMessage)
       }}
     }
 
-    implicit val volumeAccessModeWrts = Writes[VolumeAccessMode] { vam => JsString(vam.toString) }
+    implicit val volumeAccessModeWrts = Writes[AccessMode] { vam => JsString(vam.toString) }
   }
 
-  implicit def vam2skubervam(mode: VolumeAccessMode): skuber.PersistentVolume.AccessMode.AccessMode = skuber.PersistentVolume.AccessMode.withName(mode.toString)
+  implicit def vam2skubervam(mode: AccessMode): skuber.PersistentVolume.AccessMode.AccessMode = skuber.PersistentVolume.AccessMode.withName(mode.toString)
 
   sealed trait Type {
     def label: String
@@ -114,13 +114,13 @@ case object VolumeSpec {
     ).flatten.toMap)
   )
 
-  def fromResourceInstance(metaVolumeSpec: GestaltResourceInstance): Try[VolumeSpec] = {
+  def fromResourceInstance(metaVolumeSpec: ResourceLike): Try[VolumeSpec] = {
     if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
     for {
       props <- Try{metaVolumeSpec.properties.get}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       tpe <- Try{props("type")}.flatMap(Type.fromString)
-      mode <- Try{props("access_mode")}.flatMap(VolumeAccessMode.fromString)
+      mode <- Try{props("access_mode")}.flatMap(AccessMode.fromString)
       size <- Try{props("size").toInt}
       config <- Try{Json.parse(props("config"))}
     } yield VolumeSpec(
