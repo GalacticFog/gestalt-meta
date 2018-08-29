@@ -58,6 +58,8 @@ case object VolumeSpec {
     implicit val volumeAccessModeWrts = Writes[VolumeAccessMode] { vam => JsString(vam.toString) }
   }
 
+  implicit def vam2skubervam(mode: VolumeAccessMode): skuber.PersistentVolume.AccessMode.AccessMode = skuber.PersistentVolume.AccessMode.withName(mode.toString)
+
   sealed trait Type {
     def label: String
   }
