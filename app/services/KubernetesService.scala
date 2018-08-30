@@ -4,7 +4,8 @@ import java.util.{Base64, TimeZone, UUID}
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadOnlyMany
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
@@ -16,14 +17,14 @@ import play.api.libs.json._
 import services.util.CommandParser
 import skuber.Container.Port
 import skuber.LabelSelector.dsl._
-import skuber.Volume.GenericVolumeSource
+import skuber.Volume.{GenericVolumeSource, HostPath}
 import skuber._
 import skuber.api.client._
 import skuber.ext._
 import skuber.json.ext.format._
 import skuber.json.format._
-import scala.util.Try
 
+import scala.util.Try
 import scala.annotation.tailrec
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
@@ -65,6 +66,63 @@ object KubernetesService {
     configuredStorageClasses.contains(storageClass)
   }
 
+  def mkPV( namespace: Namespace,
+            metaResource: ResourceLike,
+            spec: VolumeSpec,
+            context: ProviderContext,
+            source: Volume.PersistentSource ): PersistentVolume = {
+    PersistentVolume(
+      metadata = ObjectMeta(
+        name = metaResource.name.substring(0, 8) + "-" + metaResource.id.toString,
+        namespace = "",
+        labels = Map(
+          META_VOLUME_KEY      -> metaResource.id.toString,
+          META_ENVIRONMENT_KEY -> context.environmentId.toString,
+          META_WORKSPACE_KEY   -> context.workspace.id.toString,
+          META_FQON_KEY        -> context.fqon,
+          META_PROVIDER_KEY    -> context.providerId.toString
+        )
+      ),
+      spec = Some(PersistentVolume.Spec(
+        capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
+        source = source,
+        accessModes = List(spec.access_mode),
+        claimRef = Some(skuber.ObjectReference(
+          namespace = namespace.name,
+          name = metaResource.name.toString
+        ))
+      ))
+    )
+  }
+
+  def mkPVC( namespace: Namespace,
+             metaResource: ResourceLike,
+             spec: VolumeSpec,
+             context: ProviderContext,
+             maybeStorageClass: Option[String] = None): PersistentVolumeClaim = {
+    PersistentVolumeClaim(
+      metadata = ObjectMeta(
+        name = metaResource.name,
+        namespace = namespace.name,
+        labels = Map(
+          META_VOLUME_KEY      -> metaResource.id.toString,
+          META_ENVIRONMENT_KEY -> context.environmentId.toString,
+          META_WORKSPACE_KEY   -> context.workspace.id.toString,
+          META_FQON_KEY        -> context.fqon,
+          META_PROVIDER_KEY    -> context.providerId.toString
+        )
+      ),
+      spec = Some(PersistentVolumeClaim.Spec(
+        accessModes = List(spec.access_mode),
+        resources = Some(Resource.Requirements(
+          requests = Map(
+            Resource.storage -> s"${spec.size}Mi"
+          )
+        )),
+        storageClassName = maybeStorageClass
+      ))
+    )
+  }
 
 }
 
@@ -687,7 +745,6 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       command   = commands.getOrElse(Nil))    
   }
 
-
   /**
    * Create a Kubernetes Deployment object in memory.
    *
@@ -710,11 +767,29 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       /*
        * If there are any volumes in the Meta ContainerSpec, convert them to kube volumeMounts
        */
-      // val volMounts: Seq[Volume.Mount] = containerSpec.volumes map { v => KubeVolume(v).asVolumeMount }
+      val (storageVolumes,volMounts) = containerSpec.volumes.map({
+        case ex: ExistingVolumeMountSpec =>
+          val r = ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, ex.volume_id).getOrElse(
+            throw new BadRequestException("container spec had volume mount for non-existent volume")
+          )
+          val spec = VolumeSpec.fromResourceInstance(r).getOrElse(
+            throw new InternalErrorException(s"could not parse referenced volume resource '${r.name}' as VolumeSpec")
+          )
+          val eid = spec.external_id.getOrElse(
+            throw new InternalErrorException(s"Volume resource '${r.id}' did not have 'external_id'")
+          )
+          val eidExtracter = "/namespaces/([^/]+)/persistentvolumeclaims/(.*)".r
+          val pvcName = eid match {
+            case eidExtracter(_,name) /* TODO: need to check namespace */ => name
+            case _ => throw new InternalErrorException(s"Volume resource '${r.id}' 'external_id' was not well-formed")
+          }
+          val readOnly = (spec.access_mode == ReadOnlyMany)
+          val lbl = r.name // TODO: don't need this now: UUID.randomUUID().toString
+          skuber.Volume(lbl, skuber.Volume.PersistentVolumeClaimRef(pvcName, readOnly)) -> Volume.Mount(lbl, ex.mount_path, readOnly)
+        case _ =>
+          throw new BadRequestException("container create/update only accepting volume mount to existing volumes; inline volume specs are not currently supported.")
+      }).unzip
 
-      /*
-       * each kube volume needs a name, used for reference internal to the deployment, generate a uuid to use
-       */
 
       /*
        * make sure the secrets all exist
@@ -886,38 +961,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         affinity = affinity
       )
         .addContainer(container.copy(
-          volumeMounts = (/* volMounts ++ */ secDirMounts ++ secretFileMounts).toList,
+          volumeMounts = (volMounts ++ secDirMounts ++ secretFileMounts).toList,
           env = container.env ++ envSecrets
         ))
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
-
-      val storageVolumes = Seq.empty /* containerSpec.volumes map { v =>
-        val name = v.name getOrElse {
-          unprocessable("Malformed volume specification. Must supply 'name'")
-        }
-        v match {
-          case ContainerSpec.Volume(containerPath, Some(hostPath), None, maybeMode, Some(name)) =>
-            val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
-            if (hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))) {
-              Volume(
-                name = name,
-                source = Volume.HostPath(hostPath)
-              )
-            } else {
-              unprocessable("host_path is not in provider's white-list")
-            }
-          case ContainerSpec.Volume(containerPath, None, Some(persistentVolumeInfo), maybeMode, Some(name)) =>
-            Volume(
-              name = name,
-              source = Volume.PersistentVolumeClaimRef(
-                claimName = name,
-                readOnly = KubeVolume.resolveAccessMode(maybeMode) == PersistentVolume.AccessMode.ReadOnlyMany
-              )
-            )
-          case _ =>
-            unprocessable("Could not resolve ContainerSpec.Volume to an appropriate volume mount.")
-        }
-      } */
 
       val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
       Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
@@ -1062,62 +1109,28 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  def mkPV( namespace: Namespace,
-            metaResource: ResourceLike,
-            spec: VolumeSpec,
-            context: ProviderContext,
-            source: Volume.PersistentSource ): PersistentVolume = {
-    PersistentVolume(
-      metadata = ObjectMeta(
-        name = metaResource.name.substring(0, 8) + "-" + metaResource.id.toString,
-        namespace = "",
-        labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString,
-          META_ENVIRONMENT_KEY -> context.environmentId.toString,
-          META_WORKSPACE_KEY   -> context.workspace.id.toString,
-          META_FQON_KEY        -> context.fqon,
-          META_PROVIDER_KEY    -> context.providerId.toString
-        )
-      ),
-      spec = Some(PersistentVolume.Spec(
-        capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
-        source = source,
-        accessModes = List(spec.access_mode),
-        claimRef = Some(skuber.ObjectReference(
-          namespace = namespace.name,
-          name = metaResource.name.toString
-        ))
-      ))
-    )
-  }
-
-  def mkPVC( namespace: Namespace,
-             metaResource: ResourceLike,
-             spec: VolumeSpec,
-             context: ProviderContext,
-             maybeStorageClass: Option[String] = None): PersistentVolumeClaim = {
-    PersistentVolumeClaim(
-      metadata = ObjectMeta(
-        name = metaResource.name,
-        namespace = namespace.name,
-        labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString,
-          META_ENVIRONMENT_KEY -> context.environmentId.toString,
-          META_WORKSPACE_KEY   -> context.workspace.id.toString,
-          META_FQON_KEY        -> context.fqon,
-          META_PROVIDER_KEY    -> context.providerId.toString
-        )
-      ),
-      spec = Some(PersistentVolumeClaim.Spec(
-        accessModes = List(spec.access_mode),
-        resources = Some(Resource.Requirements(
-          requests = Map(
-            Resource.storage -> s"${spec.size}Mi"
-          )
-        )),
-        storageClassName = maybeStorageClass
-      ))
-    )
+  def createVolumeResources(context: ProviderContext,
+                            metaResource: ResourceLike,
+                            maybePV: Option[(skuber.Namespace => skuber.PersistentVolume)],
+                            pvc: skuber.Namespace => skuber.PersistentVolumeClaim): Future[PersistentVolumeClaim] = {
+    for {
+      namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
+      pvc       <- cleanly(context.provider.id, namespace.name  ){ kube =>
+        for {
+          pv <- maybePV match {
+            case Some(pv) =>
+              kube.create[PersistentVolume](pv(namespace)) recoverWith { case e: K8SException =>
+                Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${metaResource.name}': " + e.status.message))
+              } map(Some(_))
+            case None =>
+              Future.successful(None)
+          }
+          pvc <- kube.create[PersistentVolumeClaim](pvc(namespace)) recoverWith { case e: K8SException =>
+            Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${metaResource.name}': " + e.status.message))
+          }
+        } yield pvc
+      }
+    } yield pvc
   }
 
   override def createVolume(context: ProviderContext, metaResource: Instance)
@@ -1127,47 +1140,47 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       config <- Future.fromTry(Try(spec.parseConfig.get))
       v <- config match {
         case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(context.provider, hostPath) =>
-          Future.successful(metaResource)
+          createVolumeResources(
+            context,
+            metaResource,
+            Some(mkPV(_, metaResource, spec, context, HostPath(hostPath))),
+            mkPVC(_, metaResource, spec, context)
+          ) map { pvc =>
+            upsertProperties(
+              metaResource,
+              "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}",
+              "reclamation_policy" -> "delete_persistent_volume"
+            )
+          }
         case VolumeSpec.HostPathVolume(hostPath) =>
           Future.failed(new UnprocessableEntityException(s"host_path '$hostPath' is not in provider's white-list"))
         case VolumeSpec.PersistentVolume =>
           Future.failed(new BadRequestException("Kubernetes providers only support volumes of type 'external', 'dynamic' and 'host_path'"))
         case VolumeSpec.ExternalVolume(config) =>
-          for {
-            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-            pvc       <- cleanly(context.provider.id, namespace.name  ){ kube =>
-              for {
-                pv <-  kube.create[PersistentVolume](
-                  mkPV(namespace, metaResource, spec, context, GenericVolumeSource(config.toString) )
-                ) recoverWith { case e: K8SException =>
-                  Future.failed(new RuntimeException(s"Failed creating PersistentVolume for volume '${spec.name}': " + e.status.message))
-                }
-                pvc <- kube.create[PersistentVolumeClaim](
-                  mkPVC(namespace, metaResource, spec, context)
-                ) recoverWith { case e: K8SException =>
-                  Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${spec.name}': " + e.status.message))
-                }
-              } yield pvc
-            }
-          } yield upsertProperties(
+          createVolumeResources(
+            context,
             metaResource,
-            "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}",
-            "reclamation_policy" -> "delete_persistent_volume"
-          )
+            Some(mkPV(_, metaResource, spec, context, GenericVolumeSource(config.toString))),
+            mkPVC(_, metaResource, spec, context)
+          ) map { pvc =>
+            upsertProperties(
+              metaResource,
+              "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}",
+              "reclamation_policy" -> "delete_persistent_volume"
+            )
+          }
         case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(context.provider, storageClass) =>
-          for {
-            namespace <- cleanly(context.provider.id, DefaultNamespace)( getNamespace(_, context, create = true) )
-            pvc       <- cleanly(context.provider.id, namespace.name  ){ kube =>
-              kube.create[PersistentVolumeClaim](
-                mkPVC(namespace, metaResource, spec, context, maybeStorageClass = Some(storageClass))
-              ) recoverWith { case e: K8SException =>
-                Future.failed(new RuntimeException(s"Failed creating PersistentVolumeClaim for volume '${spec.name}': " + e.status.message))
-              }
-            }
-          } yield upsertProperties(
+          createVolumeResources(
+            context,
             metaResource,
-            "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
-          )
+            None,
+            mkPVC(_, metaResource, spec, context, maybeStorageClass = Some(storageClass))
+          ) map { pvc =>
+            upsertProperties(
+              metaResource,
+              "external_id" -> s"/namespaces/${pvc.namespace}/persistentvolumeclaims/${pvc.name}"
+            )
+          }
         case VolumeSpec.DynamicVolume(storageClass) =>
           Future.failed(new UnprocessableEntityException(s"storage_class '$storageClass' is not in provider's white-list"))
       }
@@ -1219,7 +1232,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     for {
       spec <- Future.fromTry(VolumeSpec.fromResourceInstance(volume))
       d <- spec.`type` match {
-        case VolumeSpec.External | VolumeSpec.Dynamic =>
+        case VolumeSpec.External | VolumeSpec.Dynamic | VolumeSpec.HostPath =>
           doTheDelete
         case other =>
           log.info(s"destroyVolume(): nothing to do for type ${other}")
