@@ -73,7 +73,7 @@ object KubernetesService {
             source: Volume.PersistentSource ): PersistentVolume = {
     PersistentVolume(
       metadata = ObjectMeta(
-        name = metaResource.name.substring(0, 8) + "-" + metaResource.id.toString,
+        name = metaResource.name.substring(0, math.min(8,metaResource.name.length)) + "-" + metaResource.id.toString,
         namespace = "",
         labels = Map(
           META_VOLUME_KEY      -> metaResource.id.toString,
