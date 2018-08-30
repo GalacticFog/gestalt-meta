@@ -6,7 +6,7 @@ import java.util.Base64
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.HealthCheck._
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolume}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -761,58 +761,67 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any,meq(Deployment.deployDef),any)
     }
 
-    "create and mount white-listed host_path volumes" in new FakeKubeCreate(
-      volumes= Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath1", uuid()), // Some("/mnt/for_containers/someHostPath"), None, Some("RO"), Some("my-volume-1")),
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/someContainerPath2", uuid())  // Some("/mnt/also_for_containers/wow/someReallyDeepHostPath"), None, Some("RW"), Some("my-volume-2"))
-      ),
-      providerConfig = Seq(
-        "host_volume_whitelist" -> Json.arr("/mnt/for_containers", "/mnt/also_for_containers")
-      )
-    ) {
-      testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
-      testSetup.kubeClient.create(any)(any,meq(PersistentVolumeClaim.pvcDef),any) returns Future.successful(mock[skuber.PersistentVolumeClaim])
-
-      val Some(updatedContainerProps) = await(testSetup.kubeService.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
-      there was one(testSetup.kubeClient).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
-      val createdDepl = deploymentCaptor.getValue
-
-      createdDepl.getPodSpec.get.volumes must containTheSameElementsAs(Seq(
-        skuber.Volume("my-volume-1", skuber.Volume.HostPath("/mnt/for_containers/someHostPath")),
-        skuber.Volume("my-volume-2", skuber.Volume.HostPath("/mnt/also_for_containers/wow/someReallyDeepHostPath"))
-      ))
-
-      createdDepl.getPodSpec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
-        skuber.Volume.Mount(
-          "my-volume-1",
-          mountPath = "/mnt/someContainerPath1",
-          readOnly = true
-        ),
-        skuber.Volume.Mount(
-          "my-volume-2",
-          mountPath = "/mnt/someContainerPath2",
-          readOnly = false
-        )
-      ))
-    }.pendingUntilFixed
-
     "using existing PVCs when mounting into container" in new FakeKubeCreate(
       volumes = Seq(
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", uuid() ), // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadOnlyMany"), Some("my-volume-1")),
-        ContainerSpec.ExistingVolumeMountSpec("/mnt/path2", uuid() )  // None, Some(ContainerSpec.Volume.PersistentVolumeInfo(100)), Some("ReadWriteOnce"), Some("my-volume-2"))
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path1", uuid() ),
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path2", uuid() ),
+        ContainerSpec.ExistingVolumeMountSpec("/mnt/path3", uuid() )
       )
-    ) {
+    ) { tag("volumes")
       testSetup.kubeClient.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList(
         "","",None,List(
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta("my-volume-1")),
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta("my-volume-2"))
         )
       ))
+
+      val Success(vol1) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "volume-1",
+        id = initProps.volumes(0).asInstanceOf[ExistingVolumeMountSpec].volume_id,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/volume-1",
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+      val Success(vol2) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "volume-2",
+        id = initProps.volumes(1).asInstanceOf[ExistingVolumeMountSpec].volume_id,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "size" -> "1000",
+          "access_mode" -> "ReadOnlyMany",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/volume-2",
+          "config" -> Json.toJson(DynamicVolume("some-storage-class")).toString
+        ))
+      )
+      val Success(vol3) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "volume-3",
+        id = initProps.volumes(2).asInstanceOf[ExistingVolumeMountSpec].volume_id,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteMany",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/volume-3",
+          "config" -> Json.obj(
+            "gcePersistentDisk" -> Json.obj(
+              "pdName" -> "my-data-disk",
+              "fsType" -> "ext4"
+            )
+          ).toString
+        ))
+      )
 
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -823,11 +832,18 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         inNamespace(testSetup.testNS.name)
           and
           (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.volumes) ^^ containTheSameElementsAs(Seq(
-            skuber.Volume("my-volume-1", skuber.Volume.PersistentVolumeClaimRef("my-volume-1", true)),
-            skuber.Volume("my-volume-2", skuber.Volume.PersistentVolumeClaimRef("my-volume-2", false))
+            skuber.Volume("volume-1", skuber.Volume.PersistentVolumeClaimRef("volume-1", false)),
+            skuber.Volume("volume-2", skuber.Volume.PersistentVolumeClaimRef("volume-2", true)),
+            skuber.Volume("volume-3", skuber.Volume.PersistentVolumeClaimRef("volume-3", false))
           )))
+          and
+          (((_:skuber.ext.Deployment).spec.get.template.get.spec.get.containers.head.volumeMounts)) ^^ containTheSameElementsAs(Seq(
+            skuber.Volume.Mount("volume-1", "/mnt/path1", false),
+            skuber.Volume.Mount("volume-2", "/mnt/path2", true),
+            skuber.Volume.Mount("volume-3", "/mnt/path3", false)
+          ))
       ))(any,meq(Deployment.deployDef),any)
-    }.pendingUntilFixed
+    }
 
     "provision containers and secrets with the expected external_id property" in new FakeKubeCreate() {
       val Some(updatedContainerProps) = await(testSetup.kubeService.create(
@@ -2086,7 +2102,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were two(testSetup.kubeClient).close
     }
 
-    "throw 400 on invalid volume type" in new FakeKube() {
+    "throw 400 on invalid volume type" in new FakeKube() { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "invalid-volume",
@@ -2109,7 +2125,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       providerConfig = Seq(
         KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson("/tmp", "/mnt")
       )
-    ) {
+    ) { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "host-volume",
@@ -2129,34 +2145,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there were no(testSetup.kubeClient).create(any)(any,any,any)
     }
 
-    "do nothing on create of white-listed volume of type 'host_path'" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
-      )
-    ) {
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "host-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "host_path",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
-        ))
-      )
-      val newVolume = await(testSetup.kubeService.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      ))
-      val newProps = newVolume.properties.get
-      newProps.get("external_id") must beNone
-      newProps must_== metaVolume.properties.get
-      there were no(testSetup.kubeClient).create(any)(any,any,any)
-    }
-
-    "perform pass-through create on volume of type 'external'" in new FakeKube() {
+    "perform pass-through create on volume of type 'external'" in new FakeKube() { tag("volumes")
       val extVolumeConfig = Json.obj(
         "gcePersistentDisk" -> Json.obj(
           "pdName" -> "my-data-disk",
@@ -2209,7 +2198,134 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
-    "perform PV and PVC deletion on volume of type 'external' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() {
+    "perform HostPath create on volume of type 'host_path'" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.kubeClient.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolume])
+      }
+      testSetup.kubeClient.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
+      }
+
+      val newVolume = await(testSetup.kubeService.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      ))
+      val newProps = newVolume.properties.get
+      newProps must havePairs(
+        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
+        "reclamation_policy" -> "delete_persistent_volume"
+      )
+
+      there was one(testSetup.kubeClient).create(argThat(
+        haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
+          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.HostPath("/supported-path/sub-path"))) and
+          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
+            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
+              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
+          ))
+      ))(any, meq(skuber.PersistentVolume.pvDef), any)
+
+      there was one(testSetup.kubeClient).create(argThat(
+        haveName(metaVolume.name) and
+          inNamespace(testEnv.id.toString) and
+          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
+      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PV and PVC deletion on volume of type 'host_path' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-path-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "reclamation_policy" -> "delete_persistent_volume",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeList("","",None,List(
+          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
+            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.kubeService.destroyVolume(metaVolume))
+
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion only on volume of type 'host_path' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-path-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.kubeClient.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.kubeClient.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.kubeService.destroyVolume(metaVolume))
+
+      there were no(testSetup.kubeClient).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PV and PVC deletion on volume of type 'external' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
       val extVolumeConfig = Json.obj(
         "gcePersistentDisk" -> Json.obj(
           "pdName" -> "my-data-disk",
@@ -2258,7 +2374,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
-    "perform PVC deletion only on volume of type 'external' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() {
+    "perform PVC deletion only on volume of type 'external' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
       val extVolumeConfig = Json.obj(
         "gcePersistentDisk" -> Json.obj(
           "pdName" -> "my-data-disk",
@@ -2297,7 +2413,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       there was one(testSetup.kubeClient).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
-    "throw 400 on volume type 'persistent'" in new FakeKube() {
+    "throw 400 on volume type 'persistent'" in new FakeKube() { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "unsupported-volume",
@@ -2320,7 +2436,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       providerConfig = Seq(
         KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
-    ) {
+    ) { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "dynamic-volume",
@@ -2344,7 +2460,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       providerConfig = Seq(
         KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
-    ) {
+    ) { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "dynamic-volume",
@@ -2383,7 +2499,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       providerConfig = Seq(
         KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
-    ) {
+    ) { tag("volumes")
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "dynamic-volume",
