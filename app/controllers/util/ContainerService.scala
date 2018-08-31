@@ -4,6 +4,7 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec}
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
@@ -449,33 +450,53 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
                       containerSpec: ContainerSpec,
                       userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance] = {
 
+    import ContainerSpec.existingVMSFmt
+
     val input = ContainerSpec.toResourcePrototype(containerSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.workspace.orgId, input, user, None)
-    val operations = caasObjectRequestOperations("container.create")
+    val containerOps = caasObjectRequestOperations("container.create")
+    // TODO: should also have provider.view for the selected provider, as well as (maybe) volume.create for inline volume creation
     val options = caasObjectRequestOptions(user, context.environmentId, proto)
 
-    SafeRequest(operations, options) ProtectAsync { _ =>
+    SafeRequest(containerOps, options) ProtectAsync { _ =>
 
       val provider = caasProvider(containerSpec.provider.id)
-      val containerResourcePre = upsertProperties(
-        proto,
-        "provider" -> Json.obj(
-          "name" -> provider.name,
-          "id" -> provider.id,
-          "resource_type" -> sdk.ResourceName(provider.typeId)
-        ).toString
-      )
 
       for {
+        volMounts <- {
+          val inlineVolMounts = containerSpec.volumes collect {case i: InlineVolumeMountSpec => i}
+          val existingVolMounts = containerSpec.volumes collect {case e: ExistingVolumeMountSpec => e}
+          // convert all inlineVolMounts to existingVolMounts by creating volume instances from them
+          val v = Future.traverse(inlineVolMounts) { inlineSpec =>
+            this.createVolume(context, user, inlineSpec.volume_spec, None) map {
+              volumeInstance => ExistingVolumeMountSpec(
+                mount_path = inlineSpec.mount_path,
+                volume_id = volumeInstance.id
+              )
+            }
+          }
+          v map {
+            _ ++ existingVolMounts
+          }
+        }
+        containerResourcePre = upsertProperties(
+          proto,
+          "provider" -> Json.obj(
+            "name" -> provider.name,
+            "id" -> provider.id,
+            "resource_type" -> sdk.ResourceName(provider.typeId)
+          ).toString,
+          "volumes" -> Json.toJson(volMounts).toString
+        )
+        service <- Future.fromTry {
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
         metaResource <- Future.fromTry {
           log.debug("Creating container resource in Meta")
           CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta container created: " + metaResource.id)
-        service <- Future.fromTry {
-          log.debug("Retrieving CaaSService from ProviderManager")
-          providerManager.getProviderImpl(context.provider.typeId)
-        }
         instanceWithUpdates <- {
           log.info("Creating container in backend CaaS...")
           service.create(context, metaResource)

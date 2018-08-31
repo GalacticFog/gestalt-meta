@@ -25,6 +25,7 @@ import play.api.http.HttpVerbs
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.libs.json._
 import play.api.test.FakeRequest
+import org.mockito.ArgumentCaptor
 
 import scala.concurrent.Future
 import scala.util.Success
@@ -58,8 +59,6 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
-  
-  
   override def beforeAll(): Unit = {
     pristineDatabase()
 
@@ -662,6 +661,81 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       )
 
       ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, createdVolume.id) must beSome
+    }
+
+    "allow creating volumes as part of container creation using CaaSService interface" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testContainerName = "test-container"
+      val testVolumeName = "test-volume"
+      val testVolumeSpec = VolumeSpec(
+        name = testVolumeName,
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        volumes = Seq(
+          ContainerSpec.InlineVolumeMountSpec(
+            mount_path = "/mnt/path",
+            volume_spec = testVolumeSpec
+          )
+        )
+      )
+
+      mockCaasService.createVolume(any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+      mockCaasService.create(any,any)(any) answers {
+        (a: Any) =>
+          val arr = a.asInstanceOf[Array[Object]]
+          Future.successful(arr(1).asInstanceOf[GestaltResourceInstance])
+      }
+
+      val createdContainer = await(containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      ))
+
+      ResourceFactory.findParent(createdContainer.id) must beSome(
+        (r: GestaltResourceInstance) => r.typeId == ResourceIds.Environment && r.id == testEnv.id
+      )
+
+      val containerInstanceCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+      val volumeInstanceCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
+
+      there was one(mockCaasService).create(
+        context = any,
+        container = containerInstanceCaptor.capture()
+      )(any)
+      there was one(mockCaasService).createVolume(
+        context = any,
+        metaResource = volumeInstanceCaptor.capture()
+      )(any)
+
+      val volumeInstance = volumeInstanceCaptor.getValue
+      val createdVolumeSpec = VolumeSpec.fromResourceInstance(volumeInstance).get
+      createdVolumeSpec.copy(
+        provider = createdVolumeSpec.provider.copy(name = None, locations = None)
+      ) must_== testVolumeSpec
+      val containerInstance = containerInstanceCaptor.getValue
+      val containerSpec = ContainerSpec.fromResourceInstance(containerInstance).get
+      containerSpec.volumes must haveSize(1)
+      containerSpec.volumes(0) must_== ContainerSpec.ExistingVolumeMountSpec(
+        volume_id = volumeInstance.id,
+        mount_path = "/mnt/path"
+      )
     }
 
     "throw 400 on bad provider during secret creation" >> { t : TestScope =>
