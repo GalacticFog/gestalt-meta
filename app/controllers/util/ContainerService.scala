@@ -464,8 +464,19 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
       for {
         volMounts <- {
-          val inlineVolMounts = containerSpec.volumes collect {case i: InlineVolumeMountSpec => i}
-          val existingVolMounts = containerSpec.volumes collect {case e: ExistingVolumeMountSpec => e}
+          val inlineVolMounts = containerSpec.volumes collect {
+            case i: InlineVolumeMountSpec if i.volume_spec.provider.id == containerSpec.provider.id => i
+            case i: InlineVolumeMountSpec => throw new BadRequestException("inline volume specification must have the same provider as the container that is being created")
+          }
+          val existingVolMounts = containerSpec.volumes collect {
+            case e: ExistingVolumeMountSpec =>
+              val ok = for {
+                v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, e.volume_id)
+                vs <- VolumeSpec.fromResourceInstance(v).toOption
+                if vs.provider.id == containerSpec.provider.id
+              } yield true
+              if (ok.contains(true)) e else throw new BadRequestException("container can only mount volumes from the same CaaS provider")
+          }
           // convert all inlineVolMounts to existingVolMounts by creating volume instances from them
           val v = Future.traverse(inlineVolMounts) { inlineSpec =>
             this.createVolume(context, user, inlineSpec.volume_spec, None) map {

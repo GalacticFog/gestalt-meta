@@ -5,6 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
+import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -736,6 +737,80 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         volume_id = volumeInstance.id,
         mount_path = "/mnt/path"
       )
+    }
+
+    "fail volume mount if provider IDs do not match" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testProvider2 = createKubernetesProvider(testEnv.id, "test-provider-2").get
+      val Success(testVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Json.obj("id" -> testProvider2.id).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+      val testContainerName = "test-container"
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        volumes = Seq(ContainerSpec.ExistingVolumeMountSpec(volume_id = testVolume.id, mount_path = "/mnt/path"))
+      )
+
+      await(containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      )) must throwA[BadRequestException]("container can only mount volumes from the same CaaS provider")
+
+      there were no(mockCaasService).create(any, any)(any)
+      there were no(mockCaasService).createVolume(any, any)(any)
+    }
+
+    "fail inline volume creation if provider IDs do not match" >> { t : TestScope =>
+      val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
+      val testProvider2 = createKubernetesProvider(testEnv.id, "test-provider-2").get
+      val testContainerName = "test-container"
+      val testVolumeName = "test-volume"
+      val testVolumeSpec = VolumeSpec(
+        name = testVolumeName,
+        provider = ContainerSpec.InputProvider(id = testProvider2.id),
+        `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+      val testSpec = ContainerSpec(
+        name = testContainerName,
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        volumes = Seq(
+          ContainerSpec.InlineVolumeMountSpec(
+            mount_path = "/mnt/path",
+            volume_spec = testVolumeSpec
+          )
+        )
+      )
+
+      await(containerService.createContainer(
+        context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        user = user,
+        containerSpec = testSpec,
+        userRequestedId = None
+      )) must throwA[BadRequestException]("inline volume specification must have the same provider as the container that is being created")
+
+      there were no(mockCaasService).create(any, any)(any)
+      there were no(mockCaasService).createVolume(any, any)(any)
     }
 
     "throw 400 on bad provider during secret creation" >> { t : TestScope =>
