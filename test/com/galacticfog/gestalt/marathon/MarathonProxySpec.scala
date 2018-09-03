@@ -80,7 +80,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
     p
   }
 
-  def createVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue, size: Int = 10, mode: VolumeSpec.VolumeAccessMode = VolumeSpec.ReadWriteOnce): GestaltResourceInstance = {
+  def createVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue, size: Int = 10, mode: VolumeSpec.AccessMode = VolumeSpec.ReadWriteOnce): GestaltResourceInstance = {
     val id = uuid()
     val spec = VolumeSpec(id.toString, None, ContainerSpec.InputProvider(provider.id), tpe, config, size = size, access_mode = mode)
     val props = controllers.util.stringmap(VolumeSpec.toResourcePrototype(spec).properties)

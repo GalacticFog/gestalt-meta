@@ -5,16 +5,16 @@ import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, string2uuid, uuid, uuid2string}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.ExistingVolumeMountSpec
 import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util.JsonUtil._
 import controllers.util._
 import javax.inject.Singleton
@@ -48,7 +48,6 @@ class ResourceController @Inject()(
   type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Option[GestaltResourceInstance]
   type LookupSeq = (ResourcePath, AuthAccountWithCreds, Map[String, Seq[String]]) => Seq[GestaltResourceInstance]
   
-  
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
@@ -56,7 +55,8 @@ class ResourceController @Inject()(
       ResourceIds.ApiEndpoint -> transformApiEndpoint,
       ResourceIds.Lambda -> embedApiEndpoints,
       ResourceIds.Container -> embedApiEndpoints,
-      UUID.fromString("e9e90e0a-4f87-492e-afcc-2cd84057f226") -> transformStreamSpec
+      migrations.V13.VOLUME_TYPE_ID -> embedContainerMountInfo,
+      migrations.V7.STREAM_SPEC_TYPE_ID -> transformStreamSpec
   )
   
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
@@ -1201,6 +1201,43 @@ class ResourceController @Inject()(
   }
 
   /**
+    * Lookup and inject container mount info into upstream Volume object
+    */
+  private[controllers] def embedContainerMountInfo( res: GestaltResourceInstance,
+                                                    user: AuthAccountWithCreds,
+                                                    qs: Option[Map[String, Seq[String]]] = None) = Try {
+    val embedContainer = for {
+      qs <- qs
+      embed <- qs.get("embed")
+    } yield embed.contains("container")
+
+    val containerMount: Option[(ExistingVolumeMountSpec,GestaltResourceInstance)] = if (embedContainer.contains(true)) {
+      val mnts = for {
+        env <- ResourceFactory.findParent(res.id).toList
+        cntr <- ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id)
+        mnt <- Try {
+          Json.parse(cntr.properties.getOrElse(Map.empty).getOrElse("volumes", "[]")).as[Seq[ContainerSpec.VolumeMountSpec]]
+        } getOrElse Seq.empty collect {
+          case ex: ExistingVolumeMountSpec => ex
+        }
+        if mnt.volume_id == res.id
+      } yield mnt -> cntr
+      if (mnts.size > 1) log.warn(s"multiple containers believe that they are mounting Volume ${res.id}")
+      mnts.headOption
+    } else {
+      None
+    }
+    containerMount match {
+      case None =>
+        res
+      case Some((mnt, container)) =>
+        upsertProperties(res,
+          "container" -> container.id,
+          "mount_path" -> mnt.mount_path
+        )
+    }
+  }
+  /**
     * Lookup and inject apiendpoints into upstream object according to implementation_id
     */
   private[controllers] def embedApiEndpoints( res: GestaltResourceInstance,
@@ -1272,8 +1309,6 @@ class ResourceController @Inject()(
       }
     }
   }
-  
-  import controllers.util.LambdaMethods
   
   def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None): Try[GestaltResourceInstance] = Try {
     log.debug("Entered transformStreamSpec...")

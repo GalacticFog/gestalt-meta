@@ -6,7 +6,7 @@ import com.galacticfog.gestalt.data.bootstrap.LineageInfo
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.meta.api.output
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, output}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
@@ -936,6 +936,46 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
 
   "ResourceController rendering transforms" should {
 
+    trait testVolume extends testAppMocks {
+      val (testOrg,testWork,testEnv) = {
+        val Success(to) = createOrg(name = uuid().toString)
+        val Success((tw,te)) = createWorkEnv(org = to.id)
+        Ents.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+        Ents.setNewResourceEntitlements(dummyRootOrgId, tw.id, user, Some(dummyRootOrgId))
+        Ents.setNewResourceEntitlements(dummyRootOrgId, to.id, user, None)
+        (to,tw,te)
+      }
+      val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider")
+      val Success(volume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        name = "test-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "config" -> Json.obj("host_path" -> "/some/path").toString
+        ))
+      )
+      import ContainerSpec.existingVMSFmt
+      val Success(volumeContainer) = createInstance(
+        ResourceIds.Container,
+        name = "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "image" -> "test-image",
+          "container_type" -> "docker",
+          "provider" -> Json.obj(
+            "id" -> uuid()
+          ).toString,
+          "volumes" -> Json.toJson(Seq(ContainerSpec.ExistingVolumeMountSpec("/mount/path", volume.id))).toString
+        ))
+      )
+    }
+
     trait testEndpoint extends testAppMocks {
       val (testOrg,testWork,testEnv) = {
         val Success(to) = createOrg(name = uuid().toString)
@@ -1308,6 +1348,39 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
       (json \ "properties" \ "apiendpoints") must beUndefined
+    }
+
+    "render single volume with .properties.container/.properties.mount_path if embed=container" in new testVolume {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/volumes/${volume.id}?embed=container", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      println(json.toString)
+      (json \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(volumeContainer.id)
+      (json \ "properties" \ "container" \ "name").asOpt[String] must beSome(volumeContainer.name)
+      (json \ "properties" \ "mount_path").asOpt[String] must beSome("/mount/path")
+    }
+
+    "render listed volumes with .properties.container/.properties.mount_path if embed=container" in new testVolume {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/volumes?expand=true&embed=container", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result).as[Seq[JsObject]].head
+      (json \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(volumeContainer.id)
+      (json \ "properties" \ "container" \ "name").asOpt[String] must beSome(volumeContainer.name)
+      (json \ "properties" \ "mount_path").asOpt[String] must beSome("/mount/path")
+    }
+
+    "not render volumes with .properties.container if missing embed=container" in new testVolume {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/volumes/${volume.id}", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "properties" \ "container") must beUndefined
+      (json \ "properties" \ "mount_path") must beUndefined
     }
 
   }

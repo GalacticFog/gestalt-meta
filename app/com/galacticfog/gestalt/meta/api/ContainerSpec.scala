@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
@@ -170,17 +170,17 @@ case object ContainerSpec extends Spec {
   )
 
 
-  def fromResourceInstance(metaContainerSpec: GestaltResourceInstance): Try[ContainerSpec] = {
-    if (metaContainerSpec.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-    log.debug(s"loading Container from Resource ${metaContainerSpec.id}")
+  def fromResourceInstance(metaContainer: ResourceLike): Try[ContainerSpec] = {
+    if (metaContainer.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
+    log.debug(s"loading Container from Resource ${metaContainer.id}")
     val created: Option[DateTime] = for {
-      c <- metaContainerSpec.created
+      c <- metaContainer.created
       ts <- c.get("timestamp")
       parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
     } yield parsedTimestamp
 
     val attempt = for {
-      props <- Try{metaContainerSpec.properties.get}
+      props <- Try{metaContainer.properties.get}
       ctype <- Try{props("container_type")}
       provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
       cpus = props.get("cpus").flatMap( c => Try(c.toDouble).toOption )
@@ -195,8 +195,8 @@ case object ContainerSpec extends Spec {
       volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.VolumeMountSpec]]}
       secrets = props.get("secrets") map {json => Json.parse(json).as[Seq[ContainerSpec.SecretMount]]}
       labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
-      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}      
-      
+      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
+
       port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
 
       user = props.get("user")
@@ -204,10 +204,10 @@ case object ContainerSpec extends Spec {
       network = props.get("network")
       force_pull = props.get("force_pull") map {_.toBoolean}
       external_id = props.get("external_id")
-      
+
     } yield ContainerSpec(
-      name = metaContainerSpec.name,
-      description = metaContainerSpec.description,
+      name = metaContainer.name,
+      description = metaContainer.description,
       container_type = ctype,
       image = image,
       provider = provider,
