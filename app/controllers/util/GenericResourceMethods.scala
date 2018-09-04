@@ -322,11 +322,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
       throw new BadRequestException(s"Given provider-type '$providerType' is not a sub-type of Provider.")
     }
     
-    if (isGestalt(resourceType)) {
-      log.debug("Target is core Gestalt resource...finding provider...")
-      getOrFail(findGestaltProvider, "Gestalt Core Provider not found. Contact an administrator.")
-      
-    } else {
+//    if (isGestalt(resourceType)) {
+//      log.debug("Target is core Gestalt resource...finding provider...")
+//      getOrFail(findGestaltProvider, "Gestalt Core Provider not found. Contact an administrator.")
+//      
+//    } else {
       
       for {
         // Lookup provider-id in the payload properties (properties.provider)
@@ -343,9 +343,8 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
         )
       } yield providerResource
-    
-    
-    }
+
+    //}
     
   }
 
