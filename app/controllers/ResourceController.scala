@@ -640,34 +640,68 @@ class ResourceController @Inject()(
         )
     }
   }
+  
+  private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+    val rendered = {
+      for {
+        ps <- res.properties
+        pid = {
+          val sid  = (Json.parse(ps("provider")) \ "id").as[String]
+          UUID.fromString(sid)
+        }
+        prv <- ResourceFactory.findById(pid).map(Output.renderInstance(_))
+        r2 = upsertProperties(res, "provider" -> Json.stringify(prv))
+      } yield r2
+    }
+    rendered.fold(res) { p => p }
+  }
+  
+  private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+    val endpoints = {
+      val raw = ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", res.id)
+      raw.map { ep =>
+        transformApiEndpoint(ep, user, None) match {
+          case Success(xep) => xep
+          case Failure(e) => ep
+        }
+      }
+    }
+    val rendered = Json.stringify(Json.toJson(endpoints.map(Output.renderInstance(_))))
+    upsertProperties(res, "apiendpoints" -> rendered)
+  }  
+  
   /**
     * Lookup and inject apiendpoints into upstream object according to implementation_id
     */
   private[controllers] def embedApiEndpoints( res: GestaltResourceInstance,
                                               user: AuthAccountWithCreds,
                                               qs: Option[Map[String, Seq[String]]] = None) = Try {
-    val embedEndpoints = for {
-      qs <- qs
-      embed <- qs.get("embed")
-    } yield embed.contains("apiendpoints")
+    
+    val fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds) => GestaltResourceInstance] = Map(
+        "apiendpoints" -> embedEndpoints,
+        "provider" -> embedProvider)
 
-    if (embedEndpoints.contains(true)) {
-      val endpoints = {
-        val raw = ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", res.id)
-        raw.map {
-          ep => transformApiEndpoint(ep, user, None) match {
-            case Success(xep) => xep
-            case Failure(e) =>   ep
-          }
+    def performEmbeds(tpes: List[String], acc: GestaltResourceInstance): GestaltResourceInstance = {
+      tpes match {
+        case Nil => acc
+        case resourceType :: tail => {
+          performEmbeds(tail, fns(resourceType)(res, user))
         }
       }
-      val rendered = Json.stringify(Json.toJson(endpoints.map(Output.renderInstance(_))))
-      upsertProperties(res, "apiendpoints" -> rendered)
-    } else {
-      res
+    }    
+    
+    val embeds = for {
+      qs <- qs
+      embeds = QueryString.list(qs, "embed")
+    } yield embeds
+    
+    embeds.fold(res){ es =>
+      if (es.isEmpty) res
+      else performEmbeds(es.toList, res)
     }
   }
 
+  
   /**
     * Lookup and inject Kong public_url into ApiEndpoint
     */
