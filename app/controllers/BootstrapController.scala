@@ -102,7 +102,7 @@ class BootstrapController @Inject()(
               log.info("Performing Meta-Schema migrations...")
               
               val result = {
-                val migrations = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V9")
+                val migrations = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V9", "V11", "V12", "V13")
                 migrations.map { v =>
                     migration.executeMigration(v, caller.account.id) match {
                     case Left(e) => {
