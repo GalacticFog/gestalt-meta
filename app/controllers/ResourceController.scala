@@ -354,7 +354,7 @@ class ResourceController @Inject()(
     } yield container
   }  
   
-
+  
   /**
    * Ensure Container input JSON is well-formed and valid. Ensures that required properties
    * are given and fills in default values where appropriate.
@@ -368,9 +368,9 @@ class ResourceController @Inject()(
   }  
   
   private[controllers] def normalizeCaasPayload(payloadJson: JsValue, environment: UUID): Try[JsObject] = Try {
-
+  
     val payload = payloadJson.as[JsObject]
-
+    
     val (env, provider) = (for {
       pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
             throw new BadRequestException(s"`/properties/provider/id` not found.")
@@ -382,7 +382,7 @@ class ResourceController @Inject()(
             throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
           })
     } yield (env, prv)).get
-
+    
     /*
      *  This throws an exception if the environment is incompatible with the provider.
      */
@@ -514,9 +514,7 @@ class ResourceController @Inject()(
           throw new BadRequestException("Error parsing '/properties/storage': " + e.getMessage)
         }
       }
-      
     }
-    
   }
   
   import java.math.BigInteger
@@ -676,7 +674,6 @@ class ResourceController @Inject()(
 //    }
     
     updated2.getOrElse(updated.getOrElse(resource))
-    //updated.getOrElse(resource)
   } 
   
   
@@ -704,6 +701,7 @@ class ResourceController @Inject()(
     */
     
     println("****Checking resource type for post-create...")
+    
     val outputResource = if (resource.typeId == ResourceIds.Environment) {
       println("*****Type is Environment...checking for variable updates...")
       val update = postCreateEnvironment(resource)
@@ -717,23 +715,6 @@ class ResourceController @Inject()(
      */
      
     outputResource
-    
-//    specProps.map { sp =>
-//      if (given.contains(sp.name)) {
-//        // We have a spec prop value
-//        for {
-//          r1 <- execGenericCreate(
-//                  org = ???, 
-//                  targetTypeId = sp.refersTo.get, 
-//                  parent = resource,
-//                  payload = Json.parse(given(sp.name)))
-//          r2 = postCreateCheck(r1)
-//        } yield r2
-//      }
-//      
-//    }
-    
-    // Filter properties of type 'spec'
   }  
   
   def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
@@ -766,124 +747,7 @@ class ResourceController @Inject()(
       } yield result
     }
   }      
-    
-//    /*
-//     * The path ends with a resource-type name (i.e. /environments). This can only mean 'create'
-//     */
-//    if (rp.isList) { // create semantics
-//      val x = for {
-//        org         <- findOrgOrFail(fqon)
-//        parent      <- Future.fromTry(findResourceParent(rp, fqon))
-//        jsonRequest <- fTry(requireJsonRequest(request))
-//        securedRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
-//        
-//        result      <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
-//      } yield result
-//      
-//      x
-//        .map (r => Created(Output.renderInstance(r, Some(META_URL))))
-//        .recover { case e => HandleExceptions(e) }  
-//      
-//    } else { // perform action
-//      for {
-//        org      <- findOrgOrFail(fqon)
-//        action   <- fTry( requireActionParam(request) )
-//        targetId <- requireTargetId(rp)
-//        
-//        result   <- execGenericAction(org, rp.targetTypeId, targetId, action)
-//      } yield result
-//    }
-//  }  
   
-
-  
-//  def genericResourcePost3(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-//    log.debug(s"genericResourcePost(${fqon},${path})")
-//    val rp = new ResourcePath(fqon, path)
-//    log.debug(rp.info.toString)
-//
-//    if (rp.isList) {
-//      // create semantics
-//
-//      val tryParent = ResourceFactory.findById(
-//        typeId = rp.parentTypeId getOrElse ResourceIds.Org,
-//        id = rp.parentId getOrElse fqid(fqon)
-//      ) match {
-//        case Some(parent) => Success(parent)
-//        case None => Failure(new ConflictException("parent not specified/does not exist/does match type"))
-//      }
-//
-//      for {
-//        org <- findOrgOrFail(fqon)
-//        parent <- Future.fromTry(tryParent)
-//        jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
-//        jsonSecuredRequest = SecuredRequest[JsValue](request.identity, request.authenticator, jsonRequest)
-//        /*
-//         * Determine if the resource we're creating is backed by a provider.
-//         */
-//        result <- getBackingProviderType(rp.targetTypeId) match {
-//          case None =>
-//            log.debug("Request to create non-provider-backed resource")
-//            newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
-//
-//          case Some(backingProviderType) =>
-//            log.debug(s"Request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
-//            val result = genericResourceMethods.createProviderBackedResource(
-//              org = org,
-//              identity = request.identity,
-//              body = jsonRequest.body,
-//              parent = parent,
-//              resourceType = rp.targetTypeId,
-//              providerType = backingProviderType,
-//              actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
-//            )
-//            result
-//              .map (r => Created(Output.renderInstance(r, Some(META_URL))))
-//              .recover { case e => HandleExceptions(e) }
-//        }
-//      } yield result
-//      
-//    } else {
-//      
-//      // perform action
-//      for {
-//        org <- findOrgOrFail(fqon)
-//        
-//        /*
-//         *  Lookup action to be performed
-//         */
-//        action <- fTry{
-//          request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
-//        }
-//        
-//        /*
-//         * Get resource target ID from request URL
-//         */
-//        targetId <- rp.targetId match {
-//          case Some(targetId) => Future.successful(UUID.fromString(targetId))
-//          case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
-//        }
-//        
-//        /*
-//         * 
-//         */
-//        result <- getBackingProviderType(rp.targetTypeId) match {
-//          case None => 
-//            Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
-//          case Some(backingProviderType) => 
-//            genericResourceMethods.performProviderBackedAction(
-//              org = org,
-//              identity = request.identity,
-//              body = request.body,
-//              resourceType = rp.targetTypeId,
-//              providerType = backingProviderType,
-//              actionVerb = action,
-//              resourceId = targetId)
-//        }
-//      } yield result
-//    }
-//  }
-
   /**
    * Get a Resource or list of Resources by path.
    */
@@ -1024,20 +888,30 @@ class ResourceController @Inject()(
     }{ _ =>
       val prvs = for {
         anc <- {
+          /*
+           * This selects the ancestor environment and workspace, as well as all 
+           * ancestor Orgs up to 'root'
+           */
           val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
           val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
           rs.reverse ++ root
         }
         prv <- {
+          /*
+           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
+           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
+           * top-level to indicate that it exposes UI actions, we need to select ALL providers
+           * in context and inspect individually.
+           */
           val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.ActionProvider, anc.id)
           rs
         }
       } yield prv
       ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
     }
-
+    
     log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
-
+    
     if (prefixFilter.isEmpty) actions
     else actions filter { act =>
       val spec = ProviderActionSpec.fromResource(act)
@@ -1045,6 +919,7 @@ class ResourceController @Inject()(
     }
   }
 
+  
   def getResourceActionsOrg(fqon: String) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
     val org = fqid(fqon)
@@ -1268,8 +1143,8 @@ class ResourceController @Inject()(
   }  
   
   /**
-    * Lookup and inject apiendpoints into upstream object according to implementation_id
-    */
+   * Lookup and inject apiendpoints into upstream object according to implementation_id
+   */
   private[controllers] def embedApiEndpoints( res: GestaltResourceInstance,
                                               user: AuthAccountWithCreds,
                                               qs: Option[Map[String, Seq[String]]] = None) = Try {
@@ -1277,7 +1152,7 @@ class ResourceController @Inject()(
     val fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds) => GestaltResourceInstance] = Map(
         "apiendpoints" -> embedEndpoints,
         "provider" -> embedProvider)
-
+    
     def performEmbeds(tpes: List[String], acc: GestaltResourceInstance): GestaltResourceInstance = {
       tpes match {
         case Nil => acc
@@ -1285,19 +1160,19 @@ class ResourceController @Inject()(
           performEmbeds(tail, fns(resourceType)(res, user))
         }
       }
-    }    
+    }
     
     val embeds = for {
       qs <- qs
       embeds = QueryString.list(qs, "embed")
     } yield embeds
     
-    embeds.fold(res){ es =>
+    embeds.fold(res) { es =>
       if (es.isEmpty) res
       else performEmbeds(es.toList, res)
     }
   }
-
+  
   
   /**
     * Lookup and inject Kong public_url into ApiEndpoint
@@ -1312,7 +1187,7 @@ class ResourceController @Inject()(
       upsertProperties(res, "public_url" -> public_url)
     }
   }
-
+  
   private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     val resJson = Json.toJson(res).as[JsObject]
     val renderedLinks: Seq[JsObject] = (resJson \ "properties" \ "linked_providers").asOpt[Seq[JsObject]].map { _.flatMap {
