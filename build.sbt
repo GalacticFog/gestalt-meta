@@ -6,7 +6,7 @@ name := """gestalt-meta"""
 
 organization := "com.galacticfog"
 
-version := "0.7.0"
+version := "0.7.1"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -90,8 +90,8 @@ libraryDependencies ++= Seq(
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
   "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.1" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
-  "com.galacticfog" %% "gestalt-security-play"         % "4.0.1-SNAPSHOT" withSources(),
-  "com.galacticfog" %% "gestalt-security-play-testkit" % "4.0.1-SNAPSHOT" withSources(),
+  "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
+  "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
   "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.3" withSources(),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
