@@ -29,6 +29,25 @@ import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
 
+import com.galacticfog.gestalt.data.PropertyFactory
+import com.galacticfog.gestalt.json._
+import com.galacticfog.gestalt.marathon.containerWithDefaults
+
+import services.ProviderContext  
+import play.api.mvc.{Request, RequestHeader}
+import play.api.mvc.AnyContent
+
+import java.math.BigInteger
+import java.security.SecureRandom
+import com.galacticfog.gestalt.data.parseUUID
+import com.galacticfog.gestalt.meta.providers._      
+import com.galacticfog.gestalt.meta.providers.ui._
+import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
+import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}  
+import com.galacticfog.gestalt.meta.auth._  
+import com.galacticfog.gestalt.meta.api.output.toLink
+
+
 
 @Singleton
 class ResourceController @Inject()( 
@@ -200,9 +219,7 @@ class ResourceController @Inject()(
     }
   }
   
-  import play.api.mvc.{Request, RequestHeader}
-  import play.api.mvc.AnyContent
-
+  
   /**
    * Find the parent of a resource given it's path (default to given fqon)
    */
@@ -232,36 +249,6 @@ class ResourceController @Inject()(
    * delegate creation to the appropriate provider. If not provider-backed, use the
    * default 'create in Meta' function.
    */
-//  def execGenericCreate(
-//      org: GestaltResourceInstance,
-//      targetTypeId: UUID,
-//      parent: GestaltResourceInstance,
-//      payload: JsValue)(implicit request: SecuredRequest[JsValue]) = {
-//      
-//    /*
-//     * Determine if the resource we're creating is backed by a provider.
-//     */    
-//    getBackingProviderType(targetTypeId) match {
-//      case None => {
-//        log.debug("Request to create non-provider-backed resource")
-//        newDefaultResourceResult(org.id, targetTypeId, parent.id, payload)(request)
-//      }
-//      case Some(backingProviderType) => {
-//        val result = genericResourceMethods.createProviderBackedResource(
-//          org = org,
-//          identity = request.identity,
-//          body = payload,
-//          parent = parent,
-//          resourceType = targetTypeId,
-//          providerType = backingProviderType,
-//          actionVerb = "create")
-//        
-////        result
-////          .map (r => Created(Output.renderInstance(r, Some(META_URL))))
-////          .recover { case e => HandleExceptions(e) }             
-//      }
-//    }
-//  }
   def execGenericCreate(
       org: GestaltResourceInstance,
       targetTypeId: UUID,
@@ -299,6 +286,7 @@ class ResourceController @Inject()(
       targetTypeId: UUID,
       targetId: UUID,
       action: String)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent]) = {
+    
     /*
      * Ensure the target resource is backed by a provider.
      */
@@ -317,7 +305,7 @@ class ResourceController @Inject()(
           actionVerb = action,
           resourceId = targetId)
       }
-    }    
+    }
   }
   
   def requireActionParam(request: Request[AnyContent]) = {
@@ -335,11 +323,7 @@ class ResourceController @Inject()(
     }    
   }
   
-  import com.galacticfog.gestalt.data.PropertyFactory
-  import com.galacticfog.gestalt.json._
-  import com.galacticfog.gestalt.marathon.containerWithDefaults
-  
-  import services.ProviderContext
+
   
   def createContainer(
       org: UUID, 
@@ -517,8 +501,7 @@ class ResourceController @Inject()(
     }
   }
   
-  import java.math.BigInteger
-  import java.security.SecureRandom
+
   
   def randomAlphaNum(chars: Int = 24): String = {
     new BigInteger(chars * 5, new SecureRandom()).toString(32)
@@ -830,9 +813,7 @@ class ResourceController @Inject()(
     }
   }  
   
-  
-  import com.galacticfog.gestalt.data.parseUUID
-  import com.galacticfog.gestalt.meta.providers._
+
   
 
   def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
@@ -859,7 +840,7 @@ class ResourceController @Inject()(
         }
       } yield res
       
-      import com.galacticfog.gestalt.meta.providers.ui._
+
 
       val metaAddress = META_URL
 
@@ -1006,8 +987,6 @@ class ResourceController @Inject()(
     }
   }
 
-  import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
-  import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}
   
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
@@ -1040,7 +1019,7 @@ class ResourceController @Inject()(
     }
   }
 
-  import com.galacticfog.gestalt.meta.auth._
+
 
   private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     val props  = EntitlementProps.make(res)
@@ -1360,7 +1339,6 @@ class ResourceController @Inject()(
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
 
-  import com.galacticfog.gestalt.meta.api.output.toLink
   
   def mkPath2(fqon: String, path: String) = {
     

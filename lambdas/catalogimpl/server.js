@@ -3,11 +3,11 @@ const concat = require('concat-stream')
 const lambda = require('./index.js')
 
 const server = http.createServer((request, response) => {
-
+  console.log("METHOD : " + request.method)
   if (request.method === 'POST') {
     handlePost(request, response)
   } else {
-    response.end('It works! Path hit: ' + request.url)
+    response.end('It works! Path hit => ' + request.url)
   }
 })
 

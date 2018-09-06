@@ -163,7 +163,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                   actionVerb: String,
                                   specificProviderId: Option[UUID] = None)
                                  ( implicit request: RequestHeader ) : Future[Result] = {
-                                 
+                    
     val metaAddress = META_URL
 
     val response = for {

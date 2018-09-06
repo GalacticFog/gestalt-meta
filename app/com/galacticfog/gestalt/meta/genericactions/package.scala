@@ -1,8 +1,36 @@
 package com.galacticfog.gestalt.meta
 
 import play.api.libs.json._
+import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+
+/*
+ * GestaltFunctionConfig takes just the /properties/config object.
+ * Need a function that can get that from a GestaltResourceInstance
+ * 
+ * 
+ * 
+ * 
+ * 
+ * 
+ */
+
 
 package object genericactions {
+  
+  /**
+   * Extract a GestaltFunctionConfig object from a Provider instance.
+   */
+  def getFunctionConfig(provider: GestaltResourceInstance): Option[GestaltFunctionConfig] = {
+    for {
+      ps  <- provider.properties
+      cfg <- ps.get("config")
+      out = {
+        val configJson = Json.parse(cfg).as[JsObject]
+        (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
+      }
+    } yield out
+  }
   
   sealed trait FunctionVerb {
     val description: Option[String]
@@ -96,7 +124,7 @@ package object genericactions {
       display_name: Option[String] = None,
       description: Option[String] = None,
       get: Option[FunctionVerb] = None,
-      post: Option[FunctionVerb] = None,
+      post: Option[PostVerb] = None,
       put: Option[FunctionVerb] = None,
       patch: Option[FunctionVerb] = None,
       delete: Option[FunctionVerb] = None) {
