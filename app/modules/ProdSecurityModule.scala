@@ -6,10 +6,9 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
-import com.google.inject.{AbstractModule, Provider}
-import com.mohiva.play.silhouette.api.services.IdentityService
-import com.mohiva.play.silhouette.api.{EventBus, Silhouette, SilhouetteProvider}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltDelegatedSecurityEnvironment, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.google.inject.{AbstractModule, Provider, Provides}
+import com.mohiva.play.silhouette.api.{Silhouette, SilhouetteProvider}
 import controllers.util.DataStore
 import javax.inject.{Inject, Named, Singleton}
 import net.codingwell.scalaguice.ScalaModule
@@ -24,8 +23,11 @@ class ProdSecurityModule extends AbstractModule with ScalaModule {
   override def configure(): Unit = {
     bind[Silhouette[GestaltFrameworkSecurityEnvironment]].to[SilhouetteProvider[GestaltFrameworkSecurityEnvironment]]
     bind[SecurityClientProvider].to[GestaltLateInitSecurityEnvironment]
-    bind[GestaltSecurityEnvironment[AuthAccountWithCreds]].to[GestaltLateInitSecurityEnvironment]
-    bind[GestaltSecurityConfig].toProvider[GestaltLateInitSecurityEnvironment]
+    bind[GestaltFrameworkSecurityEnvironment].to[GestaltLateInitSecurityEnvironment]
+    bind[GestaltDelegatedSecurityEnvironment].toInstance(new GestaltDelegatedSecurityEnvironment {
+      override def client: GestaltSecurityClient = throw new RuntimeException("invalid configuration; meta does not use delegated security model")
+      override def config: GestaltSecurityConfig = throw new RuntimeException("invalid configuration; meta does not use delegated security model")
+    })
     bind[SecurityKeyInit].to[GestaltLateInitSecurityEnvironment]
   }
 
@@ -39,14 +41,13 @@ trait SecurityClientProvider {
   def client: GestaltSecurityClient
 }
 
-
 @Singleton
 class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
                                                      dataStore: DataStore,
                                                      appconfig: play.api.Configuration,
                                                      @Named(SystemConfigActor.name) configActor: ActorRef )
                                                    ( implicit ec: ExecutionContext )
-  extends GestaltSecurityEnvironment[AuthAccountWithCreds] with SecurityClientProvider with SecurityKeyInit with Provider[GestaltSecurityConfig] {
+  extends GestaltFrameworkSecurityEnvironment with SecurityClientProvider with SecurityKeyInit {
 
   private val logger = Logger(this.getClass)
 
@@ -58,29 +59,33 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
     discoverSecurityConfig
   }
 
-  override def client: GestaltSecurityClient = {
-    val c = config
+  private var _client: GestaltSecurityClient = newClient(config)
+
+  private[this] def newClient(c: GestaltSecurityConfig) = {
     new GestaltSecurityClient(wsclient, c.protocol, c.hostname, c.port, GestaltBasicCredentials(c.apiKey, c.apiSecret))
   }
+
+  override def client: GestaltSecurityClient = _client
 
   override def config: GestaltSecurityConfig = {
     if (maybeEnvSecConfig.filter(_.isWellDefined).isEmpty) {
       logger.trace(maybeEnvSecConfig.toString)
       logger.warn("GestaltSecurityConfig is not fully initialized")
     }
-    maybeEnvSecConfig getOrElse GestaltSecurityConfig(
-      FRAMEWORK_SECURITY_MODE,
-      HTTP,
-      "localhost",
-      9455,
-      "",
-      "",
-      None,
-      None
-    )
+    maybeEnvSecConfig getOrElse {
+      logger.warn("Returning fall-back security config; this will not work.")
+      GestaltSecurityConfig(
+        FRAMEWORK_SECURITY_MODE,
+        HTTP,
+        "localhost",
+        9455,
+        "",
+        "",
+        None,
+        None
+      )
+    }
   }
-
-  override def get: GestaltSecurityConfig = config
 
   override def init(org: UUID, caller: AuthAccountWithCreds) = {
 
@@ -92,6 +97,8 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
         apiSecret = creds.password
       )
     }
+    // this uses the config set above
+    _client = newClient(config)
 
     configActor ! SystemConfigActor.SetKeys(
       caller.account.id,
@@ -132,11 +139,14 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
 
       import scala.concurrent.duration._
       implicit val askTimeout: akka.util.Timeout = 15.seconds
-      logger.info("Meta repository is initialized. Looking up credentials...")
+      logger.info("Meta repository is initialized. Looking up security credentials...")
       val fConfig = (configActor ? SystemConfigActor.GetAllConfig).mapTo[Map[String,String]]
       val fCreds = fConfig.map(
         config => config.get(KEY_NAME).zip(config.get(KEY_SECRET)).headOption
       )(ec)
+      fCreds.onSuccess{
+        case Some(_) => logger.info("Discovered security credentials in repository.")
+      }
       Await.result(fCreds, 15.seconds)
     } else {
       logger.info("Skipping credential lookup.")
@@ -144,13 +154,11 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
     }
   }
 
-  
   private def discoverSecurityConfig: Option[GestaltSecurityConfig] = {
-    logger.info("> checking environment for Gestalt security config")
+    logger.info("Checking environment variables for Gestalt security config")
 
     import GestaltSecurityConfig._
-
-    def getEnv(name: String): Option[String] = scala.util.Properties.envOrNone(name)
+    import scala.util.Properties.envOrNone
 
     def defaultPort: Protocol => Int = _ match {
       case HTTP => 80
@@ -165,14 +173,15 @@ class GestaltLateInitSecurityEnvironment @Inject() ( wsclient: WSClient,
       case _ => throw new RuntimeException("Invalid protocol for Gestalt security")
     }
 
+    lazy val dbCreds: Option[(String, String)] = getCredsFromSystem
+
     for {
-      proto  <- getEnv(ePROTOCOL) orElse Some("http") map checkProtocol
-      host   <- getEnv(eHOSTNAME)
-      port   <- getEnv(ePORT) flatMap {s => Try{s.toInt}.toOption} orElse Some(defaultPort(proto))
-      dbCreds = getCredsFromSystem
-      key    = dbCreds.map(_._1) orElse getEnv(eKEY)    getOrElse {logger.warn("Could not identity API key for use with gestalt-security; authentication is not functional."); ""}
-      secret = dbCreds.map(_._2) orElse getEnv(eSECRET) getOrElse {logger.warn("Could not identity API secret for use with gestalt-security; authentication is not functional."); ""}
-      realm  = getEnv(eREALM)
+      proto  <- envOrNone(ePROTOCOL) orElse Some("http") map checkProtocol
+      host   <- envOrNone(eHOSTNAME)
+      port   <- envOrNone(ePORT) flatMap {s => Try{s.toInt}.toOption} orElse Some(defaultPort(proto))
+      key    = envOrNone(eKEY)    orElse dbCreds.map(_._1) getOrElse {logger.warn("Could not identity API key for use with gestalt-security; authentication is not functional."); ""}
+      secret = envOrNone(eSECRET) orElse dbCreds.map(_._2) getOrElse {logger.warn("Could not identity API secret for use with gestalt-security; authentication is not functional."); ""}
+      realm  = envOrNone(eREALM)
     } yield GestaltSecurityConfig(
       mode=FRAMEWORK_SECURITY_MODE,
       protocol=proto,
