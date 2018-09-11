@@ -7,7 +7,6 @@ import scala.annotation.tailrec
 
 import com.galacticfog.gestalt.meta.api.sdk._
 
-
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.illegal
 
@@ -19,19 +18,14 @@ import com.galacticfog.gestalt.data.models.GestaltTypeProperty
 import com.galacticfog.gestalt.data.uuid
 
 import OutputDatatypeHandlers._
-
-import play.api.libs.json.JsString
-import play.api.libs.json.JsObject
-import play.api.libs.json.JsValue
-import play.api.libs.json.Json
-
-import scala.reflect.runtime.{ universe => ru }
-import scala.reflect.runtime.currentMirror
-import ru._
+import play.api.libs.json._
+import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import scala.language.implicitConversions
+import play.api.Logger
+
 
 object OrgCache {
   // this never gets updated when new orgs are created: https://gitlab.com/galacticfog/gestalt-meta/issues/364#note_48945348
@@ -56,6 +50,8 @@ object OrgCache {
 
 object Output {
 
+  private[this] val log = Logger(this.getClass)
+  
   /*
    * TODO: Refactor renderLinks* to take ResourceLike args.
    */
@@ -69,7 +65,7 @@ object Output {
         jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri, props)
       },
       resource_type = jsonTypeName(Option(r.typeId)).get,
-      resource_state = JsString(ResourceState.name(r.state)),
+      resource_state = JsNull,//JsString(ResourceState.name(r.state)),
       owner = Json.toJson(r.owner),
       name = r.name,
       description = r.description,
@@ -81,10 +77,21 @@ object Output {
       auth = r.auth)       
 
     // this renders the properties
-    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
-    Json.toJson(res.copy(
-      properties = renderedProps orElse Some(Json.obj())
-    ))
+    try {
+      val (renderedProps, state) = renderInstanceProperties(r.typeId, r.id, r.properties, r.state)
+      Json.toJson(res.copy(
+        properties = (renderedProps orElse Some(Json.obj())),
+        resource_state = JsString(ResourceState.name(state))
+      ))
+    } catch {
+      case e: Throwable => {
+        /*
+         * TODO: Leave this try/catch here for awhile. It's useful for troubleshooting
+         * errors in rendering.
+         */
+        throw e
+      }
+    }
   }
 
   
@@ -106,7 +113,7 @@ object Output {
       id = r.id,
       org = jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, metaUrl),
       resource_type = jsonTypeName(Option(r.typeId)).get,
-      resource_state = JsString(ResourceState.name(r.state)),
+      resource_state = JsNull, //JsString(ResourceState.name(r.state)),
       owner = Json.toJson(r.owner),
       name = r.name,
       description = r.description,
@@ -118,9 +125,10 @@ object Output {
       auth = r.auth)       
 
     // this renders the properties
-    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    val (renderedProps, state) = renderInstanceProperties(r.typeId, r.id, r.properties, r.state)
     val result = Json.toJson(res.copy(
-      properties = renderedProps orElse Some(Json.obj())
+      properties = (renderedProps orElse Some(Json.obj())),
+      resource_state = JsString(ResourceState.name(r.state))
     ))
     
     compact(result, metaUrl)
@@ -153,9 +161,10 @@ object Output {
       auth = r.auth)       
 
     // this renders the properties
-    val renderedProps = renderInstanceProperties(r.typeId, r.id, r.properties)
+    val (renderedProps, state) = renderInstanceProperties(r.typeId, r.id, r.properties, r.state)
     val result = Json.toJson(res.copy(
-      properties = renderedProps orElse Some(Json.obj())
+      properties = (renderedProps orElse Some(Json.obj())),
+      resource_state = JsString(ResourceState.name(r.state))
     ))
     import com.galacticfog.gestalt.patch._
     
@@ -290,15 +299,15 @@ object Output {
    * @param instanceId UUID of Type instance
    * @return JsValue object containing all rendered property name/values.
    */
-  def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
-    /* Get a Map of the properties defined for the current ResourceType. */
+  def renderInstanceProperties(typeId: UUID, instanceId: UUID, properties: Option[Hstore], state: UUID): (Option[JsValue], UUID) = {
     
+    /* Get a Map of the properties defined for the current ResourceType. */
     val templateProps = Properties.getTypePropertyMap(typeId)
     
     @tailrec
-    def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
+    def loop(propKeys: Seq[String], given: Hstore, acc: (Map[String,JsValue],UUID)): (Option[Map[String,JsValue]],UUID) = {
       propKeys match {
-        case Nil    => Option(acc)
+        case Nil    => (Option(acc._1), acc._2)
         case property :: tail => {
         
           /*
@@ -308,19 +317,46 @@ object Output {
            */
           if (skipRender(templateProps(property), given)) loop(tail, given, acc)
           else {
-            val renderedValue = renderDataType(templateProps( property ), given( property ))
-            loop( tail, given, acc + (property -> renderedValue) )
+            val (renderedValue, newState) = Try(renderDataType(templateProps( property ), given( property ))) match {
+              case Failure(e) => {
+                log.error(s"Encountered an error rendering property '${property}' on resource '${instanceId}': ${e.getMessage}")
+                
+                val res = ResourceFactory.findById(instanceId)
+                val corrupt = ResourceState.id(ResourceStates.Corrupt)
+                /*
+                 * Update the object state to 'Corrupt. This is conditional because
+                 * I've seen this method used to render resources that are not yet
+                 * persisted.
+                 */
+                if (res.isDefined) {
+                  if (res.get.state != corrupt) {
+                    ResourceFactory.update(res.get.copy(state = corrupt), res.get.owner.id)
+                  }
+                }                
+                (JsString(s"!!!ERROR: ${e.getMessage}: GIVEN_VALUE => '${given(property)}'"), corrupt)
+              }
+              case Success(v) => (v, acc._2)
+            }
+            loop( tail, given, (acc._1 + (property -> renderedValue), newState) )
           }
         }
       }
     }
     
     val givenProperties = collectInstanceProperties(typeId, instanceId, properties)
-    givenProperties map {
-      loop(templateProps.keys.toList, _, Map[String, JsValue]())
-    } map {
-      Json.toJson(_)
+    
+    if (givenProperties.isEmpty) (None, state)
+    else {
+      val output = givenProperties map {
+        loop(templateProps.keys.toList, _, (Map[String, JsValue](), state))
+      } map { case (ps, st) =>
+        (Json.toJson(ps), st)
+      }
+      (Option(output.get._1), output.get._2)
     }
+    
+    
+    
   }
   
 

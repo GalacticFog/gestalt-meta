@@ -833,6 +833,57 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
   }
 
+  "ContainerSpec.InlineVolumeMountSpec" should {
+
+    "parse properly without description" in {
+      val testSpec = ContainerSpec.InlineVolumeMountSpec(
+        mount_path = "/mnt/path",
+        volume_spec = VolumeSpec(
+          name = "test-volume-name",
+          provider = ContainerSpec.InputProvider(id = uuid()),
+          `type` = VolumeSpec.HostPath,
+          size = 1000,
+          access_mode = VolumeSpec.ReadWriteOnce,
+          config = Json.obj(
+            "host_path" -> "/tmp"
+          )
+        )
+      )
+      val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
+      (json \ "volume_spec" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_spec" \ "description").asOpt[String] must beNone
+      (json \ "volume_spec" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_spec" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+
+      json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
+    }
+
+    "parse properly with description" in {
+      val testSpec = ContainerSpec.InlineVolumeMountSpec(
+        mount_path = "/mnt/path",
+        volume_spec = VolumeSpec(
+          name = "test-volume-name",
+          description = Some("test description"),
+          provider = ContainerSpec.InputProvider(id = uuid()),
+          `type` = VolumeSpec.HostPath,
+          size = 1000,
+          access_mode = VolumeSpec.ReadWriteOnce,
+          config = Json.obj(
+            "host_path" -> "/tmp"
+          )
+        )
+      )
+      val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
+      (json \ "volume_spec" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_spec" \ "description").asOpt[String] must beSome("test description")
+      (json \ "volume_spec" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_spec" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+
+      json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
+    }
+
+  }
+
   "containers.count limit policies" should {
 
     "enforce environment container limits" >> { t : TestScope =>
