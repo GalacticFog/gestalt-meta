@@ -1,9 +1,8 @@
 package com.galacticfog.gestalt.meta.api
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
@@ -83,8 +82,6 @@ case object VolumeSpec {
   }
 
   implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { t => Json.toJson(t.label) }
-
-  implicit val volumeSpecFmt = Json.format[VolumeSpec]
 
   sealed trait VolumeConfig
   case object PersistentVolume extends VolumeConfig

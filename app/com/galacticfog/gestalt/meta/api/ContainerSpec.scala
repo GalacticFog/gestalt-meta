@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
@@ -11,7 +11,7 @@ import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
-import scala.language.implicitConversions
+import scala.language.{implicitConversions, postfixOps}
 import scala.util.{Failure, Success, Try}
 
 case class ContainerSpec(name: String = "",
@@ -283,9 +283,27 @@ case object ContainerSpec extends Spec {
       (__ \ "lb_address").readNullable[ServiceAddress]
     )(ContainerSpec.PortMapping.apply _)
 
+  val volumeSpecJsonOutputTransformer = (
+    (__ \ 'name).json.copyFrom( (__ \ 'name).json.pick ) and
+    (__ \ 'description).json.copyFrom( (__ \ 'description).readNullable[JsValue].map(_.getOrElse(JsNull)) ) and
+    (__ \ 'properties).json.copyFrom(
+      (__ \ 'name).json.prune andThen (__ \ 'description).json.prune
+    )
+  ) reduce
+  val volumeSpecJsonInputTransformer = (
+    __.json.copyFrom( (__ \ 'properties).json.pick ) and
+    (__ \ 'name).json.copyFrom( (__ \ 'name).json.pick ) and
+    (__ \ 'description).json.copyFrom( (__ \ 'description).readNullable[JsValue].map(_.getOrElse(JsNull)) )
+    reduce
+  )
+
   implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
   implicit val existingVMSFmt = Json.format[ContainerSpec.ExistingVolumeMountSpec]
-  implicit val volSpec: Format[VolumeSpec] = VolumeSpec.volumeSpecFmt
+  val naturalVolSpec = Json.format[VolumeSpec]
+  implicit val volSpecRds = Reads[VolumeSpec] (json => json.transform(volumeSpecJsonInputTransformer).flatMap(naturalVolSpec.reads))
+  implicit val volSpecWrts = Writes[VolumeSpec] {
+    (spec: VolumeSpec) => naturalVolSpec.writes(spec).transform(volumeSpecJsonOutputTransformer).get
+  }
   implicit val inlineVMSFmt = Json.format[ContainerSpec.InlineVolumeMountSpec]
 
   implicit val metaVMCSpecRds =
