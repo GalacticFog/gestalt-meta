@@ -40,11 +40,16 @@ trait ResourceScope extends Scope with Mockito {
   )
   private[this] lazy val injector = appBuilder.injector()
  
+  
+  import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
+  
+  
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org,
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
+    val metaconfig = new DefaultMetaConfiguration()
     
     for {
       _ <- db.clean
@@ -69,6 +74,8 @@ trait ResourceScope extends Scope with Mockito {
         )
         ResourceFactory.create(ResourceIds.User, adminUserId)(gestaltAdmin, Some(dummyRootOrgId))
       }
+      _ <- metaconfig.ensureReady()
+      _ <- metaconfig.setRoot(adminUserId)
       _ <- {
         println("*** Applying migrations ***")
         /*

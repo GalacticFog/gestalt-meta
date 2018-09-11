@@ -80,19 +80,13 @@ class DefaultMetaConfigManager @Inject()(
   val GESTALT_META_ROOT_IDENTITY = "GESTALT_META_ROOT_IDENTITY"
   val DEFAULT_CONFIG_SECRETS_PATH = "/gestalt/root"
 
+  
   initialize()
   
   
   def setup(force: Boolean): Try[Unit] = {
     config.setup(force)
   }
-  
-//  /**
-//   * Ensure the configuration datastore is ready and available
-//   */
-//  def ensureReady(): Try[Unit] = {
-//    if (isReady) Success(()) else config.setup(true)  
-//  }  
 
   /**
    * Initialize Meta configuration.
@@ -126,7 +120,7 @@ class DefaultMetaConfigManager @Inject()(
     log.info(s"Checking for mounted secret @$secretsPath...")
     val maybeSecret = readMountedFile(secretsPath)
 
-    val identity = {
+    val identity: Option[UUID] = {
       /*
        * Check secrets file
        */
@@ -164,16 +158,8 @@ class DefaultMetaConfigManager @Inject()(
         }
       }
     }
-    
-    try { 
-      UUID.fromString(identity.get) 
-    } 
-    catch {
-      case e: Throwable => {
-        log.error(s"An error occurred converting identity to UUID. found: ${identity.get}")
-        throw e
-      }
-    }
+
+    identity.get
     
 //    val maybeIdentity = {
 //      readMountedFile(secretsPath) orElse 
@@ -182,11 +168,11 @@ class DefaultMetaConfigManager @Inject()(
 //    (maybeIdentity orElse readGestaltSecurity()).map(UUID.fromString(_))
   }
 
-  private[auth] def readMountedFile(path: String): Option[String] = {
+  private[auth] def readMountedFile(path: String): Option[UUID] = {
     if (Files.exists(Paths.get(path))) {
       val source = scala.io.Source.fromFile(path)
       try { 
-        Option(source.mkString) 
+        Option(toUserUuid(source.mkString.trim))
       } finally {
         source.close()
       }
@@ -196,15 +182,33 @@ class DefaultMetaConfigManager @Inject()(
     }
   }
   
-  private[auth] def readEnvironmentVar(key: String): Option[String] = {
-    sys.env.get(key)
+  private[auth] def readEnvironmentVar(key: String): Option[UUID] = {
+    sys.env.get(key).map(toUserUuid(_))
   }
   
-  private[auth] def readGestaltSecurity(): Option[String] = {
+  private[auth] def readGestaltSecurity(): Option[UUID] = {
     security.getRootUser()(client.client) match {
       case Failure(e) => throw new RuntimeException("FAILED talking to Gestalt-Security")
-      case Success(r) => Some(r.id.toString)
+      case Success(r) => Some(toUserUuid(r.id.toString))
     }
   }
+ 
+  /**
+   * 
+   * @param sid String representation of UUID to convert
+   * @param validate if 'true' will test if gestalt-security knows the given user
+   */
+  private[auth] def toUserUuid(sid: String, validate: Boolean = true): UUID = {
+    val result = Try(UUID.fromString(sid.trim))
+    if (result.isFailure) {
+      log.error("An error occurred converting identity string to UUID. found: '${sid}'")  
+    }
+    
+//    if (validate) {
+//      // Test that the user actually exists here.
+//    }
+    result.get
+  }
+  
   
 }

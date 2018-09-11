@@ -29,7 +29,7 @@ import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
 import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
-
+import com.galacticfog.gestalt.meta.auth.DefaultMetaConfigManager
 
 @Singleton
 class BootstrapController @Inject()( 
@@ -41,7 +41,8 @@ class BootstrapController @Inject()(
        deleteController: DeleteController,
        db: play.api.db.Database,
        appconfig: play.api.Configuration,
-       migration: MigrationController)
+       migration: MigrationController,
+       metaConf: DefaultMetaConfigManager)
      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
      
   val logger = Logger(this.getClass)
@@ -78,9 +79,8 @@ class BootstrapController @Inject()(
             HandleExceptions(e)
           }
           case Success(metaAdmin) => {
-
-            log.info(s"Setting root user to : ${metaAdmin.name}, ${metaAdmin.id}")
-            initializeRootUser(metaAdmin).get
+            
+            initializeRootUser().get
             
             log.info("Setting entitlements for admin-user on root-org...")
             setNewResourceEntitlements(org.id, org.id, caller, None)
@@ -136,17 +136,18 @@ class BootstrapController @Inject()(
     }
   }
   
-  private[controllers] def initializeRootUser(user: GestaltResourceInstance): Try[UUID] = Try {
-    metaConfig.ensureReady.get
-    metaConfig.getRoot.getOrElse {
-      log.warn(s"Root identity not found in Meta-Configuration. This should not happen.")
-      log.warn(s"Setting root to gestalt-security admin")
-
-      metaConfig.setRoot(user.id) match {
-        case Failure(e) => throw new RuntimeException(s"Failed setting root user in Meta configuration.")
-        case Success(_) => user.id
-      }
-    }
+  private[controllers] def initializeRootUser(/*user: GestaltResourceInstance*/): Try[Unit] = Try {
+//    metaConfig.ensureReady.get
+//    metaConfig.getRoot.getOrElse {
+//      log.warn(s"Root identity not found in Meta-Configuration. This should not happen.")
+//      log.warn(s"Setting root to gestalt-security admin")
+//
+//      metaConfig.setRoot(user.id) match {
+//        case Failure(e) => throw new RuntimeException(s"Failed setting root user in Meta configuration.")
+//        case Success(_) => user.id
+//      }
+//    }
+    metaConf.initialize()
   }
   
   /**
