@@ -22,6 +22,14 @@ import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
 import scala.util.{Failure, Success, Try}
+import controllers.util.QueryString
+
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.ResourceState
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
+import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
+
 
 @Singleton
 class BootstrapController @Inject()( 
@@ -42,13 +50,7 @@ class BootstrapController @Inject()(
     val results = providerManager.loadProviders()
     Ok("TESTING PROVIDER LOADING...")
   }
-  
-  import controllers.util.MetaConfig
-  import controllers.util.DummyMetaConfig
-  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-  
-  private val metaConfig: MetaConfig[GestaltResourceInstance] = DummyMetaConfig
-  
+
   def bootstrap() = Audited() { implicit request =>
     log.debug("bootstrap()")
     val caller = request.identity    
@@ -68,9 +70,8 @@ class BootstrapController @Inject()(
       }
       case Success((admin, org)) => {
         log.info("Data migration complete.")
-
         log.info("Creating admin-user in Meta...")
-        
+
         createAdminUser(admin, org) match {
           case Failure(e) => {
             log.error(s"Failed creating admin-user during bootstrap: ${e.getMessage}")
@@ -79,15 +80,13 @@ class BootstrapController @Inject()(
           case Success(metaAdmin) => {
 
             log.info(s"Setting root user to : ${metaAdmin.name}, ${metaAdmin.id}")
-            initializeRootUser(metaAdmin)
+            initializeRootUser(metaAdmin).get
             
             log.info("Setting entitlements for admin-user on root-org...")
             setNewResourceEntitlements(org.id, org.id, caller, None)
 
             log.info("Stashing credentials in gestalt-security...")
             initGestaltSecurityCreds(org.id, caller)
-            
-            import controllers.util.QueryString
             
             /*
              * Test for migration (default is 'true', always migrate) pass ?migrate=false
@@ -106,7 +105,6 @@ class BootstrapController @Inject()(
                 }.get
               }
             }
-            
             
             val report = if (performMigration) {
               log.info("Performing Meta-Schema migrations...")
@@ -138,20 +136,18 @@ class BootstrapController @Inject()(
     }
   }
   
-  private[controllers] def initializeRootUser(user: GestaltResourceInstance) = {
-    metaConfig.initRootUser(Some(user)) match {
-      case Success(u) => ;
-      case Failure(e) => {
-        log.error("Failed initialized root-user during bootstrap.")
-        throw e
+  private[controllers] def initializeRootUser(user: GestaltResourceInstance): Try[UUID] = Try {
+    metaConfig.ensureReady.get
+    metaConfig.getRoot.getOrElse {
+      log.warn(s"Root identity not found in Meta-Configuration. This should not happen.")
+      log.warn(s"Setting root to gestalt-security admin")
+
+      metaConfig.setRoot(user.id) match {
+        case Failure(e) => throw new RuntimeException(s"Failed setting root user in Meta configuration.")
+        case Success(_) => user.id
       }
     }
-  }  
-  
-  import com.galacticfog.gestalt.data.ResourceState
-  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-  import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
-
+  }
   
   /**
    * Create root/admin user in Meta from corresponding Account in gestalt-security

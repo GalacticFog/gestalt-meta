@@ -25,15 +25,15 @@ import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
 import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.patch._
-
-import controllers.util.MetaConfig
-
+import com.galacticfog.gestalt.meta.api._
+import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
 
 trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   //private val log = Logger(this.getClass)
   
-  import com.galacticfog.gestalt.meta.api._
+  val metaConfig = new DefaultMetaConfiguration
+ 
 
   override val log = Logger("AuthorizationMethods")
 
@@ -467,12 +467,10 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     //user +: (Security.getAccountGroups(user, account).get map { _.id })
     user +: account.groups.map( _.id )
   }
-  
-  private lazy val metaConfig: MetaConfig[GestaltResourceInstance] = DummyMetaConfig
-  
+
   def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
     
-    if (metaConfig.isRootUser(identity)) {
+    if (metaConfig.isRoot(identity)) {
       log.info(s"[Root-Access] => '${action}' AUTHORIZED.")
       true 
     } else {
@@ -512,7 +510,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
     
     
-    if (metaConfig.isRootUser(account.account.id)) {
+    if (metaConfig.isRoot(account.account.id)) {
       log.info(s"[Root-Access] => '${action}' AUTHORIZED.")
       true 
     } else {

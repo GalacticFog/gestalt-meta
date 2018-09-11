@@ -6,80 +6,109 @@ import play.api.inject.ApplicationLifecycle
 import controllers.util.Security
 import java.util.UUID
 import scala.util.{Try,Success,Failure}
-import com.galacticfog.gestalt.data.MetaConfigData
+
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
 import org.slf4j.LoggerFactory
+import java.nio.file.{Paths, Files}
+import java.nio.file.{Paths, Files}
 
-class MetaConfigModule extends AbstractModule {
-  override def configure(): Unit = bind(classOf[DefaultMetaConfig]).asEagerSingleton()  
-}
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfiguration
+import modules.SecurityClientProvider
 
-trait MetaConfiguration {
-  
+
+class DefaultMetaConfiguration extends GestaltConfiguration {
+
   object Keys {
     val MetaRootUser = UUID.fromString("af86f1da-82cf-44da-a01c-d392957f8083")  
-  }  
+  }
   
-  /**
-   * Create the meta-configuration table.
-   * @param force if true any existing table with the same given name will be recreated
-   */
-  def setup(force: Boolean): Try[Unit] = 
-    MetaConfigData.setup(force)
-  
-  def isReady(): Boolean = 
-    MetaConfigData.isReady()
+  def isReady(): Boolean = { 
+    PostgresConfigManager.isReady()
+  }
 
-  def get(key: UUID): Option[String] = 
-    MetaConfigData.get(key)
-  
-  def set(key: UUID, data: String): Try[Unit] = 
-    MetaConfigData.set(key, data)
-  
-}
+  def get(key: UUID): Option[String] = { 
+    PostgresConfigManager.get(key)
+  }
 
-@Singleton
-class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration {
-  
-  val GESTALT_META_CONFIG_SECRETS_PATH = "GESTALT_META_CONFIG_SECRETS_PATH"
-  val GESTALT_META_ROOT_IDENTITY = "GESTALT_META_ROOT_IDENTITY"
-  val DEFAULT_CONFIG_SECRETS_PATH = "/gestalt/root"
-  
-  private[this] val log = LoggerFactory.getLogger(this.getClass)
+  def set(key: UUID, data: String): Try[Unit] = {
+    PostgresConfigManager.set(key, data)
+  }
   
   /**
    * Get the persisted root user identity
    */
   def getRoot(): Option[UUID] = {
-    MetaConfigData.get(Keys.MetaRootUser).map(UUID.fromString(_))
+    PostgresConfigManager.get(Keys.MetaRootUser).map(UUID.fromString(_))
   }
   
   /**
    * Persist the root user identity
    */
   def setRoot(id: UUID): Try[Unit] = {
-    MetaConfigData.set(Keys.MetaRootUser, id.toString)
-  }  
+    PostgresConfigManager.set(Keys.MetaRootUser, id.toString)
+  }
+
+  /**
+   * Determine if given identity matches root-user ID
+   */
+  def isRoot(identity: UUID): Boolean = {
+    getRoot.fold(false)(identity == _)
+  }
   
   /**
    * Ensure the configuration datastore is ready and available
    */
   def ensureReady(): Try[Unit] = {
-    if (isReady) Success(()) else setup(true)  
+    if (isReady) Success(()) else PostgresConfigManager.setup(true)  
+  }  
+}
+
+
+
+@Singleton
+class DefaultMetaConfigManager @Inject()(
+    config: GestaltConfigurationManager, 
+    client: SecurityClientProvider,
+    security: Security) 
+      extends DefaultMetaConfiguration with GestaltConfigurationManager {
+  
+  private[this] val log = LoggerFactory.getLogger(this.getClass)
+  
+  val GESTALT_META_CONFIG_SECRETS_PATH = "GESTALT_META_CONFIG_SECRETS_PATH"
+  val GESTALT_META_ROOT_IDENTITY = "GESTALT_META_ROOT_IDENTITY"
+  val DEFAULT_CONFIG_SECRETS_PATH = "/gestalt/root"
+
+  initialize()
+  
+  
+  def setup(force: Boolean): Try[Unit] = {
+    config.setup(force)
   }
+  
+//  /**
+//   * Ensure the configuration datastore is ready and available
+//   */
+//  def ensureReady(): Try[Unit] = {
+//    if (isReady) Success(()) else config.setup(true)  
+//  }  
 
   /**
    * Initialize Meta configuration.
    */
-  def initConfiguration(): Try[Unit] = {
+  def initialize(): Try[Unit] = {
     
     // Ensure the config store is ready and discover 'root'
     val root = for {
       _ <- ensureReady
-      r <- getRootIdentity
+      r <- findRootIdentity
     } yield r
     
     root match {
-      case Failure(e) => ???
+      case Failure(e) => {
+        throw new RuntimeException("Could not determine 'root' identity.")
+      }
       case Success(id) => {
         log.info("Setting root identity in meta configuration.")
         setRoot(id)
@@ -87,7 +116,7 @@ class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration 
     }
   }
   
-  private[auth] def getRootIdentity(): Try[UUID] = Try {
+  private[auth] def findRootIdentity(): Try[UUID] = Try {
     log.info("Establishing root-user identity...")
     
     val secretsPath = sys.env.get(GESTALT_META_CONFIG_SECRETS_PATH).getOrElse {
@@ -95,7 +124,6 @@ class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration 
     }
     
     log.info(s"Checking for mounted secret @$secretsPath...")
-    
     val maybeSecret = readMountedFile(secretsPath)
 
     val identity = {
@@ -137,7 +165,10 @@ class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration 
       }
     }
     
-    try { UUID.fromString(identity.get) } catch {
+    try { 
+      UUID.fromString(identity.get) 
+    } 
+    catch {
       case e: Throwable => {
         log.error(s"An error occurred converting identity to UUID. found: ${identity.get}")
         throw e
@@ -150,11 +181,18 @@ class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration 
 //    }
 //    (maybeIdentity orElse readGestaltSecurity()).map(UUID.fromString(_))
   }
-  
+
   private[auth] def readMountedFile(path: String): Option[String] = {
-    val source = scala.io.Source.fromFile(path)
-    try { Option(source.mkString) } finally {
-      source.close()
+    if (Files.exists(Paths.get(path))) {
+      val source = scala.io.Source.fromFile(path)
+      try { 
+        Option(source.mkString) 
+      } finally {
+        source.close()
+      }
+    } else {
+      log.warn(s"Could not find given path: '${GESTALT_META_CONFIG_SECRETS_PATH} = ${path}'") 
+      None
     }
   }
   
@@ -163,8 +201,10 @@ class DefaultMetaConfig @Inject()(security: Security) extends MetaConfiguration 
   }
   
   private[auth] def readGestaltSecurity(): Option[String] = {
-    security.getRootUser(auth = ???)
-    ???
+    security.getRootUser()(client.client) match {
+      case Failure(e) => throw new RuntimeException("FAILED talking to Gestalt-Security")
+      case Success(r) => Some(r.id.toString)
+    }
   }
   
 }
