@@ -24,6 +24,8 @@ import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import org.specs2.execute.Result
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
 
 
 class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
@@ -54,7 +56,8 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
         bind[SkuberFactory].toInstance(mock[SkuberFactory]),
         bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
         bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-        bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
+        bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
+        bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
       )
     )
   ) {

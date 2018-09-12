@@ -18,6 +18,9 @@ import services.{MarathonClientFactory, SkuberFactory}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.util.Success
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
 
 class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
@@ -33,16 +36,17 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     "gwmProviderId" -> "b22c704b-01d8-4bf0-b7d5-a8344119972c",
     "kongProviderId" -> "5b835edf-bc93-4ce8-b018-401dfd5bf903"
   )
-
+  
   val testEndpoint = "https://gtw1.test.galacticfog.com/test-upgrader"
-
+  
   def appWithMocks() = application(additionalBindings = Seq(
     bind[ContainerService].toInstance(mock[ContainerService]),
     bind[ProviderManager].toInstance(mock[ProviderManager]),
     bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
     bind[SkuberFactory].toInstance(mock[SkuberFactory]),
     bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
-    bind[UpgraderService].toInstance(mock[UpgraderService])
+    bind[UpgraderService].toInstance(mock[UpgraderService]),
+    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   ))
 
   abstract class TestUpgradeController extends WithApplication(appWithMocks()) {

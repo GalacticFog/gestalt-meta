@@ -31,6 +31,11 @@ import services._
 import scala.concurrent.Future
 import scala.util.Success
 
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
+
+
 @RunWith(classOf[JUnitRunner])
 class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 
@@ -76,7 +81,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       bind[SkuberFactory].toInstance(mock[SkuberFactory]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
-      bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods])
+      bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods]),
+      bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
     )
 
     new GuiceApplicationBuilder()

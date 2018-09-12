@@ -66,7 +66,16 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
       }
     } yield a2
   }
-
+  
+  def getRootUser()(implicit client: GestaltSecurityClient) = {
+    for {
+      tree <- getOrgSyncTree2()
+      link = tree.admin getOrElse {
+        throw new ResourceNotFoundException(s"Could not find 'admin' in security sync-tree.")
+      }
+    } yield link
+  }
+  
   def getRootInfo(auth: AuthAccountWithCreds): (GestaltOrg, Option[GestaltAccount]) = {
     (for {
       org    <- getRootOrg(auth)
