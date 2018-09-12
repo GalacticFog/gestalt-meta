@@ -18,6 +18,10 @@ import play.api.test._
 
 import scala.util.{Success, Try}
 
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
+
 class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking with JsonMatchers with ResourceScope with BeforeAll with Mockito {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
@@ -41,6 +45,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
     additionalBindings = Seq(
       bind(classOf[LambdaMethods]).toInstance(mockLambdaMethods),
       bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods)
+      
     )
   ))
 

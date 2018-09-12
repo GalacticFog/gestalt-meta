@@ -29,6 +29,9 @@ import org.specs2.runner._
 import org.junit.runner.RunWith
 import org.specs2.specification.Tables
 
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
 @RunWith(classOf[JUnitRunner])
 class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers with Tables {
 
@@ -58,6 +61,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+
   }
 
   abstract class testAppMocks extends WithApplication(application(additionalBindings = Seq(
@@ -67,7 +71,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
     bind[SkuberFactory].toInstance(mock[SkuberFactory]),
     bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
-    bind[Security].toInstance(mock[Security])
+    bind[Security].toInstance(mock[Security]),
+    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   )))
 
   trait testApp extends testAppMocks {
@@ -75,7 +80,10 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
   }
 
   sequential
-
+  stopOnFail
+  
+  
+  
   "ResourceController generic support" should {
 
     val providerTypeName = "Gestalt::Configuration::Provider::TestProvider"
@@ -1122,6 +1130,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       containerService.listEnvironmentContainers(testOrg.name, testEnv.id) returns Future.successful(Seq(container -> Seq.empty))
     }
 
+    
     "render apiendpoints with .properties.public_url if present in kong provider" in new testEndpoint {
 
       "protocol" | "vhost"                  | "expected_url"                                              |>

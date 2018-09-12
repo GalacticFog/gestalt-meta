@@ -79,7 +79,7 @@ class DefaultMetaConfigManager @Inject()(
   val GESTALT_META_CONFIG_SECRETS_PATH = "GESTALT_META_CONFIG_SECRETS_PATH"
   val GESTALT_META_ROOT_IDENTITY = "GESTALT_META_ROOT_IDENTITY"
   val DEFAULT_CONFIG_SECRETS_PATH = "/gestalt/root"
-
+  
   
   initialize()
   
@@ -88,10 +88,11 @@ class DefaultMetaConfigManager @Inject()(
     config.setup(force)
   }
 
+
   /**
    * Initialize Meta configuration.
    */
-  def initialize(): Try[Unit] = {
+  def initialize(rootIdentity: Option[UUID] = None): Try[Unit] = {
     
     // Ensure the config store is ready and discover 'root'
     val root = for {
@@ -144,29 +145,33 @@ class DefaultMetaConfigManager @Inject()(
           /*
            * Check Gestalt-Security
            */
-          log.info("Identity Env var not found. Asking gestalt-security...")
-          val maybeSecurity = readGestaltSecurity()
-          
-          if (maybeSecurity.isDefined) {
-            log.info("Using root identity from gestalt-security")
-            maybeSecurity
+          log.info("Identity Env var not found. Checking persisted identity...")
+          val maybeConfig = getRoot()
+          if (maybeConfig.isDefined) {
+            log.info("Using persisted root-identity")
+            maybeConfig
             
           } else {
-            throw new RuntimeException(
-              "Could not determine the root user identity. This is fatal. Contact an administrator.")
+            log.info("Persisted identity not found. Asking gestalt-security...")
+            val maybeSecurity = readGestaltSecurity()
+            
+            if (maybeSecurity.isDefined) {
+              log.info("Using root identity from gestalt-security")
+              maybeSecurity
+              
+            } else {
+              None
+            }            
           }
         }
       }
     }
+    identity.getOrElse {
+      throw new RuntimeException(
+        "Could not determine the root user identity. This is fatal. Contact an administrator.")      
+    }
+  }  
 
-    identity.get
-    
-//    val maybeIdentity = {
-//      readMountedFile(secretsPath) orElse 
-//      sys.env.get(GESTALT_META_ROOT_IDENTITY).flatMap(readEnvironmentVar(_))
-//    }
-//    (maybeIdentity orElse readGestaltSecurity()).map(UUID.fromString(_))
-  }
 
   private[auth] def readMountedFile(path: String): Option[UUID] = {
     if (Files.exists(Paths.get(path))) {
