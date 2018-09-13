@@ -45,24 +45,28 @@ class ResourceController @Inject()(
   
   type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Option[GestaltResourceInstance]
   type LookupSeq = (ResourcePath, AuthAccountWithCreds, Map[String, Seq[String]]) => Seq[GestaltResourceInstance]
-  
+
+  def embed( embeddings: Map[String,(GestaltResourceInstance,AuthAccountWithCreds) => GestaltResourceInstance] ): TransformFunction = performOptionalEmbeddings(
+     embeddings, _: GestaltResourceInstance, _: AuthAccountWithCreds, _: Option[Map[String,Seq[String]]]
+  )
+
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
       ResourceIds.Group  -> transformGroup,
       ResourceIds.User   -> transformUser,
       ResourceIds.Policy -> transformPolicy,
       ResourceIds.ApiEndpoint -> transformApiEndpoint,
-      ResourceIds.Lambda -> embedApiEndpoints,
-      ResourceIds.Container -> embedApiEndpoints,
-      migrations.V13.VOLUME_TYPE_ID -> embedContainerMountInfo,
+      ResourceIds.Lambda -> embed(Map("apiendpoints" -> embedEndpoints, "provider" -> embedProvider)),
+      ResourceIds.Container -> embed(Map("apiendpoints" -> embedEndpoints, "provider" -> embedProvider, "volumes" -> embedVolumes)),
+      migrations.V13.VOLUME_TYPE_ID -> embed(Map("container" -> embedContainerMountInfo)),
       migrations.V7.STREAM_SPEC_TYPE_ID -> transformStreamSpec
   )
-  
+
   private[controllers] val lookups: Map[UUID, Lookup] = Map(
     ResourceIds.Container   -> lookupContainer,
     ResourceIds.Entitlement -> lookupEntitlement,
     ResourceIds.Provider    -> lookupProvider
   )
-  
+
   private[controllers] val lookupSeqs: Map[UUID, LookupSeq] = Map(
     ResourceIds.Provider    -> lookupSeqProviders,
     ResourceIds.Secret      -> lookupSeqSecrets,
@@ -72,33 +76,33 @@ class ResourceController @Inject()(
     ResourceIds.Rule        -> lookupPolicyRules,
     ResourceIds.ProviderAction -> lookupProviderActions
   )
-  
-  
+
+
   def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val parent = mapPathData(Resource.ParentId)
-    
+
     if (qs.contains("q") && (qs("q")(0).toLowerCase == "entitlements")) {
       ResourceFactory.rollupActionEntitlements(parent)
     } else {
       ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, UUID.fromString(parent))
     }
   }
-  
-  
+
+
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val policy = mapPathData(Resource.ParentId)
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
-  
+
   def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupProvider(_,_,_)...")
-    
+
     Resource.toInstance(path) map { res =>
       // Inject actions if this is an ActionProvider
-      if (ProviderMethods.isActionProvider(res.typeId)) 
-        ProviderMethods.injectProviderActions(res) else res 
+      if (ProviderMethods.isActionProvider(res.typeId))
+        ProviderMethods.injectProviderActions(res) else res
     }
   }
 
@@ -117,7 +121,7 @@ class ResourceController @Inject()(
       ) map (_._1)
     }
   }
-  
+
   def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
@@ -126,30 +130,30 @@ class ResourceController @Inject()(
         case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
-      
+
       /*
        * Have to pre-process the container-list
        */
-      
+
       Await.result(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds
       ) map (_._1)
     } else Resource.listFromPath(path.path, qs)
   }
-  
+
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
-  
+
   def getOrgFqon(fqon: String) = Audited() { implicit request =>
     val action = "org.view"
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, ${action}")
-    Authorize(fqid(fqon), action, request.identity) {   
+    Authorize(fqid(fqon), action, request.identity) {
       Ok(RenderSingle(Resource.fromPath(fqon).get))
     }
   }
-  
+
   /**
    * Get a top-level resource list. Pulls resources from across all Orgs (no leading FQON).
    * i.e., GET /users
@@ -161,9 +165,9 @@ class ResourceController @Inject()(
       ResourceFactory.findAll(typeId)
     }
   }
-  
+
   /**
-   * Custom lookup providing a shortcut to Provider containers. 
+   * Custom lookup providing a shortcut to Provider containers.
    */
   def getProviderContainers(fqon: String, provider: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(provider).fold {
@@ -174,7 +178,7 @@ class ResourceController @Inject()(
       }
     }
   }
-  
+
   def getProviderContainer(fqon: String, provider: UUID, container: UUID) = Audited(fqon) { implicit request =>
     ResourceFactory.findById(provider).fold {
       ResourceNotFound(ResourceIds.Provider, provider)
@@ -188,7 +192,7 @@ class ResourceController @Inject()(
           ResourceNotFound(ResourceIds.Container, container)
         }{ c => Ok(RenderSingle(c)) }
       }
-    }    
+    }
   }
 
 
@@ -198,8 +202,8 @@ class ResourceController @Inject()(
       case Success(res) => Ok(RenderSingle(res))
     }
   }
-  
-  
+
+
   def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
     log.debug(s"genericResourcePost(${fqon},${path})")
     val rp = new ResourcePath(fqon, path)
@@ -245,20 +249,20 @@ class ResourceController @Inject()(
               .recover { case e => HandleExceptions(e) }
         }
       } yield result
-      
+
     } else {
-      
+
       // perform action
       for {
         org <- findOrgOrFail(fqon)
-        
+
         /*
          *  Lookup action to be performed
          */
         action <- fTry{
           request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
         }
-        
+
         /*
          * Get resource target ID from request URL
          */
@@ -266,14 +270,14 @@ class ResourceController @Inject()(
           case Some(targetId) => Future.successful(UUID.fromString(targetId))
           case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
         }
-        
+
         /*
-         * 
+         *
          */
         result <- getBackingProviderType(rp.targetTypeId) match {
-          case None => 
+          case None =>
             Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
-          case Some(backingProviderType) => 
+          case Some(backingProviderType) =>
             genericResourceMethods.performProviderBackedAction(
               org = org,
               identity = request.identity,
@@ -294,7 +298,7 @@ class ResourceController @Inject()(
     val rp = new ResourcePath(fqon, path)
 
     val action = actionInfo(rp.targetTypeId).prefix + ".view"
-    
+
     log.trace(s"getResources(_, $path)")
     log.debug("Action : " + action)
 
@@ -302,15 +306,15 @@ class ResourceController @Inject()(
       AuthorizedResourceList(rp, action, request.queryString)
     }
     else AuthorizedResourceSingle(rp, action)
-  }  
-  
+  }
+
   private[controllers] def AuthorizedResourceSingle(path: ResourcePath, action: String)
       (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
-    
+
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, $action")
-    
+
     Authorize(path.targetId.get, action) {
-      
+
       val resource = lookups.get(path.targetTypeId).fold {
         Resource.toInstance(path)
       }{ f=>
@@ -327,11 +331,11 @@ class ResourceController @Inject()(
             case Failure(err) => HandleExceptions(err)
             case Success(res) => Ok( RenderSingle(res) )
           }
-        }          
+        }
       }
     }
   }
-  
+
   private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: Map[String, Seq[String]])
       (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
 
@@ -341,16 +345,16 @@ class ResourceController @Inject()(
       log.debug(s"Executing standard lookup function for resource list: ${path.path}")
       Resource.listFromPath(path.path, qs)
     }{ f => f(path, request.identity, request.queryString).toList }
-    
+
     AuthorizeList(action) {
       transforms.get(path.targetTypeId).fold {
         rss
-        }{ f =>
+      }{ f =>
         rss map { f(_, request.identity, Option(request.queryString)).get }
       }
     }
   }
-  
+
   private[controllers] def findResource(path: ResourcePath, account: AuthAccountWithCreds)
       : Option[GestaltResourceInstance] = {
 
@@ -358,33 +362,33 @@ class ResourceController @Inject()(
       Resource.fromPath(path.path)
     }{ f =>
       log.debug(s"Found custom lookup function for Resource.")
-      f(path, account, None) 
+      f(path, account, None)
     }
-    
+
     resource map { res =>
       transforms.get(res.typeId).fold(res){ f =>
         log.debug(s"Found custom transformation function for Resource: ${res.id}")
         f(res, account, None).get
       }
     }
-  }  
-  
-  
+  }
+
+
   import com.galacticfog.gestalt.data.parseUUID
   import com.galacticfog.gestalt.meta.providers._
-  
+
 
   def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
 
     log.debug("Finding Action...")
-    
+
     ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
       this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
-      
+
     }{ act =>
-      
+
       log.debug("Finding target resource...")
-      
+
       val resource = for {
         a   <- request.queryString.get("resource") orElse {
           throw new BadRequestException("You must supply a `?resource={id}` query parameter")
@@ -397,24 +401,24 @@ class ResourceController @Inject()(
           throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
         }
       } yield res
-      
+
       import com.galacticfog.gestalt.meta.providers.ui._
 
       val metaAddress = META_URL
 
       log.debug("using META_ADDRESS : " + metaAddress)
-      
+
       val output = Assembler.assemble(
           fqon,
           metaAddress,
-          act, 
-          resource.get, 
+          act,
+          resource.get,
           request.identity,
           request.queryString)
       Ok(output).as("text/html")
     }
   }
-  
+
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
@@ -455,14 +459,14 @@ class ResourceController @Inject()(
       findActionsInScope(org, org, targetPrefix)
     }
   }
-  
+
   def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
     RenderList {
       findActionsInScope(fqid(fqon), target, targetPrefix)
     }
   }
-  
+
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
@@ -470,16 +474,16 @@ class ResourceController @Inject()(
    */
   def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     Resource.listFromPath(path.path, qs) filter { o =>
-      o.properties.get("fqon") != path.fqon  
+      o.properties.get("fqon") != path.fqon
     }
   }
-  
+
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
-  
+
   def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
-    
+
     val rs = if (Resource.isTopLevel(path.path)) {
       val org = fqid(Resource.getFqon(path.path))
       ResourceFactory.findChildrenOfType(org, org, ResourceIds.Entitlement)
@@ -487,26 +491,26 @@ class ResourceController @Inject()(
 
     if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
   }
-  
+
   /*
    * Type-Based Lookup Functions
-   */ 
+   */
   def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqProviders(${path.path}, user = ${account.account.id}")
-    
-    val parentId = { 
+
+    val parentId = {
       if (path.parentId.isDefined) path.parentId.get
       else orgFqon(path.fqon).fold(FqonNotFound(path.fqon)){ _.id }
     }
-    
+
     ResourceFactory.findById(parentId).fold {
       throw new ResourceNotFoundException(parentId.toString)
-    }{ _ => 
-      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId) 
+    }{ _ =>
+      val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId)
       filterProvidersByType(rs, qs) map { res =>
-        
+
         // Inject actions if this is an ActionProvider
-        if (ProviderMethods.isActionProvider(res.typeId)) 
+        if (ProviderMethods.isActionProvider(res.typeId))
           ProviderMethods.injectProviderActions(res) else res
       }
     }
@@ -536,7 +540,7 @@ class ResourceController @Inject()(
 
   import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
   import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}
-  
+
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
     val abstractProviders = Seq(
@@ -547,23 +551,23 @@ class ResourceController @Inject()(
     if (abstractProviders.contains(typeid)) CoVariant(typeid)
     else Invariant(typeid)
   }
-  
+
   def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
 
     val allnames = TypeFactory.allProviderNames()
     val prefixes = TypeFactory.typeNamePrefixes(allnames)
-    
+
     if (qs.get("type").isEmpty) rs
     else {
       val ids: Seq[UUID] = TypeFactory.validTypeFilter(qs("type").head, allnames, prefixes).fold {
         throw new BadRequestException(s"Unknown provider type : '${qs.get("type").head}'")
       }{ typename =>
         log.debug("Filtering providers for type : " + typename)
-     
+
         val variance = providerTypeVariance(typename)
         findTypesWithVariance(variance) map { _.id }
       }
-      rs filter { r => 
+      rs filter { r =>
         ids.contains(r.typeId) }
     }
   }
@@ -573,13 +577,13 @@ class ResourceController @Inject()(
   private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
     val props  = EntitlementProps.make(res)
     val output = props.identities map { ids =>
-      
+
       // Get expanded resource for each UUID in properties.identities
       val identities = ResourceFactory.findAllIn(ids)
-      
+
       // Transform identity Seq[UUID] to Seq[ResourceLink] JSON.
       val idJson = Output.renderLinks(identities, /*baseUrl*/None)
-      
+
       res.copy(properties = {
         Option(res.properties.get ++ Map("identities" -> Json.stringify(idJson)))
       })
@@ -595,10 +599,10 @@ class ResourceController @Inject()(
    * Lookup and inject associated rules into policy.
    */
   private[controllers] def transformPolicy(
-      res: GestaltResourceInstance, 
-      user: AuthAccountWithCreds, 
+      res: GestaltResourceInstance,
+      user: AuthAccountWithCreds,
       qs: Option[Map[String, Seq[String]]] = None) = Try {
-    
+
     val ruleLinks = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map {  toLink(_, None) }
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
   }
@@ -607,14 +611,8 @@ class ResourceController @Inject()(
     * Lookup and inject container mount info into upstream Volume object
     */
   private[controllers] def embedContainerMountInfo( res: GestaltResourceInstance,
-                                                    user: AuthAccountWithCreds,
-                                                    qs: Option[Map[String, Seq[String]]] = None) = Try {
-    val embedContainer = for {
-      qs <- qs
-      embed <- qs.get("embed")
-    } yield embed.contains("container")
-
-    val containerMount: Option[(ExistingVolumeMountSpec,GestaltResourceInstance)] = if (embedContainer.contains(true)) {
+                                                    user: AuthAccountWithCreds ): GestaltResourceInstance = {
+    val containerMount: Option[(ExistingVolumeMountSpec,GestaltResourceInstance)] = {
       val mnts = for {
         env <- ResourceFactory.findParent(res.id).toList
         cntr <- ResourceFactory.findChildrenOfType(ResourceIds.Container, env.id)
@@ -627,8 +625,6 @@ class ResourceController @Inject()(
       } yield mnt -> cntr
       if (mnts.size > 1) log.warn(s"multiple containers believe that they are mounting Volume ${res.id}")
       mnts.headOption
-    } else {
-      None
     }
     containerMount match {
       case None =>
@@ -640,7 +636,7 @@ class ResourceController @Inject()(
         )
     }
   }
-  
+
   private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
     val rendered = {
       for {
@@ -650,12 +646,12 @@ class ResourceController @Inject()(
           UUID.fromString(sid)
         }
         prv <- ResourceFactory.findById(pid).map(Output.renderInstance(_))
-        r2 = upsertProperties(res, "provider" -> Json.stringify(prv))
-      } yield r2
+
+      } yield upsertProperties(res, "provider" -> Json.stringify(prv))
     }
     rendered.fold(res) { p => p }
   }
-  
+
   private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
     val endpoints = {
       val raw = ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", res.id)
@@ -668,36 +664,32 @@ class ResourceController @Inject()(
     }
     val rendered = Json.stringify(Json.toJson(endpoints.map(Output.renderInstance(_))))
     upsertProperties(res, "apiendpoints" -> rendered)
-  }  
-  
+  }
+
+  private[controllers] def embedVolumes(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+    val volumes = for {
+      vol <- res.properties.getOrElse(Map.empty).get("volumes").flatMap(vs => Try(Json.parse(vs).as[Seq[JsObject]]).toOption).getOrElse(Seq.empty)
+      vid <- (vol \ "volume_id").asOpt[UUID]
+      v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, vid)
+      j = Output.renderInstance(v).as[JsObject]
+    } yield vol ++ Json.obj("volume_resource" -> j)
+    upsertProperties(res, "volumes" -> Json.toJson(volumes).toString)
+  }
+
   /**
     * Lookup and inject apiendpoints into upstream object according to implementation_id
     */
-  private[controllers] def embedApiEndpoints( res: GestaltResourceInstance,
-                                              user: AuthAccountWithCreds,
-                                              qs: Option[Map[String, Seq[String]]] = None) = Try {
-    
-    val fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds) => GestaltResourceInstance] = Map(
-        "apiendpoints" -> embedEndpoints,
-        "provider" -> embedProvider)
-
-    def performEmbeds(tpes: List[String], acc: GestaltResourceInstance): GestaltResourceInstance = {
-      tpes match {
-        case Nil => acc
-        case resourceType :: tail => {
-          performEmbeds(tail, fns(resourceType)(res, user))
-        }
-      }
-    }    
-    
+  private[controllers] def performOptionalEmbeddings(fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds) => GestaltResourceInstance],
+                                                     res: GestaltResourceInstance,
+                                                     user: AuthAccountWithCreds,
+                                                     qs: Option[Map[String, Seq[String]]] = None ) = Try {
     val embeds = for {
-      qs <- qs
-      embeds = QueryString.list(qs, "embed")
-    } yield embeds
-    
-    embeds.fold(res){ es =>
-      if (es.isEmpty) res
-      else performEmbeds(es.toList, res)
+      em <- qs.getOrElse(Map.empty).getOrElse("embed", Seq.empty).distinct
+      fn <- fns.get(em)
+    } yield fn
+
+    embeds.foldLeft(res) {
+      case (res, fn) => fn(res, user)
     }
   }
 

@@ -80,10 +80,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
   }
 
   sequential
-  stopOnFail
-  
-  
-  
+
   "ResourceController generic support" should {
 
     val providerTypeName = "Gestalt::Configuration::Provider::TestProvider"
@@ -992,6 +989,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         Ents.setNewResourceEntitlements(dummyRootOrgId, to.id, user, None)
         (to,tw,te)
       }
+      val Success(kubeProvider) = createKubernetesProvider(testEnv.id)
       val Success(gtw) = createDummyGateway(testEnv.id)
       val Success(kongProviderWithAbsentVhost) = createDummyKong(testEnv.id, props = Map(
         "config" -> Json.obj(
@@ -1046,6 +1044,23 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           "memory" -> "2048"
         ))
       )
+      val volumeMountPath = "/mnt/test-volume"
+      val Success(containerVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        name = "container-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Json.obj(
+            "id" -> kubeProvider.id
+          ).toString,
+          "type" -> "host_path",
+          "config" -> Json.obj(
+            "host_path" -> "/tmp"
+          ).toString,
+          "access_mode" -> "ReadOnlyMany",
+          "size" -> "1000"
+        ))
+      )
       val Success(container) = createInstance(
         ResourceIds.Container,
         name = "test-container",
@@ -1053,8 +1068,14 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         properties = Some(Map(
           "image" -> "test-image",
           "container_type" -> "docker",
+          "volumes" -> Json.toJson(
+            Seq(Json.obj(
+              "mount_path" -> volumeMountPath,
+              "volume_id" -> containerVolume.id
+            ))
+          ).toString,
           "provider" -> Json.obj(
-            "id" -> uuid()
+            "id" -> kubeProvider.id
           ).toString
         ))
       )
@@ -1358,13 +1379,38 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       (json \ "properties" \ "apiendpoints") must beUndefined
     }
 
+    "render listed containers with .properties.volumes expanded if embed=volumes" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/containers?expand=true&embed=volumes", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json(0) \ "properties" \ "volumes").as[Seq[JsObject]].size must_== 1
+      ((json(0) \ "properties" \ "volumes")(0) \ "mount_path").asOpt[String] must beSome(volumeMountPath)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "name").asOpt[String] must beSome(containerVolume.name)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+    }
+
+    "not render containers with .properties.apiendpoints if missing embed=apiendpoints" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/containers?expand=true", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json(0) \ "properties" \ "volumes").as[Seq[JsObject]].size must_== 1
+      ((json(0) \ "properties" \ "volumes")(0) \ "mount_path").asOpt[String] must beSome(volumeMountPath)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource").isDefined must beFalse
+    }
+
     "render single volume with .properties.container/.properties.mount_path if embed=container" in new testVolume {
       val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/volumes/${volume.id}?embed=container", testCreds
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      println(json.toString)
       (json \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(volumeContainer.id)
       (json \ "properties" \ "container" \ "name").asOpt[String] must beSome(volumeContainer.name)
       (json \ "properties" \ "mount_path").asOpt[String] must beSome("/mount/path")
