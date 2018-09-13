@@ -25,7 +25,8 @@ class InfoController @Inject()(
                        build_info: JsValue,
                        meta_repo_build_info: JsValue,
                        services: Map[String,ServiceInfo],
-                       docker_image: Option[String] )
+                       docker_image: Option[String],
+                       root_initialized: Option[Boolean])
   case class ServiceInfo(url: String, status: String)
 
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
@@ -35,6 +36,9 @@ class InfoController @Inject()(
    * TODO:
    */
   def about() = Audited() { implicit request =>
+    import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
+    val rootInitialized = new DefaultMetaConfiguration().getRoot().nonEmpty
+    
     val result = AboutMeta(
       status     = "OK",
       url        = META_URL,
@@ -45,7 +49,8 @@ class InfoController @Inject()(
         "security"       -> ServiceInfo(url = EnvConfig.securityUrl, status = "OK"),
         "datastore"      -> ServiceInfo(url = EnvConfig.databaseUrl, status = "OK")
       ),
-      docker_image = sys.env.get("MARATHON_APP_DOCKER_IMAGE")
+      docker_image = sys.env.get("MARATHON_APP_DOCKER_IMAGE"),
+      root_initialized = Some(rootInitialized)
     )
     Ok(Json.toJson(result))
   }

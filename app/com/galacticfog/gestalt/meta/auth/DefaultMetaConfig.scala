@@ -102,7 +102,9 @@ class DefaultMetaConfigManager @Inject()(
     
     root match {
       case Failure(e) => {
-        throw new RuntimeException("Could not determine 'root' identity.")
+        //throw new RuntimeException("Could not determine 'root' identity.")
+        log.warn("Unable to determine a root user. The system has probably not been bootstrapped. You can continue to use the system as usual, but no user with 'root' privileges has been assigned.")
+        Success(())
       }
       case Success(id) => {
         log.info("Setting root identity in meta configuration.")
