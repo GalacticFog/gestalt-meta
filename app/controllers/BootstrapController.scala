@@ -79,14 +79,15 @@ class BootstrapController @Inject()(
             HandleExceptions(e)
           }
           case Success(metaAdmin) => {
-            
-            initializeRootUser().get
-            
+
             log.info("Setting entitlements for admin-user on root-org...")
             setNewResourceEntitlements(org.id, org.id, caller, None)
 
             log.info("Stashing credentials in gestalt-security...")
             initGestaltSecurityCreds(org.id, caller)
+
+            
+            initializeRootUser().get
             
             /*
              * Test for migration (default is 'true', always migrate) pass ?migrate=false
