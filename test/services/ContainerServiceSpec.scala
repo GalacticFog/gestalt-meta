@@ -686,7 +686,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         volumes = Seq(
           ContainerSpec.InlineVolumeMountSpec(
             mount_path = "/mnt/path",
-            volume_spec = testVolumeSpec
+            volume_resource = testVolumeSpec
           )
         )
       )
@@ -797,7 +797,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         volumes = Seq(
           ContainerSpec.InlineVolumeMountSpec(
             mount_path = "/mnt/path",
-            volume_spec = testVolumeSpec
+            volume_resource = testVolumeSpec
           )
         )
       )
@@ -838,7 +838,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
     "parse properly without description" in {
       val testSpec = ContainerSpec.InlineVolumeMountSpec(
         mount_path = "/mnt/path",
-        volume_spec = VolumeSpec(
+        volume_resource = VolumeSpec(
           name = "test-volume-name",
           provider = ContainerSpec.InputProvider(id = uuid()),
           `type` = VolumeSpec.HostPath,
@@ -861,7 +861,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
     "parse properly with description" in {
       val testSpec = ContainerSpec.InlineVolumeMountSpec(
         mount_path = "/mnt/path",
-        volume_spec = VolumeSpec(
+        volume_resource = VolumeSpec(
           name = "test-volume-name",
           description = Some("test description"),
           provider = ContainerSpec.InputProvider(id = uuid()),
