@@ -850,10 +850,10 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         )
       )
       val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
-      (json \ "volume_spec" \ "name").asOpt[String] must beSome("test-volume-name")
-      (json \ "volume_spec" \ "description").asOpt[String] must beNone
-      (json \ "volume_spec" \ "properties" \ "name").asOpt[String] must beNone
-      (json \ "volume_spec" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+      (json \ "volume_resource" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_resource" \ "description").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
 
       json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
     }
@@ -874,10 +874,10 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         )
       )
       val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
-      (json \ "volume_spec" \ "name").asOpt[String] must beSome("test-volume-name")
-      (json \ "volume_spec" \ "description").asOpt[String] must beSome("test description")
-      (json \ "volume_spec" \ "properties" \ "name").asOpt[String] must beNone
-      (json \ "volume_spec" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+      (json \ "volume_resource" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_resource" \ "description").asOpt[String] must beSome("test description")
+      (json \ "volume_resource" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
 
       json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
     }
