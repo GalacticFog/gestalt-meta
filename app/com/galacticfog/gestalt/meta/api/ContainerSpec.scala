@@ -88,7 +88,7 @@ case object ContainerSpec extends Spec {
   }
 
   case class InlineVolumeMountSpec( mount_path: String,
-                                    volume_resource: VolumeSpec ) extends VolumeMountSpec
+                                    volume_resource: GestaltResourceInput ) extends VolumeMountSpec
   case class ExistingVolumeMountSpec( mount_path: String,
                                       volume_id: UUID ) extends VolumeMountSpec
 
@@ -283,29 +283,11 @@ case object ContainerSpec extends Spec {
       (__ \ "lb_address").readNullable[ServiceAddress]
     )(ContainerSpec.PortMapping.apply _)
 
-  val volumeSpecJsonOutputTransformer = (
-    (__ \ 'name).json.copyFrom( (__ \ 'name).json.pick ) and
-    (__ \ 'description).json.copyFrom( (__ \ 'description).readNullable[JsValue].map(_.getOrElse(JsNull)) ) and
-    (__ \ 'properties).json.copyFrom(
-      (__ \ 'name).json.prune andThen (__ \ 'description).json.prune
-    )
-  ) reduce
-  val volumeSpecJsonInputTransformer = (
-    __.json.copyFrom( (__ \ 'properties).json.pick ) and
-    (__ \ 'name).json.copyFrom( (__ \ 'name).json.pick ) and
-    (__ \ 'description).json.copyFrom( (__ \ 'description).readNullable[JsValue].map(_.getOrElse(JsNull)) )
-    reduce
-  )
-
   implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
   implicit val existingVMSFmt = Json.format[ContainerSpec.ExistingVolumeMountSpec]
-  val naturalVolSpec = Json.format[VolumeSpec]
-  implicit val volSpecRds = Reads[VolumeSpec] (json => json.transform(volumeSpecJsonInputTransformer).flatMap(naturalVolSpec.reads))
-  implicit val volSpecWrts = Writes[VolumeSpec] {
-    (spec: VolumeSpec) => naturalVolSpec.writes(spec).transform(volumeSpecJsonOutputTransformer).get
-  }
-  implicit val inlineVMSFmt = Json.format[ContainerSpec.InlineVolumeMountSpec]
+  implicit val inlineVMSRds = Json.format[ContainerSpec.InlineVolumeMountSpec]
 
+  // check for ExistingVolumeMountSpec first!
   implicit val metaVMCSpecRds =
     Json.reads[ContainerSpec.ExistingVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec ) |
       Json.reads[ContainerSpec.InlineVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec)
