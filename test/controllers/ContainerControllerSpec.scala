@@ -1160,7 +1160,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val testVolumeName = "test-volume"
       val testProps = VolumeSpec(
         name = testVolumeName,
-        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        provider = Some(ContainerSpec.InputProvider(id = testProvider.id)),
         `type` = VolumeSpec.HostPath,
         size = 1000,
         access_mode = VolumeSpec.ReadWriteOnce,
@@ -1234,7 +1234,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       val testVolumeName = "test-volume"
       val testProps = VolumeSpec(
         name = testVolumeName,
-        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        provider = Some(ContainerSpec.InputProvider(id = testProvider.id)),
         `type` = VolumeSpec.HostPath,
         size = 1000,
         access_mode = VolumeSpec.ReadWriteOnce,

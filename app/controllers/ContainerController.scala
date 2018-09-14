@@ -196,7 +196,10 @@ class ContainerController @Inject()(
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
       proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputVolume(payload), None))
       spec      <- Future.fromTry(VolumeSpec.fromResourceInstance(proto))
-      context   = ProviderContext(request, spec.provider.id, None)
+      pid       <- Future.fromTry(Try{spec.provider.map(_.id).getOrElse(
+        throw new BadRequestException("Volume payload did not include '.properties.provider.id'")
+      )})
+      context   = ProviderContext(request, pid, None)
       secret <- containerService.createVolume(context, request.identity, spec, Some(proto.id))
     } yield Accepted(RenderSingle(secret))
     created recover { case e => HandleExceptions(e) }

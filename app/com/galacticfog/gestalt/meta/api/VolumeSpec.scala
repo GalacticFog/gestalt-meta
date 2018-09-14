@@ -11,7 +11,7 @@ import scala.util.{Failure, Success, Try}
 
 case class VolumeSpec(name: String = "",
                       description: Option[String] = None,
-                      provider: ContainerSpec.InputProvider,
+                      provider: Option[ContainerSpec.InputProvider],
                       `type`: VolumeSpec.Type,
                       config: JsValue,
                       size: Int,
@@ -115,7 +115,7 @@ case object VolumeSpec {
     if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
     for {
       props <- Try{metaVolumeSpec.properties.get}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
+      provider = Try{Json.parse(props("provider")).as[ContainerSpec.InputProvider]}.toOption
       tpe <- Try{props("type")}.flatMap(Type.fromString)
       mode <- Try{props("access_mode")}.flatMap(AccessMode.fromString)
       size <- Try{props("size").toInt}
