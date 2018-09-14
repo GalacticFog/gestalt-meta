@@ -88,7 +88,7 @@ case object ContainerSpec extends Spec {
   }
 
   case class InlineVolumeMountSpec( mount_path: String,
-                                    volume_spec: VolumeSpec ) extends VolumeMountSpec
+                                    volume_resource: VolumeSpec ) extends VolumeMountSpec
   case class ExistingVolumeMountSpec( mount_path: String,
                                       volume_id: UUID ) extends VolumeMountSpec
 

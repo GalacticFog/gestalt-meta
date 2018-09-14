@@ -465,7 +465,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       for {
         volMounts <- {
           val inlineVolMounts = containerSpec.volumes collect {
-            case i: InlineVolumeMountSpec if i.volume_spec.provider.id == containerSpec.provider.id => i
+            case i: InlineVolumeMountSpec if i.volume_resource.provider.id == containerSpec.provider.id => i
             case i: InlineVolumeMountSpec => throw new BadRequestException("inline volume specification must have the same provider as the container that is being created")
           }
           val existingVolMounts = containerSpec.volumes collect {
@@ -479,7 +479,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           }
           // convert all inlineVolMounts to existingVolMounts by creating volume instances from them
           val v = Future.traverse(inlineVolMounts) { inlineSpec =>
-            this.createVolume(context, user, inlineSpec.volume_spec, None) map {
+            this.createVolume(context, user, inlineSpec.volume_resource, None) map {
               volumeInstance => ExistingVolumeMountSpec(
                 mount_path = inlineSpec.mount_path,
                 volume_id = volumeInstance.id

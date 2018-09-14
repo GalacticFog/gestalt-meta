@@ -2,38 +2,27 @@ package com.galacticfog.gestalt.meta.auth
 
 import java.util.UUID
 
-import scala.util.{Try,Success,Failure}
-
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.GestaltResourceType
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
 import controllers.util._
 import play.api.Logger
 import play.api.libs.json._
-import play.api.mvc.Result
-import scala.concurrent.Future
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.annotation.tailrec
 
-import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
-
-import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
+import com.galacticfog.gestalt.data.bootstrap.ActionInfo
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
+import com.galacticfog.gestalt.patch._
+
+import scala.annotation.tailrec
+import scala.language.postfixOps
 
 trait AuthorizationMethods extends ActionMethods with JsonInput {
   
-  //private val log = Logger(this.getClass)
-  
   val metaConfig = new DefaultMetaConfiguration
- 
 
   override val log = Logger("AuthorizationMethods")
 
