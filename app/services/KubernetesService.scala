@@ -244,13 +244,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   /**
-   * Get the Kubernetes Namespace for the given Environment ID. Namespaces are named after the
-   * Environment UUID. If a corresponding namespace is not found, it will be created if create is 'true'
-   *
-   * @param rc RequestContext for communicating with Kubernetes
-   * @param pc ProviderContext of the Meta Environment you want a Namespace for
-   * @param create when set to true, a new Namespace will be created if and existing one is not found
-   */
+    * Get the Kubernetes Namespace for the given Environment ID.
+    * By default, namespaces are named after the Environment UUID.
+    * However, if existing resources in the Environment have `external_id` corresponding to a different namespace,
+    * that takes precedence.
+    *
+    * If a corresponding namespace is not found, it will be created if create is 'true'
+    *
+    * @param rc RequestContext for communicating with Kubernetes
+    * @param pc ProviderContext of the Meta Environment you want a Namespace for
+    * @param create when set to true, a new Namespace will be created if and existing one is not found
+    */
   private[services] def getNamespace(rc: RequestContext, pc: ProviderContext, create: Boolean = false): Future[Namespace] = {
     log.debug(s"getNamespace(environment = ${pc.environmentId}, create = ${create}")
     rc.getOption[Namespace](pc.environmentId.toString) flatMap {
@@ -728,11 +732,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       if (spec.force_pull) Container.PullPolicy.Always 
       else Container.PullPolicy.IfNotPresent
     }
-    
+
     val environmentVars = List(
-          skuber.EnvVar("POD_IP", 
-          skuber.EnvVar.FieldRef("status.podIP"))
-      ) ++ mkEnvVars(spec.env)
+      skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
+    ) ++ mkEnvVars(spec.env)
       
     skuber.Container(
       name      = spec.name,

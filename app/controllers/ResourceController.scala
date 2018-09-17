@@ -323,14 +323,9 @@ class ResourceController @Inject()(
       }
 
       resource.fold(NotFoundResult(request.uri)) { res =>
-        transforms.get(res.typeId).fold {
-          Ok( RenderSingle(res) )
-        }{ f =>
-
-          f(res, request.identity, Option(request.queryString)) match {
-            case Failure(err) => HandleExceptions(err)
-            case Success(res) => Ok( RenderSingle(res) )
-          }
+        transformResource(res) match {
+          case Failure(err) => HandleExceptions(err)
+          case Success(res) => Ok( RenderSingle(res) )
         }
       }
     }
@@ -346,12 +341,13 @@ class ResourceController @Inject()(
       Resource.listFromPath(path.path, qs)
     }{ f => f(path, request.identity, request.queryString).toList }
 
-    AuthorizeList(action) {
-      transforms.get(path.targetTypeId).fold {
-        rss
-      }{ f =>
-        rss map { f(_, request.identity, Option(request.queryString)).get }
-      }
+    AuthorizeList(action) { rss.map(transformResource(_).get) }
+  }
+
+  private[controllers] def transformResource(res: GestaltResourceInstance)
+                                            (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Try[GestaltResourceInstance] = {
+    transforms.get(res.typeId).fold(Try(res)) {
+      f => f(res, request.identity, Option(request.queryString))
     }
   }
 
@@ -372,7 +368,6 @@ class ResourceController @Inject()(
       }
     }
   }
-
 
   import com.galacticfog.gestalt.data.parseUUID
   import com.galacticfog.gestalt.meta.providers._

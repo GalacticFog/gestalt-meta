@@ -2,13 +2,10 @@ package migrations
 
 import java.util.UUID
 
-import akka.actor.ActorSystem
-import akka.stream.Materializer
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
-import com.google.inject.Inject
 import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success}
