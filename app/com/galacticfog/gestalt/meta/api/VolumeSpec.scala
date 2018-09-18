@@ -1,9 +1,8 @@
 package com.galacticfog.gestalt.meta.api
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
@@ -12,7 +11,7 @@ import scala.util.{Failure, Success, Try}
 
 case class VolumeSpec(name: String = "",
                       description: Option[String] = None,
-                      provider: ContainerSpec.InputProvider,
+                      provider: Option[ContainerSpec.InputProvider],
                       `type`: VolumeSpec.Type,
                       config: JsValue,
                       size: Int,
@@ -84,8 +83,6 @@ case object VolumeSpec {
 
   implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { t => Json.toJson(t.label) }
 
-  implicit val volumeSpecFmt = Json.format[VolumeSpec]
-
   sealed trait VolumeConfig
   case object PersistentVolume extends VolumeConfig
   case class HostPathVolume(host_path: String) extends VolumeConfig
@@ -118,7 +115,7 @@ case object VolumeSpec {
     if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
     for {
       props <- Try{metaVolumeSpec.properties.get}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
+      provider = Try{Json.parse(props("provider")).as[ContainerSpec.InputProvider]}.toOption
       tpe <- Try{props("type")}.flatMap(Type.fromString)
       mode <- Try{props("access_mode")}.flatMap(AccessMode.fromString)
       size <- Try{props("size").toInt}

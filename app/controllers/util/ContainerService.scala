@@ -277,7 +277,7 @@ object ContainerService {
 }
 
 class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteController: DeleteController)
-    extends ContainerService with MetaControllerUtils {
+    extends ContainerService with MetaControllerUtils with JsonInput {
 
   import ContainerService._
 
@@ -424,21 +424,81 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     )
   }
 
+  /**
+    * From a gestalt container resource, parse .properties.volumes, and convert any InlineVolumeMountSpec into ExistingVolumeMountSpec by creating volume resources
+    *
+    * @param container
+    * @return all of the ExistingVolumeMountSpec object, for the previous and newly-created volumes
+    */
+  def createInlineContainerVolumes(context: ProviderContext, user: AuthAccountWithCreds, container: Either[GestaltResourceInstance,ContainerSpec]): Future[Seq[ContainerSpec.ExistingVolumeMountSpec]] = {
+    val containerSpec = container.fold[ContainerSpec](
+      r => ContainerSpec.fromResourceInstance(r).get, identity
+    )
+    val inlineVolMounts = containerSpec.volumes collect {
+      case i: InlineVolumeMountSpec =>
+        val spec = VolumeSpec.fromResourceInstance(resourceWithDefaults(
+          org = context.workspace.orgId,
+          input = i.volume_resource,
+          creator = user,
+          typeId = Some(migrations.V13.VOLUME_TYPE_ID)
+        )).get
+        spec.provider match {
+          case Some(provider) if provider.id != containerSpec.provider.id =>
+            throw new BadRequestException("inline volume specification must have the same provider as the container that is being created")
+          case _ =>
+            i.mount_path -> spec.copy(
+              provider = Some(containerSpec.provider)
+            )
+        }
+    }
+    val existingVolMounts = containerSpec.volumes collect {
+      case e: ExistingVolumeMountSpec =>
+        val ok = for {
+          v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, e.volume_id)
+          vs <- VolumeSpec.fromResourceInstance(v).toOption
+          prov <- vs.provider
+          if prov.id == containerSpec.provider.id
+        } yield true
+        if (ok.contains(true)) e else throw new BadRequestException("container can only mount volumes from the same CaaS provider")
+    }
+    // convert all inlineVolMounts to existingVolMounts by creating volume instances from them
+    val v = Future.traverse(inlineVolMounts) {
+      case (mntPath,inlineSpec) =>
+        this.createVolume(context, user, inlineSpec, None) map {
+          volumeInstance => ExistingVolumeMountSpec(
+            mount_path = mntPath,
+            volume_id = volumeInstance.id
+          )
+        }
+    }
+    v map {
+      _ ++ existingVolMounts
+    }
+  }
+
   def updateContainer(context: ProviderContext,
                       container: Instance,
                       user: AuthAccountWithCreds,
                       request: RequestHeader): Future[Instance] = {
+    import ContainerSpec.existingVMSFmt
+
     val operations = caasObjectRequestOperations("container.update")
     val options = caasObjectRequestOptions(user, context.environmentId, container)
     SafeRequest(operations, options) ProtectAsync { _ =>
+
       for {
+        volMounts <- createInlineContainerVolumes(context, user, Left(container))
+        containerWithMounts = upsertProperties(
+          container,
+          "volumes" -> Json.toJson(volMounts).toString
+        )
         service <- Future.fromTry {
           log.debug("Retrieving CaaSService from ProviderManager")
           providerManager.getProviderImpl(context.provider.typeId)
         }
         instanceWithUpdates <- {
           log.info("Updating container in backend CaaS...")
-          service.update(context, container)
+          service.update(context, containerWithMounts)
         }
         updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
       } yield updatedInstance
@@ -463,33 +523,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       val provider = caasProvider(containerSpec.provider.id)
 
       for {
-        volMounts <- {
-          val inlineVolMounts = containerSpec.volumes collect {
-            case i: InlineVolumeMountSpec if i.volume_spec.provider.id == containerSpec.provider.id => i
-            case i: InlineVolumeMountSpec => throw new BadRequestException("inline volume specification must have the same provider as the container that is being created")
-          }
-          val existingVolMounts = containerSpec.volumes collect {
-            case e: ExistingVolumeMountSpec =>
-              val ok = for {
-                v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, e.volume_id)
-                vs <- VolumeSpec.fromResourceInstance(v).toOption
-                if vs.provider.id == containerSpec.provider.id
-              } yield true
-              if (ok.contains(true)) e else throw new BadRequestException("container can only mount volumes from the same CaaS provider")
-          }
-          // convert all inlineVolMounts to existingVolMounts by creating volume instances from them
-          val v = Future.traverse(inlineVolMounts) { inlineSpec =>
-            this.createVolume(context, user, inlineSpec.volume_spec, None) map {
-              volumeInstance => ExistingVolumeMountSpec(
-                mount_path = inlineSpec.mount_path,
-                volume_id = volumeInstance.id
-              )
-            }
-          }
-          v map {
-            _ ++ existingVolMounts
-          }
-        }
+        volMounts <- createInlineContainerVolumes(context, user, Right(containerSpec))
         containerResourcePre = upsertProperties(
           proto,
           "provider" -> Json.obj(
@@ -557,6 +591,10 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   override def createVolume(context: ProviderContext, user: AuthAccountWithCreds, volumeSpec: VolumeSpec, userRequestedId: Option[UUID]): Future[Instance] = {
 
+    val providerId = volumeSpec.provider.map(_.id).getOrElse(
+      throw new BadRequestException("Volume payload did not include '.properties.provider.id'")
+    )
+
     val input = VolumeSpec.toResourcePrototype(volumeSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
     val operations = caasObjectRequestOperations("volume.create")
@@ -564,7 +602,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
     SafeRequest(operations, options) ProtectAsync { _ =>
 
-      val provider = caasProvider(volumeSpec.provider.id)
+      val provider = caasProvider(providerId)
       val volumeResourcePre = upsertProperties(
         resource = proto,
         "provider" -> Json.obj(

@@ -29,6 +29,9 @@ import org.specs2.runner._
 import org.junit.runner.RunWith
 import org.specs2.specification.Tables
 
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
 @RunWith(classOf[JUnitRunner])
 class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers with Tables {
 
@@ -58,6 +61,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+
   }
 
   abstract class testAppMocks extends WithApplication(application(additionalBindings = Seq(
@@ -67,7 +71,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
     bind[SkuberFactory].toInstance(mock[SkuberFactory]),
     bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
-    bind[Security].toInstance(mock[Security])
+    bind[Security].toInstance(mock[Security]),
+    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   )))
 
   trait testApp extends testAppMocks {
@@ -363,7 +368,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
          "string_prop" -> "some string",
          "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create workspace provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -421,7 +426,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         "string_prop" -> "some string",
         "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create environment provider-backed resources using the ActionProvider interface" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -479,7 +484,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         "string_prop" -> "some string",
         "bool_prop" -> "true"
       )
-    }.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
+    }//.pendingUntilFixed(", is broken until we can come to an agreement on create semantics")
 
     "create provider-backed resources using an alternative verb" in new testAppWithProvider {
       val testResourceName = "test-resource"
@@ -985,6 +990,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         Ents.setNewResourceEntitlements(dummyRootOrgId, to.id, user, None)
         (to,tw,te)
       }
+      val Success(kubeProvider) = createKubernetesProvider(testEnv.id)
       val Success(gtw) = createDummyGateway(testEnv.id)
       val Success(kongProviderWithAbsentVhost) = createDummyKong(testEnv.id, props = Map(
         "config" -> Json.obj(
@@ -1039,6 +1045,23 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           "memory" -> "2048"
         ))
       )
+      val volumeMountPath = "/mnt/test-volume"
+      val Success(containerVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        name = "container-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Json.obj(
+            "id" -> kubeProvider.id
+          ).toString,
+          "type" -> "host_path",
+          "config" -> Json.obj(
+            "host_path" -> "/tmp"
+          ).toString,
+          "access_mode" -> "ReadOnlyMany",
+          "size" -> "1000"
+        ))
+      )
       val Success(container) = createInstance(
         ResourceIds.Container,
         name = "test-container",
@@ -1046,8 +1069,14 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         properties = Some(Map(
           "image" -> "test-image",
           "container_type" -> "docker",
+          "volumes" -> Json.toJson(
+            Seq(Json.obj(
+              "mount_path" -> volumeMountPath,
+              "volume_id" -> containerVolume.id
+            ))
+          ).toString,
           "provider" -> Json.obj(
-            "id" -> uuid()
+            "id" -> kubeProvider.id
           ).toString
         ))
       )
@@ -1123,6 +1152,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       containerService.listEnvironmentContainers(testOrg.name, testEnv.id) returns Future.successful(Seq(container -> Seq.empty))
     }
 
+    
     "render apiendpoints with .properties.public_url if present in kong provider" in new testEndpoint {
 
       "protocol" | "vhost"                  | "expected_url"                                              |>
@@ -1350,13 +1380,41 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       (json \ "properties" \ "apiendpoints") must beUndefined
     }
 
+    "render listed containers with .properties.volumes expanded if embed=volumes" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/containers?expand=true&embed=volumes", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      println(json)
+      (json(0) \ "properties" \ "volumes").as[Seq[JsObject]].size must_== 1
+      ((json(0) \ "properties" \ "volumes")(0) \ "mount_path").asOpt[String] must beSome(volumeMountPath)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "name").asOpt[String] must beSome(containerVolume.name)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(container.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "mount_path").asOpt[String] must beSome(volumeMountPath)
+    }
+
+    "not render containers with .properties.apiendpoints if missing embed=apiendpoints" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/containers?expand=true", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json(0) \ "properties" \ "volumes").as[Seq[JsObject]].size must_== 1
+      ((json(0) \ "properties" \ "volumes")(0) \ "mount_path").asOpt[String] must beSome(volumeMountPath)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_id").asOpt[UUID] must beSome(containerVolume.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource").isDefined must beFalse
+    }
+
     "render single volume with .properties.container/.properties.mount_path if embed=container" in new testVolume {
       val Some(result) = route(app,fakeAuthRequest(GET,
         s"/${testOrg.name}/environments/${testEnv.id}/volumes/${volume.id}?embed=container", testCreds
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      println(json.toString)
       (json \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(volumeContainer.id)
       (json \ "properties" \ "container" \ "name").asOpt[String] must beSome(volumeContainer.name)
       (json \ "properties" \ "mount_path").asOpt[String] must beSome("/mount/path")

@@ -46,7 +46,25 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
-    
+## Setting Root User
+Similar to a *nix operating system, Meta employs the concept of a 'root' or 'super' user. Root is simply a special user-account that has all possible privileges in the system. Note that in this context, root is a self contained concept - this user is defined in gestalt-security, and given special permissions in Meta. By default this user has nothing to do with any Directory/LDAP integration you may have in place. Root privileges do not (automatically) extend to any external systems your installation may integrate with.
+
+By default the gestalt-security admin-user will be set as Meta root. This behavior can be overridden and the root user can be changed at any time.  The effective root user is determined as follows:
+
+1. Look for identity in a file
+2. Look for identity in an Environment Variable
+3. Look for identity in the Meta Datastore
+4. Ask Gestalt-Security
+
+There are two environment variables to help with setup:
+* GESTALT_META_CONFIG_SECRETS_PATH
+Use this to set the location of the configuration file (default: /gestalt/root). The file should contain a single line, containing the UUID of the user you want to be root.
+
+* GESTALT_META_ROOT_IDENTITY
+Set this to the UUID of the user you want to assume *root* responsibilities
+
+**NOTE**: Root identity is evaluated when the system is started and when it is bootstrapped. In general you will change identity by making the appropriate changes and restarting Meta.
+
 ## Audit Logging
 Configured with the following Environment Variables:
 

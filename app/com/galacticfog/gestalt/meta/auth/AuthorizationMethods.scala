@@ -2,35 +2,27 @@ package com.galacticfog.gestalt.meta.auth
 
 import java.util.UUID
 
-import scala.util.{Try,Success,Failure}
-
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.models.GestaltResourceType
+import com.galacticfog.gestalt.meta.api.errors._
+import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-
 import controllers.util._
 import play.api.Logger
 import play.api.libs.json._
-import play.api.mvc.Result
-import scala.concurrent.Future
-//import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import scala.annotation.tailrec
 
-import com.galacticfog.gestalt.data.bootstrap.{ActionInfo,LineageInfo}
-
-import scala.language.postfixOps
+import scala.util.{Failure, Success, Try}
+import com.galacticfog.gestalt.data.bootstrap.ActionInfo
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.patch._
+
+import scala.annotation.tailrec
+import scala.language.postfixOps
 
 trait AuthorizationMethods extends ActionMethods with JsonInput {
   
-  //private val log = Logger(this.getClass)
-  
-  import com.galacticfog.gestalt.meta.api._
+  val metaConfig = new DefaultMetaConfiguration
 
   override val log = Logger("AuthorizationMethods")
 
@@ -185,8 +177,8 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         
         val ownerLink = ResourceOwnerLink(ResourceIds.Org, rootid)
         
-        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
-        log.debug(s"Entitlement Owner : " + ownerLink.id)
+//        log.debug(s"Setting Entitlement on $resource : ${ent.name}")
+//        log.debug(s"Entitlement Owner : " + ownerLink.id)
         
         val payload = {
           Js.transform(Json.toJson(ent).as[JsObject],
@@ -464,31 +456,39 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
     //user +: (Security.getAccountGroups(user, account).get map { _.id })
     user +: account.groups.map( _.id )
   }
-  
+
   def isAuthorized(resource: UUID, identity: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    log.debug(s"Finding entitlements matching: $action($resource)")
-    findMatchingEntitlement(resource, action) match {
-      case None => false
-      case Some(entitlement) => {
-        
-        val allowed = getAllowedIdentities(entitlement)
-        val membership = getUserMembership(identity, account)
-        val intersection = (allowed intersect membership)
-        
-        log.debug("identities : " + allowed)
-        log.debug("membership : " + membership)
-        log.debug("intersection : " + (allowed intersect membership))
-        
-        //(allowed intersect membership).isDefinedAt(0)
-        if (intersection.isDefinedAt(0)) {
-          log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
-          true
+    
+    if (metaConfig.isRoot(identity)) {
+      log.info(s"[Root-Access] => '${action}' AUTHORIZED.")
+      true 
+    } else {
+      
+      log.debug(s"Finding entitlements matching: $action($resource)")
+      findMatchingEntitlement(resource, action) match {
+        case None => false
+        case Some(entitlement) => {
+          
+          val allowed = getAllowedIdentities(entitlement)
+          val membership = getUserMembership(identity, account)
+          val intersection = (allowed intersect membership)
+          
+          log.debug("identities : " + allowed)
+          log.debug("membership : " + membership)
+          log.debug("intersection : " + (allowed intersect membership))
+          
+          //(allowed intersect membership).isDefinedAt(0)
+          if (intersection.isDefinedAt(0)) {
+            log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
+            true
+          }
+          else forbiddenAction(account.account.id, resource, action)        
         }
-        else forbiddenAction(account.account.id, resource, action)        
       }
     }
   }
   
+
   
   private def forbiddenAction(identity: UUID, resource: UUID, action: String) = {
     log.warn(s"{UNAUTHORIZED: user=${identity}, resource=${resource}, action=${action}}")
@@ -497,28 +497,36 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    log.debug(s"Entered => isAuthorized($resource, $action, _)...")
-    log.debug(s"Finding entitlements matching: $action($resource)")
     
-    findMatchingEntitlement(resource, action) match {
-      case None => forbiddenAction(account.account.id, resource, action)
-      case Some(entitlement) => {
-        
-        log.debug("Found matching entitlement...testing identity...")
-        
-        val allowed = getAllowedIdentities(entitlement)        
-        val membership = getUserMembership(account.account.id, account)
-        val intersection = (allowed intersect membership)
-        
-//        log.debug("identities : " + allowed)
-//        log.debug("membership : " + membership)
-//        log.debug("intersection : " + (allowed intersect membership))
-        
-        if (intersection.isDefinedAt(0)) {
-          log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
-          true
+    
+    if (metaConfig.isRoot(account.account.id)) {
+      log.info(s"[Root-Access] => '${action}' AUTHORIZED.")
+      true 
+    } else {
+    
+      log.debug(s"Entered => isAuthorized($resource, $action, _)...")
+      log.debug(s"Finding entitlements matching: $action($resource)")
+      
+      findMatchingEntitlement(resource, action) match {
+        case None => forbiddenAction(account.account.id, resource, action)
+        case Some(entitlement) => {
+          
+          log.debug("Found matching entitlement...testing identity...")
+          
+          val allowed = getAllowedIdentities(entitlement)        
+          val membership = getUserMembership(account.account.id, account)
+          val intersection = (allowed intersect membership)
+          
+  //        log.debug("identities : " + allowed)
+  //        log.debug("membership : " + membership)
+  //        log.debug("intersection : " + (allowed intersect membership))
+          
+          if (intersection.isDefinedAt(0)) {
+            log.info(s"{AUTHORIZED: user=${account.account.id}, resource=${resource}, action=${action}}")
+            true
+          }
+          else forbiddenAction(account.account.id, resource, action)
         }
-        else forbiddenAction(account.account.id, resource, action)
       }
     }
   }

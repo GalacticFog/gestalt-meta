@@ -79,17 +79,17 @@ class GestaltFunctionConfigSpec extends Specification {
    */
   
   
-  "GestaltFunction" should {
-    
-    "fail construction if zero FunctionVerbs are given" >> {
-      failure
-    }
-    
-    "fail construction if more than one FunctionVerb is given" >> {
-      failure
-    }
-    
-  }
+//  "GestaltFunction" should {
+//    
+//    "fail construction if zero FunctionVerbs are given" >> {
+//      failure
+//    }
+//    
+//    "fail construction if more than one FunctionVerb is given" >> {
+//      failure
+//    }
+//    
+//  }
   
   
   

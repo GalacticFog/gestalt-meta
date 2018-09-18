@@ -2,7 +2,7 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
@@ -11,7 +11,7 @@ import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
-import scala.language.implicitConversions
+import scala.language.{implicitConversions, postfixOps}
 import scala.util.{Failure, Success, Try}
 
 case class ContainerSpec(name: String = "",
@@ -88,7 +88,7 @@ case object ContainerSpec extends Spec {
   }
 
   case class InlineVolumeMountSpec( mount_path: String,
-                                    volume_spec: VolumeSpec ) extends VolumeMountSpec
+                                    volume_resource: GestaltResourceInput ) extends VolumeMountSpec
   case class ExistingVolumeMountSpec( mount_path: String,
                                       volume_id: UUID ) extends VolumeMountSpec
 
@@ -285,9 +285,9 @@ case object ContainerSpec extends Spec {
 
   implicit val metaPortMappingSpecWrites = Json.writes[ContainerSpec.PortMapping]
   implicit val existingVMSFmt = Json.format[ContainerSpec.ExistingVolumeMountSpec]
-  implicit val volSpec: Format[VolumeSpec] = VolumeSpec.volumeSpecFmt
-  implicit val inlineVMSFmt = Json.format[ContainerSpec.InlineVolumeMountSpec]
+  implicit val inlineVMSRds = Json.format[ContainerSpec.InlineVolumeMountSpec]
 
+  // check for ExistingVolumeMountSpec first!
   implicit val metaVMCSpecRds =
     Json.reads[ContainerSpec.ExistingVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec ) |
       Json.reads[ContainerSpec.InlineVolumeMountSpec].map( vms => vms: ContainerSpec.VolumeMountSpec)

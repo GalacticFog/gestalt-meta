@@ -40,12 +40,25 @@ trait ResourceScope extends Scope with Mockito {
   )
   private[this] lazy val injector = appBuilder.injector()
  
+  
+  import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
+  
+  
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
     val db = new Bootstrap(ResourceIds.Org,
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
-    
+    val metaconfig = new DefaultMetaConfiguration()
+
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+    println("...PRISTINE...PRISTINE...PRISTINE...")
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+    println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
+
     for {
       _ <- db.clean
       _ <- db.migrate
@@ -69,6 +82,8 @@ trait ResourceScope extends Scope with Mockito {
         )
         ResourceFactory.create(ResourceIds.User, adminUserId)(gestaltAdmin, Some(dummyRootOrgId))
       }
+      _ <- metaconfig.ensureReady()
+      _ <- metaconfig.setRoot(adminUserId)
       _ <- {
         println("*** Applying migrations ***")
         /*
@@ -91,7 +106,8 @@ trait ResourceScope extends Scope with Mockito {
           new V9(),
           new V10(),
           new V12(),
-          new V13()
+          new V13(),
+          new V14()
         )
 
         val tries = migrations.map {

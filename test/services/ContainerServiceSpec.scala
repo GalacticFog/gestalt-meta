@@ -626,7 +626,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       val testVolumeName = "test-volume"
       val testSpec = VolumeSpec(
         name = testVolumeName,
-        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        provider = Some(ContainerSpec.InputProvider(id = testProvider.id)),
         `type` = VolumeSpec.HostPath,
         size = 1000,
         access_mode = VolumeSpec.ReadWriteOnce,
@@ -670,7 +670,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       val testVolumeName = "test-volume"
       val testVolumeSpec = VolumeSpec(
         name = testVolumeName,
-        provider = ContainerSpec.InputProvider(id = testProvider.id),
+        provider = None,
         `type` = VolumeSpec.HostPath,
         size = 1000,
         access_mode = VolumeSpec.ReadWriteOnce,
@@ -686,7 +686,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         volumes = Seq(
           ContainerSpec.InlineVolumeMountSpec(
             mount_path = "/mnt/path",
-            volume_spec = testVolumeSpec
+            volume_resource = VolumeSpec.toResourcePrototype(testVolumeSpec)
           )
         )
       )
@@ -728,8 +728,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       val volumeInstance = volumeInstanceCaptor.getValue
       val createdVolumeSpec = VolumeSpec.fromResourceInstance(volumeInstance).get
       createdVolumeSpec.copy(
-        provider = createdVolumeSpec.provider.copy(name = None, locations = None)
-      ) must_== testVolumeSpec
+        provider = createdVolumeSpec.provider.map(_.copy(
+          name = None, locations = None
+        ))
+      ) must_== testVolumeSpec.copy(
+        provider = Some(ContainerSpec.InputProvider(testProvider.id))
+      )
       val containerInstance = containerInstanceCaptor.getValue
       val containerSpec = ContainerSpec.fromResourceInstance(containerInstance).get
       containerSpec.volumes must haveSize(1)
@@ -781,7 +785,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       val testVolumeName = "test-volume"
       val testVolumeSpec = VolumeSpec(
         name = testVolumeName,
-        provider = ContainerSpec.InputProvider(id = testProvider2.id),
+        provider = Some(ContainerSpec.InputProvider(id = testProvider2.id)),
         `type` = VolumeSpec.HostPath,
         size = 1000,
         access_mode = VolumeSpec.ReadWriteOnce,
@@ -797,7 +801,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         volumes = Seq(
           ContainerSpec.InlineVolumeMountSpec(
             mount_path = "/mnt/path",
-            volume_spec = testVolumeSpec
+            volume_resource = VolumeSpec.toResourcePrototype(testVolumeSpec)
           )
         )
       )
@@ -829,6 +833,57 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         secretSpec = testSpec,
         userRequestedId = None
       ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
+    }
+
+  }
+
+  "ContainerSpec.InlineVolumeMountSpec" should {
+
+    "parse properly without description" in {
+      val testSpec = ContainerSpec.InlineVolumeMountSpec(
+        mount_path = "/mnt/path",
+        volume_resource = VolumeSpec.toResourcePrototype(VolumeSpec(
+          name = "test-volume-name",
+          provider = Some(ContainerSpec.InputProvider(id = uuid())),
+          `type` = VolumeSpec.HostPath,
+          size = 1000,
+          access_mode = VolumeSpec.ReadWriteOnce,
+          config = Json.obj(
+            "host_path" -> "/tmp"
+          )
+        ))
+      )
+      val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
+      (json \ "volume_resource" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_resource" \ "description").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+
+      json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
+    }
+
+    "parse properly with description" in {
+      val testSpec = ContainerSpec.InlineVolumeMountSpec(
+        mount_path = "/mnt/path",
+        volume_resource = VolumeSpec.toResourcePrototype(VolumeSpec(
+          name = "test-volume-name",
+          description = Some("test description"),
+          provider = Some(ContainerSpec.InputProvider(id = uuid())),
+          `type` = VolumeSpec.HostPath,
+          size = 1000,
+          access_mode = VolumeSpec.ReadWriteOnce,
+          config = Json.obj(
+            "host_path" -> "/tmp"
+          )
+        ))
+      )
+      val json = Json.toJson[ContainerSpec.VolumeMountSpec](testSpec)
+      (json \ "volume_resource" \ "name").asOpt[String] must beSome("test-volume-name")
+      (json \ "volume_resource" \ "description").asOpt[String] must beSome("test description")
+      (json \ "volume_resource" \ "properties" \ "name").asOpt[String] must beNone
+      (json \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+
+      json.as[ContainerSpec.VolumeMountSpec].asInstanceOf[ContainerSpec.InlineVolumeMountSpec] must_== testSpec
     }
 
   }

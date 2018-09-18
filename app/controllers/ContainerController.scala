@@ -33,6 +33,7 @@ class ContainerController @Inject()(
      containerService: ContainerService,
      providerManager: ProviderManager,
      genericResourceMethods: GenericResourceMethods,
+     resourceController: ResourceController,
      db: play.api.db.Database)
     extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
@@ -175,8 +176,7 @@ class ContainerController @Inject()(
         case _=>
           Future.failed(new BadRequestException("invalid 'action' on container create: must be 'create' or 'import'"))
       }
-    } yield Created(RenderSingle(container))
-    
+    } yield Created(RenderSingle(resourceController.transformResource(container).get))
     created recover { case e => HandleExceptions(e) }
   }
 
@@ -187,7 +187,7 @@ class ContainerController @Inject()(
       spec      <- Future.fromTry(SecretSpec.fromResourceInstance(proto))
       context   = ProviderContext(request, spec.provider.id, None)
       secret <- containerService.createSecret(context, request.identity, spec, Some(proto.id))
-    } yield Accepted(RenderSingle(secret))
+    } yield Accepted(RenderSingle(resourceController.transformResource(secret).get))
     created recover { case e => HandleExceptions(e) }
   }
 
@@ -196,9 +196,12 @@ class ContainerController @Inject()(
       payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
       proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputVolume(payload), None))
       spec      <- Future.fromTry(VolumeSpec.fromResourceInstance(proto))
-      context   = ProviderContext(request, spec.provider.id, None)
-      secret <- containerService.createVolume(context, request.identity, spec, Some(proto.id))
-    } yield Accepted(RenderSingle(secret))
+      pid       <- Future.fromTry(Try{spec.provider.map(_.id).getOrElse(
+        throw new BadRequestException("Volume payload did not include '.properties.provider.id'")
+      )})
+      context   = ProviderContext(request, pid, None)
+      volume <- containerService.createVolume(context, request.identity, spec, Some(proto.id))
+    } yield Accepted(RenderSingle(resourceController.transformResource(volume).get))
     created recover { case e => HandleExceptions(e) }
   }
 
@@ -241,7 +244,7 @@ class ContainerController @Inject()(
       ), provider.id, Some(prevContainer))
       _ = log.debug("about to perform update")
       updated <- containerService.updateContainer(context, containerWithUpdates, request.identity, request)
-    } yield Ok(RenderSingle(updated))
+    } yield Ok(RenderSingle(resourceController.transformResource(updated).get))
     updated recover { case e => HandleExceptions(e) }
   }
 
@@ -271,7 +274,7 @@ class ContainerController @Inject()(
           service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
           updated <- service.scale(context, c, numInstances)
           updatedResource <- Future.fromTry(ResourceFactory.update(updated, request.identity.account.id))
-        } yield Accepted(RenderSingle(updatedResource))
+        } yield Accepted(RenderSingle(resourceController.transformResource(updatedResource).get))
         scaled recover { case e => HandleExceptions(e) }
       }
     }
@@ -305,7 +308,7 @@ class ContainerController @Inject()(
             user.account.id
           ) match {
             case Failure(e) => HandleExceptions(e)
-            case Success(c) => Accepted(Output.renderInstance(c, Some(META_URL)))
+            case Success(c) => Accepted(RenderSingle(c))
           }
         }
       }
@@ -338,7 +341,7 @@ class ContainerController @Inject()(
             user.account.id
           ) match {
             case Failure(e) => HandleExceptions(e)
-            case Success(c) => Accepted(Output.renderInstance(c, Some(META_URL)))
+            case Success(c) => Accepted(RenderSingle(c))
           }
         }
       }

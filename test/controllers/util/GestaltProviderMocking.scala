@@ -12,6 +12,11 @@ import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.test.PlaySpecification
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
+
+
 trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocking with Mockito with ResourceScope {
 
   lazy val mockContainerService = mock[ContainerService]
@@ -65,7 +70,8 @@ trait GestaltProviderMocking extends PlaySpecification with GestaltSecurityMocki
       bind[UpgraderService].toInstance(mock[UpgraderService]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-      bind[GenericProviderManager].toInstance(mock[GenericProviderManager])
+      bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
+      bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
     )
     application(additionalBindings = (bindings ++ additionalBindings)) 
   }

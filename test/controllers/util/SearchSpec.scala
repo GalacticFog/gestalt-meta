@@ -26,6 +26,9 @@ import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
 import scala.concurrent.Future
 import scala.util.Success
+import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
+import com.galacticfog.gestalt.data.PostgresConfigManager
+
 
 @RunWith(classOf[JUnitRunner])
 class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
@@ -53,7 +56,8 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
     bind(classOf[DockerClientFactory]).toInstance(mock[DockerClientFactory]),
     bind(classOf[MarathonClientFactory]).toInstance(mock[MarathonClientFactory]),
     bind(classOf[SkuberFactory]).toInstance(mock[SkuberFactory]),
-    bind(classOf[GenericProviderManager]).toInstance(mock[GenericProviderManager])
+    bind(classOf[GenericProviderManager]).toInstance(mock[GenericProviderManager]),
+    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   )))
 
   case class testAppWithEnv() extends testApp {
