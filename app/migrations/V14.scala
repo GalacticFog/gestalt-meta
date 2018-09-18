@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
 import play.api.libs.json._
 
-import scala.util.{Either, Failure, Left, Right, Success}
+import scala.util.{Either, Failure, Left, Right, Success, Try}
 
 
 class V14 extends MetaMigration with AuthorizationMethods {
@@ -24,9 +24,13 @@ class V14 extends MetaMigration with AuthorizationMethods {
         acc push "Looking up 'root' org"
         ResourceFactory.findRootOrg
       }
+      creator <- Try{
+        acc push s"Looking up creator '${identity}'"
+        ResourceFactory.findById(ResourceIds.User, identity).getOrElse(throw new RuntimeException(s"Could not locate creator '${identity}'"))
+      }
       ecsTpe <- createResourceType(
-        root, ECS_PROVIDER_TYPE_ID, ECS_PROVIDER_TYPE_NAME,
-        SystemType(root.id, ResourceOwnerLink(ResourceIds.Org, root.id),
+        creator, ECS_PROVIDER_TYPE_ID, ECS_PROVIDER_TYPE_NAME,
+        SystemType(root.id, ResourceOwnerLink(ResourceIds.User, creator.id),
           typeId = ECS_PROVIDER_TYPE_ID,
           typeName = ECS_PROVIDER_TYPE_NAME,
           desc = Some("AWS ECS CaaS Provider"),
