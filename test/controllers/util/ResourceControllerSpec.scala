@@ -1385,12 +1385,15 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
+      println(json)
       (json(0) \ "properties" \ "volumes").as[Seq[JsObject]].size must_== 1
       ((json(0) \ "properties" \ "volumes")(0) \ "mount_path").asOpt[String] must beSome(volumeMountPath)
       ((json(0) \ "properties" \ "volumes")(0) \ "volume_id").asOpt[UUID] must beSome(containerVolume.id)
       ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "id").asOpt[UUID] must beSome(containerVolume.id)
       ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "name").asOpt[String] must beSome(containerVolume.name)
       ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "type").asOpt[String] must beSome("host_path")
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "container" \ "id").asOpt[UUID] must beSome(container.id)
+      ((json(0) \ "properties" \ "volumes")(0) \ "volume_resource" \ "properties" \ "mount_path").asOpt[String] must beSome(volumeMountPath)
     }
 
     "not render containers with .properties.apiendpoints if missing embed=apiendpoints" in new testEndpoint {

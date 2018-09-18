@@ -666,7 +666,8 @@ class ResourceController @Inject()(
       vol <- res.properties.getOrElse(Map.empty).get("volumes").flatMap(vs => Try(Json.parse(vs).as[Seq[JsObject]]).toOption).getOrElse(Seq.empty)
       vid <- (vol \ "volume_id").asOpt[UUID]
       v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, vid)
-      j = Output.renderInstance(v).as[JsObject]
+      vEmbed = embedContainerMountInfo(v, user)
+      j = Output.renderInstance(vEmbed).as[JsObject]
     } yield vol ++ Json.obj("volume_resource" -> j)
     upsertProperties(res, "volumes" -> Json.toJson(volumes).toString)
   }
