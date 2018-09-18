@@ -107,135 +107,135 @@ class GenericResourceMethodsSpec extends PlaySpecification
   trait TestApplication extends TestScope {
   }
 
-  "DefaultGenericProviderManager" should {
-
-    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
-      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
-      ))
-    }
-
-    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
-      val defaultUrl = "http://default-url"
-      val authHeader = "Bearer magic-token"
-      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
-        "config" -> Json.obj(
-          "endpoints" -> Json.arr(
-            Json.obj(
-              "default" -> true,
-              "http" -> Json.obj(
-                "url" -> defaultUrl,
-                "authentication" -> authHeader
-              )
-            )
-          )
-        ).toString
-      )))
-
-      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].authHeader) ^^ beSome(authHeader))
-      ))
-    }
-
-    "use default when present" in new TestApplication {
-      val defaultUrl = "http://default-url"
-      val overrideUrl = "http://override-url"
-      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
-        "config" -> Json.obj(
-          "endpoints" -> Json.arr(
-            Json.obj(
-              "actions" -> Seq("action1", "action2"),
-              "http" -> Json.obj(
-                "url" -> overrideUrl
-              )
-            ),
-            Json.obj(
-              "default" -> true,
-              "http" -> Json.obj(
-                "url" -> defaultUrl
-              )
-            )
-          )
-        ).toString
-      )))
-
-      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
-      ))
-      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
-      ))
-      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
-      ))
-    }
-
-    "use default when present (reverse order)" in new TestApplication {
-      val defaultUrl = "http://default-url"
-      val overrideUrl = "http://override-url"
-      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
-        "config" -> Json.obj(
-          "endpoints" -> Json.arr(
-            Json.obj(
-              "default" -> true,
-              "http" -> Json.obj(
-                "url" -> defaultUrl
-              )
-            ),
-            Json.obj(
-              "actions" -> Seq("action1", "action2"),
-              "http" -> Json.obj(
-                "url" -> overrideUrl
-              )
-            )
-          )
-        ).toString
-      )))
-
-      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
-      ))
-      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
-      ))
-      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-        beAnInstanceOf[HttpGenericProvider]
-          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
-      ))
-    }
-
-    "return None when there is no match or default" in new TestApplication {
-      val overrideUrl = "http://override-url"
-      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
-        "config" -> Json.obj(
-          "endpoints" -> Json.arr(
-            Json.obj(
-              "actions" -> Seq("action1", "action2"),
-              "http" -> Json.obj(
-                "url" -> overrideUrl
-              )
-            )
-          )
-        ).toString
-      )))
-
-      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beNone)
-    }
-
-  }
+//  "DefaultGenericProviderManager" should {
+//
+//    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
+//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+//      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
+//      ))
+//    }
+//    
+//    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
+//      val defaultUrl = "http://default-url"
+//      val authHeader = "Bearer magic-token"
+//      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+//        "config" -> Json.obj(
+//          "endpoints" -> Json.arr(
+//            Json.obj(
+//              "default" -> true,
+//              "http" -> Json.obj(
+//                "url" -> defaultUrl,
+//                "authentication" -> authHeader
+//              )
+//            )
+//          )
+//        ).toString
+//      )))
+//
+//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+//      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].authHeader) ^^ beSome(authHeader))
+//      ))
+//    }
+//
+//    "use default when present" in new TestApplication {
+//      val defaultUrl = "http://default-url"
+//      val overrideUrl = "http://override-url"
+//      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+//        "config" -> Json.obj(
+//          "endpoints" -> Json.arr(
+//            Json.obj(
+//              "actions" -> Seq("action1", "action2"),
+//              "http" -> Json.obj(
+//                "url" -> overrideUrl
+//              )
+//            ),
+//            Json.obj(
+//              "default" -> true,
+//              "http" -> Json.obj(
+//                "url" -> defaultUrl
+//              )
+//            )
+//          )
+//        ).toString
+//      )))
+//
+//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+//      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+//      ))
+//      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+//      ))
+//      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+//      ))
+//    }
+//
+//    "use default when present (reverse order)" in new TestApplication {
+//      val defaultUrl = "http://default-url"
+//      val overrideUrl = "http://override-url"
+//      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+//        "config" -> Json.obj(
+//          "endpoints" -> Json.arr(
+//            Json.obj(
+//              "default" -> true,
+//              "http" -> Json.obj(
+//                "url" -> defaultUrl
+//              )
+//            ),
+//            Json.obj(
+//              "actions" -> Seq("action1", "action2"),
+//              "http" -> Json.obj(
+//                "url" -> overrideUrl
+//              )
+//            )
+//          )
+//        ).toString
+//      )))
+//
+//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+//      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(defaultUrl))
+//      ))
+//      providerManager.getProvider(testProvider, "action1", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+//      ))
+//      providerManager.getProvider(testProvider, "action2", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+//        beAnInstanceOf[HttpGenericProvider]
+//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(overrideUrl))
+//      ))
+//    }
+//
+//    "return None when there is no match or default" in new TestApplication {
+//      val overrideUrl = "http://override-url"
+//      val Success(testProvider) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
+//        "config" -> Json.obj(
+//          "endpoints" -> Json.arr(
+//            Json.obj(
+//              "actions" -> Seq("action1", "action2"),
+//              "http" -> Json.obj(
+//                "url" -> overrideUrl
+//              )
+//            )
+//          )
+//        ).toString
+//      )))
+//
+//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+//      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beNone)
+//    }
+//
+//  }
 
 
   "HttpGenericProvider" in {
