@@ -242,6 +242,18 @@ trait ResourceScope extends Scope with Mockito {
       ))
     )
   }
+
+  def createEcsProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
+    createInstance(
+      typeId = ResourceIds.EcsProvider,
+      name = name,
+      parent = Option(parent),
+      properties = Option(Map(
+        "parent" -> "{}",
+        "config" -> Json.obj(config:_*).toString
+      ))
+    )
+  }
   
   def newDummyLambda(env: UUID, gateway: UUID = uuid()) = {
     createInstance(ResourceIds.Lambda, uuid(),

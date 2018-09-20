@@ -32,7 +32,8 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
 class ProviderManager @Inject() (
     kubernetesService: KubernetesService,
     marathonService: MarathonService,
-    dockerService: DockerService) extends AuthorizationMethods with JsonInput {
+    dockerService: DockerService,
+    ecsService: EcsService) extends AuthorizationMethods with JsonInput {
   
   private[this] val log = Logger(this.getClass)
   
@@ -576,6 +577,7 @@ class ProviderManager @Inject() (
       case ResourceIds.KubeProvider => kubernetesService
       case ResourceIds.DcosProvider => marathonService
       case ResourceIds.DockerProvider => dockerService
+      case ResourceIds.EcsProvider => ecsService
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }
