@@ -122,7 +122,9 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
   private[this] def createService(ecs: AwsEcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
    (implicit ec: ExecutionContext): Try[String] = {
 
-    val avc = new AwsVpcConfiguration().withSubnets(spec.network.getOrElse(""))    // subnet id; required
+    val avc = new AwsVpcConfiguration()
+      .withSubnets(spec.network.getOrElse(""))    // subnet id; required
+      .withAssignPublicIp("ENABLED")
     val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
 
     val name = s"${context.environmentId}-${spec.name}"

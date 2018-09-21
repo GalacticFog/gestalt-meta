@@ -331,7 +331,7 @@ class DeleteController @Inject()(
    * need to skip the delete from the cloud provider.
    */
   protected[controllers] def skipExternals(res: ResourceLike, qs: Map[String, Seq[String]]) = {
-    if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider, ResourceIds.EcsProvider).contains(res.typeId) &&
+    if (Seq(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider, migrations.V14.ECS_PROVIDER_TYPE_ID).contains(res.typeId) &&
         !QueryString.singleBoolean(qs, "deleteContainers")) {
       
       log.debug("Delete CaaS Provider: 'deleteContainers' is FALSE.")

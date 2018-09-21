@@ -47,7 +47,7 @@ class DefaultAwsSdkFactory @Inject()() extends AwsSdkFactory {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
 
-    if (prv.typeId != ResourceIds.EcsProvider)
+    if (prv.typeId != migrations.V14.ECS_PROVIDER_TYPE_ID)
       throw ResourceNotFoundException(s"Provider '$provider' is not a AWS ECS Provider")
     else extractAwsConfig(prv.properties) getOrElse {
       throw new RuntimeException(s"Empty or malformed provider configuration. This is a bug")

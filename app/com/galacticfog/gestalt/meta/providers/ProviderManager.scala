@@ -577,7 +577,8 @@ class ProviderManager @Inject() (
       case ResourceIds.KubeProvider => kubernetesService
       case ResourceIds.DcosProvider => marathonService
       case ResourceIds.DockerProvider => dockerService
-      case ResourceIds.EcsProvider => ecsService
+      // case ResourceIds.EcsProvider => ecsService
+      case migrations.V14.ECS_PROVIDER_TYPE_ID => ecsService
       case _ => throw BadRequestException(s"No implementation for provider type '$typeId' was found.")
     }
   }
