@@ -208,7 +208,7 @@ object ContainerService {
   def caasProvider(provider: UUID): GestaltResourceInstance = {
     ResourceFactory.findById(provider) filter {
       // TODO: this should just check that its a sub-type of ::CaaS provider
-      Set(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider) contains _.typeId
+      Set(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider, migrations.V14.ECS_PROVIDER_TYPE_ID) contains _.typeId
     } getOrElse {
       throw new BadRequestException(s"Provider with ID '$provider' is absent or not a recognized CaaS provider. Associated container may be corrupt.")
     }
