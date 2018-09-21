@@ -245,7 +245,7 @@ trait ResourceScope extends Scope with Mockito {
 
   def createEcsProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(
-      typeId = ResourceIds.EcsProvider,
+      typeId = migrations.V14.ECS_PROVIDER_TYPE_ID,
       name = name,
       parent = Option(parent),
       properties = Option(Map(
