@@ -18,6 +18,24 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 
 package object genericactions {
   
+  implicit lazy val formatRequestBody = Json.format[RequestBody]
+  implicit lazy val formatRequestQueryParameter = Json.format[RequestQueryParameter]  
+  
+  implicit lazy val formatActionIcon = Json.format[ActionIcon]
+  implicit lazy val formatGestaltUi = Json.format[GestaltUi]
+  implicit lazy val formatFunctionResponse = Json.format[FunctionResponse]
+  implicit lazy val formatPostVerb = Json.format[PostVerb]  
+  implicit lazy val formatGetVerb = Json.format[GetVerb]
+  implicit lazy val formatPutVerb = Json.format[PutVerb]
+  implicit lazy val formatPatchVerb = Json.format[PatchVerb]
+  implicit lazy val formatDeleteVerb = Json.format[DeleteVerb]
+
+  implicit lazy val formatGestaltFunction = Json.format[GestaltFunction]
+  implicit lazy val formatGestaltEndpoint = Json.format[GestaltEndpoint]
+  lazy implicit val formatGestaltFunctionConfig = Json.format[GestaltFunctionConfig]    
+  
+  
+  
   /**
    * Extract a GestaltFunctionConfig object from a Provider instance.
    */
@@ -32,30 +50,30 @@ package object genericactions {
     } yield out
   }
   
-  sealed trait FunctionVerb {
-    val description: Option[String]
-    val body: Option[RequestBody]
-    val query_parameters: Option[Seq[RequestQueryParameter]]
-    val responses: Seq[FunctionResponse]    
-  }
-  
-  object FunctionVerb {
-    implicit lazy val reader =
-      __.read[GetVerb].map(x=>x:FunctionVerb) orElse
-      __.read[PostVerb].map(x=>x:FunctionVerb) orElse
-      __.read[PutVerb].map(x=>x:FunctionVerb) orElse
-      __.read[PatchVerb].map(x=>x:FunctionVerb) orElse
-      __.read[DeleteVerb].map(x=>x:FunctionVerb)
-      
-    implicit lazy val writer =
-      Writes[FunctionVerb] {
-        case a: GetVerb => Json.toJson(a)(GetVerb.format)
-        case b: PostVerb => Json.toJson(b)(PostVerb.format)
-        case c: PutVerb  => Json.toJson(c)(PutVerb.format)
-        case d: PatchVerb => Json.toJson(d)(PatchVerb.format)
-        case e: DeleteVerb => Json.toJson(e)(DeleteVerb.format)
-    }
-  }
+//  sealed trait FunctionVerb {
+//    val description: Option[String]
+//    val body: Option[RequestBody]
+//    val query_parameters: Option[Seq[RequestQueryParameter]]
+//    val responses: Seq[FunctionResponse]    
+//  }
+//  
+//  object FunctionVerb {
+//    implicit lazy val reader =
+//      __.read[GetVerb].map(x=>x:FunctionVerb) orElse
+//      __.read[PostVerb].map(x=>x:FunctionVerb) orElse
+//      __.read[PutVerb].map(x=>x:FunctionVerb) orElse
+//      __.read[PatchVerb].map(x=>x:FunctionVerb) orElse
+//      __.read[DeleteVerb].map(x=>x:FunctionVerb)
+//      
+//    implicit lazy val writer =
+//      Writes[FunctionVerb] {
+//        case a: GetVerb => Json.toJson(a)(GetVerb.format)
+//        case b: PostVerb => Json.toJson(b)(PostVerb.format)
+//        case c: PutVerb  => Json.toJson(c)(PutVerb.format)
+//        case d: PatchVerb => Json.toJson(d)(PatchVerb.format)
+//        case e: DeleteVerb => Json.toJson(e)(DeleteVerb.format)
+//    }
+//  }
   
   case class RequestQueryParameter(
     name: String, 
@@ -64,76 +82,70 @@ package object genericactions {
     required: Boolean = false,
     data_type: String = "string")    
   
-  object RequestQueryParameter {
-    implicit lazy val formatRequestQueryParameter = Json.format[RequestQueryParameter]    
-  }  
+//  object RequestQueryParameter {
+//    implicit lazy val formatRequestQueryParameter = Json.format[RequestQueryParameter]    
+//  }  
   
   case class GetVerb(
       description: Option[String] = None, 
       body: Option[RequestBody] = None, 
       query_parameters: Option[Seq[RequestQueryParameter]] = None,
-      responses: Seq[FunctionResponse]) extends FunctionVerb
+      responses: Seq[FunctionResponse])// extends FunctionVerb
       
   case class PostVerb(
       description: Option[String] = None, 
       body: Option[RequestBody] = None, 
       query_parameters: Option[Seq[RequestQueryParameter]] = None,
-      responses: Seq[FunctionResponse]) extends FunctionVerb
+      responses: Seq[FunctionResponse])// extends FunctionVerb
     
   case class PutVerb(
       description: Option[String] = None, 
       body: Option[RequestBody] = None, 
       query_parameters: Option[Seq[RequestQueryParameter]] = None,
-      responses: Seq[FunctionResponse]) extends FunctionVerb
+      responses: Seq[FunctionResponse])// extends FunctionVerb
     
   case class PatchVerb(
       description: Option[String] = None, 
       body: Option[RequestBody] = None, 
       query_parameters: Option[Seq[RequestQueryParameter]] = None,
-      responses: Seq[FunctionResponse]) extends FunctionVerb
+      responses: Seq[FunctionResponse])// extends FunctionVerb
       
   case class DeleteVerb(
       description: Option[String] = None, 
       body: Option[RequestBody] = None, 
       query_parameters: Option[Seq[RequestQueryParameter]] = None,
-      responses: Seq[FunctionResponse]) extends FunctionVerb
+      responses: Seq[FunctionResponse])// extends FunctionVerb
       
-  object GetVerb {
-    implicit lazy val format = Json.format[GetVerb]
-  }      
-  object PostVerb {
-    implicit lazy val format = Json.format[PostVerb]
-  }      
-  object PutVerb {
-    implicit lazy val format = Json.format[PutVerb]
-  }    
-  object PatchVerb {
-    implicit lazy val format = Json.format[PatchVerb]
-  }
-  object DeleteVerb {
-    implicit lazy val format = Json.format[DeleteVerb]
-  }
-
   case class ActionIcon(svg: Option[String])
-  case class GestaltUi(render: String, locations: Seq[String], icon: Option[ActionIcon])
-  case class FunctionResponse(code: Int, content_type: Option[String], gestalt_ui: Option[GestaltUi])
+  
+  case class GestaltUi(render: String, locations: Seq[String], icon: Option[ActionIcon]) {
+    if (locations.isEmpty) throw new RuntimeException("Must provide at least one 'location' value.")
+  }
+  
+  case class FunctionResponse(
+      code: Int, 
+      content_type: Option[String] = None, 
+      gestalt_ui: Option[GestaltUi] = None)
+  
   case class RequestBody(content_type: String)
-
+  
   case class GestaltFunction(
       name: String, 
       display_name: Option[String] = None,
       description: Option[String] = None,
-      get: Option[FunctionVerb] = None,
+      
+      get: Option[GetVerb] = None,
       post: Option[PostVerb] = None,
-      put: Option[FunctionVerb] = None,
-      patch: Option[FunctionVerb] = None,
-      delete: Option[FunctionVerb] = None) {
-    
+      put: Option[PutVerb] = None,
+      patch: Option[PatchVerb] = None,
+      delete: Option[DeleteVerb] = None) {
+      
     /*
      * Ensure exactly one FunctionVerb is given.
      */
     private val theVerb = {
       val v = Seq(get, post, put, patch, delete).filter(_.isDefined)
+
       v.size match {
         case 1 => v.head.get
         case 0 => throw new RuntimeException("Must provide an HTTP verb. None found.")
@@ -149,18 +161,13 @@ package object genericactions {
       case e: DeleteVerb => "DELETE"
     }
   }
-
-  case class GestaltEndpoint(kind: String, url: String, actions: Seq[GestaltFunction])
+  
+  case class GestaltEndpoint(kind: String, url: String, actions: Seq[GestaltFunction]) {
+    if (actions.isEmpty) throw new RuntimeException("Must specify at least one action for an Endpoint.")
+  }
   case class GestaltFunctionConfig(endpoints: Seq[GestaltEndpoint])
   
-  implicit lazy val formatActionIcon = Json.format[ActionIcon]
-  implicit lazy val formatGestaltUi = Json.format[GestaltUi]
-  implicit lazy val formatFunctionResponse = Json.format[FunctionResponse]
-  implicit lazy val formatRequestBody = Json.format[RequestBody]
-  implicit lazy val formatGestaltFunction = Json.format[GestaltFunction]
-  implicit lazy val formatGestaltEndpoint = Json.format[GestaltEndpoint]
-  implicit lazy val formatGestaltFunctionConfig = Json.format[GestaltFunctionConfig]    
-
+  
   
 //  case class ActionIcon(svg: Option[String])
 //  case class GestaltUi(render: String, locations: Seq[String], icon: Option[ActionIcon])

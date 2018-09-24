@@ -100,22 +100,24 @@ class GenericResourceMethodsSpec extends PlaySpecification
         )
       ).toString
     )))
-
+    
+    
+    
     val Some(rootOrg) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
   }
 
   trait TestApplication extends TestScope {
   }
 
-//  "DefaultGenericProviderManager" should {
-//
-//    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
-//      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-//      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
-//        beAnInstanceOf[HttpGenericProvider]
-//          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
-//      ))
-//    }
+  "DefaultGenericProviderManager" should {
+
+    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
+      val providerManager = new DefaultGenericProviderManager(mock[WSClient])
+      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+        beAnInstanceOf[HttpGenericProvider]
+          and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
+      ))
+    }
 //    
 //    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
 //      val defaultUrl = "http://default-url"
@@ -235,7 +237,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
 //      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beNone)
 //    }
 //
-//  }
+  }
 
 
   "HttpGenericProvider" in {

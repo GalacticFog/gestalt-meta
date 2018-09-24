@@ -180,7 +180,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
       throw new RuntimeException(s"'/properties/config' not found on Provider '${provider.id}'")
     }
     
-    val cfg = Js.parse[GestaltFunctionConfig](config.as[JsObject]).get
+    val cfg = Js.parse[GestaltFunctionConfig](config.as[JsObject])(formatGestaltFunctionConfig).get
     val found = for {
       e <- cfg.endpoints
       a <- e.actions
