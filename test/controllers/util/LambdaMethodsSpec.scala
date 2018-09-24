@@ -121,6 +121,26 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
 
   "toLaserLambda" should {
 
+    "include `isolate` flag" in new FakeLambdaScope {
+      val Success(testLambdaWithIsolation) = createLambda("test-lambda-with-isolation", Map(
+        "public" -> "true",
+        "cpus" -> "0.1",
+        "memory" -> "128",
+        "code_type" -> "inline",
+        "timeout" -> "30",
+        "handler" -> "blah;blah",
+        "runtime" -> "custom",
+        "periodic_info" -> "{}",
+        "provider" -> Json.obj(
+          "name" -> testLambdaProvider.name,
+          "id" -> testLambdaProvider.id.toString
+        ).toString,
+        "isolate" -> "true"
+      ))
+      val Success(laserLambda) = toLaserLambda(testLambdaWithIsolation, testLambdaProvider.id)
+      laserLambda.artifactDescription.isolate must beSome(true)
+    }
+
     "include all secret mounts" in new FakeLambdaScope {
       val Success(s1) = createSecret( "s1", Map(
         "provider" -> Json.obj("id" -> caasProviderId).toString
@@ -196,7 +216,6 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
         SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
       )
-
       toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(testSecretMounts).toString

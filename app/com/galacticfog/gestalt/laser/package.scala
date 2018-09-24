@@ -81,7 +81,8 @@ package object laser {
       headers : Map[String,String] = Map.empty,
       computePathOverride: Option[String] = None,
       secrets: Option[Seq[JsObject]] = None,
-      preWarm: Option[Int] = None)
+      preWarm: Option[Int] = None,
+      isolate: Option[Boolean] = None)
 
   case class LaserLambda(
       id: Option[String], 
@@ -177,6 +178,7 @@ package object laser {
         periodicInfo= periodic,
         code        = props.get("code"),
         headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty,
+        isolate     = props.get("isolate").flatMap(maybeToBool),
         secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject])),
         computePathOverride = computePath
       )
