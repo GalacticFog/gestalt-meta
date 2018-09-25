@@ -34,7 +34,7 @@ class MigrationController @Inject()(
   def migrate() = AsyncAudited() { implicit request =>
     log.debug("migrate()")
     
-    val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13", "V14", "V15")
+    val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10", "V11", "V12", "V13", "V14", "V15", "V16")
     
     val version = QueryString.single(request.queryString, "version", strict = true)
     val caller = request.identity.account.id
@@ -103,6 +103,7 @@ class MigrationController @Inject()(
       case "V13" => new V13()
       case "V14" => new V14()
       case "V15" => new V15()
+      case "V16" => new V16()
       case _ =>
         throw new BadRequestException(s"No migration found for version '$version'")
     }
