@@ -45,6 +45,7 @@ class LambdaController @Inject()(
     ws: WSClient,
     messagesApi: MessagesApi,
     providerMethods: ProviderMethods,
+    resourceController: ResourceController,
     sec: GestaltFrameworkSecurity)
       extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with JsonInput {
   
@@ -105,16 +106,16 @@ class LambdaController @Inject()(
         val client = providerMethods.configureWebClient(provider, Some(ws))
         
         for {
-          meta <- newDefaultResource(org, ResourceIds.Lambda, parent.id, newjson)
-          laser <- Future.fromTry(toLaserLambda(meta, provider.id))
+          metaLambda <- newDefaultResource(org, ResourceIds.Lambda, parent.id, newjson)
+          laser <- Future.fromTry(toLaserLambda(metaLambda, provider.id))
           result <- client.post("/lambdas", Option(Json.toJson(laser)))
           response = {
             if (Seq(200, 201, 202).contains(result.status)) {
               log.info("Successfully created Lambda in backend system.")
-              Created(RenderSingle(meta))
+              Created(RenderSingle(resourceController.transformResource(metaLambda).get))
             } else { 
               log.error("Error creating Lambda in backend system.")
-              updateFailedBackendCreate(caller, meta, ApiError(result.status, result.body).throwable)
+              updateFailedBackendCreate(caller, metaLambda, ApiError(result.status, result.body).throwable)
             }
           }
         } yield response
