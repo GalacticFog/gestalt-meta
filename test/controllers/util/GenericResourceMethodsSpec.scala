@@ -86,6 +86,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
             )
           )
         ),
+      /*
         "endpoints" -> Json.arr(
           Json.obj(
             "default" -> true,
@@ -94,14 +95,36 @@ class GenericResourceMethodsSpec extends PlaySpecification
             )
           )
         ),
+      */
+      "endpoints" -> Json.arr(
+        Json.obj(
+        "kind" -> "http",
+        "url" -> testUrl,
+        "actions" -> Json.arr(
+            Json.obj(
+                "name" -> "some-verb",
+                "description" -> "Bars foos",
+                "post" -> Json.obj(
+                  "body" -> Json.obj(
+                    "content_type" -> "application/json"
+                  ),
+                  "responses" -> Json.arr(
+                    Json.obj(
+                      "code" -> 201,
+                      "content_type" -> "application/json"
+                    )
+                   )
+                 )
+               )
+             )
+           )
+         ),
         "providerSpecificConfig" -> Json.obj(
           "password" -> "monkey",
           "url" -> "whatever"
         )
       ).toString
     )))
-    
-    
     
     val Some(rootOrg) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
   }
@@ -113,7 +136,10 @@ class GenericResourceMethodsSpec extends PlaySpecification
 
     "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
-      providerManager.getProvider(providerWithDefaultEndpoint, "some-verb", callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
+      providerManager.getProvider(
+          providerWithDefaultEndpoint, 
+          "some-verb", 
+          callerAuth = "fakeCreds") must beASuccessfulTry(beSome(
         beAnInstanceOf[HttpGenericProvider]
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
       ))
