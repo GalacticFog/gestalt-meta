@@ -30,6 +30,7 @@ class GestaltFunctionConfigSpec extends Specification {
         {
           "kind": "http",
           "url": "http://example.com",
+          "authentication": "Basic Zm9vYmFyMTp3aG9jYW5pdGJlbm93",
           "actions": [
             {
               "name": "foo.bar",
@@ -162,6 +163,64 @@ class GestaltFunctionConfigSpec extends Specification {
   }
   """
   
+  val rawAction = s"""
+    {
+      "name": "streamspec.stop",
+      "description": "Stop a Stream Instance",
+      "post": {
+        "body": {
+          "content_type": "application/json"
+        },
+        "responses": [
+          {
+            "code": 200,
+            "content_type": "application/json"
+          }
+        ]
+      }
+    }    
+  """
+  
+  val rawUiAction = s"""
+    {
+      "name": "streamspec.restart",
+      "display_name": "Restart Stream",
+      "description": "Stop then restart a running Stream",
+      "post": {
+        "body": {
+          "content_type": "application/json"
+        },
+        "responses": [
+          {
+            "code": 200,
+            "content_type": "text/html",
+            "gestalt_ui": {
+              "render": "inline",
+              "locations": [
+                "environment.list",
+                "environment.detail"
+              ],
+              "icon": {
+                "svg": "...optional embedded svg..."
+              }
+            }
+          }
+        ]
+      }
+    }    
+    """
+  
+  
+  "GestaltFunctionConfig" should {
+    
+    "parse a properly formatted array of provider endpoints" >> {
+      val js = (Json.parse(rawConfig) \ "config").as[JsValue]
+      
+      Js.parse[GestaltFunctionConfig](js)(
+        formatGestaltFunctionConfig) must beSuccessfulTry
+    }
+  }  
+  
   "GestaltFunction" should {
     
     "fail construction if zero FunctionVerbs are given" >> {
@@ -187,6 +246,22 @@ class GestaltFunctionConfigSpec extends Specification {
       )     
       Try(GestaltFunction("foo", get = get)) must beSuccessfulTry      
     }   
+    
+    "hasUi()" should {
+      
+      "return TRUE when there is at least one response with a gestalt_ui object" >> {
+        val uiAction = Js.parse[GestaltFunction](Json.parse(rawUiAction).as[JsObject])(formatGestaltFunction)
+        uiAction must beSuccessfulTry
+        uiAction.get.hasUi() === true
+      }
+      
+      "return FALSE if there are no responses with gestalt_ui objects" >> {
+        val nonUiAction = Js.parse[GestaltFunction](Json.parse(rawAction).as[JsObject])(formatGestaltFunction)
+        nonUiAction must beSuccessfulTry
+        nonUiAction.get.hasUi() === false
+      }
+      
+    }
   }
 
   "GestaltEndpoint" should {
@@ -203,16 +278,33 @@ class GestaltFunctionConfigSpec extends Specification {
       val func = GestaltFunction("foo", get = get)
       Try(GestaltEndpoint("http", "http://example.com", actions = Seq(func))) must beSuccessfulTry      
     }
-  }
-
-  "GestaltFunctionConfig" should {
     
-    "parse a properly formatted array of provider endpoints" >> {
-      val js = (Json.parse(rawConfig) \ "config").as[JsValue]
-      
-      Js.parse[GestaltFunctionConfig](js)(
-        formatGestaltFunctionConfig) must beSuccessfulTry
-    }
+    "throw an exception if there are actions with duplicate names" >> {
+      val get = Some(
+        GetVerb(Some("get a foo"), 
+          responses = Seq(FunctionResponse(200, Some("application/json"), None)))
+      )
+      val fn1 = GestaltFunction("duplicate.name", get = get)
+      val fn2 = GestaltFunction("duplicate.name", get = get)
+      Try(GestaltEndpoint("http", "http://example.com", actions = Seq(fn1, fn2))) must beFailedTry         
+    }    
   }
-    
+  
+  
+  
+//  "getFunctionConfig" should {
+//    
+//    "extract a GestaltFunctionConfig from a Provider instance if present" >> {
+//      
+//      failure
+//    }
+//    
+//    "return nothing if there is no function config present" >> {
+//      
+//      failure
+//    }
+//  }
+  
+  
+  
 }

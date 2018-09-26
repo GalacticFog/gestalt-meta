@@ -203,9 +203,12 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     val protocol = ep.kind
     val url = ep.url
     
+    // Try to use the auth string in the endpoint, or else try the caller creds if given.
+    val effectiveAuth = ep.auth orElse callerAuth
+    
     println(s"${protocol}, ${url}, ${method}")
     
-    val http = Option(HttpGenericProvider(wsclient, url, method, authHeader = callerAuth))
+    val http = Option(HttpGenericProvider(wsclient, url, method, authHeader = effectiveAuth))
     http match {
       case Some(p) =>
         Success(p)
