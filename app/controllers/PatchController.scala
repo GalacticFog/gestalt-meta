@@ -188,7 +188,7 @@ class PatchController @Inject()(
           log.info("Updating resource in Meta...")
           update(patched, user.account.id)
         }
-      } yield Ok(RenderSingle(updated))
+      } yield Ok(RenderSingle(resourceController.transformResource(updated).get))
     }
     updated recover {
       case e: Throwable => HandleExceptions(e)

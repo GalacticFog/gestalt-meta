@@ -257,14 +257,29 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     */
   private[services] def getNamespace(rc: RequestContext, pc: ProviderContext, create: Boolean = false): Future[Namespace] = {
     log.debug(s"getNamespace(environment = ${pc.environmentId}, create = ${create}")
-    rc.getOption[Namespace](pc.environmentId.toString) flatMap {
+    val namespaceGetter = "/namespaces/([^/]+)/.*/.*".r
+
+    val namespaces = ResourceFactory.findChildren(pc.environmentId).filter(
+      r => Set(ResourceIds.Container, ResourceIds.Secret, migrations.V13.VOLUME_TYPE_ID).contains(r.typeId) &&
+        Try{ContainerService.containerProviderId(r)}.toOption.contains(pc.providerId)
+    ).flatMap(ContainerService.resourceExternalId).collect {
+      case namespaceGetter(namespace) => namespace
+    } distinct
+
+    val targetNamespace = namespaces match {
+      case Seq() => pc.environmentId.toString
+      case Seq(single) => single
+      case _ => throw new BadRequestException(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+    }
+
+    rc.getOption[Namespace](targetNamespace) flatMap {
       case Some(s) =>
-        log.debug(s"Found Kubernetes namespace: ${pc.environmentId}")
+        log.debug(s"Found Kubernetes namespace: ${s.name}")
         Future.successful(s)
       case None if create =>
-        log.debug(s"Creating new Kubernetes namespace: ${pc.environmentId}")
+        log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
         rc create[Namespace] Namespace(metadata = ObjectMeta(
-          name = pc.environmentId.toString,
+          name = targetNamespace,
           labels = Map(
             META_ENVIRONMENT_KEY -> pc.environmentId.toString,
             META_WORKSPACE_KEY -> pc.workspace.id.toString,
@@ -273,8 +288,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           )
         ))
       case None if !create =>
-        log.error("No namespace found for environment '{}' - create == false")
-        Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '{}', environment"))
+        log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
+        Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))
     }
   }
 
@@ -805,7 +820,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         secret =>
           allEnvSecrets.get(secret.secret_id) match {
             case None =>
-              throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' does not exist in environment ${context.environmentId}'")
+              throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' does not exist in environment '${context.environmentId}'")
             case Some(sec) if ContainerService.containerProviderId(sec) != context.providerId =>
               throw new UnprocessableEntityException(s"secret with ID '${secret.secret_id}' belongs to a different provider")
             case _ => ()
@@ -994,22 +1009,29 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     val lblSelector = LabelSelector(LabelSelector.IsEqualRequirement(META_CONTAINER_KEY, container.id.toString))
-    cleanly(context.providerId, context.environment.id.toString)( kube =>
-      for {
-        maybeDepl <- kube.listSelected[DeploymentList](lblSelector) map (_.items.headOption)
-        pods <- maybeDepl match {
-          case None    => Future.successful(Nil)
-          case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
-        }
-        maybeLbSvc <- maybeDepl match {
-          case None    => Future.successful(None)
-          case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
-            _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
-          }
-        }
-        update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc))
-      } yield update
-    )
+    lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
+    ContainerService.resourceExternalId(container) match {
+      case Some(deplSplitter(namespace,deploymentName)) =>
+        cleanly(context.providerId, namespace)( kube =>
+          for {
+            maybeDepl <- kube.getOption[Deployment](deploymentName)
+            // TODO: this needs to be rewritten to find the pods from the deployment (or, indirectly, from the replica sets)
+            // https://gitlab.com/galacticfog/gestalt-meta/issues/516
+            pods <- maybeDepl match {
+              case None    => Future.successful(Nil)
+              case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
+            }
+            maybeLbSvc <- maybeDepl match {
+              case None    => Future.successful(None)
+              case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
+                _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
+              }
+            }
+            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc))
+          } yield update
+        )
+      case None => Future.successful(None)
+    }
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = cleanly(context.providerId, context.environment.id.toString) { kube =>
