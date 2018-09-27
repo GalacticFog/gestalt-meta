@@ -13,15 +13,16 @@ import scala.language.postfixOps
 import com.galacticfog.gestalt.caas.kube.Ascii
 import com.galacticfog.gestalt.caas.kube.KubeConfig
 import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.google.inject.{Singleton,Inject}
+import com.google.inject.{Inject, Singleton}
 import play.api.Logger
 import skuber.api.client.RequestContext
 
 
 trait SkuberFactory {
-  def initializeKube( provider: UUID, namespace: String )
+  def initializeKube( provider: GestaltResourceInstance, namespace: String )
                     ( implicit ec: ExecutionContext ): Future[RequestContext]
 }
 
@@ -33,7 +34,7 @@ class DefaultSkuberFactory @Inject()()(implicit actorSystem: ActorSystem, mat: M
   /**
     *
     */
-  override def initializeKube( provider: UUID, namespace: String )
+  override def initializeKube( provider: GestaltResourceInstance, namespace: String )
                              ( implicit ec: ExecutionContext ): Future[RequestContext] = for {
     config  <- loadProviderConfiguration(provider)
     context <- Future.fromTry(KubeConfig.initializeString(config, namespace = Some(namespace)))
@@ -42,16 +43,11 @@ class DefaultSkuberFactory @Inject()()(implicit actorSystem: ActorSystem, mat: M
   /**
     * Get kube configuration from Provider. Performs lookup and validation of provider type.
     */
-  private[services] def loadProviderConfiguration(provider: UUID)(
-    implicit ec: ExecutionContext): Future[String] = Future {
-
-    val prv = ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
-    }
-
-    if (prv.typeId != ResourceIds.KubeProvider)
+  private[services] def loadProviderConfiguration(provider: GestaltResourceInstance)
+                                                 (implicit ec: ExecutionContext): Future[String] = Future {
+    if (provider.typeId != ResourceIds.KubeProvider)
       throw ResourceNotFoundException(s"Provider '$provider' is not a Kubernetes Provider")
-    else extractKubeConfig(prv.properties) getOrElse {
+    else extractKubeConfig(provider.properties) getOrElse {
       throw new RuntimeException(s"Provider configuration not found. This is a bug")
     }
   }
