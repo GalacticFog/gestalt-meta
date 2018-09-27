@@ -1008,26 +1008,32 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    val lblSelector = LabelSelector(LabelSelector.IsEqualRequirement(META_CONTAINER_KEY, container.id.toString))
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
       case Some(deplSplitter(namespace,deploymentName)) =>
         cleanly(context.providerId, namespace)( kube =>
           for {
             maybeDepl <- kube.getOption[Deployment](deploymentName)
-            // TODO: this needs to be rewritten to find the pods from the deployment (or, indirectly, from the replica sets)
-            // https://gitlab.com/galacticfog/gestalt-meta/issues/516
-            pods <- maybeDepl match {
+            allPods <- maybeDepl match {
               case None    => Future.successful(Nil)
-              case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
+              case Some(_) => kube.list[PodList]() map (_.items)
             }
-            maybeLbSvc <- maybeDepl match {
+            allReplicaSets <- maybeDepl match {
+              case None    => Future.successful(Nil)
+              case Some(_) => kube.list[ReplicaSetList]() map (_.items)
+            }
+            allLbSvcs <- maybeDepl match {
               case None    => Future.successful(None)
-              case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
+              case Some(_) => kube.list[ServiceList]().map {
                 _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
               }
             }
-            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc))
+            deplPods = Nil    // TODO(516) first: filter all pods whose metadata.ownerReferences is a ReplicaSet whose metadata.ownerReferences is this deployment
+            maybeLbSvc = None // TODO(516) second: "somehow" find the Svc form allLbSvcs that matches the pods in this deployment
+                              // this will use the svc.spec.get.selector map against the deployment.metadata.labels map
+                              // see https://kubernetes.io/docs/concepts/services-networking/service/ for how services work
+                              // also, this is how selectors work: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
+            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, deplPods, maybeLbSvc))
           } yield update
         )
       case None => Future.successful(None)
