@@ -27,12 +27,7 @@ dockerBaseImage := "openjdk:8-jre-alpine"
 dockerCommands := dockerCommands.value.flatMap {
   case cmd@Cmd("FROM",_) => List(
     cmd,
-    Cmd("RUN",
-      """
-        |apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg &&
-        |  ln -s /lib /lib64 &&
-        |  rm -rf /var/cache/apk/*")
-      """.stripMargin)
+    Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*")
   )
   case other => List(other)
 }
