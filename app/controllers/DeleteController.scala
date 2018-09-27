@@ -265,7 +265,6 @@ class DeleteController @Inject()(
         case e: Throwable => {
           log.warn(s"unable to initialize kube with id = '${k.id}' with cause '${e.getCause()}'...")
           Future.successful(())
-
         }
       }
     }
