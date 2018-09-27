@@ -27,12 +27,18 @@ dockerBaseImage := "openjdk:8-jre-alpine"
 dockerCommands := dockerCommands.value.flatMap {
   case cmd@Cmd("FROM",_) => List(
     cmd,
-    Cmd("RUN", "apk add --update bash && rm -rf /var/cache/apk/*")     
+    Cmd("RUN",
+      """
+        |apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg &&
+        |  ln -s /lib /lib64 &&
+        |  rm -rf /var/cache/apk/*")
+      """.stripMargin)
   )
   case other => List(other)
 }
 
 parallelExecution in Test := false
+
 
 lazy val root = (project in file(".")).
   enablePlugins(PlayScala,SbtNativePackager).
@@ -66,6 +72,9 @@ javaOptions in Universal ++= Seq(
         "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
 )
 
+import NativePackagerHelper._
+mappings in Universal ++= directory("authenticators")
+
 scalaVersion := "2.11.8"
 
 scalacOptions ++= Seq(
@@ -93,7 +102,7 @@ libraryDependencies ++= Seq(
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
-  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.3" withSources(),
+  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources(),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
   "net.codingwell"  %% "scala-guice"                   % "4.2.1",
   "org.slf4j"        % "slf4j-api"                     % "1.7.21",
