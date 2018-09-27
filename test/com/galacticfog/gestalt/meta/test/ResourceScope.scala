@@ -22,6 +22,7 @@ import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
 import migrations._
+import play.api.db.Database
 
 trait ResourceScope extends Scope with Mockito {
   println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
@@ -46,8 +47,9 @@ trait ResourceScope extends Scope with Mockito {
   
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
+    val database = injector.instanceOf(classOf[Database])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-    val db = new Bootstrap(ResourceIds.Org,
+    val dbBootstrap = new Bootstrap(ResourceIds.Org,
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
     val metaconfig = new DefaultMetaConfiguration()
 
@@ -60,11 +62,11 @@ trait ResourceScope extends Scope with Mockito {
     println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
 
     for {
-      _ <- db.clean
-      _ <- db.migrate
-      _ <- db.loadReferenceData
-      _ <- db.loadSystemTypes
-      _ <- db.initialize("root")
+      _ <- dbBootstrap.clean
+      _ <- dbBootstrap.migrate
+      _ <- dbBootstrap.loadReferenceData
+      _ <- dbBootstrap.loadSystemTypes
+      _ <- dbBootstrap.initialize("root")
       admin <- {
         val gestaltAdmin = GestaltResourceInstance(
           id     = adminUserId,
@@ -122,6 +124,7 @@ trait ResourceScope extends Scope with Mockito {
           tries.map(_.get)
         }
       }
+      _ <- Try { database.shutdown() }
     } yield ()
   }
   
