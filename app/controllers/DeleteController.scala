@@ -244,7 +244,7 @@ class DeleteController @Inject()(
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
       
-      skuberFactory.initializeKube(k.id, namespace) flatMap { kube =>
+      skuberFactory.initializeKube(k, namespace) flatMap { kube =>
         val deleted = kube.delete[Namespace](namespace).recoverWith { 
           case e: skuber.api.client.K8SException => {
             /*
