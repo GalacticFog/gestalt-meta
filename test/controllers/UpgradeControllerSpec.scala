@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.meta.test._
 import controllers.util.{ContainerService, UpgraderService}
 import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
-import org.specs2.specification.BeforeEach
+import org.specs2.specification.{BeforeAll, BeforeEach}
 import play.api.inject.{BindingKey, bind}
 import play.api.libs.json.Json
 import play.api.test.{PlaySpecification, WithApplication}
@@ -22,11 +22,15 @@ import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 
 
-class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
+class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers with BeforeAll {
 
   sequential
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
+
+  override def beforeAll(): Unit = {
+    pristineDatabase()
+  }
 
   val testPayload = Json.obj(
     "image" -> "galacticfog/gestalt-upgrader:1.6.0",
@@ -49,15 +53,9 @@ class UpgradeControllerSpec extends PlaySpecification with MetaRepositoryOps wit
     bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   ))
 
-  abstract class TestUpgradeController extends WithApplication(appWithMocks()) {
+  abstract class TestUpgradeController extends WithDb(appWithMocks()) {
     lazy val mockUpgraderService = app.injector.instanceOf[UpgraderService]
     lazy val configActor = app.injector.instanceOf(BindingKey(classOf[ActorRef]).qualifiedWith(SystemConfigActor.name))
-
-    override def around[T: AsResult](t: => T): Result = super.around {
-      scalikejdbc.config.DBs.setupAll()
-      val Success(_) = pristineDatabase()
-      t
-    }
   }
 
   "UpgradeController" should {
