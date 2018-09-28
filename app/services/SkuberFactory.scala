@@ -38,12 +38,15 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
 
   def getToken(req: KubeTokenActor.KubeAuthTokenRequest)
               (implicit timeout: akka.util.Timeout): Future[skuber.api.client.AuthInfo] = {
+    log.info(s"acquiring token for provider ${req.providerId} from KubeTokenActor")
     for {
       resp <- kubeTokenActor ? req
       token <- resp match {
         case KubeAuthTokenResponse(token) =>
+          log.info("successfully acquired token")
           Future.successful(skuber.api.client.TokenAuth(token))
         case KubeAuthTokenError(msg) =>
+          log.info("failed to acquire token")
           Future.failed(new RuntimeException(msg))
       }
     } yield token
@@ -57,6 +60,7 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
     for {
       configYaml  <- loadProviderConfiguration(provider)
       initialConfig = KubeConfig.parseYaml(configYaml, Map.empty)
+      _ = log.info(s"parsed kubeconfig for provider ${provider.id}, authInfo of type ${initialConfig.currentContext.authInfo.getClass.getSimpleName}")
       newAuth <- initialConfig.currentContext.authInfo match {
         case gcp: skuber.api.client.GcpAuth if whitelistedCmdPaths.contains(gcp.command)=>
           getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, gcp))
