@@ -243,24 +243,32 @@ class DeleteController @Inject()(
     
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
-      
-      skuberFactory.initializeKube(k, namespace) flatMap { kube =>
-        val deleted = kube.delete[Namespace](namespace).recoverWith { 
-          case e: skuber.api.client.K8SException => {
-            /*
-             * There are a few cases where kube may throw an error when attempting to 
-             * delete a namespace. This guard checks for thos known cases and ignores
-             * the failure if possible.
-             */
-            if (ignorableNamespaceError(namespace, e.status)) 
-              Future.successful(())
-            else throw e
+
+      try{
+        skuberFactory.initializeKube(k, namespace) flatMap { kube =>
+          val deleted = kube.delete[Namespace](namespace).recoverWith {
+            case e: skuber.api.client.K8SException => {
+              /*
+               * There are a few cases where kube may throw an error when attempting to
+               * delete a namespace. This guard checks for thos known cases and ignores
+               * the failure if possible.
+               */
+              if (ignorableNamespaceError(namespace, e.status))
+                Future.successful(())
+              else throw e
+            }
           }
+          deleted.onComplete(_ => kube.close)
+          deleted
         }
-        deleted.onComplete(_ => kube.close)
-        deleted
+      } catch {
+        case e: Throwable => {
+          log.warn(s"unable to initialize kube with id = '${k.id}' with cause '${e.getCause()}'...")
+          Future.successful(())
+        }
       }
     }
+
     Await.result(Future.sequence(deletes), 10.seconds)
     ()
   }

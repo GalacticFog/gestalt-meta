@@ -21,6 +21,8 @@ import scala.util.{Success, Try}
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 
+import services.{SkuberFactory}
+
 
 class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking with JsonMatchers with ResourceScope with BeforeAll with Mockito {
 
@@ -45,9 +47,10 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
     additionalBindings = Seq(
       bind(classOf[LambdaMethods]).toInstance(mockLambdaMethods),
       bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods)
-      
     )
-  ))
+  )) {
+    lazy val mockSkuberFactory = app.injector.instanceOf[SkuberFactory]
+  }
 
   trait TestApplication extends FakeSecurity {
     val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
@@ -96,6 +99,12 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       properties = Some(Map(
         "resource" -> "/the/path"
       )),
+      parent = Some(testEnv.id)
+    )
+    val Success(testKubeProvider) = createInstance(
+      ResourceIds.KubeProvider,
+      "test-kube-provider",
+      properties = Some(Map()),
       parent = Some(testEnv.id)
     )
   }
@@ -148,6 +157,20 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       there was one(mockGatewayMethods).deleteApiHandler(
         r = argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
       )
+    }
+
+    "delete environment when provider configuration not found or k8s configuration is not correct" in new TestApplication {
+      mockSkuberFactory.initializeKube(any, any)(any) throws new RuntimeException("provider configuration not found/k8s configuration is not correct")
+      mockLambdaMethods.deleteLambdaHandler(any) returns Success(())
+      mockGatewayMethods.deleteApiHandler(any) returns Success(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
+
+      val Some(result) = route(app,fakeAuthRequest(
+        DELETE,
+        s"/root/environments/${testEnv.id}?force=true", testCreds
+      ))
+
+      status(result) must equalTo(NO_CONTENT)
     }
 
   }
