@@ -1025,10 +1025,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             allLbSvcs <- maybeDepl match {
               case None    => Future.successful(None)
               case Some(_) => kube.list[ServiceList]().map {
-                _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
+                _.items.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
               }
             }
-            deplPods = Nil    // TODO(516) first: filter all pods whose metadata.ownerReferences is a ReplicaSet whose metadata.ownerReferences is this deployment
+            // TODO(516) first: filter all pods whose metadata.ownerReferences is a ReplicaSet whose metadata.ownerReferences is this deployment
+            deploymentUid = maybeDepl.get.metadata.uid
+            deploymentReplicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(_.uid == deploymentUid))
+            deplPods = allPods.filter(_.metadata.ownerReferences.exists(__
+                => deploymentReplicaSets.exists(_.metadata.uid == __.uid)))
+
             maybeLbSvc = None // TODO(516) second: "somehow" find the Svc form allLbSvcs that matches the pods in this deployment
                               // this will use the svc.spec.get.selector map against the deployment.metadata.labels map
                               // see https://kubernetes.io/docs/concepts/services-networking/service/ for how services work
