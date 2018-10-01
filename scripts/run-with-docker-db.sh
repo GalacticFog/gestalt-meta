@@ -1,6 +1,5 @@
 #!/bin/bash
 
-DBUSER=gestaltdev
 DBPASS=password
 DBNAME=metadev
 DOCKERDBCONTAINER=gestaltdb
@@ -37,7 +36,7 @@ false)
 *)
   echo Starting DB container
   docker pull postgres:9.4
-  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e POSTGRES_DB=$DBNAME -e POSTGRES_USER=$DBUSER -e POSTGRES_PASSWORD=$DBPASS postgres:9.4)
+  db=$(docker run -p 5432:5432 -d --name=$DOCKERDBCONTAINER -e POSTGRES_DB=$DBNAME -e POSTGRES_PASSWORD=$DBPASS postgres:9.4)
   ;;
 esac
 
@@ -78,7 +77,7 @@ trap cleanup_docker_db EXIT SIGSTOP SIGTERM
 export DATABASE_HOSTNAME=$DOCKERIP
 export DATABASE_NAME=$DBNAME
 export DATABASE_PORT=$DBPORT
-export DATABASE_USERNAME=$DBUSER
+export DATABASE_USERNAME=postgres
 export DATABASE_PASSWORD=$DBPASS
 
 export GESTALT_SECURITY_PORT=9455
