@@ -92,11 +92,11 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       skNonstandardNs.name returns "non-standard-namespace"
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider), meq("default")         )(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skDefaultNs))
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skTestNs))
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq("non-standard-namespace"))(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider), meq("non-standard-namespace"))(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq("non-standard-namespace"))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skNonstandardNs))
 
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
@@ -358,9 +358,9 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       skTestNs.name returns testEnv.id.toString
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq("default")         )(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider), meq("default")         )(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skDefaultNs))
-      mockSkuberFactory.initializeKube(meq(testProvider.id), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skTestNs))
 
       mockSkuber.list()(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
@@ -530,7 +530,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         container = metaContainer
       )).properties
 
-      there were two(testSetup.skuberFactory).initializeKube(meq(testProvider.id), any)(any)
+      there were two(testSetup.skuberFactory).initializeKube(meq(testProvider), any)(any)
       there was one(testSetup.client).create(argThat(
         inNamespace(testSetup.testNS.name)
           and
@@ -2256,8 +2256,8 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           "affinity" -> affinityCfg
         )
       ).get
-      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity.id), meq("default")          )(any)  returns Future.successful(testSetup.client)
-      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity.id), meq(testEnv.id.toString))(any) returns Future.successful(testSetup.client)
+      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity), meq("default")          )(any)  returns Future.successful(testSetup.client)
+      testSetup.skuberFactory.initializeKube(meq(providerWithAffinity), meq(testEnv.id.toString))(any) returns Future.successful(testSetup.client)
 
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
