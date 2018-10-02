@@ -46,16 +46,16 @@ test:
   artifacts:
     expire_in: 2 days
     paths:
-    - target/docker/stage/
+    - meta/target/docker/stage/
 
 docker-publish:
   stage: publish
   services:
     - docker:dind
   script: 
-    - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
+    - VERSION=$(grep "^version" meta/build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
-    - cd target/docker/stage
+    - cd meta/target/docker/stage
     - echo building $DOCKER_IMG:$DOCKER_TAG
     - docker build -t $DOCKER_IMG:$DOCKER_TAG .
     - docker push     $DOCKER_IMG:$DOCKER_TAG
@@ -89,7 +89,7 @@ github-publish:
   tags: 
     - test-cluster
   script: 
-    - VERSION=$(grep "^version" build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
+    - VERSION=$(grep "^version" meta/build.sbt | sed 's/.*:=[ ]*//' | sed 's/"//g')
     - DOCKER_TAG=${CI_BUILD_TAG-$VERSION-${CI_BUILD_REF:0:8}}
     - http --check-status -a "$API_KEY":"$API_SECRET" --ignore-stdin $LEGACY_CI_URL project=$CI_PROJECT_NAME image=$DOCKER_IMG:$DOCKER_TAG git_ref=$CI_COMMIT_REF_NAME git_sha=$CI_COMMIT_SHA git_author="$GITLAB_USER_NAME"
   artifacts:

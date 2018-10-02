@@ -123,7 +123,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
    (implicit ec: ExecutionContext): Try[String] = {
 
     val avc = new AwsVpcConfiguration()
-      .withSubnets(spec.network.getOrElse(""))    // subnet id; required
+      .withSubnets(spec.network.getOrElse("").split(";").toSeq)    // subnet id; required
       .withAssignPublicIp("ENABLED")
     val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
 
@@ -207,12 +207,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
               startedAt = Some(deployment.getCreatedAt().toString)
             )
           }
+          val cpus = Option(taskDefn.getCpu()) orElse Option(containerDefn.getCpu()).map(_.toString) getOrElse("0")
+          val memory = Option(taskDefn.getMemory()) orElse Option(containerDefn.getMemory()).map(_.toString) getOrElse("0")
           val moreStats = ContainerStats(
             external_id = service.getServiceArn(),
             containerType = "DOCKER",
             status = service.getStatus(),
-            cpus = containerDefn.getCpu().toDouble / 1024,
-            memory = containerDefn.getMemory().toDouble,
+            cpus = cpus.toDouble / 1024,
+            memory = memory.toDouble,
             image = containerDefn.getImage(),
             age = new DateTime(service.getCreatedAt()),
             numInstances = service.getDesiredCount(),
@@ -280,7 +282,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     }
 
     cleanly(context.provider.id) { ecs =>
-      Future.fromTry(describeAllServices(ecs, None, Seq()))
+      describeAllServices(ecs, None, Seq()) match {
+        case Success(res) => Future.successful(res)
+        case Failure(throwable) => {
+          throwable.printStackTrace()
+          log.error(s"error in listInEnvironment: $throwable")
+          Future.failed(throwable)
+        }
+      }
     }
   }
 
@@ -319,8 +328,11 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       Future.fromTry {
         for(
           externalId <- tryExternalId;
-          res <- deleteService(ecs, externalId)
-        ) yield res
+          _ <- deleteService(ecs, externalId) recoverWith {
+            case _: ServiceNotActiveException => Success(())
+            case _: ServiceNotFoundException => Success(())
+          }
+        ) yield ()
       }
     }
   }
