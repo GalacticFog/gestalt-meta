@@ -1,19 +1,13 @@
-import Dependencies._
-
 import com.typesafe.sbt.packager.docker._
 
-name := """gestalt-meta"""
+scalacOptions ++= Seq(
+  "-deprecation",   // Emit warning and location for usages of deprecated APIs.
+  "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
+  "-unchecked"      // Enable additional warnings where generated code depends on assumptions.
+  //"-Xlint"        // Enable recommended additional warnings.
+)
 
-organization := "com.galacticfog"
-
-version := "0.7.6"
-
-
-maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
-
-testFrameworks := Seq(TestFrameworks.Specs2)
-
-resolvers ++= Seq(
+resolvers in ThisBuild ++= Seq(
   "jwtig" at  "https://jcenter.bintray.com/",
   "gestalt-snapshots" at "https://galacticfog.artifactoryonline.com/galacticfog/libs-snapshots-local",
   "gestalt-releases" at  "https://galacticfog.artifactoryonline.com/galacticfog/libs-releases-local",
@@ -23,22 +17,15 @@ resolvers ++= Seq(
   "scalaz-bintray" at "https://dl.bintray.com/scalaz/releases"
 )
 
-dockerBaseImage := "openjdk:8-jre-alpine"
+lazy val commonSettings = Seq(
+  organization := "com.galacticfog",
+  scalaVersion := "2.11.8"
+)
 
-dockerCommands := dockerCommands.value.flatMap {
-  case cmd@Cmd("FROM",_) => List(
-    cmd,
-    Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*")
-  )
-  case other => List(other)
-}
-
-parallelExecution in Test := false
-
-
-lazy val root = (project in file(".")).
+lazy val meta = (project in file("meta")).
   enablePlugins(PlayScala,SbtNativePackager).
   enablePlugins(BuildInfoPlugin).
+  settings(commonSettings: _*).
   settings(
     buildInfoKeys := Seq[BuildInfoKey](
       name, version, scalaVersion, sbtVersion,
@@ -55,73 +42,34 @@ lazy val root = (project in file(".")).
     buildInfoPackage := "com.galacticfog.gestalt.meta.api"
   )
 
-buildInfoOptions += BuildInfoOption.BuildTime
+lazy val containerImport = (project in file("container.import")).
+  settings(commonSettings: _*).
+  settings(
+    assemblyMergeStrategy in assembly := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case _ => MergeStrategy.first
+    },
+    assemblyShadeRules in assembly := Seq(      // until aws library is removed from laser jvm executor
+      ShadeRule.rename("com.amazonaws.**" -> "shadeaws.@1").inAll
+    )
+  ).
+  settings(
+    artifact in (Compile, assembly) ~= { art =>
+      art.copy(`classifier` = Some("assembly"))
+    }
+  ).
+  settings(addArtifact(artifact in (Compile, assembly), assembly).settings: _*).
+  dependsOn(meta % "test->test")
+  // enablePlugins(GitVersioning)
 
-buildInfoOptions += BuildInfoOption.ToMap
-
-buildInfoOptions += BuildInfoOption.ToJson
-
-EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
-
-javaOptions in Universal ++= Seq(
-        "-Djava.util.prefs.systemRoot=/tmp/.java",
-        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
-)
-
-import NativePackagerHelper._
-mappings in Universal ++= directory("authenticators")
-
-scalaVersion := "2.11.8"
-
-scalacOptions ++= Seq(
-  "-deprecation",   // Emit warning and location for usages of deprecated APIs.
-  "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
-  "-unchecked"      // Enable additional warnings where generated code depends on assumptions.
-  //"-Xlint"        // Enable recommended additional warnings.
-)
-
-javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
-                            "-Dlogger.file=test/resources/logback-test.xml")
-
-scalacOptions in Test ++= Seq("-Yrangepos")
-
-libraryDependencies ++= Seq(
-  jdbc,
-  cache,
-  ws,
-  filters,
-
-  "org.clapper"     %% "scalasti"                      % "3.0.1",
-  "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.6" withSources(),
-  "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
-  "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
-  "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
-  "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
-  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources(),
-  "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
-  "net.codingwell"  %% "scala-guice"                   % "4.2.1",
-  "org.slf4j"        % "slf4j-api"                     % "1.7.21",
-  "ch.qos.logback"   % "logback-classic"               % "1.1.7",
-  "org.postgresql"   % "postgresql"                    % "9.4.1208.jre7",
-  "com.rabbitmq"     % "amqp-client"                   % "3.6.6",
-  "io.jsonwebtoken"  % "jjwt"                          % "0.7.0",
-  "com.spotify"      % "docker-client"                 % "8.7.1",
-  "com.amazonaws"    % "aws-java-sdk-ecs"              % "1.11.410",
-
-  "com.lihaoyi"     %% "scalatags"                     % "0.6.7",
-  "org.scala-lang"   % "scala-reflect"                 % "2.11.8",
-  "org.scala-lang"   % "scala-compiler"                % "2.11.8",
-  "org.scalaz"      %% "scalaz-core"                   % "7.1.12",
-
-  "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
-  "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",
-
-  "de.leanovate.play-mockws"  %% "play-mockws" % "2.5.1" % Test,
-  Library.Play.specs2          % Test,
-  Library.Specs2.matcherExtra  % Test,
-  Library.mockito              % Test,
-  Library.akkaTestkit          % Test
-)
-
-routesGenerator := InjectedRoutesGenerator
+lazy val root = (project in file(".")).
+  aggregate(meta).
+  aggregate(containerImport).
+  settings(commonSettings: _*).
+  settings(
+    publish := {},
+    publishLocal := {},
+    assemblyMergeStrategy in assembly := {
+        case _  => MergeStrategy.discard
+    }
+  )
