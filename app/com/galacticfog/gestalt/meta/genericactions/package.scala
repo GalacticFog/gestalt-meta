@@ -28,14 +28,22 @@ package object genericactions {
    * Extract a GestaltFunctionConfig object from a Provider instance.
    */
   def getFunctionConfig(provider: GestaltResourceInstance): Option[GestaltFunctionConfig] = {
-    for {
-      ps  <- provider.properties
-      cfg <- ps.get("config")
-      out = {
-        val configJson = Json.parse(cfg).as[JsObject]
-        (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
+    try {
+      for {
+        ps  <- provider.properties
+        cfg <- ps.get("config")
+        out = {
+          val configJson = Json.parse(cfg).as[JsObject]
+          (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
+        }
+      } yield out
+    } catch {
+      case e: Throwable => {
+        // ignore failures for now.
+        //Option.empty[GestaltResourceInstance]
+        None
       }
-    } yield out
+    }
   }
   
   case class RequestQueryParameter(
@@ -140,7 +148,7 @@ package object genericactions {
     }
   }
   
-  case class GestaltEndpoint(kind: String, url: String, actions: Seq[GestaltFunction], auth: Option[String] = None) {
+  case class GestaltEndpoint(kind: String, url: String, actions: Seq[GestaltFunction], authentication: Option[String] = None) {
     if (actions.isEmpty) throw new RuntimeException("Must specify at least one action for an Endpoint.")
     
     private val duplicateActions = actions.map(_.name).groupBy(identity).collect { 
