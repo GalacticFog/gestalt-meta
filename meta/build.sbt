@@ -20,6 +20,9 @@ dockerCommands := dockerCommands.value.flatMap {
   case other => List(other)
 }
 
+import NativePackagerHelper._
+mappings in Universal ++= directory("authenticators")
+
 parallelExecution in Test := false
 
 buildInfoOptions += BuildInfoOption.BuildTime
