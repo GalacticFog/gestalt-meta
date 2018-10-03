@@ -18,6 +18,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.mvc.RequestHeader
 import services._
 import skuber.Namespace
+import skuber.api.client.RequestContext
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -136,7 +137,7 @@ class DeleteController @Inject()(
         }
         
         test match {
-          case Failure(e) => throw e
+          case Failure(_) => Try {}
           case Success(_) => DeleteHandler.handle(resource, identity)
         }
       }
@@ -244,7 +245,6 @@ class DeleteController @Inject()(
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
 
-      try{
         skuberFactory.initializeKube(k, namespace) flatMap { kube =>
           val deleted = kube.delete[Namespace](namespace).recoverWith {
             case e: skuber.api.client.K8SException => {
@@ -261,15 +261,9 @@ class DeleteController @Inject()(
           deleted.onComplete(_ => kube.close)
           deleted
         }
-      } catch {
-        case e: Throwable => {
-          log.warn(s"unable to initialize kube with id = '${k.id}' with cause '${e.getCause()}'...")
-          Future.successful(())
-        }
-      }
     }
 
-    Await.result(Future.sequence(deletes), 10.seconds)
+    Await.ready(Future.sequence(deletes), 10.seconds)
     ()
   }
   
