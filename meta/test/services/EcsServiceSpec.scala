@@ -187,5 +187,36 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
 
       await(testSetup.ecsService.destroy(metaContainer))
     }
+    "destroy invalid container" in new MockScope {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "4096.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> "subnet-66d74a1c"
+        ))
+      )
+      val mockService = mock[Service]
+      mockService.getTaskDefinition() returns "task defn arn"
+      val mockDescribeServicesResult = mock[DescribeServicesResult]
+      mockDescribeServicesResult.getServices() returns new java.util.ArrayList(Seq(mockService))
+      testSetup.ecs.describeServices(any) returns mockDescribeServicesResult
+
+      await(testSetup.ecsService.destroy(metaContainer))
+    }
   }
 }

@@ -320,20 +320,21 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
 
   override def destroy(container: ResourceLike): Future[Unit] = {
     val provider = ContainerService.containerProvider(container)
-    val tryExternalId = ContainerService.resourceExternalId(container) match {
-      case Some(externalId) => Success(externalId)
-      case None => Failure(new RuntimeException("Could not determine 'external_id' for container"))
-    }
-    cleanly(provider.id) { ecs =>
-      Future.fromTry {
-        for(
-          externalId <- tryExternalId;
-          _ <- deleteService(ecs, externalId) recoverWith {
+    
+    def destroyRunningContainer(externalId: String): Future[Unit] = {
+      cleanly(provider.id) { ecs =>
+        Future.fromTry {
+          deleteService(ecs, externalId) recoverWith {
             case _: ServiceNotActiveException => Success(())
             case _: ServiceNotFoundException => Success(())
           }
-        ) yield ()
+        }
       }
+    }
+    
+    ContainerService.resourceExternalId(container) match {
+      case Some(externalId) => destroyRunningContainer(externalId)
+      case None => Future.successful(())    // the container wasn't created properly – can be safely deleted
     }
   }
 
