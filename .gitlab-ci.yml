@@ -43,9 +43,6 @@ test:
     - galacticfog/fat-postgres:9.4
   script:
     - sbt clean update test docker:stage
-    - mkdir -p meta/target/docker/stage/opt/docker/authentificators
-    - cp authenticators/aws-iam-authenticator meta/target/docker/stage/opt/docker/authentificators/
-    - chmod +x meta/target/docker/stage/opt/docker/authentificators/aws-iam-authenticator
   artifacts:
     expire_in: 2 days
     paths:
