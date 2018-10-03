@@ -7,6 +7,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.HealthCheck._
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerStats.EventStat
 import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolume}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -15,6 +16,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
+import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
@@ -83,6 +85,23 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     lazy val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider", providerConfig)
 
+    lazy val podEvents = List(skuber.Event(
+      metadata = skuber.ObjectMeta(
+        creationTimestamp = Some(java.time.ZonedDateTime.now())
+      ),
+      involvedObject = skuber.ObjectReference(
+        name = "test-pod",
+        kind = KubernetesService.POD
+      ),
+      `type` = Some("type"),
+      reason = Some("reason"),
+      source = Some(skuber.Event.Source(
+        component = Some("component"),
+        host = Some("host")
+      )),
+      message = Some("message")
+    ))
+
     lazy val testSetup = {
       val skDefaultNs = mock[skuber.Namespace]
       skDefaultNs.name returns "default"
@@ -102,6 +121,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
       mockSkuber.create(any)(any,meq(skuber.Service.svcDef),any) answers {(x: Any) => answerId[skuber.Service](x)}
       mockSkuber.create(any)(any,meq(skuber.Secret.secDef),any) answers {(x: Any) => answerId[skuber.Secret](x)}
+      mockSkuber.listSelected(any)(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, podEvents))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, None)
@@ -367,6 +387,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
       mockSkuber.getOption(meq(mockDepl.name))(any, meq(skuber.ext.Deployment.deployDef), any) returns Future.successful(Some(mockDepl))
       mockSkuber.listSelected(any)(any,meq(skuber.ext.Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
+      mockSkuber.listSelected(any)(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
 
       mockSkuber.update(any)(any,meq(Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
       mockSkuber.update(any)(any,meq(Ingress.ingDef),any) answers {(x: Any) => answerId[skuber.ext.Ingress](x)}
