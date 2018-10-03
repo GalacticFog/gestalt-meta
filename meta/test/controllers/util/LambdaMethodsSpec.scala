@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.laser.{LaserLambda, _}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
@@ -26,7 +26,7 @@ import play.api.test.{FakeRequest, PlaySpecification}
 import scala.concurrent.Future
 import scala.util.Success
 
-class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with JsonMatchers with JsonInput {
+class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with DbShutdown with JsonMatchers with JsonInput {
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -51,17 +51,18 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val mockProviderMethods = mock[ProviderMethods]
-    val injector =
-      new GuiceApplicationBuilder()
-        .disable[modules.ProdSecurityModule]
-        .disable[modules.MetaDefaultSkuber]
-        .disable[modules.MetaDefaultServices]
-        .disable[modules.HealthModule]
-        .bindings(
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
-          bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
-        )
-        .injector
+    val mockGestaltSecurityConfig = mock[GestaltSecurityConfig]
+    val appBuilder = new GuiceApplicationBuilder()
+      .disable[modules.ProdSecurityModule]
+      .disable[modules.MetaDefaultSkuber]
+      .disable[modules.MetaDefaultServices]
+      .disable[modules.HealthModule]
+      .bindings(
+        bind(classOf[GestaltSecurityConfig]).toInstance(mockGestaltSecurityConfig),
+        bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
+      )
+    val injector = appBuilder.injector()
+    setInjector(injector)
 
     val lambdaMethods = injector.instanceOf[LambdaMethods]
 

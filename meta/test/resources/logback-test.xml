@@ -3,7 +3,8 @@
 	<logger name="com.ning.http.client" level="WARN"/>
 	<logger name="scalikejdbc" level="WARN"/>
 	<logger name="org.flywaydb" level="WARN"/>
-	<logger name="com.zaxxer" level="WARN"/>
+	<logger name="com.zaxxer" level="INFO"/>
+    <logger name="com.jolbox" level="INFO"/>
 	<logger name="com.google.inject" level="WARN"/>
     <logger name="AuthorizationMethods" level="WARN"/>
     <logger name="net.sf.ehcache" level="WARN"/>
