@@ -137,7 +137,7 @@ class DeleteController @Inject()(
         }
         
         test match {
-          case Failure(_) => Try {}
+          case Failure(e) => throw e
           case Success(_) => DeleteHandler.handle(resource, identity)
         }
       }
@@ -241,29 +241,41 @@ class DeleteController @Inject()(
     val namespace = res.id.toString
     val kubeProviders = ResourceFactory.findAncestorsOfSubType(ResourceIds.KubeProvider, res.id)
     log.info(s"Found [${kubeProviders.size}] Kube Providers in Scope...")
-    
+
+
+
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
 
-        skuberFactory.initializeKube(k, namespace) flatMap { kube =>
-          val deleted = kube.delete[Namespace](namespace).recoverWith {
-            case e: skuber.api.client.K8SException => {
-              /*
+        skuberFactory.initializeKube(k, namespace) map {
+          Success(_):Try[RequestContext]
+        } recover {
+          case t => Failure(t)
+        } flatMap {
+          case Success(kube) => {
+            val deleted = kube.delete[Namespace](namespace).recoverWith {
+              case e: skuber.api.client.K8SException => {
+                /*
                * There are a few cases where kube may throw an error when attempting to
                * delete a namespace. This guard checks for thos known cases and ignores
                * the failure if possible.
                */
-              if (ignorableNamespaceError(namespace, e.status))
-                Future.successful(())
-              else throw e
+                if (ignorableNamespaceError(namespace, e.status))
+                  Future.successful(())
+                else throw e
+              }
             }
+            deleted.onComplete(_ => kube.close)
+            deleted
           }
-          deleted.onComplete(_ => kube.close)
-          deleted
+          case Failure(t) => {
+            log.warn(s"{t.me}", t)
+            Future.successful(())
+          }
         }
     }
 
-    Await.ready(Future.sequence(deletes), 10.seconds)
+    Await.result(Future.sequence(deletes), 10.seconds)
     ()
   }
   
