@@ -923,7 +923,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         volumes = Seq(),
         labels = Map(),
         env = Map(),
-        user = None
+        user = None,
+        external_id = Some(s"/${testEnv.id}/test-container")
       )
       val extId = s"/${testEnv.id}/test-container"
       val Success(createdResource) = createInstance(ResourceIds.Container, testContainerName,
@@ -939,7 +940,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "force_pull" -> testProps.force_pull.toString,
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get,
-          "external_id" -> s"${extId}"
+          "external_id" -> testProps.external_id.get
         ))
       )
 

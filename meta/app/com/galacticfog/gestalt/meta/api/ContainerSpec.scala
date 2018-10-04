@@ -299,7 +299,7 @@ case object ContainerSpec extends Spec {
     case ivmc : ContainerSpec.InlineVolumeMountSpec   => Json.toJson(ivmc)
   }
 
-  implicit val containerSpecJsonFormat = Jsonx.formatCaseClass[ContainerSpec]
+  implicit val containerSpecJsonFormat = Jsonx.formatCaseClassUseDefaults[ContainerSpec]
 
 }
 
