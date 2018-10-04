@@ -147,7 +147,6 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       if(lookupServiceArns.isEmpty) {
         val lsr = new ListServicesRequest()
           .withCluster(ecs.cluster)
-          .withLaunchType(LaunchType.FARGATE)
         val lsrWithToken = paginationToken match {
           case None => lsr
           case Some(token) => lsr.withNextToken(token)
@@ -196,15 +195,46 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
             case _ => {
               Failure(throw new RuntimeException(s"More than one container present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
             }
-          }
+          };
+          ltr = new ListTasksRequest()
+            .withCluster(ecs.cluster)
+            .withServiceName(service.getServiceArn());
+          taskArns <- Try(ecs.client.listTasks(ltr)).map(_.getTaskArns().toSeq);
+          dtr = new DescribeTasksRequest()
+            .withCluster(ecs.cluster)
+            .withTasks(taskArns);
+          tasks <- Try(ecs.client.describeTasks(dtr)).map(_.getTasks().toSeq);
+          containerInstanceArns = tasks map { r => Option(r.getContainerInstanceArn()) } collect { case Some(v) => v };
+          containerInstances <- if(!containerInstanceArns.isEmpty) {
+            val dcir = new DescribeContainerInstancesRequest()
+              .withCluster(ecs.cluster)
+              .withContainerInstances(containerInstanceArns)
+            Try(ecs.client.describeContainerInstances(dcir)).map(_.getContainerInstances().toSeq) map { containerInstances =>
+              Map(containerInstances map { ci =>
+                ci.getContainerInstanceArn() -> ci
+              }: _*)
+            }
+          }else { Success(Map.empty[String,ContainerInstance]) }
         ) yield {
-          val tasks = service.getDeployments().toSeq map { deployment =>
+          val taskStats = for(
+            task <- tasks;
+            container <- task.getContainers().toSeq
+          ) yield {
+            val host = Option(task.getContainerInstanceArn()) flatMap { ciArn =>
+              containerInstances.get(ciArn).map(_.getEc2InstanceId())
+            }
+            val ports = Option(container.getNetworkBindings()).map(_.toSeq).getOrElse(Seq.empty[NetworkBinding]) map { networkBinding =>
+              networkBinding.getHostPort().toInt
+            }
+            val ipAddresses = Option(container.getNetworkInterfaces()).map(_.toSeq).getOrElse(Seq.empty[NetworkInterface]) map { networkInterface =>
+              ContainerStats.TaskStat.IPAddress(networkInterface.getPrivateIpv4Address(), "")
+            }
             ContainerStats.TaskStat(
-              id = deployment.getId(),
-              host = "",
-              ipAddresses = None,
-              ports = Seq(),
-              startedAt = Some(deployment.getCreatedAt().toString)
+              id = task.getTaskArn(),
+              host = host.getOrElse("FARGATE"),
+              ipAddresses = Some(ipAddresses),
+              ports = ports,
+              startedAt = Some(task.getStartedAt().toString)
             )
           }
           val cpus = Option(taskDefn.getCpu()) orElse Option(containerDefn.getCpu()).map(_.toString) getOrElse("0")
@@ -222,7 +252,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
             tasksRunning = service.getRunningCount(),
             tasksHealthy = 0,
             tasksUnhealthy = 0,
-            taskStats = Some(tasks),
+            taskStats = Some(taskStats),
             lb_address = None
           )
           stats :+ moreStats
