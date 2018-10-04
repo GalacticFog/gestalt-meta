@@ -1,5 +1,6 @@
 package migrations
 
+
 import java.util.UUID
 import scala.util.{Either, Left, Right}
 import scala.util.{Try, Success, Failure}
@@ -9,17 +10,17 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.sdk._
 import play.api.libs.json._
 
+
 /*
  * 
  * Add `/properties/provider_subtype` to ::CaasProvider
  * 
  */
-class V17 extends MetaMigration() {
+class V18 extends MetaMigration() {
 
   private val acc = new MessageAccumulator()
-  
-  private val TARGET_TYPE = ResourceIds.CaasProvider
-  private val NEW_PROPERTY_NAME = "provider_subtype"  
+  private val TARGET_TYPE = ResourceIds.Container
+  private val NEW_PROPERTY_NAME = "status_detail"  
   
   
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
@@ -27,7 +28,7 @@ class V17 extends MetaMigration() {
     /*
      * Get a reference to the Resource Type you want to enhance...
      */
-    acc push "Looking up CaasProvider Resource Type..."
+    acc push "Looking up Container Resource Type..."
     val tpe = TypeFactory.findById(TARGET_TYPE).get
     
     /*
@@ -55,7 +56,7 @@ class V17 extends MetaMigration() {
             datatype = DataType.id("string"),
             requirementType = RequirementType.id("optional"))
         
-        acc push s"Adding /properties/${NEW_PROPERTY_NAME} to CaasProvider Type."
+        acc push s"Adding /properties/${NEW_PROPERTY_NAME} to Container Type."
         addPropertyTypeToResourceType(tpe, newProperty)(acc)         
       }
    }
@@ -75,8 +76,8 @@ class V17 extends MetaMigration() {
           succeeded = Some(acc.messages),
           errors = Some(Seq(e.getMessage))).toJson)
       }
-    }
-    
-    
+    }  
   }
+  
 }
+ 
