@@ -292,9 +292,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     val fMaybeUpdate = (for {
       (metaContainer, metaContainerSpec) <- maybeMetaContainer
       provider <- Try { caasProvider(metaContainerSpec.provider.id) }.toOption
-      saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
+      caasProviderImpl <- providerManager.getProviderImpl(provider.typeId).toOption
       ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
-      stats = saasProvider.find(ctx, metaContainer)
+      stats = caasProviderImpl.find(ctx, metaContainer)
     } yield stats).getOrElse(Future.successful(None)) recover {
 
       case ce: java.net.ConnectException =>
@@ -337,11 +337,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     } groupBy (_._2.provider.id)
 
     val fStatsFromAllRelevantProviders: Future[Map[UUID, Map[String, ContainerStats]]] = Future.traverse(containerSpecsByProvider.keys) { pid =>
-      val cp = caasProvider(pid)
-      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
+      val provider = caasProvider(pid)
+      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, None)
       val pidAndStats = for {
-        caasP <- Future.fromTry(providerManager.getProviderImpl(cp.typeId))
-        stats <- caasP.listInEnvironment(ctx)
+        caasProviderImpl <- Future.fromTry(providerManager.getProviderImpl(provider.typeId))
+        stats <- caasProviderImpl.listInEnvironment(ctx)
         statsMap = stats map (stat => stat.external_id -> stat) toMap
       } yield (pid -> statsMap)
       futureToFutureTry(pidAndStats)
@@ -396,7 +396,8 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
           "tasks_staged" -> stats.tasksStaged.toString,
           "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"),
-          "port_mappings" -> Json.toJson(pms).toString
+          "port_mappings" -> Json.toJson(pms).toString,
+          "events" -> stats.events.map { Json.toJson(_).toString() }.getOrElse("[]")
         )
       case None if metaCon.state == ResourceStates.Failed => Seq(
         "status" -> "FAILED",
