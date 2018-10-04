@@ -1,7 +1,7 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
-import java.util.Base64
+import java.util.{Base64, TimeZone}
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
@@ -16,7 +16,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
-import org.joda.time.DateTime
+import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
 import org.mockito.Matchers.{eq => meq}
@@ -1461,6 +1461,68 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
       containerStats.cpus must_== 0.1
       containerStats.memory must_== 64.0
+    }
+
+    "fill pod events" in new FakeKube {
+      val testContainerId = uuid()
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val testDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map()
+            ))
+          )
+        )
+      )
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        id = testContainerId,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testDepl.metadata.namespace}/deployments/${testDepl.name}"
+        ))
+      )
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
+      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+
+      val Some(containerStats) = await(testSetup.svc.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      val testEvent = podEvents.head
+      val creationTimestamp = testEvent.metadata.creationTimestamp.get
+
+      there was one(testSetup.client).listSelected(any)(any,meq(skuber.Event.evListDef),any)
+      containerStats.events must_== Some(List(EventStat(
+        testEvent.involvedObject.name,
+        KubernetesService.POD,
+        testEvent.`type`.get,
+        testEvent.reason.get,
+        new DateTime(
+          creationTimestamp.toInstant().toEpochMilli(),
+          DateTimeZone.forTimeZone(TimeZone.getTimeZone(creationTimestamp.getZone()))),
+        testEvent.source.get.component.get,
+        testEvent.source.get.host.get,
+        testEvent.message.get
+      )))
     }
 
     "fallback on to 0 cpu/mem if neither request nor limit " in new FakeKube {
