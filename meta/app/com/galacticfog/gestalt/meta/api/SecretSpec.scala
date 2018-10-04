@@ -17,6 +17,28 @@ case class SecretSpec( name: String,
 
 case object SecretSpec {
 
+  val secretNameRegex = "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*".r
+  val secretItemKeyRegex = "[-._a-zA-Z0-9]+".r
+
+  val secretItemReads: Reads[SecretSpec.Item] = (
+    (__ \ "key").read[String](Reads.pattern(secretItemKeyRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
+      (__ \ "value").readNullable[String]
+    )(SecretSpec.Item.apply _)
+  val secretItemWrites = Json.writes[SecretSpec.Item]
+
+  implicit val secretItemFmt = Format(secretItemReads, secretItemWrites)
+
+  val secretSpecReads: Reads[SecretSpec] = (
+    (__ \ "name").read[String](Reads.pattern(secretNameRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
+      (__ \ "description").readNullable[String] and
+      (__ \ "provider").read[ContainerSpec.InputProvider] and
+      (__ \ "items").read[Seq[SecretSpec.Item]]
+    )(SecretSpec.apply(_,_,_,_))
+  val secretSpecWrites = Json.writes[SecretSpec]
+
+  implicit val metaContainerSpec = Format(secretSpecReads, secretSpecWrites)
+
+
   case class Item(key: String, value: Option[String])
 
   val log = Logger(this.getClass)
@@ -48,30 +70,5 @@ case object SecretSpec {
       case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into SecretSpec: ${e.getMessage}"))
     }
   }
-
-
-  val secretNameRegex = "[a-z0-9]([-a-z0-9]*[a-z0-9])?(\\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*".r
-
-  val secretItemKeyRegex = "[-._a-zA-Z0-9]+".r
-
-  val secretItemReads: Reads[SecretSpec.Item] = (
-    (__ \ "key").read[String](Reads.pattern(secretItemKeyRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
-      (__ \ "value").readNullable[String]
-  )(SecretSpec.Item.apply _)
-
-  val secretItemWrites = Json.writes[SecretSpec.Item]
-
-  implicit val secretItemFmt = Format(secretItemReads, secretItemWrites)
-
-  val secretSpecReads: Reads[SecretSpec] = (
-    (__ \ "name").read[String](Reads.pattern(secretNameRegex) keepAnd Reads.minLength[String](1) keepAnd Reads.maxLength[String](253)) and
-      (__ \ "description").readNullable[String] and
-      (__ \ "provider").read[ContainerSpec.InputProvider] and
-      (__ \ "items").read[Seq[SecretSpec.Item]]
-    )(SecretSpec.apply(_,_,_,_))
-
-  val secretSpecWrites = Json.writes[SecretSpec]
-
-  implicit val metaContainerSpec = Format(secretSpecReads, secretSpecWrites)
 
 }

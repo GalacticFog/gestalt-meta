@@ -49,6 +49,7 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
+  "ai.x"            %% "play-json-extensions"          % "0.10.0",
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
   "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.5" withSources(),
