@@ -818,44 +818,44 @@ class ResourceController @Inject()(
   }  
 
 
-  def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
-
-    log.debug("Finding Action...")
-
-    ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
-      this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
-
-    }{ act =>
-
-      log.debug("Finding target resource...")
-
-      val resource = for {
-        a   <- request.queryString.get("resource") orElse {
-          throw new BadRequestException("You must supply a `?resource={id}` query parameter")
-        }
-        b   <- a.headOption
-        id  = parseUUID(b) getOrElse {
-            throw new BadRequestException(s"Invalid resource UUID. found: '$b'")
-        }
-        res = ResourceFactory.findById(id) getOrElse {
-          throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
-        }
-      } yield res
-
-      val metaAddress = META_URL
-
-      log.debug("using META_ADDRESS : " + metaAddress)
-
-      val output = Assembler.assemble(
-          fqon,
-          metaAddress,
-          act,
-          resource.get,
-          request.identity,
-          request.queryString)
-      Ok(output).as("text/html")
-    }
-  }
+//  def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
+//
+//    log.debug("Finding Action...")
+//
+//    ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
+//      this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
+//
+//    }{ act =>
+//
+//      log.debug("Finding target resource...")
+//
+//      val resource = for {
+//        a   <- request.queryString.get("resource") orElse {
+//          throw new BadRequestException("You must supply a `?resource={id}` query parameter")
+//        }
+//        b   <- a.headOption
+//        id  = parseUUID(b) getOrElse {
+//            throw new BadRequestException(s"Invalid resource UUID. found: '$b'")
+//        }
+//        res = ResourceFactory.findById(id) getOrElse {
+//          throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
+//        }
+//      } yield res
+//
+//      val metaAddress = META_URL
+//
+//      log.debug("using META_ADDRESS : " + metaAddress)
+//
+//      val output = Assembler.assemble(
+//          fqon,
+//          metaAddress,
+//          act,
+//          resource.get,
+//          request.identity,
+//          request.queryString)
+//      Ok(output).as("text/html")
+//    }
+//  }
 
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
