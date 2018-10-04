@@ -234,15 +234,12 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
 
-
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
     val namespace = res.id.toString
     val kubeProviders = ResourceFactory.findAncestorsOfSubType(ResourceIds.KubeProvider, res.id)
     log.info(s"Found [${kubeProviders.size}] Kube Providers in Scope...")
-
-
 
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
