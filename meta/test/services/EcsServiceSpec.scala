@@ -132,6 +132,15 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockTaskDefinition.getContainerDefinitions() returns new java.util.ArrayList(Seq(mockContainerDefinition))
       mockDescribeTaskDefinitionResult.getTaskDefinition() returns mockTaskDefinition
       testSetup.ecs.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
+      val mockListTasksResult = mock[ListTasksResult]
+      mockListTasksResult.getTaskArns() returns new java.util.ArrayList(Seq("task a", "task b"))
+      testSetup.ecs.listTasks(any) returns mockListTasksResult
+      val mockDescribeTasksResult = mock[DescribeTasksResult]
+      val mockTask = mock[Task]
+      mockTask.getTaskArn() returns "task arn"
+      mockTask.getStartedAt() returns new java.util.Date(0)
+      mockDescribeTasksResult.getTasks() returns new java.util.ArrayList(Seq(mockTask))
+      testSetup.ecs.describeTasks(any) returns mockDescribeTasksResult
 
       val containerStats = await(testSetup.ecsService.listInEnvironment(
         context = ProviderContext(play.api.test.FakeRequest("GET",

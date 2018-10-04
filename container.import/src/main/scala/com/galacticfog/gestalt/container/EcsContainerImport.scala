@@ -130,9 +130,9 @@ class EcsContainerImport extends ContainerImport {
         case Seq() => Left(s"No service entity found for `${externalId}`")
         case response => throw new RuntimeException(s"Invalid response: $response")
       };
-      _ <- if(service.getLaunchType() == "FARGATE") { Right(()) }else {
-        Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; only `FARGATE` is supported")
-      };
+      // _ <- if(service.getLaunchType() == "FARGATE") { Right(()) }else {
+      //   Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; only `FARGATE` is supported")
+      // };
       dtdr = new DescribeTaskDefinitionRequest().withTaskDefinition(service.getTaskDefinition());
       taskDefn = client.describeTaskDefinition(dtdr).getTaskDefinition();
       containerDefn <- taskDefn.getContainerDefinitions().toSeq match {

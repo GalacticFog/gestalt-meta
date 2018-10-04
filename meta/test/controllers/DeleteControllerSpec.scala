@@ -17,11 +17,11 @@ import play.api.libs.json._
 import play.api.test._
 
 import scala.util.{Success, Try}
-
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
+import services.SkuberFactory
 
-import services.{SkuberFactory}
+import scala.concurrent.Future
 
 
 class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking with JsonMatchers with ResourceScope with BeforeAll with Mockito {
@@ -160,7 +160,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
     }
 
     "delete environment when provider configuration not found or k8s configuration is not correct" in new TestApplication {
-      mockSkuberFactory.initializeKube(any, any)(any) throws new RuntimeException("provider configuration not found/k8s configuration is not correct")
+      mockSkuberFactory.initializeKube(any, any)(any) returns Future.failed(new RuntimeException("provider configuration not found/k8s configuration is not correct"))
       mockLambdaMethods.deleteLambdaHandler(any) returns Success(())
       mockGatewayMethods.deleteApiHandler(any) returns Success(())
       mockGatewayMethods.deleteEndpointHandler(any) returns Success(())

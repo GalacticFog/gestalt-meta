@@ -243,6 +243,38 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
   "ContainerSpec" should {
 
+    "be fully (de)serializable" in {
+      val testProps = ContainerSpec(
+        name = "name",
+        description = Some("description"),
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = uuid),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = Some("cmd"),
+        constraints = Seq(),
+        accepted_resource_roles = Some(Seq("role")),
+        args = Some(Seq("arg")),
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = Some("user"),
+        external_id = Some("id"),
+        created = Some(DateTime.now())
+      )
+
+      val json = Json.toJson(testProps)
+      val containerSpec = Json.fromJson[ContainerSpec](json)
+      containerSpec must beAnInstanceOf[JsSuccess[ContainerSpec]]
+    }
+
     "be convertible to GestaltResourceInput with all fields" >> { t : TestScope =>
       val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val testProps = ContainerSpec(

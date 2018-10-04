@@ -5,10 +5,13 @@ import java.util.{Base64, TimeZone, UUID}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerStats.EventStat
 import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadOnlyMany
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
+import com.galacticfog.gestalt.util.Helpers.OptionWithDefaults
+import com.galacticfog.gestalt.util.Helpers.OptionDefaults._
 import com.google.inject.Inject
 import controllers.util._
 import org.joda.time.{DateTime, DateTimeZone}
@@ -46,6 +49,8 @@ object KubernetesService {
 
   val REQ_TYPE_LIMIT = "limit"
   val REQ_TYPE_REQUEST = "request"
+
+  val POD = "POD"
 
   val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
   val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
@@ -1021,13 +1026,17 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               case None    => Future.successful(Nil)
               case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
             }
+            events <- maybeDepl match {
+              case None    => Future.successful(Nil)
+              case Some(_) => kube.listSelected[EventList](lblSelector) map (_.items)
+            }
             maybeLbSvc <- maybeDepl match {
               case None    => Future.successful(None)
               case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
                 _.items.filter(_.spec.exists(_._type == Service.Type.LoadBalancer)).headOption
               }
             }
-            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc))
+            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc, events))
           } yield update
         )
       case None => Future.successful(None)
@@ -1054,7 +1063,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield stats
   }
 
-  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment, pods: List[Pod], maybeLbSvc: Option[Service]): ContainerStats = {
+  private[this] def kubeDeplAndPodsToContainerStatus(depl: Deployment,
+                                                      pods: List[Pod],
+                                                      maybeLbSvc: Option[Service],
+                                                      events : List[Event] = Nil): ContainerStats = {
     // meta wants: SCALING, SUSPENDED, RUNNING, HEALTHY, UNHEALTHY
     // kube provides: waiting, running, terminated
     val containerStates = pods.flatMap(_.status.toSeq).flatMap(_.containerStatuses.headOption).flatMap(_.state)
@@ -1092,6 +1104,30 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           ports = hostPorts
         )
     }
+    val podEvents = events filter (_.involvedObject.kind == POD) map {
+      podEvent => {
+        val eventAge = podEvent.metadata.creationTimestamp map {
+          creationTimestamp =>
+            new DateTime(
+              creationTimestamp.toInstant().toEpochMilli(),
+              DateTimeZone.forTimeZone(TimeZone.getTimeZone(creationTimestamp.getZone())))
+        }
+        val (eventSourceComponent, eventSourceOption) = podEvent.source match {
+          case None => (None, None)
+          case Some(source) => (source.component, source.host)
+        }
+        EventStat(
+          objectName = podEvent.involvedObject.name,
+          objectType = POD,
+          eventType = podEvent.`type`.getOrDefault(),
+          reason = podEvent.reason.getOrDefault(),
+          sourceComponent = eventSourceComponent.getOrDefault(),
+          sourceHost = eventSourceOption.getOrDefault(),
+          message = podEvent.message.getOrDefault(),
+          age = eventAge.getOrElse(DateTime.now)
+        )
+      }
+    }
     ContainerStats(
       external_id = s"/namespaces/${depl.namespace}/deployments/${depl.name}",
       containerType = "DOCKER",
@@ -1108,6 +1144,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       tasksHealthy = 0,
       tasksUnhealthy = 0,
       taskStats = Some(taskStats),
+      events = Some(podEvents),
       lb_address = lbAddress
     )
   }
