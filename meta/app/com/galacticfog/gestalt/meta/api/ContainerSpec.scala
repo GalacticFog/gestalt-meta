@@ -2,6 +2,9 @@ package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
 
+import ai.x.play.json.Jsonx
+import ai.x.play.json.implicits.optionWithNull
+import com.galacticfog.gestalt.util.Helpers.JodaJsonFormats._
 import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
@@ -296,77 +299,7 @@ case object ContainerSpec extends Spec {
     case ivmc : ContainerSpec.InlineVolumeMountSpec   => Json.toJson(ivmc)
   }
 
-  val containerSpecWrites: Writes[ContainerSpec] = (
-    (__ \ "container_type").write[String] and
-      (__ \ "image").write[String] and
-      (__ \ "provider").write[ContainerSpec.InputProvider] and
-      (__ \ "port_mappings").write[Seq[ContainerSpec.PortMapping]] and
-      (__ \ "cpus").write[Double] and
-      (__ \ "memory").write[Double] and
-      (__ \ "disk").write[Double] and
-      (__ \ "num_instances").write[Int] and
-      (__ \ "network").writeNullable[String] and
-      (__ \ "cmd").writeNullable[String] and
-      (__ \ "constraints").write[Seq[String]] and
-      (__ \ "accepted_resource_roles").writeNullable[Seq[String]] and
-      (__ \ "args").writeNullable[Seq[String]] and
-      (__ \ "force_pull").write[Boolean] and
-      (__ \ "health_checks").write[Seq[ContainerSpec.HealthCheck]] and
-      (__ \ "volumes").write[Seq[ContainerSpec.VolumeMountSpec]] and
-      (__ \ "secrets").write[Seq[ContainerSpec.SecretMount]] and
-      (__ \ "labels").write[Map[String,String]] and
-      (__ \ "env").write[Map[String,String]] and
-      (__ \ "user").writeNullable[String]
-    )( (c: ContainerSpec) => (
-    c.container_type,
-    c.image,
-    c.provider,
-    c.port_mappings,
-    c.cpus,
-    c.memory,
-    c.disk,
-    c.num_instances,
-    c.network,
-    c.cmd,
-    c.constraints,
-    c.accepted_resource_roles,
-    c.args,
-    c.force_pull,
-    c.health_checks,
-    c.volumes,
-    c.secrets,
-    c.labels,
-    c.env,
-    c.user
-    )
-  )
-
-  val containerSpecReads: Reads[ContainerSpec] = (
-    ((__ \ "name").read[String] orElse Reads.pure[String]("")) and
-      (__ \ "description").readNullable[String] and
-      (__ \ "container_type").read[String] and
-      (__ \ "image").read[String] and
-      (__ \ "provider").read[ContainerSpec.InputProvider] and
-      ((__ \ "port_mappings").read[Seq[ContainerSpec.PortMapping]] orElse Reads.pure(Seq.empty)) and
-      ((__ \ "cpus").read[Double] orElse Reads.pure(0.2)) and
-      ((__ \ "memory").read[Double] orElse Reads.pure(128.0)) and
-      ((__ \ "disk").read[Double] orElse Reads.pure(0.0)) and
-      ((__ \ "num_instances").read[Int] orElse Reads.pure(1)) and
-      (__ \ "network").readNullable[String] and
-      (__ \ "cmd").readNullable[String] and
-      ((__ \ "constraints").read[Seq[String]] orElse Reads.pure(Seq.empty)) and
-      (__ \ "accepted_resource_roles").readNullable[Seq[String]] and
-      (__ \ "args").readNullable[Seq[String]] and
-      ((__ \ "force_pull").read[Boolean] orElse Reads.pure(false)) and
-      ((__ \ "health_checks").read[Seq[ContainerSpec.HealthCheck]] orElse Reads.pure(Seq.empty)) and
-      ((__ \ "volumes").read[Seq[ContainerSpec.VolumeMountSpec]] orElse Reads.pure(Seq.empty)) and
-      ((__ \ "labels").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
-      ((__ \ "env").read[Map[String,String]] orElse Reads.pure(Map.empty[String,String])) and
-      (__ \ "user").readNullable[String] and
-      ((__ \ "secrets").read[Seq[SecretMount]] orElse Reads.pure(Seq.empty))
-    )(ContainerSpec.apply(_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_,None,None,_))
-
-  implicit val metaContainerSpec = Format(containerSpecReads, containerSpecWrites)
+  implicit val containerSpecJsonFormat = Jsonx.formatCaseClass[ContainerSpec]
 
 }
 
