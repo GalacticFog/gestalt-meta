@@ -56,7 +56,7 @@ abstract class SecureController( messagesApi: MessagesApi,
       implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent] =>
     auditedAction(request, System.currentTimeMillis)(block)
   }  
-  
+
   private val FailureRange = Seq((400 to 599): _*)
   
   private def auditedActionAsync[A](request: SecuredRequest[GestaltFrameworkSecurityEnvironment,A], startTime: Long)(block: SecuredRequest[GestaltFrameworkSecurityEnvironment,A] => Future[Result]) = {

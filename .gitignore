@@ -15,10 +15,10 @@ sec-init.sh
 *.sc
 /out
 /.idea_modules
-/.classpath
-/.project
+.classpath
+.project
+.settings
 /RUNNING_PID
-/.settings
 /bin/
 /.worksheet/
 *.cache*
