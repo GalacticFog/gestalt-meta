@@ -78,7 +78,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
     val ecsProviderConfig: Seq[(String,JsValueWrapper)] = Seq(
       "access_key" -> "",
       "secret_key" -> "",
-      "cluster" -> "default",
+      "cluster" -> "test",
       "region" -> "us-east-2",
       "endpoints" -> Json.arr(
         Json.obj(
@@ -117,7 +117,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
             "VAR2" -> "VAL2"
           ).toString,
           "network" -> "subnet-66d74a1c",
-          "external_id" -> "arn:aws:ecs:us-east-2:326625211408:service/nginx-service"
+          "external_id" -> "arn:aws:ecs:us-east-2:326625211408:service/test-WebsiteService-1TIWL47KKR37L-Service-8HFNG8QFP8KK"
         ))
       )
 
@@ -154,9 +154,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       mockClient.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
 
       class ECI extends EcsContainerImport {
-        override def getClient(providerSpec: EcsContainerImport.ProviderSpec): AmazonECS = {
-          mockClient
-        }
+        override def getClient(providerSpec: EcsContainerImport.ProviderSpec): AmazonECS = mockClient
       }
 
       val response = new ECI().run(lastLambdaRequestBody.toString, "{}")

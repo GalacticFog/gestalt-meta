@@ -6,10 +6,16 @@ stages:
 - deploy
 
 cache:
-  key: "$CI_PIPELINE_ID"
+  # key: "$CI_PIPELINE_ID"
+  key: default
   untracked: false
+  paths:
+    - "sbt-cache/ivy/cache"
+    - "sbt-cache/boot"
+    - "sbt-cache/sbtboot"
 
 variables:
+  SBT_OPTS: "-Dsbt.global.base=sbt-cache/sbtboot -Dsbt.boot.directory=sbt-cache/boot -Dsbt.ivy.home=sbt-cache/ivy"
   POSTGRES_DB: gestalt-meta
   POSTGRES_USER: gestaltdev
   POSTGRES_PASSWORD: letmein
