@@ -271,8 +271,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       )
 
       val json = Json.toJson(testProps)
+      (json \ "name").toOption must beNone
+
+      json.as[JsObject] + ("name" -> JsString("name"))
       val containerSpec = Json.fromJson[ContainerSpec](json)
       containerSpec must beAnInstanceOf[JsSuccess[ContainerSpec]]
+
     }
 
     "be convertible to GestaltResourceInput with all fields" >> { t : TestScope =>
