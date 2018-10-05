@@ -299,7 +299,19 @@ case object ContainerSpec extends Spec {
     case ivmc : ContainerSpec.InlineVolumeMountSpec   => Json.toJson(ivmc)
   }
 
-  implicit val containerSpecJsonFormat = Jsonx.formatCaseClassUseDefaults[ContainerSpec]
+  val containerSpecJsonFormat = Jsonx.formatCaseClassUseDefaults[ContainerSpec]
+
+  implicit val containerSpecWrites = new Writes[ContainerSpec] {
+    override def writes(containerSpec: ContainerSpec): JsValue = {
+      containerSpecJsonFormat.writes(containerSpec) - "name"
+    }
+  }
+
+  implicit val containerSpecReads = new Reads[ContainerSpec] {
+    override def reads(json: JsValue): JsResult[ContainerSpec] = {
+      containerSpecJsonFormat.reads(json)
+    }
+  }
 
 }
 
