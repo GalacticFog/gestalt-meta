@@ -23,6 +23,7 @@ import controllers.util._
 import modules._
 import com.amazonaws.services.ecs.AmazonECS
 import com.amazonaws.services.ecs.model._
+import com.galacticfog.gestalt.integrations.ecs._
 
 class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 
@@ -154,7 +155,9 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       mockClient.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
 
       class ECI extends EcsContainerImport {
-        override def getClient(providerSpec: EcsContainerImport.ProviderSpec): AmazonECS = mockClient
+        val mockFactory = mock[EcsClientFactory]
+        mockFactory.getEcsClient(any) returns Right(EcsClient(mockClient, "", None))
+        override val clientFactory = mockFactory
       }
 
       val response = new ECI().run(lastLambdaRequestBody.toString, "{}")
@@ -237,9 +240,9 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       mockClient.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
 
       class ECI extends EcsContainerImport {
-        override def getClient(providerSpec: EcsContainerImport.ProviderSpec): AmazonECS = {
-          mockClient
-        }
+        val mockFactory = mock[EcsClientFactory]
+        mockFactory.getEcsClient(any) returns Right(EcsClient(mockClient, "", None))
+        override val clientFactory = mockFactory
       }
 
       val response = new ECI().run(lastLambdaRequestBody.toString, "{}")
