@@ -16,11 +16,12 @@ import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Try,Success,Failure}
 import scala.collection.JavaConversions._
 import com.amazonaws.services.ecs.model._
+import com.galacticfog.gestalt.integrations.ecs.EcsClient
 
 class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
   private[this] val log = Logger(this.getClass)
 
-  def cleanly[T](providerId: UUID)(f: AwsEcsClient => Future[T]): Future[T] = {
+  def cleanly[T](providerId: UUID)(f: EcsClient => Future[T]): Future[T] = {
     awsSdkFactory.getEcsClient(providerId) flatMap { ecs =>
       val fT = f(ecs)
       fT.onComplete(_ => ecs.client.shutdown())
@@ -32,7 +33,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  private[this] def createTaskDefinition(ecs: AwsEcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
+  private[this] def createTaskDefinition(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
    (implicit ec: ExecutionContext): Try[String] = {
     // If using the Fargate launch type, this field is required and you must use one of the following values, which determines your range of supported values for the memory parameter:
     // 256 (.25 vCPU) - Available memory values: 512 (0.5 GB), 1024 (1 GB), 2048 (2 GB)
@@ -111,15 +112,18 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       .withMemory(spec.memory.toInt.toString)
       .withCpu(cpus.toString)
       .withRequiresCompatibilities("FARGATE")
-      .withTaskRoleArn(ecs.taskRoleArn)
-      .withExecutionRoleArn(ecs.taskRoleArn)
+
+    ecs.taskRoleArn foreach { taskRoleArn =>
+      rtdr.setTaskRoleArn(taskRoleArn)
+      rtdr.setExecutionRoleArn(taskRoleArn)
+    }
     Try(ecs.client.registerTaskDefinition(rtdr)) map { result =>
       val taskDefn = result.getTaskDefinition()
       s"${taskDefn.getFamily()}:${taskDefn.getRevision()}"
     }
   }
 
-  private[this] def createService(ecs: AwsEcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
+  private[this] def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
    (implicit ec: ExecutionContext): Try[String] = {
 
     val avc = new AwsVpcConfiguration()
@@ -141,7 +145,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     }
   }
 
-  private[this] def describeServices(ecs: AwsEcsClient, context: ProviderContext, lookupServiceArns: Seq[String] = Seq(),
+  private[this] def describeServices(ecs: EcsClient, context: ProviderContext, lookupServiceArns: Seq[String] = Seq(),
    paginationToken: Option[String] = None): Try[(Option[String],Seq[ContainerStats])] = {
     def listServices(): Try[(Option[String],Seq[String])] = {
       if(lookupServiceArns.isEmpty) {
@@ -200,10 +204,12 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
             .withCluster(ecs.cluster)
             .withServiceName(service.getServiceArn());
           taskArns <- Try(ecs.client.listTasks(ltr)).map(_.getTaskArns().toSeq);
-          dtr = new DescribeTasksRequest()
-            .withCluster(ecs.cluster)
-            .withTasks(taskArns);
-          tasks <- Try(ecs.client.describeTasks(dtr)).map(_.getTasks().toSeq);
+          tasks <- if(!taskArns.isEmpty) {
+            val dtr = new DescribeTasksRequest()
+              .withCluster(ecs.cluster)
+              .withTasks(taskArns);
+            Try(ecs.client.describeTasks(dtr)).map(_.getTasks().toSeq);
+          }else { Success(Seq.empty[Task]) };    // tasks not yet spawned
           containerInstanceArns = tasks map { r => Option(r.getContainerInstanceArn()) } collect { case Some(v) => v };
           containerInstances <- if(!containerInstanceArns.isEmpty) {
             val dcir = new DescribeContainerInstancesRequest()
@@ -234,7 +240,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
               host = host.getOrElse("FARGATE"),
               ipAddresses = Some(ipAddresses),
               ports = ports,
-              startedAt = Some(task.getStartedAt().toString)
+              startedAt = Option(task.getStartedAt()).map(_.toString)
             )
           }
           val cpus = Option(taskDefn.getCpu()) orElse Option(containerDefn.getCpu()).map(_.toString) getOrElse("0")
@@ -263,7 +269,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     }
   }
 
-  private[this] def deleteService(ecs: AwsEcsClient, serviceArn: String): Try[Unit] = {
+  private[this] def deleteService(ecs: EcsClient, serviceArn: String): Try[Unit] = {
     val decribesr = new DescribeServicesRequest()
       .withCluster(ecs.cluster)
       .withServices(serviceArn)
@@ -303,7 +309,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     @tailrec
-    def describeAllServices(ecs: AwsEcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
+    def describeAllServices(ecs: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
       describeServices(ecs, context, Seq(), paginationToken) match {
         case Success((Some(token), moreStats)) => describeAllServices(ecs, Some(token), stats ++ moreStats)
         case Success((None, moreStats)) => Success(stats ++ moreStats)

@@ -1,71 +1,38 @@
 package services
 
 import java.util.UUID
-import scala.util.Try
 import scala.concurrent.{Future, ExecutionContext}
 import scala.concurrent.ExecutionContext.Implicits.global
 import com.google.inject.Inject
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 // import play.api.Logger
-import play.api.libs.json.Json
-import com.amazonaws.auth.{AWSStaticCredentialsProvider, BasicAWSCredentials}
-import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
-
-case class AwsEcsClient(client: AmazonECS, cluster: String, taskRoleArn: String)
+import com.galacticfog.gestalt.integrations.ecs._
 
 trait AwsSdkFactory {
-  def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[AwsEcsClient]
+  def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[EcsClient]
 }
 
 class DefaultAwsSdkFactory @Inject()() extends AwsSdkFactory {
+  val clientFactory = new EcsClientFactory()
 
-  // val log = Logger(this.getClass)
-
-  type AwsSdkProperties = (String,String,String,String,String)
-
-  private[services] def extractAwsConfig(props: Option[Map[String, String]]): Option[AwsSdkProperties] = {
-    for(
-      p <- props;
-      config <- p.get("config");
-      jsValue <- Try(Json.parse(config)).toOption;
-      accessKey <- (jsValue \ "access_key").asOpt[String];
-      secretKey <- (jsValue \ "secret_key").asOpt[String];
-      region <- (jsValue \ "region").asOpt[String];
-      cluster <- (jsValue \ "cluster").asOpt[String];
-      taskRoleArn <- (jsValue \ "taskRoleArn").asOpt[String]
-    ) yield {
-      (accessKey, secretKey, region, cluster, taskRoleArn)
-    }
-  }
-
-  private[services] def loadProviderConfiguration(provider: UUID)(
-    implicit ec: ExecutionContext): Future[AwsSdkProperties] = Future {
-
+  override def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[EcsClient] = {
     val prv = ResourceFactory.findById(provider) getOrElse {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }
-
-    if (prv.typeId != migrations.V14.ECS_PROVIDER_TYPE_ID)
-      throw ResourceNotFoundException(s"Provider '$provider' is not a AWS ECS Provider")
-    else extractAwsConfig(prv.properties) getOrElse {
-      throw new RuntimeException(s"Empty or malformed provider configuration. This is a bug")
+    if(prv.typeId != migrations.V14.ECS_PROVIDER_TYPE_ID) {
+      throw ResourceNotFoundException(s"Provider '$provider' is not an ECS provider")
+    }else {
+      (for(
+        props <- prv.properties;
+        config <- props.get("config")
+      ) yield {
+        clientFactory.getEcsClient(config)
+      }) match {
+        case None => throw new RuntimeException("Empty ECS provider configuration. This is a bug")
+        case Some(Left(errorMessage)) => throw new RuntimeException(s"Malformed ECS provider configuration: $errorMessage")
+        case Some(Right(client)) => Future.successful(client)
+      }
     }
-  }
-
-  private[services] def buildEcsClient(credentials: AwsSdkProperties): Try[AwsEcsClient] = {
-    val (accessKey, secretKey, region, cluster, taskRoleArn) = credentials
-    Try(AwsEcsClient(AmazonECSClientBuilder.standard()
-      .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey)))
-      .withRegion(region)
-      .build(), cluster, taskRoleArn))
-  }
-
-  override def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[AwsEcsClient] = {
-    for(
-      credentials <- loadProviderConfiguration(provider);
-      client <- Future.fromTry(buildEcsClient(credentials))
-    ) yield client
   }
 }
