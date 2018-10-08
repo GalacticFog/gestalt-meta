@@ -1,6 +1,6 @@
 package com.galacticfog.gestalt.meta.api
 
-import com.galacticfog.gestalt.meta.api.ContainerStats.EventStat
+import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.util.Helpers.JodaJsonFormats._
 
 import org.joda.time.DateTime
@@ -20,12 +20,14 @@ case class ContainerStats(external_id: String,
                           tasksUnhealthy: Int,
                           taskStats: Option[Seq[ContainerStats.TaskStat]],
                           events: Option[Seq[EventStat]] = None,
+                          states: Option[Seq[ContainerStateStat]] = None,
                           lb_address: Option[String])
 
 case object ContainerStats {
   implicit val formatIPAddress = Json.format[TaskStat.IPAddress]
   implicit val formatTaskStat = Json.format[TaskStat]
   implicit val formatEventStat = Json.format[EventStat]
+  implicit val formatContainerStateStat = Json.format[ContainerStateStat]
 
   case class TaskStat( id: String,
                        host: String,
@@ -45,5 +47,13 @@ case object ContainerStats {
                        sourceComponent: String,
                        sourceHost: String,
                        message: String )
+
+  case class ContainerStateStat(objectName: String,
+                                objectType: String,
+                                stateId: String = "unknown",
+                                reason: Option[String] = None,
+                                message: Option[String] = None,
+                                finishedAt: Option[DateTime] = None
+                               )
 }
 

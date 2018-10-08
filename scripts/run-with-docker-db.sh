@@ -97,7 +97,7 @@ echo "
 Running gestalt-meta on http://localhost:14374
 
 "
-sbt -jvm-debug 10000 "run -Dhttp.port=14374 -Dlogger.application=TRACE $*"
+sbt -jvm-debug 10000 "meta/run -Dhttp.port=14374 -Dlogger.application=TRACE $*"
 
 # prod
 # sbt testProd
