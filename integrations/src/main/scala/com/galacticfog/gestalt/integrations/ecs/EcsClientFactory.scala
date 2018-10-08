@@ -49,7 +49,7 @@ object EcsProvider {
   implicit val propertiesReads = Json.reads[Properties]
 }
 
-case class EcsClient(client: AmazonECS, cluster: String, taskRoleArn: Option[String])
+case class EcsClient(client: AmazonECS, cluster: String, launchType: String, taskRoleArn: Option[String])
 
 trait FromJsResult {
   def fromJsResult[A](jsResult: JsResult[A]): Either[String,A] = {
@@ -66,11 +66,18 @@ trait FromJsResult {
   }
 }
 
-class EcsClientFactory extends FromJsResult {
+trait EcsClientFactory {
+  def getEcsClient(launchType: String, rawProperties: String): Either[String,EcsClient]
+}
+
+class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
   import EcsProvider._
 
-  def getEcsClient(rawProperties: String): Either[String,EcsClient] = {
+  def getEcsClient(launchType: String, rawProperties: String): Either[String,EcsClient] = {
     for(
+      _ <- if(Seq("EC2", "FARGATE").contains(launchType)) { Right(()) }else {
+        Left(s"Invalid launchType `${launchType}`") 
+      };
       json <- Right(Json.parse(rawProperties));
       properties <- fromJsResult(json.validate[EcsProvider.Properties])
     ) yield {
@@ -119,8 +126,8 @@ class EcsClientFactory extends FromJsResult {
         .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
-        
-      EcsClient(builder.build(), properties.cluster, properties.taskRoleArn)
+      
+      EcsClient(builder.build(), properties.cluster, launchType, properties.taskRoleArn)
     }
   }
 }

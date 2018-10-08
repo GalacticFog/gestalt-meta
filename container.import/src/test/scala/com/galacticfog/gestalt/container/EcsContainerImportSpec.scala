@@ -72,7 +72,14 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       (tw,te)
     }
 
-    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", providerConfig)
+    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", "FARGATE", providerConfig)
+  }
+
+  class MockEcsClientFactory(mockClient: AmazonECS) extends EcsClientFactory {
+    def getEcsClient(launchType: String, rawProperties: String): Either[String,EcsClient] = {
+      val realClient = new DefaultEcsClientFactory().getEcsClient(launchType, rawProperties)
+      realClient.right.map(_.copy(client=mockClient))
+    }
   }
 
   "EcsContainerImport" should {
@@ -155,9 +162,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       mockClient.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
 
       class ECI extends EcsContainerImport {
-        val mockFactory = mock[EcsClientFactory]
-        mockFactory.getEcsClient(any) returns Right(EcsClient(mockClient, "", None))
-        override val clientFactory = mockFactory
+        override val clientFactory = new MockEcsClientFactory(mockClient)
       }
 
       val response = new ECI().run(lastLambdaRequestBody.toString, "{}")
@@ -240,9 +245,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       mockClient.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
 
       class ECI extends EcsContainerImport {
-        val mockFactory = mock[EcsClientFactory]
-        mockFactory.getEcsClient(any) returns Right(EcsClient(mockClient, "", None))
-        override val clientFactory = mockFactory
+        override val clientFactory = new MockEcsClientFactory(mockClient)
       }
 
       val response = new ECI().run(lastLambdaRequestBody.toString, "{}")
