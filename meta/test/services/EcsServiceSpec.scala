@@ -44,13 +44,14 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       (tw,te)
     }
 
-    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", providerConfig)
+    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", "FARGATE", providerConfig)
 
     lazy val testSetup = {
       val mockAmazonECS = mock[AmazonECS]
       val mockClient = mock[EcsClient]
       mockClient.client returns mockAmazonECS
       mockClient.cluster returns "test_cluster"
+      mockClient.launchType returns "FARGATE"
       mockClient.taskRoleArn returns Some("")
       val mockAwsSdkFactory = mock[AwsSdkFactory]
       mockAwsSdkFactory.getEcsClient(any)(any) returns Future.successful(mockClient)
@@ -190,6 +191,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
         ))
       )
       val mockService = mock[Service]
+      mockService.getLaunchType() returns "FARGATE"
       mockService.getTaskDefinition() returns "task defn arn"
       val mockDescribeServicesResult = mock[DescribeServicesResult]
       mockDescribeServicesResult.getServices() returns new java.util.ArrayList(Seq(mockService))
@@ -221,6 +223,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
         ))
       )
       val mockService = mock[Service]
+      mockService.getLaunchType() returns "FARGATE"
       mockService.getTaskDefinition() returns "task defn arn"
       val mockDescribeServicesResult = mock[DescribeServicesResult]
       mockDescribeServicesResult.getServices() returns new java.util.ArrayList(Seq(mockService))
