@@ -92,7 +92,7 @@ object EcsContainerImport {
 class EcsContainerImport extends ContainerImport with FromJsResult {
   import EcsContainerImport._
 
-  val clientFactory = new EcsClientFactory()
+  val clientFactory: EcsClientFactory = new DefaultEcsClientFactory()
 
   type EitherString[A] = Either[String,A]
 
@@ -108,9 +108,9 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
         case Seq() => Left(s"No service entity found for `${externalId}`")
         case response => throw new RuntimeException(s"Invalid response: $response")
       };
-      // _ <- if(service.getLaunchType() == "FARGATE") { Right(()) }else {
-      //   Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; only `FARGATE` is supported")
-      // };
+      _ <- if(service.getLaunchType() == client.launchType) { Right(()) }else {
+        Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; this provider is configured to use `${client.launchType}`")
+      };
       dtdr = new DescribeTaskDefinitionRequest().withTaskDefinition(service.getTaskDefinition());
       taskDefn = client.client.describeTaskDefinition(dtdr).getTaskDefinition();
       containerDefn <- taskDefn.getContainerDefinitions().toSeq match {
@@ -182,7 +182,9 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
       externalId <- fromJsResult((payloadJson \ "resource" \ "properties" \ "external_id").validate[String]);     // see above
       containerSpec = containerSpec0.copy(external_id=Some(externalId));
       providerProperties <- Either.fromOption(payload.provider.properties, "Provider properties cannot be empty");
-      client <- clientFactory.getEcsClient(providerProperties.toString);
+      providerSubtype <- fromJsResult((providerProperties \ "provider_subtype").validate[String]);
+      providerConfig <- fromJsResult((providerProperties \ "config").validate[JsValue]);
+      client <- clientFactory.getEcsClient(providerSubtype, providerConfig.toString);
       _ <- if(payload.action != "container.import") { Left(s"Unsupported action: `${payload.action}`") }else { Right(()) }
     ) yield (payload.resource, containerSpec, client)
   }
