@@ -35,7 +35,8 @@ EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 javaOptions in Universal ++= Seq(
         "-Djava.util.prefs.systemRoot=/tmp/.java",
-        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
+        "-Djava.util.prefs.userRoot=/tmp/.userPrefs",
+        "-Djava.net.useSystemProxies=true"
 )
 
 javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
