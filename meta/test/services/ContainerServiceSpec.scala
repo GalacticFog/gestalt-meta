@@ -5,11 +5,12 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
+import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
@@ -1060,6 +1061,54 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         container = any
       )(any)
     }
+
+  }
+
+  "ContainerStats" should {
+
+    "provide status detail of topmost priority" in {
+      val testStates = Seq(
+        ContainerStateStat(
+          objectName = "testPod",
+          objectType = "Pod",
+          stateId = "running"
+        ),
+        ContainerStateStat(
+          objectName = "testPod1",
+          objectType = "Pod",
+          stateId = "waiting",
+          reason = Some("ERROR"),
+          message = Some("error message"),
+          priority = 1
+        ),
+        ContainerStateStat(
+          objectName = "testPod2",
+          objectType = "Pod",
+          stateId = "running"
+        )
+      )
+      val testContainerStats = ContainerStats(
+        external_id = "",
+        containerType = "",
+        status = "",
+        cpus = 0,
+        memory = 0,
+        image = "",
+        age = DateTime.now(),
+        numInstances = 0,
+        tasksStaged = 0,
+        tasksRunning = 0,
+        tasksHealthy = 0,
+        tasksUnhealthy = 0,
+        taskStats = None,
+        events = None,
+        states = Some(testStates),
+        lb_address = None)
+
+      val statusDetail = testContainerStats.getStatusDetail()
+      statusDetail must_== "Pod testPod1 is in WAITING state. Reason: ERROR (error message)"
+    }
+
 
   }
 

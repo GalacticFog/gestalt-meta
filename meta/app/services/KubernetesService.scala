@@ -1108,7 +1108,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
     val podEventStats = events filter (podEvent => podEvent.involvedObject.kind == POD && podNames.contains(podEvent.involvedObject.name)) map eventStatFromPodEvent
 
-    val containerStateStats = pods flatMap containerStateStatFromPod
+    val containerStateStats = (pods flatMap containerStateStatFromPodContainerStates) ++ (pods flatMap containerStateStatFromPodConditions)
 
     ContainerStats(
       external_id = s"/namespaces/${depl.namespace}/deployments/${depl.name}",
@@ -1150,7 +1150,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       )
   }
 
-  def containerStateStatFromPod(pod: skuber.Pod) : Option[ContainerStateStat] = {
+  def containerStateStatFromPodContainerStates(pod: skuber.Pod) : Option[ContainerStateStat] = {
     val maybeContainerState = pod.status.flatMap(_.containerStatuses.headOption).flatMap(_.state)
     maybeContainerState.map(containerState => {
       containerState match {
@@ -1162,14 +1162,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             stateId = terminated.id,
             reason = terminated.reason,
             message = terminated.message,
-            finishedAt = terminationDateTime
+            finishedAt = terminationDateTime,
+            priority = 3
           )
         }
         case waiting: skuber.Container.Waiting => ContainerStateStat(
           objectName = pod.name,
           objectType = POD,
           stateId = waiting.id,
-          reason = waiting.reason
+          reason = waiting.reason,
+          priority = 2
         )
         case running: skuber.Container.Running => ContainerStateStat(
           objectName = pod.name,
@@ -1182,6 +1184,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           objectType = POD
         )
       }
+    })
+  }
+
+  def containerStateStatFromPodConditions(pod: skuber.Pod) : Option[ContainerStateStat] = {
+    pod.status flatMap (podStatus => {
+      podStatus.conditions.find(_.status == "False").map(condition => {
+        ContainerStateStat(
+          objectName = pod.name,
+          objectType = POD,
+          stateId = podStatus.phase.map(_.toString.toLowerCase).getOrElse("unknown"),
+          reason = condition.reason,
+          message = condition.message,
+          priority = 1
+        )
+      })
     })
   }
 

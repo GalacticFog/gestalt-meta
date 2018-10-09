@@ -21,7 +21,13 @@ case class ContainerStats(external_id: String,
                           taskStats: Option[Seq[ContainerStats.TaskStat]],
                           events: Option[Seq[EventStat]] = None,
                           states: Option[Seq[ContainerStateStat]] = None,
-                          lb_address: Option[String])
+                          lb_address: Option[String]) {
+
+  def getStatusDetail(): String = {
+    val maybeStatusDetail = states.flatMap (_.sortBy(_.priority).lastOption)
+    maybeStatusDetail.map(_.format()).getOrElse("")
+  }
+}
 
 case object ContainerStats {
   implicit val formatIPAddress = Json.format[TaskStat.IPAddress]
@@ -53,7 +59,22 @@ case object ContainerStats {
                                 stateId: String = "unknown",
                                 reason: Option[String] = None,
                                 message: Option[String] = None,
-                                finishedAt: Option[DateTime] = None
-                               )
+                                finishedAt: Option[DateTime] = None,
+                                priority: Int = 0
+                               ) {
+
+    def format(): String = {
+      priority match {
+        case 0 => s"${stateId.toUpperCase}"
+        case _ => {
+          val objectPart = s"${objectType} ${objectName}"
+          val statePart = s" is in ${stateId.toUpperCase} state."
+          val maybeMessagePart = message.map(message => s" (${message})")
+          val maybeDetailsPart = reason.map(reason => s" Reason: ${reason}${maybeMessagePart.getOrElse(".")}")
+          objectPart + statePart + maybeDetailsPart.getOrElse("")
+        }
+      }
+    }
+  }
 }
 
