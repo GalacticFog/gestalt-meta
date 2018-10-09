@@ -1018,40 +1018,38 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       case Some(deplSplitter(namespace,deploymentName)) =>
         cleanly(context.provider, namespace)( kube =>
           for {
-            maybeDepl <- kube.getOption[Deployment](deploymentName)
-            allPods <- maybeDepl match {
+            maybeDeployment <- kube.getOption[Deployment](deploymentName)
+            allPods <- maybeDeployment match {
               case None    => Future.successful(Nil)
               case Some(_) => kube.list[PodList]() map (_.items)
             }
-            allReplicaSets <- maybeDepl match {
+            allReplicaSets <- maybeDeployment match {
               case None    => Future.successful(Nil)
               case Some(_) => kube.list[ReplicaSetList]() map (_.items)
             }
-            events <- maybeDepl match {
+            allEvents <- maybeDeployment match {
               case None    => Future.successful(Nil)
-              case Some(_) => kube.listSelected[EventList](lblSelector) map (_.items)
+              case Some(_) => kube.list[EventList]() map (_.items)
             }
-            allLbSvcs <- maybeDepl match {
+            allServices <- maybeDeployment match {
               case None    => Future.successful(None)
               case Some(_) => kube.list[ServiceList]().map {
                 _.items.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
               }
             }
-            events <- maybeDepl match {
-              case None    => Future.successful(Nil)
-              case Some(_) => kube.listSelected[EventList](lblSelector) map (_.items)
-            }
-            // TODO(516) first: filter all pods whose metadata.ownerReferences is a ReplicaSet whose metadata.ownerReferences is this deployment
-            deploymentUid = maybeDepl.get.metadata.uid
-            deploymentReplicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(_.uid == deploymentUid))
-            deplPods = allPods.filter(_.metadata.ownerReferences.exists(__
-                => deploymentReplicaSets.exists(_.metadata.uid == __.uid)))
 
-            maybeLbSvc = None // TODO(516) second: "somehow" find the Svc form allLbSvcs that matches the pods in this deployment
-                              // this will use the svc.spec.get.selector map against the deployment.metadata.labels map
-                              // see https://kubernetes.io/docs/concepts/services-networking/service/ for how services work
-                              // also, this is how selectors work: https://kubernetes.io/docs/concepts/overview/working-with-objects/labels/
-            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc, events))
+            replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
+                owner.kind == "replicaSet" && owner.uid == maybeDeployment.get.metadata.uid))
+
+            pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
+                owner.kind == "replicaSet" && replicaSets.exists(_.metadata.uid == owner.uid)))
+
+            services = allServices.filter(service =>service.spec.isDefined &&
+              (service.spec.get.selector.toSet diff maybeDeployment.get.metadata.labels.toSet).isEmpty)
+
+            events = allEvents.filter(event => pods.map(_.metadata.name).contains(event.involvedObject.name))
+
+            update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, events))
           } yield update
         )
       case None => Future.successful(None)
