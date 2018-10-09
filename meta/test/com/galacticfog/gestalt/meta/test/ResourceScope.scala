@@ -110,7 +110,10 @@ trait ResourceScope extends Scope with Mockito {
           new V12(),
           new V13(),
           new V14(),
-          new V15()
+          new V15(),
+          new V16(),
+          new V17(),
+          new V18()
         )
 
         val tries = migrations.map {
@@ -247,13 +250,14 @@ trait ResourceScope extends Scope with Mockito {
     )
   }
 
-  def createEcsProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
+  def createEcsProvider(parent: UUID, name: String = uuid.toString, launchType: String, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(
       typeId = migrations.V14.ECS_PROVIDER_TYPE_ID,
       name = name,
       parent = Option(parent),
       properties = Option(Map(
         "parent" -> "{}",
+        "provider_subtype" -> launchType,
         "config" -> Json.obj(config:_*).toString
       ))
     )

@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltAccountUpdate
 import com.galacticfog.gestalt.security.api.GestaltAccountCreateWithRights
+import com.galacticfog.gestalt.security.api.GestaltBasicCredentials
 import com.galacticfog.gestalt.security.api.GestaltGroup
 import com.galacticfog.gestalt.security.api.GestaltGroupUpdate
 import com.galacticfog.gestalt.security.api.GestaltGroupCreateWithRights
@@ -92,6 +93,13 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   def getOrgSyncTree2()(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
     Try(Await.result(GestaltOrg.syncOrgTree(None), 5 seconds))
   }  
+  
+  /**
+   * Use explicit credentials
+   */
+  def getOrgSyncTree(orgId: Option[UUID], creds: GestaltBasicCredentials): Try[GestaltOrgSync] = {
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(creds)), 5 seconds))
+  }
   
   def getRootOrg(auth: AuthAccountWithCreds): Try[GestaltOrg] = {
     def unwrap(os: Seq[GestaltOrg]) = Try {

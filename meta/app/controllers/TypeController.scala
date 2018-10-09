@@ -123,14 +123,13 @@ class TypeController @Inject()(
   }
   
   def createResourceTypeFqon(fqon: String) = AsyncAudited(fqon) { implicit request =>
-    
     TypeMethods.validateCreatePayload(request.body) match {
       case Failure(e) => HandleExceptionsAsync(e)
       case Success(payload) => {
         if (QueryString.singleBoolean(request.queryString, "test")) {
           Future.successful(Ok(payload))
         } else {
-          CreateTypeWithPropertiesResult(fqid(fqon), payload)
+          CreateTypeWithPropertiesResult(fqid(fqon), payload, request.identity)
         }
       }
     }
@@ -153,9 +152,9 @@ class TypeController @Inject()(
     qs("name").toSeq.flatMap(TypeFactory.findByName(_))     
   }  
   
-  private[controllers] def CreateTypeWithPropertiesResult[T](org: UUID, typeJson: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
+  private[controllers] def CreateTypeWithPropertiesResult(org: UUID, typeJson: JsValue, caller: AuthAccountWithCreds) = {
     Future {
-      createTypeWithProperties(org, typeJson) match {
+      createTypeWithProperties(org, typeJson, caller) match {
         case Failure(e) => HandleExceptions(e)
         case Success(newtype) => Created(Output.renderResourceTypeOutput( newtype ))
       }
@@ -218,7 +217,14 @@ class TypeController @Inject()(
     }      
   }
   
-  private[this] lazy val root: AuthAccountWithCreds = getRootAccountWithCreds()
+  private[this] lazy val root: AuthAccountWithCreds = try {
+    getRootAccountWithCreds()
+  } catch {
+    case e: Throwable => {
+      log.error("Failed looking up root user : " + e.getMessage)
+      throw e
+    }
+  }
 
   
   /**
@@ -258,12 +264,13 @@ class TypeController @Inject()(
     }
   }
   
-  private[controllers] def createTypeWithProperties[T](
+  private[controllers] def createTypeWithProperties(
       org: UUID, 
-      typeJson: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,T]) = {
+      typeJson: JsValue,
+      caller: AuthAccountWithCreds): Try[GestaltResourceType] = {
     
     Try {
-      val owner = request.identity.account.id
+      val owner = caller.account.id
       
       log.debug("Converting input types to domain...")
       val (domain, propdefs) = deconstructType(org, owner, typeJson)
@@ -299,7 +306,7 @@ class TypeController @Inject()(
       
       val results = for {
         _ <- updateParentLineage(owner, newtype, newParentTypes)
-        a <- updateParentEntitlements(request.identity, newtype.id, newParentTypes)
+        a <- updateParentEntitlements(caller, newtype.id, newParentTypes)
       } yield a
       
       results match {

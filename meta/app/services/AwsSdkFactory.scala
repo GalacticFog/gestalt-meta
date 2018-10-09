@@ -14,7 +14,7 @@ trait AwsSdkFactory {
 }
 
 class DefaultAwsSdkFactory @Inject()() extends AwsSdkFactory {
-  val clientFactory = new EcsClientFactory()
+  val clientFactory: EcsClientFactory = new DefaultEcsClientFactory()
 
   override def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[EcsClient] = {
     val prv = ResourceFactory.findById(provider) getOrElse {
@@ -25,11 +25,12 @@ class DefaultAwsSdkFactory @Inject()() extends AwsSdkFactory {
     }else {
       (for(
         props <- prv.properties;
+        launchType <- props.get("provider_subtype");
         config <- props.get("config")
       ) yield {
-        clientFactory.getEcsClient(config)
+        clientFactory.getEcsClient(launchType, config)
       }) match {
-        case None => throw new RuntimeException("Empty ECS provider configuration. This is a bug")
+        case None => throw new RuntimeException("Empty ECS provider configuration or missing `provider_subtype` field. This is a bug")
         case Some(Left(errorMessage)) => throw new RuntimeException(s"Malformed ECS provider configuration: $errorMessage")
         case Some(Right(client)) => Future.successful(client)
       }

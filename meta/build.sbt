@@ -4,7 +4,7 @@ import com.typesafe.sbt.packager.docker._
 
 name := """gestalt-meta"""
 
-version := "0.7.4"
+version := "0.7.5"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -35,7 +35,8 @@ EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 javaOptions in Universal ++= Seq(
         "-Djava.util.prefs.systemRoot=/tmp/.java",
-        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
+        "-Djava.util.prefs.userRoot=/tmp/.userPrefs",
+        "-Djava.net.useSystemProxies=true"
 )
 
 javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
@@ -52,7 +53,7 @@ libraryDependencies ++= Seq(
   "ai.x"            %% "play-json-extensions"          % "0.10.0",
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.5" withSources(),
+  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.7" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),

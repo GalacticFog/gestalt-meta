@@ -85,23 +85,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
 
     lazy val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider", providerConfig)
 
-    lazy val podEvents = List(skuber.Event(
-      metadata = skuber.ObjectMeta(
-        creationTimestamp = Some(java.time.ZonedDateTime.now())
-      ),
-      involvedObject = skuber.ObjectReference(
-        name = "test-pod",
-        kind = KubernetesService.POD
-      ),
-      `type` = Some("type"),
-      reason = Some("reason"),
-      source = Some(skuber.Event.Source(
-        component = Some("component"),
-        host = Some("host")
-      )),
-      message = Some("message")
-    ))
-
     lazy val testSetup = {
       val skDefaultNs = mock[skuber.Namespace]
       skDefaultNs.name returns "default"
@@ -121,7 +104,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
       mockSkuber.create(any)(any,meq(skuber.Service.svcDef),any) answers {(x: Any) => answerId[skuber.Service](x)}
       mockSkuber.create(any)(any,meq(skuber.Secret.secDef),any) answers {(x: Any) => answerId[skuber.Secret](x)}
-      mockSkuber.listSelected(any)(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, podEvents))
 
       val ks = new KubernetesService(mockSkuberFactory)
       TestSetup(ks, mockSkuber, mockSkuberFactory, skTestNs, None)
@@ -387,7 +369,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       mockSkuber.list()(any,meq(skuber.ext.Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
       mockSkuber.getOption(meq(mockDepl.name))(any, meq(skuber.ext.Deployment.deployDef), any) returns Future.successful(Some(mockDepl))
       mockSkuber.listSelected(any)(any,meq(skuber.ext.Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDepl)))
-      mockSkuber.listSelected(any)(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
+      mockSkuber.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
 
       mockSkuber.update(any)(any,meq(Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
       mockSkuber.update(any)(any,meq(Ingress.ingDef),any) answers {(x: Any) => answerId[skuber.ext.Ingress](x)}
@@ -1402,6 +1384,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
       testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
       testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1453,6 +1436,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
       testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
       testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1498,9 +1482,32 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
 
+      lazy val podEvents = List(skuber.Event(
+        metadata = skuber.ObjectMeta(
+          creationTimestamp = Some(java.time.ZonedDateTime.now())
+        ),
+        involvedObject = skuber.ObjectReference(
+          name = "test-pod",
+          kind = KubernetesService.POD
+        ),
+        `type` = Some("type"),
+        reason = Some("reason"),
+        source = Some(skuber.Event.Source(
+          component = Some("component"),
+          host = Some("host")
+        )),
+        message = Some("message")
+      ))
+      val pods = List(skuber.Pod(
+        metadata = skuber.ObjectMeta(
+          name = "test-pod"
+        )
+      ))
+
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
       testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, podEvents))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1510,7 +1517,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val testEvent = podEvents.head
       val creationTimestamp = testEvent.metadata.creationTimestamp.get
 
-      there was one(testSetup.client).listSelected(any)(any,meq(skuber.Event.evListDef),any)
+      there was one(testSetup.client).list()(any,meq(skuber.Event.evListDef),any)
       containerStats.events must_== Some(List(EventStat(
         testEvent.involvedObject.name,
         KubernetesService.POD,
@@ -1563,6 +1570,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
       testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
       testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),

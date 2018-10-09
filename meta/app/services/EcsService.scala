@@ -108,10 +108,15 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     val rtdr = new RegisterTaskDefinitionRequest()
       .withContainerDefinitions(cd)
       .withFamily(s"${context.environmentId}-${spec.name}")
-      .withNetworkMode("awsvpc")
       .withMemory(spec.memory.toInt.toString)
       .withCpu(cpus.toString)
-      .withRequiresCompatibilities("FARGATE")
+      .withRequiresCompatibilities(ecs.launchType)
+
+    if(ecs.launchType == "EC2") {
+      rtdr.setNetworkMode(spec.network.getOrElse("none"))
+    }else if(ecs.launchType == "FARGATE") {
+      rtdr.setNetworkMode("awsvpc")
+    }
 
     ecs.taskRoleArn foreach { taskRoleArn =>
       rtdr.setTaskRoleArn(taskRoleArn)
@@ -126,11 +131,6 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
   private[this] def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext)
    (implicit ec: ExecutionContext): Try[String] = {
 
-    val avc = new AwsVpcConfiguration()
-      .withSubnets(spec.network.getOrElse("").split(";").toSeq)    // subnet id; required
-      .withAssignPublicIp("ENABLED")
-    val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
-
     val name = s"${context.environmentId}-${spec.name}"
 
     val csr = new CreateServiceRequest()
@@ -138,8 +138,16 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       .withTaskDefinition(name)
       .withServiceName(name)
       .withDesiredCount(spec.num_instances)
-      .withLaunchType(LaunchType.FARGATE)
-      .withNetworkConfiguration(nc)
+      .withLaunchType(LaunchType.valueOf(ecs.launchType))
+
+    if(ecs.launchType == "FARGATE") {
+      val avc = new AwsVpcConfiguration()
+        .withSubnets(spec.network.getOrElse("").split(";").toSeq)    // subnet id; required
+        .withAssignPublicIp("ENABLED")
+      val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
+      csr.setNetworkConfiguration(nc)
+    }
+
     Try(ecs.client.createService(csr)) map { result =>
       result.getService().getServiceArn()
     }
@@ -151,6 +159,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       if(lookupServiceArns.isEmpty) {
         val lsr = new ListServicesRequest()
           .withCluster(ecs.cluster)
+          .withLaunchType(LaunchType.valueOf(ecs.launchType))
         val lsrWithToken = paginationToken match {
           case None => lsr
           case Some(token) => lsr.withNextToken(token)
@@ -202,6 +211,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
           };
           ltr = new ListTasksRequest()
             .withCluster(ecs.cluster)
+            .withLaunchType(LaunchType.valueOf(ecs.launchType))
             .withServiceName(service.getServiceArn());
           taskArns <- Try(ecs.client.listTasks(ltr)).map(_.getTaskArns().toSeq);
           tasks <- if(!taskArns.isEmpty) {
@@ -285,7 +295,11 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
       _ = response.getFailures() foreach { failure =>
         log.error(s"Failure during a DescribeServicesRequest: `failure.getArn()` (`failure.getReason()`)")
       };
-      Seq(taskDefnArn) = response.getServices().toSeq map { service => service.getTaskDefinition() };
+      Seq(service) = response.getServices().toSeq;
+      _ <- if(service.getLaunchType() == ecs.launchType) { Success(()) }else {
+        Failure(throw new RuntimeException(s"The service `${serviceArn}` belongs to `${service.getLaunchType()}` launch type; this provider is configured to use `${ecs.launchType}`"))
+      };
+      taskDefnArn = service.getTaskDefinition();
       _ <- Try(ecs.client.updateService(usr));
       _ <- Try(ecs.client.deleteService(deletesr));
       dtdr = new DeregisterTaskDefinitionRequest().withTaskDefinition(taskDefnArn);
@@ -359,10 +373,16 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService {
     
     def destroyRunningContainer(externalId: String): Future[Unit] = {
       cleanly(provider.id) { ecs =>
-        Future.fromTry {
-          deleteService(ecs, externalId) recoverWith {
-            case _: ServiceNotActiveException => Success(())
-            case _: ServiceNotFoundException => Success(())
+        val deleted = deleteService(ecs, externalId) recoverWith {
+          case _: ServiceNotActiveException => Success(())
+          case _: ServiceNotFoundException => Success(())
+        }
+        deleted match {
+          case Success(res) => Future.successful(res)
+          case Failure(throwable) => {
+            throwable.printStackTrace()
+            log.error(s"error in destroy: $throwable")
+            Future.failed(throwable)
           }
         }
       }
