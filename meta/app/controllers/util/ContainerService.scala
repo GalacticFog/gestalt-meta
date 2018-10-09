@@ -398,7 +398,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"),
           "port_mappings" -> Json.toJson(pms).toString,
           "events" -> stats.events.map { Json.toJson(_).toString() }.getOrElse("[]"),
-          "status_detail" -> stats.getStatusDetail()
+          "status_detail" -> stats.getStatusDetail().map { Json.toJson(_).toString() }.getOrElse("{}")
         )
       case None if metaCon.state == ResourceStates.Failed => Seq(
         "status" -> "FAILED",

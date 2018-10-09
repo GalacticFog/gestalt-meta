@@ -23,9 +23,8 @@ case class ContainerStats(external_id: String,
                           states: Option[Seq[ContainerStateStat]] = None,
                           lb_address: Option[String]) {
 
-  def getStatusDetail(): String = {
-    val maybeStatusDetail = states.flatMap (_.sortBy(_.priority).lastOption)
-    maybeStatusDetail.map(_.format()).getOrElse("")
+  def getStatusDetail(): Option[ContainerStateStat] = {
+    states.flatMap (_.sortBy(_.priority).lastOption)
   }
 }
 

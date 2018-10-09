@@ -1106,7 +1106,14 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         lb_address = None)
 
       val statusDetail = testContainerStats.getStatusDetail()
-      statusDetail must_== "Pod testPod1 is in WAITING state. Reason: ERROR (error message)"
+      statusDetail must_== Some(ContainerStateStat(
+        objectName = "testPod1",
+        objectType = "Pod",
+        stateId = "waiting",
+        reason = Some("ERROR"),
+        message = Some("error message"),
+        priority = 1
+      ))
     }
 
 

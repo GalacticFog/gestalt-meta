@@ -53,7 +53,7 @@ class V18 extends MetaMigration() {
             owner = tpe.owner,
             name = NEW_PROPERTY_NAME,
             appliesTo = tpe.id,
-            datatype = DataType.id("string"),
+            datatype = DataType.id("json"),
             requirementType = RequirementType.id("optional"))
         
         acc push s"Adding /properties/${NEW_PROPERTY_NAME} to Container Type."
