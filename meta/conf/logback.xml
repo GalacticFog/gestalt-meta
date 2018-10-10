@@ -18,7 +18,6 @@
   <logger name="sun.rmi" level="WARN"/>
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
-  <logger name="com.galacticfog" level="INFO"/>
   <logger name="application"  level="INFO" />
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="org.asynchttpclient.netty" level="WARN"/>
@@ -31,6 +30,9 @@
   <logger name="gestalt-security-play" level="INFO"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   <logger name="com.amazonaws.monitoring.CsmConfigurationProviderChain" level="INFO"/>
+  <logger name="com.zaxxer.hikari" level="WARN"/>
+  
+  <logger name="com.galacticfog" level="INFO"/>
 
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />

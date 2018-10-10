@@ -2,7 +2,7 @@ package services
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.ContainerStats
+import com.galacticfog.gestalt.meta.api.{ContainerStats,ContainerSpec,VolumeSpec}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
 import org.joda.time.DateTime
@@ -46,6 +46,8 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
 
     lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", "FARGATE", providerConfig)
 
+    lazy val Success(testVolume) = createVolume(testEnv.id, "test-volume", Seq("host_path" -> "/tmp"))
+
     lazy val testSetup = {
       val mockAmazonECS = mock[AmazonECS]
       val mockClient = mock[EcsClient]
@@ -63,6 +65,22 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   "EcsService" should {
 
     "create containers" in new MockScope {
+      // val volumeSpec = ContainerSpec.InlineVolumeMountSpec(
+      //   mount_path = "/mnt/path",
+      //   volume_resource = VolumeSpec.toResourcePrototype(VolumeSpec(
+      //     name = "test-volume-name",
+      //     provider = Some(ContainerSpec.InputProvider(id = uuid())),
+      //     `type` = VolumeSpec.HostPath,
+      //     size = 0,     // doesn't make sense with HostPath
+      //     access_mode = VolumeSpec.ReadWriteMany,     // the only one that makes sense with HostPath
+      //     config = Json.obj(
+      //       "host_path" -> "/tmp"
+      //     )
+      //   ))
+      // )
+      // val volumesSerialized = Json.toJson[Seq[ContainerSpec.VolumeMountSpec]](Seq(volumeSpec)).toString
+      val volumesSerialized = s"""[{"volume_id": "${testVolume.id}", "mount_path": "/mnt"}]"""
+
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test",
@@ -82,7 +100,8 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
             "VAR1" -> "VAL1",
             "VAR2" -> "VAL2"
           ).toString,
-          "network" -> "subnet-66d74a1c"
+          "network" -> "subnet-66d74a1c",
+          "volumes" -> volumesSerialized
         ))
       )
       val mockTaskDefinition = mock[TaskDefinition]

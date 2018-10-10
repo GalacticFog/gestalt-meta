@@ -17,7 +17,26 @@ dockerCommands := dockerCommands.value.flatMap {
     cmd,
     Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*")
   )
+  case Cmd("ADD", _) => List(
+    Cmd("RUN", "mkdir -p /opt/docker/lib"),
+    Cmd("RUN", "chown -R daemon:daemon ."),
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/authenticators", "/opt/docker/authenticators"),    // 150MB blob: updated never
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/lib/*", "/opt/docker/lib/"),     // all third-party dependencies: updated once in a while
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/_lib/*", "/opt/docker/lib/"),    // our dependencies: updated very often
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/conf", "/opt/docker/conf"),
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/bin", "/opt/docker/bin")
+  )
+  case ExecCmd("RUN", _*) => List()
   case other => List(other)
+}
+
+mappings in Universal := {
+  val universalMappings = (mappings in Universal).value
+
+  universalMappings map {
+    case(file, name) if name.startsWith("lib/com.galacticfog.") => (file, "_" ++ name)
+    case(file, name) => (file, name)
+  }
 }
 
 import NativePackagerHelper._
@@ -72,6 +91,7 @@ libraryDependencies ++= Seq(
   "org.scala-lang"   % "scala-reflect"                 % "2.11.8",
   "org.scala-lang"   % "scala-compiler"                % "2.11.8",
   "org.scalaz"      %% "scalaz-core"                   % "7.1.12",
+  "org.typelevel"   %% "cats-core"                     % "1.0.1",
 
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",

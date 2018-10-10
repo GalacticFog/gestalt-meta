@@ -13,6 +13,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, 
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
+import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.google.inject.Inject
 import controllers.util._
 import javax.inject.Singleton
@@ -135,14 +136,14 @@ class ContainerController @Inject()(
   def postContainer(fqon: String, environment: UUID) = AsyncAudited(fqon) { implicit request =>
     val action = request.getQueryString("action").getOrElse("create")
     val created = for {
-      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      payload   <- Future.fromTryST(normalizeCaasPayload(request.body, environment))
       container <- action match {
         //
         // CREATE
         case "create" =>
           for {
-            proto     <- Future.fromTry(jsonToResource(fqid(fqon), request.identity, normalizeInputContainer(payload), None))
-            spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
+            proto     <- Future.fromTryST(jsonToResource(fqid(fqon), request.identity, normalizeInputContainer(payload), None))
+            spec      <- Future.fromTryST(ContainerSpec.fromResourceInstance(proto))
             context   = ProviderContext(request, spec.provider.id, None)
             container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
           } yield container
@@ -151,14 +152,14 @@ class ContainerController @Inject()(
         case "import" =>
           log.info("request to import container against GenericResourceMethods")
           for {
-            org <- Future.fromTry(Try(orgFqon(fqon).getOrElse(
+            org <- Future.fromTryST(Try(orgFqon(fqon).getOrElse(
               throw new InternalErrorException("could not locate org resource after authentication")
             )))
-            env <- Future.fromTry(Try(ResourceFactory.findById(ResourceIds.Environment, environment).getOrElse(
+            env <- Future.fromTryST(Try(ResourceFactory.findById(ResourceIds.Environment, environment).getOrElse(
               throw new ResourceNotFoundException(s"environment with id '$environment' not found")
             )))
             providerId = (payload \ "properties" \ "provider" \ "id").as[UUID]
-            provider <- Future.fromTry(Try(ResourceFactory.findById(providerId).getOrElse(
+            provider <- Future.fromTryST(Try(ResourceFactory.findById(providerId).getOrElse(
               throw new ResourceNotFoundException(s"provider with id '$providerId' not found")
             )))
             r <- genericResourceMethods.createProviderBackedResource(
