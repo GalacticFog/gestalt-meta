@@ -3,12 +3,16 @@ package com.galacticfog.gestalt.container
 // import java.io.{StringWriter,PrintWriter}
 // import scala.util.{Try,Success,Failure}
 import scala.collection.JavaConversions._
+import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceOutput
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import play.api.libs.json._
 import cats.syntax.either._
 import cats.Semigroup
 import cats.syntax.semigroup._
+import cats.instances.vector._
+import cats.instances.either._
+import cats.syntax.traverse._
 import com.amazonaws.services.ecs.model._
 import com.galacticfog.gestalt.integrations.ecs._
 
@@ -99,6 +103,30 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
   def containerImport(containerSpec: ContainerSpec, client: EcsClient): EitherString[ContainerSpec] = {
     val Some(externalId) = containerSpec.external_id
 
+    def mkInlineVolumeMountSpec(mountPointMapping: Map[String,String])(volume: Volume): EitherString[ContainerSpec.VolumeMountSpec] = {
+      for(
+        hostVolumeProperties <- Either.fromOption(Option(volume.getHost()), "Only host path volumes (bind mounts) are supported");
+        sourcePath = hostVolumeProperties.getSourcePath();
+        mountPath <- Either.fromOption(mountPointMapping.get(volume.getName()), s"Container does not define a mount point for ${volume.getName}")
+      ) yield {
+        val resource = GestaltResourceInput(
+          name = volume.getName(),
+          id = None,
+          resource_type = None,
+          resource_state = None,
+          properties = Some(Map(
+            "type" -> JsString("host_path"),
+            "access_mode" -> JsString("ReadWriteMany"),
+            "size" -> JsNumber(1),
+            "config" -> JsString(s"""{
+              "host_path": "${sourcePath}"
+            }""")
+          ))
+        )
+        ContainerSpec.InlineVolumeMountSpec(mountPath, resource)
+      }
+    }
+
     val dsr = new DescribeServicesRequest()
       .withCluster(client.cluster)
       .withServices(externalId)
@@ -120,7 +148,14 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
           Left(s"More than one container per task definition is defined for `${externalId}`; this is not supported")
           // anything I need to do about it?
         }
-      }
+      };
+      mountPointMapping = (Option(containerDefn.getMountPoints()) map { mps =>
+        mps.toSeq map { mp =>
+          (mp.getSourceVolume(), mp.getContainerPath())
+        }
+      }).map(_.toMap).getOrElse(Map());
+      inputVolumes = Option(taskDefn.getVolumes()).map(_.toSeq).getOrElse(Seq());
+      volumes <- inputVolumes.toVector.traverse(mkInlineVolumeMountSpec(mountPointMapping))
     ) yield {
       val entrypoint = Option(containerDefn.getEntryPoint()).map(_.toSeq.mkString(" "))
       val command = Option(containerDefn.getCommand()).map(_.toSeq)
@@ -166,6 +201,7 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
         cmd = if(entrypoint == Some("")) { None }else { entrypoint },
         args = if(command == Some(Seq())) { None }else { command },
         health_checks = healthChecks,
+        volumes = volumes,
         labels = Option(containerDefn.getDockerLabels()).map(_.toMap).getOrElse(Map()),
         env = environment.toMap,
         user = Option(containerDefn.getUser())
