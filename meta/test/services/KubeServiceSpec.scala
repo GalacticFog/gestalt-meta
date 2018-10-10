@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.HealthCheck._
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, SecretDirMount, SecretEnvMount, SecretFileMount}
-import com.galacticfog.gestalt.meta.api.ContainerStats.EventStat
+import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolume}
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -1518,6 +1518,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       val creationTimestamp = testEvent.metadata.creationTimestamp.get
 
       there was one(testSetup.client).list()(any,meq(skuber.Event.evListDef),any)
+
       containerStats.events must_== Some(List(EventStat(
         testEvent.involvedObject.name,
         KubernetesService.POD,
@@ -1530,6 +1531,145 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         testEvent.source.get.host.get,
         testEvent.message.get
       )))
+    }
+
+    "fill status using container states" in new FakeKube {
+      val testContainerId = uuid()
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val testDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map()
+            ))
+          )
+        )
+      )
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        id = testContainerId,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testDepl.metadata.namespace}/deployments/${testDepl.name}"
+        ))
+      )
+
+      val pods = List(skuber.Pod(
+        metadata = skuber.ObjectMeta(
+          name = "test-pod"
+        ),
+        status = Some(Pod.Status(
+          containerStatuses = List(skuber.Container.Status(
+            name = "test-container",
+            ready = false,
+            restartCount = 0,
+            image = "",
+            imageID = "",
+            state = Some(skuber.Container.Waiting(
+              reason = Some("error")
+            ))
+          ))
+        ))
+      ))
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
+      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
+
+      val Some(containerStats) = await(testSetup.svc.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.getStatusDetail() must_== Some(ContainerStateStat(
+        stateId = "waiting",
+        reason = Some("error"),
+        priority = 2,
+        objectName = "test-pod",
+        objectType = KubernetesService.POD
+      ))
+    }
+
+    "fill status using pod conditions" in new FakeKube {
+      val testContainerId = uuid()
+      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val testDepl = skuber.ext.Deployment(
+        metadata = skuber.ObjectMeta(
+          name = "test-container",
+          namespace = testEnv.id.toString,
+          labels = lbls,
+          creationTimestamp = Some(ZonedDateTime.now(ZoneOffset.UTC))
+        )
+      ).withTemplate(
+        skuber.Pod.Template.Spec().addContainer(
+          skuber.Container(
+            name = "test-container",
+            image = "nginx",
+            resources = Some(skuber.Resource.Requirements(
+              limits = Map(),
+              requests = Map()
+            ))
+          )
+        )
+      )
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        id = testContainerId,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> s"/namespaces/${testDepl.metadata.namespace}/deployments/${testDepl.name}"
+        ))
+      )
+
+      val pods = List(skuber.Pod(
+        metadata = skuber.ObjectMeta(
+          name = "test-pod"
+        ),
+        status = Some(Pod.Status(
+          phase = Some(Pod.Phase.Pending),
+          conditions = List(Pod.Condition(
+            status = "False",
+            reason = Some("error")
+          ))
+        ))
+      ))
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
+      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
+      testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
+
+      val Some(containerStats) = await(testSetup.svc.find(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      ))
+
+      containerStats.getStatusDetail() must_== Some(ContainerStateStat(
+        stateId = "pending",
+        reason = Some("error"),
+        priority = 1,
+        objectName = "test-pod",
+        objectType = KubernetesService.POD
+      ))
     }
 
     "fallback on to 0 cpu/mem if neither request nor limit " in new FakeKube {
