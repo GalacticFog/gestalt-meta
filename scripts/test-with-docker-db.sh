@@ -24,6 +24,8 @@ echo "
 DB running at $DOCKERIP:$DBPORT/$DBNAME
 "
 
+# DOCKERIP="192.168.99.100"
+
 cleanup_docker_db() {
 echo ""
 echo Stopping db container
