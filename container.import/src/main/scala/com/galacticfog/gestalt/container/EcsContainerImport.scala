@@ -147,8 +147,12 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
           host_port = Option(pm.getHostPort())
         )
       }
-      val networkConfiguration = Option(service.getNetworkConfiguration()).flatMap { a => Option(a.getAwsvpcConfiguration()) }
-      val subnets = networkConfiguration.map(_.getSubnets().toSeq.mkString(";"))
+      val network = if(service.getLaunchType() == "FARGATE") {
+        val networkConfiguration = Option(service.getNetworkConfiguration()).flatMap { a => Option(a.getAwsvpcConfiguration()) }
+        networkConfiguration.map(_.getSubnets().toSeq.mkString(";"))
+      }else {
+        Option(taskDefn.getNetworkMode())
+      }
       val updatedContainerSpec = ContainerSpec(
         name = Option(containerDefn.getName()).getOrElse(""),
         container_type = "DOCKER",
@@ -158,7 +162,7 @@ class EcsContainerImport extends ContainerImport with FromJsResult {
         cpus = (Option(taskDefn.getCpu()) |+| Option(containerDefn.getCpu()).map(_.toString)).map(_.toDouble / 1024.0).getOrElse(0.0),
         memory = (Option(taskDefn.getMemory()) |+| Option(containerDefn.getMemory()).map(_.toString)).map(_.toDouble).getOrElse(0.0),
         num_instances = service.getDesiredCount(),
-        network = subnets,
+        network = network,
         cmd = if(entrypoint == Some("")) { None }else { entrypoint },
         args = if(command == Some(Seq())) { None }else { command },
         health_checks = healthChecks,

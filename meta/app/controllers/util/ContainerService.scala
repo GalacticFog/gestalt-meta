@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.google.inject.Inject
 import controllers.DeleteController
 import play.api.Logger
@@ -535,11 +536,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           ).toString,
           "volumes" -> Json.toJson(volMounts).toString
         )
-        service <- Future.fromTry {
+        service <- Future.fromTryST {
           log.debug("Retrieving CaaSService from ProviderManager")
           providerManager.getProviderImpl(context.provider.typeId)
         }
-        metaResource <- Future.fromTry {
+        metaResource <- Future.fromTryST {
           log.debug("Creating container resource in Meta")
           CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
@@ -548,7 +549,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           log.info("Creating container in backend CaaS...")
           service.create(context, metaResource)
         }
-        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
       } yield updatedInstance
     }
   }
@@ -615,12 +616,12 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       )
 
       for {
-        metaResource <- Future.fromTry {
+        metaResource <- Future.fromTryST {
           log.debug("Creating volume resource in Meta")
           ResourceFactory.create(ResourceIds.User, user.account.id)(volumeResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta volume created: " + metaResource.id)
-        service <- Future.fromTry {
+        service <- Future.fromTryST {
           log.debug("Retrieving CaaSService from ProviderManager")
           providerManager.getProviderImpl(context.provider.typeId)
         }
@@ -628,7 +629,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           log.info("Creating volume in backend CaaS...")
           service.createVolume(context, metaResource)
         }
-        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
       } yield updatedInstance
 
     }

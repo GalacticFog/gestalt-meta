@@ -80,7 +80,7 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
     p
   }
 
-  def createVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue, size: Int = 10, mode: VolumeSpec.AccessMode = VolumeSpec.ReadWriteOnce): GestaltResourceInstance = {
+  def createMarathonVolume(provider: GestaltResourceInstance, tpe: VolumeSpec.Type, config: JsValue, size: Int = 10, mode: VolumeSpec.AccessMode = VolumeSpec.ReadWriteOnce): GestaltResourceInstance = {
     val id = uuid()
     val spec = VolumeSpec(id.toString, None, Some(ContainerSpec.InputProvider(provider.id)), tpe, config, size = size, access_mode = mode)
     val props = controllers.util.stringmap(VolumeSpec.toResourcePrototype(spec).properties)
@@ -621,9 +621,9 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
 
     "add default upgradeStrategy for persistent volumes" in {
       val p = marathonProviderWithStdNetworks
-      val vol1 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
-      val vol2 = createVolume(p,VolumeSpec.Persistent, Json.obj("access_mode" -> "ReadWriteOnce", "size" -> 1000))
-      val vol3 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath3", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
+      val vol1 = createMarathonVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
+      val vol2 = createMarathonVolume(p,VolumeSpec.Persistent, Json.obj("access_mode" -> "ReadWriteOnce", "size" -> 1000))
+      val vol3 = createMarathonVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath3", "access_mode" -> "ReadWriteOnce", "size" -> 1000))
       val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",
@@ -649,8 +649,8 @@ class MarathonProxySpec extends Specification with Mockito with JsonMatchers wit
 
     "neglect default upgradeStrategy absent persistent volumes" in {
       val p = marathonProviderWithStdNetworks
-      val vol1 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1"))
-      val vol2 = createVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath2"))
+      val vol1 = createMarathonVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath1"))
+      val vol2 = createMarathonVolume(p,VolumeSpec.HostPath, Json.obj("host_path" -> "/hpath2"))
       val marApp = marPayload(ContainerSpec(
         name = "test-container",
         container_type = "DOCKER",

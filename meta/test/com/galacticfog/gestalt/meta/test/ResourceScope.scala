@@ -262,6 +262,21 @@ trait ResourceScope extends Scope with Mockito {
       ))
     )
   }
+
+  def createVolume(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
+    createInstance(
+      typeId = migrations.V13.VOLUME_TYPE_ID,
+      name = name,
+      parent = Option(parent),
+      properties = Option(Map(
+        "provider" -> "",
+        "type" -> "host_path",
+        "access_mode" -> "ReadWriteMany",
+        "size" -> "0",
+        "config" -> Json.obj(config:_*).toString
+      ))
+    )
+  }
   
   def newDummyLambda(env: UUID, gateway: UUID = uuid()) = {
     createInstance(ResourceIds.Lambda, uuid(),
