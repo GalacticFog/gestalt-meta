@@ -85,7 +85,7 @@ class InfoController @Inject()(
     }    
   }
 
-
+  
   def options(path: String) = Action {Ok("")}
   
   def serviceCheck() = Audited() { implicit request =>
@@ -102,7 +102,11 @@ class InfoController @Inject()(
       }
     }
   }
-
+  import com.galacticfog.gestalt.data.ResourceFactory
+  
+  def resourceStats() = Audited() { implicit request =>
+    Ok(ResourceFactory.resourceStats("dsc"))  
+  }
   
   import java.nio.file.{Files, Paths}
 
