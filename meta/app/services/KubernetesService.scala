@@ -1013,30 +1013,43 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    val lblSelector = LabelSelector(LabelSelector.IsEqualRequirement(META_CONTAINER_KEY, container.id.toString))
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
       case Some(deplSplitter(namespace,deploymentName)) =>
         cleanly(context.provider, namespace)( kube =>
           for {
-            maybeDepl <- kube.getOption[Deployment](deploymentName)
-            // TODO: this needs to be rewritten to find the pods from the deployment (or, indirectly, from the replica sets)
-            // https://gitlab.com/galacticfog/gestalt-meta/issues/516
-            pods <- maybeDepl match {
+            maybeDeployment <- kube.getOption[Deployment](deploymentName)
+            allPods <- maybeDeployment match {
               case None    => Future.successful(Nil)
-              case Some(_) => kube.listSelected[PodList](lblSelector) map (_.items)
+              case Some(_) => kube.list[PodList]() map (_.items)
             }
-            events <- maybeDepl match {
+            allReplicaSets <- maybeDeployment match {
               case None    => Future.successful(Nil)
-              case Some(_) => kube.list[EventList] map (_.items)
+              case Some(_) => kube.list[ReplicaSetList]() map (_.items)
             }
-            maybeLbSvc <- maybeDepl match {
+            allEvents <- maybeDeployment match {
+              case None    => Future.successful(Nil)
+              case Some(_) => kube.list[EventList]() map (_.items)
+            }
+            allServices <- maybeDeployment match {
               case None    => Future.successful(None)
-              case Some(_) => kube.listSelected[ServiceList](lblSelector).map {
+              case Some(_) => kube.list[ServiceList]().map {
                 _.items.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
               }
             }
-            update = maybeDepl map (kubeDeplAndPodsToContainerStatus(_, pods, maybeLbSvc, events))
+
+            replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
+                owner.kind == "deployment" && owner.uid == maybeDeployment.get.metadata.uid))
+
+            pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
+                owner.kind == "replicaSet" && replicaSets.exists(_.metadata.uid == owner.uid)))
+
+            services = allServices.filter(service =>service.spec.isDefined &&
+              (service.spec.get.selector.toSet diff maybeDeployment.get.metadata.labels.toSet).isEmpty)
+
+            events = allEvents.filter(event => pods.map(_.metadata.name).contains(event.involvedObject.name))
+
+            update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, events))
           } yield update
         )
       case None => Future.successful(None)
