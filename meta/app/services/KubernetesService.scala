@@ -1039,7 +1039,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             }
 
             replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
-                owner.kind == "replicaSet" && owner.uid == maybeDeployment.get.metadata.uid))
+                owner.kind == "deployment" && owner.uid == maybeDeployment.get.metadata.uid))
 
             pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
                 owner.kind == "replicaSet" && replicaSets.exists(_.metadata.uid == owner.uid)))
