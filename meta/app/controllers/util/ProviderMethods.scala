@@ -132,23 +132,20 @@ object ProviderMethods {
     val mask = "*" * 8
     val propertiesToMask = Seq("access_key", "secret_key")
 
-    val maybeMasked = provider.properties.flatMap(properties => {
-
-      val maybeConfig = Json.parse(properties("config")).asOpt[JsObject]
-      maybeConfig.map(config => {
-
-        val maskedConfig = propertiesToMask.foldLeft(config) {(acc, property) => {
-          config \ property match {
-            case _ : JsDefined => acc.deepMerge(Json.obj(
-              property -> mask
-            ))
-            case _ : JsUndefined => acc
-          }
-        }}
-        provider.copy(properties = Some(properties + ("config" -> Json.stringify(maskedConfig))))
-      })
-    })
-
+    val maybeMasked = for {
+      properties <- provider.properties
+      config <- Json.parse(properties("config")).asOpt[JsObject]
+    } yield {
+      val maskedConfig = propertiesToMask.foldLeft(config) { (acc, property) => {
+        config \ property match {
+          case _: JsDefined => acc.deepMerge(Json.obj(
+            property -> mask
+          ))
+          case _: JsUndefined => acc
+        }
+      }}
+      provider.copy(properties = Some(properties + ("config" -> Json.stringify(maskedConfig))))
+    }
     maybeMasked.getOrElse(provider)
   }
 

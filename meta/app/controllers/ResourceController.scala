@@ -640,8 +640,10 @@ class ResourceController @Inject()(
           UUID.fromString(sid)
         }
         prv <- ResourceFactory.findById(pid).map(maybeMaskCredentials(qs))
-        renderedPrv <- Some(Output.renderInstance(prv))
-      } yield upsertProperties(res, "provider" -> Json.stringify(renderedPrv))
+      } yield {
+        val renderedPrv = Output.renderInstance(prv)
+        upsertProperties(res, "provider" -> Json.stringify(renderedPrv))
+      }
     }
     renderedRes.getOrElse(res)
   }
