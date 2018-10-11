@@ -1,7 +1,6 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
-import java.util.concurrent.TimeUnit
 import java.util.{Base64, TimeZone}
 
 import com.galacticfog.gestalt.data.ResourceFactory
@@ -13,7 +12,7 @@ import com.galacticfog.gestalt.meta.api.VolumeSpec.{DynamicVolume, HostPathVolum
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, UnprocessableEntityException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
@@ -292,9 +291,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
     ).addLabels(containerLbls)
 
+    val deploymentUid = uuid()
     lazy val mockDepl = skuber.ext.Deployment(
       metadata = skuber.ObjectMeta(
-        uid = "63e10328-ac77-42a8-8525-07b41861dd35",
+        uid = deploymentUid.toString,
         name = metaContainer.name,
         namespace = testEnv.id.toString,
         labels = containerLbls,
@@ -311,6 +311,21 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )
       )
     )
+    val replicaSetUid = uuid()
+    lazy val mockReplicaA = skuber.ext.ReplicaSet(
+      metadata = skuber.ObjectMeta(
+        name = "test-replica",
+        uid = replicaSetUid.toString,
+        ownerReferences = List(OwnerReference(
+          apiVersion = "v1",
+          kind = "deployment",
+          name = "test-container",
+          uid = deploymentUid.toString,
+          controller = None,
+          blockOwnerDeletion = None
+        ))
+      )
+    )
 
     lazy val startA = ZonedDateTime.now(ZoneOffset.UTC)
     lazy val startB = ZonedDateTime.now(ZoneOffset.UTC)
@@ -323,7 +338,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           apiVersion = "v1",
           kind = "replicaSet",
           name = "test-replica",
-          uid = "6b02aa4e-abaf-4072-81d5-4f38f4a9a200",
+          uid = replicaSetUid.toString,
           controller = None,
           blockOwnerDeletion = None
         ))
@@ -351,7 +366,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           apiVersion = "v1",
           kind = "replicaSet",
           name = "test-replica",
-          uid = "6b02aa4e-abaf-4072-81d5-4f38f4a9a200",
+          uid = replicaSetUid.toString,
           controller = None,
           blockOwnerDeletion = None
         ))
@@ -369,21 +384,6 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         )),
         startTime = Some(startB)
       ))
-    )
-
-    lazy val mockReplicaA = skuber.ext.ReplicaSet(
-      metadata = skuber.ObjectMeta(
-        name = "test-replica",
-        uid = "6b02aa4e-abaf-4072-81d5-4f38f4a9a200",
-        ownerReferences = List(OwnerReference(
-          apiVersion = "v1",
-          kind = "deployment",
-          name = "test-container",
-          uid = "63e10328-ac77-42a8-8525-07b41861dd35",
-          controller = None,
-          blockOwnerDeletion = None
-        ))
-      )
     )
 
     lazy val testSetup = {
@@ -1489,9 +1489,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     "fill pod events" in new FakeKube {
       val testContainerId = uuid()
       val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
-          uid = "63e10328-ac77-42a8-8525-07b41861dd35",
+          uid = deploymentUid.toString,
           name = "test-container",
           namespace = testEnv.id.toString,
           labels = lbls,
@@ -1539,15 +1540,16 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         message = Some("message")
       ))
 
+      val replicaSetUid = uuid()
       val replicas = List(skuber.ext.ReplicaSet(
         metadata = skuber.ObjectMeta(
           name = "test-replica",
-          uid = "6b02aa4e-abaf-4072-81d5-4f38f4a9a200",
+          uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
             kind = "deployment",
             name = "test-container",
-            uid = "63e10328-ac77-42a8-8525-07b41861dd35",
+            uid = deploymentUid.toString,
             controller = None,
             blockOwnerDeletion = None
           ))
@@ -1561,7 +1563,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
             apiVersion = "v1",
             kind = "replicaSet",
             name = "test-replica",
-            uid = "6b02aa4e-abaf-4072-81d5-4f38f4a9a200",
+            uid = replicaSetUid.toString,
             controller = None,
             blockOwnerDeletion = None
           ))
