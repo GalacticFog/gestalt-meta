@@ -21,6 +21,7 @@ GET     /upgrade                 controllers.UpgradeController.check()
 POST    /upgrade                 controllers.UpgradeController.launch()
 DELETE  /upgrade                 controllers.UpgradeController.delete()
 
+GET     /about/resources         controllers.InfoController.resourceStats()
 GET		/about					 controllers.InfoController.about()
 GET		/health 				 controllers.InfoController.health()
 
