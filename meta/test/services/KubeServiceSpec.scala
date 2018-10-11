@@ -1603,8 +1603,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     "fill status using container states" in new FakeKube {
       val testContainerId = uuid()
       val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
+          uid = deploymentUid.toString,
           name = "test-container",
           namespace = testEnv.id.toString,
           labels = lbls,
@@ -1635,9 +1637,33 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
 
+      val replicaSetUid = uuid()
+      val replicas = List(skuber.ext.ReplicaSet(
+        metadata = skuber.ObjectMeta(
+          name = "test-replica",
+          uid = replicaSetUid.toString,
+          ownerReferences = List(OwnerReference(
+            apiVersion = "v1",
+            kind = "deployment",
+            name = "test-container",
+            uid = deploymentUid.toString,
+            controller = None,
+            blockOwnerDeletion = None
+          ))
+        )
+      ))
+
       val pods = List(skuber.Pod(
         metadata = skuber.ObjectMeta(
-          name = "test-pod"
+          name = "test-pod",
+          ownerReferences = List(OwnerReference(
+            apiVersion = "v1",
+            kind = "replicaSet",
+            name = "test-replica",
+            uid = replicaSetUid.toString,
+            controller = None,
+            blockOwnerDeletion = None
+          ))
         ),
         status = Some(Pod.Status(
           containerStatuses = List(skuber.Container.Status(
@@ -1654,9 +1680,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
 
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
-      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
+      testSetup.client.list()(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.client.list()(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
       testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
+      testSetup.client.list()(any,meq(skuber.ext.ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("", "", None, replicas))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
@@ -1675,8 +1702,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     "fill status using pod conditions" in new FakeKube {
       val testContainerId = uuid()
       val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
+          uid = deploymentUid.toString,
           name = "test-container",
           namespace = testEnv.id.toString,
           labels = lbls,
@@ -1707,9 +1736,33 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         ))
       )
 
+      val replicaSetUid = uuid()
+      val replicas = List(skuber.ext.ReplicaSet(
+        metadata = skuber.ObjectMeta(
+          name = "test-replica",
+          uid = replicaSetUid.toString,
+          ownerReferences = List(OwnerReference(
+            apiVersion = "v1",
+            kind = "deployment",
+            name = "test-container",
+            uid = deploymentUid.toString,
+            controller = None,
+            blockOwnerDeletion = None
+          ))
+        )
+      ))
+
       val pods = List(skuber.Pod(
         metadata = skuber.ObjectMeta(
-          name = "test-pod"
+          name = "test-pod",
+          ownerReferences = List(OwnerReference(
+            apiVersion = "v1",
+            kind = "replicaSet",
+            name = "test-replica",
+            uid = replicaSetUid.toString,
+            controller = None,
+            blockOwnerDeletion = None
+          ))
         ),
         status = Some(Pod.Status(
           phase = Some(Pod.Phase.Pending),
@@ -1721,9 +1774,10 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
       ))
 
       testSetup.client.getOption(meq(metaContainer.name))(any,meq(Deployment.deployDef),any) returns Future.successful(Some(testDepl))
-      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
-      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
+      testSetup.client.list()(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,Nil))
+      testSetup.client.list()(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,pods))
       testSetup.client.list()(any,meq(skuber.Event.evListDef),any) returns Future.successful(new skuber.EventList("", "", None, Nil))
+      testSetup.client.list()(any,meq(skuber.ext.ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("", "", None, replicas))
 
       val Some(containerStats) = await(testSetup.svc.find(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
