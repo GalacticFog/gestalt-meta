@@ -990,8 +990,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         (to,tw,te)
       }
       val Success(kubeProvider) = createKubernetesProvider(parent = testEnv.id, config = Seq(
-        "access_key" -> "test_key",
-        "secret_key" -> "test_key"
+        "access_key" -> "access_key",
+        "secret_key" -> "secret_key"
       ))
       val Success(gtw) = createDummyGateway(testEnv.id)
       val Success(kongProviderWithAbsentVhost) = createDummyKong(testEnv.id, props = Map(
@@ -1449,7 +1449,6 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      println(Json.stringify(json))
       (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
       (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
     }
@@ -1462,6 +1461,16 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val json = contentAsJson(result)
       (json \ "properties" \ "provider" \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
       (json \ "properties" \ "provider" \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
+    }
+
+    "show security credentials for provider if explicitly asked" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/providers/${kubeProvider.id}?showcredentials=true", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("access_key")
+      (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("secret_key")
     }
 
   }
