@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
@@ -100,9 +101,7 @@ class ResourceController @Inject()(
     log.debug("Lookup function : lookupProvider(_,_,_)...")
 
     Resource.toInstance(path) map { res =>
-      // Inject actions if this is an ActionProvider
-      if (ProviderMethods.isActionProvider(res.typeId))
-        ProviderMethods.injectProviderActions(res) else res
+      (maybeInjectActions _  andThen maybeMaskCredentials) apply res
     }
   }
 
@@ -504,9 +503,7 @@ class ResourceController @Inject()(
       val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId)
       filterProvidersByType(rs, qs) map { res =>
 
-        // Inject actions if this is an ActionProvider
-        if (ProviderMethods.isActionProvider(res.typeId))
-          ProviderMethods.injectProviderActions(res) else res
+        (maybeInjectActions _ andThen maybeMaskCredentials) apply res
       }
     }
   }
@@ -633,18 +630,29 @@ class ResourceController @Inject()(
   }
 
   private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
-    val rendered = {
+    val renderedRes = {
       for {
         ps <- res.properties
         pid = {
           val sid  = (Json.parse(ps("provider")) \ "id").as[String]
           UUID.fromString(sid)
         }
-        prv <- ResourceFactory.findById(pid).map(Output.renderInstance(_))
-
-      } yield upsertProperties(res, "provider" -> Json.stringify(prv))
+        prv <- ResourceFactory.findById(pid).map(maybeMaskCredentials)
+        renderedPrv <- Some(Output.renderInstance(prv))
+      } yield upsertProperties(res, "provider" -> Json.stringify(renderedPrv))
     }
-    rendered.fold(res) { p => p }
+    renderedRes.getOrElse(res)
+  }
+
+  private[controllers] def maybeMaskCredentials(provider: GestaltResourceInstance) : GestaltResourceInstance = {
+    if (ProviderMethods.isCaaSProvider(provider.typeId)) {
+      ProviderMethods.maskCredentials(provider)
+    } else provider
+  }
+
+  private[controllers] def maybeInjectActions(provider: GestaltResourceInstance) : GestaltResourceInstance = {
+    if (ProviderMethods.isActionProvider(provider.typeId))
+      ProviderMethods.injectProviderActions(provider) else provider
   }
 
   private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
