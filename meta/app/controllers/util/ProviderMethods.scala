@@ -14,9 +14,8 @@ import java.util.UUID
 
 import akka.actor.ActorSystem
 import akka.stream.Materializer
-import play.api.libs.json.Json
 import com.galacticfog.gestalt.meta.api.output.Output
-import play.api.libs.json.Json
+import play.api.libs.json.{JsDefined, JsObject, JsUndefined, Json}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 
@@ -114,6 +113,10 @@ object ProviderMethods {
   def isActionProvider(testType: UUID): Boolean = {
     ResourceFactory.isSubTypeOf(testType, ResourceIds.ActionProvider)
   }
+
+  def isCaaSProvider(testType: UUID) : Boolean = {
+    ResourceFactory.isSubTypeOf(testType, ResourceIds.CaasProvider)
+  }
  
   def injectProviderActions(res: GestaltResourceInstance): GestaltResourceInstance = {
     log.debug("injectProviderActions(_) : Looking up Provider Actions")
@@ -123,6 +126,27 @@ object ProviderMethods {
       ps ++ Map("provider_actions" -> Json.stringify(actjson))
     }
     res.copy(properties = props)    
+  }
+
+  def maskCredentials(provider: GestaltResourceInstance) : GestaltResourceInstance = {
+    val mask = "*" * 8
+    val propertiesToMask = Seq("access_key", "secret_key")
+
+    val maybeMasked = for {
+      properties <- provider.properties
+      config <- Json.parse(properties("config")).asOpt[JsObject]
+    } yield {
+      val maskedConfig = propertiesToMask.foldLeft(config) { (acc, property) => {
+        config \ property match {
+          case _: JsDefined => acc.deepMerge(Json.obj(
+            property -> mask
+          ))
+          case _: JsUndefined => acc
+        }
+      }}
+      provider.copy(properties = Some(properties + ("config" -> Json.stringify(maskedConfig))))
+    }
+    maybeMasked.getOrElse(provider)
   }
 
 }
