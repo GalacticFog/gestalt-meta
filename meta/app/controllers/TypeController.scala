@@ -31,6 +31,7 @@ import com.galacticfog.gestalt.meta.providers.ui.Assembler
 import com.galacticfog.gestalt.meta.providers._
 
 import scala.util.{Failure, Success, Try}
+import scala.concurrent.duration._
 import controllers.util.Security
 import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
 import com.galacticfog.gestalt.security.api.GestaltOrg
@@ -38,6 +39,7 @@ import com.galacticfog.gestalt.security.api.GestaltOrgSync
 import com.galacticfog.gestalt.security.api.GestaltResource
 import com.galacticfog.gestalt.security.api.json.JsonImports._
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
+import play.api.cache.CacheApi
 import play.api.mvc.RequestHeader
 
 
@@ -45,7 +47,8 @@ import play.api.mvc.RequestHeader
 class TypeController @Inject()(
     messagesApi: MessagesApi,
     sec: GestaltFrameworkSecurity,
-    security: Security)
+    security: Security,
+    cache: CacheApi)
   extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   case class SchemaEntry(name: String, datatype: String, required: Option[Boolean])
@@ -61,12 +64,30 @@ class TypeController @Inject()(
       
       val tpes = {
         if (qs.contains("name") && qs.contains("type")) {
-          throw new BadRequestException(
-              "'name' and 'type' query params are not supported simultaneously. Supply one or the other")
+          throw BadRequestException(
+            "'name' and 'type' query params are not supported simultaneously. Supply one or the other")
         }
-        else if (qs.contains("name")) findNamedTypes(qs)
-        else if (qs.contains("type")) findCovariantTypes(qs)
-        else TypeFactory.findAll(ResourceIds.ResourceType, org.id)
+        else if (qs.contains("name")) {
+          cache.getOrElse[Seq[GestaltResourceType]]("name=" + qs) {
+            val result = findNamedTypes(qs)
+            cache.set("name=" + qs, result, 10.minutes)
+            result
+          }
+        }
+        else if (qs.contains("type")) {
+          cache.getOrElse[Seq[GestaltResourceType]]("type=" + qs) {
+            val result = findCovariantTypes(qs)
+            cache.set("type=" + qs, result, 10.minutes)
+            result
+          }
+        }
+        else {
+          cache.getOrElse[Seq[GestaltResourceType]]("id=" + org.id) {
+            val result = TypeFactory.findAll(ResourceIds.ResourceType, org.id)
+            cache.set("id=" + org.id, result, 10.minutes)
+            result
+          }
+        }
       }
       Ok(handleExpandType(tpes, qs, META_URL))
     }
