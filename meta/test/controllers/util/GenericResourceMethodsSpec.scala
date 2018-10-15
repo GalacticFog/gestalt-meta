@@ -143,7 +143,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
       ))
     }
-<<<<<<< HEAD
+
 //    
 //    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
 //      val defaultUrl = "http://default-url"
