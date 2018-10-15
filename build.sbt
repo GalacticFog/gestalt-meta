@@ -39,8 +39,9 @@ lazy val meta = (project in file("meta")).
                       } catch {      case t: Throwable => "get git hash failed"    }
               }}.toString()
     ),
-    buildInfoPackage := "com.galacticfog.gestalt.meta.api"
-  )
+    buildInfoPackage := "com.galacticfog.gestalt.meta.api",
+    sources in (Compile,doc) := Seq.empty
+  ).dependsOn(integrations)
 
 lazy val containerImport = (project in file("container.import")).
   settings(commonSettings: _*).
@@ -59,12 +60,15 @@ lazy val containerImport = (project in file("container.import")).
     }
   ).
   settings(addArtifact(artifact in (Compile, assembly), assembly).settings: _*).
-  dependsOn(meta % "test->test")
-  // enablePlugins(GitVersioning)
+  dependsOn(meta % "test->test").dependsOn(integrations)
+
+lazy val integrations = (project in file("integrations")).
+  settings(commonSettings: _*)
 
 lazy val root = (project in file(".")).
   aggregate(meta).
   aggregate(containerImport).
+  aggregate(integrations).
   settings(commonSettings: _*).
   settings(
     publish := {},

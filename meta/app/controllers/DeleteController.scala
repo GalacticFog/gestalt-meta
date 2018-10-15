@@ -18,6 +18,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.mvc.RequestHeader
 import services._
 import skuber.Namespace
+import skuber.api.client.RequestContext
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
@@ -130,13 +131,17 @@ class DeleteController @Inject()(
          * See: https://gitlab.com/galacticfog/gestalt-meta/issues/319
          */
         val test = if (resource.typeId == ResourceIds.Environment) {
-            deleteEnvironmentSpecial(resource, identity)
+          deleteEnvironmentSpecial(resource, identity)
         } else {
           Success(())
         }
         
         test match {
-          case Failure(e) => throw e
+          case Failure(e) => {
+            log.warn(s"An error occurred checking Kube providers for namespace. The error received was, '${e.getMessage}'. This probably indicates a problem with an upstream Kubernetes provider.")
+            log.info("Ignoring error - proceeding with Environment delete.")
+            DeleteHandler.handle(resource, identity)
+          }
           case Success(_) => DeleteHandler.handle(resource, identity)
         }
       }
@@ -203,10 +208,9 @@ class DeleteController @Inject()(
     TypeMethods.destroyTypeEntitlements(tpe).get
   }
   
+  
   def hardDeleteResource(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-
     val p = if (path.trim.isEmpty) fqon else "%s/%s".format(fqon, path)
-
     Resource.fromPath( p ) map {
       resource =>
         val resp = if (isProviderBackedResource(resource.typeId)) {
@@ -233,40 +237,49 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
 
-
-  def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
+def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
     val namespace = res.id.toString
     val kubeProviders = ResourceFactory.findAncestorsOfSubType(ResourceIds.KubeProvider, res.id)
+    
     log.info(s"Found [${kubeProviders.size}] Kube Providers in Scope...")
     
     val deletes = kubeProviders.map { k =>
       log.info(s"Deleting namespace '$namespace' from Kube Provider '${k.name}'...")
-
-      try{
-        skuberFactory.initializeKube(k, namespace) flatMap { kube =>
-          val deleted = kube.delete[Namespace](namespace).recoverWith {
-            case e: skuber.api.client.K8SException => {
+      
+      skuberFactory.initializeKube(k, namespace) map {
+          Success(_):Try[RequestContext]
+        } recover {
+          case t => Failure(t)
+        } flatMap {
+          case Success(kube) => {
+            val deleted = kube.delete[Namespace](namespace).recoverWith {
+              case e: skuber.api.client.K8SException => {
+               
               /*
                * There are a few cases where kube may throw an error when attempting to
                * delete a namespace. This guard checks for thos known cases and ignores
                * the failure if possible.
                */
-              if (ignorableNamespaceError(namespace, e.status))
+                
+                if (ignorableNamespaceError(namespace, e.status))
+                  Future.successful(())
+                else throw e
+              }
+              case x: Throwable => {
+                log.warn("Error deleting namespaces during environment cleanup.")
                 Future.successful(())
-              else throw e
+              }
             }
+            deleted.onComplete(_ => kube.close)
+            deleted
           }
-          deleted.onComplete(_ => kube.close)
-          deleted
+          case Failure(t) => {
+            log.warn(s"${t.getMessage}", t)
+            Future.successful(())
+          }
         }
-      } catch {
-        case e: Throwable => {
-          log.warn(s"unable to initialize kube with id = '${k.id}' with cause '${e.getCause()}'...")
-          Future.successful(())
-        }
-      }
     }
 
     Await.result(Future.sequence(deletes), 10.seconds)

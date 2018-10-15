@@ -8,12 +8,12 @@ import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
 import com.galacticfog.gestalt.meta.genericactions._
-import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import controllers.SecurityResources
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.specification.{BeforeAll, Scope}
+import org.specs2.specification._
 import play.api.http.HeaderNames
 import play.api.inject.bind
 import play.api.inject.guice.GuiceApplicationBuilder
@@ -31,10 +31,10 @@ import scala.util.Success
 
 class GenericResourceMethodsSpec extends PlaySpecification
   with GestaltSecurityMocking with ResourceScope
-  with BeforeAll with JsonMatchers with JsonInput with DefaultAwaitTimeout with FutureAwaits {
+  with BeforeAll with DbShutdown with JsonMatchers with JsonInput with DefaultAwaitTimeout with FutureAwaits {
   
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
-  
+
   override def beforeAll(): Unit = {
     pristineDatabase()
     val Success(_) = Ents.createNewMetaUser(user, dummyRootOrgId, rootOwnerLink(), user.account,
@@ -48,24 +48,24 @@ class GenericResourceMethodsSpec extends PlaySpecification
     )
   }
   
-  sequential
-  
   abstract class TestScope extends Scope {
-    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
-    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
-    
     val mockProviderMethods = mock[ProviderMethods]
-    val injector =
+    val mockGestaltSecurityConfig = mock[GestaltSecurityConfig]
+    val appBuilder =
       new GuiceApplicationBuilder()
         .disable[modules.ProdSecurityModule]
         .disable[modules.MetaDefaultSkuber]
         .disable[modules.MetaDefaultServices]
         .disable[modules.HealthModule]
         .bindings(
-          bind(classOf[GestaltSecurityConfig]).toInstance(mock[GestaltSecurityConfig]),
+          bind(classOf[GestaltSecurityConfig]).toInstance(mockGestaltSecurityConfig),
           bind(classOf[ProviderMethods]).toInstance(mockProviderMethods)
         )
-        .injector
+    val injector = appBuilder.injector()
+    setInjector(injector)
+
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
 
     val testUrl = "http://some-laser.some-domain/lambdas/b2d51c3d-aaaf-4575-b29d-4f0cb52d53fc/invokeSync"
     val Success(providerWithDefaultEndpoint) = createInstance(ResourceIds.Provider, "test-provider", properties = Some(Map(
@@ -129,12 +129,11 @@ class GenericResourceMethodsSpec extends PlaySpecification
     val Some(rootOrg) = ResourceFactory.findById(ResourceIds.Org, dummyRootOrgId)
   }
 
-  trait TestApplication extends TestScope {
-  }
+  sequential
 
   "DefaultGenericProviderManager" should {
 
-    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestApplication {
+    "appropriately instantiate HttpGenericProvider classes for configured provider" in new TestScope {
       val providerManager = new DefaultGenericProviderManager(mock[WSClient])
       providerManager.getProvider(
           providerWithDefaultEndpoint, 
@@ -144,6 +143,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
           and (((_:GenericProvider).asInstanceOf[HttpGenericProvider].url) ^^ be_==(testUrl))
       ))
     }
+<<<<<<< HEAD
 //    
 //    "instantiate HttpGenericProvider with authentication support" in new TestApplication {
 //      val defaultUrl = "http://default-url"
@@ -263,12 +263,13 @@ class GenericResourceMethodsSpec extends PlaySpecification
 //      providerManager.getProvider(testProvider, "some-action", callerAuth = "fakeCreds") must beASuccessfulTry(beNone)
 //    }
 //
+
   }
 
 
   "HttpGenericProvider" in {
 
-    "post appropriately to endpoints and parse Resource update semantics" in new TestApplication {
+    "post appropriately to endpoints and parse Resource update semantics" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val actionPayload = Json.obj(
         "foo" -> "bar"
@@ -322,7 +323,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       )
     }
 
-    "use authentication header if configured" in new TestApplication {
+    "use authentication header if configured" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
 
       val testHeader = "Bearer some-magic-token"
@@ -353,7 +354,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       await(httpProvider.invokeAction(inv)) must beLeft[GestaltResourceInstance]
     }
 
-    "abide by provider 'method'" in new TestApplication {
+    "abide by provider 'method'" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
 
       val testHeader = "Bearer some-magic-token"
@@ -385,7 +386,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
-    "expand url template" in new TestApplication {
+    "expand url template" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
 
       val templateUrl = "http://<provider.properties.config.env.public.SERVICE_HOST>:<provider.properties.config.env.public.SERVICE_PORT>/streams/<resource.id>/status"
@@ -419,7 +420,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
-    "expand url template (query params)" in new TestApplication {
+    "expand url template (query params)" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
 
       val templateUrl = "http://host/resources/<queryParams.p1>"
@@ -457,7 +458,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
-    "40x errors from endpoints should result in BadRequestException" in new TestApplication {
+    "40x errors from endpoints should result in BadRequestException" in new TestScope {
       var status: Int = 398
       val routeInvoke = Route {
         case _ => Action(parse.json) { request =>
@@ -486,7 +487,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       await(httpProvider.invokeAction(inv)) must throwA[RuntimeException]("403")
     }
 
-    "parse custom-response semantics from endpoints " in new TestApplication {
+    "parse custom-response semantics from endpoints " in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val actionPayload = Json.obj(
         "foo" -> "bar"
@@ -527,7 +528,7 @@ class GenericResourceMethodsSpec extends PlaySpecification
       ))
     }
 
-    "parse failure semantics" in new TestApplication {
+    "parse failure semantics" in new TestScope {
       val Success(dummyResource) = createInstance(ResourceIds.Resource, "test-resource")
       val failureMessage = "some failure message"
       val customResponse = Json.obj(

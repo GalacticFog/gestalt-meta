@@ -4,7 +4,7 @@ import com.typesafe.sbt.packager.docker._
 
 name := """gestalt-meta"""
 
-version := "0.7.3"
+version := "0.7.7"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -17,8 +17,30 @@ dockerCommands := dockerCommands.value.flatMap {
     cmd,
     Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*")
   )
+  case Cmd("ADD", _) => List(
+    Cmd("RUN", "mkdir -p /opt/docker/lib"),
+    Cmd("RUN", "chown -R daemon:daemon ."),
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/authenticators", "/opt/docker/authenticators"),    // 150MB blob: updated never
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/lib/*", "/opt/docker/lib/"),     // all third-party dependencies: updated once in a while
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/_lib/*", "/opt/docker/lib/"),    // our dependencies: updated very often
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/conf", "/opt/docker/conf"),
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/bin", "/opt/docker/bin")
+  )
+  case ExecCmd("RUN", _*) => List()
   case other => List(other)
 }
+
+mappings in Universal := {
+  val universalMappings = (mappings in Universal).value
+
+  universalMappings map {
+    case(file, name) if name.startsWith("lib/com.galacticfog.") => (file, "_" ++ name)
+    case(file, name) => (file, name)
+  }
+}
+
+import NativePackagerHelper._
+mappings in Universal ++= directory("authenticators")
 
 parallelExecution in Test := false
 
@@ -32,7 +54,8 @@ EclipseKeys.createSrc := EclipseCreateSrc.Default + EclipseCreateSrc.Managed
 
 javaOptions in Universal ++= Seq(
         "-Djava.util.prefs.systemRoot=/tmp/.java",
-        "-Djava.util.prefs.userRoot=/tmp/.userPrefs"
+        "-Djava.util.prefs.userRoot=/tmp/.userPrefs",
+        "-Djava.net.useSystemProxies=true"
 )
 
 javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
@@ -46,9 +69,11 @@ libraryDependencies ++= Seq(
   ws,
   filters,
 
+  "ai.x"            %% "play-json-extensions"          % "0.10.0",
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.6" withSources(),
+
+  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.9" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
@@ -68,6 +93,7 @@ libraryDependencies ++= Seq(
   "org.scala-lang"   % "scala-reflect"                 % "2.11.8",
   "org.scala-lang"   % "scala-compiler"                % "2.11.8",
   "org.scalaz"      %% "scalaz-core"                   % "7.1.12",
+  "org.typelevel"   %% "cats-core"                     % "1.0.1",
 
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",

@@ -22,6 +22,7 @@ import controllers.util.DataStore
 import org.specs2.mock.Mockito
 import play.api.inject.guice.GuiceApplicationBuilder
 import migrations._
+import play.api.db.Database
 
 trait ResourceScope extends Scope with Mockito {
   println("*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*~*")
@@ -46,8 +47,9 @@ trait ResourceScope extends Scope with Mockito {
   
   def pristineDatabase() = {
     val dataStore = injector.instanceOf(classOf[DataStore])
+    val database = injector.instanceOf(classOf[Database])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
-    val db = new Bootstrap(ResourceIds.Org,
+    val dbBootstrap = new Bootstrap(ResourceIds.Org,
         dummyRootOrgId, dummyRootOrgId, owner, dataStore.dataSource)
     val metaconfig = new DefaultMetaConfiguration()
 
@@ -60,11 +62,11 @@ trait ResourceScope extends Scope with Mockito {
     println("%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%")
 
     for {
-      _ <- db.clean
-      _ <- db.migrate
-      _ <- db.loadReferenceData
-      _ <- db.loadSystemTypes
-      _ <- db.initialize("root")
+      _ <- dbBootstrap.clean
+      _ <- dbBootstrap.migrate
+      _ <- dbBootstrap.loadReferenceData
+      _ <- dbBootstrap.loadSystemTypes
+      _ <- dbBootstrap.initialize("root")
       admin <- {
         val gestaltAdmin = GestaltResourceInstance(
           id     = adminUserId,
@@ -108,7 +110,10 @@ trait ResourceScope extends Scope with Mockito {
           new V12(),
           new V13(),
           new V14(),
-          new V15()
+          new V15(),
+          new V16(),
+          new V17(),
+          new V18()
         )
 
         val tries = migrations.map {
@@ -122,6 +127,7 @@ trait ResourceScope extends Scope with Mockito {
           tries.map(_.get)
         }
       }
+      _ <- Try { database.shutdown() }
     } yield ()
   }
   
@@ -244,13 +250,29 @@ trait ResourceScope extends Scope with Mockito {
     )
   }
 
-  def createEcsProvider(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
+  def createEcsProvider(parent: UUID, name: String = uuid.toString, launchType: String, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
     createInstance(
       typeId = migrations.V14.ECS_PROVIDER_TYPE_ID,
       name = name,
       parent = Option(parent),
       properties = Option(Map(
         "parent" -> "{}",
+        "provider_subtype" -> launchType,
+        "config" -> Json.obj(config:_*).toString
+      ))
+    )
+  }
+
+  def createVolume(parent: UUID, name: String = uuid.toString, config: Seq[(String,JsValueWrapper)] = Seq.empty) = {
+    createInstance(
+      typeId = migrations.V13.VOLUME_TYPE_ID,
+      name = name,
+      parent = Option(parent),
+      properties = Option(Map(
+        "provider" -> "",
+        "type" -> "host_path",
+        "access_mode" -> "ReadWriteMany",
+        "size" -> "0",
         "config" -> Json.obj(config:_*).toString
       ))
     )

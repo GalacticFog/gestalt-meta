@@ -73,20 +73,23 @@ abstract class MetaMigration() {
 
   private[migrations] def addPropertyTypeToResourceType(tpe: GestaltResourceType,
                                                         prop: GestaltTypeProperty)
-                                                       (implicit acc: MessageAccumulator) = Try {
-    PropertyFactory.findByName(tpe.id, prop.name) match {
-      case Some(t) =>
+                                                       (implicit acc: MessageAccumulator): Try[GestaltTypeProperty] = {
+    Try(PropertyFactory.findByName(tpe.id, prop.name)) flatMap {
+      case Some(t) => {
         acc push s"Type ${tpe.id} already had '${prop.name}' property"
         Success(t)
-      case None =>
-        PropertyFactory.create(tpe.owner.id)(prop) match {
-          case Success(t) =>
-            acc push s"Added '${prop.name}' to Type ${tpe.id}"
-            Success(t)
-          case Failure(e) =>
+      }
+      case None => {
+        PropertyFactory.create(tpe.owner.id)(prop) map { t =>
+          acc push s"Added '${prop.name}' to Type ${tpe.id}"
+          t
+        } recoverWith {
+          case e: Throwable => {
             acc push s"ERROR adding '${prop.name}' to Type ${tpe.id}: ${e.getMessage}"
             Failure(e)
+          }
         }
+      }
     }
   }
 

@@ -3,15 +3,18 @@ package com.galacticfog.gestalt.container
 // import java.io.{StringWriter,PrintWriter}
 // import scala.util.{Try,Success,Failure}
 import scala.collection.JavaConversions._
+import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceOutput
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import play.api.libs.json._
 import cats.syntax.either._
 import cats.Semigroup
 import cats.syntax.semigroup._
-import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials}
-import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
+import cats.instances.vector._
+import cats.instances.either._
+import cats.syntax.traverse._
 import com.amazonaws.services.ecs.model._
+import com.galacticfog.gestalt.integrations.ecs._
 
 object EcsContainerImport {
   case class Payload(
@@ -20,20 +23,6 @@ object EcsContainerImport {
     resource: GestaltResourceOutput
   )
 
-  case class ProviderConfig(
-    access_key: String,
-    secret_key: String,
-    region: String,
-    cluster: String,
-    taskRoleArn: Option[String]
-  )
-
-  case class ProviderSpec(
-    config: ProviderConfig
-  )
-
-  implicit val providerConfigReads = Json.reads[ProviderConfig]
-  implicit val providerSpecReads = Json.reads[ProviderSpec]
   implicit val gestaltResourceOutputReads = Json.reads[GestaltResourceOutput]
   implicit val payloadReads = Json.reads[Payload]
 
@@ -104,37 +93,54 @@ object EcsContainerImport {
   }
 }
 
-class EcsContainerImport extends ContainerImport {
+class EcsContainerImport extends ContainerImport with FromJsResult {
   import EcsContainerImport._
+
+  val clientFactory: EcsClientFactory = new DefaultEcsClientFactory()
 
   type EitherString[A] = Either[String,A]
 
-  def getClient(providerSpec: ProviderSpec): AmazonECS = {
-    val credentials = new BasicAWSCredentials(providerSpec.config.access_key, providerSpec.config.secret_key)
-    AmazonECSClientBuilder.standard()
-      .withCredentials(new AWSStaticCredentialsProvider(credentials))
-      .withRegion(providerSpec.config.region)
-      .build()
-  }
-
-  def containerImport(containerSpec: ContainerSpec, providerSpec: ProviderSpec): EitherString[ContainerSpec] = {
-    val client = getClient(providerSpec)
+  def containerImport(containerSpec: ContainerSpec, client: EcsClient): EitherString[ContainerSpec] = {
     val Some(externalId) = containerSpec.external_id
 
+    def mkInlineVolumeMountSpec(mountPointMapping: Map[String,String])(volume: Volume): EitherString[ContainerSpec.VolumeMountSpec] = {
+      for(
+        hostVolumeProperties <- Either.fromOption(Option(volume.getHost()), "Only host path volumes (bind mounts) are supported");
+        sourcePath = hostVolumeProperties.getSourcePath();
+        mountPath <- Either.fromOption(mountPointMapping.get(volume.getName()), s"Container does not define a mount point for ${volume.getName}")
+      ) yield {
+        val resource = GestaltResourceInput(
+          name = volume.getName(),
+          id = None,
+          resource_type = None,
+          resource_state = None,
+          properties = Some(Map(
+            "type" -> JsString("host_path"),
+            "access_mode" -> JsString("ReadWriteMany"),
+            "size" -> JsNumber(1),
+            "config" -> JsString(s"""{
+              "host_path": "${sourcePath}"
+            }""")
+          ))
+        )
+        ContainerSpec.InlineVolumeMountSpec(mountPath, resource)
+      }
+    }
+
     val dsr = new DescribeServicesRequest()
-      .withCluster(providerSpec.config.cluster)
+      .withCluster(client.cluster)
       .withServices(externalId)
     for(
-      service <- client.describeServices(dsr).getServices().toSeq match {
+      service <- client.client.describeServices(dsr).getServices().toSeq match {
         case Seq(service) => Right(service)
         case Seq() => Left(s"No service entity found for `${externalId}`")
         case response => throw new RuntimeException(s"Invalid response: $response")
       };
-      _ <- if(service.getLaunchType() == "FARGATE") { Right(()) }else {
-        Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; only `FARGATE` is supported")
+      _ <- if(service.getLaunchType() == client.launchType) { Right(()) }else {
+        Left(s"The service `${externalId}` belongs to `${service.getLaunchType()}` launch type; this provider is configured to use `${client.launchType}`")
       };
       dtdr = new DescribeTaskDefinitionRequest().withTaskDefinition(service.getTaskDefinition());
-      taskDefn = client.describeTaskDefinition(dtdr).getTaskDefinition();
+      taskDefn = client.client.describeTaskDefinition(dtdr).getTaskDefinition();
       containerDefn <- taskDefn.getContainerDefinitions().toSeq match {
         case Seq(containerDefn) => Right(containerDefn)
         case Seq() => Left(s"No container definitions found for `${externalId}`")
@@ -142,7 +148,14 @@ class EcsContainerImport extends ContainerImport {
           Left(s"More than one container per task definition is defined for `${externalId}`; this is not supported")
           // anything I need to do about it?
         }
-      }
+      };
+      mountPointMapping = (Option(containerDefn.getMountPoints()) map { mps =>
+        mps.toSeq map { mp =>
+          (mp.getSourceVolume(), mp.getContainerPath())
+        }
+      }).map(_.toMap).getOrElse(Map());
+      inputVolumes = Option(taskDefn.getVolumes()).map(_.toSeq).getOrElse(Seq());
+      volumes <- inputVolumes.toVector.traverse(mkInlineVolumeMountSpec(mountPointMapping))
     ) yield {
       val entrypoint = Option(containerDefn.getEntryPoint()).map(_.toSeq.mkString(" "))
       val command = Option(containerDefn.getCommand()).map(_.toSeq)
@@ -169,8 +182,12 @@ class EcsContainerImport extends ContainerImport {
           host_port = Option(pm.getHostPort())
         )
       }
-      val networkConfiguration = Option(service.getNetworkConfiguration()).flatMap { a => Option(a.getAwsvpcConfiguration()) }
-      val subnets = networkConfiguration.map(_.getSubnets().toSeq.mkString(";"))
+      val network = if(service.getLaunchType() == "FARGATE") {
+        val networkConfiguration = Option(service.getNetworkConfiguration()).flatMap { a => Option(a.getAwsvpcConfiguration()) }
+        networkConfiguration.map(_.getSubnets().toSeq.mkString(";"))
+      }else {
+        Option(taskDefn.getNetworkMode())
+      }
       val updatedContainerSpec = ContainerSpec(
         name = Option(containerDefn.getName()).getOrElse(""),
         container_type = "DOCKER",
@@ -180,10 +197,11 @@ class EcsContainerImport extends ContainerImport {
         cpus = (Option(taskDefn.getCpu()) |+| Option(containerDefn.getCpu()).map(_.toString)).map(_.toDouble / 1024.0).getOrElse(0.0),
         memory = (Option(taskDefn.getMemory()) |+| Option(containerDefn.getMemory()).map(_.toString)).map(_.toDouble).getOrElse(0.0),
         num_instances = service.getDesiredCount(),
-        network = subnets,
+        network = network,
         cmd = if(entrypoint == Some("")) { None }else { entrypoint },
         args = if(command == Some(Seq())) { None }else { command },
         health_checks = healthChecks,
+        volumes = volumes,
         labels = Option(containerDefn.getDockerLabels()).map(_.toMap).getOrElse(Map()),
         env = environment.toMap,
         user = Option(containerDefn.getUser())
@@ -192,20 +210,7 @@ class EcsContainerImport extends ContainerImport {
     }
   }
 
-  def fromJsResult[A](jsResult: JsResult[A]): EitherString[A] = {
-    jsResult match {
-      case JsError(errors) => {
-        val errorMessage = errors map { case(path, errors) =>
-          val allErrors = errors.map(_.message).mkString(", ")
-          s"${path}: $allErrors"
-        } mkString("; ")
-        Left(s"Failed to parse payload: ${errorMessage}")
-      }
-      case JsSuccess(value, _) => Right(value)
-    }
-  }
-
-  def parsePayload(payloadStr: String): EitherString[(GestaltResourceOutput,ContainerSpec,ProviderSpec)] = {
+  def parsePayload(payloadStr: String): EitherString[(GestaltResourceOutput,ContainerSpec,EcsClient)] = {
     // https://stackoverflow.com/questions/23571677/22-fields-limit-in-scala-2-11-play-framework-2-3-case-classes-and-functions/23588132#23588132
     // It's funny, but play does not seem to provide a way to serialize or deserialize case classes with more than 22 fields
     // ContainerSpec is already a couple of fields too big, so there is no way to update Reads[ContainerSpec] to make it extract external_id
@@ -217,18 +222,20 @@ class EcsContainerImport extends ContainerImport {
       externalId <- fromJsResult((payloadJson \ "resource" \ "properties" \ "external_id").validate[String]);     // see above
       containerSpec = containerSpec0.copy(external_id=Some(externalId));
       providerProperties <- Either.fromOption(payload.provider.properties, "Provider properties cannot be empty");
-      providerSpec <- fromJsResult(providerProperties.validate[ProviderSpec]);
+      providerSubtype <- fromJsResult((providerProperties \ "provider_subtype").validate[String]);
+      providerConfig <- fromJsResult((providerProperties \ "config").validate[JsValue]);
+      client <- clientFactory.getEcsClient(providerSubtype, providerConfig.toString);
       _ <- if(payload.action != "container.import") { Left(s"Unsupported action: `${payload.action}`") }else { Right(()) }
-    ) yield (payload.resource, containerSpec, providerSpec)
+    ) yield (payload.resource, containerSpec, client)
   }
 
   def run(payloadStr: String, ctxStr: String): String = {
     // Try {
     (for(
-      resourceContainerSpecProviderSpec <- parsePayload(payloadStr);
-      updatedContainerSpec <- containerImport(resourceContainerSpecProviderSpec._2, resourceContainerSpecProviderSpec._3);
+      resourceContainerSpecEcsClient <- parsePayload(payloadStr);
+      updatedContainerSpec <- containerImport(resourceContainerSpecEcsClient._2, resourceContainerSpecEcsClient._3);
       containerSpecSerialized <- Right(Json.toJson(updatedContainerSpec).as[JsObject]);
-      resourceSerialized <- Right(Json.toJson(resourceContainerSpecProviderSpec._1).as[JsObject])
+      resourceSerialized <- Right(Json.toJson(resourceContainerSpecEcsClient._1).as[JsObject])
     ) yield {
       // these three fields are not serialized in reads[ContainerSpec] so I have to add them by hand
       val obligatoryObj = Json.obj(

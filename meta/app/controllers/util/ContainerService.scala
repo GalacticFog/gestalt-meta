@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.google.inject.Inject
 import controllers.DeleteController
 import play.api.Logger
@@ -292,9 +293,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     val fMaybeUpdate = (for {
       (metaContainer, metaContainerSpec) <- maybeMetaContainer
       provider <- Try { caasProvider(metaContainerSpec.provider.id) }.toOption
-      saasProvider <- providerManager.getProviderImpl(provider.typeId).toOption
+      caasProviderImpl <- providerManager.getProviderImpl(provider.typeId).toOption
       ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, Some(metaContainer))
-      stats = saasProvider.find(ctx, metaContainer)
+      stats = caasProviderImpl.find(ctx, metaContainer)
     } yield stats).getOrElse(Future.successful(None)) recover {
 
       case ce: java.net.ConnectException =>
@@ -337,11 +338,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     } groupBy (_._2.provider.id)
 
     val fStatsFromAllRelevantProviders: Future[Map[UUID, Map[String, ContainerStats]]] = Future.traverse(containerSpecsByProvider.keys) { pid =>
-      val cp = caasProvider(pid)
-      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), cp.id, None)
+      val provider = caasProvider(pid)
+      val ctx = ProviderContext(new FakeURI(s"/${fqon}/environments/${environment}/containers"), provider.id, None)
       val pidAndStats = for {
-        caasP <- Future.fromTry(providerManager.getProviderImpl(cp.typeId))
-        stats <- caasP.listInEnvironment(ctx)
+        caasProviderImpl <- Future.fromTry(providerManager.getProviderImpl(provider.typeId))
+        stats <- caasProviderImpl.listInEnvironment(ctx)
         statsMap = stats map (stat => stat.external_id -> stat) toMap
       } yield (pid -> statsMap)
       futureToFutureTry(pidAndStats)
@@ -396,7 +397,9 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           "tasks_unhealthy" -> stats.tasksUnhealthy.toString,
           "tasks_staged" -> stats.tasksStaged.toString,
           "instances" -> stats.taskStats.map { Json.toJson(_).toString }.getOrElse("[]"),
-          "port_mappings" -> Json.toJson(pms).toString
+          "port_mappings" -> Json.toJson(pms).toString,
+          "events" -> stats.events.map { Json.toJson(_).toString() }.getOrElse("[]"),
+          "status_detail" -> stats.getStatusDetail().map { Json.toJson(_).toString() }.getOrElse("{}")
         )
       case None if metaCon.state == ResourceStates.Failed => Seq(
         "status" -> "FAILED",
@@ -533,11 +536,11 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           ).toString,
           "volumes" -> Json.toJson(volMounts).toString
         )
-        service <- Future.fromTry {
+        service <- Future.fromTryST {
           log.debug("Retrieving CaaSService from ProviderManager")
           providerManager.getProviderImpl(context.provider.typeId)
         }
-        metaResource <- Future.fromTry {
+        metaResource <- Future.fromTryST {
           log.debug("Creating container resource in Meta")
           CreateWithEntitlements(containerResourcePre.orgId, user, containerResourcePre, Some(context.environmentId))
         }
@@ -546,7 +549,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           log.info("Creating container in backend CaaS...")
           service.create(context, metaResource)
         }
-        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
       } yield updatedInstance
     }
   }
@@ -613,12 +616,12 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
       )
 
       for {
-        metaResource <- Future.fromTry {
+        metaResource <- Future.fromTryST {
           log.debug("Creating volume resource in Meta")
           ResourceFactory.create(ResourceIds.User, user.account.id)(volumeResourcePre, Some(context.environmentId))
         }
         _ = log.info("Meta volume created: " + metaResource.id)
-        service <- Future.fromTry {
+        service <- Future.fromTryST {
           log.debug("Retrieving CaaSService from ProviderManager")
           providerManager.getProviderImpl(context.provider.typeId)
         }
@@ -626,7 +629,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           log.info("Creating volume in backend CaaS...")
           service.createVolume(context, metaResource)
         }
-        updatedInstance <- Future.fromTry(ResourceFactory.update(instanceWithUpdates, user.account.id))
+        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
       } yield updatedInstance
 
     }

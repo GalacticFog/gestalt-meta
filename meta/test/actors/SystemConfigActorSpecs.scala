@@ -4,14 +4,12 @@ import akka.actor.Props
 import akka.pattern.ask
 import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, WithDb}
 import controllers.SecurityResources
-import org.specs2.specification.BeforeAll
 import play.api.test.PlaySpecification
 
 import scala.concurrent.duration._
 import scala.util.Success
 
 class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
-
   implicit val askTimeout: akka.util.Timeout = 5 seconds
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
@@ -106,10 +104,6 @@ class SystemConfigActorSpecs extends PlaySpecification with MetaRepositoryOps {
         {(o: Option[String]) => throw new RuntimeException("who's bad?")}
       )).mapTo[SystemConfigActor.TestAndSetResult]) must_== (false, None)
       await((configActor ? SystemConfigActor.GetKey("nonexistent-test-and-set")).mapTo[Option[String]]) must beNone
-    }
-
-    "test-and-set for extant items" in new TestScope {
-
     }
 
   }

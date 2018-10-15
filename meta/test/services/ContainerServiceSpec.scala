@@ -5,11 +5,12 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
+import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
@@ -242,6 +243,42 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
   }
 
   "ContainerSpec" should {
+
+    "be fully (de)serializable" in {
+      val testProps = ContainerSpec(
+        name = "name",
+        description = Some("description"),
+        container_type = "DOCKER",
+        image = "nginx",
+        provider = ContainerSpec.InputProvider(id = uuid),
+        port_mappings = Seq(ContainerSpec.PortMapping("tcp", Some(80), None, None, None, None)),
+        cpus = 1.0,
+        memory = 128,
+        disk = 0.0,
+        num_instances = 1,
+        network = Some("BRIDGE"),
+        cmd = Some("cmd"),
+        constraints = Seq(),
+        accepted_resource_roles = Some(Seq("role")),
+        args = Some(Seq("arg")),
+        force_pull = false,
+        health_checks = Seq(),
+        volumes = Seq(),
+        labels = Map(),
+        env = Map(),
+        user = Some("user"),
+        external_id = Some("id"),
+        created = Some(DateTime.now())
+      )
+
+      val json = Json.toJson(testProps)
+      (json \ "name").toOption must beNone
+
+      json.as[JsObject] + ("name" -> JsString("name"))
+      val containerSpec = Json.fromJson[ContainerSpec](json)
+      containerSpec must beAnInstanceOf[JsSuccess[ContainerSpec]]
+
+    }
 
     "be convertible to GestaltResourceInput with all fields" >> { t : TestScope =>
       val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
@@ -1024,6 +1061,61 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         container = any
       )(any)
     }
+
+  }
+
+  "ContainerStats" should {
+
+    "provide status detail of topmost priority" in {
+      val testStates = Seq(
+        ContainerStateStat(
+          objectName = "testPod",
+          objectType = "Pod",
+          stateId = "running"
+        ),
+        ContainerStateStat(
+          objectName = "testPod1",
+          objectType = "Pod",
+          stateId = "waiting",
+          reason = Some("ERROR"),
+          message = Some("error message"),
+          priority = 1
+        ),
+        ContainerStateStat(
+          objectName = "testPod2",
+          objectType = "Pod",
+          stateId = "running"
+        )
+      )
+      val testContainerStats = ContainerStats(
+        external_id = "",
+        containerType = "",
+        status = "",
+        cpus = 0,
+        memory = 0,
+        image = "",
+        age = DateTime.now(),
+        numInstances = 0,
+        tasksStaged = 0,
+        tasksRunning = 0,
+        tasksHealthy = 0,
+        tasksUnhealthy = 0,
+        taskStats = None,
+        events = None,
+        states = Some(testStates),
+        lb_address = None)
+
+      val statusDetail = testContainerStats.getStatusDetail()
+      statusDetail must_== Some(ContainerStateStat(
+        objectName = "testPod1",
+        objectType = "Pod",
+        stateId = "waiting",
+        reason = Some("ERROR"),
+        message = Some("error message"),
+        priority = 1
+      ))
+    }
+
 
   }
 

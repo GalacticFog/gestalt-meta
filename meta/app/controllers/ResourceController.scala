@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
@@ -61,14 +62,15 @@ class ResourceController @Inject()(
   extends SecureController(messagesApi = messagesApi, sec = sec)
     with Authorization with MetaControllerUtils {
   
-  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Try[GestaltResourceInstance]
+  type TransformFunction = (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => Try[GestaltResourceInstance]
   type FilterFunction    = ((Seq[ResourceLike], Map[String, Seq[String]]) => Seq[ResourceLike])
+  type QueryString = Map[String, Seq[String]]
   
-  type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[Map[String, Seq[String]]]) => Option[GestaltResourceInstance]
-  type LookupSeq = (ResourcePath, AuthAccountWithCreds, Map[String, Seq[String]]) => Seq[GestaltResourceInstance]
+  type Lookup    = (ResourcePath, AuthAccountWithCreds, Option[QueryString]) => Option[GestaltResourceInstance]
+  type LookupSeq = (ResourcePath, AuthAccountWithCreds, QueryString) => Seq[GestaltResourceInstance]
 
-  def embed( embeddings: Map[String,(GestaltResourceInstance,AuthAccountWithCreds) => GestaltResourceInstance] ): TransformFunction = performOptionalEmbeddings(
-     embeddings, _: GestaltResourceInstance, _: AuthAccountWithCreds, _: Option[Map[String,Seq[String]]]
+  def embed( embeddings: Map[String,(GestaltResourceInstance,AuthAccountWithCreds,Option[QueryString]) => GestaltResourceInstance] ): TransformFunction = performOptionalEmbeddings(
+     embeddings, _: GestaltResourceInstance, _: AuthAccountWithCreds, _: Option[QueryString]
   )
 
   private[controllers] val transforms: Map[UUID, TransformFunction] = Map(
@@ -99,7 +101,7 @@ class ResourceController @Inject()(
   )
 
 
-  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
+  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val parent = mapPathData(Resource.ParentId)
 
@@ -111,23 +113,21 @@ class ResourceController @Inject()(
   }
 
 
-  def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] ={
+  def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
     val policy = mapPathData(Resource.ParentId)
     ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, policy)
   }
 
-  def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
+  def lookupProvider(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupProvider(_,_,_)...")
 
     Resource.toInstance(path) map { res =>
-      // Inject actions if this is an ActionProvider
-      if (ProviderMethods.isActionProvider(res.typeId))
-        ProviderMethods.injectProviderActions(res) else res
+      (maybeInjectActions _  andThen maybeMaskCredentials(qs)) apply res
     }
   }
 
-  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
+  def lookupContainer(path: ResourcePath, user: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     log.debug("Lookup function : lookupContainer(_,_,_)...")
     Resource.toInstance(path) flatMap { r =>
       val fqon = Resource.getFqon(path.path)
@@ -143,7 +143,7 @@ class ResourceController @Inject()(
     }
   }
 
-  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): Seq[GestaltResourceInstance] = {
+  def lookupContainers(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] = {
     if (getExpandParam(qs)) {
       // rs map transformMetaResourceToContainerAndUpdateWithStatsFromMarathon
       val mapPathData = Resource.mapListPathData(path.path)
@@ -778,7 +778,7 @@ class ResourceController @Inject()(
     }
   }
 
-  private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: Map[String, Seq[String]])
+  private[controllers] def AuthorizedResourceList(path: ResourcePath, action: String, qs: QueryString)
       (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
 
     log.debug(s"AuthorizedResourceList(${path.path}, $action)")
@@ -1029,17 +1029,17 @@ class ResourceController @Inject()(
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
    * org that is owned by itself.
    */
-  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
+  def lookupSeqOrgs(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
     Resource.listFromPath(path.path, qs) filter { o =>
       o.properties.get("fqon") != path.fqon
     }
   }
 
-  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]]): Option[GestaltResourceInstance] = {
+  def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
 
-  def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
+  def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
 
     val rs = if (Resource.isTopLevel(path.path)) {
       val org = fqid(Resource.getFqon(path.path))
@@ -1052,7 +1052,7 @@ class ResourceController @Inject()(
   /*
    * Type-Based Lookup Functions
    */
-  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
+  def lookupSeqProviders(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqProviders(${path.path}, user = ${account.account.id}")
 
     val parentId = {
@@ -1066,14 +1066,12 @@ class ResourceController @Inject()(
       val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId)
       filterProvidersByType(rs, qs) map { res =>
 
-        // Inject actions if this is an ActionProvider
-        if (ProviderMethods.isActionProvider(res.typeId))
-          ProviderMethods.injectProviderActions(res) else res
+        (maybeInjectActions _ andThen maybeMaskCredentials(Option(qs))) apply res
       }
     }
   }
 
-  def lookupSeqSecrets(path: ResourcePath, account: AuthAccountWithCreds, qs: Map[String, Seq[String]]): List[GestaltResourceInstance] = {
+  def lookupSeqSecrets(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
     log.debug(s"lookupSeqSecrets(${path.path}, user = ${account.account.id}")
 
     val parentEnvId = if ( !path.parentTypeId.contains(ResourceIds.Environment) ) {
@@ -1106,7 +1104,7 @@ class ResourceController @Inject()(
     else Invariant(typeid)
   }
 
-  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: Map[String,Seq[String]]) = {
+  def filterProvidersByType(rs: List[GestaltResourceInstance], qs: QueryString) = {
 
     val allnames = TypeFactory.allProviderNames()
     val prefixes = TypeFactory.typeNamePrefixes(allnames)
@@ -1128,7 +1126,7 @@ class ResourceController @Inject()(
 
 
 
-  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
+  private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val props  = EntitlementProps.make(res)
     val output = props.identities map { ids =>
 
@@ -1155,7 +1153,7 @@ class ResourceController @Inject()(
   private[controllers] def transformPolicy(
       res: GestaltResourceInstance,
       user: AuthAccountWithCreds,
-      qs: Option[Map[String, Seq[String]]] = None) = Try {
+      qs: Option[QueryString] = None) = Try {
 
     val ruleLinks = ResourceFactory.findChildrenOfSubType(ResourceIds.Rule, res.id) map {  toLink(_, None) }
     upsertProperties(res, "rules" -> Json.stringify(Json.toJson(ruleLinks)))
@@ -1165,7 +1163,8 @@ class ResourceController @Inject()(
     * Lookup and inject container mount info into upstream Volume object
     */
   private[controllers] def embedContainerMountInfo( res: GestaltResourceInstance,
-                                                    user: AuthAccountWithCreds ): GestaltResourceInstance = {
+                                                    user: AuthAccountWithCreds,
+                                                    qs: Option[QueryString]): GestaltResourceInstance = {
     val containerMount: Option[(ExistingVolumeMountSpec,GestaltResourceInstance)] = {
       val mnts = for {
         env <- ResourceFactory.findParent(res.id).toList
@@ -1191,22 +1190,38 @@ class ResourceController @Inject()(
     }
   }
 
-  private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
-    val rendered = {
+  private[controllers] def embedProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString]) = {
+    val renderedRes = {
       for {
         ps <- res.properties
         pid = {
           val sid  = (Json.parse(ps("provider")) \ "id").as[String]
           UUID.fromString(sid)
         }
-        prv <- ResourceFactory.findById(pid).map(Output.renderInstance(_))
-
-      } yield upsertProperties(res, "provider" -> Json.stringify(prv))
+        prv <- ResourceFactory.findById(pid).map(maybeMaskCredentials(qs))
+      } yield {
+        val renderedPrv = Output.renderInstance(prv)
+        upsertProperties(res, "provider" -> Json.stringify(renderedPrv))
+      }
     }
-    rendered.fold(res) { p => p }
+    renderedRes.getOrElse(res)
   }
 
-  private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+  private[controllers] def maybeMaskCredentials(qs: Option[QueryString])(provider: GestaltResourceInstance) : GestaltResourceInstance = {
+    val isShowCredentials = qs.isDefined && qs.get.getOrElse("showcredentials", Seq.empty).headOption.contains("true")
+    val isCaaSProvider = ProviderMethods.isCaaSProvider(provider.typeId)
+
+    if (!isShowCredentials && isCaaSProvider) {
+      ProviderMethods.maskCredentials(provider)
+    } else provider
+  }
+
+  private[controllers] def maybeInjectActions(provider: GestaltResourceInstance) : GestaltResourceInstance = {
+    if (ProviderMethods.isActionProvider(provider.typeId))
+      ProviderMethods.injectProviderActions(provider) else provider
+  }
+
+  private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString]) = {
     val endpoints = {
       val raw = ResourceFactory.findAllByPropertyValue(ResourceIds.ApiEndpoint, "implementation_id", res.id)
       raw.map { ep =>
@@ -1220,41 +1235,40 @@ class ResourceController @Inject()(
     upsertProperties(res, "apiendpoints" -> rendered)
   }
 
-  private[controllers] def embedVolumes(res: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+  private[controllers] def embedVolumes(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString]) = {
     val volumes = for {
       vol <- res.properties.getOrElse(Map.empty).get("volumes").flatMap(vs => Try(Json.parse(vs).as[Seq[JsObject]]).toOption).getOrElse(Seq.empty)
       vid <- (vol \ "volume_id").asOpt[UUID]
       v <- ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, vid)
-      vEmbed = embedContainerMountInfo(v, user)
+      vEmbed = embedContainerMountInfo(v, user, qs)
       j = Output.renderInstance(vEmbed).as[JsObject]
     } yield vol ++ Json.obj("volume_resource" -> j)
     upsertProperties(res, "volumes" -> Json.toJson(volumes).toString)
   }
 
   /**
-   * Lookup and inject apiendpoints into upstream object according to implementation_id
-   */
-  private[controllers] def performOptionalEmbeddings(fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds) => GestaltResourceInstance],
+    * Lookup and inject apiendpoints into upstream object according to implementation_id
+    */
+  private[controllers] def performOptionalEmbeddings(fns: Map[String, (GestaltResourceInstance, AuthAccountWithCreds, Option[QueryString]) => GestaltResourceInstance],
                                                      res: GestaltResourceInstance,
                                                      user: AuthAccountWithCreds,
-                                                     qs: Option[Map[String, Seq[String]]] = None ) = Try {
+                                                     qs: Option[QueryString] = None ) = Try {
     val embeds = for {
       em <- qs.getOrElse(Map.empty).getOrElse("embed", Seq.empty).distinct
       fn <- fns.get(em)
     } yield fn
 
     embeds.foldLeft(res) {
-      case (res, fn) => fn(res, user)
+      case (res, fn) => fn(res, user, qs)
     }
   }
-  
   
   /**
     * Lookup and inject Kong public_url into ApiEndpoint
     */
   private[controllers] def transformApiEndpoint( res: GestaltResourceInstance,
                                                  user: AuthAccountWithCreds,
-                                                 qs: Option[Map[String, Seq[String]]] = None) = Try {
+                                                 qs: Option[QueryString] = None) = Try {
 
     val maybePublicUrl = GatewayMethods.getPublicUrl(res)
 
@@ -1262,8 +1276,8 @@ class ResourceController @Inject()(
       upsertProperties(res, "public_url" -> public_url)
     }
   }
-  
-  private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
+
+  private[controllers] def transformProvider(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val resJson = Json.toJson(res).as[JsObject]
     val renderedLinks: Seq[JsObject] = (resJson \ "properties" \ "linked_providers").asOpt[Seq[JsObject]].map { _.flatMap {
       js => for {
@@ -1281,7 +1295,7 @@ class ResourceController @Inject()(
   /**
    * Build the dynamic 'groups' property on a User instance.
    */
-  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None) = Try {
+  private[controllers] def transformUser(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     security.getAccountGroups(res.id, user) match {
       case Failure(er) => {
         throw new RuntimeException(Errors.USER_GROUP_LOOKUP_FAILED(res.id, er.getMessage))
@@ -1294,7 +1308,7 @@ class ResourceController @Inject()(
     }
   }
   
-  def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None): Try[GestaltResourceInstance] = Try {
+  def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = Try {
     log.debug("Entered transformStreamSpec...")
     val streams = lambdaMethods.getLambdaStreams(r, user).get
     val oldprops = r.properties.get
@@ -1306,7 +1320,7 @@ class ResourceController @Inject()(
    * Add users to the Group's properties collection. Users are looked up dynamically
    * in gestalt-security.
    */
-  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[Map[String, Seq[String]]] = None): Try[GestaltResourceInstance] = {
+  def transformGroup(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = {
     // TODO: there's no check here that the caller is permitted to see the account ids returned by gestalt-security
     // TODO: also, this is using the user credential in the call to gestalt-security, meaning that the user must have appropriate permissions
     // bug discussion: https://gitlab.com/galacticfog/gestalt-meta/issues/247

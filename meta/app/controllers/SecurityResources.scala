@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.output.toOwnerLink
-import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup}
+import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup, GestaltSecurityClient, GestaltBasicCredentials}
 import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
@@ -21,24 +21,31 @@ import javax.inject._
 import controllers.util.Security
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import java.time.ZonedDateTime
+import modules._
+import com.galacticfog.gestalt.security.api.GestaltBasicCredentials
 
 
 @Singleton
 class SecuritySync @Inject()(
-    security: Security, 
+    security: Security,
+    keyInit: SecurityKeyInit,
     deleteController: DeleteController) 
       extends SecurityResources with AuthorizationMethods {
   
   private[this] val log = Logger(this.getClass)
+
   
   def synchronize(identity: AuthAccountWithCreds) = Try {
     
     log.info(s"Beginning sync with gestalt-security [${security.clientUrl}]...")
     val beginStamp = ZonedDateTime.now()
     val beginMillis = System.currentTimeMillis()
+ 
     
-    val sd = security.getOrgSyncTree(None, identity).get
-    
+    val secConfig = keyInit.asInstanceOf[GestaltLateInitSecurityEnvironment].config
+    val creds = GestaltBasicCredentials(secConfig.apiKey, secConfig.apiSecret)
+    val sd = security.getOrgSyncTree(None, creds).get
+ 
     val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
     val metausers = ResourceFactory.findAll(ResourceIds.User)
     val metagroups = ResourceFactory.findAll(ResourceIds.Group)

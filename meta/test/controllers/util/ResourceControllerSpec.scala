@@ -990,7 +990,10 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         Ents.setNewResourceEntitlements(dummyRootOrgId, to.id, user, None)
         (to,tw,te)
       }
-      val Success(kubeProvider) = createKubernetesProvider(testEnv.id)
+      val Success(kubeProvider) = createKubernetesProvider(parent = testEnv.id, config = Seq(
+        "access_key" -> "access_key",
+        "secret_key" -> "secret_key"
+      ))
       val Success(gtw) = createDummyGateway(testEnv.id)
       val Success(kongProviderWithAbsentVhost) = createDummyKong(testEnv.id, props = Map(
         "config" -> Json.obj(
@@ -1439,6 +1442,36 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       val json = contentAsJson(result)
       (json \ "properties" \ "container") must beUndefined
       (json \ "properties" \ "mount_path") must beUndefined
+    }
+
+    "mask security credentials for provider" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/providers/${kubeProvider.id}", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
+      (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
+    }
+
+    "mask security credentials for embedded provider" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/containers/${container.id}?embed=provider", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "properties" \ "provider" \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
+      (json \ "properties" \ "provider" \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
+    }
+
+    "show security credentials for provider if explicitly asked" in new testEndpoint {
+      val Some(result) = route(app,fakeAuthRequest(GET,
+        s"/${testOrg.name}/environments/${testEnv.id}/providers/${kubeProvider.id}?showcredentials=true", testCreds
+      ))
+      status(result) must equalTo(OK)
+      val json = contentAsJson(result)
+      (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("access_key")
+      (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("secret_key")
     }
 
   }

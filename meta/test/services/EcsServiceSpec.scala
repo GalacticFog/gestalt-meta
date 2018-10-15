@@ -2,7 +2,7 @@ package services
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.ContainerStats
+import com.galacticfog.gestalt.meta.api.{ContainerStats,ContainerSpec,VolumeSpec}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
 import org.joda.time.DateTime
@@ -19,6 +19,7 @@ import com.amazonaws.services.ecs.model._
 import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.util.Success
+import com.galacticfog.gestalt.integrations.ecs.EcsClient
 
 @RunWith(classOf[JUnitRunner])
 class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -43,14 +44,17 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       (tw,te)
     }
 
-    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", providerConfig)
+    lazy val Success(testProvider) = createEcsProvider(testEnv.id, "test-provider", "FARGATE", providerConfig)
+
+    lazy val Success(testVolume) = createVolume(testEnv.id, "test-volume", Seq("host_path" -> "/tmp"))
 
     lazy val testSetup = {
       val mockAmazonECS = mock[AmazonECS]
-      val mockClient = mock[AwsEcsClient]
+      val mockClient = mock[EcsClient]
       mockClient.client returns mockAmazonECS
       mockClient.cluster returns "test_cluster"
-      mockClient.taskRoleArn returns ""
+      mockClient.launchType returns "FARGATE"
+      mockClient.taskRoleArn returns Some("")
       val mockAwsSdkFactory = mock[AwsSdkFactory]
       mockAwsSdkFactory.getEcsClient(any)(any) returns Future.successful(mockClient)
       val es = new EcsService(mockAwsSdkFactory)
@@ -61,6 +65,22 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
   "EcsService" should {
 
     "create containers" in new MockScope {
+      // val volumeSpec = ContainerSpec.InlineVolumeMountSpec(
+      //   mount_path = "/mnt/path",
+      //   volume_resource = VolumeSpec.toResourcePrototype(VolumeSpec(
+      //     name = "test-volume-name",
+      //     provider = Some(ContainerSpec.InputProvider(id = uuid())),
+      //     `type` = VolumeSpec.HostPath,
+      //     size = 0,     // doesn't make sense with HostPath
+      //     access_mode = VolumeSpec.ReadWriteMany,     // the only one that makes sense with HostPath
+      //     config = Json.obj(
+      //       "host_path" -> "/tmp"
+      //     )
+      //   ))
+      // )
+      // val volumesSerialized = Json.toJson[Seq[ContainerSpec.VolumeMountSpec]](Seq(volumeSpec)).toString
+      val volumesSerialized = s"""[{"volume_id": "${testVolume.id}", "mount_path": "/mnt"}]"""
+
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test",
@@ -80,7 +100,8 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
             "VAR1" -> "VAL1",
             "VAR2" -> "VAL2"
           ).toString,
-          "network" -> "subnet-66d74a1c"
+          "network" -> "subnet-66d74a1c",
+          "volumes" -> volumesSerialized
         ))
       )
       val mockTaskDefinition = mock[TaskDefinition]
@@ -132,6 +153,15 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockTaskDefinition.getContainerDefinitions() returns new java.util.ArrayList(Seq(mockContainerDefinition))
       mockDescribeTaskDefinitionResult.getTaskDefinition() returns mockTaskDefinition
       testSetup.ecs.describeTaskDefinition(any) returns mockDescribeTaskDefinitionResult
+      val mockListTasksResult = mock[ListTasksResult]
+      mockListTasksResult.getTaskArns() returns new java.util.ArrayList(Seq("task a", "task b"))
+      testSetup.ecs.listTasks(any) returns mockListTasksResult
+      val mockDescribeTasksResult = mock[DescribeTasksResult]
+      val mockTask = mock[Task]
+      mockTask.getTaskArn() returns "task arn"
+      mockTask.getStartedAt() returns new java.util.Date(0)
+      mockDescribeTasksResult.getTasks() returns new java.util.ArrayList(Seq(mockTask))
+      testSetup.ecs.describeTasks(any) returns mockDescribeTasksResult
 
       val containerStats = await(testSetup.ecsService.listInEnvironment(
         context = ProviderContext(play.api.test.FakeRequest("GET",
@@ -180,6 +210,39 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
         ))
       )
       val mockService = mock[Service]
+      mockService.getLaunchType() returns "FARGATE"
+      mockService.getTaskDefinition() returns "task defn arn"
+      val mockDescribeServicesResult = mock[DescribeServicesResult]
+      mockDescribeServicesResult.getServices() returns new java.util.ArrayList(Seq(mockService))
+      testSetup.ecs.describeServices(any) returns mockDescribeServicesResult
+
+      await(testSetup.ecsService.destroy(metaContainer))
+    }
+    "destroy invalid container" in new MockScope {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "4096.0",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> "subnet-66d74a1c"
+        ))
+      )
+      val mockService = mock[Service]
+      mockService.getLaunchType() returns "FARGATE"
       mockService.getTaskDefinition() returns "task defn arn"
       val mockDescribeServicesResult = mock[DescribeServicesResult]
       mockDescribeServicesResult.getServices() returns new java.util.ArrayList(Seq(mockService))
