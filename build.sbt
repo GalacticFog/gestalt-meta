@@ -39,8 +39,8 @@ lazy val meta = (project in file("meta")).
                       } catch {      case t: Throwable => "get git hash failed"    }
               }}.toString()
     ),
-    buildInfoPackage := "com.galacticfog.gestalt.meta.api",
-    sources in (Compile,doc) := Seq.empty
+    buildInfoPackage := "com.galacticfog.gestalt.meta.api"//,
+    // sources in (Compile,doc) := Seq.empty
   ).dependsOn(integrations)
 
 lazy val containerImport = (project in file("container.import")).
