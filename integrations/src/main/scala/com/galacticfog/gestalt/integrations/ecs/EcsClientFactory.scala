@@ -7,6 +7,8 @@ import cats.syntax.either._
 import com.amazonaws.{ClientConfiguration,Protocol,ProxyAuthenticationMethod}
 import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials}
 import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
+import com.amazonaws.services.elasticloadbalancingv2.{AmazonElasticLoadBalancing,AmazonElasticLoadBalancingClientBuilder}
+import com.amazonaws.services.ec2.{AmazonEC2ClientBuilder,AmazonEC2}
 
 object EcsProvider {
   case class Properties(
@@ -49,7 +51,7 @@ object EcsProvider {
   implicit val propertiesReads = Json.reads[Properties]
 }
 
-case class EcsClient(client: AmazonECS, cluster: String, launchType: String, taskRoleArn: Option[String])
+case class EcsClient(client: AmazonECS, elb: AmazonElasticLoadBalancing, ec2: AmazonEC2, cluster: String, launchType: String, taskRoleArn: Option[String])
 
 trait FromJsResult {
   def fromJsResult[A](jsResult: JsResult[A]): Either[String,A] = {
@@ -122,12 +124,22 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         clientConfiguration.setProxyWorkstation(ntlmWorkstation)
       }
 
-      val builder = AmazonECSClientBuilder.standard()
+      val ecsBuilder = AmazonECSClientBuilder.standard()
+        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+        .withRegion(properties.region)
+        .withClientConfiguration(clientConfiguration)
+
+      val elbBuilder = AmazonElasticLoadBalancingClientBuilder.standard()
+        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+        .withRegion(properties.region)
+        .withClientConfiguration(clientConfiguration)
+
+      val ec2Builder = AmazonEC2ClientBuilder.standard()
         .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
       
-      EcsClient(builder.build(), properties.cluster, launchType, properties.taskRoleArn)
+      EcsClient(ecsBuilder.build(), elbBuilder.build(), ec2Builder.build(), properties.cluster, launchType, properties.taskRoleArn)
     }
   }
 }

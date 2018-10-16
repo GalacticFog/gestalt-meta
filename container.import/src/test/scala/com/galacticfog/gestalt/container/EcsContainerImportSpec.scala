@@ -49,6 +49,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       new UpgraderServiceModule,
       new MetaConfigModule,
       new MetaDefaultDocker,
+      new ActorsModule,
       FakeGestaltSecurityModule(fakeSecurityEnvironment()),
       new SystemConfigModule,
       bind[SecureController].toInstance(mockSecureController),
