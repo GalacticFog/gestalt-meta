@@ -151,11 +151,11 @@ class ResourceController @Inject()(
         case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
-
+      
       /*
        * Have to pre-process the container-list
        */
-
+      
       Await.result(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds
@@ -166,7 +166,7 @@ class ResourceController @Inject()(
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
-
+  
   def getOrgFqon(fqon: String) = Audited() { implicit request =>
     val action = "org.view"
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, ${action}")
@@ -186,7 +186,7 @@ class ResourceController @Inject()(
       ResourceFactory.findAll(typeId)
     }
   }
-
+  
   /**
    * Custom lookup providing a shortcut to Provider containers.
    */
@@ -856,12 +856,13 @@ class ResourceController @Inject()(
 //      Ok(output).as("text/html")
 //    }
 //  }
-
+  
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
   
   import com.galacticfog.gestalt.meta.genericactions._
+  
   
   def findActionsInScope2(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[JsObject] = {
 
@@ -912,7 +913,7 @@ class ResourceController @Inject()(
       }
     }
     
-    ResourceFactory.findProvidersWithEndpoints.flatMap { p =>
+    ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
       val config = getFunctionConfig(p).get
       config.endpoints.flatMap { ep =>
         val act = ep.getUiActions()
@@ -922,7 +923,6 @@ class ResourceController @Inject()(
         }
       }
     }
-    
   }
   
   
