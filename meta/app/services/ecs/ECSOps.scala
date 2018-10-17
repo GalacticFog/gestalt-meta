@@ -288,6 +288,22 @@ trait ECSOps {
     ))
   }
 
+  def scaleService(client: EcsClient, spec: ContainerSpec, context: ProviderContext, numInstances: Int): Try[Unit] = {
+    val externalId = spec.external_id.getOrElse("")
+    val usr = new UpdateServiceRequest()
+      .withCluster(client.cluster)
+      .withService(externalId)
+      .withDesiredCount(numInstances)
+    for(
+      _ <- if(externalId == "") {
+        Failure(new RuntimeException(s"Cannot scale container with external_id=${externalId}"))
+      }else {
+        Success(())
+      };
+      _ <- Try(client.client.updateService(usr))
+    ) yield ()
+  }
+
   def describeServices(ecs: EcsClient, context: ProviderContext, lookupServiceArns: Seq[String] = Seq(),
    paginationToken: Option[String] = None): Try[(Option[String],Seq[ContainerStats])] = {
     def listServices(): Try[(Option[String],Seq[String])] = {

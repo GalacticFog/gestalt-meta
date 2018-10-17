@@ -153,5 +153,22 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") ac
   override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
+    cleanly(context.provider.id) { client =>
+      val scaled = for(
+        spec <- ContainerSpec.fromResourceInstance(container);
+        newNumInstances <- if(spec.external_id.getOrElse("") == "") {     // pending or lost container, doing nothing
+          Success(spec.num_instances)
+        }else {
+          scaleService(client, spec, context, numInstances) map { _ => numInstances}
+        }
+      ) yield {
+        val values = Map(
+          "num_instances" -> s"${newNumInstances}"
+        )
+        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
+      }
+      Future.fromTryST(scaled)
+    }
+  }
 }
