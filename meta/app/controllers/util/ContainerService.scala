@@ -206,13 +206,20 @@ object ContainerService {
     }
   }
 
-  def caasProvider(provider: UUID): GestaltResourceInstance = {
-    ResourceFactory.findById(provider) filter {
+  def caasProvider(providerId: UUID): GestaltResourceInstance = {
+    val caasProviderIds = Set(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider, migrations.V14.ECS_PROVIDER_TYPE_ID)
+    (for(
+      providerResource <- ResourceFactory.findById(providerId) match {
+        case Some(value) => Success(value)
+        case None => Failure(new BadRequestException(s"Provider with ID '$providerId' is absent. Associated container may be corrupt."))
+      };
       // TODO: this should just check that its a sub-type of ::CaaS provider
-      Set(ResourceIds.DcosProvider, ResourceIds.KubeProvider, ResourceIds.DockerProvider, migrations.V14.ECS_PROVIDER_TYPE_ID) contains _.typeId
-    } getOrElse {
-      throw new BadRequestException(s"Provider with ID '$provider' is absent or not a recognized CaaS provider. Associated container may be corrupt.")
-    }
+      _ <- if(caasProviderIds contains providerResource.typeId) {
+        Success(Unit)
+      }else {
+        Failure(new BadRequestException(s"Provider with ID '$providerId' is not a recognized CaaS provider (${providerResource.typeId} is not one of ${caasProviderIds}). Associated container may be corrupt."))
+      }
+    ) yield providerResource).get
   }
 
   /**
