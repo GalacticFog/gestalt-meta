@@ -5,15 +5,15 @@ import scala.collection.JavaConversions._
 import play.api.libs.json._
 import cats.syntax.either._
 import com.amazonaws.{ClientConfiguration,Protocol,ProxyAuthenticationMethod}
-import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials}
+import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials,DefaultAWSCredentialsProviderChain}
 import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
 import com.amazonaws.services.elasticloadbalancingv2.{AmazonElasticLoadBalancing,AmazonElasticLoadBalancingClientBuilder}
 import com.amazonaws.services.ec2.{AmazonEC2ClientBuilder,AmazonEC2}
 
 object EcsProvider {
   case class Properties(
-    access_key: String,
-    secret_key: String,
+    access_key: Option[String],
+    secret_key: Option[String],
     region: String,
     cluster: String,
     taskRoleArn: Option[String],
@@ -124,18 +124,25 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         clientConfiguration.setProxyWorkstation(ntlmWorkstation)
       }
 
+      val credentialsProvider = (for(
+        accessKey <- properties.access_key;
+        secretKey <- properties.secret_key
+      ) yield {
+        new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
+      }) getOrElse(new DefaultAWSCredentialsProviderChain())
+
       val ecsBuilder = AmazonECSClientBuilder.standard()
-        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+        .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
 
       val elbBuilder = AmazonElasticLoadBalancingClientBuilder.standard()
-        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+        .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
 
       val ec2Builder = AmazonEC2ClientBuilder.standard()
-        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+        .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
       
