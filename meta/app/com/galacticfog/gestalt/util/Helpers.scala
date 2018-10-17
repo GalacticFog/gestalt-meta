@@ -18,13 +18,20 @@ object Helpers {
   }
 
   object OptionDefaults {
-    implicit val defaultString =  (o : Option[String]) => o.getOrElse("")
+    implicit val defaultString = (o : Option[String]) => o.getOrElse("")
   }
 
   implicit class OptionWithDefaults[T](o: Option[T]){
 
     def getOrDefault()(implicit defaultFunction: Option[T] => T) : T = {
       defaultFunction(o)
+    }
+  }
+
+  implicit class StringCompare(s: String){
+
+    def ~==(s2: String) : Boolean = {
+      s != null && s.equalsIgnoreCase(s2)
     }
   }
 }

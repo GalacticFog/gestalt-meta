@@ -129,7 +129,6 @@ object ProviderMethods {
   }
 
   def maskCredentials(provider: GestaltResourceInstance) : GestaltResourceInstance = {
-    val mask = "*" * 8
     val propertiesToMask = Seq("access_key", "secret_key")
 
     val maybeMasked = for {
@@ -139,7 +138,7 @@ object ProviderMethods {
       val maskedConfig = propertiesToMask.foldLeft(config) { (acc, property) => {
         config \ property match {
           case _: JsDefined => acc.deepMerge(Json.obj(
-            property -> mask
+            property -> ""
           ))
           case _: JsUndefined => acc
         }

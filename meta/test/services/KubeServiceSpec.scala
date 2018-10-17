@@ -1547,7 +1547,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "deployment",
+            kind = KubernetesService.DEPLOYMENT,
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -1561,7 +1561,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "replicaSet",
+            kind = KubernetesService.REPLICA_SET,
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
@@ -1644,7 +1644,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "deployment",
+            kind = KubernetesService.DEPLOYMENT,
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -1658,7 +1658,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "replicaSet",
+            kind = KubernetesService.REPLICA_SET,
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
@@ -1743,7 +1743,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "deployment",
+            kind = KubernetesService.DEPLOYMENT,
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -1757,7 +1757,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = "replicaSet",
+            kind = KubernetesService.REPLICA_SET,
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
