@@ -532,7 +532,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
           "provider" -> Json.obj(
             "name" -> provider.name,
             "id" -> provider.id,
-            "resource_type" -> sdk.ResourceName(provider.typeId)
+            "resource_type" -> TypeMethods.typeName(provider.typeId)
           ).toString,
           "volumes" -> Json.toJson(volMounts).toString
         )
@@ -569,7 +569,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
         "provider" -> Json.obj(
           "name" -> provider.name,
           "id" -> provider.id,
-          "resource_type" -> sdk.ResourceName(provider.typeId)).toString)
+          "resource_type" -> TypeMethods.typeName(provider.typeId)).toString)
 
       for {
         metaResource <- Future.fromTry {
@@ -611,7 +611,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
         "provider" -> Json.obj(
           "name" -> provider.name,
           "id" -> provider.id,
-          "resource_type" -> sdk.ResourceName(provider.typeId)
+          "resource_type" -> TypeMethods.typeName(provider.typeId)
         ).toString
       )
 

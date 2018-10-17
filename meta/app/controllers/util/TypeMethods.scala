@@ -488,5 +488,9 @@ object TypeMethods extends AuthorizationMethods {
   
   def typeId(name: String): Option[UUID] = {
     TypeFactory.findByName(name) map { _.id }
+  }
+
+  def typeName(typeId: UUID): Option[String] = {
+    TypeFactory.findById(typeId) map { _.name }
   }  
 }

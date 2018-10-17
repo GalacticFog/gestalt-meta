@@ -727,7 +727,7 @@ class ResourceController @Inject()(
         lp <- ResourceFactory.findById(id)
       } yield (js ++ Json.obj(
         "typeId" -> lp.typeId,
-        "type" -> sdk.ResourceName(lp.typeId)
+        "type" -> TypeMethods.typeName(lp.typeId)
       ))
     } } getOrElse Seq.empty
     val newResJson = replaceJsonProps(resJson, replaceJsonPropValue(resJson, "linked_providers", Json.toJson(renderedLinks)))
