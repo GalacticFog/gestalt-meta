@@ -34,6 +34,7 @@ package object genericactions {
         cfg <- ps.get("config")
         out = {
           val configJson = Json.parse(cfg).as[JsObject]
+          println("getFunctionConfig() => " + Json.prettyPrint(configJson))
           (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
         }
       } yield out

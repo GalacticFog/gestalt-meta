@@ -914,14 +914,24 @@ class ResourceController @Inject()(
     }
     
     ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
-      val config = getFunctionConfig(p).get
-      config.endpoints.flatMap { ep =>
-        val act = ep.getUiActions()
-        act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
-          val uiResponse = ac.post.get.getUiResponse.get
-          toOutputJson(p, ep, ac, uiResponse)
-        }
+      getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
+        config.endpoints.flatMap { ep =>
+          val act = ep.getUiActions()
+          act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
+            val uiResponse = ac.post.get.getUiResponse.get
+            toOutputJson(p, ep, ac, uiResponse)
+          }
+        }      
       }
+//      val config = getFunctionConfig(p).get
+//      config.endpoints.flatMap { ep =>
+//        val act = ep.getUiActions()
+//        act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
+//          val uiResponse = ac.post.get.getUiResponse.get
+//          toOutputJson(p, ep, ac, uiResponse)
+//        }
+//      }
+      
     }
   }
   
@@ -1034,7 +1044,7 @@ class ResourceController @Inject()(
       o.properties.get("fqon") != path.fqon
     }
   }
-  
+
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
