@@ -14,10 +14,11 @@ object EcsProvider {
   case class Properties(
     access_key: Option[String],
     secret_key: Option[String],
-    region: String,
     cluster: String,
+    region: String,
     taskRoleArn: Option[String],
-    request: Option[RequestConfiguration]
+    request: Option[RequestConfiguration],
+    awsLogGroup: Option[String]
   )
 
   object HttpOrHttps extends Enumeration {
@@ -51,7 +52,17 @@ object EcsProvider {
   implicit val propertiesReads = Json.reads[Properties]
 }
 
-case class EcsClient(client: AmazonECS, elb: AmazonElasticLoadBalancing, ec2: AmazonEC2, cluster: String, launchType: String, taskRoleArn: Option[String])
+sealed trait LoggingConfiguration
+case class AwslogsConfiguration(groupName: String, region: String) extends LoggingConfiguration
+case class EcsClient(
+  client: AmazonECS,
+  elb: AmazonElasticLoadBalancing,
+  ec2: AmazonEC2,
+  cluster: String,
+  launchType: String,
+  taskRoleArn: Option[String],
+  loggingConfiguration: Option[LoggingConfiguration]
+)
 
 trait FromJsResult {
   def fromJsResult[A](jsResult: JsResult[A]): Either[String,A] = {
@@ -145,8 +156,14 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
+
+      val awsLogGroup = properties.awsLogGroup match {
+        case None => None
+        case Some(logGroup) => Some(AwslogsConfiguration(logGroup, properties.region))
+      }
       
-      EcsClient(ecsBuilder.build(), elbBuilder.build(), ec2Builder.build(), properties.cluster, launchType, properties.taskRoleArn)
+      EcsClient(ecsBuilder.build(), elbBuilder.build(), ec2Builder.build(), properties.cluster, launchType,
+       properties.taskRoleArn, awsLogGroup)
     }
   }
 }
