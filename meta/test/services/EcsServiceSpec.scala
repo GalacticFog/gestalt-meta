@@ -83,14 +83,14 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       // val volumesSerialized = Json.toJson[Seq[ContainerSpec.VolumeMountSpec]](Seq(volumeSpec)).toString
       val volumesSerialized = s"""[{"volume_id": "${testVolume.id}", "mount_path": "/mnt"}]"""
 
-      // val portMapping = ContainerSpec.PortMapping(
-      //   protocol = "tcp",
-      //   container_port = Some(80),
-      //   name = Some("test"),
-      //   lb_port = Some(80)
-      // )
-      // val portMappingsSerialized = Json.toJson[Seq[ContainerSpec.PortMapping]](Seq(portMapping)).toString
-      val portMappingsSerialized = "[]"
+      val portMapping = ContainerSpec.PortMapping(
+        protocol = "tcp",
+        container_port = Some(80),
+        name = Some("test"),
+        lb_port = Some(80)
+      )
+      val portMappingsSerialized = Json.toJson[Seq[ContainerSpec.PortMapping]](Seq(portMapping)).toString
+      // val portMappingsSerialized = "[]"
 
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
