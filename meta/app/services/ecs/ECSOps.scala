@@ -60,24 +60,6 @@ trait ECSOps {
     ) yield cis
   }
 
-  def getDefaultVpc(client: EcsClient): Try[String] = {
-    for(
-      containerInstances <- describeContainerInstances(client);
-      vpcs <- containerInstances.toVector.traverse { ci =>
-        ci.getAttributes().find(_.getName() == "ecs.vpc-id").map(_.getValue()) match {
-          case Some(vpc) => Success(vpc)
-          case None => Failure(new RuntimeException(s"Unable to determine vpc for container instance ${ci.getEc2InstanceId()}"))
-        }
-      };
-      vpc <- if(vpcs.toSet.size == 1) {
-        Success(vpcs(0))
-      }else {
-        // needs to be able to set a vpc via provider configuration
-        Failure(new RuntimeException(s"Unable to determine vpc: not all container instances belong to the same vpc (${vpcs})"))
-      }
-    ) yield vpc
-  }
-
   def createTaskDefinition(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
     // If using the Fargate launch type, this field is required and you must use one of the following values, which determines your range of supported values for the memory parameter:
     // 256 (.25 vCPU) - Available memory values: 512 (0.5 GB), 1024 (1 GB), 2048 (2 GB)
@@ -180,6 +162,10 @@ trait ECSOps {
       .withMemory(spec.memory.toInt)
       .withCpu(cpus)
 
+    if(ecs.launchType == "EC2") {
+      cd.setHostname(spec.name)
+    }
+
     logConfiguration foreach { lc =>
       cd.withLogConfiguration(lc)
     }
@@ -277,25 +263,6 @@ trait ECSOps {
     }
 
     Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
-  }
-
-  def mkPlaceholderContainerStats(spec: ContainerSpec): Try[ContainerStats] = {
-    Success(ContainerStats(
-      external_id = "",
-      containerType = "DOCKER",
-      status = "PENDING",
-      cpus = spec.cpus,
-      memory = spec.memory,
-      image = spec.image,
-      age = new DateTime(spec.created.getOrElse(new Date())),
-      numInstances = 0,
-      tasksStaged = 0,
-      tasksRunning = 0,
-      tasksHealthy = 0,
-      tasksUnhealthy = 0,
-      taskStats = None,
-      lb_address = None
-    ))
   }
 
   def scaleService(client: EcsClient, spec: ContainerSpec, context: ProviderContext, numInstances: Int): Try[Unit] = {

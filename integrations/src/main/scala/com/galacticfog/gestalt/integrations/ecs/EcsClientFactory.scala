@@ -7,6 +7,7 @@ import cats.syntax.either._
 import com.amazonaws.{ClientConfiguration,Protocol,ProxyAuthenticationMethod}
 import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials,DefaultAWSCredentialsProviderChain}
 import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
+import com.amazonaws.services.ec2.{AmazonEC2ClientBuilder,AmazonEC2}
 
 object EcsProvider {
   case class Properties(
@@ -54,6 +55,7 @@ sealed trait LoggingConfiguration
 case class AwslogsConfiguration(groupName: String, region: String) extends LoggingConfiguration
 case class EcsClient(
   client: AmazonECS,
+  ec2: AmazonEC2,
   cluster: String,
   launchType: String,
   taskRoleArn: Option[String],
@@ -142,13 +144,18 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
+      
+      val ec2Builder = AmazonEC2ClientBuilder.standard()
+        .withCredentials(credentialsProvider)
+        .withRegion(properties.region)
+        .withClientConfiguration(clientConfiguration)
 
       val awsLogGroup = properties.awsLogGroup match {
         case None => None
         case Some(logGroup) => Some(AwslogsConfiguration(logGroup, properties.region))
       }
       
-      EcsClient(ecsBuilder.build(), properties.cluster, launchType, properties.taskRoleArn, awsLogGroup)
+      EcsClient(ecsBuilder.build(), ec2Builder.build(), properties.cluster, launchType, properties.taskRoleArn, awsLogGroup)
     }
   }
 }

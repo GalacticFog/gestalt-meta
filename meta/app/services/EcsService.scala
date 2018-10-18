@@ -10,11 +10,14 @@ import java.util.UUID
 import scala.annotation.tailrec
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Try,Success,Failure}
+import cats.instances.vector._
+import cats.instances.try_._
+import cats.syntax.traverse._
 import com.google.inject.Inject
 import play.api.Logger
 import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFoundException}
 
-class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps {
+class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
 
   private[this] val log = Logger(this.getClass)
 
@@ -35,16 +38,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     import scala.concurrent.ExecutionContext.Implicits.global     // the method signature doesn't support passing an implicit here – probably should be updated
     cleanly(context.provider.id) { client =>
       ContainerService.resourceExternalId(container) match {
-        case Some("") => {    // pending container
-          for(
-            spec <- Future.fromTryST(ContainerSpec.fromResourceInstance(container));
-            stats <- Future.fromTryST(mkPlaceholderContainerStats(spec))
-          ) yield Some(stats)
-        }
         case Some(externalId) => {
-          Future.fromTryST(describeServices(client, context, Seq(externalId)) flatMap {
+          val described = for(
+            (nextToken, services) <- describeServices(client, context, Seq(externalId));
+            updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+          ) yield (nextToken, updatedServices)
+          Future.fromTryST(described flatMap {
             case (None, Seq(stats)) => Success(Option(stats))
-            case other => Failure(throw new RuntimeException(s"Unexpected value returned from describeServices: `${other}`; this is a bug"))
+            case other => Failure(new RuntimeException(s"Unexpected value returned from describeServices: `${other}`; this is a bug"))
           })
         }
         case None => Future.successful(None)
@@ -55,7 +56,11 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     @tailrec
     def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
-      describeServices(client, context, Seq(), paginationToken) match {
+      val described = for(
+        (nextToken, services) <- describeServices(client, context, Seq(), paginationToken);
+        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+      ) yield (nextToken, updatedServices)
+      described match {
         case Success((Some(token), moreStats)) => describeAllServices(client, Some(token), stats ++ moreStats)
         case Success((None, moreStats)) => Success(stats ++ moreStats)
         case Failure(throwable) => Failure(throwable)
