@@ -257,7 +257,7 @@ trait ECSOps {
     }
   }
 
-  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext, targetGroups: Map[String,String] = Map()): Try[String] = {
+  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
 
     val name = s"${context.environmentId}-${spec.name}"
 
@@ -275,34 +275,8 @@ trait ECSOps {
       val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
       csr.setNetworkConfiguration(nc)
     }
-    
-    def mkLb(pm: ContainerSpec.PortMapping): Try[LoadBalancer] = {
-      val name = pm.name.getOrElse("")
-      val port = pm.lb_port.getOrElse(-1)
-      for(
-        _ <- failIfNot(name != "") { "Port mapping name must not be empty" };
-        _ <- failIfNot(port != -1) { s"Port mapping lb port must not be empty (${name})" };
-        targetGroupArn <- targetGroups.get(name) match {
-          case Some(tga) => Success(tga)
-          case None => Failure(new RuntimeException(s"No Load Balancer created for ${name}"))
-        }
-      ) yield {
-        new LoadBalancer()
-          .withContainerName(spec.name)
-          .withContainerPort(port)
-          // .withLoadBalancerName(s"${name}-lb")
-          .withTargetGroupArn(targetGroupArn)
-      }
-    }    
 
-    for(
-      lbs <- spec.port_mappings.toVector.traverse(mkLb);
-      lb <- if(lbs.size <= 1) { Success(()) }else {
-        Failure(throw new RuntimeException("Defining more than one load balancer per service is not supported by Amazon"))
-      };
-      _ = if(!lbs.isEmpty) { csr.setLoadBalancers(lbs) };
-      serviceArn <- Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
-    ) yield serviceArn
+    Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
   }
 
   def mkPlaceholderContainerStats(spec: ContainerSpec): Try[ContainerStats] = {

@@ -16,8 +16,6 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.Json
 import play.api.libs.json.Json.JsValueWrapper
 import play.api.test.PlaySpecification
-import akka.actor.ActorSystem
-import akka.testkit.TestActorRef
 import com.amazonaws.services.ecs.AmazonECS
 import com.amazonaws.services.ecs.model._
 import scala.collection.JavaConversions._
@@ -61,13 +59,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockClient.taskRoleArn returns Some("")
       val mockAwsSdkFactory = mock[AwsSdkFactory]
       mockAwsSdkFactory.getEcsClient(any)(any) returns Future.successful(mockClient)
-      implicit val actorSystem = ActorSystem("test-system")
-      val mockActor = TestActorRef(new ECSActor(mockAwsSdkFactory) {
-        override def create(containerId: UUID, ownerId: UUID, container: GestaltResourceInstance, context: ProviderContext): Unit = {
-          ()
-        }
-      })
-      val es = new EcsService(mockAwsSdkFactory, mockActor)
+      val es = new EcsService(mockAwsSdkFactory)
       TestSetup(es, mockAmazonECS)
     }
   }
@@ -140,7 +132,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
         container = metaContainer
       )).properties
 
-      // updatedContainerProps.get("external_id") must_==(Some("service arn"))
+      updatedContainerProps.get("external_id") must_==(Some("service arn"))
     }
     "list containers" in new MockScope {
       val mockListServicesResult = mock[ListServicesResult]
