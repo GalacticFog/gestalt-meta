@@ -13,15 +13,11 @@ import scala.util.{Try,Success,Failure}
 import cats.instances.vector._
 import cats.instances.try_._
 import cats.syntax.traverse._
-import akka.actor._
 import com.google.inject.Inject
-import com.google.inject.name.Named
 import play.api.Logger
-import play.api.libs.json._
 import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFoundException}
-import com.amazonaws.services.elasticloadbalancingv2.model.LoadBalancerNotFoundException
 
-class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") actor: ActorRef) extends CaasService with ECSOps with ELBOps with EC2Ops {
+class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
 
   private[this] val log = Logger(this.getClass)
 
@@ -42,16 +38,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") ac
     import scala.concurrent.ExecutionContext.Implicits.global     // the method signature doesn't support passing an implicit here – probably should be updated
     cleanly(context.provider.id) { client =>
       ContainerService.resourceExternalId(container) match {
-        case Some("") => {    // pending container
-          for(
-            spec <- Future.fromTryST(ContainerSpec.fromResourceInstance(container));
-            stats <- Future.fromTryST(mkPlaceholderContainerStats(spec))
-          ) yield Some(stats)
-        }
         case Some(externalId) => {
-          Future.fromTryST(describeServices(client, context, Seq(externalId)) flatMap {
+          val described = for(
+            (nextToken, services) <- describeServices(client, context, Seq(externalId));
+            updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+          ) yield (nextToken, updatedServices)
+          Future.fromTryST(described flatMap {
             case (None, Seq(stats)) => Success(Option(stats))
-            case other => Failure(throw new RuntimeException(s"Unexpected value returned from describeServices: `${other}`; this is a bug"))
+            case other => Failure(new RuntimeException(s"Unexpected value returned from describeServices: `${other}`; this is a bug"))
           })
         }
         case None => Future.successful(None)
@@ -62,7 +56,11 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") ac
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     @tailrec
     def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
-      describeServices(client, context, Seq(), paginationToken) match {
+      val described = for(
+        (nextToken, services) <- describeServices(client, context, Seq(), paginationToken);
+        updatedServices <- services.toVector.traverse(populateContainerStatsWithPrivateAddresses(client, _))
+      ) yield (nextToken, updatedServices)
+      described match {
         case Success((Some(token), moreStats)) => describeAllServices(client, Some(token), stats ++ moreStats)
         case Success((None, moreStats)) => Success(stats ++ moreStats)
         case Failure(throwable) => Failure(throwable)
@@ -76,22 +74,19 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") ac
 
   override def create(context: ProviderContext, container: GestaltResourceInstance)
    (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
-    // apparently there is no way to get correct request.identity instance here (without changing method signature)
-    def getUserId(): Try[UUID] = container.created.flatMap(_.get("id")) match {
-      case Some(userId) => Try(UUID.fromString(userId))
-      case None => Failure(new RuntimeException("Failed to obtain user id for create operation"))
+    cleanly(context.provider.id) { client =>
+      Future.fromTryST(for(
+        spec <- ContainerSpec.fromResourceInstance(container);
+        _ <- createTaskDefinition(client, container.id, spec, context);
+        serviceArn <- createService(client, container.id, spec, context)
+      ) yield {
+        val values = Map(
+          "external_id" -> serviceArn,
+          "status" -> "RUNNING"
+        )
+        container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
+      })
     }
-    val res = for(
-      userId <- getUserId()
-    ) yield {
-      actor ! ECSActor.CreateService(container.id, userId, container, context)
-      val values = Map(
-        "external_id" -> "",
-        "status" -> "PENDING"
-      )
-      container.copy(properties = Some((container.properties getOrElse Map()) ++ values.toMap))
-    }
-    Future.fromTryST(res)
   }
 
   override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
@@ -114,30 +109,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory, @Named("ecs-actor") ac
     
     def destroyRunningContainer(externalId: String): Future[Unit] = {
       cleanly(provider.id) { client =>
-        val rawPms = container.properties.get("port_mappings")
-        val res = for(
-          jsPms <- Try(Json.parse(rawPms));
-          pms <- Try(jsPms.as[Seq[ContainerSpec.PortMapping]]);
-          _ <- if(pms.isEmpty) { Success(()) } else {     // not for FARGATE - can't even check because I have no access to container spec
-            (for(
-              _ <- pms.toVector traverse { pm => deleteLoadBalancer(client, pm) };
-              vpc <- getDefaultVpc(client);
-              _ <- deleteSecurityGroup(client, container.name, vpc)
-            ) yield ()) recoverWith {
-              case _: LoadBalancerNotFoundException => Success(())
-            }
-          };
-          _ <- deleteService(client, externalId) recoverWith {
-            case _: ServiceNotActiveException => Success(())
-            case _: ServiceNotFoundException => Success(())
-          }
-        ) yield ()
-        Future.fromTryST(res)
+        Future.fromTryST(deleteService(client, externalId) recoverWith {
+          case _: ServiceNotActiveException => Success(())
+          case _: ServiceNotFoundException => Success(())
+        })
       }
     }
     
     ContainerService.resourceExternalId(container) match {
-      case Some("") => Future.successful(())    // pending container
       case Some(externalId) => destroyRunningContainer(externalId)
       case None => Future.successful(())    // the container wasn't created properly – can be safely deleted
     }

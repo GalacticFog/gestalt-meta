@@ -1,3 +1,4 @@
+//
 //package com.galacticfog.gestalt.container
 //
 //import scala.util.Success
@@ -26,8 +27,8 @@
 //import com.amazonaws.services.ecs.model._
 //import com.galacticfog.gestalt.integrations.ecs._
 //
-//
 //class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
+//
 //
 //  override def beforeAll(): Unit = { pristineDatabase(); () }
 //
@@ -49,7 +50,6 @@
 //      new UpgraderServiceModule,
 //      new MetaConfigModule,
 //      new MetaDefaultDocker,
-//      new ActorsModule,
 //      FakeGestaltSecurityModule(fakeSecurityEnvironment()),
 //      new SystemConfigModule,
 //      bind[SecureController].toInstance(mockSecureController),

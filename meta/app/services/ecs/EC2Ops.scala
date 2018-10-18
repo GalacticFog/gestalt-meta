@@ -1,89 +1,49 @@
 package services
 
+import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats}
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
-import com.galacticfog.gestalt.meta.api.ContainerSpec
 import scala.util.{Try,Success,Failure}
 import cats.instances.vector._
 import cats.instances.try_._
 import cats.syntax.traverse._
+import play.api.Logger
 import com.amazonaws.services.ec2.model._
 
 trait EC2Ops {
   import scala.collection.JavaConversions._
 
-  // def getVpcFromSubnets(client: EcsClient, subnets: Seq[String]): Try[String] = {
-  //   def getVpcs(subnets: Seq[String]): Try[Seq[String]] = {
-  //     val dsr = new DescribeSubnetsRequest()
-  //       .withSubnetIds(subnets)
-  //     Try(client.ec2.describeSubnets(dsr)) map { res =>
-  //       res.getSubnets().map(_.getVpcId()).toSeq
-  //     }
-  //   }
+  private[this] val log = Logger(this.getClass)
 
-  //   for(
-  //     vpcs <- subnets.toVector.sliding(10, 10).toVector.traverse(getVpcs(_)).map(_.flatten.toSet);
-  //     vpc <- if(vpcs.size == 1) {
-  //       Success(vpcs.head)
-  //     }else {
-  //       Failure(new RuntimeException(s"Subnets ${subnets} must belong to the same vpc"))
-  //     }
-  //   ) yield vpc
-  // }
+  def getInstancePrivateAddresses(client: EcsClient, instanceIds: Seq[String]): Try[Seq[(String,String)]] = {
+    val dir = new DescribeInstancesRequest()
+      .withInstanceIds(instanceIds)
+    for(
+      reservations <- Try(client.ec2.describeInstances(dir)).map(_.getReservations());
+      instances = reservations.map(_.getInstances()).flatten;
+      addresses <- instances.toVector traverse { instance =>
+        Option(instance.getPrivateIpAddress()) match {
+          case Some(ipAddr) => Success((instance.getInstanceId(), ipAddr))
+          case None => Failure(new RuntimeException(s"Private IP address not set on instance ${instance.getInstanceId()}"))
+        }
+      }
+    ) yield addresses
+  }
 
-  def getAllSubnetsFromVpc(client: EcsClient, vpc: String): Try[Seq[String]] = {
-    val dsr = new DescribeSubnetsRequest()
-      .withFilters(new Filter("vpc-id", Seq(vpc)))
-    Try(client.ec2.describeSubnets(dsr)) map { res =>
-      res.getSubnets().map(_.getSubnetId()).toSeq
+  def populateContainerStatsWithPrivateAddresses(client: EcsClient, stats: ContainerStats): Try[ContainerStats] = {
+    if(client.launchType == "EC2" && !stats.taskStats.isEmpty) {
+      val instanceIds = stats.taskStats.get.collect { case ts if ts.host != "" => ts.host }
+      for(
+        addressMapping <- getInstancePrivateAddresses(client, instanceIds).map(_.toMap);
+        updatedTaskStats = stats.taskStats.get.map { ts =>
+          (addressMapping.get(ts.host), ts.ipAddresses) match {
+            case (Some(ipAddr), None) => ts.copy(ipAddresses=Some(Seq(ContainerStats.TaskStat.IPAddress(ipAddr, "tcp"))))
+            case (Some(ipAddr), Some(seq)) => ts.copy(ipAddresses=Some(seq :+ ContainerStats.TaskStat.IPAddress(ipAddr, "tcp")))
+            case (None, _) => ts
+          }
+        }
+      ) yield stats.copy(taskStats=Some(updatedTaskStats))
+    }else {
+      Success(stats)
     }
-  }
-
-  def createSecurityGroup(client: EcsClient, spec: ContainerSpec, vpc: String): Try[String] = {
-    val openPorts = spec.port_mappings.map(_.lb_port).collect { case Some(port) => port };
-    val csgr = new CreateSecurityGroupRequest()
-      .withGroupName(s"${spec.name}-sg")
-      .withDescription("Managed by Gestalt")
-      .withVpcId(vpc);
-    for(
-      groupId <- Try(client.ec2.createSecurityGroup(csgr)).map(_.getGroupId());
-      range = new IpRange().withCidrIp("0.0.0.0/0");
-      perms = openPorts map { port =>
-        new IpPermission() 
-          .withIpProtocol("tcp")
-          .withToPort(port)
-          .withFromPort(port)
-          .withIpv4Ranges(range)
-      };
-      asgir = new AuthorizeSecurityGroupIngressRequest()
-        .withGroupId(groupId)
-        .withIpPermissions(perms);
-      _ <- Try(client.ec2.authorizeSecurityGroupIngress(asgir))//;
-      // asger = new AuthorizeSecurityGroupEgressRequest()
-      //   .withGroupId(groupId);
-        // .withIpPermissions(new IpPermission().withIpProtocol("-1").withIpv4Ranges(range));
-      // _ <- Try(client.ec2.authorizeSecurityGroupEgress(asger))
-    ) yield groupId
-  }
-
-  def deleteSecurityGroup(client: EcsClient, containerName: String, vpc: String): Try[Unit] = {
-    val sgName = s"${containerName}-sg"
-    val describeSgr = new DescribeSecurityGroupsRequest()
-      .withFilters(new Filter("group-name").withValues(sgName))
-      .withFilters(new Filter("vpc-id").withValues(vpc))
-    for(
-      sgs <- Try(client.ec2.describeSecurityGroups(describeSgr)).map(_.getSecurityGroups());
-      sgOpt = sgs map { sg =>
-        (sg.getGroupName(), sg.getGroupId())
-      } find { case(name, id) =>
-        name == sgName
-      };
-      groupId <- sgOpt match {
-        case Some((name, groupId)) => Success(groupId)
-        case None => Failure(new RuntimeException(s"No matching security group found: $sgName"))
-      };
-      deleteSgr = new DeleteSecurityGroupRequest()
-        .withGroupId(groupId);
-      _ <- Try(client.ec2.deleteSecurityGroup(deleteSgr))
-    ) yield ()
   }
 }

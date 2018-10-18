@@ -2,7 +2,7 @@ package services
 
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,VolumeSpec}
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.integrations.ecs.EcsClient
+import com.galacticfog.gestalt.integrations.ecs.{EcsClient,AwslogsConfiguration}
 import java.util.{UUID, Date}
 import scala.util.{Try,Success,Failure}
 import scala.concurrent.Future
@@ -11,6 +11,7 @@ import cats.instances.vector._
 import cats.instances.try_._
 import cats.syntax.traverse._
 import play.api.Logger
+import play.api.libs.json._
 import org.joda.time.DateTime
 import com.amazonaws.services.ecs.model._
 
@@ -57,24 +58,6 @@ trait ECSOps {
       containerInstances <- listContainerInstances(client);
       cis <- containerInstances.sliding(10, 10).toVector.traverse(describe(_)).map(_.flatten)
     ) yield cis
-  }
-
-  def getDefaultVpc(client: EcsClient): Try[String] = {
-    for(
-      containerInstances <- describeContainerInstances(client);
-      vpcs <- containerInstances.toVector.traverse { ci =>
-        ci.getAttributes().find(_.getName() == "ecs.vpc-id").map(_.getValue()) match {
-          case Some(vpc) => Success(vpc)
-          case None => Failure(new RuntimeException(s"Unable to determine vpc for container instance ${ci.getEc2InstanceId()}"))
-        }
-      };
-      vpc <- if(vpcs.toSet.size == 1) {
-        Success(vpcs(0))
-      }else {
-        // needs to be able to set a vpc via provider configuration
-        Failure(new RuntimeException(s"Unable to determine vpc: not all container instances belong to the same vpc (${vpcs})"))
-      }
-    ) yield vpc
   }
 
   def createTaskDefinition(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
@@ -159,11 +142,33 @@ trait ECSOps {
 
     val tryPortMappings = spec.port_mappings.toVector.traverse(processPortMapping)
 
+    val logConfiguration = ecs.loggingConfiguration match {
+      case Some(AwslogsConfiguration(groupName, region)) => {
+        Some(new LogConfiguration()
+          .withLogDriver(LogDriver.Awslogs)
+          .withOptions(Map(
+            // "awslogs-create-group" -> "true",
+            "awslogs-region" -> region,
+            "awslogs-group" -> groupName,
+            "awslogs-stream-prefix" -> s"${context.environmentId}-${spec.name}"
+          )))
+      }
+      case _ => None
+    }
+
     val cd = new ContainerDefinition()
       .withImage(spec.image)
       .withName(spec.name)
       .withMemory(spec.memory.toInt)
       .withCpu(cpus)
+
+    if(ecs.launchType == "EC2") {
+      cd.setHostname(spec.name)
+    }
+
+    logConfiguration foreach { lc =>
+      cd.withLogConfiguration(lc)
+    }
 
     if(!env.isEmpty) { cd.setEnvironment(env) }
     if(!spec.labels.isEmpty) { cd.setDockerLabels(spec.labels) }
@@ -178,8 +183,24 @@ trait ECSOps {
     // kubernetes command = docker entrypoint
     // kubernetes arguments = docker command
     // I assume ContainerSpec cmd and args have the same meaning as Kubernetes cmd and args
-    spec.cmd.foreach { cmd => cd.setEntryPoint(cmd.split(" ").toSeq) }
-    spec.args.foreach { args => cd.setCommand(args.toSeq) }
+    // spec.cmd.foreach { cmd => cd.setEntryPoint(cmd.split(" ").toSeq) }
+    // spec.args.foreach { args => cd.setCommand(args.toSeq) }
+
+    // however the default ui only allows to specify `command` (in docker sense)
+    // I expect this format: ["nginx", "-g", "daemon off;"]    (can't see any other viable option tbh)
+    val tryCmd = spec.cmd match {
+      case Some(args) => {
+        (for(
+          argsJs <- Try(Json.parse(args));
+          splitArgs <- Try(argsJs.as[Seq[String]])
+        ) yield splitArgs) map { sargs =>
+          cd.setCommand(sargs.toSeq)
+        } recoverWith { case _: Throwable =>
+          Failure(new RuntimeException(s"""Failed to parse command, please use this format: `["nginx", "-g", "daemon off;"]`"""))
+        }
+      }
+      case None => Success(Seq())
+    }
     
     for(
       hcOpt <- tryHealthCheck;
@@ -214,6 +235,7 @@ trait ECSOps {
       _ <- tryPortMappings;
       _ <- tryHealthCheck;
       _ <- tryVolumes;
+      _ <- tryCmd;
       result <- Try(ecs.client.registerTaskDefinition(rtdr))
     ) yield {
       val taskDefn = result.getTaskDefinition()
@@ -221,7 +243,7 @@ trait ECSOps {
     }
   }
 
-  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext, targetGroups: Map[String,String] = Map()): Try[String] = {
+  def createService(ecs: EcsClient, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Try[String] = {
 
     val name = s"${context.environmentId}-${spec.name}"
 
@@ -239,53 +261,8 @@ trait ECSOps {
       val nc = new NetworkConfiguration().withAwsvpcConfiguration(avc)
       csr.setNetworkConfiguration(nc)
     }
-    
-    def mkLb(pm: ContainerSpec.PortMapping): Try[LoadBalancer] = {
-      val name = pm.name.getOrElse("")
-      val port = pm.lb_port.getOrElse(-1)
-      for(
-        _ <- failIfNot(name != "") { "Port mapping name must not be empty" };
-        _ <- failIfNot(port != -1) { s"Port mapping lb port must not be empty (${name})" };
-        targetGroupArn <- targetGroups.get(name) match {
-          case Some(tga) => Success(tga)
-          case None => Failure(new RuntimeException(s"No Load Balancer created for ${name}"))
-        }
-      ) yield {
-        new LoadBalancer()
-          .withContainerName(spec.name)
-          .withContainerPort(port)
-          // .withLoadBalancerName(s"${name}-lb")
-          .withTargetGroupArn(targetGroupArn)
-      }
-    }    
 
-    for(
-      lbs <- spec.port_mappings.toVector.traverse(mkLb);
-      lb <- if(lbs.size <= 1) { Success(()) }else {
-        Failure(throw new RuntimeException("Defining more than one load balancer per service is not supported by Amazon"))
-      };
-      _ = if(!lbs.isEmpty) { csr.setLoadBalancers(lbs) };
-      serviceArn <- Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
-    ) yield serviceArn
-  }
-
-  def mkPlaceholderContainerStats(spec: ContainerSpec): Try[ContainerStats] = {
-    Success(ContainerStats(
-      external_id = "",
-      containerType = "DOCKER",
-      status = "PENDING",
-      cpus = spec.cpus,
-      memory = spec.memory,
-      image = spec.image,
-      age = new DateTime(spec.created.getOrElse(new Date())),
-      numInstances = 0,
-      tasksStaged = 0,
-      tasksRunning = 0,
-      tasksHealthy = 0,
-      tasksUnhealthy = 0,
-      taskStats = None,
-      lb_address = None
-    ))
+    Try(ecs.client.createService(csr)).map(_.getService().getServiceArn())
   }
 
   def scaleService(client: EcsClient, spec: ContainerSpec, context: ProviderContext, numInstances: Int): Try[Unit] = {
