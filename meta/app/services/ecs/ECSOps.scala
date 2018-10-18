@@ -2,7 +2,7 @@ package services
 
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,VolumeSpec}
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.integrations.ecs.EcsClient
+import com.galacticfog.gestalt.integrations.ecs.{EcsClient,AwslogsConfiguration}
 import java.util.{UUID, Date}
 import scala.util.{Try,Success,Failure}
 import scala.concurrent.Future
@@ -11,6 +11,7 @@ import cats.instances.vector._
 import cats.instances.try_._
 import cats.syntax.traverse._
 import play.api.Logger
+import play.api.libs.json._
 import org.joda.time.DateTime
 import com.amazonaws.services.ecs.model._
 
@@ -159,11 +160,29 @@ trait ECSOps {
 
     val tryPortMappings = spec.port_mappings.toVector.traverse(processPortMapping)
 
+    val logConfiguration = ecs.loggingConfiguration match {
+      case Some(AwslogsConfiguration(groupName, region)) => {
+        Some(new LogConfiguration()
+          .withLogDriver(LogDriver.Awslogs)
+          .withOptions(Map(
+            // "awslogs-create-group" -> "true",
+            "awslogs-region" -> region,
+            "awslogs-group" -> groupName,
+            "awslogs-stream-prefix" -> s"${context.environmentId}-${spec.name}"
+          )))
+      }
+      case _ => None
+    }
+
     val cd = new ContainerDefinition()
       .withImage(spec.image)
       .withName(spec.name)
       .withMemory(spec.memory.toInt)
       .withCpu(cpus)
+
+    logConfiguration foreach { lc =>
+      cd.withLogConfiguration(lc)
+    }
 
     if(!env.isEmpty) { cd.setEnvironment(env) }
     if(!spec.labels.isEmpty) { cd.setDockerLabels(spec.labels) }
@@ -178,8 +197,24 @@ trait ECSOps {
     // kubernetes command = docker entrypoint
     // kubernetes arguments = docker command
     // I assume ContainerSpec cmd and args have the same meaning as Kubernetes cmd and args
-    spec.cmd.foreach { cmd => cd.setEntryPoint(cmd.split(" ").toSeq) }
-    spec.args.foreach { args => cd.setCommand(args.toSeq) }
+    // spec.cmd.foreach { cmd => cd.setEntryPoint(cmd.split(" ").toSeq) }
+    // spec.args.foreach { args => cd.setCommand(args.toSeq) }
+
+    // however the default ui only allows to specify `command` (in docker sense)
+    // I expect this format: ["nginx", "-g", "daemon off;"]    (can't see any other viable option tbh)
+    val tryCmd = spec.cmd match {
+      case Some(args) => {
+        (for(
+          argsJs <- Try(Json.parse(args));
+          splitArgs <- Try(argsJs.as[Seq[String]])
+        ) yield splitArgs) map { sargs =>
+          cd.setCommand(sargs.toSeq)
+        } recoverWith { case _: Throwable =>
+          Failure(new RuntimeException(s"""Failed to parse command, please use this format: `["nginx", "-g", "daemon off;"]`"""))
+        }
+      }
+      case None => Success(Seq())
+    }
     
     for(
       hcOpt <- tryHealthCheck;
@@ -214,6 +249,7 @@ trait ECSOps {
       _ <- tryPortMappings;
       _ <- tryHealthCheck;
       _ <- tryVolumes;
+      _ <- tryCmd;
       result <- Try(ecs.client.registerTaskDefinition(rtdr))
     ) yield {
       val taskDefn = result.getTaskDefinition()
