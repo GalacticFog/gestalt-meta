@@ -26,8 +26,8 @@
 //import com.amazonaws.services.ecs.model._
 //import com.galacticfog.gestalt.integrations.ecs._
 //
-//class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 //
+//class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 //
 //  override def beforeAll(): Unit = { pristineDatabase(); () }
 //
@@ -49,6 +49,7 @@
 //      new UpgraderServiceModule,
 //      new MetaConfigModule,
 //      new MetaDefaultDocker,
+//      new ActorsModule,
 //      FakeGestaltSecurityModule(fakeSecurityEnvironment()),
 //      new SystemConfigModule,
 //      bind[SecureController].toInstance(mockSecureController),
@@ -91,25 +92,6 @@
 //      "region" -> "us-east-2",
 //      "endpoints" -> Json.arr(
 //        Json.obj(
-//            "kind" -> "http",
-//            "url" -> "http://localhost:8090",
-//            "actions" -> Json.arr(
-//                Json.obj(
-//                    "name" -> "container.import",
-//                    "post" -> Json.obj(
-//                      "body" -> Json.obj(
-//                        "content_type" -> "application/json"  
-//                      ),
-//                      "responses" -> Json.arr(
-//                        "code" -> 200,
-//                        "content_type" -> "application/json"
-//                      )
-//                    )
-//                )
-//            )
-//        )
-//        /*
-//        Json.obj(
 //          "actions" -> Json.arr("container.import"),
 //          "default" -> false,
 //          "http" -> Json.obj(
@@ -117,15 +99,12 @@
 //            "url" -> "http://localhost:8090"
 //          )
 //        )
-//        */
 //      )
 //    )
 //    var lastLambdaRequestBody: JsValue = null
 //    val mockWs = MockWS {
 //      case (POST, "http://localhost:8090") => Action { request =>
-//        
 //        lastLambdaRequestBody = request.body.asJson.get
-//        println("***** LAMBDA-REQUEST-BODY : " + lastLambdaRequestBody)
 //        Ok("http response")
 //      }
 //    }

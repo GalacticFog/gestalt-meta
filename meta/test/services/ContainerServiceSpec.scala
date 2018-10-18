@@ -488,7 +488,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         user = user,
         containerSpec = testSpec,
         userRequestedId = None
-      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
+      ) must throwAn[BadRequestException]("is absent. Associated container may be corrupt.")
     }
 
     "throw 400 if patching a container with the same name" >> { t : TestScope =>
@@ -869,7 +869,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         user = user,
         secretSpec = testSpec,
         userRequestedId = None
-      ) must throwAn[BadRequestException]("is absent or not a recognized CaaS provider")
+      ) must throwAn[BadRequestException]("is absent. Associated container may be corrupt.")
     }
 
   }

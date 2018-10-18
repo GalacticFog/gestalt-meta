@@ -127,7 +127,7 @@ class ContainerController @Inject()(
         "provider" -> Json.obj(
           "name"          -> provider.name,
           "id"            -> provider.id,
-          "resource_type" -> sdk.ResourceName(provider.typeId)
+          "resource_type" -> TypeMethods.typeName(provider.typeId)
         )
       ))
     )

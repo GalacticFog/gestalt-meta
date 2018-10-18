@@ -1450,8 +1450,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
-      (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
+      (json \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("")
+      (json \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("")
     }
 
     "mask security credentials for embedded provider" in new testEndpoint {
@@ -1460,8 +1460,8 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       ))
       status(result) must equalTo(OK)
       val json = contentAsJson(result)
-      (json \ "properties" \ "provider" \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("*" * 8)
-      (json \ "properties" \ "provider" \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("*" * 8)
+      (json \ "properties" \ "provider" \ "properties" \ "config" \ "access_key").asOpt[String] must beSome("")
+      (json \ "properties" \ "provider" \ "properties" \ "config" \ "secret_key").asOpt[String] must beSome("")
     }
 
     "show security credentials for provider if explicitly asked" in new testEndpoint {

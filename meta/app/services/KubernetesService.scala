@@ -11,6 +11,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.util.Helpers.OptionWithDefaults
+import com.galacticfog.gestalt.util.Helpers.StringCompare
 import com.galacticfog.gestalt.util.Helpers.OptionDefaults._
 import com.google.inject.Inject
 import controllers.util._
@@ -51,6 +52,8 @@ object KubernetesService {
   val REQ_TYPE_REQUEST = "request"
 
   val POD = "Pod"
+  val DEPLOYMENT = "Deployment"
+  val REPLICA_SET = "ReplicaSet"
 
   val DEFAULT_CPU_REQ = REQ_TYPE_REQUEST
   val DEFAULT_MEM_REQ = Seq(REQ_TYPE_LIMIT,REQ_TYPE_REQUEST).mkString(",")
@@ -1039,17 +1042,15 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             }
 
             replicaSets = allReplicaSets.filter(_.metadata.ownerReferences.exists(owner =>
-                owner.kind == "deployment" && owner.uid == maybeDeployment.get.metadata.uid))
+              (owner.kind ~== DEPLOYMENT) && owner.uid == maybeDeployment.get.metadata.uid))
 
             pods = allPods.filter(_.metadata.ownerReferences.exists(owner =>
-                owner.kind == "replicaSet" && replicaSets.exists(_.metadata.uid == owner.uid)))
+              (owner.kind ~== REPLICA_SET) && replicaSets.exists(_.metadata.uid == owner.uid)))
 
             services = allServices.filter(service =>service.spec.isDefined &&
               (service.spec.get.selector.toSet diff maybeDeployment.get.metadata.labels.toSet).isEmpty)
 
-            events = allEvents.filter(event => pods.map(_.metadata.name).contains(event.involvedObject.name))
-
-            update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, events))
+            update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
           } yield update
         )
       case None => Future.successful(None)
@@ -1119,7 +1120,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         )
     }
 
-    val podEventStats = events filter (podEvent => podEvent.involvedObject.kind == POD && podNames.contains(podEvent.involvedObject.name)) map eventStatFromPodEvent
+    val podEventStats = events filter (podEvent => (podEvent.involvedObject.kind ~== POD) && podNames.contains(podEvent.involvedObject.name)) map eventStatFromPodEvent
 
     val containerStateStats = (pods flatMap containerStateStatFromPodContainerStates) ++ (pods flatMap containerStateStatFromPodConditions)
 

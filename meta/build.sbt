@@ -87,7 +87,6 @@ libraryDependencies ++= Seq(
   "com.rabbitmq"     % "amqp-client"                   % "3.6.6",
   "io.jsonwebtoken"  % "jjwt"                          % "0.7.0",
   "com.spotify"      % "docker-client"                 % "8.7.1",
-  "com.amazonaws"    % "aws-java-sdk-ecs"              % "1.11.410",
 
   "com.lihaoyi"     %% "scalatags"                     % "0.6.7",
   "org.scala-lang"   % "scala-reflect"                 % "2.11.8",

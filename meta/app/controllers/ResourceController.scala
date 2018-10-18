@@ -864,7 +864,7 @@ class ResourceController @Inject()(
   import com.galacticfog.gestalt.meta.genericactions._
   
   
-  def findActionsInScope2(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[JsObject] = {
+  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[JsObject] = {
 
     def makeActionUrl(provider: GestaltResourceInstance, action: String) = {
       val act = action.drop(action.indexOf(""".""")+1)
@@ -926,44 +926,44 @@ class ResourceController @Inject()(
   }
   
   
-  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
-    log.debug("Looking up applicable actions...")
-
-    val actions = ResourceFactory.findById(target).fold {
-      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-    }{ _ =>
-      val prvs = for {
-        anc <- {
-          /*
-           * This selects the ancestor environment and workspace, as well as all 
-           * ancestor Orgs up to 'root'
-           */
-          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
-          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
-          rs.reverse ++ root
-        }
-        prv <- {
-          /*
-           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
-           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
-           * top-level to indicate that it exposes UI actions, we need to select ALL providers
-           * in context and inspect individually.
-           */
-          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, anc.id)
-          rs
-        }
-      } yield prv
-      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
-    }
-    
-    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
-    
-    if (prefixFilter.isEmpty) actions
-    else actions filter { act =>
-      val spec = ProviderActionSpec.fromResource(act)
-      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
-    }
-  }
+//  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+//    log.debug("Looking up applicable actions...")
+//
+//    val actions = ResourceFactory.findById(target).fold {
+//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
+//    }{ _ =>
+//      val prvs = for {
+//        anc <- {
+//          /*
+//           * This selects the ancestor environment and workspace, as well as all 
+//           * ancestor Orgs up to 'root'
+//           */
+//          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
+//          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
+//          rs.reverse ++ root
+//        }
+//        prv <- {
+//          /*
+//           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
+//           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
+//           * top-level to indicate that it exposes UI actions, we need to select ALL providers
+//           * in context and inspect individually.
+//           */
+//          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, anc.id)
+//          rs
+//        }
+//      } yield prv
+//      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
+//    }
+//    
+//    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
+//    
+//    if (prefixFilter.isEmpty) actions
+//    else actions filter { act =>
+//      val spec = ProviderActionSpec.fromResource(act)
+//      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
+//    }
+//  }
   
 //  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
 //    log.debug("Looking up applicable actions...")
@@ -1012,7 +1012,7 @@ class ResourceController @Inject()(
 //      findActionsInScope(org, org, targetPrefix)
 //    }
     
-    Ok(Json.toJson(findActionsInScope2(org, org, targetPrefix)))
+    Ok(Json.toJson(findActionsInScope(org, org, targetPrefix)))
   }
 
   def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
@@ -1021,9 +1021,9 @@ class ResourceController @Inject()(
 //      findActionsInScope(fqid(fqon), target, targetPrefix)
 //    }
     
-    Ok(Json.toJson(findActionsInScope2(fqid(fqon), target, targetPrefix)))
+    Ok(Json.toJson(findActionsInScope(fqid(fqon), target, targetPrefix)))
   }
-
+  
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
@@ -1034,11 +1034,11 @@ class ResourceController @Inject()(
       o.properties.get("fqon") != path.fqon
     }
   }
-
+  
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
-
+  
   def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
 
     val rs = if (Resource.isTopLevel(path.path)) {
@@ -1285,7 +1285,7 @@ class ResourceController @Inject()(
         lp <- ResourceFactory.findById(id)
       } yield (js ++ Json.obj(
         "typeId" -> lp.typeId,
-        "type" -> sdk.ResourceName(lp.typeId)
+        "type" -> TypeMethods.typeName(lp.typeId)
       ))
     } } getOrElse Seq.empty
     val newResJson = replaceJsonProps(resJson, replaceJsonPropValue(resJson, "linked_providers", Json.toJson(renderedLinks)))
