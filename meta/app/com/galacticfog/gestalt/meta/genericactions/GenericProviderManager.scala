@@ -157,7 +157,7 @@ case class HttpGenericProvider(client: WSClient,
           ) {
         case (req, header) => req.withHeaders(AUTHORIZATION -> header)
       }
-      _ = log.warn("Request: " + request.queryString)
+      _ = log.warn("Request: " + invocation.toJson().toString())
 
       rawResp <- request.execute()
       processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
