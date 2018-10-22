@@ -1,12 +1,11 @@
 package services
 
+import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import java.util.UUID
 import scala.concurrent.{Future, ExecutionContext}
 import scala.concurrent.ExecutionContext.Implicits.global
 import com.google.inject.Inject
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
-// import play.api.Logger
 import com.galacticfog.gestalt.integrations.ecs._
 
 trait AwsSdkFactory {
@@ -17,6 +16,7 @@ class DefaultAwsSdkFactory @Inject()() extends AwsSdkFactory {
   val clientFactory: EcsClientFactory = new DefaultEcsClientFactory()
 
   override def getEcsClient(provider: UUID)(implicit ec: ExecutionContext): Future[EcsClient] = {
+
     val prv = ResourceFactory.findById(provider) getOrElse {
       throw new ResourceNotFoundException(s"Provider with ID '$provider' not found.")
     }

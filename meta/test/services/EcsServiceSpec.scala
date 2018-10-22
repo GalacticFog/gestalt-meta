@@ -21,7 +21,7 @@ import com.amazonaws.services.ecs.model._
 import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.util.Success
-import com.galacticfog.gestalt.integrations.ecs.EcsClient
+import com.galacticfog.gestalt.integrations.ecs._
 
 @RunWith(classOf[JUnitRunner])
 class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -56,6 +56,8 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockClient.client returns mockAmazonECS
       mockClient.cluster returns "test_cluster"
       mockClient.launchType returns "FARGATE"
+      mockClient.region returns ""
+      mockClient.kongConfigureUrl returns None
       mockClient.taskRoleArn returns Some("")
       val mockAwsSdkFactory = mock[AwsSdkFactory]
       mockAwsSdkFactory.getEcsClient(any)(any) returns Future.successful(mockClient)

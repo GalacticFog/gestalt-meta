@@ -4,6 +4,7 @@ logs
 project/project
 meta/target
 container.import/target
+kong.configure/target
 target
 tmp
 .history

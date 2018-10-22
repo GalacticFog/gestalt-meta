@@ -17,7 +17,9 @@ object EcsProvider {
     region: String,
     taskRoleArn: Option[String],
     request: Option[RequestConfiguration],
-    awsLogGroup: Option[String]
+    awsLogGroup: Option[String],
+    kongConfigureUrl: Option[String],    // I believe this should be on endpoints field by I don't know how to access to it
+    kongManagementUrl: Option[String]
   )
 
   object HttpOrHttps extends Enumeration {
@@ -58,8 +60,11 @@ case class EcsClient(
   ec2: AmazonEC2,
   cluster: String,
   launchType: String,
+  region: String,
   taskRoleArn: Option[String],
-  loggingConfiguration: Option[LoggingConfiguration]
+  loggingConfiguration: Option[LoggingConfiguration],
+  kongConfigureUrl: Option[String],
+  kongManagementUrl: Option[String]
 )
 
 trait FromJsResult {
@@ -155,7 +160,17 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         case Some(logGroup) => Some(AwslogsConfiguration(logGroup, properties.region))
       }
       
-      EcsClient(ecsBuilder.build(), ec2Builder.build(), properties.cluster, launchType, properties.taskRoleArn, awsLogGroup)
+      EcsClient(
+        client = ecsBuilder.build(),
+        ec2 = ec2Builder.build(),
+        cluster = properties.cluster,
+        launchType = launchType,
+        region = properties.region,
+        taskRoleArn = properties.taskRoleArn,
+        loggingConfiguration = awsLogGroup,
+        kongConfigureUrl = properties.kongConfigureUrl,
+        kongManagementUrl = properties.kongManagementUrl
+      )
     }
   }
 }
