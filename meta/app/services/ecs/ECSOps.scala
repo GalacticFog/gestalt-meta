@@ -21,6 +21,8 @@ trait ECSOps {
 
   private[this] val log = Logger(this.getClass)
 
+  private[this] val sidecarContainer = "gesalt-ecs-sidecar-lb-agent"
+
   def listContainerInstances(client: EcsClient): Try[Seq[String]] = {
     @tailrec
     def iter(nextToken: Option[String] = None, containerInstances: Seq[String] = Seq()): Try[Seq[String]] = {
@@ -162,12 +164,25 @@ trait ECSOps {
       .withMemory(spec.memory.toInt)
       .withCpu(cpus)
 
+    val sidecarCd = for(
+      configureUrl <- ecs.kongConfigureUrl;
+      managementUrl <- ecs.kongManagementUrl
+    ) yield {
+      new ContainerDefinition()
+        .withImage("htch/ecs-sidecar:latest")
+        .withName(sidecarContainer)
+        // .withMemory(64)
+        // .withCpu(256)
+        .withCommand(Seq("/bin/app", "-url", configureUrl, "-region", ecs.region, "-management-url", managementUrl))
+    }
+
     if(ecs.launchType == "EC2") {
       cd.setHostname(spec.name)
     }
 
     logConfiguration foreach { lc =>
       cd.withLogConfiguration(lc)
+      sidecarCd.foreach(_.withLogConfiguration(lc))
     }
 
     if(!env.isEmpty) { cd.setEnvironment(env) }
@@ -209,8 +224,10 @@ trait ECSOps {
 
     spec.user.foreach(cd.setUser(_))
 
+    val containerDefinitions = Seq(cd) ++ sidecarCd.map(Seq(_)).getOrElse(Seq())
+
     val rtdr = new RegisterTaskDefinitionRequest()
-      .withContainerDefinitions(cd)
+      .withContainerDefinitions(containerDefinitions)
       .withFamily(s"${context.environmentId}-${spec.name}")
       .withMemory(spec.memory.toInt.toString)
       .withCpu(cpus.toString)
@@ -309,7 +326,9 @@ trait ECSOps {
         describeResponse <- Try(ecs.client.describeTaskDefinition(dtdr));
         taskDefn = describeResponse.getTaskDefinition();
         containerDefns: Seq[ContainerDefinition] = taskDefn.getContainerDefinitions();
-        containerDefn <- containerDefns match {
+        containerDefn <- (containerDefns filter { cd =>
+          cd.getName() != sidecarContainer
+        }) match {
           case Seq(containerDefn: ContainerDefinition) => Success(containerDefn)
           case containerDefns if containerDefns.isEmpty => {
             Failure(throw new RuntimeException(s"Zero containers present on task definition `${taskDefn.getTaskDefinitionArn()}`; this is not supported"))
@@ -343,7 +362,9 @@ trait ECSOps {
       ) yield {
         val taskStats = for(
           task <- tasks;
-          container <- task.getContainers().toSeq
+          container <- task.getContainers().toSeq filter { container =>
+            container.getName() != sidecarContainer
+          }
         ) yield {
           val host = Option(task.getContainerInstanceArn()) flatMap { ciArn =>
             containerInstances.get(ciArn).map(_.getEc2InstanceId())

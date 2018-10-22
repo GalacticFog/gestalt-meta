@@ -15,6 +15,7 @@ import cats.instances.try_._
 import cats.syntax.traverse._
 import com.google.inject.Inject
 import play.api.Logger
+import play.api.libs.json.Json
 import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFoundException}
 
 class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
@@ -80,7 +81,14 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
         _ <- createTaskDefinition(client, container.id, spec, context);
         serviceArn <- createService(client, container.id, spec, context)
       ) yield {
+        val portMappings = spec.port_mappings map { pm =>
+          pm.copy(
+            expose_endpoint=Some(true),
+            service_address=Some(ContainerSpec.ServiceAddress(serviceArn, pm.container_port.getOrElse(0), None, None))
+          )
+        }
         val values = Map(
+          "port_mappings" -> Json.toJson(portMappings).toString,
           "external_id" -> serviceArn,
           "status" -> "RUNNING"
         )
