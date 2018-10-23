@@ -18,8 +18,9 @@ object EcsProvider {
     taskRoleArn: Option[String],
     request: Option[RequestConfiguration],
     awsLogGroup: Option[String],
-    kongConfigureUrl: Option[String],    // I believe this should be on endpoints field by I don't know how to access to it
-    kongManagementUrl: Option[String]
+    kongConfigureUrl: Option[String],
+    kongManagementUrl: Option[String],
+    sidecarContainerImageOverride: Option[String]
   )
 
   object HttpOrHttps extends Enumeration {
@@ -64,7 +65,8 @@ case class EcsClient(
   taskRoleArn: Option[String],
   loggingConfiguration: Option[LoggingConfiguration],
   kongConfigureUrl: Option[String],
-  kongManagementUrl: Option[String]
+  kongManagementUrl: Option[String],
+  sidecarContainerImage: String
 )
 
 trait FromJsResult {
@@ -169,7 +171,8 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         taskRoleArn = properties.taskRoleArn,
         loggingConfiguration = awsLogGroup,
         kongConfigureUrl = properties.kongConfigureUrl,
-        kongManagementUrl = properties.kongManagementUrl
+        kongManagementUrl = properties.kongManagementUrl,
+        sidecarContainerImage = properties.sidecarContainerImageOverride.getOrElse("galacticfog/gesalt-ecs-sidecar-lb-agent:latest")
       )
     }
   }

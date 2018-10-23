@@ -169,7 +169,7 @@ trait ECSOps {
       managementUrl <- ecs.kongManagementUrl
     ) yield {
       new ContainerDefinition()
-        .withImage("htch/ecs-sidecar:latest")
+        .withImage(ecs.sidecarContainerImage)
         .withName(sidecarContainer)
         // .withMemory(64)
         // .withCpu(256)
