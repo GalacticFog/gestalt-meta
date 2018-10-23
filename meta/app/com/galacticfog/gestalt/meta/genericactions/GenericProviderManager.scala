@@ -5,6 +5,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.{InvocationResponse, RawInvocationResponse}
+import com.gargoylesoftware.htmlunit.javascript.host.WeakSet
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
 import org.clapper.scalasti.ST
@@ -156,6 +157,8 @@ case class HttpGenericProvider(client: WSClient,
           ) {
         case (req, header) => req.withHeaders(AUTHORIZATION -> header)
       }
+      _ = log.warn("Request: " + invocation.toJson().toString())
+
       rawResp <- request.execute()
       processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
     } yield processed

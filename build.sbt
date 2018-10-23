@@ -39,8 +39,8 @@ lazy val meta = (project in file("meta")).
                       } catch {      case t: Throwable => "get git hash failed"    }
               }}.toString()
     ),
-    buildInfoPackage := "com.galacticfog.gestalt.meta.api",
-    sources in (Compile,doc) := Seq.empty
+    buildInfoPackage := "com.galacticfog.gestalt.meta.api"//,
+    // sources in (Compile,doc) := Seq.empty
   ).dependsOn(integrations)
 
 lazy val containerImport = (project in file("container.import")).
@@ -62,12 +62,31 @@ lazy val containerImport = (project in file("container.import")).
   settings(addArtifact(artifact in (Compile, assembly), assembly).settings: _*).
   dependsOn(meta % "test->test").dependsOn(integrations)
 
+lazy val kongConfigure = (project in file("kong.configure")).
+  settings(commonSettings: _*).
+  settings(
+    assemblyMergeStrategy in assembly := {
+      case PathList("META-INF", xs @ _*) => MergeStrategy.discard
+      case _ => MergeStrategy.first
+    },
+    assemblyShadeRules in assembly := Seq(      // until aws library is removed from laser jvm executor
+      ShadeRule.rename("com.amazonaws.**" -> "shadeaws.@1").inAll
+    )
+  ).
+  settings(
+    artifact in (Compile, assembly) ~= { art =>
+      art.copy(`classifier` = Some("assembly"))
+    }
+  ).
+  settings(addArtifact(artifact in (Compile, assembly), assembly).settings: _*)
+
 lazy val integrations = (project in file("integrations")).
   settings(commonSettings: _*)
 
 lazy val root = (project in file(".")).
   aggregate(meta).
   aggregate(containerImport).
+  aggregate(kongConfigure).
   aggregate(integrations).
   settings(commonSettings: _*).
   settings(

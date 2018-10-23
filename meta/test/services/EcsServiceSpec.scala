@@ -4,7 +4,9 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerStats,ContainerSpec,VolumeSpec}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import controllers.util.GestaltSecurityMocking
+import java.util.UUID
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.specs2.matcher.JsonMatchers
@@ -19,7 +21,7 @@ import com.amazonaws.services.ecs.model._
 import scala.collection.JavaConversions._
 import scala.concurrent.Future
 import scala.util.Success
-import com.galacticfog.gestalt.integrations.ecs.EcsClient
+import com.galacticfog.gestalt.integrations.ecs._
 
 @RunWith(classOf[JUnitRunner])
 class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
@@ -54,6 +56,8 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       mockClient.client returns mockAmazonECS
       mockClient.cluster returns "test_cluster"
       mockClient.launchType returns "FARGATE"
+      mockClient.region returns ""
+      mockClient.kongConfigureUrl returns None
       mockClient.taskRoleArn returns Some("")
       val mockAwsSdkFactory = mock[AwsSdkFactory]
       mockAwsSdkFactory.getEcsClient(any)(any) returns Future.successful(mockClient)
@@ -64,7 +68,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
 
   "EcsService" should {
 
-    "create containers" in new MockScope {
+    "create container (FARGATE)" in new MockScope {
       // val volumeSpec = ContainerSpec.InlineVolumeMountSpec(
       //   mount_path = "/mnt/path",
       //   volume_resource = VolumeSpec.toResourcePrototype(VolumeSpec(
@@ -81,6 +85,15 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
       // val volumesSerialized = Json.toJson[Seq[ContainerSpec.VolumeMountSpec]](Seq(volumeSpec)).toString
       val volumesSerialized = s"""[{"volume_id": "${testVolume.id}", "mount_path": "/mnt"}]"""
 
+      val portMapping = ContainerSpec.PortMapping(
+        protocol = "tcp",
+        container_port = Some(80),
+        name = Some("test"),
+        lb_port = Some(80)
+      )
+      val portMappingsSerialized = Json.toJson[Seq[ContainerSpec.PortMapping]](Seq(portMapping)).toString
+      // val portMappingsSerialized = "[]"
+
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
         "test",
@@ -95,7 +108,7 @@ class EcsServiceSpec extends PlaySpecification with ResourceScope with BeforeAll
           "memory" -> "4096.0",
           "num_instances" -> "1",
           "force_pull" -> "true",
-          "port_mappings" -> "[]",
+          "port_mappings" -> portMappingsSerialized,
           "env" -> Json.obj(
             "VAR1" -> "VAL1",
             "VAR2" -> "VAL2"

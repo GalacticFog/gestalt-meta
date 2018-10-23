@@ -5,17 +5,21 @@ import scala.collection.JavaConversions._
 import play.api.libs.json._
 import cats.syntax.either._
 import com.amazonaws.{ClientConfiguration,Protocol,ProxyAuthenticationMethod}
-import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials}
+import com.amazonaws.auth.{AWSStaticCredentialsProvider,BasicAWSCredentials,DefaultAWSCredentialsProviderChain}
 import com.amazonaws.services.ecs.{AmazonECSClientBuilder,AmazonECS}
+import com.amazonaws.services.ec2.{AmazonEC2ClientBuilder,AmazonEC2}
 
 object EcsProvider {
   case class Properties(
-    access_key: String,
-    secret_key: String,
-    region: String,
+    access_key: Option[String],
+    secret_key: Option[String],
     cluster: String,
+    region: String,
     taskRoleArn: Option[String],
-    request: Option[RequestConfiguration]
+    request: Option[RequestConfiguration],
+    awsLogGroup: Option[String],
+    kongConfigureUrl: Option[String],    // I believe this should be on endpoints field by I don't know how to access to it
+    kongManagementUrl: Option[String]
   )
 
   object HttpOrHttps extends Enumeration {
@@ -49,7 +53,19 @@ object EcsProvider {
   implicit val propertiesReads = Json.reads[Properties]
 }
 
-case class EcsClient(client: AmazonECS, cluster: String, launchType: String, taskRoleArn: Option[String])
+sealed trait LoggingConfiguration
+case class AwslogsConfiguration(groupName: String, region: String) extends LoggingConfiguration
+case class EcsClient(
+  client: AmazonECS,
+  ec2: AmazonEC2,
+  cluster: String,
+  launchType: String,
+  region: String,
+  taskRoleArn: Option[String],
+  loggingConfiguration: Option[LoggingConfiguration],
+  kongConfigureUrl: Option[String],
+  kongManagementUrl: Option[String]
+)
 
 trait FromJsResult {
   def fromJsResult[A](jsResult: JsResult[A]): Either[String,A] = {
@@ -122,12 +138,39 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         clientConfiguration.setProxyWorkstation(ntlmWorkstation)
       }
 
-      val builder = AmazonECSClientBuilder.standard()
-        .withCredentials(new AWSStaticCredentialsProvider(new BasicAWSCredentials(properties.access_key, properties.secret_key)))
+      val credentialsProvider = (for(
+        accessKey <- properties.access_key;
+        secretKey <- properties.secret_key
+      ) yield {
+        new AWSStaticCredentialsProvider(new BasicAWSCredentials(accessKey, secretKey))
+      }) getOrElse(new DefaultAWSCredentialsProviderChain())
+
+      val ecsBuilder = AmazonECSClientBuilder.standard()
+        .withCredentials(credentialsProvider)
         .withRegion(properties.region)
         .withClientConfiguration(clientConfiguration)
       
-      EcsClient(builder.build(), properties.cluster, launchType, properties.taskRoleArn)
+      val ec2Builder = AmazonEC2ClientBuilder.standard()
+        .withCredentials(credentialsProvider)
+        .withRegion(properties.region)
+        .withClientConfiguration(clientConfiguration)
+
+      val awsLogGroup = properties.awsLogGroup match {
+        case None => None
+        case Some(logGroup) => Some(AwslogsConfiguration(logGroup, properties.region))
+      }
+      
+      EcsClient(
+        client = ecsBuilder.build(),
+        ec2 = ec2Builder.build(),
+        cluster = properties.cluster,
+        launchType = launchType,
+        region = properties.region,
+        taskRoleArn = properties.taskRoleArn,
+        loggingConfiguration = awsLogGroup,
+        kongConfigureUrl = properties.kongConfigureUrl,
+        kongManagementUrl = properties.kongManagementUrl
+      )
     }
   }
 }

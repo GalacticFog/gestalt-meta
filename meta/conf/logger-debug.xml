@@ -18,7 +18,6 @@
   <logger name="sun.rmi" level="WARN"/>
   <logger name="com.google.inject" level="WARN"/>
   <logger name="play" level="INFO" />
-  <logger name="com.galacticfog" level="DEBUG"/>
   <logger name="application"  level="DEBUG" />
   <logger name="org.flywaydb" level="INFO"/>
   <logger name="scalikejdbc" level="ERROR"/>
@@ -30,6 +29,10 @@
   <logger name="controllers.LambdaController" level="DEBUG"/>
   <logger name="gestalt-security-play" level="TRACE"/>
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
+  <logger name="org.apache.http" level="WARN"/>
+  <logger name="com.amazonaws.http.conn.ssl.SdkTLSSocketFactory" level="WARN"/>
+  
+  <logger name="com.galacticfog" level="DEBUG"/>
   
   <root level="DEBUG">
     <appender-ref ref="STDOUT" />
