@@ -17,7 +17,10 @@ object EcsProvider {
     region: String,
     taskRoleArn: Option[String],
     request: Option[RequestConfiguration],
-    awsLogGroup: Option[String]
+    awsLogGroup: Option[String],
+    kongConfigureUrl: Option[String],
+    kongManagementUrl: Option[String],
+    sidecarContainerImageOverride: Option[String]
   )
 
   object HttpOrHttps extends Enumeration {
@@ -58,8 +61,12 @@ case class EcsClient(
   ec2: AmazonEC2,
   cluster: String,
   launchType: String,
+  region: String,
   taskRoleArn: Option[String],
-  loggingConfiguration: Option[LoggingConfiguration]
+  loggingConfiguration: Option[LoggingConfiguration],
+  kongConfigureUrl: Option[String],
+  kongManagementUrl: Option[String],
+  sidecarContainerImage: String
 )
 
 trait FromJsResult {
@@ -155,7 +162,18 @@ class DefaultEcsClientFactory extends EcsClientFactory with FromJsResult {
         case Some(logGroup) => Some(AwslogsConfiguration(logGroup, properties.region))
       }
       
-      EcsClient(ecsBuilder.build(), ec2Builder.build(), properties.cluster, launchType, properties.taskRoleArn, awsLogGroup)
+      EcsClient(
+        client = ecsBuilder.build(),
+        ec2 = ec2Builder.build(),
+        cluster = properties.cluster,
+        launchType = launchType,
+        region = properties.region,
+        taskRoleArn = properties.taskRoleArn,
+        loggingConfiguration = awsLogGroup,
+        kongConfigureUrl = properties.kongConfigureUrl,
+        kongManagementUrl = properties.kongManagementUrl,
+        sidecarContainerImage = properties.sidecarContainerImageOverride.getOrElse("galacticfog/gesalt-ecs-sidecar-lb-agent:latest")
+      )
     }
   }
 }

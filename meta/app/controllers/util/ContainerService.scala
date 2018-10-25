@@ -278,6 +278,10 @@ object ContainerService {
     } yield result
     result recoverWith {
       case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+      case throwable => {
+        throwable.printStackTrace()
+        Failure(throwable)
+      }
     }
   }
 

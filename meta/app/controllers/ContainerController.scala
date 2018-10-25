@@ -152,14 +152,14 @@ class ContainerController @Inject()(
         case "import" =>
           log.info("request to import container against GenericResourceMethods")
           for {
-            org <- Future.fromTryST(Try(orgFqon(fqon).getOrElse(
+            org <- Future.fromTry(Try(orgFqon(fqon).getOrElse(
               throw new InternalErrorException("could not locate org resource after authentication")
             )))
-            env <- Future.fromTryST(Try(ResourceFactory.findById(ResourceIds.Environment, environment).getOrElse(
+            env <- Future.fromTry(Try(ResourceFactory.findById(ResourceIds.Environment, environment).getOrElse(
               throw new ResourceNotFoundException(s"environment with id '$environment' not found")
             )))
             providerId = (payload \ "properties" \ "provider" \ "id").as[UUID]
-            provider <- Future.fromTryST(Try(ResourceFactory.findById(providerId).getOrElse(
+            provider <- Future.fromTry(Try(ResourceFactory.findById(providerId).getOrElse(
               throw new ResourceNotFoundException(s"provider with id '$providerId' not found")
             )))
             r <- genericResourceMethods.createProviderBackedResource(
@@ -177,7 +177,7 @@ class ContainerController @Inject()(
         case _=>
           Future.failed(new BadRequestException("invalid 'action' on container create: must be 'create' or 'import'"))
       }
-    } yield Created(RenderSingle(resourceController.transformResource(container).get))
+    } yield Created(RenderSingle(container))
     created recover { case e => HandleExceptions(e) }
   }
 

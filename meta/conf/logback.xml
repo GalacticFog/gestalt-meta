@@ -31,6 +31,8 @@
   <logger name="services.DCOSAuthTokenActor" level="INFO"/>
   <logger name="com.amazonaws.monitoring.CsmConfigurationProviderChain" level="INFO"/>
   <logger name="com.zaxxer.hikari" level="WARN"/>
+  <logger name="org.apache.http" level="WARN"/>
+  <logger name="com.amazonaws.http.conn.ssl.SdkTLSSocketFactory" level="WARN"/>
   
   <logger name="com.galacticfog" level="INFO"/>
 
