@@ -5,6 +5,7 @@ versionWithGit
 name := """container.import"""
 
 libraryDependencies ++= Seq(
+  "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.3" withSources(),
   "com.galacticfog" %% "gestalt-meta-repository" % "0.8.5" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
   "com.typesafe.play" %% "play-json" % "2.5.12",

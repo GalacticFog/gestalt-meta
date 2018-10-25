@@ -4,7 +4,7 @@ import com.typesafe.sbt.packager.docker._
 
 name := """gestalt-meta"""
 
-version := "0.7.7"
+version := "0.7.8"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
