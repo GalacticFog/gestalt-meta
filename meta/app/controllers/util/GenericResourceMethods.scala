@@ -177,7 +177,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
       providerId <- getOrFail(specificProviderId orElse
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
+        s"Could not locate 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
       )
 
       providerResource <- getOrFail(

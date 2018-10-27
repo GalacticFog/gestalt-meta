@@ -817,55 +817,18 @@ class ResourceController @Inject()(
 
   }  
 
-
-//  def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
-//
-//    log.debug("Finding Action...")
-//
-//    ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
-//      this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
-//
-//    }{ act =>
-//
-//      log.debug("Finding target resource...")
-//
-//      val resource = for {
-//        a   <- request.queryString.get("resource") orElse {
-//          throw new BadRequestException("You must supply a `?resource={id}` query parameter")
-//        }
-//        b   <- a.headOption
-//        id  = parseUUID(b) getOrElse {
-//            throw new BadRequestException(s"Invalid resource UUID. found: '$b'")
-//        }
-//        res = ResourceFactory.findById(id) getOrElse {
-//          throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
-//        }
-//      } yield res
-//
-//      val metaAddress = META_URL
-//
-//      log.debug("using META_ADDRESS : " + metaAddress)
-//
-//      val output = Assembler.assemble(
-//          fqon,
-//          metaAddress,
-//          act,
-//          resource.get,
-//          request.identity,
-//          request.queryString)
-//      Ok(output).as("text/html")
-//    }
-//  }
-  
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
   
   import com.galacticfog.gestalt.meta.genericactions._
   
-  
+  /**
+   * 
+   */
   def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[JsObject] = {
-
+    log.debug("findActionsInScope()")
+    
     def makeActionUrl(provider: GestaltResourceInstance, action: String) = {
       val act = action.drop(action.indexOf(""".""")+1)
       val org = ResourceFactory.findById(ResourceIds.Org, provider.orgId) getOrElse {
@@ -882,18 +845,22 @@ class ResourceController @Inject()(
         provider: GestaltResourceInstance, 
         endpoint: GestaltEndpoint, 
         function: GestaltFunction,
-        response: FunctionResponse) = {
+        response: FunctionResponse,
+        params: Option[Seq[JsValue]]) = {
+      
       Json.obj(
-          "url"          -> makeActionUrl(provider, function.name),
-          "action"       -> function.name,
-          "display_name" -> function.display_name,
-          "method"       -> "POST",
-          "code"         -> response.code,
-          "content_type" -> response.content_type,
-          "render"       -> response.gestalt_ui.get.render,
-          "locations"    -> response.gestalt_ui.get.locations)
+        "url"          -> makeActionUrl(provider, function.name),
+        "action"       -> function.name,
+        "display_name" -> function.display_name,
+        "method"       -> "POST",
+        "code"         -> response.code,
+        "content_type" -> response.content_type,
+        "render"       -> response.gestalt_ui.get.render,
+        "locations"    -> response.gestalt_ui.get.locations,
+        "params"       -> JsArray(params.getOrElse(Seq.empty)) 
+      )
     }
-    
+
     /*
      * Determine if given function contains a UI action with a location
      * matching a filter (gestalt_ui.locations)
@@ -913,25 +880,34 @@ class ResourceController @Inject()(
       }
     }
     
+    def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
+      ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
+        Json.obj(p.name -> p.value) +: acc
+      }
+    }
+    
     ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
       getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
         config.endpoints.flatMap { ep =>
           val act = ep.getUiActions()
           act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
             val uiResponse = ac.post.get.getUiResponse.get
-            toOutputJson(p, ep, ac, uiResponse)
+
+            //
+            // This finds any query params where .value isDefined
+            //
+            val params = ac.post.fold(Seq.empty[RequestQueryParameter]){ ps =>
+              ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
+                    filter(_.value.isDefined)
+            }
+            
+            // Now we translate those query params to the JSON output format.
+            val y = reWriteParams(params)
+            
+            toOutputJson(p, ep, ac, uiResponse, Some(y))
           }
-        }      
+        }
       }
-//      val config = getFunctionConfig(p).get
-//      config.endpoints.flatMap { ep =>
-//        val act = ep.getUiActions()
-//        act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
-//          val uiResponse = ac.post.get.getUiResponse.get
-//          toOutputJson(p, ep, ac, uiResponse)
-//        }
-//      }
-      
     }
   }
   

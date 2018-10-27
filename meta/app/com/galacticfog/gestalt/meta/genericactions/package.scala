@@ -49,10 +49,11 @@ package object genericactions {
   
   case class RequestQueryParameter(
     name: String, 
-    description: Option[String], 
-    example: Option[String],
-    required: Boolean = false,
-    data_type: String = "string")    
+    description: Option[String] = None, 
+    example: Option[String] = None,
+    required: Option[Boolean] = Some(false),
+    data_type: Option[String] = Some("string"),
+    value: Option[String] = None)    
 
   trait FunctionVerb {
     val responses: Seq[FunctionResponse]

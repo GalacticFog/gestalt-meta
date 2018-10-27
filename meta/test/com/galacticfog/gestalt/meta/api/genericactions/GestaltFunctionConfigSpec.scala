@@ -57,6 +57,12 @@ class GestaltFunctionConfigSpec extends Specification {
                 "body": {
                   "content_type": "application/json"
                 },
+                "query_parameters": [
+                  {
+                    "name": "resource_id",
+                    "value": "${RESOURCE_ID}"
+                  }
+                ],    
                 "responses": [
                   {
                     "code": 200,
