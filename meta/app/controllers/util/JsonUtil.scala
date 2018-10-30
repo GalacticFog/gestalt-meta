@@ -3,9 +3,7 @@ package controllers.util
 
 import play.api.libs.json._
 
-import scala.util.{Try,Success,Failure}
-import play.api.{ Logger => log }
-import scala.annotation.tailrec
+import scala.util.{Try,Success}
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import scala.language.implicitConversions

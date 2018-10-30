@@ -7,9 +7,8 @@ import com.galacticfog.gestalt.data.{EnvironmentType, PropertyValidator, Resourc
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.marathon._
-import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, sdk}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
@@ -23,7 +22,6 @@ import play.api.libs.json._
 import services._
 
 import scala.concurrent.Future
-import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 
@@ -66,12 +64,12 @@ class ContainerController @Inject()(
    * Test that the given Provider is compatible with the given Environment. An
    * exception is thrown if the given Environment is incompatible.
    */
-  private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance) {
+  private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance): Unit = {
     
     // These are the values tha Meta will accept for 'environment_type'
     val acceptableTypes = Set("development", "test", "production")
     
-    provider.properties.get.get("environment_types").map { types =>
+    provider.properties.get.get("environment_types") foreach { types =>
       
       // Environment types the provider is compatible with.
       val allowedByProvider = Json.parse(types).as[Seq[String]]

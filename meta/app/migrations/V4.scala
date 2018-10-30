@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.meta.auth.{Entitlement, EntitlementProps}
 import controllers.util.JsonInput
 import play.api.libs.json._
 
-import scala.util.{Either, Failure, Left, Right, Success, Try}
+import scala.util.{Either, Failure, Left, Right, Success}
 
 
 class V4() extends MetaMigration() with JsonInput {

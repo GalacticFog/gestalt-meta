@@ -4,31 +4,25 @@ package controllers
 import java.util.UUID
 
 import scala.util.{Failure, Success, Try}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.concurrent.Future
 import play.api.libs.json.JsObject
-import play.api.{Logger => log}
-import play.api.libs.json.{JsArray, JsObject, JsValue, Json}
+import play.api.libs.json.{JsObject, JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.ResourceFactory.{findAll, findById, hardDeleteResource}
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.data.ResourceFactory.{findById, hardDeleteResource}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.galacticfog.gestalt.keymgr._
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, ResourceNotFoundException}
-import play.api.libs.json.{JsArray, JsValue, Json}
+import play.api.libs.json.{JsValue, Json}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
 import controllers.util._
 import com.galacticfog.gestalt.json.Js
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
-import play.api.{Logger => log}
 
 @Singleton
 class LicenseController @Inject()(
@@ -227,7 +221,7 @@ class LicenseController @Inject()(
         case Success(_) => 
           hardDeleteResource(license) match {
             case Failure(e) => ErrorLicenseDelete(license, e)
-            case Success(_) => Unit
+            case Success(_) => ()
           }
       }
     }

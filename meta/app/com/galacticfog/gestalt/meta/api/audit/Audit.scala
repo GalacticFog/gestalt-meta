@@ -95,7 +95,7 @@ object Audit {
     }
   }
   
-  private def exitFailure() {
+  private def exitFailure(): Unit = {
     internalLog.error(
         s"FATAL: ${Keys.ExitOnFailure} is 'true'. You must fix the audit-log configuration, " +
         s"or set ${Keys.ExitOnFailure} to 'false'. Exiting host process.")

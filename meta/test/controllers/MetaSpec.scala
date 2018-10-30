@@ -42,6 +42,7 @@ class MetaSpec extends PlaySpecification with MetaRepositoryOps with JsonMatcher
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+    ()
   }
   
   sequential

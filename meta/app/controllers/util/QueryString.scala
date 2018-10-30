@@ -1,6 +1,5 @@
 package controllers.util
 
-import scala.language.postfixOps
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try

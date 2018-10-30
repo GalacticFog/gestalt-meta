@@ -5,7 +5,6 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.genericactions.GenericProvider.{InvocationResponse, RawInvocationResponse}
-import com.gargoylesoftware.htmlunit.javascript.host.WeakSet
 import com.google.inject.Inject
 import controllers.util.{ContainerService, JsonInput}
 import org.clapper.scalasti.ST
@@ -17,7 +16,6 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.http.HeaderNames.{AUTHORIZATION, CONTENT_TYPE}
 
 import scala.concurrent.Future
-import scala.util.parsing.json.JSON
 import scala.util.{Failure, Success, Try}
 
 trait GenericProviderManager {

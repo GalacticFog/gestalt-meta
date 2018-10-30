@@ -1,8 +1,8 @@
 package com.galacticfog.gestalt.meta.api.audit
 
 
-import org.slf4j.{LoggerFactory, MarkerFactory}
-import ch.qos.logback.classic.{Level, Logger, LoggerContext}
+import org.slf4j.LoggerFactory
+import ch.qos.logback.classic.{Logger, LoggerContext}
 import ch.qos.logback.classic.spi.ILoggingEvent
 import ch.qos.logback.classic.encoder.PatternLayoutEncoder
 import ch.qos.logback.core.encoder.Encoder
@@ -13,7 +13,7 @@ import ch.qos.logback.core.rolling.TimeBasedRollingPolicy
 
 
 trait AuditLogger {
-  def log(message: String, level: String, marker: Option[String])  
+  def log(message: String, level: String, marker: Option[String]): Unit  
 }
 
 

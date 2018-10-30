@@ -9,7 +9,6 @@ import scala.concurrent.duration.DurationInt
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.security.api.GestaltAccount
@@ -28,11 +27,8 @@ import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import modules.SecurityClientProvider
 import play.api.Logger
-import play.api.libs.json._
 import scala.language.postfixOps
 import scala.concurrent.Future
-import com.galacticfog.gestalt.security.api.json.JsonImports._
-import play.api.libs.json._
 
 
 class Security @Inject()(secClientProvider: SecurityClientProvider) {

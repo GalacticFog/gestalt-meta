@@ -10,7 +10,6 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.OrgCache
-import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.Logger
 
 import scala.util.Try

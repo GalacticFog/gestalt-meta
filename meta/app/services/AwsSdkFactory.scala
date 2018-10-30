@@ -4,7 +4,6 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
 import java.util.UUID
 import scala.concurrent.{Future, ExecutionContext}
-import scala.concurrent.ExecutionContext.Implicits.global
 import com.google.inject.Inject
 import com.galacticfog.gestalt.integrations.ecs._
 

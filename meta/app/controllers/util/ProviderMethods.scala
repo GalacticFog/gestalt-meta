@@ -16,7 +16,6 @@ import akka.actor.ActorSystem
 import akka.stream.Materializer
 import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.libs.json.{JsDefined, JsObject, JsUndefined, Json}
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
 
 case class ActionInvokeEvent(

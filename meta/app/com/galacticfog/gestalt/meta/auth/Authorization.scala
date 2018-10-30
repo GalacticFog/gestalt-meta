@@ -14,7 +14,6 @@ import play.api.libs.json._
 import play.api.mvc.Result
 
 import scala.concurrent.Future
-import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 trait Authorization extends MetaController with ActionMethods with AuthorizationMethods { self: SecureController =>

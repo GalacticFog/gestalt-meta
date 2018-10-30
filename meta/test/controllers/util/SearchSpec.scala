@@ -48,6 +48,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+    ()
   }
 
   abstract class testApp extends WithApplication(application(additionalBindings = Seq(

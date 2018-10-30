@@ -2,11 +2,9 @@ package com.galacticfog.gestalt.meta.policy
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output._
 import play.api.libs.json._
-import com.galacticfog.gestalt.meta.api.sdk._
 import org.joda.time.DateTime
 
 

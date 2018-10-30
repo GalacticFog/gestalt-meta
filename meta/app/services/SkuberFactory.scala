@@ -17,7 +17,6 @@ import scala.collection.JavaConversions._
 import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
 import scala.concurrent.duration._
-import scala.language.{implicitConversions, postfixOps}
 
 trait SkuberFactory {
   def initializeKube( provider: GestaltResourceInstance, namespace: String )

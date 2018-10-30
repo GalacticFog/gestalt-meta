@@ -31,24 +31,34 @@ class SystemConfigActor() extends Actor with ActorLogging {
   }
 
   override def receive: Receive = {
-    case sk: SetKey =>
+    case sk: SetKey => {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
       f pipeTo sender()
-    case sk: SetKeys =>
+      ()
+    }
+    case sk: SetKeys => {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? sk)
       f pipeTo sender()
-    case GetKey(key) =>
+      ()
+    }
+    case GetKey(key) => {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
         .mapTo[Map[String,String]]
         .map(_.get(key))
       f pipeTo sender()
-    case GetAllConfig =>
+      ()
+    }
+    case GetAllConfig => {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? GetAllConfig)
       f pipeTo sender()
-    case ts: TestAndSet =>
+      ()
+    }
+    case ts: TestAndSet => {
       val f = (context.actorOf(Props(new ConfigDelegationActor)) ? ts)
       f pipeTo sender()
-    case _ =>
+      ()
+    }
+    case _ => ()
   }
 
 }
