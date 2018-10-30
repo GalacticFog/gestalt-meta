@@ -39,6 +39,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       user.account.description
     )
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, userAccount.id, user, None)
+    ()
   }
 
   sequential

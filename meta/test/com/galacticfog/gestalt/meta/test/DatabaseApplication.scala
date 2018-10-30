@@ -26,6 +26,7 @@ abstract class WithDb(val application: Application) extends WithApplication(appl
     finally {
       scalikejdbc.config.DBs.closeAll()
       application.stop()
+      ()
     }
   }  
 }
@@ -61,7 +62,7 @@ trait DbShutdown extends AfterEach {
  * This pulls several traits together for easier test class declaration
  */
 trait MetaRepositoryOps extends GestaltProviderMocking with ResourceScope with BeforeAll {
-  override def beforeAll(): Unit = pristineDatabase().get
+  override def beforeAll(): Unit = pristineDatabase()
 }
 
 

@@ -29,6 +29,7 @@ class ProdSecurityModule extends AbstractModule with ScalaModule {
       override def config: GestaltSecurityConfig = throw new RuntimeException("invalid configuration; meta does not use delegated security model")
     })
     bind[SecurityKeyInit].to[GestaltLateInitSecurityEnvironment]
+    ()
   }
 
 }

@@ -130,7 +130,7 @@ package object policy {
     
     log.debug("Test-Value : " + testValue)
     testValue.fold(missingProperty(rule, predicate)) { test =>
-      if (compareJson(test, predicate)) Right(Unit) else Left(predicate.toString)
+      if (compareJson(test, predicate)) Right(()) else Left(predicate.toString)
     }
 
   }
@@ -144,7 +144,7 @@ package object policy {
     
     if (isStrict(rule)) {
       Left(s"Missing property ${predicate.property}. The rule is strict.")
-    } else Right(Unit)
+    } else Right(())
   }
   
   

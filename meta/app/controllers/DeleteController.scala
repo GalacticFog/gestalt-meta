@@ -338,7 +338,7 @@ def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountW
         res.asInstanceOf[GestaltResourceInstance], 
         account, 
         QueryString.singleBoolean(request.queryString, "force"),
-        skipExternals(res, request.queryString) ) map { Success(_) }
+        skipExternals(res, request.queryString) ) map { _ => () }
     }
     
     def canDelete(typeId: UUID, resourceId: UUID): Boolean = {

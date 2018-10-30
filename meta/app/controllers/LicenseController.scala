@@ -227,7 +227,7 @@ class LicenseController @Inject()(
         case Success(_) => 
           hardDeleteResource(license) match {
             case Failure(e) => ErrorLicenseDelete(license, e)
-            case Success(_) => Unit
+            case Success(_) => ()
           }
       }
     }

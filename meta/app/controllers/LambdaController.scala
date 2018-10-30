@@ -3,6 +3,7 @@ package controllers
 
 import java.net.URL
 import java.util.UUID
+import scala.concurrent.Future
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 

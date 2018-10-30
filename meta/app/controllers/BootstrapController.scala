@@ -149,6 +149,7 @@ class BootstrapController @Inject()(
 //      }
 //    }
     metaConf.initialize()
+    ()
   }
   
   /**

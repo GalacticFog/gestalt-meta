@@ -10,7 +10,8 @@ import scala.util.{Try,Success,Failure}
 import controllers.util.db.EnvConfig
 import play.api.{ Logger => log }
 
-
+// this causes warning when -Xlint is enabled: "it is not recommended to define classes/objects inside of package objects"
+// any way to refactor it?
 package object events {
 
   implicit lazy val eventContextFormat = Json.format[EventContext]
@@ -21,7 +22,6 @@ package object events {
   lazy val RABBIT_PORT = EnvConfig.rabbitPort.toInt
   lazy val RABBIT_EXCHANGE = EnvConfig.rabbitExchange
   lazy val RABBIT_ROUTE = EnvConfig.rabbitRoute
-  
 
   
   case class EventContext(

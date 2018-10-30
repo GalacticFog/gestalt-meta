@@ -1,11 +1,12 @@
 import com.typesafe.sbt.packager.docker._
 
-scalacOptions ++= Seq(
-  "-deprecation",   // Emit warning and location for usages of deprecated APIs.
-  "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
-  "-unchecked"      // Enable additional warnings where generated code depends on assumptions.
-  //"-Xlint"        // Enable recommended additional warnings.
-)
+// looks like these don't take effect in any subproject as of now – commenting out to make this fact explicit
+// scalacOptions ++= Seq(
+//   "-deprecation",   // Emit warning and location for usages of deprecated APIs.
+//   "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
+//   "-unchecked"      // Enable additional warnings where generated code depends on assumptions.
+//   //"-Xlint"        // Enable recommended additional warnings.,
+// )
 
 resolvers in ThisBuild ++= Seq(
   "jwtig" at  "https://jcenter.bintray.com/",

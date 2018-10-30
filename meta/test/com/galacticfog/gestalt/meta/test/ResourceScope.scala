@@ -45,7 +45,7 @@ trait ResourceScope extends Scope with Mockito {
   import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
   
   
-  def pristineDatabase() = {
+  def pristineDatabase(): Unit = {
     val dataStore = injector.instanceOf(classOf[DataStore])
     val database = injector.instanceOf(classOf[Database])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
@@ -128,7 +128,9 @@ trait ResourceScope extends Scope with Mockito {
         }
       }
       _ <- Try { database.shutdown() }
-    } yield ()
+    } { () }
+    // for with yield == flatMap flatMap ... map
+    // for with no yield == flatMap flatMap ... foreach
   }
   
   

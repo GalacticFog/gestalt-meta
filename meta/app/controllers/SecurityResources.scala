@@ -253,7 +253,7 @@ class SecuritySync @Inject()(
     o.parent.fold(security.getRootOrg(identity).get.id)(_.id)
   }
 
-  private[controllers] def deleteResources(account: AuthAccountWithCreds, ids: Iterable[UUID], resType: String) = {
+  private[controllers] def deleteResources(account: AuthAccountWithCreds, ids: Iterable[UUID], resType: String): Unit = {
     for (id <- ids) {
       
       ResourceFactory.findById(id).fold {
@@ -267,7 +267,8 @@ class SecuritySync @Inject()(
          */
         deleteController.manager.delete(res, account,
           force = true, 
-          skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))  
+          skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))
+        ()
       }
     }
   }

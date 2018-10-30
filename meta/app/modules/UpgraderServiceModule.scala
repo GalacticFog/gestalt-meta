@@ -9,6 +9,7 @@ class UpgraderServiceModule extends AbstractModule with ScalaModule with AkkaGui
 
   override def configure(): Unit = {
     bind[UpgraderService].to[DefaultUpgraderService]
+    ()
   }
 
 }

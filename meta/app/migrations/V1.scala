@@ -200,7 +200,7 @@ class V1() extends MetaMigration() {
     }
     val failures = deleteResults.collect { case Failure(e) => JsString(e.getMessage) }
     if (failures.nonEmpty) 
-      new GenericApiException(500, "Failure deleting TypeProperties:", Some(Json.toJson(failures)))
+      throw new GenericApiException(500, "Failure deleting TypeProperties:", Some(Json.toJson(failures)))
     else ()
   }
   

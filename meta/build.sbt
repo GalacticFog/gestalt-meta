@@ -2,6 +2,17 @@ import sbt._
 
 import com.typesafe.sbt.packager.docker._
 
+scalacOptions ++= Seq(
+  "-language:reflectiveCalls",
+  "-deprecation",   // Emit warning and location for usages of deprecated APIs.
+  "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
+  "-unchecked",      // Enable additional warnings where generated code depends on assumptions.
+  // "-Xlint",        // Enable recommended additional warnings.,
+  "-Xfatal-warnings",
+  "-Ywarn-value-discard"//,
+  // "-Ywarn-unused-import"
+)
+
 name := """gestalt-meta"""
 
 version := "0.7.8"
