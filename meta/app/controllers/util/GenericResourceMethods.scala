@@ -15,10 +15,8 @@ import com.galacticfog.gestalt.meta.genericactions.{GenericActionContext, Generi
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.google.inject.Inject
 import javax.inject.Singleton
-import play.api.http.HeaderNames._
 import play.api.http.HttpEntity
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.iteratee.Enumerator
 import play.api.libs.json.{JsString, JsValue}
 import play.api.mvc.Results._
 import play.api.mvc.{AnyContent, RequestHeader, ResponseHeader, Result}

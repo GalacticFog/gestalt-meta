@@ -3,7 +3,7 @@ package migrations
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.{session, _}
+import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk._
 import play.api.libs.json._
 

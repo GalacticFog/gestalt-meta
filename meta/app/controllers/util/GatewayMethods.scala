@@ -18,13 +18,9 @@ import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.google.inject.Inject
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth.Entitlement
-import com.galacticfog.gestalt.patch.PatchDocument
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import play.api.libs.ws.WSClient
-import play.api.mvc.RequestHeader
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._

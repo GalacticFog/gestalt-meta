@@ -8,6 +8,7 @@ class MetaDefaultDocker extends AbstractModule with ScalaModule {
 
   override def configure(): Unit = {
     bind[DockerClientFactory].to[DefaultDockerClientFactory]
+    ()
   }
 
 }

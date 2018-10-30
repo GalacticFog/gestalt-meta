@@ -18,7 +18,6 @@ package object ui {
 
     import java.util.Base64
     import java.nio.charset.Charset
-    import scala.util.matching.Regex
 
     val DEFAULT_CHARSET: Charset = Charset.forName("UTF-8")
 

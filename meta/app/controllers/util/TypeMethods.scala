@@ -2,30 +2,20 @@ package controllers.util
 
 import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.concurrent.Future
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import controllers.util._
 import java.util.UUID
 
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltSecurityEnvironment}
-import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.i18n.MessagesApi
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
-import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
-import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.data.ResourceSelector
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.security.api.DIRECTORY_TYPE_INTERNAL
 

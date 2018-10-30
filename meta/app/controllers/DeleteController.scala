@@ -22,7 +22,6 @@ import skuber.api.client.RequestContext
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 
@@ -338,7 +337,7 @@ def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountW
         res.asInstanceOf[GestaltResourceInstance], 
         account, 
         QueryString.singleBoolean(request.queryString, "force"),
-        skipExternals(res, request.queryString) ) map { Success(_) }
+        skipExternals(res, request.queryString) ) map { _ => () }
     }
     
     def canDelete(typeId: UUID, resourceId: UUID): Boolean = {

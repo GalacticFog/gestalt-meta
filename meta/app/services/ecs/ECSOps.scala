@@ -3,9 +3,8 @@ package services
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,VolumeSpec}
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.integrations.ecs.{EcsClient,AwslogsConfiguration}
-import java.util.{UUID, Date}
+import java.util.UUID
 import scala.util.{Try,Success,Failure}
-import scala.concurrent.Future
 import scala.annotation.tailrec
 import cats.instances.vector._
 import cats.instances.try_._

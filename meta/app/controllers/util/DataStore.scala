@@ -5,7 +5,6 @@ import javax.inject.{Inject,Singleton}
 import scala.util.Failure
 import scala.util.Success
 import org.postgresql.util.PSQLException
-import com.galacticfog.gestalt.data.util.JdbcConnectionInfo
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import play.api.Logger
 

@@ -1,6 +1,5 @@
 package services
 
-import scala.language.implicitConversions
 import java.util.UUID
 
 import akka.actor.ActorRef

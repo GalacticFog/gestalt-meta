@@ -5,11 +5,9 @@ import play.api.http.HeaderNames
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.concurrent.Future
-import controllers.util.db._
 import play.api.Logger
 
 import scala.util.{Failure, Success}
-import scalikejdbc._
 import com.galacticfog.gestalt.data._
 
 import scala.util.Try
@@ -25,7 +23,6 @@ import com.galacticfog.gestalt.meta.api.output._
 import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.Resource
-import com.galacticfog.gestalt.patch._
 import controllers.util.JsonUtil._
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.auth.ActionMethods

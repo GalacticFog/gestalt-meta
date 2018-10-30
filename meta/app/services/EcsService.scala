@@ -35,8 +35,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
-    import scala.concurrent.ExecutionContext.Implicits.global     // the method signature doesn't support passing an implicit here – probably should be updated
+  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {     // the method signature doesn't support passing an implicit here – probably should be updated
     cleanly(context.provider.id) { client =>
       ContainerService.resourceExternalId(container) match {
         case Some(externalId) => {

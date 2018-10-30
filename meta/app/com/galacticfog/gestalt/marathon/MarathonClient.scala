@@ -1,13 +1,11 @@
 package com.galacticfog.gestalt.marathon
 
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerStats
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException, InternalErrorException, ResourceNotFoundException, UnprocessableEntityException}
 import org.joda.time.DateTime
 import play.api.libs.ws.{WSClient, WSResponse}
 import play.api.libs.json._
 import play.api.libs.json.Reads._
-import play.api.libs.functional.syntax._
 
 import scala.concurrent.{ExecutionContext, Future}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper

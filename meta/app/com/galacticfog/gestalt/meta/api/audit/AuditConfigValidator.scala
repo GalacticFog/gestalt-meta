@@ -27,7 +27,6 @@ trait AuditConfigValidator {
   }
   
   import java.io.File
-  import scalaz.{Success, Failure}
 
   /*
    * 1. File location env var MUST be present
@@ -91,9 +90,9 @@ trait AuditConfigValidator {
 object AuditEnv extends AuditConfigValidator {
 
   def validate(m: Map[String, String]) = {
-    val checks = List(checkName _, checkFile _, checkRolling _)
-    checks.traverseU( _ andThen (_.toValidationNel) apply m) map {
-      case x :: _ => x
+    val checks = scalaz.NonEmptyList(checkName _, checkFile _, checkRolling _)
+    checks.traverseU( _ andThen (_.toValidationNel) apply m) map { x: scalaz.NonEmptyList[Map[String,String]] =>
+      x.head
     }
   }
 }

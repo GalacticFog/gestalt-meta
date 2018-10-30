@@ -17,10 +17,8 @@ import controllers.util.ContainerService
 import org.joda.time.DateTime
 import org.slf4j.LoggerFactory
 import play.api.libs.json.Json
-import services.util.CommandParser
 
 import collection.JavaConverters._
-import scala.annotation.meta
 import scala.concurrent.{ExecutionContext, Future}
 import scala.util.{Failure, Success, Try}
 

@@ -1,19 +1,14 @@
 package com.galacticfog.gestalt.meta.providers.ui
 
 
-import scala.collection.JavaConverters._
 import play.api.libs.json._
-
-import org.jtwig.JtwigModel;
-import org.jtwig.JtwigTemplate;
+;;
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.providers.ProviderActionSpec
 import scalatags.Text.TypedTag
 import scalatags.Text.all._
 import scala.xml._
-import scala.xml.XML._
 import scalatags.Text.tags2.style
 
 

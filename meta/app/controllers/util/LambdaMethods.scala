@@ -13,9 +13,7 @@ import scala.concurrent.{Await, Future}
 import scala.util.Try
 import scala.language.postfixOps
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.laser.LaserLambda
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
+import com.galacticfog.gestalt.patch.PatchDocument
 import play.api.Logger
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
@@ -77,7 +75,6 @@ class LambdaMethods @Inject()( ws: WSClient,
       }      
     }
     
-    import scala.util.{Success,Failure}
       
     Try {
       Await.result(f, LAMBDA_PROVIDER_TIMEOUT_MS millis)

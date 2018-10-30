@@ -1,8 +1,6 @@
 package com.galacticfog.gestalt.meta.api.output
 
-import com.galacticfog.gestalt.data._
 import play.api.libs.json._
-import java.util.UUID
 import scala.language.implicitConversions
 
 abstract class ResourceOutput {

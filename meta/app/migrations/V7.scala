@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
 import com.google.inject.Inject
-import controllers.util.{AccountLike, JsonUtil, ProviderMethods, TypeMethods}
+import controllers.util.{AccountLike, JsonUtil, ProviderMethods}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
 

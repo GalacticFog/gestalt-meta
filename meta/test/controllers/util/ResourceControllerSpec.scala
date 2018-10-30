@@ -61,7 +61,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
-
+    ()
   }
 
   abstract class testAppMocks extends WithApplication(application(additionalBindings = Seq(

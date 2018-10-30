@@ -286,7 +286,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         Future.successful(s)
       case None if create =>
         log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
-        rc create[Namespace] Namespace(metadata = ObjectMeta(
+        rc.create(Namespace(metadata = ObjectMeta(
           name = targetNamespace,
           labels = Map(
             META_ENVIRONMENT_KEY -> pc.environmentId.toString,
@@ -294,7 +294,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             META_FQON_KEY -> pc.fqon,
             META_PROVIDER_KEY -> pc.providerId.toString
           )
-        ))
+        )))
       case None if !create =>
         log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
         Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))

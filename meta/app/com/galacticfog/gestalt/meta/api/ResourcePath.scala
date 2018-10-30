@@ -39,7 +39,6 @@ class ResourcePath(val path: String) {
 }
 
 import com.galacticfog.gestalt.data._
-import play.api.libs.json._
 
 object ResourcePath {
   

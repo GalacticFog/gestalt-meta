@@ -1081,9 +1081,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
       testSetup.client.createSecret(
         secretId = meq(s"root/${testWork.name}/${testEnv.name}/${metaSecret.name}"),
         marPayload = meq(Json.obj("value" -> "value-a"))
-      )(any) returns Future.successful(Json.obj(
-        "value" -> "dmFsdWUtYQ=="
-      ))
+      // )(any) returns Future.successful(Json.obj("value" -> "dmFsdWUtYQ=="))
+      )(any) returns Future.successful(())
 
       val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
@@ -1120,7 +1119,8 @@ class MarathonServiceSpec extends PlaySpecification with ResourceScope with Befo
         ))
       )
 
-      testSetup.client.deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/test-secret"))(any) returns Future.successful(Json.obj())
+      // testSetup.client.deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/test-secret"))(any) returns Future.successful(Json.obj())
+      testSetup.client.deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/test-secret"))(any) returns Future.successful(())
 
       await(testSetup.svc.destroySecret(metaSecret))
       there was one(testSetup.client).deleteSecret(meq(s"root/${testWork.name}/${testEnv.name}/${metaSecret.name}"))(any)

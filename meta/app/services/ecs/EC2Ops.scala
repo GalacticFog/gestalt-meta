@@ -1,6 +1,6 @@
 package services
 
-import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats}
+import com.galacticfog.gestalt.meta.api.ContainerStats
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
 import scala.util.{Try,Success,Failure}
 import cats.instances.vector._

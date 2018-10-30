@@ -8,7 +8,7 @@ import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, GestaltReso
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, session, _}
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.errors.ConflictException
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel, ResourceOwnerLink, ResourceStates}
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
 import com.galacticfog.gestalt.meta.auth.{Entitlement, EntitlementProps}
 import controllers.util.TypeMethods
 import play.api.libs.json.{JsValue, Json}

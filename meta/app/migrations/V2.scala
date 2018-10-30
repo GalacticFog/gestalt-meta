@@ -6,17 +6,13 @@ import java.util.UUID
 import scala.util.{Either, Left, Right}
 import scala.util.{Try, Success, Failure}
 
-import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.data.session
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.auth._
-import com.galacticfog.gestalt.meta.api.output._
 
 
 class V2 extends MetaMigration() {

@@ -8,20 +8,15 @@ import scala.util.{Failure, Success, Try}
 import play.api.{Logger => log}
 import play.api.mvc._
 import play.api.mvc.Results._
-import play.api.mvc.Action
-import play.api.mvc.Controller
 
 //import com.galacticfog.gestalt.meta.services._
 
-import com.galacticfog.gestalt.meta.api._
 
 import play.api.libs.json._
 
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data._
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => _}
 import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
@@ -188,7 +183,6 @@ package object util {
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
  
   
-  import com.galacticfog.gestalt.meta.auth._
   import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
   
   /**

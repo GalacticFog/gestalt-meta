@@ -5,14 +5,12 @@ import play.api.libs.json._
 
 import com.galacticfog.gestalt.json.Js
 import play.api.libs.json.Reads._ // Custom validation helpers
-import play.api.libs.functional.syntax._ // Combinator syntax
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models._
 
 import scala.util.{Try,Success,Failure}
-import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.meta.api.errors._
 
