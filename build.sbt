@@ -20,7 +20,7 @@ resolvers in ThisBuild ++= Seq(
 
 lazy val commonSettings = Seq(
   organization := "com.galacticfog",
-  scalaVersion := "2.11.8"
+  scalaVersion := "2.11.12"
 )
 
 lazy val meta = (project in file("meta")).

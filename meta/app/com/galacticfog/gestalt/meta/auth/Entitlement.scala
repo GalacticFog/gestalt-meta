@@ -13,7 +13,6 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 
 import play.api.libs.json.JsArray
 import play.api.libs.json.Json
-import scala.language.postfixOps
 import play.api.libs.json._
 
 case class Entitlement(

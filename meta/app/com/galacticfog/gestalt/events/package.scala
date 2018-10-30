@@ -1,14 +1,12 @@
 package com.galacticfog.gestalt
 
 
-import com.rabbitmq.client.{Channel, ConnectionFactory, Connection}
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.output._
 import play.api.libs.json._
 import java.util.UUID
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import controllers.util.db.EnvConfig
-import play.api.{ Logger => log }
 
 // this causes warning when -Xlint is enabled: "it is not recommended to define classes/objects inside of package objects"
 // any way to refactor it?

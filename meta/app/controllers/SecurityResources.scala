@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.output.toOwnerLink
-import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup, GestaltSecurityClient, GestaltBasicCredentials}
+import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup, GestaltBasicCredentials}
 import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 

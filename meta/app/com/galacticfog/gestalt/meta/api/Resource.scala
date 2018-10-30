@@ -2,13 +2,10 @@ package com.galacticfog.gestalt.meta.api
 
 
 import java.util.UUID
-import play.api.libs.json._
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
-import scala.util.Try
 import play.api.Logger
 
 import scala.language.postfixOps

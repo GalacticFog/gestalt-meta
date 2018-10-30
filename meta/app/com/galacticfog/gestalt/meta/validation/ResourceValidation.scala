@@ -1,10 +1,9 @@
 package com.galacticfog.gestalt.meta.validation
 
 import scalaz._
-import Scalaz._
 
 import java.util.UUID
-import scala.util.{Try,Success,Failure}
+import scala.util.{Try,Success}
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.errors._

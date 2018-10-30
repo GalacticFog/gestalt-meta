@@ -1,7 +1,7 @@
 package com.galacticfog.gestalt.meta.api
 
 import java.util.UUID
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors._

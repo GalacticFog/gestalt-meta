@@ -4,7 +4,6 @@ package services
 import java.security.cert.X509Certificate
 import java.util.UUID
 
-import scala.language.postfixOps
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.Resource

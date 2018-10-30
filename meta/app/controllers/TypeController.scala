@@ -1,7 +1,6 @@
 package controllers
 
 
-import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
@@ -17,12 +16,10 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 
-import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
@@ -32,12 +29,10 @@ import com.galacticfog.gestalt.meta.providers._
 
 import scala.util.{Failure, Success, Try}
 import controllers.util.Security
-import com.galacticfog.gestalt.security.api.{GestaltAPICredentials, GestaltAccount, GestaltDirectory}
+import com.galacticfog.gestalt.security.api.GestaltAccount
 import com.galacticfog.gestalt.security.api.GestaltOrg
-import com.galacticfog.gestalt.security.api.GestaltOrgSync
 import com.galacticfog.gestalt.security.api.GestaltResource
 import com.galacticfog.gestalt.security.api.json.JsonImports._
-import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import play.api.cache.CacheApi
 import play.api.mvc.RequestHeader
 import scala.concurrent.duration._

@@ -27,7 +27,6 @@ trait AuditConfigValidator {
   }
   
   import java.io.File
-  import scalaz.{Success, Failure}
 
   /*
    * 1. File location env var MUST be present

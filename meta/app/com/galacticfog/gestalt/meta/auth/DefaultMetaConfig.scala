@@ -1,8 +1,6 @@
 package com.galacticfog.gestalt.meta.auth
 
 import javax.inject.{Inject, Singleton}
-import com.google.inject.AbstractModule
-import play.api.inject.ApplicationLifecycle
 import controllers.util.Security
 import java.util.UUID
 import scala.util.{Try,Success,Failure}

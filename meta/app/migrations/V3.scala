@@ -6,10 +6,8 @@ import java.util.UUID
 import scala.util.{Either, Left, Right}
 import scala.util.{Try, Success, Failure}
 
-import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.session
 import play.api.libs.json._

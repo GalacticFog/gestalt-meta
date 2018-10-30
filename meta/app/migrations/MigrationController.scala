@@ -3,22 +3,17 @@ package migrations
 
 import java.util.UUID
 
-import akka.actor.ActorSystem
-import akka.stream.Materializer
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.concurrent.Future
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
-import play.api.Logger
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
-import scala.language.postfixOps
 import scala.util.Try
 import com.galacticfog.gestalt.json.Js
 

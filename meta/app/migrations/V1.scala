@@ -135,7 +135,7 @@ class V1() extends MetaMigration() {
   /**
    * Ensure the list of named properties no longer exist on the given Resourcetype,
    */
-  private[migrations] def verifyPropsRemoved(tpe: UUID, expectedGone: Seq[String]) {
+  private[migrations] def verifyPropsRemoved(tpe: UUID, expectedGone: Seq[String]): Unit = {
     val props = PropertyFactory.findByType(tpe).collect { case p if expectedGone.contains(p.name) => p.name }
     assert(props.isEmpty) {
       s"Errors removing properties from ${Resources.RuleLimit}. The following properties were not removed: ${bracketString(props)}"

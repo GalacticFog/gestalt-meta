@@ -22,7 +22,6 @@ import skuber.api.client.RequestContext
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
-import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 

@@ -6,8 +6,8 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import com.galacticfog.gestalt.data.util.PostgresHealth
 import com.galacticfog.gestalt.security.api.{GestaltSecurityClient, GestaltSecurityConfig, _}
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltDelegatedSecurityEnvironment, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
-import com.google.inject.{AbstractModule, Provider, Provides}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltDelegatedSecurityEnvironment, GestaltFrameworkSecurityEnvironment}
+import com.google.inject.AbstractModule
 import com.mohiva.play.silhouette.api.{Silhouette, SilhouetteProvider}
 import controllers.util.DataStore
 import javax.inject.{Inject, Named, Singleton}

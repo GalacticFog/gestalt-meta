@@ -142,7 +142,6 @@ object OutputDatatypeHandlers {
    */
   private[output] def linkFromId(typeId: UUID, id: UUID, baseUri: Option[String] = None) = {
     
-    import  com.galacticfog.gestalt.data.models.ResourceLike
     /*
      * 
      * ResourceType.name(typeId) is failing when the resource type is a reference-type.

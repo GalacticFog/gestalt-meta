@@ -28,7 +28,6 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, ResourceStates}
-import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
 import com.galacticfog.gestalt.meta.auth.DefaultMetaConfigManager
 
 @Singleton

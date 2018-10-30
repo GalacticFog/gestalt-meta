@@ -2,13 +2,11 @@ package migrations
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink,ResourceIds}
 import com.galacticfog.gestalt.meta.auth._
 import play.api.libs.json._
-import scala.util.{Try,Success,Failure,Either,Left,Right}
+import scala.util.{Success,Failure,Either,Left,Right}
 
 class V16  extends MetaMigration with AuthorizationMethods {
   

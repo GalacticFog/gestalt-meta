@@ -1,8 +1,7 @@
 package services
 
 import java.time.Instant
-import java.time.temporal.TemporalAmount
-import java.util.{Calendar, UUID}
+import java.util.UUID
 
 import akka.actor.{Actor, Props}
 import akka.pattern.ask
@@ -12,7 +11,6 @@ import services.KubeTokenActor.{KubeAuthTokenError, KubeAuthTokenRequest, KubeAu
 
 import scala.collection.mutable
 import scala.concurrent.duration._
-import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
 @Singleton

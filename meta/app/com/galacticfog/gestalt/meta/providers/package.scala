@@ -1,11 +1,7 @@
 package com.galacticfog.gestalt.meta
 
 import play.api.libs.json._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.sdk._
 
-import java.util.UUID
 
 
 package object providers {
