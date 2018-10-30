@@ -846,7 +846,7 @@ class ResourceController @Inject()(
         endpoint: GestaltEndpoint, 
         function: GestaltFunction,
         response: FunctionResponse,
-        params: Option[Seq[JsValue]]) = {
+        params:   Map[String,Option[String]]) = {
       
       Json.obj(
         "url"          -> makeActionUrl(provider, function.name),
@@ -857,7 +857,7 @@ class ResourceController @Inject()(
         "content_type" -> response.content_type,
         "render"       -> response.gestalt_ui.get.render,
         "locations"    -> response.gestalt_ui.get.locations,
-        "params"       -> JsArray(params.getOrElse(Seq.empty)) 
+        "params"       -> Json.toJson(params)
       )
     }
 
@@ -880,6 +880,10 @@ class ResourceController @Inject()(
       }
     }
     
+    def reWriteParams2(ps: Seq[RequestQueryParameter]): Map[String,Option[String]] = {
+      ps.map(p => (p.name -> p.value)).toMap  
+    }
+    
     def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
       ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
         Json.obj(p.name -> p.value) +: acc
@@ -900,11 +904,10 @@ class ResourceController @Inject()(
               ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
                     filter(_.value.isDefined)
             }
-            
+
             // Now we translate those query params to the JSON output format.
-            val y = reWriteParams(params)
-            
-            toOutputJson(p, ep, ac, uiResponse, Some(y))
+            val y = reWriteParams2(params)
+            toOutputJson(p, ep, ac, uiResponse, y)
           }
         }
       }
