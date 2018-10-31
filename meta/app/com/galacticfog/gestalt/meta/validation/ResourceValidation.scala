@@ -1,7 +1,5 @@
 package com.galacticfog.gestalt.meta.validation
 
-import scalaz._
-
 import java.util.UUID
 import scala.util.{Try,Success}
 import com.galacticfog.gestalt.data._
