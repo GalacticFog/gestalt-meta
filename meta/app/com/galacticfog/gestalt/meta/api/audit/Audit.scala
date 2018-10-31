@@ -4,7 +4,7 @@ package com.galacticfog.gestalt.meta.api.audit
 import org.slf4j.LoggerFactory
 import play.api.libs.json.{Json, JsValue}
 import scala.util.{Try,Success,Failure}
-import scalaz.{Success => VSuccess, Failure => VFailure}
+import cats.data.Validated._
 import scala.concurrent.Future
 import scala.concurrent.ExecutionContext.Implicits.global
 
@@ -34,15 +34,15 @@ object Audit {
       case (k, v) => k.startsWith(Keys.VarPrefix) 
     }
     AuditEnv.validate(auditEnv) match {
-      case VSuccess(env) => Json.obj(
+      case Valid(env) => Json.obj(
             "config_state"   -> "OK",
             "enabled"        -> env(Keys.Enabled),
             "settings"       -> Json.toJson(env))
      
-      case VFailure(errs) => Json.obj(
+      case Invalid(errs) => Json.obj(
             "config_state"   -> "ERROR",
             "enabled"        -> auditEnv(Keys.Enabled),
-            "errors"         -> Json.toJson(errs.list),
+            "errors"         -> Json.toJson(errs.toList),
             "settings"       -> Json.toJson(auditEnv))
     }
   }
@@ -64,8 +64,8 @@ object Audit {
       
       AuditEnv.validate(auditEnv) match {
         
-        case VFailure(errs) => {
-          internalLog.error(s"Bad Audit Configuration. Errors: [${errs.list.mkString(",")}]")
+        case Invalid(errs) => {
+          internalLog.error(s"Bad Audit Configuration. Errors: [${errs.toList.mkString(",")}]")
           
           if (shouldExitOnFailure(Some(auditEnv))) exitFailure()
           
@@ -73,7 +73,7 @@ object Audit {
           new NoOpLogger()
           
         }
-        case VSuccess(vars) => {
+        case Valid(vars) => {
           internalLog.info(s"Audit configuration validated [SUCCESS]. Determining logger type...")
           
           val name      = vars.get(Keys.Name).get
