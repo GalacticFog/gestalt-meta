@@ -3,7 +3,6 @@ package migrations
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap._
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
 import com.galacticfog.gestalt.meta.test.MetaRepositoryOps
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.json.Js

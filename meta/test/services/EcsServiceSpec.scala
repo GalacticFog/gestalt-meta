@@ -2,11 +2,9 @@ package services
 
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerStats,ContainerSpec,VolumeSpec}
+import com.galacticfog.gestalt.meta.api.{ContainerStats,ContainerSpec}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import controllers.util.GestaltSecurityMocking
-import java.util.UUID
 import org.joda.time.DateTime
 import org.junit.runner.RunWith
 import org.specs2.matcher.JsonMatchers

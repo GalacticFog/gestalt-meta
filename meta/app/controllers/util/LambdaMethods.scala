@@ -10,22 +10,29 @@ import play.api.libs.json._
 import play.api.libs.ws.WSClient
 
 import scala.concurrent.{Await, Future}
-import scala.util.Try
+import scala.concurrent.duration._
+import scala.util.{Try, Success, Failure}
 import scala.language.postfixOps
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.patch.PatchDocument
-import play.api.Logger
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods  
+import com.galacticfog.gestalt.meta.providers._  
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.data.parseUUID
+import com.galacticfog.gestalt.data.ResourceState
 import javax.inject.Inject
-
+import play.api.Logger
 import play.api.mvc.RequestHeader
 
-import scala.concurrent.duration._
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+case class LambdaProviderInfo(id: String, locations: Seq[String])
+object LambdaProviderInfo {
+  implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
+}
 
 class LambdaMethods @Inject()( ws: WSClient,
                                providerMethods: ProviderMethods ) extends AuthorizationMethods {
@@ -125,9 +132,6 @@ class LambdaMethods @Inject()( ws: WSClient,
       updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
     } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
   }
-
-  import scala.util.{Try, Success, Failure}
-  import com.galacticfog.gestalt.data.ResourceState
   
   def createLambdaCommon(
     org: UUID, 
@@ -181,24 +185,20 @@ class LambdaMethods @Inject()( ws: WSClient,
     }
   }
   
-  import com.galacticfog.gestalt.meta.api.output._
-  import controllers.LambdaProviderInfo
-  import com.galacticfog.gestalt.data.parseUUID
-  
-  def updateFailedBackendCreateResource(caller: AccountLike, metaResource: GestaltResourceInstance, ex: Throwable)
+  private def updateFailedBackendCreateResource(caller: AccountLike, metaResource: GestaltResourceInstance, ex: Throwable)
       : Try[GestaltResourceInstance]= {
     log.error(s"Setting state of resource '${metaResource.id}' to FAILED")
     val failstate = ResourceState.id(ResourceStates.Failed)
     ResourceFactory.update(metaResource.copy(state = failstate), caller.id)
   }
   
-  def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
+  private def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
     val parentLink = toLink(parent, None)
     json ++ Json.obj("properties" -> 
       JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
   }
   
-  def getProviderInfo(lambdaJson: JsValue): LambdaProviderInfo = {
+  private def getProviderInfo(lambdaJson: JsValue): LambdaProviderInfo = {
     Js.find(lambdaJson.as[JsObject], "/properties/provider/id").fold {
       unprocessable("Could not find value for [lambda.properties.provider.id]")
     }{ pid =>
@@ -234,9 +234,7 @@ class LambdaMethods @Inject()( ws: WSClient,
       throw new RuntimeException("`lambda.properties.provider.id` not found. This is a bug.")
     }
     ResourceFactory.findById(ResourceIds.LambdaProvider, pid)
-  }  
-  
-import com.galacticfog.gestalt.meta.providers._  
+  }
   
   /**
    * Find the Message (rabbit) provider linked to the given LambdaProvider

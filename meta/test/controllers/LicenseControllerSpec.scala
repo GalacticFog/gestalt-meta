@@ -1,31 +1,11 @@
 package controllers
 
-import java.util.UUID
 
-import com.galacticfog.gestalt.data.Instance
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.marathon
-import com.galacticfog.gestalt.marathon.MarathonClient
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.security.api.GestaltSecurityClient
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import controllers.util.{ContainerService, GestaltProviderMocking}
-import org.joda.time.{DateTime, DateTimeZone}
-import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
-import org.specs2.specification._
-import play.api.libs.json.{JsArray, Json}
-import play.api.test._
-import play.api.{Application, GlobalSettings, Play}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import org.mockito.Matchers.{eq => meq}
+import play.api.libs.json.Json
+import org.mockito.Matchers.{eq => _}
 
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.{Success, Try}
 
 
 class LicenseControllerSpec extends MetaRepositoryOps with JsonMatchers {

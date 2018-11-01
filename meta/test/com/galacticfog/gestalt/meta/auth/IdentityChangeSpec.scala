@@ -4,18 +4,10 @@ package com.galacticfog.gestalt.meta.auth
 import org.specs2.mutable._
 import org.specs2.specification._
 import org.specs2.specification.BeforeAll
-import org.specs2.specification.Scope
 
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.data.bootstrap.ActionInfo
-import com.galacticfog.gestalt.data.bootstrap.LineageInfo
-import com.galacticfog.gestalt.data.bootstrap.SystemType
 import com.galacticfog.gestalt.data.string2uuid
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 
-import controllers.util.GestaltSecurityMocking
 
 class IdentityChangeSpec extends Specification with ResourceScope with BeforeAll {
   

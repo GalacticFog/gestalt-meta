@@ -332,7 +332,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 //        out = getCurrentProvider(id, ps)
 //      } yield Ok(RenderSingle(out))
       
-      providerManager.processProvider(ProviderMap(p), forceLaunch = true) map { _ =>
+      providerManager.triggerProvider(p, forceLaunch = true) map { _ =>
         Accepted
       } recover {
         case e => {
@@ -345,7 +345,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  def load(rootProvider: ProviderMap, identity: UUID) = {
+  def load(rootProvider: GestaltResourceInstance, identity: UUID) = {
     log.info("Beginning provider initialization...")
     providerManager.loadProviders(Some(rootProvider)) map { seq =>
       
@@ -619,7 +619,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
           }
           case Success(newMetaProvider) => {
 
-            val results = load(ProviderMap(newMetaProvider), identity)
+            val results = load(newMetaProvider, identity)
 
             getCurrentProvider(targetid, results) map { newprovider =>
 

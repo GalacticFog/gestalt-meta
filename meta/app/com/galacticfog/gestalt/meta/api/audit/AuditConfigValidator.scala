@@ -3,7 +3,6 @@ package com.galacticfog.gestalt.meta.api.audit
 import cats.Apply
 import cats.data._
 import cats.data.Validated._
-import cats.implicits._
 
 /**
  * Contains functions for validating META_AUDIT configuration values.

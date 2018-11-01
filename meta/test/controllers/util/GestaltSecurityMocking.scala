@@ -2,18 +2,13 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.meta.providers.ProviderManager
 
-import scala.reflect.ClassTag
-import scala.reflect.runtime.universe
 import org.specs2.mock.Mockito
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.api.{DIRECTORY_TYPE_INTERNAL, GestaltAPICredentials, GestaltAccount, GestaltAuthResponse, GestaltDirectory, GestaltOrg, GestaltOrgSync, GestaltSecurityClient, GestaltSecurityConfig, ResourceLink => SecurityLink}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.GestaltAuthResponseWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.test.FakeRequest
 import play.api.test.PlaySpecification
 

@@ -25,7 +25,7 @@ import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsString, JsValue, Json}
-import play.api.test.{PlaySpecification, WithApplication}
+import play.api.test.PlaySpecification
 import services._
 
 import scala.concurrent.Future

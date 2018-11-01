@@ -10,11 +10,10 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.auth.Entitlement
-import controllers.util.{DataStore, GatewayMethods, GestaltProviderMocking, ProviderMethods}
+import controllers.util.{GatewayMethods, GestaltProviderMocking, ProviderMethods}
 import play.api.libs.json.{JsObject, Json}
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import org.mockito.{ArgumentCaptor, Matchers}
+import org.mockito.ArgumentCaptor
 import org.specs2.matcher.JsonMatchers
 import play.api.inject.bind
 
@@ -208,8 +207,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
     }
   }
 
-  import scala.util.{Try,Success,Failure}
-  import com.galacticfog.gestalt.json.Js
+  import scala.util.Success
   import com.galacticfog.gestalt.meta.auth.EntitlementProps
 
   "cascadeEntitlements" should {

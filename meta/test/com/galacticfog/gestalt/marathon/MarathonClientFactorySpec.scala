@@ -22,7 +22,6 @@ import services.DCOSAuthTokenActor.{DCOSAuthTokenRequest, DCOSAuthTokenResponse}
 import services.MarathonService.Properties
 import services.{DCOSAuthTokenActor, DefaultMarathonClientFactory}
 
-import scala.language.reflectiveCalls
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
