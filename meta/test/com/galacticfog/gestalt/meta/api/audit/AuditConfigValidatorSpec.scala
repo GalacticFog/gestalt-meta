@@ -1,15 +1,8 @@
 package com.galacticfog.gestalt.meta.api.audit
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
 
 import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Step
-import play.api.libs.json._
 
-import org.joda.time.DateTime
 import cats.data.NonEmptyList
 import cats.data.Validated._
 

@@ -27,6 +27,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.patch._
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.ContainerSpec.PortMapping
+import scala.annotation.tailrec
 
 @Singleton
 class ProviderManager @Inject() (
@@ -39,19 +40,25 @@ class ProviderManager @Inject() (
   
   private type ServiceList = Seq[Future[GestaltResourceInstance]]
   
-  def loadProviders(root: Option[ProviderMap] = None): Future[Seq[(ProviderMap,Seq[GestaltResourceInstance])]] = {
+  def loadProviders(root: Option[GestaltResourceInstance] = None): Future[Seq[(ProviderMap,Seq[GestaltResourceInstance])]] = {
     val ps = {
       if (root.isEmpty) findEagerProviders()
-      else depthCollect(root.get, Set.empty, 0).toList.reverse
+      else depthCollect(ProviderMap(root.get), Set.empty, 0).toList.reverse
     }
     processAllProviders(ps)
   }
 
-  private[providers] def processAllProviders(ps: Seq[ProviderMap]) = {
-    Future.sequence(ps map { p => processProvider(p) })
+  def triggerProvider(p: GestaltResourceInstance, forceLaunch: Boolean = false): Future[Seq[GestaltResourceInstance]] = {
+    processProvider(ProviderMap(p), forceLaunch) map { case(_, containers) =>
+      containers
+    }
   }
 
-  def processProvider(p: ProviderMap, forceLaunch: Boolean = false): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
+  private def processAllProviders(ps: Seq[ProviderMap]): Future[Seq[(ProviderMap, Seq[GestaltResourceInstance])]] = {
+    Future.sequence(ps map { p => processProvider(p, false) })
+  }
+
+  def processProvider(p: ProviderMap, forceLaunch: Boolean): Future[(ProviderMap,Seq[GestaltResourceInstance])] = {
     val servicelist = processServices(p, p.services.toList, Seq.empty, forceLaunch)
     for {
       sl <- Future.sequence(servicelist)
@@ -66,7 +73,7 @@ class ProviderManager @Inject() (
   /**
     * Add the values in newVars to the given ProviderMap's envConfig.public
     */
-  private[providers] def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
+  private def updatePublicEnv(p: ProviderMap, newVars: Map[String, String]): ProviderMap = {
     val penv = p.envConfig map { env =>
       val sorted = env.public map { pub => 
         ListMap((newVars.toMap ++ pub).toSeq.sortBy(_._1):_*)
@@ -76,7 +83,7 @@ class ProviderManager @Inject() (
     p.copy(env = penv)
   }
   
-  private[providers] def mapPorts(services: Seq[GestaltResourceInstance]): Seq[(String, String)] = {
+  private def mapPorts(services: Seq[GestaltResourceInstance]): Seq[(String, String)] = {
     val t = services map { s =>
       parsePortMappings(s) filter { _.expose_endpoint == Some(true) } flatMap {
         portMappingToVariables(_)
@@ -88,7 +95,7 @@ class ProviderManager @Inject() (
   /**
    *
    */
-  private[providers] def portMappingToVariables(mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
+  private def portMappingToVariables(mapping: ContainerSpec.PortMapping): Seq[(String,String)] = {
     log.trace("Entered portMappingToVariables(_)...")
     log.trace("PortMapping => " + mapping)
 
@@ -122,7 +129,7 @@ class ProviderManager @Inject() (
    * Parse the port_mappings from a Meta container resourcce to PortMapping objects.
    * @param r a Meta container resource
    */
-  private[providers] def parsePortMappings(r: GestaltResourceInstance): Seq[PortMapping] = {
+  private def parsePortMappings(r: GestaltResourceInstance): Seq[PortMapping] = {
     log.debug("Entered parsePortMappings(_)...")
     r.properties.get.get("port_mappings") map { pmstr =>
       Js.parse[Seq[PortMapping]](Json.parse(pmstr)) match {
@@ -135,41 +142,42 @@ class ProviderManager @Inject() (
     } getOrElse Seq.empty
   }
   
-  import controllers.util.ContainerService
+  // import controllers.util.ContainerService
 
   /**
    * Parse provider ID from container.properties and return corresponding provider.
    */
-  private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
-    val providerId = ContainerService.containerProviderId(container)
+  // private def containerProvider(container: GestaltResourceInstance): GestaltResourceInstance = {
+  //   val providerId = ContainerService.containerProviderId(container)
 
-    ResourceFactory.findById(providerId) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }
-  }
+  //   ResourceFactory.findById(providerId) getOrElse {
+  //     throw new ResourceNotFoundException(
+  //       s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
+  //   }
+  // }
 
-  import scala.concurrent.Await
-  import scala.concurrent.duration._
+  // import scala.concurrent.Await
+  // import scala.concurrent.duration._
 
   /*
    * This is essentially a duplicate of the code found in DeleteController::deleteExternalContainer
    * Reproduced here due to circular dependency created when attempting to inject DeleteController
    * into this class.
    */
-  def deleteContainer(container: GestaltResourceInstance): Try[Unit] = {
-    val providerId = ContainerService.containerProviderId(container)
-    val provider   = ResourceFactory.findById(providerId) getOrElse {
-      throw new ResourceNotFoundException(
-        s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
-    }
+  // private def deleteContainer(container: GestaltResourceInstance): Try[Unit] = {
+  //   val providerId = ContainerService.containerProviderId(container)
+  //   val provider   = ResourceFactory.findById(providerId) getOrElse {
+  //     throw new ResourceNotFoundException(
+  //       s"Provider with ID '$providerId' not found. Container '${container.id}' is corrupt.")
+  //   }
 
-    getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroy(container), 5.seconds)
-    }
-  }
+  //   getProviderImpl(provider.typeId) map { service =>
+  //     Await.result(service.destroy(container), 5.seconds)
+  //   }
+  // }
 
-  private[providers] def processServices(
+  @tailrec
+  private def processServices(
       parent: ProviderMap, 
       ss: Seq[ProviderService], 
       acc: Seq[Future[GestaltResourceInstance]],
@@ -215,7 +223,7 @@ class ProviderManager @Inject() (
   }
 
 
-  private[providers] def mergeContainerVars(spec: JsValue, vars: Map[String,String]): Try[JsValue] = {
+  private def mergeContainerVars(spec: JsValue, vars: Map[String,String]): Try[JsValue] = {
     val cvars = Js.find(spec.as[JsObject], "/properties/env") map { env =>
       Js.parse[Map[String,String]](env) match {
         case Failure(e) => {
@@ -233,7 +241,7 @@ class ProviderManager @Inject() (
   /**
    * 
    */
-  private[providers] def normalizeContainerPayload(spec: JsValue, providerVars: Map[String,String]) = {
+  private def normalizeContainerPayload(spec: JsValue, providerVars: Map[String,String]) = {
     mergeContainerVars(withProviderInfo(spec), providerVars) match {
       case Failure(e) => 
         throw new UnprocessableEntityException(s"Invalid container_spec: " + e.getMessage)
@@ -245,7 +253,7 @@ class ProviderManager @Inject() (
     *
     * @return the newly created container resource.
     */
-  private[providers] def updateContainer( pm: ProviderMap,
+  private def updateContainer( pm: ProviderMap,
                                           service: ProviderService,
                                           existing: GestaltResourceInstance,
                                           environment: GestaltResourceInstance,
@@ -266,7 +274,10 @@ class ProviderManager @Inject() (
 
     log.info(s"Updating container resource for provider '${pm.id}' in Meta...")
     val metaUpdate = for {
-      new_props   <- Try(CaasTransform(pm.org, account, payload).resource.properties.get)
+      new_props   <- Try {
+        val resource = jsonToResource(pm.org, account, normalizeInputContainer(payload), None).get
+        resource.properties.get
+      }
       external_id <- Try(existing.properties.flatMap(_.get("external_id")).getOrElse {
         throw new RuntimeException("could not determine external_id property for container resource")
       })
@@ -303,7 +314,7 @@ class ProviderManager @Inject() (
    * 
    * @return the newly created container resource.
    */
-  private[providers] def launchContainer(
+  private def launchContainer(
       pm: ProviderMap, 
       service: ProviderService, 
       environment: GestaltResourceInstance,
@@ -324,12 +335,13 @@ class ProviderManager @Inject() (
     val req = new FakeURI(uri)
     val account = getUserAccount(pm)
 
-    val transform = CaasTransform(pm.org, account, payload)
     val ctx = ProviderContext(req, caas.id, None)
     
     log.info(s"Creating container for provider '${pm.id}' in Meta...")
     val metaCreate = for {
-      r1          <- Try(transform.resource)
+      r1          <- Try {
+        jsonToResource(pm.org, account, normalizeInputContainer(payload), None).get
+      }
       resource    <- createMetaContainer(account, r1, environment.id)
       serviceImpl <- getProviderImpl(caas.typeId)
     } yield (serviceImpl, resource)
@@ -358,7 +370,7 @@ class ProviderManager @Inject() (
   }
 
 
-  def loadCaasProvider(service: ProviderService) = {
+  private def loadCaasProvider(service: ProviderService): GestaltResourceInstance = {
     val pid = ProviderService.providerId(service) getOrElse {
       throw new RuntimeException("Could not parse [container.properties.provider.id].")
     }
@@ -367,11 +379,11 @@ class ProviderManager @Inject() (
     }    
   }
 
-  def createMetaContainer(user: AuthAccountWithCreds, container: GestaltResourceInstance, env: UUID) = {
+  private def createMetaContainer(user: AuthAccountWithCreds, container: GestaltResourceInstance, env: UUID): Try[GestaltResourceInstance] = {
     ResourceFactory.create(ResourceIds.User, user.account.id)(container, Some(env))
   }
 
-  def getUserAccount(pm: ProviderMap) = {
+  private def getUserAccount(pm: ProviderMap) = {
     val owner = pm.resource.owner
     val userinfo = Map(
       "id" -> owner.id.toString,
@@ -384,7 +396,7 @@ class ProviderManager @Inject() (
   /**
    * Get FQON given an Org ID
    */
-  def getFqon(org: UUID): Option[String] = {
+  private def getFqon(org: UUID): Option[String] = {
     for {
       o <- ResourceFactory.findById(ResourceIds.Org, org)
       p <- o.properties
@@ -392,8 +404,8 @@ class ProviderManager @Inject() (
     } yield f
   }
 
-  private[providers] def createProviderEnvironment( provider: GestaltResourceInstance,
-                                                    creator: AccountLike ) = {
+  private def createProviderEnvironment( provider: GestaltResourceInstance,
+                                                    creator: AccountLike ): Try[GestaltResourceInstance] = {
 
     val org = provider.orgId
 
@@ -424,7 +436,7 @@ class ProviderManager @Inject() (
   /**
    * Return a list of the containers
    */
-  def getProviderContainers(provider: UUID, environment: Option[UUID] = None): Seq[GestaltResourceInstance] = {
+  private def getProviderContainers(provider: UUID, environment: Option[UUID] = None): Seq[GestaltResourceInstance] = {
     val envid = environment orElse getProviderEnvironment(provider).map(_.id)
     envid.fold(Seq[GestaltResourceInstance]()) { eid =>
       ResourceFactory.findChildrenOfType(ResourceIds.Container, eid)
@@ -450,7 +462,7 @@ class ProviderManager @Inject() (
   /**
    * Get the environment where the provider's service containers are located.
    */
-  def getProviderEnvironment(provider: UUID): Option[GestaltResourceInstance] = {
+  private def getProviderEnvironment(provider: UUID): Option[GestaltResourceInstance] = {
     ResourceFactory.findChildByName(provider, ResourceIds.Environment, "services")
   }
   
@@ -459,7 +471,7 @@ class ProviderManager @Inject() (
    * Get a list of all providers that have an associated service (container) that
    * requires eager initialization.
    */
-  def findEagerProviders() = {
+  private def findEagerProviders(): Seq[ProviderMap] = {
     val providers = ResourceFactory.findAllOfType(CoVariant(ResourceIds.Provider))
     providers collect { case p if isEager(p) => ProviderMap(p) }
   }
@@ -468,7 +480,7 @@ class ProviderManager @Inject() (
    * Boolean indicating if the given provider resource requires a
    * container.
    */
-  def requiresService(r: GestaltResourceInstance): Boolean = {
+  private def requiresService(r: GestaltResourceInstance): Boolean = {
     val svcs = for {
       p <- r.properties
       s <- p.get("services")
@@ -480,7 +492,7 @@ class ProviderManager @Inject() (
    * Determine if a provider resource has an associated service, and
    * whether that service is eagerly initialized.
    */
-  def isEager(r: GestaltResourceInstance): Boolean = {
+  private def isEager(r: GestaltResourceInstance): Boolean = {
     if (requiresService(r)) {
       val prs = ProviderService.fromResource(r)
       prs exists { s =>
@@ -493,7 +505,7 @@ class ProviderManager @Inject() (
    * Get a Map of environment variables for the given ProviderMap. The
    * variables are merged with linked dependencies with public and private merged.
    */
-  def getMergedEnvironment(pm: ProviderMap): Map[String, String] = {
+  private def getMergedEnvironment(pm: ProviderMap): Map[String, String] = {
     val allmaps = depthCollect(pm, Set.empty, 0)
     val dependencyOrder = allmaps.toList.sortBy(_.idx).reverse
     val env = mapLinkedEnvironments(pm)
@@ -504,7 +516,7 @@ class ProviderManager @Inject() (
    * Perform a depth-first search from the given ProviderMap marking each 
    * dependency ProviderMap with an index (indicating depth).
    */
-  private[providers] def depthCollect(current: ProviderMap, acc: Set[ProviderMap], idx: Int): Set[ProviderMap] = {
+  private def depthCollect(current: ProviderMap, acc: Set[ProviderMap], idx: Int): Set[ProviderMap] = {
     val target = current.copy(idx = idx)
     target.dependencies.foldLeft(acc) { (results, next) =>
       if (results.contains(next)) results
@@ -516,7 +528,7 @@ class ProviderManager @Inject() (
    * Create a map of provider envs with the public variables from any links merged
    * into the private variables of the 'linker'
    */
-  private[providers] def mapLinkedEnvironments(provider: ProviderMap): Option[ProviderEnv] = {
+  private def mapLinkedEnvironments(provider: ProviderMap): Option[ProviderEnv] = {
 
     if (provider.dependencies.isEmpty) provider.envConfig
     else {
@@ -570,7 +582,7 @@ class ProviderManager @Inject() (
   /**
    * Find a ProviderMap by ID in a Seq[ProviderMap]
    */
-  private[providers] def select(id: UUID, ps: Seq[ProviderMap]) = ps.filter(_.id == id).headOption
+  private def select(id: UUID, ps: Seq[ProviderMap]): Option[ProviderMap] = ps.filter(_.id == id).headOption
 
   def getProviderImpl(typeId: UUID): Try[CaasService] = Try {
     typeId match {
@@ -586,7 +598,7 @@ class ProviderManager @Inject() (
   /*
    * TODO: Everything below is 'container-centric' - should be in Container services somewhere.
    */
-  def withProviderInfo(json: JsValue): JsObject = {
+  private def withProviderInfo(json: JsValue): JsObject = {
 
     val oldprops = Js.find(json.as[JsObject], "/properties") getOrElse {
       throw new UnprocessableEntityException(s"Invalid container JSON. No propertites found.")
@@ -612,7 +624,7 @@ class ProviderManager @Inject() (
   /**
    * Parse the provider ID from container.properties
    */
-  def parseProvider(c: GestaltResourceInstance): UUID = {
+  private def parseProvider(c: GestaltResourceInstance): UUID = {
     UUID.fromString((Json.parse(c.properties.get("provider")) \ "id").as[String])
   }
 
@@ -620,7 +632,7 @@ class ProviderManager @Inject() (
     * Ensure Container input JSON is well-formed and valid. Ensures that required properties
     * are given and fills in default values where appropriate.
     */
-  private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
+  private def normalizeInputContainer(inputJson: JsValue): JsObject = {
     val defaults = containerWithDefaults(inputJson)
     val newprops = (Json.toJson(defaults).as[JsObject]) ++ (inputJson \ "properties").as[JsObject]
     (inputJson.as[JsObject] ++ Json.obj("resource_type" -> ResourceIds.Container.toString)) ++ Json.obj("properties" -> newprops)
@@ -630,7 +642,7 @@ class ProviderManager @Inject() (
    * Ensure the given container JSON contains required properties, using defaults
    * where possible.
    */
-  private def containerWithDefaults(json: JsValue) = {
+  private def containerWithDefaults(json: JsValue): ContainerSpec = {
 
     val ctype = (json \ "properties" \ "container_type").asOpt[String] match {
       case Some(t) if ! t.trim.isEmpty => t
@@ -654,19 +666,5 @@ class ProviderManager @Inject() (
       image = image,
       provider = prv
     )
-  }  
-
-  trait ResourceTransform extends GestaltProviderService
-  case class CaasTransform(org: UUID, caller: AuthAccountWithCreds, json: JsValue) extends ResourceTransform {
-    lazy val resource = jsonToResource(org, caller, normalizeInputContainer(json), None).get
-    lazy val spec = ContainerSpec.fromResourceInstance(resource)
   }
-
-  trait ServiceProvider[A <: GestaltProviderService] {
-    /**
-     * Get a GestaltService implementation.
-     */
-    def get[A](provider: UUID): Try[A]
-  }  
-
 } 

@@ -6,10 +6,9 @@ import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.{ProviderEnv, ProviderMap}
 import com.galacticfog.gestalt.meta.test._
-import controllers.util.{ContainerService, GestaltProviderMocking, UpgraderService}
+import controllers.util.{ContainerService, UpgraderService}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.specification.BeforeAll
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
@@ -23,7 +22,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import org.specs2.execute.Result
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 

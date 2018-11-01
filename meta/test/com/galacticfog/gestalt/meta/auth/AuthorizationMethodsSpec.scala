@@ -12,7 +12,6 @@ import com.galacticfog.gestalt.data.string2uuid
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
-import com.galacticfog.gestalt.json.Js
 import controllers.util.GestaltSecurityMocking
 import java.util.UUID
 

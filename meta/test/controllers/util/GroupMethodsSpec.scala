@@ -1,7 +1,6 @@
 package controllers.util
 
 import scala.Left
-import scala.reflect.runtime.universe
 
 import org.specs2.mutable.Specification
 import org.specs2.specification.BeforeAll
@@ -13,10 +12,7 @@ import com.galacticfog.gestalt.patch.PatchOps
 import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltFrameworkSecurityEnvironment
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 
-import javax.inject.Inject
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsString
 
 class GroupMethodsSpec extends Specification with ResourceScope with GestaltSecurityMocking with BeforeAll {

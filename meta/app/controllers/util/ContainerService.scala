@@ -131,7 +131,6 @@ object ContainerService {
 
   /**
    * Extract and validate the 'provider' querystring parameter.
-   * Used by the {@link #migrateContainer(String,UUID,UUID) migrateContainer} method.
    *
    * @param qs the complete, unmodified queryString from the original request.
    */
@@ -169,7 +168,6 @@ object ContainerService {
 
   /**
    * Extract and validate the 'targetEnv' querystring parameter.
-   * Used by the {@link #promoteContainer(String,UUID,UUID) migrateContainer} method.
    *
    * @param qs the complete, unmodified queryString from the original request.
    */

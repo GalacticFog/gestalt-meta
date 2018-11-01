@@ -11,9 +11,16 @@ scalacOptions ++= Seq(
   "-Xfatal-warnings",
   "-Ywarn-value-discard",
   "-Ywarn-unused-import",
-  "-Yrangepos",
-  "-P:silencer:globalFilters=[meta/conf/routes]"    // see https://stackoverflow.com/questions/37413032/ywarn-unused-import-triggering-on-play-routes-file
+  "-Yrangepos"//,
+  // "-P:silencer:globalFilters=[/meta/conf/routes]"    // see https://stackoverflow.com/a/52719562/8184313
+  // ^^ doesn't work
 )
+
+import CustomGenerator._
+
+import play.sbt.routes.RoutesKeys
+RoutesKeys.routesImport := Seq.empty
+routesGenerator := ModifiedInjectedRoutesGenerator    // see https://stackoverflow.com/a/53091906/8184313
 
 addCompilerPlugin(scalafixSemanticdb)
 
@@ -108,8 +115,8 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",
   
-  compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
-  "com.github.ghik" %% "silencer-lib" % silencerVersion % Provided,
+  // compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
+  // "com.github.ghik" %% "silencer-lib" % silencerVersion % Provided,
 
   "de.leanovate.play-mockws"  %% "play-mockws"          % "2.5.1"       % Test,
   "com.typesafe.play"         %% "play-specs2"          % play.core.PlayVersion.current  % Test,
@@ -118,4 +125,4 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka"         %% "akka-testkit"         % "2.3.10"      % Test
 )
 
-routesGenerator := InjectedRoutesGenerator
+// routesGenerator := InjectedRoutesGenerator

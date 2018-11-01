@@ -5,14 +5,13 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.TypeFactory
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.{errors, sdk}
+import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.api.sdk.{GestaltTypePropertyInput, ResourceIds}
 import com.galacticfog.gestalt.meta.test._
 import controllers.PropertyController
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.PlaySpecification
 import play.api.libs.json._
-import play.api.libs.json.Reads
 
 
 class TypeMethodsSpec extends PlaySpecification with MetaRepositoryOps {

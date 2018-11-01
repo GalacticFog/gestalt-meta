@@ -6,7 +6,6 @@ import java.util.UUID
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth._

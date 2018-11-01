@@ -97,10 +97,11 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       mockProviderManager.getOrCreateProviderEnvironment(any, any) answers {
         (a: Any) => ResourceFactory.findById(ResourceIds.Environment, testProviderEnvId).get
       }
-      mockProviderManager.processProvider(any, any) answers {
+      mockProviderManager.triggerProvider(any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
-          val pm = arr(0).asInstanceOf[ProviderMap]
+          // val pm = arr(0).asInstanceOf[ProviderMap]
+          val pm = ProviderMap(arr(0).asInstanceOf[GestaltResourceInstance])
           val Success(env) = createInstance(
             typeId = ResourceIds.Environment,
             id = testProviderEnvId,
@@ -136,7 +137,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
             )),
             parent = Some(testProviderEnvId)
           )
-          Future.successful(pm -> Seq(testContainer))
+          // Future.successful(pm -> Seq(testContainer))
+          Future.successful(Seq(testContainer))
       }
       val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
       mockGatewayMethods.createApi(any, apiCaptor.capture(), any) answers {

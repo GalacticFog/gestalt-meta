@@ -1,30 +1,13 @@
 package com.galacticfog.gestalt.meta.actions
 
-import java.util.UUID
 
-import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
+import com.galacticfog.gestalt.data.ResourceFactory
 
-import scala.concurrent.Future
-import scala.util.Success
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.{JsonMatchers, Matcher}
-import org.specs2.matcher.ValueCheck.typedValueCheck
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, sdk}
-import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
-import com.galacticfog.gestalt.meta.providers.ProviderManager
+import org.mockito.Matchers.{eq => _}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import controllers.util.ContainerService
-import org.specs2.execute.{AsResult, Result}
-import play.api.inject.guice.GuiceableModule
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, JsString, Json}
-import play.api.test.{PlaySpecification, WithApplication}
-import services.{CaasService, MarathonClientFactory, ProviderContext, SkuberFactory}
+import play.api.libs.json.Json
+import play.api.test.PlaySpecification
 import play.api.inject.bind
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.providers._

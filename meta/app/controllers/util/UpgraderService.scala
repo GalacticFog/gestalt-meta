@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-import com.galacticfog.gestalt.meta.providers.{ProviderManager, ProviderMap}
+import com.galacticfog.gestalt.meta.providers.ProviderManager
 import javax.inject.{Inject, Named}
 import play.api.libs.json.{Format, JsObject, Json}
 
@@ -107,7 +107,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         parent = None  // parent=None means no inheritance, granting entitlements only to creator
       ).map(_.get)))
       // load the provider to create the upgrader service container
-      (_, Seq(container)) <- providerManager.processProvider(ProviderMap(provider))
+      Seq(container) <- providerManager.triggerProvider(provider)
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
       // create the API
       apiJson = getApiPayload(payload)
