@@ -1,17 +1,12 @@
 package migrations
 
-import java.util.UUID
 
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.MetaRepositoryOps
-import org.specs2.matcher.Matcher
-import org.specs2.specification.core.{Fragment, Fragments}
-import play.api.libs.json._
+import org.specs2.specification.core.Fragments
 import play.api.test.PlaySpecification
 
 class V3Spec extends PlaySpecification with MetaRepositoryOps {

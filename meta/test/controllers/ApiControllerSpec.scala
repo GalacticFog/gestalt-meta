@@ -1,15 +1,10 @@
 package controllers
 
 
-import org.specs2.mock.Mockito
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.meta.api.errors._
 
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
-import play.api.test.WithApplication
 import java.util.UUID
 
 import com.galacticfog.gestalt.json.Js

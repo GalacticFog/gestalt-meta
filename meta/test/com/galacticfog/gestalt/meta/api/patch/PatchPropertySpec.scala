@@ -11,11 +11,9 @@ import com.galacticfog.gestalt.meta.test._//MetaRepositoryOps
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.patch.PatchOp
 import com.galacticfog.gestalt.meta.api.errors._
-import play.api.libs.json.Json
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import org.specs2.specification.Scope
 
 
 

@@ -13,7 +13,6 @@ import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds
 import com.galacticfog.gestalt.meta.auth.Entitlement
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers._
 import mockws.{MockWS, Route}
 import org.specs2.matcher.JsonMatchers

@@ -10,7 +10,6 @@ import com.galacticfog.gestalt.meta.test.ResourceScope
 import org.joda.time.DateTime
 import org.specs2.matcher._
 import org.specs2.mock.Mockito
-import org.specs2.mock.mockito._
 import org.specs2.specification.BeforeAll
 import play.api.libs.json.JsValue
 import play.api.test.PlaySpecification

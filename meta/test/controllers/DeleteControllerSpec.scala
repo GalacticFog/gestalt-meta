@@ -1,14 +1,10 @@
 package controllers
 
-import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ResourcePath
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch._
 import controllers.util._
-import org.mockito.Matchers.{eq => meq}
+import org.mockito.Matchers.{eq => _}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
 import org.specs2.specification._
@@ -17,8 +13,6 @@ import play.api.libs.json._
 import play.api.test._
 
 import scala.util.{Success, Try}
-import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
-import com.galacticfog.gestalt.data.PostgresConfigManager
 import services.SkuberFactory
 
 import scala.concurrent.Future

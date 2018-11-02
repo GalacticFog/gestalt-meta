@@ -1,11 +1,7 @@
 package controllers.util
 
 import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Scope
-import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.json.Js
 
 
 class QueryStringSpec extends Specification {
