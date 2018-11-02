@@ -847,8 +847,19 @@ class ResourceController @Inject()(
         response: FunctionResponse,
         params:   Map[String,Option[String]]) = {
       
+      val icon = (for {
+        ui <- response.gestalt_ui
+        ic <- ui.icon
+        sv <- ic.svg
+      } yield sv)
+      
+      val url = {
+        if (endpoint.kind.endsWith("-external")) endpoint.url
+        else makeActionUrl(provider, function.name)
+      }
+        
       Json.obj(
-        "url"          -> makeActionUrl(provider, function.name),
+        "url"          -> url, //makeActionUrl(provider, function.name),
         "action"       -> function.name,
         "display_name" -> function.display_name,
         "method"       -> "POST",
@@ -856,7 +867,8 @@ class ResourceController @Inject()(
         "content_type" -> response.content_type,
         "render"       -> response.gestalt_ui.get.render,
         "locations"    -> response.gestalt_ui.get.locations,
-        "params"       -> Json.toJson(params)
+        "params"       -> Json.toJson(params),
+        "icon"         -> icon
       )
     }
 
@@ -883,11 +895,11 @@ class ResourceController @Inject()(
       ps.map(p => (p.name -> p.value)).toMap  
     }
     
-    def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
-      ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
-        Json.obj(p.name -> p.value) +: acc
-      }
-    }
+//    def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
+//      ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
+//        Json.obj(p.name -> p.value) +: acc
+//      }
+//    }
     
     ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
       getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
