@@ -3,9 +3,8 @@ package controllers.util
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.{LaserLambda, _}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+// import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{JsonClient, ResourceIds}
 import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
@@ -25,6 +24,8 @@ import play.api.test.{FakeRequest, PlaySpecification}
 
 import scala.concurrent.Future
 import scala.util.Success
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll with DbShutdown with JsonMatchers with JsonInput {
 
@@ -44,6 +45,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
   }
 
   sequential
+
+  import LambdaMethods._
 
   abstract class FakeLambdaScope extends Scope {
     val Success(testOrg) = createOrg(name = uuid().toString)
@@ -110,7 +113,8 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
       "periodic_info" -> "{}",
       "provider" -> Json.obj(
         "name" -> testLambdaProvider.name,
-        "id" -> testLambdaProvider.id.toString
+        "id" -> testLambdaProvider.id.toString//,
+        //"locations" -> Json.arr()
       ).toString
     ))
 
@@ -138,7 +142,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         ).toString,
         "isolate" -> "true"
       ))
-      val Success(laserLambda) = toLaserLambda(testLambdaWithIsolation, testLambdaProvider.id)
+      val Right(laserLambda) = lambdaMethods.toLaserLambda(testLambdaWithIsolation, testLambdaProvider.id)
       laserLambda.artifactDescription.isolate must beSome(true)
     }
 
@@ -172,16 +176,18 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         ).toString,
         "secrets" -> Json.toJson(testSecretMounts).toString
       ))
-      val Success(laserLambda) = toLaserLambda(testLambdaWithSecrets, testLambdaProvider.id)
+      val Right(laserLambda) = lambdaMethods.toLaserLambda(testLambdaWithSecrets, testLambdaProvider.id)
       laserLambda.artifactDescription.secrets must beSome(testSecretMounts.map(Json.toJson(_)))
     }
 
     "fail if lambda provider references a non-existent secret" in new FakeLambdaScope {
-      toLaserLambda(testLambda.copy(
+      val secretUuid = uuid()
+      lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
-          "secrets" -> Json.toJson(Seq(SecretEnvMount(uuid, "ENV_VAR", "secret_key"))).toString
+          "secrets" -> Json.toJson(Seq(SecretEnvMount(secretUuid, "ENV_VAR", "secret_key"))).toString
         ))
-      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Secret.*does not exist.*")
+      // ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Secret.*does not exist.*")
+      ), testLambdaProvider.id) must beEqualTo(Left(s"Secret '${secretUuid}' does not exist"))
     }
 
     "fail if lambda provider is not conformant with secrets provider" in new FakeLambdaScope {
@@ -190,11 +196,12 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
           "id" -> uuid().toString
         ).toString
       ))
-      toLaserLambda(testLambda.copy(
+      lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(Seq(SecretEnvMount(secret.id, "ENV_VAR", "secret_key"))).toString
         ))
-      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*did not have same CaaS provider as mounted Secrets.*")
+      // ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*did not have same CaaS provider as mounted Secrets.*")
+      ), testLambdaProvider.id) must beEqualTo(Left(s"Lambda '${testLambda.id}' provider '${testLambdaProvider.id}' did not have same CaaS provider as mounted Secrets"))
     }
 
     "fail if secrets aren't mutual siblings" in new FakeLambdaScope {
@@ -217,11 +224,12 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         SecretFileMount(s2.id, "/mnt/dir/file", "secret_key"),
         SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
       )
-      toLaserLambda(testLambda.copy(
+      lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(testSecretMounts).toString
         ))
-      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Secrets must belong to the same Environment.*")
+      // ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Secrets must belong to the same Environment.*")
+      ), testLambdaProvider.id) must beEqualTo(Left("All mounted Secrets must belong to the same Environment"))
     }
 
     "fail if secrets aren't siblings with lambda" in new FakeLambdaScope {
@@ -243,20 +251,21 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
       )
 
-      toLaserLambda(testLambda.copy(
+      lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(testSecretMounts).toString
         ))
-      ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
+      // ), testLambdaProvider.id) must beFailedTry.withThrowable[BadRequestException](".*Lambda.*must belong to the same Environment as all mounted Secrets.*")
+      ), testLambdaProvider.id) must beEqualTo(Left(s"Lambda '${testLambda.id}' must belong to the same Environment as all mounted Secrets"))
     }
 
     "not specify computePathOverride in the absence of secrets" in new FakeLambdaScope {
-      val Success(laserLambda) = toLaserLambda(testLambda, testLambdaProvider.id)
+      val Right(laserLambda) = lambdaMethods.toLaserLambda(testLambda, testLambdaProvider.id)
       laserLambda.artifactDescription.computePathOverride must beNone
     }
 
     "specify computePathOverride if preWarm > 0" in new FakeLambdaScope {
-      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+      val Right(laserLambda) = lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "pre_warm" -> "1"
         ))
@@ -282,7 +291,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         SecretEnvMount(s3.id, "ENV_VAR", "secret_key")
       )
 
-      val Success(laserLambda) = toLaserLambda(testLambda.copy(
+      val Right(laserLambda) = lambdaMethods.toLaserLambda(testLambda.copy(
         properties = Some(testLambda.properties.get ++ Map(
           "secrets" -> Json.toJson(testSecretMounts).toString
         ))
@@ -476,7 +485,7 @@ class LambdaMethodsSpec extends PlaySpecification with GestaltSecurityMocking wi
         mockResp.status returns 200
       })
 
-      val Success(_) = lambdaMethods.deleteLambdaHandler(testLambda)
+      Await.ready(lambdaMethods.deleteLambdaHandler(testLambda), 10 .seconds)
 
       there was one(mockJsonClient).delete(
         uri = meq(s"/lambdas/${testLambda.id}"),

@@ -144,7 +144,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       org: UUID,
       resource: UUID, 
       creator: AccountLike,
-      parent: Option[UUID]) = {
+      parent: Option[UUID]): Seq[Try[GestaltResourceInstance]] = {
 
   val rootid = Resource.findFqon("root").fold {
     throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
