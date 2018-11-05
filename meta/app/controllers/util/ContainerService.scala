@@ -6,7 +6,7 @@ import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLik
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec}
 import com.galacticfog.gestalt.meta.api._
-import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, ResourceNotFoundException}
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceStates}
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -21,8 +21,7 @@ import play.api.libs.json._
 import play.api.mvc.RequestHeader
 import services.{FakeURI, ProviderContext}
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
+import scala.concurrent.Future
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 
@@ -251,36 +250,29 @@ object ContainerService {
     prop <- (config \ propName).validate[T].asOpt
   } yield prop
 
-  def deleteSecretHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+  def deleteSecretHandler(providerManager: ProviderManager, res: Instance): Future[Unit] = {
     val provider = containerProvider(res)
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroySecret(res), 10.seconds)
-    }
+    for(
+      service <- Future.fromTry(providerManager.getProviderImpl(provider.typeId));
+      _ <- service.destroySecret(res)
+    ) yield ()
   }
 
-  def deleteVolumeHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
+  def deleteVolumeHandler(providerManager: ProviderManager, res: Instance): Future[Unit] = {
     val provider = containerProvider(res)
-    providerManager.getProviderImpl(provider.typeId) map { service =>
-      Await.result(service.destroyVolume(res), 10.seconds)
-    }
+    for(
+      service <- Future.fromTry(providerManager.getProviderImpl(provider.typeId));
+      _ <- service.destroyVolume(res)
+    ) yield ()
   }
 
-  def deleteContainerHandler(providerManager: ProviderManager, res: Instance): Try[Unit] = {
-    val result = for {
-      provider <- Try{containerProvider(res)}
-      service <-  providerManager.getProviderImpl(provider.typeId)
-      result <- Try {
-        log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}")
-        Await.result(service.destroy(res), 5 seconds)
-      }
-    } yield result
-    result recoverWith {
-      case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
-      case throwable => {
-        throwable.printStackTrace()
-        Failure(throwable)
-      }
-    }
+  def deleteContainerHandler(providerManager: ProviderManager, res: Instance): Future[Unit] = {
+    val provider = containerProvider(res)
+    for(
+      service <- Future.fromTry(providerManager.getProviderImpl(provider.typeId));
+      _ = log.info(s"Attempting to delete container ${res.id} from CaaS Provider ${provider.id}");
+      _ <- service.destroy(res)
+    ) yield ()
   }
 
 

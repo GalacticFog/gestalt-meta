@@ -751,7 +751,7 @@ class ResourceController @Inject()(
   
   def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = Try {
     log.debug("Entered transformStreamSpec...")
-    val streams = lambdaMethods.getLambdaStreams(r, user).get
+    val streams = Await.result(lambdaMethods.getLambdaStreams(r, user), 5 .seconds)
     val oldprops = r.properties.get
     val newprops = oldprops ++ Map("streams" -> Json.stringify(streams))
     r.copy(properties = Some(newprops))
