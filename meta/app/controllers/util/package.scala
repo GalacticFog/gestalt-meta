@@ -123,7 +123,7 @@ package object util {
   }
 
   /*
-  I don't see a way to unfuck-up this for example:
+  I don't see a way to correctly process this for example:
   Map("a" -> JsString("true"))
   -> stringmap ->
   Map("a" -> "true")
