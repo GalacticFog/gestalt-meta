@@ -993,10 +993,20 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         .withDnsPolicy(skuber.DNSPolicy.ClusterFirst)
 
       val specWithVols = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).foldLeft[Pod.Spec](baseSpec) { _.addVolume(_) }
-      Pod.Template.Spec(spec = Some(specWithVols)).addLabels(labels)
+      
+      def DEFAULT_SECRET_NAME(idx: Int): String = "imagepullsecret-%d".format(idx)
+      
+      val finalSpec = specWithVols.copy(imagePullSecrets = List(
+          LocalObjectReference(DEFAULT_SECRET_NAME(1)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(2)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(3)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(4)),
+          LocalObjectReference(DEFAULT_SECRET_NAME(5)))
+      )
+      Pod.Template.Spec(spec = Some(finalSpec)).addLabels(labels)
     }
 
-    Deployment(metadata = ObjectMeta(
+    Deployment(metadata = ObjectMeta(  
       name = containerSpec.name,
       namespace = namespace,
       labels = labels
