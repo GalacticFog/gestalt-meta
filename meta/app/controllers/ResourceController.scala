@@ -29,19 +29,15 @@ import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
 import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
 
-import com.galacticfog.gestalt.data.PropertyFactory
 import com.galacticfog.gestalt.json._
 import com.galacticfog.gestalt.marathon.containerWithDefaults
 
 import services.ProviderContext  
-import play.api.mvc.{Request, RequestHeader}
+import play.api.mvc.Request
 import play.api.mvc.AnyContent
 
 import java.math.BigInteger
 import java.security.SecureRandom
-import com.galacticfog.gestalt.data.parseUUID
-import com.galacticfog.gestalt.meta.providers._      
-import com.galacticfog.gestalt.meta.providers.ui._
 import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
 import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}  
 import com.galacticfog.gestalt.meta.auth._  
@@ -398,8 +394,8 @@ class ResourceController @Inject()(
     // These are the values tha Meta will accept for 'environment_type'
     val acceptableTypes = Set("development", "test", "production")
     
-    provider.properties.get.get("environment_types").map { types =>
-      
+    //provider.properties.get.get("environment_types").map { types =>
+    provider.properties.get.get("environment_types").foreach { types =>  
       // Environment types the provider is compatible with.
       val allowedByProvider = Json.parse(types).as[Seq[String]]
       

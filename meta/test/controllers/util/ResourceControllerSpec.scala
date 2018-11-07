@@ -201,7 +201,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
           )
         )
       )
-      val Some(result) = route(request)
+      val Some(result) = route(app, request)
       //contentAsString(result) must contain("requires a provider")
       status(result) must equalTo(BAD_REQUEST)
     }
@@ -305,7 +305,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
         )
       )
 
-      val Some(result) = route(request)
+      val Some(result) = route(app, request)
       //(contentAsJson(result) \ "message").as[String] must contain("failure message from provider endpoint")
       status(result) must equalTo(BAD_REQUEST)
 

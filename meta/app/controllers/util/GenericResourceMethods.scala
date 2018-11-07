@@ -308,9 +308,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     } yield response
   }
 
-
-  import com.galacticfog.gestalt.meta.api.{isGestalt, findGestaltProvider}
-  
   /**
     * Find and retrieve a Provider resource instance from a 'resource.create' payload.
     */
