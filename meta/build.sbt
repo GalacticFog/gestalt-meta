@@ -4,6 +4,7 @@ import com.typesafe.sbt.packager.docker._
 
 scalacOptions ++= Seq(
   "-language:reflectiveCalls",
+  "-language:higherKinds",
   "-deprecation",   // Emit warning and location for usages of deprecated APIs.
   "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
   "-unchecked",      // Enable additional warnings where generated code depends on assumptions.
