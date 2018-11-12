@@ -1,7 +1,7 @@
 package migrations
 
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models.GestaltTypeProperty
+// import com.galacticfog.gestalt.data.models.GestaltTypeProperty
 // import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.MetaRepositoryOps
 import play.api.test.PlaySpecification

@@ -52,7 +52,7 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
     (for(
       patched <- Future.fromTryST(PatchInstance.applyPatch(resource, patch));
       laserLambda <- toLaserLambda(patched, provider.id);
-      response <- client.put(s"/lambdas/${resource}", Some(Json.toJson(laserLambda)))
+      response <- client.put(s"/lambdas/${resource.id}", Some(Json.toJson(laserLambda)))
     ) yield {
       if(response.status == 200) {
         log.info(s"Successfully PUT Lambda in lambda provider.")
