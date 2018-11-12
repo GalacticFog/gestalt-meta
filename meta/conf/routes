@@ -2,6 +2,7 @@
 ###
 ###
 
+GET /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.get(fqon: String, providerId: java.util.UUID, path: String)
 
 
 
