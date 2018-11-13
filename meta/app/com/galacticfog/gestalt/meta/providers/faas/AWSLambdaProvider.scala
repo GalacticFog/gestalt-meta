@@ -48,13 +48,6 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     }
   }
 
-  private def eitherToFuture[A](either: Either[String,A]): Future[A] = {
-    either match {
-      case Right(value) => Future.successful(value)
-      case Left(errorMessage) => Future.failed(new RuntimeException(errorMessage))
-    }
-  }
-
   private def deserializeResource[A: Reads](resource: GestaltResourceInstance): Either[String,A] = {
     for(
       rawProperties <- Either.fromOption(resource.properties, s"Could not parse resource ${resource.id} with unset properties");
@@ -128,10 +121,10 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
 
   def createLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
-      req <- eitherToFuture(mkRequest(provider));
-      lambda <- eitherToFuture(deserializeResource[AWSLambdaProperties](resource));
-      lambdaProvider <- eitherToFuture(deserializeResource[LambdaProviderProperties](provider));
-      config <- eitherToFuture(mkConfig(lambda, lambdaProvider));
+      req <- mkRequest(provider).liftTo[Future];
+      lambda <- deserializeResource[AWSLambdaProperties](resource).liftTo[Future];
+      lambdaProvider <- deserializeResource[LambdaProviderProperties](provider).liftTo[Future];
+      config <- mkConfig(lambda, lambdaProvider).liftTo[Future];
       code <- mkCode(lambda, lambdaProvider);
       response <- req("/function/create").post(Json.obj(
         "name" -> s"${resource.id}",
@@ -140,7 +133,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
         "code" -> code 
       ));
       _ <- checkResponseStatus(response);
-      updatedResource <- eitherToFuture(for(
+      updatedResource <- (for(
         response <- eitherFromJsResult(response.json.validate[AWSLambdaCreateResponse]);
         updatedLambda = lambda.copy(
           handler=response.config.handler,
@@ -151,7 +144,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
           aws_function_id=Some(response.arn)
         );
         r <- serializeResource[AWSLambdaProperties](resource, updatedLambda)
-      ) yield r)
+      ) yield r).liftTo[Future]
     ) yield updatedResource
   }
 
@@ -159,10 +152,10 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     val client = providerMethods.configureWebClient(provider, Some(ws))
 
     for(
-      req <- eitherToFuture(mkRequest(provider));
+      req <- mkRequest(provider).liftTo[Future];
       patched <- Future.fromTryST(PatchInstance.applyPatch(resource, patch));
-      lambda <- eitherToFuture(deserializeResource[AWSLambdaProperties](patched));
-      lambdaProvider <- eitherToFuture(deserializeResource[LambdaProviderProperties](provider));
+      lambda <- deserializeResource[AWSLambdaProperties](patched).liftTo[Future];
+      lambdaProvider <- deserializeResource[LambdaProviderProperties](provider).liftTo[Future];
       modifiesCode = patch exists { op => op.path == "/properties/code" };
       modifiesConfig = patch exists { op =>
         Seq("/properties/handler", "/properties/runtime", "/properties/timeout", "/properties/memory") contains op.path
@@ -178,10 +171,10 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
       };
       updatedResource <- if(modifiesConfig) {
         for(
-          config <- eitherToFuture(mkConfig(lambda, lambdaProvider));
+          config <- mkConfig(lambda, lambdaProvider).liftTo[Future];
           response <- req(s"/function/${resource.id}/configuration").put(config);
           _ <- checkResponseStatus(response);
-          updatedResource <- eitherToFuture(for(
+          updatedResource <- (for(
             response <- eitherFromJsResult(response.json.validate[AWSLambdaUpdateResponse]);
             updatedLambda = lambda.copy(
               handler=response.handler,
@@ -191,7 +184,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
               aws_role_id=Some(response.role)
             );
             r <- serializeResource[AWSLambdaProperties](resource, updatedLambda)
-          ) yield r)
+          ) yield r).liftTo[Future]
         ) yield updatedResource
       }else {
         Future.successful(patched)
@@ -201,7 +194,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
 
   def deleteLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[Unit] = {
     for(
-      req <- eitherToFuture(mkRequest(provider));
+      req <- mkRequest(provider).liftTo[Future];
       response <- req(s"/function/${resource.id}/").delete();
       _ <- checkResponseStatus(response)
     ) yield ()

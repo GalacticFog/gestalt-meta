@@ -111,7 +111,7 @@ libraryDependencies ++= Seq(
   "com.spotify"      % "docker-client"                 % "8.7.1",
 
   "com.lihaoyi"     %% "scalatags"                     % "0.6.7",
-  "org.typelevel"   %% "cats-core"                     % "1.0.1",
+  "org.typelevel"   %% "cats-core"                     % "1.4.0",
 
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",

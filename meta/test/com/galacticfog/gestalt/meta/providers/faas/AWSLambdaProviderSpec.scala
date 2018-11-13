@@ -1,8 +1,7 @@
 package com.galacticfog.gestalt.meta.providers.faas
 
 import java.util.UUID
-// import scala.util.{Try,Success}
-import scala.util.Success
+import scala.util.{Try,Success}
 import scala.concurrent.Await
 import scala.concurrent.duration._
 import play.api.test.PlaySpecification
@@ -94,14 +93,12 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
 
     val Success(testLambda) = createLambda("test-lambda", Map(
       "public" -> "true",
-      "cpus" -> "0.1",
       "memory" -> "128",
+      "cpus" -> "0.1",
       "code_type" -> "Inline",
       "timeout" -> "30",
       "handler" -> "blah",
-      "headers" -> "{}",
       "runtime" -> "nodejs8.10",
-      "periodic_info" -> "{}",
       "code" -> "sample code...",
       "provider" -> Json.obj(
         "name" -> testLambdaProvider.name,
@@ -160,8 +157,6 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "code" -> "sample code...",
         "cpus" -> "0.1",
         "code_type" -> "Inline",
-        "headers" -> "{}",
-        "periodic_info" -> "{}",
         "timeout" -> "30",
         "handler" -> "handler",
         "runtime" -> "runtime",
@@ -169,6 +164,34 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "aws_role_id" -> "role arn",
         "aws_function_id" -> "function arn"
       )))
+    }
+    "create lambda only if input is valid" in new FakeLambdaScope {
+      var r: JsValue = null
+      val ws = MockWS {
+        // case (POST, "http://laser.service:1111/function/create") => Action { request =>
+        case (POST, _) => Action { request =>
+          r = request.body.asJson.get
+          Ok(Json.obj(
+            "arn" -> "function arn",
+            "config" -> Json.obj(
+              "description" -> "description",
+              "handler" -> "handler",
+              "runtime" -> "runtime",
+              "timeout" -> 30,
+              "memorySize" -> 128,
+              "role" -> "role arn"
+            )
+          ))
+        }
+      }
+      val awslProvider = new AWSLambdaProvider(ws, providerMethods)
+
+      val newTestLambda = testLambda.copy(
+        properties = Some(testLambda.properties.get -- Seq("handler"))
+      )
+
+      val res = Try(Await.result(awslProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
+      res must beFailedTry.withThrowable[RuntimeException]("Failed to parse payload: /handler: error.path.missing")
     }
   }
   "updateLambda" should {
@@ -263,8 +286,6 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "code" -> "sample",
         "cpus" -> "0.1",
         "code_type" -> "Inline",
-        "headers" -> "{}",
-        "periodic_info" -> "{}",
         "timeout" -> "30",
         "handler" -> "handler",
         "runtime" -> "runtime",

@@ -130,7 +130,7 @@ class LambdaMethods @Inject()(
       instance = inputToInstance(org, payload);
       lambdaProvider <- getLambdaProvider(instance);
       impl <- getProviderImpl(lambdaProvider);
-      _ <- eitherFromTry(setNewResourceEntitlements(org, instance.id, caller, Some(parent.id)).toVector.sequence)//;
+      _ <- eitherFromTry(setNewResourceEntitlements(org, instance.id, caller, Some(parent.id)).toVector.sequence)
     ) yield {
       impl.createLambda(lambdaProvider, instance) map { createdLambdaResource =>
         log.info("Successfully created Lambda in backend system.")
