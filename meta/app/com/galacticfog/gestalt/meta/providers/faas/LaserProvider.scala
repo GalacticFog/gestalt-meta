@@ -89,7 +89,7 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
     val eitherL: Either[String,LaserLambda] = for(
       rawProperties <- Either.fromOption(lambda.properties, s"Cannot use lambda resource ${lambda.id} with unset properties map");
       rawJsonProperties = unstringmap(Some(rawProperties)).get;
-      properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[LambdaProperties]);
+      properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[LaserLambdaProperties]);
 
       lambdaProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.LambdaProvider, properties.provider.id),
        s"Lambda '${properties.provider.id}' provider did not exist");

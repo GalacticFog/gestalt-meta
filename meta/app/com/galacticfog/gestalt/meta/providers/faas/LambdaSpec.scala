@@ -33,7 +33,7 @@ case class InlineLambdaProvider(
   id: UUID,
   locations: Option[Seq[JsValue]]
 )
-case class LambdaProperties(
+case class LaserLambdaProperties(
   public: Boolean,
   runtime: String,
   code_type: String,
@@ -53,8 +53,21 @@ case class LambdaProperties(
   pre_warm: Option[Int],
   secrets: Option[Seq[ContainerSpec.SecretMount]],
   linked_providers: Option[Seq[LinkedProvider]],
-
-  isolate: Option[Boolean]    // not present in /root/resourcetypes/... for me
+  isolate: Option[Boolean]
+)
+case class AWSLambdaProperties(
+  public: Boolean,
+  runtime: String,
+  code_type: String,
+  memory: Int,
+  timeout: Int,
+  provider: InlineLambdaProvider,
+  handler: String,
+  package_url: Option[String],
+  code: Option[String],
+  parent: Option[JsValue],
+  aws_role_id: Option[String],
+  aws_function_id: Option[String]
 )
 
 case class StreamSpecProcessor(
@@ -77,7 +90,8 @@ object LambdaSpec {
     implicit val lambdaProviderPropertiesFormat = Json.format[LambdaProviderProperties]
 
     implicit val inlineLambdaProviderFormat = Json.format[InlineLambdaProvider]
-    implicit val lambdaPropertiesFormat = Json.format[LambdaProperties]
+    implicit val laserLambdaPropertiesFormat = Json.format[LaserLambdaProperties]
+    implicit val awsLambdaPropertiesFormat = Json.format[AWSLambdaProperties]
 
     implicit val streamSpecProcessorFormat = Json.format[StreamSpecProcessor]
     implicit val streamSpecPropertiesFormat = Json.format[StreamSpecProperties]

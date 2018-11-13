@@ -496,7 +496,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
         "id" -> testLambda.id.toString,
         // "eventFilter" -> "38446d4f-9783-4ace-8c23-2410aa2b9fd2",
         "public" -> true,
-        "provider" -> Json.obj(                             
+        "provider" -> Json.obj(
           "id" -> testLambdaProvider.id.toString,
           "location" -> "",
           "href" -> "/foo/bar"
