@@ -17,6 +17,8 @@ import akka.stream.Materializer
 import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.libs.json.{JsDefined, JsObject, JsUndefined, Json}
 
+import cats.syntax.either._
+
 
 case class ActionInvokeEvent(
   lambdaId     : String,                          // ONLY required parameter, the lambda to invoke
@@ -42,6 +44,27 @@ class ProviderMethods @Inject()()(implicit actorSystem: ActorSystem, mat: Materi
   private[this] val log = Logger(this.getClass)
   
   val DEFAULT_PROTOCOL = "http"
+
+  def getHostConfig(provider: GestaltResourceInstance): Either[String,HostConfig] = {
+    for(
+      publicVars <- Either.fromOption(ProviderEnv.fromResource(provider).flatMap(_.public),
+       "Could not parse [properties.config.env] from provider");
+      isOverride = publicVars.get("SERVICE_HOST_OVERRIDE").isDefined;
+      _ = if (log.isDebugEnabled && isOverride) {
+        log.debug("Found OVERRIDES for host configuration")
+      };
+      hostVar = if(isOverride) "SERVICE_HOST_OVERRIDE" else "SERVICE_HOST";
+      portVar = if(isOverride) "SERVICE_PORT_OVERRIDE" else "SERVICE_PORT";
+      host <- Either.fromOption(publicVars.get(hostVar), s"Could not find host address variable for provider with ID '${provider.id}'");
+      port <- Either.fromOption(publicVars.get(portVar), s"Could not find port variable for provider with ID '${provider.id}'");
+      key <- Either.fromOption(publicVars.get("GESTALT_SECURITY_KEY"), "Missing 'GESTALT_SECURITY_KEY' variable.");
+      secret <- Either.fromOption(publicVars.get("GESTALT_SECURITY_SECRET"), "Missing 'GESTALT_SECURITY_SECRET' variable.");
+      protocol = if (isOverride) { publicVars.get("SERVICE_PROTOCOL_OVERRIDE") getOrElse DEFAULT_PROTOCOL }else { DEFAULT_PROTOCOL }
+    ) yield {
+      val url = "%s://%s:%s".format(protocol, host, port)
+      HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
+    }
+  }
   
   /**
    * Configure a JSON Web Client for communicating with Provider Services.
@@ -49,53 +72,9 @@ class ProviderMethods @Inject()()(implicit actorSystem: ActorSystem, mat: Materi
    * @param client the underlying web client to configure
    */  
   def configureWebClient(provider: GestaltResourceInstance, client: Option[WSClient] = None): JsonClient = {
-
-    val publicvars = {
-      for {
-        env <- ProviderEnv.fromResource(provider)
-        pub <- env.public
-      } yield pub
-    }
-    
-    val config = publicvars map { vs =>
-    
-      val isOverride = vs.get("SERVICE_HOST_OVERRIDE").isDefined
-      
-      if (log.isDebugEnabled && isOverride) {
-        log.debug("Found OVERRIDES for host configuration")
-      }
-      
-      val hostVar = if(isOverride) "SERVICE_HOST_OVERRIDE" else "SERVICE_HOST"
-      val portVar = if(isOverride) "SERVICE_PORT_OVERRIDE" else "SERVICE_PORT"
-      
-      val host = vs.get(hostVar) getOrElse {
-        throw new UnprocessableEntityException(
-          s"Could not find host address variable for provider with ID '${provider.id}'")
-      }
-      
-      val port = vs.get(portVar) getOrElse {
-        throw new UnprocessableEntityException(
-          s"Could not find port variable for provider with ID '${provider.id}'")
-      }
-      
-      val key = vs.get("GESTALT_SECURITY_KEY") getOrElse {
-        throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_KEY' variable.") 
-      }
-      
-      val secret = vs.get("GESTALT_SECURITY_SECRET") getOrElse {
-        throw new UnprocessableEntityException("Missing 'GESTALT_SECURITY_SECRET' variable.")
-      }    
-      
-      val protocol = {
-        if (isOverride) 
-          vs.get("SERVICE_PROTOCOL_OVERRIDE") getOrElse DEFAULT_PROTOCOL
-        else DEFAULT_PROTOCOL
-      }
-      val url = "%s://%s:%s".format(protocol, host, port)
-      HostConfig.make(new URL(url), creds = Some(BasicCredential(key, secret)))
-      
-    } getOrElse {
-      throw new UnprocessableEntityException("Could not parse [properties.config.env] from provider")
+    val config = getHostConfig(provider) match {
+      case Right(v) => v
+      case Left(errorMessage) => throw new UnprocessableEntityException(errorMessage)
     }
     
     log.debug("Configuring API Web Client with URL : " + config.url)

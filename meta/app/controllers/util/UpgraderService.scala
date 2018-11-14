@@ -118,7 +118,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         resource = provider.id,
         creator = creator,
         parent = None  // parent=None means no inheritance, granting entitlements only to creator
-      ).map(_.get)))
+      )))
       // load the provider to create the upgrader service container
       Seq(container) <- providerManager.triggerProvider(provider)
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
