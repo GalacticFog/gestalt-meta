@@ -60,7 +60,9 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
       configYaml  <- loadProviderConfiguration(provider)
       initialConfig = KubeConfig.parseYaml(configYaml, Map.empty)
       _ = log.info(s"parsed kubeconfig for provider ${provider.id}, authInfo of type ${initialConfig.currentContext.authInfo.getClass.getSimpleName}")
-      newAuth <- initialConfig.currentContext.authInfo match {
+      newAuth <- {
+
+      } match {
         case gcp: skuber.api.client.GcpAuth if whitelistedCmdPaths.contains(gcp.command)=>
           getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, gcp))
         case exec: skuber.api.client.ExecAuth if whitelistedCmdPaths.contains(exec.command) =>
@@ -80,6 +82,7 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
           currentContext = ctx
         )
       }
+      
     } yield skuber.api.client.init(finalconfig)
   }
 

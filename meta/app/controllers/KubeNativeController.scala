@@ -19,10 +19,12 @@ import com.google.inject.Inject
 import controllers.util.SecureController
 import javax.inject.Singleton
 import controllers.util.HandleExceptions
-
+import controllers.util.QueryString
+import akka.util.ByteString
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import play.api.mvc.{Action, AnyContent, Result}
+
 import services.SkuberFactory
 import skuber._
 import skuber.api.client._
@@ -44,11 +46,11 @@ class KubeNativeController @Inject()(
   
   private type Headers = Map[String, Seq[String]]
   private type YamlString = String
-
+  
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
   
-  import controllers.util.QueryString
+  
   /**
    * List objects in a Kubernetes cluster
    */
@@ -57,18 +59,18 @@ class KubeNativeController @Inject()(
       throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
     }
     
-    val namespace = QueryString.single[String](request.queryString, "namespace").getOrElse("default")
+    val namespace = namespaceOrDefault(request.queryString)
     
     skuberFactory.initializeKube(kube, namespace)
         .flatMap {  getResult(path, request, _) }
         .recover { case t: Throwable => HandleExceptions(t) }
   }
-
+  \`
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
-    println("KubeNativeController::getResult(...)")
-    val headers = request.headers.toMap
+    log.debug(s"getResult($path,_,_)")
     
-    println("HEADERS : " + headers)
+    val headers = request.headers.toMap
+
     val lists: PartialFunction[String, Future[Result]] = {
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
       case "pods"        => context.list[PodList].map(RenderObject(_, headers))
@@ -98,6 +100,7 @@ class KubeNativeController @Inject()(
     (lists orElse singles orElse notfound)(path)    
   }    
   
+  
   /**
    * Create objects in a Kubernetes cluster
    */
@@ -105,9 +108,11 @@ class KubeNativeController @Inject()(
     val kube = ResourceFactory.findById(provider) getOrElse {
       throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
     }    
+    val namespace = namespaceOrDefault(request.queryString)
     val headers = request.headers.toMap
+    
     (for {
-      context <- skuberFactory.initializeKube(kube, "default")
+      context <- skuberFactory.initializeKube(kube, namespace)
       body <- Future.fromTry(jsonPayload(request.body, request.contentType))
       createResponse <- parseKind(body) match {
         case None => Future(BadRequest("Malformed request. Cannot find object 'kind'"))
@@ -141,7 +146,6 @@ class KubeNativeController @Inject()(
     }
   }
 
-  import akka.util.ByteString
   /**
    * Attempt to parse request.body to a JsValue
    */
@@ -153,7 +157,8 @@ class KubeNativeController @Inject()(
         if (isJsonType(content)) Try(payload.asJson.get)
         else if (isYamlType(content)) {
           //
-          // TODO: What could go wrong blindly packing bytes into a string a parsing to YAML??
+          // TODO: What could go wrong blindly packing bytes into a string and parsing to YAML???
+          // :)
           //
           val byteString = {
             payload.asRaw.get.asBytes().get.decodeString(ByteString.UTF_8)
@@ -169,7 +174,7 @@ class KubeNativeController @Inject()(
    * Create an object in Kubernetes
    */
   private[controllers] def createKubeObject[B <: ObjectResource](payload: JsValue, context: RequestContext)(
-      implicit fmt: Format[B], rd: ResourceDefinition[B]/*, kind: ObjKind[B]*/): Future[B] = {
+      implicit fmt: Format[B], rd: ResourceDefinition[B]): Future[B] = {
     
     KubeLoader.fromJsonValue[B](payload) match {
       case Failure(e) => throw e 
@@ -217,10 +222,21 @@ class KubeNativeController @Inject()(
   private[controllers] def parseKind(js: JsValue): Option[String] = 
      Js.find(js.as[JsObject], "/kind") map { _.as[String] }  
 
+  /**
+   * Parse given namespace from querystring - use literal 'default' if none given.
+   */
+  private[controllers] def namespaceOrDefault(qs: Map[String, Seq[String]]): String = {
+    QueryString.single[String](qs, "namespace").getOrElse {
+      log.info("No namespace given in query - using 'default'")
+      "default"
+    }
+  }  
+  
   private lazy val MimeYaml = List(
     "text/vnd.yaml", // <-- the default
     "text/yaml",
     "text/x-yaml",
+    "application/yaml",
     "application/x-yaml")
 
   private lazy val MimeJson = List(
@@ -228,7 +244,6 @@ class KubeNativeController @Inject()(
       "application/json")
 
   private def ContentType(mime: String) = "Content-Type" -> mime        
-
   private def isYamlType(mime: String) = MimeYaml.contains(mime.trim.toLowerCase)
   private def isJsonType(mime: String) = MimeJson.contains(mime.trim.toLowerCase)
 
@@ -240,7 +255,6 @@ class KubeNativeController @Inject()(
 
   private[controllers] def AcceptsJson(headers: Map[String, Seq[String]]): Boolean = 
     valueList(headers("Accept")).intersect(MimeJson).nonEmpty
-    
     
   private lazy val api = """
     | /*
