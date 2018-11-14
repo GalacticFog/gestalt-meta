@@ -6,6 +6,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import play.api.libs.json._
 
 import scala.concurrent.Future
+import scala.util.Try
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -16,9 +17,6 @@ import com.galacticfog.gestalt.data.ResourceState
 import com.galacticfog.gestalt.util.Either._
 import com.galacticfog.gestalt.meta.providers.faas._
 import cats.syntax.either._
-import cats.syntax.traverse._
-import cats.instances.try_._
-import cats.instances.vector._
 import javax.inject.Inject
 import play.api.Logger
 import play.api.mvc.RequestHeader
@@ -35,12 +33,14 @@ class LambdaMethods @Inject()(
   import LambdaSpec.Implicits._
 
   private def findLambdaProviderById(id: UUID): Either[String,GestaltResourceInstance] = {
+    log.debug("findLambdaProviderById")
     val opt = ResourceFactory.findById(ResourceIds.LambdaProvider, id) orElse
      ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, id)
     Either.fromOption(opt, s"No LambdaProvider or AWSLambdaProvider found with id `$id`")
   }
 
   private def getLambdaProvider(res: GestaltResourceInstance): Either[String,GestaltResourceInstance] = {
+    log.debug("getLambdaProvider")
     for {
       rawProperties <- Either.fromOption(res.properties, s"Properties not set on resource ${res.id}");
       rawProvider <- Either.fromOption(rawProperties.get("provider"), s"Provider id not set on resource ${res.id}");
@@ -50,6 +50,7 @@ class LambdaMethods @Inject()(
   }
 
   private def getProviderImpl[A](provider: GestaltResourceInstance): Either[String,FaasProviderImplementation[Future]] = {
+    log.debug("getProviderImpl")
     if(provider.typeId == migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID) {
       Right(awsLambdaProvider)
     }else if(provider.typeId == ResourceIds.LambdaProvider) {
@@ -85,8 +86,16 @@ class LambdaMethods @Inject()(
     (for(
       provider <- getLambdaProvider(r);
       impl <- getProviderImpl(provider)
-    ) yield impl.deleteLambda(provider, r)) valueOr { errorMessage =>
-      Future.failed(new RuntimeException(errorMessage))
+    ) yield {
+      impl.deleteLambda(provider, r) recoverWith { case throwable =>
+        throwable.printStackTrace()
+        log.error(s"Failed to delete backend lambda: ${throwable.getMessage()}")
+        Future.successful(())
+      }
+    }) valueOr { errorMessage =>
+      // Future.failed(new RuntimeException(errorMessage))
+      log.error(s"Failed to delete backend lambda: $errorMessage")
+      Future.successful(())
     }
   }
 
@@ -113,9 +122,11 @@ class LambdaMethods @Inject()(
     requestBody: JsValue,
     caller: AccountLike): Future[GestaltResourceInstance] = {
 
+    log.debug("createLambdaCommon")
+
     (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
-      typeId <- Either.fromOption(gri.resource_type, "Missing resource_type field");
+      typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
       parentLink = Json.toJson(toLink(parent, None));
       lambdaId = gri.id.getOrElse(UUID.randomUUID);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
@@ -130,21 +141,23 @@ class LambdaMethods @Inject()(
       instance = inputToInstance(org, payload);
       lambdaProvider <- getLambdaProvider(instance);
       impl <- getProviderImpl(lambdaProvider);
-      _ <- eitherFromTry(setNewResourceEntitlements(org, instance.id, caller, Some(parent.id)).toVector.sequence)
+      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(instance, Some(parent.id)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
     ) yield {
       impl.createLambda(lambdaProvider, instance) map { createdLambdaResource =>
         log.info("Successfully created Lambda in backend system.")
         setNewResourceEntitlements(org, createdLambdaResource.id, caller, Some(parent.id))
         
-        ResourceFactory.update(createdLambdaResource, caller.id)
+        ResourceFactory.update(createdLambdaResource, caller.id).get
         
         createdLambdaResource
       } recoverWith {
         case throwable: Throwable => {
+          throwable.printStackTrace()
           log.error(s"Error creating Lambda in backend system.")
           
-          log.error(s"Setting state of resource '${instance.id}' to FAILED")
-          ResourceFactory.update(instance.copy(state=ResourceState.id(ResourceStates.Failed)), caller.id)
+          log.error(s"Setting state of resource '${lambdaResource.id}' to FAILED")
+          ResourceFactory.update(lambdaResource.copy(state=ResourceState.id(ResourceStates.Failed)), caller.id).get
 
           Future.failed(throwable)
         }

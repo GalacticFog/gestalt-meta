@@ -516,7 +516,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
     )
     val metaLambdaWithEnts = metaLambda.flatMap(
       l => Try {
-        setNewResourceEntitlements(orgId, l.id, creator, Some(env.id)) map (_.get)
+        setNewResourceEntitlements(orgId, l.id, creator, Some(env.id))
       } map (_ => l)
     )
     val laserLambda = metaLambdaWithEnts.flatMap(toLaserLambda(_, lambdaProvider.id.toString))

@@ -8,6 +8,7 @@ import scala.concurrent.Future
 import javax.inject.Inject
 import play.api.libs.json._
 import play.api.libs.ws._
+import play.api.Logger
 import cats.syntax.either._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
@@ -22,7 +23,9 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
   import LambdaSpec.Implicits._
 
-  case class AWSLambdaUpdateResponse(
+  val log = Logger(this.getClass)
+
+  case class AWSLambdaConfiguration(
     description: Option[String],
     handler: String,
     runtime: String,
@@ -31,18 +34,20 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     role: String
   )
 
-  case class AWSLambdaCreateResponse(
+  case class AWSLambdaResponse(
     arn: String,
-    config: AWSLambdaUpdateResponse
+    config: AWSLambdaConfiguration
   )
 
-  implicit val formatAWSLambdaUpdateResponse = Json.format[AWSLambdaUpdateResponse]
-  implicit val formatAWSLambdaCreateResponse = Json.format[AWSLambdaCreateResponse]
+  implicit val formatAWSLambdaConfiguration = Json.format[AWSLambdaConfiguration]
+  implicit val formatAWSLambdaResponse = Json.format[AWSLambdaResponse]
 
   private def mkRequest(provider: GestaltResourceInstance): Either[String,String => WSRequest] = {
     providerMethods.getHostConfig(provider) map { hc =>
-      url => {
-        val request = ws.url(s"""${hc.protocol}://${hc.host}:${hc.port.getOrElse("80")}/${url.stripPrefix("/")}""")
+      path => {
+        val url = s"""${hc.protocol}://${hc.host}:${hc.port.getOrElse("80")}/${path.stripPrefix("/")}"""
+        log.debug(s"request to $url with ${hc.creds}")
+        val request = ws.url(url)
         hc.creds.foldLeft(request) { case(r, creds) => creds.addHeader(r) }
       }
     }
@@ -77,7 +82,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     for(
       handler <- lambda.code_type match {
         case "Package" => Right(lambda.handler)
-        case "Inline" if lambda.runtime.startsWith("nodejs") => Right(s"index:${lambda.handler}")
+        case "Inline" if lambda.runtime.startsWith("nodejs") => Right(s"index.${lambda.handler}")
         case _ => Left(s"${lambda.code_type} code type not supported with ${lambda.runtime} runtime")
       }
     ) yield {
@@ -134,9 +139,14 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
       ));
       _ <- checkResponseStatus(response);
       updatedResource <- (for(
-        response <- eitherFromJsResult(response.json.validate[AWSLambdaCreateResponse]);
+        response <- eitherFromJsResult(response.json.validate[AWSLambdaResponse]);
+        handler = lambda.code_type match {
+          case "Package" => response.config.handler
+          case "Inline" => response.config.handler.stripPrefix(s"index.")
+          case _ => ???
+        };
         updatedLambda = lambda.copy(
-          handler=response.config.handler,
+          handler=handler,
           runtime=response.config.runtime,
           timeout=response.config.timeout,
           memory=response.config.memorySize,
@@ -175,13 +185,18 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
           response <- req(s"/function/${resource.id}/configuration").put(config);
           _ <- checkResponseStatus(response);
           updatedResource <- (for(
-            response <- eitherFromJsResult(response.json.validate[AWSLambdaUpdateResponse]);
+            response <- eitherFromJsResult(response.json.validate[AWSLambdaResponse]);
+            handler = lambda.code_type match {
+              case "Package" => response.config.handler
+              case "Inline" => response.config.handler.stripPrefix(s"index.")
+              case _ => ???
+            };
             updatedLambda = lambda.copy(
-              handler=response.handler,
-              runtime=response.runtime,
-              timeout=response.timeout,
-              memory=response.memorySize,
-              aws_role_id=Some(response.role)
+              handler=handler,
+              runtime=response.config.runtime,
+              timeout=response.config.timeout,
+              memory=response.config.memorySize,
+              aws_role_id=Some(response.config.role)
             );
             r <- serializeResource[AWSLambdaProperties](resource, updatedLambda)
           ) yield r).liftTo[Future]
@@ -195,7 +210,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
   def deleteLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[Unit] = {
     for(
       req <- mkRequest(provider).liftTo[Future];
-      response <- req(s"/function/${resource.id}/").delete();
+      response <- req(s"/function/${resource.id}").delete();
       _ <- checkResponseStatus(response)
     ) yield ()
   }
