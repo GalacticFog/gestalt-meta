@@ -142,7 +142,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "name" -> testLambda.id.toString,
         "config" -> Json.obj(
           "description" -> "Managed by Gestalt Platform",
-          "handler" -> "index:blah",
+          "handler" -> "index.blah",
           "runtime" -> "nodejs8.10",
           "timeout" -> 30,
           "memorySize" -> 128,
@@ -201,12 +201,15 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         case (PUT, url) if url.endsWith("/configuration") => Action { request =>
           r = request.body.asJson.get
           Ok(Json.obj(
-            "description" -> "description",
-            "handler" -> "handler",
-            "runtime" -> "runtime",
-            "timeout" -> 30,
-            "memorySize" -> 128,
-            "role" -> "role arn"
+            "arn" -> "function arn",
+            "config" -> Json.obj(
+              "description" -> "description",
+              "handler" -> "handler",
+              "runtime" -> "runtime",
+              "timeout" -> 30,
+              "memorySize" -> 128,
+              "role" -> "role arn"
+            )
           ))
         }
       }
@@ -220,7 +223,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
       val _ = Await.result(awslProvider.updateLambda(testLambdaProvider, testLambda, patch), 10 .seconds)
       r must beEqualTo(Json.obj(
         "description" -> "Managed by Gestalt Platform",
-        "handler" -> "index:blahblah",
+        "handler" -> "index.blahblah",
         "runtime" -> "nodejs8.10",
         "timeout" -> 30,
         "memorySize" -> 64,
@@ -249,12 +252,15 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         case (PUT, url) if url.endsWith("/configuration") => Action { request =>
           r = request.body.asJson.get
           Ok(Json.obj(
-            "description" -> "description",
-            "handler" -> "handler",
-            "runtime" -> "runtime",
-            "timeout" -> 30,
-            "memorySize" -> 128,
-            "role" -> "role arn"
+            "arn" -> "function arn",
+            "config" -> Json.obj(
+              "description" -> "description",
+              "handler" -> "handler",
+              "runtime" -> "runtime",
+              "timeout" -> 30,
+              "memorySize" -> 128,
+              "role" -> "role arn"
+            )
           ))
         }
         case (PUT, url) if url.endsWith("/code") => Action { request =>
@@ -273,7 +279,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
       val updated = Await.result(awslProvider.updateLambda(testLambdaProvider, testLambda, patch), 10 .seconds)
       r must beEqualTo(Json.obj(
         "description" -> "Managed by Gestalt Platform",
-        "handler" -> "index:blahblah",
+        "handler" -> "index.blahblah",
         "runtime" -> "nodejs8.10",
         "timeout" -> 30,
         "memorySize" -> 64,
