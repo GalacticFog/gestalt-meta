@@ -121,7 +121,29 @@ package object util {
      .stripPrefix("\"")
      .stripSuffix("\"")
   }
+
+  /*
+  I don't see a way to correctly process this for example:
+  Map("a" -> JsString("true"))
+  -> stringmap ->
+  Map("a" -> "true")
+  -> unstringmap ->
+  Map("a" -> JsBool(true))
+  */
+  def unstringmap(m: Option[Hstore]): Option[Map[String,JsValue]] = {
+    m map { hstore =>
+      hstore map { case(k, v) =>
+        val trueV: JsValue = try {
+          Json.parse(v)
+        } catch {
+          case _: Throwable => JsString(v)
+        }
+        (k, trueV)
+      }
+    }
+  }
   
+  // this was truly not the best of ideas
   def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
     m map {
       _ mapValues { _ match {

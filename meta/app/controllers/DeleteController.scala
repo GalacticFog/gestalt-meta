@@ -51,12 +51,30 @@ class DeleteController @Inject()(
       ResourceIds.Org         -> deleteExternalOrg,
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
-      ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
-      ResourceIds.Secret      -> wrapUnauthedHandler(ContainerService.deleteSecretHandler(providerManager,_)),
-      migrations.V13.VOLUME_TYPE_ID -> wrapUnauthedHandler(ContainerService.deleteVolumeHandler(providerManager,_)),
-      ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
-      ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler),
-      ResourceIds.Lambda      -> wrapUnauthedHandler(lambdaMethods.deleteLambdaHandler)
+      ResourceIds.Container   -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(ContainerService.deleteContainerHandler(providerManager, resourceLike), 5 .seconds)) recoverWith {
+          case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+          case throwable => {
+            throwable.printStackTrace()
+            Failure(throwable)
+          }
+        }
+      },
+      ResourceIds.Secret      -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(ContainerService.deleteSecretHandler(providerManager, resourceLike), 10 .seconds))
+      },
+      migrations.V13.VOLUME_TYPE_ID -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(ContainerService.deleteVolumeHandler(providerManager, resourceLike), 10 .seconds))
+      },
+      ResourceIds.Api         -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(gatewayMethods.deleteApiHandler(resourceLike), 5 .seconds))
+      },
+      ResourceIds.ApiEndpoint -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(gatewayMethods.deleteEndpointHandler(resourceLike), 5 .seconds))
+      },
+      ResourceIds.Lambda      -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(lambdaMethods.deleteLambdaHandler(resourceLike), 5 .seconds))
+      }
     )
   )
 

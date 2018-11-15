@@ -6,7 +6,6 @@ import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.LaserEndpoint
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.{HostConfig, JsonClient, ResourceIds}
@@ -28,11 +27,15 @@ import play.api.mvc._
 import play.api.test.FakeRequest
 
 import scala.util.Success
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with JsonMatchers {
 
   implicit val actorSystem = ActorSystem("test-actor-system")
   implicit val mat = ActorMaterializer()
+
+  import GatewayMethods._
 
   object Ents extends com.galacticfog.gestalt.meta.auth.AuthorizationMethods with SecurityResources
 
@@ -766,12 +769,12 @@ class GatewayMethodsSpec extends GestaltProviderMocking with BeforeAll with Json
     }
 
     "delete against GatewayMethods deletes apis" in new TestApplication {
-      val Success(_) = gatewayMethods.deleteApiHandler(testApi)
+      Await.ready(gatewayMethods.deleteApiHandler(testApi), 5 .seconds)
       routeDeleteApi.timeCalled must_== 1
     }
 
     "delete against GatewayMethods deletes apiendpoints" in new TestApplication {
-      val Success(_) = gatewayMethods.deleteEndpointHandler(testEndpoint)
+      Await.ready(gatewayMethods.deleteEndpointHandler(testEndpoint), 5 .seconds)
       routeDeleteEndpoint.timeCalled must_== 1
     }
 
