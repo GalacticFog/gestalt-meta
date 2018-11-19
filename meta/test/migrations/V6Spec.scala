@@ -2,9 +2,8 @@ package migrations
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.MetaRepositoryOps
-import org.specs2.specification.core.Fragments
 import play.api.test.PlaySpecification
 
 class V6Spec extends PlaySpecification with MetaRepositoryOps {

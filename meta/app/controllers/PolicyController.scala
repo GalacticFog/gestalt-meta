@@ -2,33 +2,21 @@ package controllers
 
 import java.util.UUID
 
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.util.Failure
-import scala.util.Success
-import scala.util.Try
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import controllers.util._
-import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 
-import scala.concurrent.Future
-import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.keymgr.GestaltLicense
-import com.galacticfog.gestalt.keymgr.GestaltFeature
-import play.api.mvc.{RequestHeader, Result}
+import play.api.mvc.RequestHeader
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.i18n.MessagesApi
 import javax.inject.Singleton
-import com.galacticfog.gestalt.json.Js
-import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
 @Singleton
 class PolicyController @Inject()(messagesApi: MessagesApi,

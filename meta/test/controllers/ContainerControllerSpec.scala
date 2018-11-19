@@ -25,11 +25,11 @@ import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.{JsString, JsValue, Json}
-import play.api.test.{PlaySpecification, WithApplication}
+import play.api.test.PlaySpecification
 import services._
 
 import scala.concurrent.Future
-import scala.util.Success
+import scala.util.{Try,Success}
 
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
@@ -338,8 +338,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       containerService.getEnvironmentContainer("root", testEnv.id, testContainer.id) returns Future(Some(testContainer -> Seq.empty))
 
       // Set entitlements on new environment for container creation
-      val ces = Ents.setNewResourceEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
-      ces exists { _.isFailure } must beFalse
+      val ces = Try(Ents.setNewResourceEntitlements(dummyRootOrgId, testContainer.id, user, Some(testEnv.id)))
+      ces.isFailure must beFalse
 
       val path = s"/root/environments/${testEnv.id}/containers/${testContainer.id}"
       val request = fakeAuthRequest(GET, path, testCreds)
@@ -590,9 +590,9 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           "port_mappings" -> Json.toJson(testProps.port_mappings).toString,
           "network" -> testProps.network.get))).get
 
-      val ces = Ents.setNewResourceEntitlements(
-        dummyRootOrgId, testContainer.id, user, Some(testEnv.id))
-      ces exists { _.isFailure } must beFalse
+      val ces = Try(Ents.setNewResourceEntitlements(
+        dummyRootOrgId, testContainer.id, user, Some(testEnv.id)))
+      ces.isFailure must beFalse
 
       containerService.listEnvironmentContainers(
         "root",

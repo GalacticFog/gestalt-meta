@@ -5,16 +5,14 @@ import java.util.UUID
 import org.specs2.specification.BeforeAll
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser.LaserEndpoint
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.auth.Entitlement
-import controllers.util.{DataStore, GatewayMethods, GestaltProviderMocking, ProviderMethods}
+import controllers.util.{GatewayMethods, GestaltProviderMocking, ProviderMethods}
 import play.api.libs.json.{JsObject, Json}
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import org.mockito.{ArgumentCaptor, Matchers}
+import org.mockito.ArgumentCaptor
 import org.specs2.matcher.JsonMatchers
 import play.api.inject.bind
 
@@ -208,8 +206,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
     }
   }
 
-  import scala.util.{Try,Success,Failure}
-  import com.galacticfog.gestalt.json.Js
+  import scala.util.Success
   import com.galacticfog.gestalt.meta.auth.EntitlementProps
 
   "cascadeEntitlements" should {
@@ -539,7 +536,7 @@ class AuthorizationControllerSpec extends GestaltProviderMocking with BeforeAll 
       val endpointEnt = Entitlement.make(ResourceFactory.findDescendantEntitlements(createdEndpointId, "apiendpoint.invoke").head)
       val (expectedUserIds,expectedGroupIds) = endpointEnt.properties.identities.getOrElse(Seq.empty).partition(id => ResourceFactory.findById(ResourceIds.User, id).isDefined)
 
-      val invocationCaptor = ArgumentCaptor.forClass(classOf[LaserEndpoint])
+      val invocationCaptor = ArgumentCaptor.forClass(classOf[GatewayMethods.LaserEndpoint])
       there was one(mockGatewayMethods).createEndpoint(
         api = argThat( ((_:GestaltResourceInstance).id) ^^ be_==(testApi.id) ),
         metaEndpoint = argThat( ((_:GestaltResourceInstance).id) ^^ be_==(createdEndpointId) ),

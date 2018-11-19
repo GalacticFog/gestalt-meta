@@ -12,7 +12,6 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import play.api.test._
 import org.specs2.matcher.JsonMatchers
 import com.galacticfog.gestalt.patch._
-import com.galacticfog.gestalt.meta.api.ResourcePath
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.api.{GestaltAccount, GestaltAccountUpdate}
@@ -39,6 +38,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
       user.account.description
     )
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, userAccount.id, user, None)
+    ()
   }
 
   sequential

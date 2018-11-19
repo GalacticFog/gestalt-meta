@@ -2,29 +2,20 @@ package controllers.util
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.bootstrap.LineageInfo
-import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory}
-import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.genericactions.GenericProvider.RawInvocationResponse
-import com.galacticfog.gestalt.meta.genericactions.{GenericActionInvocation, GenericProvider, GenericProviderManager}
+import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import controllers.SecurityResources
 import org.junit.runner._
-import org.mockito.ArgumentCaptor
-import org.mockito.Matchers.{eq => meq}
-import org.specs2.matcher.ValueCheck.typedValueCheck
-import org.specs2.matcher.{JsonMatchers, Matcher}
+import org.mockito.Matchers.{eq => _}
+import org.specs2.matcher.JsonMatchers
 import org.specs2.runner._
 import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsObject, JsString, Json}
+import play.api.libs.json.JsObject
 import play.api.test.{PlaySpecification, WithApplication}
 import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
 
-import scala.concurrent.Future
 import scala.util.Success
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
@@ -48,6 +39,7 @@ class SearchSpec extends PlaySpecification with MetaRepositoryOps with JsonMatch
       user.account.description
     )
     Ents.setNewResourceEntitlements(dummyRootOrgId, dummyRootOrgId, user, None)
+    ()
   }
 
   abstract class testApp extends WithApplication(application(additionalBindings = Seq(

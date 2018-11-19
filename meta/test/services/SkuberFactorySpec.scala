@@ -14,7 +14,6 @@ import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}
 import play.api.test.PlaySpecification
 
-import scala.language.implicitConversions
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])

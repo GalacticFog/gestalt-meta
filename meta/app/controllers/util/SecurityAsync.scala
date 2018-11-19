@@ -3,9 +3,6 @@ package controllers.util
 import java.util.UUID
 
 import scala.concurrent.Future
-import scala.concurrent.Await
-import scala.concurrent.duration.DurationInt
-import scala.util.{Try,Success,Failure}
 
 
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
@@ -22,7 +19,6 @@ import com.galacticfog.gestalt.security.api.GestaltSecurityClient
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.api.{ResourceLink => SecurityLink}
 import play.api.Logger
-import scala.language.postfixOps
 
 import scala.concurrent.ExecutionContext
 

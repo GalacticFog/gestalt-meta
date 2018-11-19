@@ -13,7 +13,6 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import controllers.ResourceController
 import controllers.util.GestaltProviderMocking
-import javax.inject.Singleton
 
 import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.libs.json.{JsObject, Json}

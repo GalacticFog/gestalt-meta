@@ -8,6 +8,7 @@ class MetaDefaultAwsSdk extends AbstractModule with ScalaModule {
 
   override def configure(): Unit = {
     bind[AwsSdkFactory].to[DefaultAwsSdkFactory]
+    ()
   }
 
 }

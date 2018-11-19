@@ -5,14 +5,12 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data._
 import java.util.UUID
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 
 import _root_.play.api.libs.json._
 import _root_.play.api.Logger
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.errors._
-import controllers.util.JsonUtil
 import controllers.util.RequestOptions
 import scala.language.postfixOps
 import com.galacticfog.gestalt.json.Js
@@ -130,7 +128,7 @@ package object policy {
     
     log.debug("Test-Value : " + testValue)
     testValue.fold(missingProperty(rule, predicate)) { test =>
-      if (compareJson(test, predicate)) Right(Unit) else Left(predicate.toString)
+      if (compareJson(test, predicate)) Right(()) else Left(predicate.toString)
     }
 
   }
@@ -144,7 +142,7 @@ package object policy {
     
     if (isStrict(rule)) {
       Left(s"Missing property ${predicate.property}. The rule is strict.")
-    } else Right(Unit)
+    } else Right(())
   }
   
   
@@ -212,7 +210,7 @@ package object policy {
       value = (j \ "value").as[JsValue])
   }
   
-  def DebugLogRules(parentId: UUID, rules: Seq[GestaltResourceInstance]) {
+  def DebugLogRules(parentId: UUID, rules: Seq[GestaltResourceInstance]): Unit = {
     if (log.isDebugEnabled) {
       if (rules.isEmpty) log.debug(s"No Policy Rules found for resource $parentId")
       else {

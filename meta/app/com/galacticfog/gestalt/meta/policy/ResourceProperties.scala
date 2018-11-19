@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data.models._
 
-import scala.util.{Try,Success,Failure}
+import scala.util.Try
 
 import java.util.UUID
 import play.api.libs.json._

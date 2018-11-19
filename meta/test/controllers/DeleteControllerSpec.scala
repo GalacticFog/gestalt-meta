@@ -1,14 +1,10 @@
 package controllers
 
-import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.meta.api.ResourcePath
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
-import com.galacticfog.gestalt.patch._
 import controllers.util._
-import org.mockito.Matchers.{eq => meq}
+import org.mockito.Matchers.{eq => _}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.mock.Mockito
 import org.specs2.specification._
@@ -16,9 +12,7 @@ import play.api.inject.bind
 import play.api.libs.json._
 import play.api.test._
 
-import scala.util.{Success, Try}
-import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
-import com.galacticfog.gestalt.data.PostgresConfigManager
+import scala.util.Success
 import services.SkuberFactory
 
 import scala.concurrent.Future
@@ -113,7 +107,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use LambdaMethods for external lambda delete" in new TestApplication {
 
-      mockLambdaMethods.deleteLambdaHandler(any) returns Try(())
+      mockLambdaMethods.deleteLambdaHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -129,7 +123,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use GatewayMethods for external apiendpoint delete" in new TestApplication {
 
-      mockGatewayMethods.deleteEndpointHandler(any) returns Try(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -145,7 +139,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use GatewayMethods for external api delete" in new TestApplication {
 
-      mockGatewayMethods.deleteApiHandler(any) returns Try(())
+      mockGatewayMethods.deleteApiHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -161,9 +155,9 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "delete environment when provider configuration not found or k8s configuration is not correct" in new TestApplication {
       mockSkuberFactory.initializeKube(any, any)(any) returns Future.failed(new RuntimeException("provider configuration not found/k8s configuration is not correct"))
-      mockLambdaMethods.deleteLambdaHandler(any) returns Success(())
-      mockGatewayMethods.deleteApiHandler(any) returns Success(())
-      mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
+      mockLambdaMethods.deleteLambdaHandler(any) returns Future.successful(())
+      mockGatewayMethods.deleteApiHandler(any) returns Future.successful(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,

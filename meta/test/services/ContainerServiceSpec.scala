@@ -5,7 +5,7 @@ import java.util.UUID
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount, SecretMount}
-import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
+import com.galacticfog.gestalt.meta.api.ContainerStats.ContainerStateStat
 import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ConflictException}
 import com.galacticfog.gestalt.meta.api.output.Output
@@ -14,7 +14,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSp
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
-import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking, Security}
+import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
 import controllers.{ContainerController, DeleteController, SecurityResources}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}

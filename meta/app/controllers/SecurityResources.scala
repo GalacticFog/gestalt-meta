@@ -10,7 +10,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.galacticfog.gestalt.data.uuid2string
 import com.galacticfog.gestalt.meta.api.output.toOwnerLink
-import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup, GestaltSecurityClient, GestaltBasicCredentials}
+import com.galacticfog.gestalt.security.api.{GestaltOrg, GestaltAccount, GestaltGroup, GestaltBasicCredentials}
 import com.galacticfog.gestalt.security.api.{GestaltResource => SecurityResource}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 
@@ -253,7 +253,7 @@ class SecuritySync @Inject()(
     o.parent.fold(security.getRootOrg(identity).get.id)(_.id)
   }
 
-  private[controllers] def deleteResources(account: AuthAccountWithCreds, ids: Iterable[UUID], resType: String) = {
+  private[controllers] def deleteResources(account: AuthAccountWithCreds, ids: Iterable[UUID], resType: String): Unit = {
     for (id <- ids) {
       
       ResourceFactory.findById(id).fold {
@@ -267,7 +267,8 @@ class SecuritySync @Inject()(
          */
         deleteController.manager.delete(res, account,
           force = true, 
-          skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))  
+          skipExternals = Seq(ResourceIds.Org, ResourceIds.Group, ResourceIds.User))
+        ()
       }
     }
   }

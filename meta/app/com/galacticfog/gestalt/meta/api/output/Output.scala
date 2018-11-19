@@ -8,21 +8,18 @@ import scala.annotation.tailrec
 import com.galacticfog.gestalt.meta.api.sdk._
 
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.illegal
 
 import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.models.GestaltResourceType
 import com.galacticfog.gestalt.data.models.GestaltTypeProperty
 //import com.galacticfog.gestalt.data.models.ResourceOwnerLink
-import com.galacticfog.gestalt.data.uuid
 
 import OutputDatatypeHandlers._
 import play.api.libs.json._
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.errors._
 import scala.language.implicitConversions
 import play.api.Logger
 

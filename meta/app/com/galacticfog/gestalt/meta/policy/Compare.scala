@@ -2,7 +2,6 @@ package com.galacticfog.gestalt.meta.policy
 
 import play.api.Logger
 import play.api.libs.json._
-import controllers.util.JsonUtil
 
   trait Compare[A,B] {
     /**

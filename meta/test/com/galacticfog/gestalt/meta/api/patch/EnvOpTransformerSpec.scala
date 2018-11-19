@@ -1,18 +1,10 @@
 package com.galacticfog.gestalt.meta.api.patch
 
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
 
 import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Step
-import play.api.libs.json._
 
-import org.joda.time.DateTime
 
-import com.galacticfog.gestalt.patch._
 
 
 class EnvOpTransformerSpec extends Specification {

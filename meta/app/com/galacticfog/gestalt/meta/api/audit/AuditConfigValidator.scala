@@ -1,43 +1,42 @@
 package com.galacticfog.gestalt.meta.api.audit
 
-import scalaz._
-import Scalaz._
-
+import cats.Apply
+import cats.data._
+import cats.data.Validated._
 
 /**
  * Contains functions for validating META_AUDIT configuration values.
  */
 trait AuditConfigValidator {
   
-  private type EnvConfig = Map[String,String]
+  protected type EnvConfig = Map[String,String]
   
-  def checkEnabled(m: EnvConfig): Validation[String, EnvConfig] = {
-    if (m.get(Keys.Enabled).isEmpty) (m + (Keys.Enabled -> "false")).success
+  def checkEnabled(m: EnvConfig): Validated[String, EnvConfig] = {
+    if (m.get(Keys.Enabled).isEmpty) Valid((m + (Keys.Enabled -> "false")))
     else {
       val value = m(Keys.Enabled).trim.toLowerCase
-      if (value == "true" || value == "false") m.success
+      if (value == "true" || value == "false") Valid(m)
       else 
-        s"Invalid value for '${Keys.Enabled}'. expected: Boolean, found: '$value'".failure
+        Invalid(s"Invalid value for '${Keys.Enabled}'. expected: Boolean, found: '$value'")
     }
   }
   
-  def checkName(m: EnvConfig): Validation[String, EnvConfig] = {
-    if (m.get(Keys.Name).isDefined) m.success
-    else s"Must supply a value for '${Keys.Name}'".failure
+  def checkName(m: EnvConfig): Validated[String, EnvConfig] = {
+    if (m.get(Keys.Name).isDefined) Valid(m)
+    else Invalid(s"Must supply a value for '${Keys.Name}'")
   }
   
   import java.io.File
-  import scalaz.{Success, Failure}
 
   /*
    * 1. File location env var MUST be present
    * 2. File must exist, or directory parent of file must exist
    * 3. File must be writable
    */  
-  def checkFile(m: EnvConfig): Validation[String, EnvConfig] = {
+  def checkFile(m: EnvConfig): Validated[String, EnvConfig] = {
     
     if (m.get(Keys.LogFile).isEmpty)
-      s"Must supply a value for '${Keys.LogFile}'".failure
+      Invalid(s"Must supply a value for '${Keys.LogFile}'")
     else {
       val file: Option[File] = {
         val f = new File(m(Keys.LogFile))
@@ -56,24 +55,24 @@ trait AuditConfigValidator {
 
       file match {
         case None =>       // File must be valid location
-          s"Given audit-log file does not exist. found path: ${m(Keys.LogFile)}".failure
+          Invalid(s"Given audit-log file does not exist. found path: ${m(Keys.LogFile)}")
         case Some(f) => {  // File must be writable
-          if (f.canWrite) m.success 
-          else s"Given audit-log location is not writable".failure
+          if (f.canWrite) Valid(m) 
+          else Invalid(s"Given audit-log location is not writable")
         }
       }
     }
   }
     
-  def checkRolling(m: EnvConfig): Validation[String, EnvConfig] = {
+  def checkRolling(m: EnvConfig): Validated[String, EnvConfig] = {
     val accepted = Seq("year", "month", "day", "hour", "minute")
     
     if (m.get(Keys.LogRollover).isEmpty) 
-      m.success
+      Valid(m)
     else if (accepted.contains(m(Keys.LogRollover).trim.toLowerCase)) 
-      m.success
+      Valid(m)
     else 
-      s"Invalid log rollover value. Must be one of '${accepted.mkString(",")}'. found: '${m(Keys.LogRollover)}'".failure
+      Invalid(s"Invalid log rollover value. Must be one of '${accepted.mkString(",")}'. found: '${m(Keys.LogRollover)}'")
   }
   
   /**
@@ -90,10 +89,15 @@ trait AuditConfigValidator {
 
 object AuditEnv extends AuditConfigValidator {
 
-  def validate(m: Map[String, String]) = {
-    val checks = List(checkName _, checkFile _, checkRolling _)
-    checks.traverseU( _ andThen (_.toValidationNel) apply m) map {
-      case x :: _ => x
+  type VNS[A] = ValidatedNel[String,A]
+
+  def validate(m: Map[String, String]): ValidatedNel[String,EnvConfig] = {
+    Apply[VNS].map3(
+      checkName(m).toValidatedNel,
+      checkFile(m).toValidatedNel,
+      checkRolling(m).toValidatedNel
+    ) { case(a, b, c) =>
+      a ++ b ++ c
     }
   }
 }

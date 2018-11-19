@@ -2,7 +2,6 @@ package controllers.util.db
 
 
 import com.galacticfog.gestalt.data.util._
-import play.api.{ Logger => log }
 import play.api.libs.json._
 
 object EnvConfig extends JdbcConfiguration {

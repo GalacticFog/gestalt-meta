@@ -2,9 +2,7 @@ package com.galacticfog.gestalt.marathon
 
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadWriteOnce
-import com.galacticfog.gestalt.meta.api.VolumeSpec.HostPathVolume
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.test.ResourceScope

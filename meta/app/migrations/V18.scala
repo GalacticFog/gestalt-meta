@@ -3,7 +3,7 @@ package migrations
 
 import java.util.UUID
 import scala.util.{Either, Left, Right}
-import scala.util.{Try, Success, Failure}
+import scala.util.{Success, Failure}
 
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._

@@ -8,16 +8,14 @@ import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import controllers.util.{ContainerService, UpgraderService}
-import org.specs2.execute.{AsResult, Result}
 import org.specs2.matcher.JsonMatchers
-import org.specs2.specification.{BeforeAll, BeforeEach}
+import org.specs2.specification.BeforeAll
 import play.api.inject.{BindingKey, bind}
 import play.api.libs.json.Json
-import play.api.test.{PlaySpecification, WithApplication}
+import play.api.test.PlaySpecification
 import services.{MarathonClientFactory, SkuberFactory}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.util.Success
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 

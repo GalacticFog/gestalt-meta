@@ -2,6 +2,29 @@ import sbt._
 
 import com.typesafe.sbt.packager.docker._
 
+scalacOptions ++= Seq(
+  "-language:reflectiveCalls",
+  "-language:higherKinds",
+  "-deprecation",   // Emit warning and location for usages of deprecated APIs.
+  "-feature",       // Emit warning and location for usages of features that should be imported explicitly.
+  "-unchecked",      // Enable additional warnings where generated code depends on assumptions.
+  // "-Xlint",        // Enable recommended additional warnings.
+  "-Xfatal-warnings",
+  "-Ywarn-value-discard",
+  "-Ywarn-unused-import",
+  "-Yrangepos"//,
+  // "-P:silencer:globalFilters=[/meta/conf/routes]"    // see https://stackoverflow.com/a/52719562/8184313
+  // ^^ doesn't work
+)
+
+import CustomGenerator._
+
+import play.sbt.routes.RoutesKeys
+RoutesKeys.routesImport := Seq.empty
+routesGenerator := ModifiedInjectedRoutesGenerator    // see https://stackoverflow.com/a/53091906/8184313
+
+addCompilerPlugin(scalafixSemanticdb)
+
 name := """gestalt-meta"""
 
 version := "0.7.8"
@@ -61,7 +84,7 @@ javaOptions in Universal ++= Seq(
 javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
                             "-Dlogger.file=test/resources/logback-test.xml")
 
-scalacOptions in Test ++= Seq("-Yrangepos")
+val silencerVersion = "1.2.1"
 
 libraryDependencies ++= Seq(
   jdbc,
@@ -88,13 +111,13 @@ libraryDependencies ++= Seq(
   "com.spotify"      % "docker-client"                 % "8.7.1",
 
   "com.lihaoyi"     %% "scalatags"                     % "0.6.7",
-  "org.scala-lang"   % "scala-reflect"                 % "2.11.8",
-  "org.scala-lang"   % "scala-compiler"                % "2.11.8",
-  "org.scalaz"      %% "scalaz-core"                   % "7.1.12",
-  "org.typelevel"   %% "cats-core"                     % "1.0.1",
+  "org.typelevel"   %% "cats-core"                     % "1.4.0",
 
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",
+  
+  // compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
+  // "com.github.ghik" %% "silencer-lib" % silencerVersion % Provided,
 
   "de.leanovate.play-mockws"  %% "play-mockws"          % "2.5.1"       % Test,
   "com.typesafe.play"         %% "play-specs2"          % play.core.PlayVersion.current  % Test,
@@ -103,4 +126,4 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka"         %% "akka-testkit"         % "2.3.10"      % Test
 )
 
-routesGenerator := InjectedRoutesGenerator
+// routesGenerator := InjectedRoutesGenerator

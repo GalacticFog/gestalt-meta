@@ -11,7 +11,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
-import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
@@ -28,6 +27,7 @@ import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
+// import cats.syntax.either._
 
 @Singleton
 class ResourceController @Inject()( 
@@ -752,7 +752,7 @@ class ResourceController @Inject()(
   
   def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = Try {
     log.debug("Entered transformStreamSpec...")
-    val streams = lambdaMethods.getLambdaStreams(r, user).get
+    val streams = Await.result(lambdaMethods.getLambdaStreams(r, user), 5 .seconds)
     val oldprops = r.properties.get
     val newprops = oldprops ++ Map("streams" -> Json.stringify(streams))
     r.copy(properties = Some(newprops))

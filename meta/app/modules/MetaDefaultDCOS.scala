@@ -18,6 +18,7 @@ class MetaDefaultDCOS extends AbstractModule with ScalaModule with AkkaGuiceSupp
     bind[MarathonClientFactory].to[DefaultMarathonClientFactory]
     bindActor[DCOSAuthTokenActor](DCOSAuthTokenActor.name)
     bind[WSClient].annotatedWithName("permissive-wsclient").toProvider[InsecureClientProvider]
+    ()
   }
 
 }

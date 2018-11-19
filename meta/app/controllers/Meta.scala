@@ -1,7 +1,6 @@
 package controllers
 
 
-import java.net.URL
 import java.util.UUID
 
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
@@ -10,29 +9,24 @@ import scala.concurrent.Future
 import scala.util.Failure
 import scala.util.Success
 import scala.util.Try
-import com.galacticfog.gestalt.data.{CoVariant, EnvironmentType, ResourceFactory}
+import com.galacticfog.gestalt.data.{CoVariant, ResourceFactory}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.keymgr.{GestaltFeature, GestaltLicense}
-import com.galacticfog.gestalt.laser._
+import com.galacticfog.gestalt.keymgr.GestaltFeature
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.output.toLink
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-import com.galacticfog.gestalt.meta.api.sdk.HostConfig
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.sdk.Resources
 import com.galacticfog.gestalt.meta.api.sdk.resourceLinkFormat
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.json.JsonImports.linkFormat
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment, GestaltSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import controllers.util._
 import controllers.util.JsonUtil.replaceJsonPropValue
 import controllers.util.JsonUtil.replaceJsonProps
 import controllers.util.JsonUtil.str2js
 import controllers.util.JsonUtil.upsertProperty
-import controllers.util.db.EnvConfig
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
 
@@ -46,7 +40,6 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
 import com.galacticfog.gestalt.meta.actions._
-import play.api.Logger
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
@@ -339,7 +332,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
 //        out = getCurrentProvider(id, ps)
 //      } yield Ok(RenderSingle(out))
       
-      providerManager.processProvider(ProviderMap(p), forceLaunch = true) map { _ =>
+      providerManager.triggerProvider(p, forceLaunch = true) map { _ =>
         Accepted
       } recover {
         case e => {
@@ -352,7 +345,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
   
-  def load(rootProvider: ProviderMap, identity: UUID) = {
+  def load(rootProvider: GestaltResourceInstance, identity: UUID) = {
     log.info("Beginning provider initialization...")
     providerManager.loadProviders(Some(rootProvider)) map { seq =>
       
@@ -626,7 +619,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
           }
           case Success(newMetaProvider) => {
 
-            val results = load(ProviderMap(newMetaProvider), identity)
+            val results = load(newMetaProvider, identity)
 
             getCurrentProvider(targetid, results) map { newprovider =>
 

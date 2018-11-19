@@ -6,14 +6,11 @@ import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.google.common.collect.{ImmutableList, ImmutableMap}
 import com.spotify.docker.client.messages._
 import com.spotify.docker.client.messages.swarm.PortConfig.PortConfigPublishMode
 import com.spotify.docker.client.messages.swarm._
-import controllers.SecurityResources
 import controllers.util.GestaltSecurityMocking
-import org.junit.runner.RunWith
-import org.mockito.Matchers.{eq => meq}
+import org.mockito.Matchers.{eq => _}
 import org.specs2.matcher.JsonMatchers
 import org.specs2.specification._
 import play.api.libs.json.Json
@@ -26,7 +23,6 @@ import services.DockerService.DockerClient
 import scala.concurrent.duration._
 import scala.concurrent.Await.result
 import scala.util.Success
-import scala.language.postfixOps
 
 class DockerServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
 

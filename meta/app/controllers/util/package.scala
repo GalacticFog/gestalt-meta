@@ -8,20 +8,15 @@ import scala.util.{Failure, Success, Try}
 import play.api.{Logger => log}
 import play.api.mvc._
 import play.api.mvc.Results._
-import play.api.mvc.Action
-import play.api.mvc.Controller
 
 //import com.galacticfog.gestalt.meta.services._
 
-import com.galacticfog.gestalt.meta.api._
 
 import play.api.libs.json._
 
-import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data._
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => GestaltLink}
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceLink => _}
 import com.galacticfog.gestalt.meta.api.errors._
 
 import com.galacticfog.gestalt.security.api.errors.SecurityRESTException
@@ -126,7 +121,29 @@ package object util {
      .stripPrefix("\"")
      .stripSuffix("\"")
   }
+
+  /*
+  I don't see a way to correctly process this for example:
+  Map("a" -> JsString("true"))
+  -> stringmap ->
+  Map("a" -> "true")
+  -> unstringmap ->
+  Map("a" -> JsBool(true))
+  */
+  def unstringmap(m: Option[Hstore]): Option[Map[String,JsValue]] = {
+    m map { hstore =>
+      hstore map { case(k, v) =>
+        val trueV: JsValue = try {
+          Json.parse(v)
+        } catch {
+          case _: Throwable => JsString(v)
+        }
+        (k, trueV)
+      }
+    }
+  }
   
+  // this was truly not the best of ideas
   def stringmap(m: Option[Map[String,JsValue]]): Option[Hstore] = {
     m map {
       _ mapValues { _ match {
@@ -188,7 +205,6 @@ package object util {
   def okNotFoundNoResult(f: Try[Unit]) = new OkNotFoundNoResultHandler().handle( f )
  
   
-  import com.galacticfog.gestalt.meta.auth._
   import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
   
   /**

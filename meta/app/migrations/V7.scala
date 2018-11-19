@@ -8,22 +8,241 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.json._
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
 import com.google.inject.Inject
-import controllers.util.{AccountLike, JsonUtil, ProviderMethods, TypeMethods}
+import controllers.util.{AccountLike, JsonUtil, ProviderMethods}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.libs.json._
+import play.api.Logger
 
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
 
-class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration with AuthorizationMethods {
+trait LaserTransformationMigrationV7 {
+  // copying this here because I'm in serious doubt that we can keep this migration working while evolving
+  // the interface and behaviour of laser lambdas
+
+  private val log = Logger(this.getClass)
+  
+  implicit lazy val laserApiFormat = Json.format[LaserApi]
+  implicit lazy val laserEndpointFormat = Json.format[LaserEndpoint]
+  implicit lazy val laserArtifactDescriptionFormat = Json.format[LaserArtifactDescription]
+  implicit lazy val laserLambdaFormat = Json.format[LaserLambda]
+
+  sealed trait SecretMount {
+    def secret_id: UUID
+    def path: String
+    def mount_type: String
+  }
+
+  sealed trait VolumeSecretMount {
+    def path: String
+  }
+  case class SecretEnvMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount {
+    override def mount_type: String = "env"
+  }
+  case class SecretFileMount(secret_id: UUID, path: String, secret_key: String) extends SecretMount with VolumeSecretMount {
+    override def mount_type: String = "file"
+  }
+  case class SecretDirMount(secret_id: UUID, path: String) extends SecretMount with VolumeSecretMount {
+    override def mount_type: String = "directory"
+  }
+
+  val secretDirMountReads = Json.reads[SecretDirMount]
+  val secretFileMountReads = Json.reads[SecretFileMount]
+  val secretEnvMountReads = Json.reads[SecretEnvMount]
+
+  val secretDirMountWrites = Json.writes[SecretDirMount]
+  val secretFileMountWrites = Json.writes[SecretFileMount]
+  val secretEnvMountWrites = Json.writes[SecretEnvMount]
+
+  implicit val secretMountReads = new Reads[SecretMount] {
+    override def reads(json: JsValue): JsResult[SecretMount] = (json \ "mount_type").asOpt[String] match {
+      case Some("directory") => secretDirMountReads.reads(json)
+      case Some("file")      => secretFileMountReads.reads(json)
+      case Some("env")       => secretEnvMountReads.reads(json)
+      case _                 => JsError(__ \ "mount_type", "must be one of 'directory', 'file' or 'env'")
+    }
+  }
+
+  implicit val secretMountWrites = new Writes[SecretMount] {
+    override def writes(sm: SecretMount): JsValue = (sm match {
+      case env: SecretEnvMount   => secretEnvMountWrites.writes(env)
+      case file: SecretFileMount => secretFileMountWrites.writes(file)
+      case dir: SecretDirMount   => secretDirMountWrites.writes(dir)
+    }) ++ Json.obj("mount_type" -> sm.mount_type)
+  }
+
+  case class LaserApi(
+      id: Option[String],
+      name: String, 
+      gatewayId: Option[String] = None,
+      provider: Option[JsValue] = None, 
+      description: Option[String] = None)
+
+  case class LaserEndpoint( id: Option[String],
+                            apiId: String,
+                            upstreamUrl: String,
+                            path: Option[String],
+                            domain: Option[JsValue] = None,
+                            url: Option[String] = None,
+                            provider: Option[JsValue] = None,
+                            endpointInfo: Option[JsValue] = None,
+                            authentication: Option[JsValue] = None,
+                            methods: Option[Seq[String]] = None,
+                            plugins: Option[JsValue] = None,
+                            hosts: Option[Seq[String]] = None) {
+
+
+    def updateWithAuthorization(users: Seq[UUID], groups: Seq[UUID]): LaserEndpoint = {
+      val updated = for {
+        plugins <- this.plugins.flatMap(_.asOpt[JsObject])
+        secPlugin <- (plugins \ "gestaltSecurity").asOpt[JsObject]
+        if (secPlugin \ "enabled").asOpt[Boolean].contains(true)
+        updatedSecPlugin = secPlugin ++ Json.obj(
+          "users" -> users,
+          "groups" -> groups
+        )
+        updatedPlugins = plugins ++ Json.obj(
+          "gestaltSecurity" -> updatedSecPlugin
+        )
+      } yield this.copy(
+        plugins = Some(updatedPlugins)
+      )
+      updated getOrElse this
+    }
+
+  }
+
+  case class LaserArtifactDescription(
+      artifactUri: Option[String],
+      runtime: String,
+      handler: String,
+      memorySize: Int,
+      cpus: Double,
+      description: Option[String] = None,
+      compressed: Boolean = false,
+      publish: Boolean = false,
+      role: String = "none",
+      timeoutSecs: Int = 180,
+      code: Option[String] = None,
+      periodicInfo : Option[JsValue] = None,
+      headers : Map[String,String] = Map.empty,
+      computePathOverride: Option[String] = None,
+      secrets: Option[Seq[JsObject]] = None,
+      preWarm: Option[Int] = None,
+      isolate: Option[Boolean] = None)
+
+  case class LaserLambda(
+      id: Option[String], 
+      eventFilter: Option[String],
+      public: Boolean,
+      provider: Option[JsValue],
+      artifactDescription: LaserArtifactDescription)
+
+  def toLaserLambda(lambda: ResourceLike, providerId: UUID): Try[LaserLambda] = Try {
+
+    def maybeToBool(s: String): Option[Boolean] = Try{s.toBoolean}.toOption
+    def maybeToJson(s: String): Option[JsValue] = Try{Json.parse(s)}.toOption
+    def maybeToInt(s: String): Option[Int] = Try{s.toInt}.toOption
+
+    log.debug("toLaserLambda(...)")
+
+    val props = lambda.properties.getOrElse(Map.empty)
+
+    val handler = props.get("handler").getOrElse(throw new BadRequestException("Lambda was missing property: 'handler'"))
+    val isPublic = props.get("public").flatMap(maybeToBool) getOrElse false
+    val compressed = props.get("compressed").flatMap(maybeToBool) getOrElse false
+    val artifactUri = props.get("package_url")
+    val periodic = props.get("periodic_info").flatMap(maybeToJson)
+    val preWarm = props.get("pre_warm").flatMap(maybeToInt)
+
+    val secretMounts = (for {
+      secrets <- props.get("secrets")
+      mounts = Json.parse(secrets).as[Seq[SecretMount]]
+    } yield mounts).getOrElse(Seq.empty)
+
+    val secrets = secretMounts.map {
+      sm => ResourceFactory.findById(ResourceIds.Secret, sm.secret_id).getOrElse(throw new BadRequestException(s"Secret '${sm.secret_id}' does not exist'"))
+    }
+
+    val fqon = OrgCache.getFqon(lambda.orgId).getOrElse(
+      throw new ConflictException("Could not determine FQON for lambda.")
+    )
+
+    val lambdaProviderId = Try{(Json.parse(props("provider")) \ "id").as[UUID]}.getOrElse(
+      throw new BadRequestException(s"Lambda '${lambda.id}' did not have valid 'provider' block")
+    )
+    val lambdaProvider = ResourceFactory.findById(ResourceIds.LambdaProvider, lambdaProviderId).getOrElse(
+      throw new BadRequestException(s"Lambda '${lambda.id}' provider did not exist")
+    )
+
+    val lambdaCaasProvider = Try{(Json.parse(lambdaProvider.properties.get("config")) \ "env" \ "public" \ "META_COMPUTE_PROVIDER_ID").as[UUID]}.getOrElse(
+      throw new ConflictException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'")
+    )
+
+    val lambdaEnvironment = ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=lambda.id).getOrElse(
+      throw new ConflictException(s"Could not locate parent Environment for Secret '${lambda.id}'")
+    )
+
+    val secretProviders = secrets.map({
+      s => Try{(Json.parse(s.properties.get("provider")) \ "id").as[UUID]}.getOrElse(
+        throw new ConflictException(s"Secret '${s.id}' did not have valid 'provider' block")
+      )
+    }).distinct
+    if (secretProviders.length > 1) throw new BadRequestException("Secrets must have the same CaaS provider")
+    else if (secretProviders.headOption.exists(_ != lambdaCaasProvider)) throw new BadRequestException(s"Lambda '${lambda.id}' provider '${lambdaProviderId}' did not have same CaaS provider as mounted Secrets")
+
+    val secretEnvs = secrets.map({
+      s => ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=s.id).map(_.id).getOrElse(throw new ConflictException(s"Could not locate parent Environment for Secret '${s.id}'"))
+    }).distinct
+    if (secretEnvs.length > 1) throw new BadRequestException("All mounted Secrets must belong to the same Environment")
+    else if (secretEnvs.headOption.exists(_ != lambdaEnvironment.id)) throw new BadRequestException(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets")
+
+    val executorEnv = if (preWarm.exists(_ > 0)) Some(lambdaEnvironment.id) else secretEnvs.headOption
+
+    val computePath = executorEnv.map(controllers.routes.ContainerController.postContainer(fqon, _).url)
+
+    LaserLambda(
+      id          = Some(lambda.id.toString),
+      eventFilter = Some(UUID.randomUUID.toString),
+      public      = isPublic,
+      provider    = Some(Json.obj(
+        "id" -> providerId.toString,
+        "location" -> "",
+        "href" -> "/foo/bar"
+      )),
+      LaserArtifactDescription(
+        artifactUri = artifactUri,
+        description = props.get("description"),
+        handler     = handler,
+        memorySize  = props("memory").toInt,
+        cpus        = props("cpus").toDouble,
+        publish     = false,     // <- currently not used
+        role        = "none",    // <- currently not used
+        preWarm     = preWarm,
+        runtime     = props("runtime"),
+        timeoutSecs = props("timeout").toInt,
+        compressed  = compressed,
+        periodicInfo= periodic,
+        code        = props.get("code"),
+        headers     = props.get("headers").flatMap(maybeToJson).map(_.as[Map[String,String]]) getOrElse Map.empty,
+        isolate     = props.get("isolate").flatMap(maybeToBool),
+        secrets = Some(secretMounts.map(Json.toJson(_).as[JsObject])),
+        computePathOverride = computePath
+      )
+    )
+  }
+
+}
+
+class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration
+ with AuthorizationMethods with LaserTransformationMigrationV7 {
 
   import V7._
 
@@ -297,7 +516,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
     )
     val metaLambdaWithEnts = metaLambda.flatMap(
       l => Try {
-        setNewResourceEntitlements(orgId, l.id, creator, Some(env.id)) map (_.get)
+        setNewResourceEntitlements(orgId, l.id, creator, Some(env.id))
       } map (_ => l)
     )
     val laserLambda = metaLambdaWithEnts.flatMap(toLaserLambda(_, lambdaProvider.id.toString))

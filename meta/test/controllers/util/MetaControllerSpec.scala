@@ -3,22 +3,13 @@ package controllers.util
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
-import org.specs2.mutable._
-import org.specs2.specification._
-import org.specs2.specification.Step
 import play.api.libs.json._
-import java.util.UUID
 
 import com.galacticfog.gestalt.meta.test._
-import com.mohiva.play.silhouette.impl.authenticators.DummyAuthenticator
 import play.api.test._
-import play.api.test.Helpers._
-import controllers.{Meta, PolicyController, SecurityResources}
+import controllers.{Meta, SecurityResources}
 import org.specs2.matcher.JsonMatchers
-import play.api.http.HttpVerbs
 
-import scala.util.Success
 
 class MetaControllerSpec  extends PlaySpecification with MetaRepositoryOps with JsonMatchers {
 

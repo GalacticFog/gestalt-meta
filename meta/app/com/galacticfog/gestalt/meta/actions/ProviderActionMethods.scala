@@ -3,7 +3,6 @@ package com.galacticfog.gestalt.meta.actions
 import java.util.UUID
 
 import scala.concurrent.Future
-import scala.language.implicitConversions
 import scala.util.Try
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance

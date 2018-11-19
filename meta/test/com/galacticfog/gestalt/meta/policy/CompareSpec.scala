@@ -1,14 +1,10 @@
 package com.galacticfog.gestalt.meta.policy
 
 
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.models._
 
 import org.specs2.mutable._
 import org.specs2.specification._
 
-import org.joda.time.DateTime
 
 import org.specs2.specification.Scope
 

@@ -1,34 +1,17 @@
 package controllers.util
 
-import play.api.http.HeaderNames
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-import scala.concurrent.Future
-import controllers.util.db._
-import play.api.Logger
 
-import scala.util.{Failure, Success}
-import scalikejdbc._
 import com.galacticfog.gestalt.data._
 
 import scala.util.Try
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import java.util.UUID
 
-import com.galacticfog.gestalt.data.models._
-import play.api.mvc.{Request, RequestHeader, Result}
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.api.output._
-import controllers.SecurityResources
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.Resource
-import com.galacticfog.gestalt.patch._
-import controllers.util.JsonUtil._
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
-import com.galacticfog.gestalt.meta.auth.ActionMethods
-import play.api.mvc.Result
 
 trait PolicyMethods {
   

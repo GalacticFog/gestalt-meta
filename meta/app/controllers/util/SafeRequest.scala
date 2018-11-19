@@ -27,7 +27,6 @@ import play.api.libs.json.Json
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.mvc.Result
 import com.galacticfog.gestalt.meta.validation._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceLabel
 
 
 abstract class Operation[T](val args: T) {

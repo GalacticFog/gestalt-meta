@@ -1,17 +1,8 @@
 package com.galacticfog.gestalt.meta.api.patch
 
 
-import play.api.libs.json._
-import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.data.util._
 import com.galacticfog.gestalt.data.models._
-import scala.util.{Try,Success,Failure}
-import java.util.UUID
-import com.galacticfog.gestalt.meta.api.output._
-import controllers.util.trimquotes
-import play.api.{ Logger => log }
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
+import scala.util.Try
 import com.galacticfog.gestalt.patch._
 
 
@@ -22,7 +13,7 @@ object PatchInstance {
    * 2.) Apply attribute ops
    * 3.) If there are property Ops, serialize resource and apply
    */
-  def applyPatch(r: GestaltResourceInstance, patch: PatchDocument): Try[ResourceLike] = {
+  def applyPatch(r: GestaltResourceInstance, patch: PatchDocument): Try[GestaltResourceInstance] = {
     for {
       (p,a) <- partitionOps(patch.ops)
       r1    <- AttributePatch.applyOps(r, a)

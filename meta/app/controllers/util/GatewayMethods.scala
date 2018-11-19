@@ -8,27 +8,19 @@ import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import scala.util.{Failure, Success, Try}
+import scala.concurrent.Future
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.laser._
 import com.galacticfog.gestalt.meta.api.errors._
 import play.api.Logger
 import play.api.libs.json._
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import com.google.inject.Inject
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth.Entitlement
-import com.galacticfog.gestalt.patch.PatchDocument
-import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import play.api.libs.ws.WSClient
-import play.api.mvc.RequestHeader
-
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import scala.language.postfixOps
 
 class GatewayMethods @Inject() ( ws: WSClient,
                                  providerMethods: ProviderMethods ) {
@@ -36,8 +28,6 @@ class GatewayMethods @Inject() ( ws: WSClient,
   import GatewayMethods._
 
   private[this] val log = Logger(this.getClass)
-
-  val GATEWAY_PROVIDER_TIMEOUT_MS = 5000
 
   def createApi(provider: GestaltResourceInstance,
                 resource: GestaltResourceInstance,
@@ -76,41 +66,37 @@ class GatewayMethods @Inject() ( ws: WSClient,
     }
   }
 
-  def deleteApiHandler( r: ResourceLike ): Try[Unit] = {
-    val fdelete = (for {
+  def deleteApiHandler( r: ResourceLike ): Future[Unit] = {
+    (for {
       provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))
       _ = log.info("Deleting API from GatewayManager...")
       delResult <-  client.delete(s"/apis/${r.id}")
-    } yield delResult) recover {
+    } yield {
+      log.debug("Response from GatewayManager: " + delResult.body)
+      ()
+    }) recover {
       case e: Throwable => {
         log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
         throw e
       }
     }
-    Try {
-      val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
-      log.debug("Response from GatewayManager: " + res.body)
-      ()
-    }
   }
 
-  def deleteEndpointHandler( r: ResourceLike ): Try[Unit] = {
-    val fdelete = (for {
+  def deleteEndpointHandler( r: ResourceLike ): Future[Unit] = {
+    (for {
       provider <- Future.fromTry(findGatewayProvider(r))
       client = providerMethods.configureWebClient(provider, Some(ws))
       _ = log.info("Deleting Endpoint from GatewayManager...")
-      fdelete <- client.delete(s"/endpoints/${r.id}")
-    } yield fdelete) recover {
+      delResult <- client.delete(s"/endpoints/${r.id}")
+    } yield {
+      log.debug("Response from GatewayManager: " + delResult.body)
+      ()
+    }) recover {
       case e: Throwable => {
         log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)
         throw e
       }
-    }
-    Try {
-      val res = Await.result(fdelete, GATEWAY_PROVIDER_TIMEOUT_MS millis)
-      log.debug("Response from GatewayManager: " + res.body)
-      ()
     }
   }
 
@@ -172,7 +158,7 @@ class GatewayMethods @Inject() ( ws: WSClient,
         case _   => Future.failed(new RuntimeException(s"received $response response from ApiGateway provider on endpoint GET"))
       } }
       gotEndpoint <- getReq.json.validate[LaserEndpoint] match {
-        case JsSuccess(ep, _) => Future.successful(ep)
+        case success: JsSuccess[LaserEndpoint] => Future.successful[LaserEndpoint](success.value)
         case e: JsError => Future.failed(new RuntimeException(
           "could not parse ApiEndpoint GET response from ApiGateway provider: " + e.toString
         ))
@@ -214,6 +200,49 @@ class GatewayMethods @Inject() ( ws: WSClient,
 }
 
 object GatewayMethods {
+
+  case class LaserApi(
+    id: Option[String],
+    name: String, 
+    gatewayId: Option[String] = None,
+    provider: Option[JsValue] = None, 
+    description: Option[String] = None)
+
+  case class LaserEndpoint( id: Option[String],
+                            apiId: String,
+                            upstreamUrl: String,
+                            path: Option[String],
+                            domain: Option[JsValue] = None,
+                            url: Option[String] = None,
+                            provider: Option[JsValue] = None,
+                            endpointInfo: Option[JsValue] = None,
+                            authentication: Option[JsValue] = None,
+                            methods: Option[Seq[String]] = None,
+                            plugins: Option[JsValue] = None,
+                            hosts: Option[Seq[String]] = None) {
+
+
+    def updateWithAuthorization(users: Seq[UUID], groups: Seq[UUID]): LaserEndpoint = {
+      val updated = for {
+        plugins <- this.plugins.flatMap(_.asOpt[JsObject])
+        secPlugin <- (plugins \ "gestaltSecurity").asOpt[JsObject]
+        if (secPlugin \ "enabled").asOpt[Boolean].contains(true)
+        updatedSecPlugin = secPlugin ++ Json.obj(
+          "users" -> users,
+          "groups" -> groups
+        )
+        updatedPlugins = plugins ++ Json.obj(
+          "gestaltSecurity" -> updatedSecPlugin
+        )
+      } yield this.copy(
+        plugins = Some(updatedPlugins)
+      )
+      updated getOrElse this
+    }
+  }
+
+  implicit val laserApiFormat: Format[LaserApi] = Json.format[LaserApi]
+  implicit val laserEndpointFormat: Format[LaserEndpoint] = Json.format[LaserEndpoint]
 
   private[this] val log = Logger(this.getClass)
 

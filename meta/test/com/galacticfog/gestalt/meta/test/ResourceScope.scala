@@ -6,7 +6,6 @@ import java.util.UUID
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.bootstrap.Bootstrap
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth._
@@ -45,7 +44,7 @@ trait ResourceScope extends Scope with Mockito {
   import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
   
   
-  def pristineDatabase() = {
+  def pristineDatabase(): Unit = {
     val dataStore = injector.instanceOf(classOf[DataStore])
     val database = injector.instanceOf(classOf[Database])
     val owner = ResourceOwnerLink(ResourceIds.User, adminUserId)
@@ -113,7 +112,10 @@ trait ResourceScope extends Scope with Mockito {
           new V15(),
           new V16(),
           new V17(),
-          new V18()
+          new V18(),
+          new V19(),
+          new V20(),
+          new V21()
         )
 
         val tries = migrations.map {
@@ -128,7 +130,9 @@ trait ResourceScope extends Scope with Mockito {
         }
       }
       _ <- Try { database.shutdown() }
-    } yield ()
+    } { () }
+    // for with yield == flatMap flatMap ... map
+    // for with no yield == flatMap flatMap ... foreach
   }
   
   

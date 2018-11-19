@@ -34,7 +34,6 @@ import skuber.{OwnerReference, PersistentVolumeClaim, Pod, Secret, Service}
 
 import scala.collection.JavaConversions._
 import scala.concurrent.Future
-import scala.language.implicitConversions
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
