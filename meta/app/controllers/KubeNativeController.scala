@@ -65,7 +65,7 @@ class KubeNativeController @Inject()(
         .flatMap {  getResult(path, request, _) }
         .recover { case t: Throwable => HandleExceptions(t) }
   }
-  \`
+
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
     
