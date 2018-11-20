@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.data.models._
 import controllers.util._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 
 import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
@@ -58,7 +59,14 @@ class LambdaController @Inject()(
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[play.api.mvc.Result] = {
 
-    lambdaMethods.createLambdaCommon(org, parent, request.body, request.identity) map { metaLambda =>
+    val action = request.getQueryString("action").getOrElse("create")
+    val actionResult = action match {
+      case "create" => lambdaMethods.createLambdaCommon(org, parent, request.body, request.identity)
+      case "import" => lambdaMethods.importLambdaCommon(org, parent, request.body, request.identity)
+      case _ => Future.failed(new BadRequestException(s"Unsupported action: $action"))
+    }
+
+    actionResult map { metaLambda =>
       Created(RenderSingle(resourceController.transformResource(metaLambda).get))
     } recoverWith { case throwable =>
       HandleExceptionsAsync(throwable)

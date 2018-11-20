@@ -129,10 +129,10 @@ class GatewayMethods @Inject() (
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(api.id)));
-      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, resource.id, caller, Some(api.id))))
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, created.id, caller, Some(api.id))))
     ) yield {
       log.info("Endpoint created in Meta... creating Endpoint in backend...")
-      impl.createEndpoint(provider, resource) map { updatedResource =>
+      impl.createEndpoint(provider, created) map { updatedResource =>
         ResourceFactory.update(updatedResource, caller.id).get
       } recoverWith { case e =>
         e.printStackTrace()

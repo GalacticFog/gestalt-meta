@@ -138,19 +138,71 @@ class LambdaMethods @Inject()(
         resource_type=Some(typeId),
         properties=Some(rawProperties ++ Map("parent" -> parentLink))
       );
-      instance = inputToInstance(org, payload);
-      lambdaProvider <- getLambdaProvider(instance);
+      resource = inputToInstance(org, payload);
+      lambdaProvider <- getLambdaProvider(resource);
       impl <- getProviderImpl(lambdaProvider);
-      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(instance, Some(parent.id)));
+      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parent.id)));
       _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
     ) yield {
-      impl.createLambda(lambdaProvider, instance) map { createdLambdaResource =>
+      impl.createLambda(lambdaProvider, lambdaResource) map { createdLambdaResource =>
         log.info("Successfully created Lambda in backend system.")
         setNewResourceEntitlements(org, createdLambdaResource.id, caller, Some(parent.id))
         
         ResourceFactory.update(createdLambdaResource, caller.id).get
         
         createdLambdaResource
+      } recoverWith {
+        case throwable: Throwable => {
+          throwable.printStackTrace()
+          log.error(s"Error creating Lambda in backend system.")
+          
+          log.error(s"Setting state of resource '${lambdaResource.id}' to FAILED")
+          ResourceFactory.update(lambdaResource.copy(state=ResourceState.id(ResourceStates.Failed)), caller.id).get
+
+          Future.failed(throwable)
+        }
+      }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to create Lambda in Meta: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
+    }
+  }
+
+  def importLambdaCommon(
+    org: UUID, 
+    parent: GestaltResourceInstance,
+    requestBody: JsValue,
+    caller: AccountLike): Future[GestaltResourceInstance] = {
+
+    log.debug("importLambdaCommon")
+
+    (for(
+      gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
+      typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
+      parentLink = Json.toJson(toLink(parent, None));
+      lambdaId = gri.id.getOrElse(UUID.randomUUID);
+      ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
+      rawProperties <- Either.fromOption(gri.properties, "Properties not set");
+      payload = gri.copy(
+        id=Some(lambdaId),
+        owner=gri.owner.orElse(Some(ownerLink)),
+        resource_state=gri.resource_state.orElse(Some(ResourceStates.Active)),
+        resource_type=Some(typeId),
+        properties=Some(rawProperties ++ Map("parent" -> parentLink))
+      );
+      resource = inputToInstance(org, payload);
+      lambdaProvider <- getLambdaProvider(resource);
+      impl <- getProviderImpl(lambdaProvider);
+      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parent.id)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
+    ) yield {
+      impl.importLambda(lambdaProvider, lambdaResource) map { importedLambdaResource =>
+        log.info("Found Lambda in backend system.")
+        setNewResourceEntitlements(org, importedLambdaResource.id, caller, Some(parent.id))
+        
+        ResourceFactory.update(importedLambdaResource, caller.id).get
+        
+        importedLambdaResource
       } recoverWith {
         case throwable: Throwable => {
           throwable.printStackTrace()
