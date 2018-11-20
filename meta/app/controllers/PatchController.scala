@@ -356,7 +356,7 @@ class PatchController @Inject()(
                             patch: PatchDocument,
                             user: AuthAccountWithCreds,
                             request: RequestHeader ): Future[GestaltResourceInstance] = {
-    gatewayMethods.updateEndpoint(PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance])
+    gatewayMethods.updateEndpoint(r, patch)
   }
 
   /*
