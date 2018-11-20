@@ -40,8 +40,14 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     config: AWSLambdaConfiguration
   )
 
+  case class AWSLambdaWithCodeResponse(
+    function: AWSLambdaResponse,
+    codeLocation: String
+  )
+
   implicit val formatAWSLambdaConfiguration = Json.format[AWSLambdaConfiguration]
   implicit val formatAWSLambdaResponse = Json.format[AWSLambdaResponse]
+  implicit val formatAWSLambdaWithCodeResponse = Json.format[AWSLambdaWithCodeResponse]
 
   private def mkRequest(provider: GestaltResourceInstance): Either[String,String => WSRequest] = {
     providerMethods.getHostConfig(provider) map { hc =>
@@ -140,6 +146,33 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
         r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda)
       ) yield r).liftTo[Future]
     ) yield updatedResource
+  }
+
+  def importLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
+    for(
+      req <- mkRequest(provider).liftTo[Future];
+      lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[Future];
+      // because ResourceSerde.serialize doesn't know how to remove fields:
+      _ <- (if(lambdaProperties.code == None) { Right(()) }else { Left("code field must be set to None") }).liftTo[Future];
+      functionArn <- Either.fromOption(lambdaProperties.aws_function_id, "aws_function_id must be set").liftTo[Future];
+      response <- req(s"/function/${functionArn}").get();
+      _ <- checkResponseStatus(response);
+      importedResource <- (for(
+        response <- eitherFromJsResult(response.json.validate[AWSLambdaWithCodeResponse]);
+        importedLambdaProperties = lambdaProperties.copy(
+          handler=response.function.config.handler,
+          runtime=response.function.config.runtime,
+          timeout=response.function.config.timeout,
+          memory=response.function.config.memorySize,
+          aws_role_id=Some(response.function.config.role),
+          aws_function_id=Some(response.function.arn),
+          code_type="Package",
+          package_url=Some(response.codeLocation),
+          code=None
+        );
+        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, importedLambdaProperties)
+      ) yield r).liftTo[Future]
+    ) yield importedResource
   }
 
   def updateLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {

@@ -7,4 +7,5 @@ trait FaasProviderImplementation[F[_]] {
   def createLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): F[GestaltResourceInstance]
   def updateLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance, patch: PatchDocument): F[GestaltResourceInstance]
   def deleteLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): F[Unit]
+  def importLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): F[GestaltResourceInstance]
 }

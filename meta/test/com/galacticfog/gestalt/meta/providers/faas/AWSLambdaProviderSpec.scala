@@ -194,6 +194,49 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
       res must beFailedTry.withThrowable[RuntimeException]("Failed to parse payload: /handler: error.path.missing")
     }
   }
+  "importLambda" should {
+    "import lambda" in new FakeLambdaScope {
+      val ws = MockWS {
+        case (GET, _) => Action { request =>
+          Ok(Json.obj(
+            "function" -> Json.obj(
+              "arn" -> "function arn",
+              "config" -> Json.obj(
+                "description" -> "description",
+                "handler" -> "handler",
+                "runtime" -> "runtime",
+                "timeout" -> 30,
+                "memorySize" -> 128,
+                "role" -> "role arn"
+              )
+            ),
+            "codeLocation" -> "path to zipped package"
+          ))
+        }
+      }
+      val awslProvider = new AWSLambdaProvider(ws, providerMethods)
+
+      val newTestLambda = testLambda.copy(
+        properties = Some(testLambda.properties.get ++ Map("aws_function_id" -> "function arn") -- Seq("code"))
+      )
+
+      val imported = Await.result(awslProvider.importLambda(testLambdaProvider, newTestLambda), 10 .seconds)
+
+      imported.properties must beEqualTo(Some(Map(
+        "provider" -> s"""{"id":"${testLambdaProvider.id.toString}"}""",
+        "public" -> "true",
+        "package_url" -> "path to zipped package",
+        "cpus" -> "0.1",
+        "code_type" -> "Package",
+        "timeout" -> "30",
+        "handler" -> "handler",
+        "runtime" -> "runtime",
+        "memory" -> "128",
+        "aws_role_id" -> "role arn",
+        "aws_function_id" -> "function arn"
+      )))
+    }
+  }
   "updateLambda" should {
     "update lambda configuration" in new FakeLambdaScope {
       var r: JsValue = null

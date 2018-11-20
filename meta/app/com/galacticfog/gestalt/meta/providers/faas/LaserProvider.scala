@@ -47,6 +47,10 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
     }
   }
 
+  def importLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
+    Future.failed(???)
+  }
+
   def updateLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {
     val client = providerMethods.configureWebClient(provider, Some(ws))
     (for(
