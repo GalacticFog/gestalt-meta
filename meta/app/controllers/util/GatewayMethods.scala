@@ -31,15 +31,24 @@ class GatewayMethods @Inject() (
 
   private[this] val log = Logger(this.getClass)
 
-  def getGwmProviderAndImpl(apiProperties: ApiProperties): Either[String,(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
-    val gmProvider = ResourceFactory.findById(ResourceIds.GatewayManager, apiProperties.provider.id)
-    val awsapiProvider = ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, apiProperties.provider.id)
+  def getGwmProviderAndImpl(providerId: UUID): Either[String,(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
+    val gmProvider = ResourceFactory.findById(ResourceIds.GatewayManager, providerId)
+    val awsapiProvider = ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, providerId)
     (gmProvider, awsapiProvider) match {
       case (Some(provider), None) => Right((provider, gwmImpl))
       case (None, Some(provider)) => Right((provider, awsapiImpl))
-      case (None, None) => Left(s"No provider found for ${apiProperties.provider.id}")
+      case (None, None) => Left(s"No provider found for ${providerId}")
       case _ => ???
     }
+  }
+
+  def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
+    for(
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).toOption;
+      pi <- getGwmProviderAndImpl(endpointProperties.provider.id).toOption;
+      (_, impl) = pi;
+      publicUrl <- impl.getPublicUrl(resource)
+    )yield publicUrl
   }
 
   def createApi(org: UUID, parentId: UUID, requestBody: JsValue,
@@ -59,7 +68,7 @@ class GatewayMethods @Inject() (
       );
       resource = inputToInstance(org, payload);
       apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
-      pi <- getGwmProviderAndImpl(apiProperties);
+      pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parentId)));
       _ <- eitherFromTry(Try(setNewResourceEntitlements(org, resource.id, caller, Some(parentId))))
@@ -81,7 +90,7 @@ class GatewayMethods @Inject() (
   def deleteApiHandler(resource: GestaltResourceInstance): Future[Unit] = {
     (for(
       apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
-      pi <- getGwmProviderAndImpl(apiProperties);
+      pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
       impl.deleteApi(provider, resource) recoverWith { case e: Throwable =>
@@ -117,7 +126,7 @@ class GatewayMethods @Inject() (
       );
       resource = inputToInstance(org, payload);
       endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
-      pi <- getGwmProviderAndImpl(apiProperties);
+      pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(api.id)));
       _ <- eitherFromTry(Try(setNewResourceEntitlements(org, resource.id, caller, Some(api.id))))
@@ -145,7 +154,7 @@ class GatewayMethods @Inject() (
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
        s"Could not find API parent of ApiEndpoint ${resource.id}");
       apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
-      pi <- getGwmProviderAndImpl(apiProperties);
+      pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
       log.info("Deleting Endpoint from backend...")
@@ -168,7 +177,7 @@ class GatewayMethods @Inject() (
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
        s"Could not find API parent of ApiEndpoint ${resource.id}");
       apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
-      pi <- getGwmProviderAndImpl(apiProperties);
+      pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
       impl.updateEndpoint(provider, resource, patch)// map { updatedResource =>

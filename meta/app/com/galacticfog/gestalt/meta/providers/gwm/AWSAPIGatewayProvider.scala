@@ -1,6 +1,7 @@
 package com.galacticfog.gestalt.meta.providers.gwm
 
 import scala.concurrent.Future
+import scala.util.Try
 import com.google.inject.Inject
 import play.api.libs.ws.WSClient
 import play.api.Logger
@@ -23,6 +24,25 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   import play.api.libs.concurrent.Execution.Implicits.defaultContext
   import GwmSpec.Implicits._
   import LambdaSpec.Implicits._
+
+  def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
+    val res = for(
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      provider <- Either.fromOption(ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, endpointProperties.provider.id),
+       s"Provider not found ${endpointProperties.provider.id}");
+      config <- eitherFromTry(Try(Json.parse(provider.properties.get("config"))));
+      awsRegion <- Either.fromOption((config \ "env" \ "public" \ "AWS_REGION").asOpt[String],
+       "AWS_REGION env var not defined on provider");
+      restApiId <- Either.fromOption(endpointProperties.container_port_name,
+       s"container_port_name (restApiId) field is missing on ${resource.id}")
+    ) yield s"https://${restApiId}.execute-api.${awsRegion}.amazonaws.com/default/path"
+
+    res.left.foreach { errorMessage =>
+      log.warn(s"Failed to get public url: ${errorMessage}")
+    }
+
+    res.toOption
+  }
   
   def createApi(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     log.debug("AWSAPIGateway.createApi is a noop")

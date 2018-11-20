@@ -276,6 +276,7 @@ class PatchControllerSpec extends PlaySpecification with GestaltProviderMocking 
     "use GatewayMethods for external apiendpoint patch" in new TestApplication {
 
       mockGatewayMethods.updateEndpoint(any, any) returns Future.successful(testEndpoint)
+      mockGatewayMethods.getPublicUrl(any) returns None
 
       val patchDoc = PatchDocument()
 
