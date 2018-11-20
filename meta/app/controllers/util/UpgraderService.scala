@@ -12,7 +12,6 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.providers.ProviderManager
-import com.galacticfog.gestalt.meta.providers.gwm.GatewayManagerProvider
 import javax.inject.{Inject, Named}
 import play.api.libs.json.{Format, JsObject, Json}
 
@@ -32,8 +31,7 @@ trait UpgraderService {
 
 class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configActor: ActorRef,
                                          providerManager: ProviderManager,
-                                         gatewayMethods: GatewayMethods,
-                                         gwmImpl: GatewayManagerProvider )
+                                         gatewayMethods: GatewayMethods)
   extends UpgraderService with JsonInput with AuthorizationMethods {
 
   import UpgraderService._
@@ -129,7 +127,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
       api <- gatewayMethods.createApi(rootId, env.id, apiJson, creator)
       endpointJson = getEndpointPayload(api, container, payload)
       endpoint <- gatewayMethods.createEndpoint(rootId, api, endpointJson, creator)
-      publicUrl = gwmImpl.getPublicUrl(endpoint)
+      publicUrl = gatewayMethods.getPublicUrl(endpoint)
       status <- updateStatus(
         creator = creator.id,
         newStatus = UpgradeStatus(

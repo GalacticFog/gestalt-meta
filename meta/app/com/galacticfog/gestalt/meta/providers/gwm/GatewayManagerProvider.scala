@@ -67,11 +67,11 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   implicit val laserApiFormat: Format[LaserApi] = Json.format[LaserApi]
   implicit val laserEndpointFormat: Format[LaserEndpoint] = Json.format[LaserEndpoint]
 
-  def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
+  def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
     def byHost(endpointProperties: ApiEndpointProperties): Either[String,String] = {
       val res = for {
-        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, endpointResource.id),
-         s"Api parent for ${endpointResource.id} not found")
+        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+         s"Api parent for ${resource.id} not found")
         maybePath = endpointProperties.resource.map { path => s"/${api.name}${path}" } getOrElse("")
         firstHost <- Either.fromOption(endpointProperties.hosts.flatMap(_.headOption), "hosts array must not be empty")
         location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
@@ -93,8 +93,8 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
 
     def byPath(endpointProperties: ApiEndpointProperties): Either[String,String] = {
       val res = for {
-        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, endpointResource.id),
-         s"Api parent for ${endpointResource.id} not found")
+        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+         s"Api parent for ${resource.id} not found")
         resourcePath <- Either.fromOption(endpointProperties.resource, "resource must be present")
         location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
         kongProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.KongGateway, UUID.fromString(location)),
@@ -115,7 +115,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       res
     }
 
-    (ResourceSerde.deserialize[ApiEndpointProperties](endpointResource) flatMap { ep =>
+    (ResourceSerde.deserialize[ApiEndpointProperties](resource) flatMap { ep =>
       if(ep.hosts.getOrElse(Seq()).size == 0) {
         byPath(ep) orElse byHost(ep)
       }else {

@@ -177,6 +177,9 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         
         Future.successful(testEndpoint)
       }
+      
+      mockGatewayMethods.getPublicUrl(any) answers { _ => Some("public url") }
+
       val status = await(upgrader.launchUpgrader(adminUser, UpgraderService.UpgradeLaunch(
         image = "galacticfog/upgrader-image:version",
         dbProviderId = dbProviderId,
@@ -195,7 +198,8 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
       status.active must beTrue
-      status.endpoint must beSome(s"https://test-kong.mycompany.com/${(apiArgs(2).asInstanceOf[JsValue] \ "name").as[String]}/original/path")
+      // status.endpoint must beSome(s"https://test-kong.mycompany.com/${(apiArgs(2).asInstanceOf[JsValue] \ "name").as[String]}/original/path")
+      status.endpoint must beSome("public url")
     }
 
     "delete provider on launch and delete config" in new TestApplication {

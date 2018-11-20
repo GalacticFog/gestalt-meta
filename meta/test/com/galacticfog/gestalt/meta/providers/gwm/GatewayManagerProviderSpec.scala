@@ -92,7 +92,12 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
           |  }
           |}""".stripMargin
     )))
-    val Success(testKongProvider) = createInstance(ResourceIds.KongGateway, "test-kong-provider", properties = None)
+    val Success(testKongProvider) = createInstance(ResourceIds.KongGateway, "test-kong-provider", properties = Some(Map(
+      "config" -> Json.obj(
+        "env" -> Json.obj("public" -> Json.obj("PUBLIC_URL_VHOST_0" -> "public url host")),
+        "external_protocol" -> "http"
+      ).toString
+    )))
     val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
       "public" -> "true",
       "cpus" -> "0.1",
@@ -164,7 +169,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
         "id" -> testGatewayProvider.id.toString,
         "locations" -> Json.arr(testKongProvider.id.toString)
       ).toString
-    )))
+    )), parent=Some(testApi.id))
     Ents.setNewResourceEntitlements(dummyRootOrgId, testEndpoint.id, user, Some(testApi.id))
 
     def newEndpoint(props: Map[String,String]) = {
@@ -174,7 +179,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
           "id" -> testGatewayProvider.id.toString,
           "locations" -> Json.arr(testKongProvider.id.toString)
         ).toString
-      ) ++ props))
+      ) ++ props), parent=Some(testApi.id))
       Ents.setNewResourceEntitlements(dummyRootOrgId, testEndpoint.id, user, Some(testApi.id))
       testEndpoint
     }
@@ -584,6 +589,12 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       val gwmProvider = new GatewayManagerProvider(ws, providerMethods)
 
       val _ = Await.result(gwmProvider.deleteEndpoint(testGatewayProvider, testEndpoint), 10 .seconds)
+    }
+
+    "getPublicUrl" in new TestApplication {
+      val gwmProvider = new GatewayManagerProvider(null, null)
+
+      gwmProvider.getPublicUrl(testEndpoint) must beEqualTo(Some("http://public url host/test-api/original/path"))
     }
   }
 }
