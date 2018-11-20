@@ -133,7 +133,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteEndpointHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id == testEndpoint.id )
+        argThat( (r: GestaltResourceInstance) => r.id == testEndpoint.id )
       )
     }
 
@@ -149,7 +149,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteApiHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
+        argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
       )
     }
 

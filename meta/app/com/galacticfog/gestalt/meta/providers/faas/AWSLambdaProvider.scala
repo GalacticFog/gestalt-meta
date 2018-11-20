@@ -16,7 +16,8 @@ import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.util.Either._
-import controllers.util.{ProviderMethods, unstringmap, stringmap}
+import com.galacticfog.gestalt.util.ResourceSerde
+import controllers.util.ProviderMethods
 
 class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) extends FaasProviderImplementation[Future] {
 
@@ -50,23 +51,6 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
         val request = ws.url(url)
         hc.creds.foldLeft(request) { case(r, creds) => creds.addHeader(r) }
       }
-    }
-  }
-
-  private def deserializeResource[A: Reads](resource: GestaltResourceInstance): Either[String,A] = {
-    for(
-      rawProperties <- Either.fromOption(resource.properties, s"Could not parse resource ${resource.id} with unset properties");
-      rawJsonProperties = unstringmap(Some(rawProperties)).get;
-      properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[A])
-    ) yield properties
-  }
-
-  private def serializeResource[A: Writes](resource: GestaltResourceInstance, properties: A): Either[String,GestaltResourceInstance] = {
-    for(
-      serializedProperties <- Either.fromOption(stringmap(Json.toJson(properties).asOpt[Map[String,JsValue]]),
-       s"Failed to serialize resource properties: $properties")
-    ) yield {
-      resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ serializedProperties))
     }
   }
 
@@ -127,8 +111,8 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
   def createLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
       req <- mkRequest(provider).liftTo[Future];
-      lambda <- deserializeResource[AWSLambdaProperties](resource).liftTo[Future];
-      lambdaProvider <- deserializeResource[LambdaProviderProperties](provider).liftTo[Future];
+      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[Future];
+      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[Future];
       config <- mkConfig(lambda, lambdaProvider).liftTo[Future];
       code <- mkCode(lambda, lambdaProvider);
       response <- req("/function/create").post(Json.obj(
@@ -153,7 +137,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
           aws_role_id=Some(response.config.role),
           aws_function_id=Some(response.arn)
         );
-        r <- serializeResource[AWSLambdaProperties](resource, updatedLambda)
+        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda)
       ) yield r).liftTo[Future]
     ) yield updatedResource
   }
@@ -164,8 +148,8 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     for(
       req <- mkRequest(provider).liftTo[Future];
       patched <- Future.fromTryST(PatchInstance.applyPatch(resource, patch));
-      lambda <- deserializeResource[AWSLambdaProperties](patched).liftTo[Future];
-      lambdaProvider <- deserializeResource[LambdaProviderProperties](provider).liftTo[Future];
+      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](patched).liftTo[Future];
+      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[Future];
       modifiesCode = patch exists { op => op.path == "/properties/code" };
       modifiesConfig = patch exists { op =>
         Seq("/properties/handler", "/properties/runtime", "/properties/timeout", "/properties/memory") contains op.path
@@ -198,7 +182,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
               memory=response.config.memorySize,
               aws_role_id=Some(response.config.role)
             );
-            r <- serializeResource[AWSLambdaProperties](resource, updatedLambda)
+            r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda)
           ) yield r).liftTo[Future]
         ) yield updatedResource
       }else {

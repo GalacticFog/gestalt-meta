@@ -1,419 +1,183 @@
 package controllers.util
 
 import java.util.UUID
-
-import com.galacticfog.gestalt.data
-import com.galacticfog.gestalt.meta.api.ContainerSpec
-import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
-
-import scala.util.{Failure, Success, Try}
+import scala.util.Try
 import scala.concurrent.Future
-import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
-import com.galacticfog.gestalt.data.uuid2string
-import com.galacticfog.gestalt.meta.api.errors._
 import play.api.Logger
 import play.api.libs.json._
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
-import com.google.inject.Inject
-import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.auth.Entitlement
 import play.api.libs.ws.WSClient
+import cats.syntax.either._
+import com.google.inject.Inject
+import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.{ResourceFactory,ResourceState}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.meta.api.patch.PatchInstance
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
+import com.galacticfog.gestalt.meta.api.output._
+import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.patch.PatchDocument
+import com.galacticfog.gestalt.meta.providers.gwm._
 
-class GatewayMethods @Inject() ( ws: WSClient,
-                                 providerMethods: ProviderMethods ) {
+class GatewayMethods @Inject() (
+  ws: WSClient,
+  providerMethods: ProviderMethods,
+  awsapiImpl: AWSAPIGatewayProvider,
+  gwmImpl: GatewayManagerProvider
+ ) extends AuthorizationMethods {
 
-  import GatewayMethods._
+  import play.api.libs.concurrent.Execution.Implicits.defaultContext
+  import GwmSpec.Implicits._
 
   private[this] val log = Logger(this.getClass)
 
-  def createApi(provider: GestaltResourceInstance,
-                resource: GestaltResourceInstance,
-                lapi: LaserApi): Future[GestaltResourceInstance] = {
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-    client.post("/apis", Option(Json.toJson(lapi))) flatMap { result =>
-      if (Seq(200, 201).contains(result.status)) {
-        log.info("Successfully created API in GatewayManager.")
-        Future.successful(resource)
-      } else {
-        log.error("Error creating API in GatewayManager.")
-        Future.failed(ApiError(result.status, result.body).throwable)
-      }
+  def getGwmProviderAndImpl(apiProperties: ApiProperties): Either[String,(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
+    val gmProvider = ResourceFactory.findById(ResourceIds.GatewayManager, apiProperties.provider.id)
+    val awsapiProvider = ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, apiProperties.provider.id)
+    (gmProvider, awsapiProvider) match {
+      case (Some(provider), None) => Right((provider, gwmImpl))
+      case (None, Some(provider)) => Right((provider, awsapiImpl))
+      case (None, None) => Left(s"No provider found for ${apiProperties.provider.id}")
+      case _ => ???
     }
   }
 
-  def createEndpoint( api: GestaltResourceInstance,
-                      metaEndpoint: GestaltResourceInstance,
-                      gatewayEndpoint: LaserEndpoint ): Future[GestaltResourceInstance] = {
-    val uri = s"/apis/${api.id}/endpoints"
-    val gatewayProvider = findGatewayProvider(api) getOrElse {
-      throw new UnprocessableEntityException(s"Cannot find gateway provider for API '${api.id} (${api.name})'")
-    }
-    val client = providerMethods.configureWebClient(gatewayProvider, Some(ws))
-    client.post(uri, Option(Json.toJson(gatewayEndpoint))) flatMap {
-      result =>
-        if (Seq(200, 201, 202).contains(result.status)) {
-          log.info("Successfully created Endpoint in GatewayManager.")
-          // we don't currently do anything with the data that comes back; a generic wrapper would potentially do something
-          Future.successful(metaEndpoint)
-        } else {
-          Future.failed(
-            ApiError(result.status, result.body).throwable
-          )
-        }
-    }
-  }
-
-  def deleteApiHandler( r: ResourceLike ): Future[Unit] = {
-    (for {
-      provider <- Future.fromTry(findGatewayProvider(r))
-      client = providerMethods.configureWebClient(provider, Some(ws))
-      _ = log.info("Deleting API from GatewayManager...")
-      delResult <-  client.delete(s"/apis/${r.id}")
-    } yield {
-      log.debug("Response from GatewayManager: " + delResult.body)
-      ()
-    }) recover {
-      case e: Throwable => {
-        log.error(s"Error deleting API from Gateway Manager: " + e.getMessage)
-        throw e
+  def createApi(org: UUID, parentId: UUID, requestBody: JsValue,
+   caller: AccountLike): Future[GestaltResourceInstance] = {
+    (for(
+      gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
+      typeId = gri.resource_type.getOrElse(ResourceIds.Api);
+      environment <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, parentId),
+       s"Environment with id ${parentId} not found");
+      ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
+      apiId = gri.id.getOrElse(UUID.randomUUID);
+      payload = gri.copy(
+        id=Some(apiId),
+        owner=gri.owner.orElse(Some(ownerLink)),
+        resource_state=gri.resource_state.orElse(Some(ResourceStates.Active)),
+        resource_type=Some(typeId)
+      );
+      resource = inputToInstance(org, payload);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
+      pi <- getGwmProviderAndImpl(apiProperties);
+      (provider, impl) = pi;
+      created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parentId)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, resource.id, caller, Some(parentId))))
+    ) yield {
+      impl.createApi(provider, created) recoverWith { case e =>
+        e.printStackTrace()
+        log.error(s"Error creating API in backend: ${e.getMessage()}")
+        log.error(s"Setting state of resource '${created.id}' to FAILED")
+        val failstate = ResourceState.id(ResourceStates.Failed)
+        ResourceFactory.update(created.copy(state = failstate), caller.id)
+        Future.failed(e)
       }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to create Api: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
 
-  def deleteEndpointHandler( r: ResourceLike ): Future[Unit] = {
-    (for {
-      provider <- Future.fromTry(findGatewayProvider(r))
-      client = providerMethods.configureWebClient(provider, Some(ws))
-      _ = log.info("Deleting Endpoint from GatewayManager...")
-      delResult <- client.delete(s"/endpoints/${r.id}")
-    } yield {
-      log.debug("Response from GatewayManager: " + delResult.body)
-      ()
-    }) recover {
-      case e: Throwable => {
-        log.error(s"Error deleting Endpoint from Gateway Manager: " + e.getMessage)
-        throw e
+  def deleteApiHandler(resource: GestaltResourceInstance): Future[Unit] = {
+    (for(
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
+      pi <- getGwmProviderAndImpl(apiProperties);
+      (provider, impl) = pi
+    ) yield {
+      impl.deleteApi(provider, resource) recoverWith { case e: Throwable =>
+        log.error(s"Error deleting API from backend: " + e.getMessage)
+        Future.failed(e)
       }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to delete Api: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
 
-  def updateEndpoint( endpoint: GestaltResourceInstance ): Future[GestaltResourceInstance] = {
-
-    val (patchedEndpoint,updatedUrl) = {
-      val newProps = endpoint.properties getOrElse Map.empty
-      val implementation_type: String   = newProps.get("implementation_type") getOrElse(throw new RuntimeException(s"could not locate current 'implementation_type' for ApiEndpoint ${endpoint.id}"))
-      val implementation_id_str: String = newProps.get("implementation_id")   getOrElse(throw new RuntimeException(s"could not locate current 'implementation_id' for ApiEndpoint ${endpoint.id}"))
-      val port_name: Option[String]     = newProps.get("container_port_name")
-      val synchronous: Boolean          = newProps.get("synchronous").flatMap(s => Try{s.toBoolean}.toOption) getOrElse true
-      val implementation_id             = Try{UUID.fromString(implementation_id_str)} getOrElse(throw new RuntimeException(s"'implementation_id' == '${implementation_id_str}' for ApiEndpoint ${endpoint.id} could not be parsed as a UUID"))
-      val newUpstreamUrl = mkUpstreamUrl(implementation_type, implementation_id, port_name, synchronous).get
-      (
-        endpoint.copy(
-          properties = Some(newProps ++ Map(
-            "upstream_url" -> newUpstreamUrl
-          ))
-        ),
-        newUpstreamUrl
-      )
-    }
-
-    val updatedProps = patchedEndpoint.properties.getOrElse(Map.empty)
-    val updatedPlugins = for {
-      str <- updatedProps.get("plugins")
-      js = Try{Json.parse(str)} match {
-        case Success(js) => js
-        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.plugins", t)
-      }
-    } yield js
-    val updatedMethods = for {
-      str <- updatedProps.get("methods")
-      js = Try{Json.parse(str)} match {
-        case Success(js) => js
-        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.methods", t)
-      }
-      methods <- js.asOpt[Seq[String]]
-    } yield methods
-    val updatedHosts = for {
-      str <- updatedProps.get("hosts")
-      js = Try{Json.parse(str)} match {
-        case Success(js) => js
-        case Failure(t) => throw new RuntimeException("unable to parse patched json for .properties.hosts", t)
-      }
-      hosts <- js.asOpt[Seq[String]].filter(_.nonEmpty)
-    } yield hosts
-
-    log.debug("Finding endpoint in gateway provider system...")
-    val parentApi = ResourceFactory.findParent(ResourceIds.Api, endpoint.id) getOrElse(throw new RuntimeException(s"Could not find API parent of ApiEndpoint ${endpoint.id}"))
-    val provider = findGatewayProvider(parentApi) getOrElse(throw new RuntimeException(s"Could not locate ApiGateway provider for parent API ${parentApi.id} of ApiEndpoint ${endpoint.id}"))
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-
-    for {
-      // Get api-endpoint from gestalt-api-gateway
-      getReq <- client.get(s"/endpoints/${endpoint.id}") flatMap { response => response.status match {
-        case 200 => Future.successful(response)
-        case 404 => Future.failed(new ResourceNotFoundException(s"No ApiEndpoint with ID '${endpoint.id}' was found in gestalt-api-gateway"))
-        case _   => Future.failed(new RuntimeException(s"received $response response from ApiGateway provider on endpoint GET"))
-      } }
-      gotEndpoint <- getReq.json.validate[LaserEndpoint] match {
-        case success: JsSuccess[LaserEndpoint] => Future.successful[LaserEndpoint](success.value)
-        case e: JsError => Future.failed(new RuntimeException(
-          "could not parse ApiEndpoint GET response from ApiGateway provider: " + e.toString
+  def createEndpoint(org: UUID, api: GestaltResourceInstance, requestBody: JsValue,
+   caller: AccountLike): Future[GestaltResourceInstance] = {
+    (for(
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
+      typeId = gri.resource_type.getOrElse(ResourceIds.ApiEndpoint);
+      ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
+      endpointId = gri.id.getOrElse(UUID.randomUUID);
+      rawProperties <- Either.fromOption(gri.properties, s"Properties not set on resource ${gri.id}");
+      _ = log.debug(s"rawProperties: $rawProperties");
+      payload = gri.copy(
+        id=Some(endpointId),
+        owner=gri.owner.orElse(Some(ownerLink)),
+        resource_state=gri.resource_state.orElse(Some(ResourceStates.Active)),
+        resource_type=Some(typeId),
+        properties=Some(rawProperties ++ Map(
+          "parent" -> Json.toJson(api.id),
+          "location_id" -> Json.toJson(apiProperties.provider.locations.headOption.getOrElse("")),
+          "provider" -> Json.toJson(apiProperties.provider)
         ))
+      );
+      resource = inputToInstance(org, payload);
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      pi <- getGwmProviderAndImpl(apiProperties);
+      (provider, impl) = pi;
+      created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(api.id)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, resource.id, caller, Some(api.id))))
+    ) yield {
+      log.info("Endpoint created in Meta... creating Endpoint in backend...")
+      impl.createEndpoint(provider, resource) map { updatedResource =>
+        ResourceFactory.update(updatedResource, caller.id).get
+      } recoverWith { case e =>
+        e.printStackTrace()
+        log.error(s"Error creating Endpoint in backend: ${e.getMessage()}")
+        log.error(s"Setting state of resource '${created.id}' to FAILED")
+        val failstate = ResourceState.id(ResourceStates.Failed)
+        ResourceFactory.update(created.copy(state = failstate), caller.id).get
+        Future.failed(e)
       }
-      _ = log.debug("Endpoint found in ApiGateway provider.")
-      newPlugins = updatedPlugins.flatMap(_.asOpt[JsObject]) orElse gotEndpoint.plugins.flatMap(_.asOpt[JsObject]) getOrElse Json.obj() match {
-        case ps if (ps \ "gestaltSecurity" \ "enabled").asOpt[Boolean].contains(true) =>
-          val gestaltPlugin = (ps \ "gestaltSecurity").as[JsObject]
-          val ids = ResourceFactory.findDescendantEntitlements(endpoint.id, "apiendpoint.invoke").headOption map Entitlement.make flatMap (_.properties.identities) getOrElse Seq.empty
-          val (userIds,groupIds) = ids.partition(id => ResourceFactory.findById(ResourceIds.User, id).isDefined)
-          val updatedGestaltPlugin = gestaltPlugin ++ Json.obj(
-            "users" -> userIds,
-            "groups" -> groupIds
-          )
-          ps ++ Json.obj("gestaltSecurity" -> updatedGestaltPlugin)
-        case ps =>
-          ps
-      }
-      patchedEP = gotEndpoint.copy(
-        path = updatedProps.get("resource"),
-        hosts = updatedHosts,
-        methods = updatedMethods orElse gotEndpoint.methods,
-        plugins = Some(newPlugins),
-        upstreamUrl = updatedUrl
-      )
-      _ = log.debug("Patched endpoint resource before PUT: " + Json.toJson(patchedEP))
-      updatedEndpointReq = client.put(s"/endpoints/${endpoint.id}", Some(Json.toJson(patchedEP)))
-      _ <- updatedEndpointReq flatMap { response => response.status match {
-        case 200 =>
-          log.info(s"Successfully PUT ApiEndpoint to ApiGateway provider.")
-          Future.successful(response)
-        case _   =>
-          log.error(s"Error PUTting Lambda in ApiGateway provider: ${response}")
-          Future.failed(new RuntimeException(s"Error updating Lambda in ApiGateway provider: ${response}"))
-      }}
-    } yield patchedEndpoint // we don't actually use the result from api-gateway, though we probably should
-  }
-
-}
-
-object GatewayMethods {
-
-  case class LaserApi(
-    id: Option[String],
-    name: String, 
-    gatewayId: Option[String] = None,
-    provider: Option[JsValue] = None, 
-    description: Option[String] = None)
-
-  case class LaserEndpoint( id: Option[String],
-                            apiId: String,
-                            upstreamUrl: String,
-                            path: Option[String],
-                            domain: Option[JsValue] = None,
-                            url: Option[String] = None,
-                            provider: Option[JsValue] = None,
-                            endpointInfo: Option[JsValue] = None,
-                            authentication: Option[JsValue] = None,
-                            methods: Option[Seq[String]] = None,
-                            plugins: Option[JsValue] = None,
-                            hosts: Option[Seq[String]] = None) {
-
-
-    def updateWithAuthorization(users: Seq[UUID], groups: Seq[UUID]): LaserEndpoint = {
-      val updated = for {
-        plugins <- this.plugins.flatMap(_.asOpt[JsObject])
-        secPlugin <- (plugins \ "gestaltSecurity").asOpt[JsObject]
-        if (secPlugin \ "enabled").asOpt[Boolean].contains(true)
-        updatedSecPlugin = secPlugin ++ Json.obj(
-          "users" -> users,
-          "groups" -> groups
-        )
-        updatedPlugins = plugins ++ Json.obj(
-          "gestaltSecurity" -> updatedSecPlugin
-        )
-      } yield this.copy(
-        plugins = Some(updatedPlugins)
-      )
-      updated getOrElse this
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to create Endpoint: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
 
-  implicit val laserApiFormat: Format[LaserApi] = Json.format[LaserApi]
-  implicit val laserEndpointFormat: Format[LaserEndpoint] = Json.format[LaserEndpoint]
-
-  private[this] val log = Logger(this.getClass)
-
-  def mkUpstreamUrl(implType: String, implId: UUID, maybePortName: Option[String], sync: Boolean): Try[String] = {
-    (implType,maybePortName.map(_.trim).filter(_.nonEmpty)) match {
-      case ("lambda",_) => {
-        log.debug("ENTERED LAMBDA CASE...")
-        log.debug("impltType : " + implType)
-        log.debug("implId: " + implId)
-        
-        ResourceFactory.findById(ResourceIds.Lambda, implId) match {
-          case None => Failure(new BadRequestException("no lambda with id matching ApiEndpoint \"implementation_id\""))
-          case Some(l) =>
-            val invoke = if (sync) "invokeSync" else "invoke"
-            for {
-              providerId <- Try{ UUID.fromString((Json.parse(l.properties.get("provider")) \ "id").as[String]) }
-              provider <- Try{ ResourceFactory.findById(providerId).get }
-              config <- Try{Json.parse(provider.properties.get("config")).as[JsObject]}
-              svcHost <- Js.find(config, "/env/public/SERVICE_HOST").map(_.as[String]) match {
-                case Some(host) => Success(host)
-                case None => Failure(new RuntimeException("Could not determine service host from env SERVICE_HOST lambda provider when creating upstream URL for lambda-bound ApiEndpoint"))
-              }
-              svcPort <- Js.find(config, "/env/public/SERVICE_PORT").map(_.as[String].toInt) match {
-                case Some(port) => Success(port)
-                case None => Failure(new RuntimeException("Could not determine service port from env SERVICE_PORT for lambda provider when creating upstream URL for lambda-bound ApiEndpoint"))
-              }
-            } yield s"http://${svcHost}:${svcPort}/lambdas/${l.id}/${invoke}"
-        }
+  def deleteEndpointHandler(resource: GestaltResourceInstance): Future[Unit] = {
+    (for(
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+       s"Could not find API parent of ApiEndpoint ${resource.id}");
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      pi <- getGwmProviderAndImpl(apiProperties);
+      (provider, impl) = pi
+    ) yield {
+      log.info("Deleting Endpoint from backend...")
+      impl.deleteEndpoint(provider, resource) recoverWith { case e: Throwable =>
+        e.printStackTrace()
+        log.error(s"Error deleting Endpoint from backend: " + e.getMessage)
+        Future.successful(())
       }
-      case ("container",None) =>
-        Failure(new BadRequestException("""ApiEndpoint with "implementation_type" == "container" must also provide non-empty "container_port_name""""))
-      case ("container",Some(portName)) =>
-        ResourceFactory.findById(ResourceIds.Container, implId) match {
-          case None => Failure(new BadRequestException("no container with id matching ApiEndpoint \"implementation_id\""))
-          case Some(c) => for {
-            spec <- ContainerSpec.fromResourceInstance(c)
-            (svcHost,svcPort) <- spec.port_mappings.find(pm => pm.name.contains(portName)) match {
-              case None =>
-                Failure(new BadRequestException("no port mapping with the specified name on the specified container"))
-              case Some(ContainerSpec.PortMapping(_,_,_,_,_,_,Some(true),Some(ServiceAddress(svcHost,svcPort,_,_)),_,_,_,_)) =>
-                Success((svcHost,svcPort))
-              case Some(_) =>
-                Failure(new BadRequestException("port mapping with the specified name was not exposed or did not contain service address"))
-            }
-          } yield s"http://${svcHost}:${svcPort}"
-        }
-      case _ => Failure(new BadRequestException("ApiEndpoint \"implementation_type\" must be \"container\" or \"lambda\""))
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to delete Endpoint: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
 
-  def toGatewayEndpoint(js: JsValue, api: UUID): Try[LaserEndpoint] = {
-    for {
-      json  <- Try{js.as[JsObject]}
-      apiId <- Try{Js.find(json, "/id").flatMap(_.asOpt[String]).getOrElse(
-        throw BadRequestException("ApiEndpoint did not contain \"id\"")
-      )}
-      path = Js.find(json, "/properties/resource").flatMap(_.asOpt[String])
-      hosts = Js.find(json, "/properties/hosts").flatMap(_.asOpt[Seq[String]]).filter(_.nonEmpty)
-      _ <- Try {
-        if (path.isEmpty && !hosts.exists(_.nonEmpty)) throw new BadRequestException("ApiEndpoint must contain exactly one of '/properties/resource' or non-empty '/properties/hosts'")
-      }
-      implId <- Try{ Js.find(json, "/properties/implementation_id").flatMap(_.asOpt[UUID]).getOrElse(
-        throw BadRequestException("ApiEndpoint did not contain properly-formatted \"/properties/implementation_id\"")
-      )}
-      sync = Js.find(json, "/properties/synchronous").flatMap(_.asOpt[Boolean]).getOrElse(true)
-      implType <- Try{ Js.find(json, "/properties/implementation_type")
-        .flatMap(_.asOpt[String])
-        .orElse(ResourceFactory.findById(implId).flatMap(_.typeId match {
-          case ResourceIds.Lambda => Some("lambda")
-          case ResourceIds.Container => Some("container")
-          case _ => None
-        }))
-        .getOrElse(
-          throw BadRequestException("ApiEndpoint did not contain valid \"/properties/implementation_type\"")
-        )
-      }
-      portName = Js.find(json, "/properties/container_port_name").flatMap(_.asOpt[String])
-      upstreamUrl <- mkUpstreamUrl(implType, implId, portName, sync)
-      methods = Js.find(json, "/properties/methods").flatMap(_.asOpt[Seq[String]])
-      plugins = Js.find(json, "/properties/plugins")
-    } yield LaserEndpoint(
-      id = Some(apiId),
-      apiId       = api.toString,
-      upstreamUrl = upstreamUrl,
-      path        = path,
-      methods     = methods,
-      plugins     = plugins,
-      hosts       = hosts
-    )
-  }
+  def updateEndpoint(originalResource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {
 
-  def findGatewayProvider(r: ResourceLike): Try[GestaltResourceInstance] = for {
-    apiProps <- r.properties.fold[Try[data.Hstore]] {
-      Failure{unprocessable("API/endpoint resource missing properties Hstore")}
-    }(Success(_))
-
-    providerProps <- apiProps.get("provider").fold[Try[JsObject]] {
-      Failure{unprocessable("API/endpoint resource missing required property [properties.provider]")}
-    }{
-      jsonStr => Try{ Json.parse(jsonStr).as[JsObject]}
+    (for(
+      resource <- eitherFromTry(PatchInstance.applyPatch(originalResource, patch));
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+       s"Could not find API parent of ApiEndpoint ${resource.id}");
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      pi <- getGwmProviderAndImpl(apiProperties);
+      (provider, impl) = pi
+    ) yield {
+      impl.updateEndpoint(provider, resource, patch)// map { updatedResource =>
+        // no access to caller id – this works fine as is though
+        // ResourceFactory.update(updatedResource, user.account.id).get
+      // }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to update Endpoint: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
-
-    pid <- Js.find(providerProps, "/id").fold[Try[UUID]] {
-      Failure{unprocessable("Missing required property [properties.provider.id]")}
-    }{
-      js => Try{ UUID.fromString(js.as[String]) }
-    }
-
-    _ = log.debug(s"Parsed provider ID from API/endpoint: " + pid)
-
-    provider <- ResourceFactory.findById(ResourceIds.GatewayManager, pid).fold[Try[GestaltResourceInstance]] {
-      Failure{unprocessable(s"GatewayManager provider with ID '$pid' not found")}
-    }(Success(_))
-  } yield provider
-
-  def toGatewayApi(api: JsObject, location: UUID) = {
-    val name = Js.find(api.as[JsObject], "/name") match {
-      case None => unprocessable("Could not find /name property in payload")
-      case Some(n) => n.as[String]
-    }
-
-    // Extract 'id' from payload, use to create backend system API payload
-    val id = Js.find(api.as[JsObject], "/id").get.as[String]
-    LaserApi(Some(UUID.fromString(id)), name,
-      provider = Some(Json.obj(
-        "id"       -> location.toString,
-        "location" -> location.toString)))
   }
-
-  def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
-    val byHost = for {
-      api <- ResourceFactory.findParent(ResourceIds.Api, endpointResource.id)
-      props <- endpointResource.properties
-      hostsStr <- props.get("hosts")
-      maybePath = props.get("resource").map("/" + api.name + _).getOrElse("")
-      firstHost <- Try{Json.parse(hostsStr)}.toOption.flatMap(_.asOpt[Seq[String]]).flatMap(_.headOption)
-      provider <- props.get("provider")
-      providerJson <- Try{Json.parse(provider)}.toOption
-      locations <- (providerJson \ "locations").asOpt[Seq[String]]
-      location <- locations.headOption
-      kongId <- Try{UUID.fromString(location)}.toOption
-      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
-      kpp <- kongProvider.properties
-      kpc <- kpp.get("config")
-      kpcJson <- Try{Json.parse(kpc)}.toOption
-      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
-      publicUrl = s"$kongProto://$firstHost$maybePath"
-    } yield publicUrl
-
-    lazy val byPath = for {
-      api <- ResourceFactory.findParent(ResourceIds.Api, endpointResource.id)
-      props <- endpointResource.properties
-      resourcePath <- props.get("resource")
-      provider <- props.get("provider")
-      providerJson <- Try{Json.parse(provider)}.toOption
-      locations <- (providerJson \ "locations").asOpt[Seq[String]]
-      location <- locations.headOption
-      kongId <- Try{UUID.fromString(location)}.toOption
-      kongProvider <- ResourceFactory.findById(ResourceIds.KongGateway, kongId)
-      kpp <- kongProvider.properties
-      kpc <- kpp.get("config")
-      kpcJson <- Try{Json.parse(kpc)}.toOption
-      kongVhost <- (kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String]
-      kongProto <- (kpcJson \ "external_protocol").asOpt[String]
-      publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
-    } yield publicUrl
-
-    byHost orElse byPath
-  }
-
-  private[controllers] def unprocessable(message: String) =
-    throw new UnprocessableEntityException(message)
-
 }
