@@ -12,6 +12,7 @@ import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.providers.ProviderManager
+import com.galacticfog.gestalt.meta.providers.gwm.GatewayManagerProvider
 import javax.inject.{Inject, Named}
 import play.api.libs.json.{Format, JsObject, Json}
 
@@ -31,7 +32,8 @@ trait UpgraderService {
 
 class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configActor: ActorRef,
                                          providerManager: ProviderManager,
-                                         gatewayMethods: GatewayMethods )
+                                         gatewayMethods: GatewayMethods,
+                                         gwmImpl: GatewayManagerProvider )
   extends UpgraderService with JsonInput with AuthorizationMethods {
 
   import UpgraderService._
@@ -124,33 +126,10 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
       // create the API
       apiJson = getApiPayload(payload)
-      apiProto <- Future.fromTry(
-        jsonToResource(rootId, creator, apiJson, Some(ResourceIds.Api))
-      )
-      apiNative <- Future.fromTry(Try(
-        GatewayMethods.toGatewayApi(apiJson, payload.kongProviderId)
-      ))
-      metaApi <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
-        r = apiProto,
-        parentId = Some(env.id)
-      ))
-      createdApi <- gatewayMethods.createApi(gwmProvider, metaApi, apiNative)
-      // create the Endpoint
-      endpointJson = getEndpointPayload(createdApi, container, payload)
-      endpointProto <- Future.fromTry(
-        jsonToResource(rootId, creator, endpointJson, Some(ResourceIds.ApiEndpoint))
-      )
-      endpointNative <- Future.fromTry(GatewayMethods.toGatewayEndpoint(endpointJson, createdApi.id))
-      metaEndpoint <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
-        r = endpointProto,
-        parentId = Some(createdApi.id)
-      ))
-      createdEndpoint <- gatewayMethods.createEndpoint(
-        api = createdApi,
-        metaEndpoint = metaEndpoint,
-        gatewayEndpoint = endpointNative
-      )
-      publicUrl = GatewayMethods.getPublicUrl(createdEndpoint)
+      api <- gatewayMethods.createApi(rootId, env.id, apiJson, creator)
+      endpointJson = getEndpointPayload(api, container, payload)
+      endpoint <- gatewayMethods.createEndpoint(rootId, api, endpointJson, creator)
+      publicUrl = gwmImpl.getPublicUrl(endpoint)
       status <- updateStatus(
         creator = creator.id,
         newStatus = UpgradeStatus(
