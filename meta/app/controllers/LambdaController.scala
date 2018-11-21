@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 
 import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.galacticfog.tracking.FaasTrackingProvider
 import com.google.inject.Inject
 import play.api.i18n.MessagesApi
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
@@ -25,7 +26,8 @@ class LambdaController @Inject()(
     messagesApi: MessagesApi,
     resourceController: ResourceController,
     lambdaMethods: LambdaMethods,
-    sec: GestaltFrameworkSecurity)
+    sec: GestaltFrameworkSecurity,
+    trackingProvider: FaasTrackingProvider)
       extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with JsonInput {
   
   /*
@@ -67,6 +69,7 @@ class LambdaController @Inject()(
     }
 
     actionResult map { metaLambda =>
+      trackingProvider.reportCreate(metaLambda.id.toString)
       Created(RenderSingle(resourceController.transformResource(metaLambda).get))
     } recoverWith { case throwable =>
       HandleExceptionsAsync(throwable)

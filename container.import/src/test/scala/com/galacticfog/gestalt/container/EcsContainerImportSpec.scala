@@ -2,11 +2,11 @@ package com.galacticfog.gestalt.container
 
 import scala.util.Success
 import scala.collection.JavaConversions._
-import org.specs2.specification.{BeforeAfterEach,BeforeAll}
+import org.specs2.specification.{BeforeAfterEach, BeforeAll}
 import mockws.MockWS
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
-import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps,WithDb}
+import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, WithDb}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
@@ -25,6 +25,7 @@ import modules._
 import com.amazonaws.services.ecs.AmazonECS
 import com.amazonaws.services.ecs.model._
 import com.galacticfog.gestalt.integrations.ecs._
+import com.galacticfog.tracking.{CaasTrackingProvider, FaasTrackingProvider}
 
 class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 
@@ -56,7 +57,9 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
       bind[MetaHealth].toInstance(mock[MetaHealth]),
       bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
-      bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
+      bind[GenericResourceMethods].to[GenericResourceMethodsImpl],
+      bind[CaasTrackingProvider].toInstance(mock[CaasTrackingProvider]),
+      bind[FaasTrackingProvider].toInstance(mock[FaasTrackingProvider])
     )
 
     new GuiceApplicationBuilder()

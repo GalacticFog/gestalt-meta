@@ -33,6 +33,7 @@ import scala.util.{Try,Success}
 
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
+import com.galacticfog.tracking.CaasTrackingProvider
 
 
 
@@ -82,7 +83,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
       bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods]),
-      bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
+      bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager),
+      bind[CaasTrackingProvider].toInstance(mock[CaasTrackingProvider])
     )
 
     new GuiceApplicationBuilder()
