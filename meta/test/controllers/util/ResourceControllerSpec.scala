@@ -31,7 +31,6 @@ import org.specs2.specification.Tables
 
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
-import com.galacticfog.tracking.{CaasTrackingProvider, FaasTrackingProvider}
 
 @RunWith(classOf[JUnitRunner])
 class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps with JsonMatchers with Tables {
@@ -73,9 +72,7 @@ class ResourceControllerSpec extends PlaySpecification with MetaRepositoryOps wi
     bind[SkuberFactory].toInstance(mock[SkuberFactory]),
     bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
     bind[Security].toInstance(mock[Security]),
-    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager),
-    bind[CaasTrackingProvider].toInstance(mock[CaasTrackingProvider]),
-    bind[FaasTrackingProvider].toInstance(mock[FaasTrackingProvider])
+    bind(classOf[GestaltConfigurationManager]).toInstance(PostgresConfigManager)
   )))
 
   trait testApp extends testAppMocks {

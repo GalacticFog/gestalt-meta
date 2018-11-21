@@ -25,7 +25,6 @@ import modules._
 import com.amazonaws.services.ecs.AmazonECS
 import com.amazonaws.services.ecs.model._
 import com.galacticfog.gestalt.integrations.ecs._
-import com.galacticfog.tracking.{CaasTrackingProvider, FaasTrackingProvider}
 
 class EcsContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 
@@ -57,9 +56,7 @@ class EcsContainerImportSpec extends PlaySpecification with BeforeAll with Befor
       bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
       bind[MetaHealth].toInstance(mock[MetaHealth]),
       bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
-      bind[GenericResourceMethods].to[GenericResourceMethodsImpl],
-      bind[CaasTrackingProvider].toInstance(mock[CaasTrackingProvider]),
-      bind[FaasTrackingProvider].toInstance(mock[FaasTrackingProvider])
+      bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
     )
 
     new GuiceApplicationBuilder()
