@@ -3,6 +3,7 @@ package controllers
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test._
+import com.galacticfog.tracking.{CaasTrackingProvider, FaasTrackingProvider}
 import controllers.util._
 import org.mockito.Matchers.{eq => _}
 import org.specs2.matcher.JsonMatchers
@@ -40,7 +41,9 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
   abstract class FakeSecurity extends WithDb(containerApp(
     additionalBindings = Seq(
       bind(classOf[LambdaMethods]).toInstance(mockLambdaMethods),
-      bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods)
+      bind(classOf[GatewayMethods]).toInstance(mockGatewayMethods),
+      bind[CaasTrackingProvider].toInstance(mock[CaasTrackingProvider]),
+      bind[FaasTrackingProvider].toInstance(mock[FaasTrackingProvider])
     )
   )) {
     lazy val mockSkuberFactory = app.injector.instanceOf[SkuberFactory]
