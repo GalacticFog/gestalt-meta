@@ -51,11 +51,13 @@ class EventMethodsSpec extends PlaySpecification with MetaRepositoryOps {
       val (envPolicy, envRule) = createEventRule(env, testLambda.get.id, action)
 
       val pub = scala.collection.mutable.ArrayBuffer.empty[EventMessage]
-      val em = new EventMethods {
+      val em = new EventMethodsTrait {
         override def publishEvent(event: EventMessage, opts: RequestOptions): Try[Unit] = {
           pub += event
           Success(())
         }
+
+        def eventsClient() = null
       }
 
       val effective = em.publishEvent(

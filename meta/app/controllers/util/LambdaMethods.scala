@@ -116,13 +116,13 @@ class LambdaMethods @Inject()(
     }
   }
   
-  def createLambdaCommon(
+  def createLambda(
     org: UUID, 
     parent: GestaltResourceInstance,
     requestBody: JsValue,
     caller: AccountLike): Future[GestaltResourceInstance] = {
 
-    log.debug("createLambdaCommon")
+    log.debug("createLambda")
 
     (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
@@ -168,13 +168,13 @@ class LambdaMethods @Inject()(
     }
   }
 
-  def importLambdaCommon(
+  def importLambda(
     org: UUID, 
     parent: GestaltResourceInstance,
     requestBody: JsValue,
     caller: AccountLike): Future[GestaltResourceInstance] = {
 
-    log.debug("importLambdaCommon")
+    log.debug("importLambda")
 
     (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
@@ -219,7 +219,7 @@ class LambdaMethods @Inject()(
       Future.failed(new RuntimeException(errorMessage))
     }
   }
-  
+
   /**
    * Find the LambdaProvider backing the given Lambda
    */

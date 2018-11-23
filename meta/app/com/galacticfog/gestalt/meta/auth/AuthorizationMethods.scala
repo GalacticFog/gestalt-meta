@@ -498,7 +498,6 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
     
-    
     if (metaConfig.isRoot(account.account.id)) {
       log.info(s"[Root-Access] => '${action}' AUTHORIZED.")
       true 
