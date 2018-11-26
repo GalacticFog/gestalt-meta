@@ -148,7 +148,7 @@ private object EventType {
   val Post = "post"
 }
 
-trait EventMethods {
+trait EventMethodsTrait {
   
   private[this] val log = Logger(this.getClass)
   
@@ -261,12 +261,16 @@ trait EventMethods {
     eventsClient.publish(AmqpEndpoint(RABBIT_EXCHANGE, RABBIT_ROUTE), eventJson/*event.toJson*/)
   }
   
-  def eventsClient() = {  
+  def eventsClient(): AmqpClient
+}
+
+object EventMethods extends EventMethodsTrait {
+  def eventsClient() = {
     AmqpClient(AmqpConnection(RABBIT_HOST, RABBIT_PORT, heartbeat = 300))
   }
 }
 
-case class EventsPre(override val args: String*) extends Operation(args)  with EventMethods {
+case class EventsPre(override val args: String*) extends Operation(args) {
 
   private val log = Logger(this.getClass)
   
@@ -287,7 +291,7 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
     }
     
     log.debug(s"Publishing PRE event: ${eventName}")
-    publishEvent(actionName, EventType.Pre, opts) match {
+    EventMethods.publishEvent(actionName, EventType.Pre, opts) match {
       case Success(_) => {
         log.debug(s"Successfully published $eventName")
         Continue
@@ -305,7 +309,7 @@ case class EventsPre(override val args: String*) extends Operation(args)  with E
   }
 }
 
-case class EventsPost(override val args: String*) extends Operation(args) with EventMethods {
+case class EventsPost(override val args: String*) extends Operation(args) {
   private val log = Logger(this.getClass)
   
   def proceed(opts: RequestOptions) = {
@@ -314,7 +318,7 @@ case class EventsPost(override val args: String*) extends Operation(args) with E
     val eventName = s"${actionName}.${EventType.Post}"
     
     //log.debug("Publishing post event...")
-    publishEvent(actionName, EventType.Post, opts) match {
+    EventMethods.publishEvent(actionName, EventType.Post, opts) match {
       case Success(_) => Continue
       case Failure(e) => {
         log.error(s"Failure publishing event : '$eventName' : ${e.getMessage}")
@@ -558,5 +562,24 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
 object SafeRequest {
   def apply(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
     new SafeRequest(operations, options)
+  }
+}
+
+object ComposableSafeRequest {
+  def Protect(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
+    new {
+      val sr = new SafeRequest(operations, options)
+
+      def map(f: Option[UUID] => Result): Future[Result] = Future.successful(sr.Protect(f))
+      def flatMap(f: Option[UUID] => Future[Result]): Future[Result] = sr.ProtectAsync(f)
+    }
+  }
+  def Execute(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
+    new {
+      val sr = new SafeRequest(operations, options)
+
+      def map(f: GestaltResourceInstance => Result): Future[Result] = Future.successful(sr.Execute(f))
+      def flatMap(f: GestaltResourceInstance => Future[Result]): Future[Result] = sr.ExecuteAsync(f)
+    }
   }
 }
