@@ -35,7 +35,8 @@ class ResourceController @Inject()(
     security: Security,
     containerService: ContainerService,
     genericResourceMethods: GenericResourceMethods,
-    lambdaMethods: LambdaMethods )
+    lambdaMethods: LambdaMethods,
+    gatewayMethods: GatewayMethods  )
     
   extends SecureController(messagesApi = messagesApi, sec = sec)
     with Authorization with MetaControllerUtils {
@@ -711,7 +712,7 @@ class ResourceController @Inject()(
                                                  user: AuthAccountWithCreds,
                                                  qs: Option[QueryString] = None) = Try {
 
-    val maybePublicUrl = GatewayMethods.getPublicUrl(res)
+    val maybePublicUrl = gatewayMethods.getPublicUrl(res)
 
     maybePublicUrl.fold(res) {public_url =>
       upsertProperties(res, "public_url" -> public_url)
@@ -751,7 +752,7 @@ class ResourceController @Inject()(
   
   def transformStreamSpec(r: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None): Try[GestaltResourceInstance] = Try {
     log.debug("Entered transformStreamSpec...")
-    val streams = lambdaMethods.getLambdaStreams(r, user).get
+    val streams = Await.result(lambdaMethods.getLambdaStreams(r, user), 5 .seconds)
     val oldprops = r.properties.get
     val newprops = oldprops ++ Map("streams" -> Json.stringify(streams))
     r.copy(properties = Some(newprops))

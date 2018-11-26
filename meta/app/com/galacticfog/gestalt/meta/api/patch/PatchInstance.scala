@@ -13,7 +13,7 @@ object PatchInstance {
    * 2.) Apply attribute ops
    * 3.) If there are property Ops, serialize resource and apply
    */
-  def applyPatch(r: GestaltResourceInstance, patch: PatchDocument): Try[ResourceLike] = {
+  def applyPatch(r: GestaltResourceInstance, patch: PatchDocument): Try[GestaltResourceInstance] = {
     for {
       (p,a) <- partitionOps(patch.ops)
       r1    <- AttributePatch.applyOps(r, a)

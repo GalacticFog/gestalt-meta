@@ -144,7 +144,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
       org: UUID,
       resource: UUID, 
       creator: AccountLike,
-      parent: Option[UUID]) = {
+      parent: Option[UUID]): Seq[GestaltResourceInstance] = {
 
   val rootid = Resource.findFqon("root").fold {
     throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
@@ -191,7 +191,7 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
         CreateNewResource(org, creator, 
           json   = payload,  
           typeId = Option(ResourceIds.Entitlement), 
-          parent = Option(resource))
+          parent = Option(resource)).get
       }
     }
   }
@@ -497,7 +497,6 @@ trait AuthorizationMethods extends ActionMethods with JsonInput {
   }
   
   def isAuthorized(resource: UUID, action: String, account: AuthAccountWithCreds) = Try {
-    
     
     if (metaConfig.isRoot(account.account.id)) {
       log.info(s"[Root-Access] => '${action}' AUTHORIZED.")

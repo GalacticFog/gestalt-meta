@@ -9,33 +9,29 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
-import com.galacticfog.gestalt.data.TypeFactory
-import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.api.output.toLink
-import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.util.EitherFromJsResult._
-import com.galacticfog.gestalt.util.FutureFromTryST._
 import controllers.util._
-import cats.syntax.either._
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.auth.Authorization
+import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+// import com.galacticfog.gestalt.meta.api.errors.{ConflictException,BadRequestException}
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
+import com.galacticfog.gestalt.util.Either._
+// import com.galacticfog.gestalt.util.FutureFromTryST._
+import cats.syntax.either._
 
 import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
 import play.api.i18n.MessagesApi
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import javax.inject.Singleton
-import play.api.libs.ws.WSClient    
 
 @Singleton
 class LambdaController @Inject()(
-    ws: WSClient,
     messagesApi: MessagesApi,
-    providerMethods: ProviderMethods,
     resourceController: ResourceController,
+    lambdaMethods: LambdaMethods,
     sec: GestaltFrameworkSecurity)
-      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with JsonInput {
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   /*
    * This is the provider variable containing the provider host address.
@@ -61,18 +57,6 @@ class LambdaController @Inject()(
     val typeId = UUID.fromString(tpe)
     ResourceFactory.findById(typeId, id)
   }
-
-  case class ProviderPropertiesProvider(
-    id: UUID,
-    locations: Seq[String]
-  )
-  case class ProviderProperties(
-    provider: ProviderPropertiesProvider,
-    parent: JsValue
-  )
-
-  implicit val providerPropertiesProviderFormat = Json.format[ProviderPropertiesProvider]
-  implicit val providerPropertiesFormat = Json.format[ProviderProperties]
   
   /*
    * TODO: Overload this method - take payload JSON directly instead of from request.body
@@ -80,40 +64,62 @@ class LambdaController @Inject()(
   protected[controllers] def createLambdaCommon(org: UUID, parent: GestaltResourceInstance)
       (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[play.api.mvc.Result] = {
 
-    val eitherFR: Either[String,Future[play.api.mvc.Result]] = for(
-      gri <- eitherFromJsResult(request.body.validate[GestaltResourceInput]);
-      typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
-      _ <- Either.fromOption(TypeFactory.findById(typeId), Errors.TYPE_NOT_FOUND(typeId));
-      rawProperties <- Either.fromOption(gri.properties, "Provider properties not set");
-      properties0 <- eitherFromJsResult(JsObject(rawProperties).validate[ProviderProperties]);
-      parentLink = Json.toJson(toLink(parent, None));
-      properties = properties0.copy(parent=parentLink);
-      lambdaId = gri.id.getOrElse(UUID.randomUUID);
-      payload = gri.copy(
-        id=Some(lambdaId),
-        properties=Some(Json.toJson(properties).as[Map[String,JsValue]])
-      );
-      lambdaProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.LambdaProvider, properties.provider.id),
-       s"Lambda Provider with ID '${properties.provider.id}' not found.")
-    ) yield {
-      val client = providerMethods.configureWebClient(lambdaProvider, Some(ws))
-      for(
-        metaLambda <- newDefaultResource(org, ResourceIds.Lambda, parent.id, Json.toJson(payload));
-        laser <- Future.fromTryST(toLaserLambda(metaLambda, lambdaProvider.id));
-        result <- client.post("/lambdas", Option(Json.toJson(laser)))
-      ) yield {
-        if(Seq(200, 201, 202).contains(result.status)) {
-          log.info("Successfully created Lambda in backend system.")
-          Created(RenderSingle(resourceController.transformResource(metaLambda).get))
-        }else {
-          log.error("Error creating Lambda in backend system.")
-          updateFailedBackendCreate(request.identity, metaLambda, ApiError(result.status, result.body).throwable)
-        }
-      }
+    val action = request.getQueryString("action").getOrElse("create")
+    val actionResult = action match {
+      case "create" => lambdaMethods.createLambda(org, parent, request.body, request.identity)
+      case "import" => lambdaMethods.importLambda(org, parent, request.body, request.identity)
+      case _ => Future.failed(new BadRequestException(s"Unsupported action: $action"))
     }
 
-    eitherFR valueOr { errorMessage =>
-      HandleExceptionsAsync(new RuntimeException(errorMessage))
+    actionResult map { metaLambda =>
+      Created(RenderSingle(resourceController.transformResource(metaLambda).get))
+    } recoverWith { case throwable =>
+      HandleExceptionsAsync(throwable)
     }
+  }
+
+  def migrateLambda(fqon: String, lid: UUID) = AsyncAuditedAny(fqon) { implicit request =>
+    val operations = List(
+      controllers.util.Authorize("lambda.migrate"),
+      PolicyCheck("lambda.migrate"),
+      EventsPre("lambda.migrate")
+    )
+
+    val metaUrl = System.getenv().getOrDefault("META_POLICY_CALLBACK_URL", META_URL)
+
+    for(
+      providerId <- Either.fromOption(request.getQueryString("provider"), "Provider id must be supplied").liftTo[Future];
+      targetProvider <- Either.fromOption(ResourceFactory.findById(UUID.fromString(providerId)),
+       s"Target provider not found with id ${providerId}").liftTo[Future];
+      resource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, lid),
+       s"Lambda not found with id ${lid}").liftTo[Future];
+      // no suitable field:
+      // _ <- if(resource.properties.get("status") == Some("MIGRATING")) {
+      //   Future.failed(new ConflictException(s"Lambda '${resource.id}' is already migrating. No changes made."))
+      // }else {
+      //   Future.successful(())
+      // };
+      env <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Environment, resource.id),
+       s"Parent environment for ${resource.id} not found").liftTo[Future];
+      _ <- Either.fromOption(EventMethods.findEffectiveEventRules(env.id, Some("lambda.migrate")),
+       "No migration policy found.").liftTo[Future];
+      options = RequestOptions(
+        request.identity,
+        authTarget = Option(env.id),
+        policyOwner = Option(env.id),
+        policyTarget = Option(resource),
+        data = Option(Map(
+          "fqon" -> fqon,
+          "meta_url" -> metaUrl,
+          "environment_id" -> s"${env.id}",
+          "provider_id" -> s"${targetProvider.id}"
+        ))
+      );
+      _ <- ComposableSafeRequest.Protect(operations, options)//;
+      // updatedResource <- Future.fromTryST(ResourceFactory.update(
+      //   resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map("status" -> "MIGRATING"))),
+      //   request.identity.account.id
+      // ))
+    ) yield Accepted(RenderSingle(resource))
   }
 }

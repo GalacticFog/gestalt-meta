@@ -1,274 +1,246 @@
 package controllers.util
 
-
 import java.util.UUID
 
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import com.galacticfog.gestalt.data.ResourceFactory
-import com.galacticfog.gestalt.json.Js
 import play.api.libs.json._
-import play.api.libs.ws.WSClient
 
-import scala.concurrent.{Await, Future}
-import scala.concurrent.duration._
-import scala.util.{Try, Success, Failure}
-import scala.language.postfixOps
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import scala.concurrent.Future
+import scala.util.Try
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
-import com.galacticfog.gestalt.meta.api.patch.PatchInstance
-import com.galacticfog.gestalt.laser._
-import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.meta.auth.AuthorizationMethods  
-import com.galacticfog.gestalt.meta.providers._  
+import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.data.parseUUID
 import com.galacticfog.gestalt.data.ResourceState
+import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.meta.providers.faas._
+import cats.syntax.either._
 import javax.inject.Inject
 import play.api.Logger
 import play.api.mvc.RequestHeader
 
-case class LambdaProviderInfo(id: String, locations: Seq[String])
-object LambdaProviderInfo {
-  implicit lazy val lambdaProviderInfoFormat = Json.format[LambdaProviderInfo]
-}
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
-class LambdaMethods @Inject()( ws: WSClient,
-                               providerMethods: ProviderMethods ) extends AuthorizationMethods {
-
-  val LAMBDA_PROVIDER_TIMEOUT_MS = 5000
+class LambdaMethods @Inject()(
+    laserProviderImpl: LaserProvider,
+    awsLambdaProvider: AWSLambdaProvider
+  ) extends AuthorizationMethods {
   
   override val log = Logger(this.getClass)
 
-  private[controllers] def getLambdaProvider(res: ResourceLike): GestaltResourceInstance = {
-    (for {
-      ps  <- res.properties
-      pr  <- ps.get("provider")
-      pid <- Js.find(Json.parse(pr).as[JsObject], "/id")
-      prv <- ResourceFactory.findById(ResourceIds.LambdaProvider, UUID.fromString(pid.as[String]))
-    } yield prv) getOrElse {
-      throw new RuntimeException("Could not parse LambdaProvider ID from API.")
+  import LambdaSpec.Implicits._
+
+  private def findLambdaProviderById(id: UUID): Either[String,GestaltResourceInstance] = {
+    log.debug("findLambdaProviderById")
+    val opt = ResourceFactory.findById(ResourceIds.LambdaProvider, id) orElse
+     ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, id)
+    Either.fromOption(opt, s"No LambdaProvider or AWSLambdaProvider found with id `$id`")
+  }
+
+  private def getLambdaProvider(res: GestaltResourceInstance): Either[String,GestaltResourceInstance] = {
+    log.debug("getLambdaProvider")
+    for {
+      rawProperties <- Either.fromOption(res.properties, s"Properties not set on resource ${res.id}");
+      rawProvider <- Either.fromOption(rawProperties.get("provider"), s"Provider id not set on resource ${res.id}");
+      inlineProvider <- eitherFromJsResult(Json.parse(rawProvider).validate[InlineLambdaProvider]);
+      provider <- findLambdaProviderById(inlineProvider.id)
+    } yield provider
+  }
+
+  private def getProviderImpl[A](provider: GestaltResourceInstance): Either[String,FaasProviderImplementation[Future]] = {
+    log.debug("getProviderImpl")
+    if(provider.typeId == migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID) {
+      Right(awsLambdaProvider)
+    }else if(provider.typeId == ResourceIds.LambdaProvider) {
+      Right(laserProviderImpl)
+    }else {
+      Left(s"No faas implementation exists for provider `${provider.id}` with typeId `${provider.typeId}`")
     }
   }
 
-  def getLambdaStreams(streamSpec: GestaltResourceInstance, user: AuthAccountWithCreds) = {
+  def getLambdaStreams(streamSpec: GestaltResourceInstance, user: AuthAccountWithCreds): Future[JsValue] = {
     /*
      * Get lambda from stream to get provider.
-     */
-    val provider = {
-      val processor = Json.parse(streamSpec.properties.get("processor"))
-      val lambdaId = Js.find(processor.as[JsObject], "/lambdaId") getOrElse {
-        throw new RuntimeException("Could not find lambdaId in StreamSpec properties.")
-      }
-      log.debug("Found Lambda ID : " + lambdaId)
-      ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(lambdaId.as[String])).fold {
-        throw new ResourceNotFoundException(s"Lambda with ID '${lambdaId}' not found.")
-      }{ lam =>
-        getLambdaProvider(lam)
-      }
-    }
+    */
 
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-    val streamUrl = s"/streamDefinitions/${streamSpec.id.toString}/streams"
-    log.debug("Stream URL : " + streamUrl)
-    
-    val f = client.get(streamUrl) map { result =>
-      result.body
-    } recover {
-      case e: Throwable => {
-        log.error(s"Error looking up streams: " + e.getMessage)
-        throw e
-      }      
+    val eitherF: Either[String,Future[JsValue]] = for(
+      rawProperties <- Either.fromOption(streamSpec.properties,
+       s"Could not get lambda streams for resource ${streamSpec.id} with unset properties");
+      rawJsonProperties = unstringmap(Some(rawProperties)).get;
+      streamSpecProperties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[StreamSpecProperties]);
+      lambdaId = streamSpecProperties.processor.lambdaId;
+      _ = log.debug(s"Found Lambda ID : ${lambdaId}");
+      lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, lambdaId),
+       s"Lambda with ID '${lambdaId}' not found.");
+      lambdaProvider <- getLambdaProvider(lambdaResource)
+    ) yield laserProviderImpl.getStreamDefinitions(lambdaProvider, streamSpec)
+
+    eitherF valueOr { errorMessage =>
+      Future.failed(new RuntimeException(errorMessage))
     }
-    
-      
-    Try {
-      Await.result(f, LAMBDA_PROVIDER_TIMEOUT_MS millis)
-    }.map { Json.parse(_) }
   }
   
-  def deleteLambdaHandler( r: ResourceLike ): Try[Unit] = {
-
-    log.debug("Finding lambda in backend system...")
-    val provider = getLambdaProvider(r)
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-
-    val fdelete = client.delete(s"/lambdas/${r.id.toString}") map { result =>
-      log.info("Deleting API from Lambda backend...")
-      log.debug("Response from Lambda backend: " + result.body)
-    } recover {
-      case e: Throwable => {
-        log.error(s"Error deleting lambda from Lambda backend: " + e.getMessage)
-        throw e
+  def deleteLambdaHandler(r: GestaltResourceInstance): Future[Unit] = {
+    (for(
+      provider <- getLambdaProvider(r);
+      impl <- getProviderImpl(provider)
+    ) yield {
+      impl.deleteLambda(provider, r) recoverWith { case throwable =>
+        throwable.printStackTrace()
+        log.error(s"Failed to delete backend lambda: ${throwable.getMessage()}")
+        Future.successful(())
       }
+    }) valueOr { errorMessage =>
+      // Future.failed(new RuntimeException(errorMessage))
+      log.error(s"Failed to delete backend lambda: $errorMessage")
+      Future.successful(())
     }
-    Try {
-      Await.result(fdelete, LAMBDA_PROVIDER_TIMEOUT_MS millis)
-      ()
-    } 
   }
 
   def patchLambdaHandler( r: GestaltResourceInstance,
                           patch: PatchDocument,
                           user: AuthAccountWithCreds,
                           request: RequestHeader ): Future[GestaltResourceInstance] = {
-
-    val provider = getLambdaProvider(r)
-    val client = providerMethods.configureWebClient(provider, Some(ws))
-
-    for {
-      updatedLambda <- Future.fromTry{PatchInstance.applyPatch(r, patch).map(_.asInstanceOf[GestaltResourceInstance])}
-      patchedLaserLambda <- Future.fromTry(toLaserLambda(updatedLambda, provider.id))
-      response <- client.put(s"/lambdas/${r.id}", Some(Json.toJson(patchedLaserLambda)))
-      _ <- response.status match {
-        case 200 =>
-          log.info(s"Successfully PUT Lambda in lambda provider.")
-          Future.successful(response)
-        case _   =>
-          log.error(s"Error PUTting Lambda in lambda provider: ${response}")
-          Future.failed(new RuntimeException(s"Error updating Lambda in lambda provider: ${response}"))
+    (for(
+      provider <- getLambdaProvider(r);
+      impl <- getProviderImpl(provider)
+    ) yield {
+      impl.updateLambda(provider, r, patch) map { updatedLambdaResource =>
+        ResourceFactory.update(updatedLambdaResource, user.account.id)
+        updatedLambdaResource
       }
-      updatedMetaLambda = PatchInstance.applyPatch(r, patch).get.asInstanceOf[GestaltResourceInstance]
-    } yield updatedMetaLambda // we don't actually use the result from laser, though we probably should
+    }) valueOr { errorMessage =>
+      Future.failed(new RuntimeException(errorMessage))
+    }
   }
   
-  def createLambdaCommon(
+  def createLambda(
     org: UUID, 
     parent: GestaltResourceInstance,
-    payload: JsValue,
+    requestBody: JsValue,
     caller: AccountLike): Future[GestaltResourceInstance] = {
-    
-    val input    = toInput(payload, Some(ResourceIds.Lambda)).get
-    val lambdaId = input.id.getOrElse(UUID.randomUUID)
-    
-    // Set ID for the Lambda.
-    val newjson  = injectParentLink(payload.as[JsObject] ++ Json.obj("id" -> lambdaId.toString), parent)
-    val pinfo    = getProviderInfo(newjson)
-    val provider = ResourceFactory.findById(ResourceIds.LambdaProvider, UUID.fromString(pinfo.id)) getOrElse {
-      unprocessable(s"Lambda Provider with ID '${pinfo.id}' not found.")
-    }
 
-    val metaCreate = for {
-      metalambda <- CreateResource(org, caller, newjson, ResourceIds.Lambda, Some(parent.id))
-      laserlambda <- toLaserLambda(metalambda, provider.id)
-    } yield (metalambda, laserlambda)
+    log.debug("createLambda")
 
-    metaCreate match {
-      case Failure(e) => {
-        log.error("Failed to create Lambda in Meta: " + e.getMessage)
-        Future(throw e)
-      }
-      case Success((meta,laser)) => {
+    (for(
+      gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
+      typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
+      parentLink = Json.toJson(toLink(parent, None));
+      lambdaId = gri.id.getOrElse(UUID.randomUUID);
+      ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
+      rawProperties <- Either.fromOption(gri.properties, "Properties not set");
+      payload = gri.copy(
+        id=Some(lambdaId),
+        owner=gri.owner.orElse(Some(ownerLink)),
+        resource_state=gri.resource_state.orElse(Some(ResourceStates.Active)),
+        resource_type=Some(typeId),
+        properties=Some(rawProperties ++ Map("parent" -> parentLink))
+      );
+      resource = inputToInstance(org, payload);
+      lambdaProvider <- getLambdaProvider(resource);
+      impl <- getProviderImpl(lambdaProvider);
+      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parent.id)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
+    ) yield {
+      impl.createLambda(lambdaProvider, lambdaResource) map { createdLambdaResource =>
+        log.info("Successfully created Lambda in backend system.")
+        setNewResourceEntitlements(org, createdLambdaResource.id, caller, Some(parent.id))
+        
+        ResourceFactory.update(createdLambdaResource, caller.id).get
+        
+        createdLambdaResource
+      } recoverWith {
+        case throwable: Throwable => {
+          throwable.printStackTrace()
+          log.error(s"Error creating Lambda in backend system.")
+          
+          log.error(s"Setting state of resource '${lambdaResource.id}' to FAILED")
+          ResourceFactory.update(lambdaResource.copy(state=ResourceState.id(ResourceStates.Failed)), caller.id).get
 
-        val client = providerMethods.configureWebClient(provider, Some(ws))
-
-        log.debug("Creating lambda in Laser...")
-        client.post("/lambdas", Option(Json.toJson(laser))) map { result =>
-
-          if (Seq(200, 201).contains(result.status)) {
-            log.info("Successfully created Lambda in backend system.")
-            setNewResourceEntitlements(org, meta.id, caller, Some(parent.id))
-            meta
-          } else {
-            log.error("Error creating Lambda in backend system.")
-            updateFailedBackendCreateResource(caller, meta, ApiError(result.status, result.body).throwable).get
-          }
-
-        } recover {
-          case e: Throwable => {
-           log.error(s"Error creating Lambda in backend system.")
-           updateFailedBackendCreateResource(caller, meta, e).get
-          }
+          Future.failed(throwable)
         }
       }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to create Lambda in Meta: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
-  
-  private def updateFailedBackendCreateResource(caller: AccountLike, metaResource: GestaltResourceInstance, ex: Throwable)
-      : Try[GestaltResourceInstance]= {
-    log.error(s"Setting state of resource '${metaResource.id}' to FAILED")
-    val failstate = ResourceState.id(ResourceStates.Failed)
-    ResourceFactory.update(metaResource.copy(state = failstate), caller.id)
-  }
-  
-  private def injectParentLink(json: JsObject, parent: GestaltResourceInstance) = {
-    val parentLink = toLink(parent, None)
-    json ++ Json.obj("properties" -> 
-      JsonUtil.replaceJsonPropValue(json, "parent", Json.toJson(parentLink)))
-  }
-  
-  private def getProviderInfo(lambdaJson: JsValue): LambdaProviderInfo = {
-    Js.find(lambdaJson.as[JsObject], "/properties/provider/id").fold {
-      unprocessable("Could not find value for [lambda.properties.provider.id]")
-    }{ pid =>
-      parseUUID(pid.as[String].trim).fold {
-        unprocessable(s"[lambda.properties.provider.id] is not a valid UUID. found: '$pid'")
-      }{ uid =>
-        ResourceFactory.findById(UUID.fromString(uid)).fold {
-          unprocessable(s"[lambda.properties.provider.id] '$uid' not found.")
-        }{ p =>
-          val pjson = Js.find(lambdaJson.as[JsObject], "/properties/provider").get
-          Js.parse[LambdaProviderInfo](pjson.as[JsObject]) match {
-            case Success(result) => result
-            case Failure(e) =>
-              unprocessable(s"Could not parse [lambda.properties.provider]. found: ${e.getMessage}'")
-          }
+
+  def importLambda(
+    org: UUID, 
+    parent: GestaltResourceInstance,
+    requestBody: JsValue,
+    caller: AccountLike): Future[GestaltResourceInstance] = {
+
+    log.debug("importLambda")
+
+    (for(
+      gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
+      typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
+      parentLink = Json.toJson(toLink(parent, None));
+      lambdaId = gri.id.getOrElse(UUID.randomUUID);
+      ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
+      rawProperties <- Either.fromOption(gri.properties, "Properties not set");
+      payload = gri.copy(
+        id=Some(lambdaId),
+        owner=gri.owner.orElse(Some(ownerLink)),
+        resource_state=gri.resource_state.orElse(Some(ResourceStates.Active)),
+        resource_type=Some(typeId),
+        properties=Some(rawProperties ++ Map("parent" -> parentLink))
+      );
+      resource = inputToInstance(org, payload);
+      lambdaProvider <- getLambdaProvider(resource);
+      impl <- getProviderImpl(lambdaProvider);
+      lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parent.id)));
+      _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
+    ) yield {
+      impl.importLambda(lambdaProvider, lambdaResource) map { importedLambdaResource =>
+        log.info("Found Lambda in backend system.")
+        setNewResourceEntitlements(org, importedLambdaResource.id, caller, Some(parent.id))
+        
+        ResourceFactory.update(importedLambdaResource, caller.id).get
+        
+        importedLambdaResource
+      } recoverWith {
+        case throwable: Throwable => {
+          throwable.printStackTrace()
+          log.error(s"Error creating Lambda in backend system.")
+          
+          log.error(s"Setting state of resource '${lambdaResource.id}' to FAILED")
+          ResourceFactory.update(lambdaResource.copy(state=ResourceState.id(ResourceStates.Failed)), caller.id).get
+
+          Future.failed(throwable)
         }
       }
+    }) valueOr { errorMessage =>
+      log.error(s"Failed to create Lambda in Meta: $errorMessage")
+      Future.failed(new RuntimeException(errorMessage))
     }
   }
-  
+
   /**
    * Find the LambdaProvider backing the given Lambda
    */
   def findLambdaProvider(lambda: GestaltResourceInstance): Option[GestaltResourceInstance] = {
-    val pid = (for {
-      
-      props <- lambda.properties
-      json  <- props.get("provider")
-      id1   <- Js.find(Json.parse(json).as[JsObject], "/id")
-      id2 = UUID.fromString(id1.as[String])
-      
-    } yield id2) getOrElse {
-      throw new RuntimeException("`lambda.properties.provider.id` not found. This is a bug.")
-    }
-    ResourceFactory.findById(ResourceIds.LambdaProvider, pid)
+    getLambdaProvider(lambda).toOption
   }
   
   /**
    * Find the Message (rabbit) provider linked to the given LambdaProvider
    */
   def findMessageProvider(lambdaProvider: GestaltResourceInstance): Option[GestaltResourceInstance] = {
-    val messageProvider = {
-      val json = Json.toJson(lambdaProvider).as[JsObject]
-      val lps = Js.find(json, "/properties/linked_providers") map { lp => 
-        LinkedProvider.fromJson(Json.parse(lp.as[String]).as[JsArray]) 
-      }
-      lps flatMap { _ find { _.name == "RABBIT" } }
-    } getOrElse {
-      throw new RuntimeException(s"No MessageProvider configured for LambdaProvider '{lambdaProvider.id}'. Cannot invoke action.")
-    }
-    ResourceFactory.findById(messageProvider.id)
-  }  
-  
-  protected[controllers] def CreateResource(
-    org: UUID,
-    caller: AccountLike,
-    resourceJson: JsValue,
-    typeId: UUID,
-    parentId: Option[UUID]): Try[GestaltResourceInstance] = {
-    
-    toInput(resourceJson) flatMap { input =>
-      val tid = assertValidTypeId(input, Option(typeId))
-      ResourceFactory.create(ResourceIds.User, caller.id)(
-        resourceWithDefaults(org, input, caller, Option(tid)), parentId) map { res =>
-          setNewResourceEntitlements(org, res.id, caller, parentId)
-          res
-        }
+    (for(
+      rawProperties <- Either.fromOption(lambdaProvider.properties,
+       s"Could not get message provider for resource ${lambdaProvider.id} with unset properties");
+      rawJsonProperties = rawProperties map { case(k, v) => (k, Json.parse(v)) };
+      properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[LaserLambdaProperties]);
+      linkedProviders = properties.linked_providers.getOrElse(Seq());
+      messageProvider <- Either.fromOption(linkedProviders.find(_.name == "RABBIT"),
+       s"No MessageProvider configured for LambdaProvider '${lambdaProvider.id}'. Cannot invoke action.")
+    ) yield ResourceFactory.findById(messageProvider.id)) valueOr { errorMessage =>
+      throw new RuntimeException(errorMessage)
     }
   }
-    
-  private[this] def unprocessable(message: String) =
-    throw new UnprocessableEntityException(message)    
 }

@@ -8,6 +8,7 @@ import akka.pattern.ask
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, ResourceFactory}
 import com.galacticfog.gestalt.meta.api.Resource
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.providers.ProviderManager
@@ -15,8 +16,8 @@ import javax.inject.{Inject, Named}
 import play.api.libs.json.{Format, JsObject, Json}
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
+import scala.concurrent.{ExecutionContext, Future, Await}
+import scala.util.{Try, Failure}
 
 trait UpgraderService {
   import UpgraderService._
@@ -30,7 +31,7 @@ trait UpgraderService {
 
 class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configActor: ActorRef,
                                          providerManager: ProviderManager,
-                                         gatewayMethods: GatewayMethods )
+                                         gatewayMethods: GatewayMethods)
   extends UpgraderService with JsonInput with AuthorizationMethods {
 
   import UpgraderService._
@@ -41,9 +42,21 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
   private[this] def wrapUnauthedHandler(f: (GestaltResourceInstance) => Try[Unit])(r: GestaltResourceInstance, a: AccountLike) = f(r)
   private val deleteMgr = new HardDeleteInstanceManager[AccountLike](
     external = Map(
-      ResourceIds.Container   -> wrapUnauthedHandler(ContainerService.deleteContainerHandler(providerManager,_)),
-      ResourceIds.Api         -> wrapUnauthedHandler(gatewayMethods.deleteApiHandler),
-      ResourceIds.ApiEndpoint -> wrapUnauthedHandler(gatewayMethods.deleteEndpointHandler)
+      ResourceIds.Container   -> wrapUnauthedHandler { resourceLike =>
+       Try(Await.result(ContainerService.deleteContainerHandler(providerManager, resourceLike), 10 .seconds)) recoverWith {
+          case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
+          case throwable => {
+            throwable.printStackTrace()
+            Failure(throwable)
+          }
+        }
+      },
+      ResourceIds.Api         -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(gatewayMethods.deleteApiHandler(resourceLike), 5 .seconds))
+      },
+      ResourceIds.ApiEndpoint -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(gatewayMethods.deleteEndpointHandler(resourceLike), 5 .seconds))
+      }
     )
   )
 
@@ -105,39 +118,16 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
         resource = provider.id,
         creator = creator,
         parent = None  // parent=None means no inheritance, granting entitlements only to creator
-      ).map(_.get)))
+      )))
       // load the provider to create the upgrader service container
       Seq(container) <- providerManager.triggerProvider(provider)
       env = providerManager.getOrCreateProviderEnvironment(provider, creator)
       // create the API
       apiJson = getApiPayload(payload)
-      apiProto <- Future.fromTry(
-        jsonToResource(rootId, creator, apiJson, Some(ResourceIds.Api))
-      )
-      apiNative <- Future.fromTry(Try(
-        GatewayMethods.toGatewayApi(apiJson, payload.kongProviderId)
-      ))
-      metaApi <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
-        r = apiProto,
-        parentId = Some(env.id)
-      ))
-      createdApi <- gatewayMethods.createApi(gwmProvider, metaApi, apiNative)
-      // create the Endpoint
-      endpointJson = getEndpointPayload(createdApi, container, payload)
-      endpointProto <- Future.fromTry(
-        jsonToResource(rootId, creator, endpointJson, Some(ResourceIds.ApiEndpoint))
-      )
-      endpointNative <- Future.fromTry(GatewayMethods.toGatewayEndpoint(endpointJson, createdApi.id))
-      metaEndpoint <- Future.fromTry(ResourceFactory.create(ResourceIds.User, creator.id)(
-        r = endpointProto,
-        parentId = Some(createdApi.id)
-      ))
-      createdEndpoint <- gatewayMethods.createEndpoint(
-        api = createdApi,
-        metaEndpoint = metaEndpoint,
-        gatewayEndpoint = endpointNative
-      )
-      publicUrl = GatewayMethods.getPublicUrl(createdEndpoint)
+      api <- gatewayMethods.createApi(rootId, env.id, apiJson, creator)
+      endpointJson = getEndpointPayload(api, container, payload)
+      endpoint <- gatewayMethods.createEndpoint(rootId, api, endpointJson, creator)
+      publicUrl = gatewayMethods.getPublicUrl(endpoint)
       status <- updateStatus(
         creator = creator.id,
         newStatus = UpgradeStatus(

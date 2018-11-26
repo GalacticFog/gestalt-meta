@@ -6,20 +6,19 @@ import actors.SystemConfigActor
 import akka.actor.ActorRef
 import akka.pattern.ask
 import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}
+import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.laser
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.providers.ProviderMap
 import com.galacticfog.gestalt.meta.test._
 import controllers._
-import org.mockito.ArgumentCaptor
+// import org.mockito.ArgumentCaptor
 import org.specs2.matcher.JsonMatchers
 import org.specs2.matcher.ValueCheck.typedValueCheck
 import org.specs2.specification.BeforeAll
 import play.api.inject.{BindingKey, bind}
-import play.api.libs.json.Json
-import play.api.libs.json.Json.toJsFieldJsValueWrapper
+import play.api.libs.json._
 import services.CaasService
 
 import scala.concurrent.{ExecutionContext, Future}
@@ -97,6 +96,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
       mockProviderManager.getOrCreateProviderEnvironment(any, any) answers {
         (a: Any) => ResourceFactory.findById(ResourceIds.Environment, testProviderEnvId).get
       }
+      var testContainerId: UUID = null
       mockProviderManager.triggerProvider(any, any) answers {
         (a: Any) =>
           val arr = a.asInstanceOf[Array[Object]]
@@ -137,17 +137,49 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
             )),
             parent = Some(testProviderEnvId)
           )
+          testContainerId = testContainer.id
           // Future.successful(pm -> Seq(testContainer))
           Future.successful(Seq(testContainer))
       }
-      val apiCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
-      mockGatewayMethods.createApi(any, apiCaptor.capture(), any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
+
+      var apiArgs: Array[Object] = null
+      var endpointArgs: Array[Object] = null
+      var testApiId: UUID = null
+
+      mockGatewayMethods.createApi(any, any, any, any) answers { a: Any =>
+        apiArgs = a.asInstanceOf[Array[Object]]
+
+        val Success(testApi) = createInstance(ResourceIds.Api, (apiArgs(2).asInstanceOf[JsValue] \ "name").as[String], properties = Some(Map(
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id.toString,
+            "locations" -> Json.arr(testKongProvider.id.toString)
+          ).toString
+        )), parent = Some(testProviderEnvId))
+        testApiId = testApi.id
+        Future.successful(testApi)
       }
-      val endpointCaptor = ArgumentCaptor.forClass(classOf[GestaltResourceInstance])
-      mockGatewayMethods.createEndpoint(any, endpointCaptor.capture(), any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](1).asInstanceOf[GestaltResourceInstance])
+      mockGatewayMethods.createEndpoint(any, any, any, any) answers { a: Any =>
+        endpointArgs = a.asInstanceOf[Array[Object]]
+
+        val Success(testEndpoint) = createInstance(ResourceIds.ApiEndpoint, "test-endpoint", properties = Some(Map(
+          "resource" -> "/original/path",
+          "upstream_url" -> "http://original-upstream-url-is-irrelevant:1234/blah/blah/blah",
+          "methods" -> Json.toJson(Seq("GET")).toString,
+          "implementation_type" -> "container",
+          "implementation_id" -> testContainerId.toString,
+          "location_id" -> testKongProvider.id.toString,
+          "parent" -> testApiId.toString,
+          "provider" -> Json.obj(
+            "id" -> testGatewayProvider.id.toString,
+            "locations" -> Json.arr(testKongProvider.id.toString)
+          ).toString
+        )), parent = Some(testApiId))
+        
+        Future.successful(testEndpoint)
       }
+      
+      mockGatewayMethods.getPublicUrl(any) answers { _ => Some("public url") }
+
       val status = await(upgrader.launchUpgrader(adminUser, UpgraderService.UpgradeLaunch(
         image = "galacticfog/upgrader-image:version",
         dbProviderId = dbProviderId,
@@ -157,29 +189,23 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         kongProviderId = kongProviderId
       )))
 
-      there was one(mockGatewayMethods).createApi(argThat(
-        (gwm: GestaltResourceInstance) => gwm.id must_== gwmProviderId
-      ), any, any)
-      there was one(mockGatewayMethods).createEndpoint(
-        api = argThat(
-          (api: GestaltResourceInstance) => api.id must_== apiCaptor.getValue.id
-        ),
-        metaEndpoint = any,
-        gatewayEndpoint = argThat(
-          (le: laser.LaserEndpoint) => le.methods must beSome(containTheSameElementsAs(Seq("OPTIONS", "GET", "POST")))
-        )
-      )
+      there was one(mockGatewayMethods).createApi(any, any, any, any)
+      there was one(mockGatewayMethods).createEndpoint(any, any, any, any)
+
+      (apiArgs(2).asInstanceOf[JsValue] \ "properties" \ "provider" \ "id").as[UUID] must beEqualTo(gwmProviderId)
+      endpointArgs(1).asInstanceOf[GestaltResourceInstance].id must beEqualTo(testApiId)
 
       val maybeProviderId = (systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]
       await(maybeProviderId) must beSome
       status.active must beTrue
-      status.endpoint must beSome(s"https://test-kong.mycompany.com/${apiCaptor.getValue.name}/${endpointCaptor.getValue.name}")
+      // status.endpoint must beSome(s"https://test-kong.mycompany.com/${(apiArgs(2).asInstanceOf[JsValue] \ "name").as[String]}/original/path")
+      status.endpoint must beSome("public url")
     }
 
     "delete provider on launch and delete config" in new TestApplication {
       mockCaasService.destroy(any) returns Future.successful(())
-      mockGatewayMethods.deleteApiHandler(any) returns Success(())
-      mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
+      mockGatewayMethods.deleteApiHandler(any) returns Future.successful(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Future.successful(())
 
       val Some(providerId) = await((systemConfigActor ? SystemConfigActor.GetKey("upgrade_provider")).mapTo[Option[String]]).map(UUID.fromString(_))
       ResourceFactory.findById(providerId) must beSome

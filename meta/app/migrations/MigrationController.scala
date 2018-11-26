@@ -11,8 +11,10 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.google.inject.Inject
 import controllers.util._
+import net.sf.ehcache.Cache
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
+import play.api.cache.CacheManagerProvider
 
 import scala.util.Try
 import com.galacticfog.gestalt.json.Js
@@ -23,14 +25,16 @@ class MigrationController @Inject()(
     security: Security,
     v7: V7,
     v8: V8,
-    genericResourceMethods: GenericResourceMethods )
+    genericResourceMethods: GenericResourceMethods,
+    cacheProvider: CacheManagerProvider
+  )
       extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   def migrate() = AsyncAudited() { implicit request =>
     log.debug("migrate()")
     
     val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
-      "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19")
+      "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19", "V20", "V21", "V22")
     
     val version = QueryString.single(request.queryString, "version", strict = true)
     val caller = request.identity.account.id
@@ -63,6 +67,10 @@ class MigrationController @Inject()(
       log.info("Meta-Schema migration complete.")
       Ok(JsArray(results))
     }
+
+    // blowing up the cache
+    val cache: Cache = cacheProvider.get.getCache("play")
+    cache.removeAll()
 
     log.debug(Json.prettyPrint(JsArray(results)))
     Future(resp)
@@ -103,6 +111,9 @@ class MigrationController @Inject()(
       case "V17" => new V17()
       case "V18" => new V18()
       case "V19" => new V19()
+      case "V20" => new V20()
+      case "V21" => new V21()
+      case "V22" => new V22()
       case _ =>
         throw new BadRequestException(s"No migration found for version '$version'")
     }

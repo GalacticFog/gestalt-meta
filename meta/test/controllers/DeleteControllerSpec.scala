@@ -12,7 +12,7 @@ import play.api.inject.bind
 import play.api.libs.json._
 import play.api.test._
 
-import scala.util.{Success, Try}
+import scala.util.Success
 import services.SkuberFactory
 
 import scala.concurrent.Future
@@ -107,7 +107,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use LambdaMethods for external lambda delete" in new TestApplication {
 
-      mockLambdaMethods.deleteLambdaHandler(any) returns Try(())
+      mockLambdaMethods.deleteLambdaHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -123,7 +123,7 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
 
     "use GatewayMethods for external apiendpoint delete" in new TestApplication {
 
-      mockGatewayMethods.deleteEndpointHandler(any) returns Try(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -133,13 +133,13 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteEndpointHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id == testEndpoint.id )
+        argThat( (r: GestaltResourceInstance) => r.id == testEndpoint.id )
       )
     }
 
     "use GatewayMethods for external api delete" in new TestApplication {
 
-      mockGatewayMethods.deleteApiHandler(any) returns Try(())
+      mockGatewayMethods.deleteApiHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,
@@ -149,15 +149,15 @@ class DeleteControllerSpec extends PlaySpecification with GestaltProviderMocking
       status(result) must equalTo(NO_CONTENT)
 
       there was one(mockGatewayMethods).deleteApiHandler(
-        r = argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
+        argThat( (r: GestaltResourceInstance) => r.id == testApi.id )
       )
     }
 
     "delete environment when provider configuration not found or k8s configuration is not correct" in new TestApplication {
       mockSkuberFactory.initializeKube(any, any)(any) returns Future.failed(new RuntimeException("provider configuration not found/k8s configuration is not correct"))
-      mockLambdaMethods.deleteLambdaHandler(any) returns Success(())
-      mockGatewayMethods.deleteApiHandler(any) returns Success(())
-      mockGatewayMethods.deleteEndpointHandler(any) returns Success(())
+      mockLambdaMethods.deleteLambdaHandler(any) returns Future.successful(())
+      mockGatewayMethods.deleteApiHandler(any) returns Future.successful(())
+      mockGatewayMethods.deleteEndpointHandler(any) returns Future.successful(())
 
       val Some(result) = route(app,fakeAuthRequest(
         DELETE,

@@ -39,6 +39,10 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
     }
   }
 
+  private[util] def maskJdbcPassword(jdbcUrl: String): String = {
+    """(password=([^&]+))""".r.replaceAllIn(jdbcUrl, "password=*****")
+  }
+  
   /**
    * Write the current ConnectionPool settings to the log. If current config is either
    * not a pooled datasource a warning is written to the log.
@@ -62,15 +66,15 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
       def line(k: String, v: String) = "%-25s%s".format(k, v).replace(' ', '.')
       val ds = db.dataSource.asInstanceOf[HikariDataSource]
       
-      log.info(line("jdbcUrl", ds.getJdbcUrl))
-      log.info(line("dataSourceClassName", ds.getDataSourceClassName))
-      log.info(line("driverClassName", ds.getDriverClassName))
-      log.info(line("username", ds.getUsername))
-      log.info(line("password", "<masked>"))
-      log.info(line("autoCommit", ds.isAutoCommit.toString))
-      log.info(line("minimumIdle", ds.getMinimumIdle.toString))
-      log.info(line("maximumPoolSize", ds.getMaximumPoolSize.toString))
-      log.info(line("maxLifetime", ds.getMaxLifetime.toString))
+      log.debug(line("jdbcUrl", maskJdbcPassword(ds.getJdbcUrl)))
+      log.debug(line("dataSourceClassName", ds.getDataSourceClassName))
+      log.debug(line("driverClassName", ds.getDriverClassName))
+      log.debug(line("username", ds.getUsername))
+      log.debug(line("password", "<masked>"))
+      log.debug(line("autoCommit", ds.isAutoCommit.toString))
+      log.debug(line("minimumIdle", ds.getMinimumIdle.toString))
+      log.debug(line("maximumPoolSize", ds.getMaximumPoolSize.toString))
+      log.debug(line("maxLifetime", ds.getMaxLifetime.toString))
     }
   }
   
@@ -89,7 +93,7 @@ class DataStore @Inject()(db: Database, config: Configuration) extends DataStore
       "n/a"
     }
     
-    log.info(s"Testing Meta Repository: [${jdbcurl}]...")
+    log.info(s"Testing Meta Repository: [${maskJdbcPassword(jdbcurl)}]...")
   
     /*
      * verifyDataStore checks that the named database exists
