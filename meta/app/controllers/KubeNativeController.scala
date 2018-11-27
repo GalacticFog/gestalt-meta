@@ -12,7 +12,7 @@ import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.galacticfog.gestalt.caas.kube._
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.errors.ResourceNotFoundException
+import com.galacticfog.gestalt.meta.api.errors.{ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
@@ -27,11 +27,14 @@ import play.api.mvc.{Action, AnyContent, Result}
 
 import services.SkuberFactory
 import skuber._
+import skuber.apps.v1.{ReplicaSet, ReplicaSetList}
 import skuber.api.client._
-import skuber.ext._
-import skuber.json.ext.format._
 import skuber.json.format._
+import skuber.apps.v1beta1._
 
+//import skuber.apps.format._
+//import skuber.ext.{ReplicatSet, ReplicaSetList}
+//import skuber.json.ext.format._
 
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
@@ -50,6 +53,8 @@ class KubeNativeController @Inject()(
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
   
+  implicit val configMapListFmt: Format[ConfigMapList] = ListResourceFormat[ConfigMap]
+  implicit val replicaSetListFmt: Format[ReplicaSetList] = ListResourceFormat[ReplicaSet]
   
   /**
    * List objects in a Kubernetes cluster
@@ -65,7 +70,7 @@ class KubeNativeController @Inject()(
         .flatMap {  getResult(path, request, _) }
         .recover { case t: Throwable => HandleExceptions(t) }
   }
-
+  
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
     
@@ -78,10 +83,13 @@ class KubeNativeController @Inject()(
       case "deployments" => context.list[DeploymentList].map(RenderObject(_, headers))
       case "replicasets" => context.list[ReplicaSetList].map(RenderObject(_, headers))
       case "secrets"     => context.list[SecretList].map(RenderObject(_, headers))
-      case "persistentvolumes" => context.list[PersistentVolumeList].map(RenderObject(_, headers))
+      case "configmaps"   => context.list[ConfigMapList].map(RenderObject(_, headers))
+      case "statefulsets" => context.list[StatefulSetList].map(RenderObject(_, headers))      
+      case "persistentvolumes"      => context.list[PersistentVolumeList].map(RenderObject(_, headers))
       case "persistentvolumeclaims" => context.list[PersistentVolumeClaimList].map(RenderObject(_, headers))
+      case "namespaces" => context.list[NamespaceList].map(RenderObject(_, headers))
     }
-
+    
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
     val singles: PartialFunction[String, Future[Result]] = {
       case one("pods", nm)        => context.get[Pod](nm).map(RenderObject(_, headers))
@@ -89,8 +97,11 @@ class KubeNativeController @Inject()(
       case one("deployments", nm) => context.get[Deployment](nm).map(RenderObject(_, headers))
       case one("replicasets", nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers)) 
       case one("secrets", nm)     => context.get[Secret](nm).map(RenderObject(_, headers))
+      case one("configmaps", nm)   => context.get[ConfigMap](nm).map(RenderObject(_, headers))
+      case one("statefulsets", nm) => context.get[StatefulSet](nm).map(RenderObject(_, headers))      
       case one("persistentvolumes", nm)       => context.get[PersistentVolume](nm).map(RenderObject(_, headers))
       case one("persistentvolumeclaims", nm)  => context.get[PersistentVolumeClaim](nm).map(RenderObject(_, headers))
+      case one("namespaces", nm) => context.get[Namespace](nm).map(RenderObject(_, headers))
     }
     
     val notfound: PartialFunction[String, Future[Result]] = {
@@ -99,7 +110,45 @@ class KubeNativeController @Inject()(
     
     (lists orElse singles orElse notfound)(path)    
   }    
+
+  private def defaultHelmChartReleaseName() = {
+    java.time.LocalDateTime.now()
+      .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"))
+      .toString    
+  }
   
+  private def processCreatePayload(payload: JsValue, qs: Map[String, Seq[String]]): JsValue = {
+    
+    val source = QueryString.single(qs, "source").map(_.trim.toLowerCase)
+    source.fold( payload ) {
+      _ match {
+        case "helm" => {
+          // releaseName is required when source is 'helm'
+          val release = QueryString.single(qs, "releaseName").getOrElse {
+            log.warn("Creating helm-sourced kube resource - no 'releaseName' given")
+            defaultHelmChartReleaseName()
+          }
+          // replace all occurrences of 'RELEASE-NAME' with the given value
+          Json.parse {
+            payload.toString.replaceAll("RELEASE-NAME", release)
+          }       
+        }
+        case _ => payload
+      }
+    }
+
+//    val bytes = for {
+//      r <- payload.asRaw
+//      b <- r.asBytes()
+//    } yield b
+//    
+//    val rawBody = bytes.fold {
+//      throw new BadRequestException("Payload must not be empty")
+//    }{ b =>
+//      b.utf8String
+//    }
+
+  }
   
   /**
    * Create objects in a Kubernetes cluster
@@ -110,10 +159,11 @@ class KubeNativeController @Inject()(
     }    
     val namespace = namespaceOrDefault(request.queryString)
     val headers = request.headers.toMap
-    
+
     (for {
       context <- skuberFactory.initializeKube(kube, namespace)
-      body <- Future.fromTry(jsonPayload(request.body, request.contentType))
+      json    <- Future.fromTry(jsonPayload(request.body, request.contentType))
+      body = processCreatePayload(json, request.queryString)
       createResponse <- parseKind(body) match {
         case None => Future(BadRequest("Malformed request. Cannot find object 'kind'"))
         case Some(kind) => kind.toLowerCase match {
@@ -121,15 +171,18 @@ class KubeNativeController @Inject()(
           case "service"    => CreateResult(createKubeObject[Service](body, context), headers)
           case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
           case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
-          case "secrets"    => CreateResult(createKubeObject[Secret](body, context), headers)
-          case "persistentvolumes"       => CreateResult(createKubeObject[PersistentVolume](body, context), headers)
-          case "persistentvolumeclaims"  => CreateResult(createKubeObject[PersistentVolumeClaim](body, context), headers)
+          case "secret"     => CreateResult(createKubeObject[Secret](body, context), headers)
+          case "configmap"  => CreateResult(createKubeObject[ConfigMap](body, context), headers)
+          case "statefulset" => CreateResult(createKubeObject[StatefulSet](body, context), headers)
+          case "persistentvolume"       => CreateResult(createKubeObject[PersistentVolume](body, context), headers)
+          case "persistentvolumeclaim"  => CreateResult(createKubeObject[PersistentVolumeClaim](body, context), headers)
+          case "namespace" => CreateResult(createKubeObject[Namespace](body, context), headers)
           case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
         }
       }
     } yield createResponse) recover {case t: Throwable => HandleExceptions(t)}
   }  
-  
+
   /**
    * Handles marshaling a Kubernetes object to an appropriate data-type based on Accept headers.
    */
@@ -159,16 +212,17 @@ class KubeNativeController @Inject()(
           //
           // TODO: What could go wrong blindly packing bytes into a string and parsing to YAML???
           // :)
-          //
+          //          
           val byteString = {
             payload.asRaw.get.asBytes().get.decodeString(ByteString.UTF_8)
           }
+          
           //YamlJson.fromYamlString(new String(payload.asRaw.get.asBytes().get))
           YamlJson.fromYamlString(new String(byteString))
         }
         else throw UnsupportedMediaTypeException(s"Cannot process content-type '$content'")
     }
-  }    
+  }
 
   /**
    * Create an object in Kubernetes
@@ -262,25 +316,30 @@ class KubeNativeController @Inject()(
     |  * Set Accept to 'application/json' or 'text/vnd.yaml'
     |  * Defaults to YAML with content type 'text/plain' if not set.
     |  */
-    | GET /{fqon}/kube/pods
-    | GET /{fqon}/kube/pods/{name}
-    | GET /{fqon}/kube/services
-    | GET /{fqon}/kube/services/{name}
-    | GET /{fqon}/kube/deployments
-    | GET /{fqon}/kube/deployments/{name}
-    | GET /{fqon}/kube/replicasets
-    | GET /{fqon}/kube/replicasets/{name}
-    | GET /{fqon}/kube/secrets/{name}
+    | GET /{fqon}/providers/{id}/kube/pods
+    | GET /{fqon}/providers/{id}/kube/pods/{name}
+    | GET /{fqon}/providers/{id}/kube/services
+    | GET /{fqon}/providers/{id}/kube/services/{name}
+    | GET /{fqon}/providers/{id}/kube/deployments
+    | GET /{fqon}/providers/{id}/kube/deployments/{name}
+    | GET /{fqon}/providers/{id}/kube/replicasets
+    | GET /{fqon}/providers/{id}/kube/replicasets/{name}
+    | GET /{fqon}/providers/{id}/kube/secrets/{name}
     | 
     | /*
     |  * All POST requests accept JSON or YAML.
     |  * Set Content-Type to 'application/json' or 'text/vnd.yaml'
     |  */
-    | POST /{fqon}/kube/pods
-    | POST /{fqon}/kube/services
-    | POST /{fqon}/kube/deployments
-    | POST /{fqon}/kube/replicasets
-    | POST /{fqon}/kube/secrets
-    """.stripMargin.trim    
-    
+    | POST /{fqon}/providers/{id}/kube/pods
+    | POST /{fqon}/providers/{id}/kube/services
+    | POST /{fqon}/providers/{id}/kube/deployments
+    | POST /{fqon}/providers/{id}/kube/replicasets
+    | POST /{fqon}/providers/{id}/kube/secrets
+    | POST /{fqon}/providers/{id}/kube/configmaps
+    | POST /{fqon}/providers/{id}/kube/statefulsets
+    | POST /{fqon}/providers/{id}/kube/persistentvolumes
+    | POST /{fqon}/providers/{id}/kube/persistentvolumeclaims
+    | POST /{fqon}/providers/{id}/kube/namespaces
+    """.stripMargin.trim
+
 }

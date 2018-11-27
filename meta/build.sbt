@@ -126,4 +126,6 @@ libraryDependencies ++= Seq(
   "com.typesafe.akka"         %% "akka-testkit"         % "2.3.10"      % Test
 )
 
+libraryDependencies += "org.yaml" % "snakeyaml" % "1.23"    
+
 // routesGenerator := InjectedRoutesGenerator
