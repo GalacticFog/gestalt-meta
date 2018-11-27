@@ -163,6 +163,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
     val implId = endpointProperties.implementation_id
     val maybePortName = endpointProperties.container_port_name
     val sync = endpointProperties.synchronous.getOrElse(true)
+    val isHttpAware = endpointProperties.is_http_aware.getOrElse(false)
     (implType,maybePortName.map(_.trim).filter(_.nonEmpty)) match {
       case ("lambda",_) => {
         log.debug("ENTERED LAMBDA CASE...")
@@ -172,7 +173,11 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         ResourceFactory.findById(ResourceIds.Lambda, implId) match {
           case None => throw new BadRequestException("no lambda with id matching ApiEndpoint \"implementation_id\"")
           case Some(l) =>
-            val invoke = if (sync) "invokeSync" else "invoke"
+            val invoke = if(sync) {
+              if(isHttpAware) { "invokeSyncHA" }else { "invokeSync" }
+            }else {
+              "invoke"
+            }
             val providerId = UUID.fromString((Json.parse(l.properties.get("provider")) \ "id").as[String])
             val provider = ResourceFactory.findById(providerId).get
             val config = Json.parse(provider.properties.get("config")).as[JsObject]

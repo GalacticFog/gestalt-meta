@@ -24,6 +24,7 @@ case class ApiEndpointProperties(
   location_id: Option[String],
   parent: Option[String],
   synchronous: Option[Boolean],
+  is_http_aware: Option[Boolean],
   provider: InlineApiProvider,
   methods: Option[Seq[String]],
   plugins: Option[JsObject],
