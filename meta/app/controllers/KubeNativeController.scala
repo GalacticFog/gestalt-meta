@@ -36,6 +36,10 @@ import skuber.apps.v1beta1._
 //import skuber.ext.{ReplicatSet, ReplicaSetList}
 //import skuber.json.ext.format._
 
+import skuber.LabelSelector
+import LabelSelector.dsl._
+import scala.language.postfixOps
+
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
 
@@ -71,11 +75,60 @@ class KubeNativeController @Inject()(
         .recover { case t: Throwable => HandleExceptions(t) }
   }
   
+  def delete(fqon: String, provider: UUID, path: String): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
+    val kube = ResourceFactory.findById(provider) getOrElse {
+      throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
+    }
+    
+    val namespace = namespaceOrDefault(request.queryString)
+    
+    skuberFactory.initializeKube(kube, namespace)
+        .flatMap {  deleteResult(path, request, _) }
+        .recover { case t: Throwable => HandleExceptions(t) }
+  }
+  
+  def param[T](m: Map[String,Seq[T]], n: String) = QueryString.single[T](m, n)
+  
+  private[controllers] def deleteResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
+    
+    val qs = request.queryString
+    val headers = request.headers.toMap
+    val gracePeriod = QueryString.singleInt(qs, "k8s_gracePeriodSeconds").getOrElse(-1)
+    val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
+    
+    
+    val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
+    path match {
+      case one("pods", nm)         => kubeDelete[Pod](context, nm, gracePeriod)
+      case one("secrets", nm)      => kubeDelete[Secret](context, nm, gracePeriod)
+      case one("services", nm)     => kubeDelete[Service](context, nm, gracePeriod)
+      case one("configmaps", nm)   => kubeDelete[ConfigMap](context, nm, gracePeriod)
+      case one("deployments", nm)  => kubeDelete[Deployment](context, nm, gracePeriod)
+      case one("replicasets", nm)  => kubeDelete[ReplicaSet](context, nm, gracePeriod)      
+      case one("statefulsets", nm) => kubeDelete[StatefulSet](context, nm, gracePeriod)      
+      case one("persistentvolumes", nm)       => kubeDelete[PersistentVolume](context, nm, gracePeriod)
+      case one("persistentvolumeclaims", nm)  => kubeDelete[PersistentVolumeClaim](context, nm, gracePeriod)
+      case one("namespaces", nm) => kubeDelete[Namespace](context, nm, gracePeriod)
+      case _ => Future(NotFound(s"$path is not a valid URI."))
+    }
+  }
+  
+  def kubeDelete[T <: ObjectResource](context: RequestContext, name: String, grace: Int = -1)(implicit rd: skuber.ResourceDefinition[T]): Future[Result] = {
+    context.delete[T](name, grace).transform( 
+      s => NoContent, 
+      e => {
+        println("*****E : " + e)
+        new Exception(s"There was an error: ${e.getMessage}")
+      })
+  }
+  
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
     
     val headers = request.headers.toMap
-
+    /*
+     * TODO: Check for k8s_labelSelector queryparam and handle accordingly...
+     */
     val lists: PartialFunction[String, Future[Result]] = {
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
       case "pods"        => context.list[PodList].map(RenderObject(_, headers))
@@ -224,6 +277,13 @@ class KubeNativeController @Inject()(
     }
   }
 
+  
+  val sel = LabelSelector(
+  "tier" is "frontend",
+  "release" doesNotExist,
+  "env" isNotIn List("production", "staging")
+)
+  
   /**
    * Create an object in Kubernetes
    */

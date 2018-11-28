@@ -59,6 +59,20 @@ object QueryString {
     }
   }
   
+  def singleInt[V](qs: Map[String, Seq[V]], param: String, strict: Boolean = false): Option[Int] = {
+    single(qs, param).fold {
+      if (strict) errorNoValue(param) else Option.empty[Int]
+    }{ p =>
+      Try(p.toString.toInt) match {
+        case Success(i) => Some(i)
+        case Failure(e) =>
+          throw new BadRequestException("Failed parsing Int param: " + e.getMessage)
+      }
+    }
+  }
+  
+  
+  
   def expandSeq[V](param: (String, Seq[V])): String = {
     param._2.size match {
       case 0 => ""

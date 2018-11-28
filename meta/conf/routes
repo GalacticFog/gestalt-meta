@@ -5,7 +5,7 @@
 GET  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.get(fqon: String, providerId: java.util.UUID, path: String)
 POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.post(fqon: String, providerId: java.util.UUID, path: String)
 
-
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path   controllers.KubeNativeController.delete(fqon: String, providerId: java.util.UUID, path: String)
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
 
 GET /top/:typeName/:id  controllers.ResourceController.findResourceGlobal(typeName: String, id: java.util.UUID)
