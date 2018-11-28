@@ -66,6 +66,7 @@ case class AWSLambdaProperties(
   package_url: Option[String],
   code: Option[String],
   parent: Option[JsValue],
+  env: Option[Map[String,String]],
   aws_role_id: Option[String],
   aws_function_id: Option[String]
 )
