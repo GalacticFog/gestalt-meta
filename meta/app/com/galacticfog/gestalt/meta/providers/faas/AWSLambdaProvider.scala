@@ -31,6 +31,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     handler: String,
     runtime: String,
     timeout: Int,
+    environment: Map[String,String],
     memorySize: Int,
     role: String
   )
@@ -82,6 +83,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
         "handler" -> handler,
         "runtime" -> lambda.runtime,
         "timeout" -> lambda.timeout,
+        "environment" -> JsObject(lambda.env.getOrElse(Map()).toSeq map { ab => (ab._1, JsString(ab._2)) }),
         "memorySize" -> lambda.memory,
         "role" -> role
       )
@@ -185,7 +187,9 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
       lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[Future];
       modifiesCode = patch exists { op => op.path == "/properties/code" };
       modifiesConfig = patch exists { op =>
-        Seq("/properties/handler", "/properties/runtime", "/properties/timeout", "/properties/memory") contains op.path
+        val a = Seq("/properties/handler", "/properties/runtime", "/properties/timeout", "/properties/memory") contains op.path
+        val b = op.path.startsWith("/properties/env")
+        a || b
       };
       _ <- if(modifiesCode) {
         for(

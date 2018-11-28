@@ -127,6 +127,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
               "handler" -> "handler",
               "runtime" -> "runtime",
               "timeout" -> 30,
+              "environment" -> Json.obj(),
               "memorySize" -> 128,
               "role" -> "role arn"
             )
@@ -145,6 +146,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
           "handler" -> "index.blah",
           "runtime" -> "nodejs8.10",
           "timeout" -> 30,
+          "environment" -> Json.obj(),
           "memorySize" -> 128,
           "role" -> "auto"
         ),
@@ -178,6 +180,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
               "handler" -> "handler",
               "runtime" -> "runtime",
               "timeout" -> 30,
+              "environment" -> Json.obj(),
               "memorySize" -> 128,
               "role" -> "role arn"
             )
@@ -206,6 +209,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
                 "handler" -> "handler",
                 "runtime" -> "runtime",
                 "timeout" -> 30,
+                "environment" -> Json.obj(),
                 "memorySize" -> 128,
                 "role" -> "role arn"
               )
@@ -250,6 +254,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
               "handler" -> "handler",
               "runtime" -> "runtime",
               "timeout" -> 30,
+              "environment" -> Json.obj(),
               "memorySize" -> 128,
               "role" -> "role arn"
             )
@@ -269,6 +274,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "handler" -> "index.blahblah",
         "runtime" -> "nodejs8.10",
         "timeout" -> 30,
+        "environment" -> Json.obj(),
         "memorySize" -> 64,
         "role" -> "auto"
       ))
@@ -301,6 +307,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
               "handler" -> "handler",
               "runtime" -> "runtime",
               "timeout" -> 30,
+              "environment" -> Json.obj(),
               "memorySize" -> 128,
               "role" -> "role arn"
             )
@@ -325,6 +332,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
         "handler" -> "index.blahblah",
         "runtime" -> "nodejs8.10",
         "timeout" -> 30,
+        "environment" -> Json.obj(),
         "memorySize" -> 64,
         "role" -> "auto"
       ))
