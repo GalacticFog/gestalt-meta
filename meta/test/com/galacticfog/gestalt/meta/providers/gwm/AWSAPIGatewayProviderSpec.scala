@@ -64,7 +64,7 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
 
     // val patchController = application.injector.instanceOf[PatchController]
     // val apiController = application.injector.instanceOf[ApiController]
-    val Success(testGatewayProvider) = createInstance(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, "test-gateway-provider", properties = Some(Map(
+    val Success(testLambdaProvider) = createInstance(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, "test-gateway-provider", properties = Some(Map(
       "config" ->
         """{
           |  "env": {
@@ -80,7 +80,13 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
           |  }
           |}""".stripMargin
     )))
-    val testLambdaProvider = testGatewayProvider
+    val Success(testGatewayProvider) = createInstance(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, "test-gateway-provider", properties = Some(Map(
+      "linked_providers" -> Json.arr(Json.obj(
+        "name" -> "AWS",
+        "type" -> "",
+        "id" -> testLambdaProvider.id
+      )).toString
+    )))
 
     val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
       "public" -> "true",
@@ -140,7 +146,9 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
 
       r must beEqualTo(Json.obj(
         "name" -> s"${testEndpoint.id}",
-        "functionArn" -> "function id"
+        "aws" -> Json.obj(
+          "functionArn" -> "function id"
+        )
       ))
     }
     "update endpoint" in new TestApplication {

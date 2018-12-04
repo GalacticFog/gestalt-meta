@@ -33,7 +33,7 @@ class GatewayMethods @Inject() (
 
   def getGwmProviderAndImpl(providerId: UUID): Either[String,(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
     val gmProvider = ResourceFactory.findById(ResourceIds.GatewayManager, providerId)
-    val awsapiProvider = ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, providerId)
+    val awsapiProvider = ResourceFactory.findById(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, providerId)
     (gmProvider, awsapiProvider) match {
       case (Some(provider), None) => Right((provider, gwmImpl))
       case (None, Some(provider)) => Right((provider, awsapiImpl))

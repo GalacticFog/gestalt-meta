@@ -160,7 +160,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
     import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 
     val implType = endpointProperties.implementation_type
-    val implId = endpointProperties.implementation_id
+    val implId = UUID.fromString(endpointProperties.implementation_id)
     val maybePortName = endpointProperties.container_port_name
     val sync = endpointProperties.synchronous.getOrElse(true)
     val isHttpAware = endpointProperties.is_http_aware.getOrElse(false)
