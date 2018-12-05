@@ -12,14 +12,15 @@ import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.galacticfog.gestalt.caas.kube._
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.errors.{ResourceNotFoundException}
+
+import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
 import controllers.util.SecureController
 import javax.inject.Singleton
-import controllers.util.HandleExceptions
-import controllers.util.QueryString
+import controllers.util.{CompiledHelmChart, HandleExceptions, QueryString}
+
 import akka.util.ByteString
 import play.api.i18n.MessagesApi
 import play.api.libs.json._
@@ -31,14 +32,14 @@ import skuber.apps.v1.{ReplicaSet, ReplicaSetList}
 import skuber.api.client._
 import skuber.json.format._
 import skuber.apps.v1beta1._
-
-//import skuber.apps.format._
-//import skuber.ext.{ReplicatSet, ReplicaSetList}
-//import skuber.json.ext.format._
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt  
 
 import skuber.LabelSelector
 import LabelSelector.dsl._
 import scala.language.postfixOps
+import play.api.mvc.AnyContentAsRaw
+
 
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
@@ -60,6 +61,23 @@ class KubeNativeController @Inject()(
   implicit val configMapListFmt: Format[ConfigMapList] = ListResourceFormat[ConfigMap]
   implicit val replicaSetListFmt: Format[ReplicaSetList] = ListResourceFormat[ReplicaSet]
   
+  
+  def createApplicationDeployment(fqon: String, provider: UUID): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
+    val kube = ResourceFactory.findById(provider) getOrElse {
+      throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
+    }
+    
+    val contentType = request.contentType.getOrElse("")
+    if (isYamlType(contentType)) {    
+      val namespace = namespaceOrDefault(request.queryString)
+      skuberFactory.initializeKube(kube, namespace)
+          .flatMap { deploymentResult(request, _) }
+          .recover { case t: Throwable => HandleExceptions(t) }
+    } else {
+      Future(UnsupportedMediaType("Content-Type must be a valid YAML Mime type."))
+    }        
+  }
+  
   /**
    * List objects in a Kubernetes cluster
    */
@@ -69,12 +87,14 @@ class KubeNativeController @Inject()(
     }
     
     val namespace = namespaceOrDefault(request.queryString)
-    
     skuberFactory.initializeKube(kube, namespace)
         .flatMap {  getResult(path, request, _) }
         .recover { case t: Throwable => HandleExceptions(t) }
   }
   
+  /**
+   * Delete objects in a Kubernetes cluster
+   */
   def delete(fqon: String, provider: UUID, path: String): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
     val kube = ResourceFactory.findById(provider) getOrElse {
       throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
@@ -87,16 +107,102 @@ class KubeNativeController @Inject()(
         .recover { case t: Throwable => HandleExceptions(t) }
   }
   
-  def param[T](m: Map[String,Seq[T]], n: String) = QueryString.single[T](m, n)
+  private def param[T](m: Map[String,Seq[T]], n: String) = QueryString.single[T](m, n)
   
+  
+  /**
+   * Take the raw payload YAML for a Helm Chart and convert it to a string.
+   */
+  private def decodeCompiledChart(payload: AnyContentAsRaw): String = {
+    val bytes = for {
+      r <- payload.asRaw
+      b <- r.asBytes()
+    } yield b
+
+    bytes.fold {
+      throw new BadRequestException("Payload must not be empty")
+    }{ b =>
+      b.utf8String
+    }
+  }
+  
+  case class KubeCreateObjectResponse(kind: String, name: String, status: String)
+  case class KubeChartResponse(namespace: String, objects: Seq[KubeCreateObjectResponse])
+  implicit lazy val formatKubeCreateObjectResponse = Json.format[KubeCreateObjectResponse]
+  implicit lazy val formatKubeChartResponse = Json.format[KubeChartResponse]
+  
+  private[controllers] def deploymentResult[R](request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
+    
+    val payload = request.body.asInstanceOf[AnyContentAsRaw]
+    val rawBody = decodeCompiledChart(payload)
+    
+    // This is a list of each YAML document in the composite input as a YAML String
+    val documents: List[String] = CompiledHelmChart.splitToYamlString(rawBody)
+
+    /*
+     * Iterate over YAML docs, attempt to create each - resulting list is either JSON
+     * representation of the creted object, or JSON conveying the error that occured
+     */
+    val kubeResponses = documents.foldLeft(Seq[JsValue]()) { (acc, doc) =>
+      val result = Try {
+        Await.result(createKubeResource(doc, context, request.queryString).transform(
+          s => s,
+          e => throw new Exception("Failed creating object.")), 20.seconds)
+      } match {
+        case Success(r) => {
+          // kube request succeeded - add JSON resource
+          objectResource2Json(r) match {
+            case Success(a) => a
+            case Failure(e) => Json.obj(
+              "status" -> "failed",
+              "resource" -> "[not implemented]",
+              "message" -> e.getMessage) 
+          }
+        }
+        case Failure(e) => {
+          // kube request failed - add error JSON
+          Json.obj(
+              "status" -> "failed",
+              "resource" -> "[not implemented]",
+              "message" -> e.getMessage)
+        }
+      }
+      result +: acc
+    }
+    
+    // TODO: Complete this response format - should be an AppDeployment Resource
+    // TODO: Define AppDeployment Resource schema
+    val jsResponse = Json.obj(
+      "status" -> "[not implemented]",
+      "objects" -> Json.toJson(kubeResponses)
+    )
+    
+    Future(Ok(jsResponse))
+  }
+  
+  def objectResource2Json(r: ObjectResource): Try[JsValue] = Try {
+    r match {
+      case x: Pod => Json.toJson(x) 
+      case x: Service => Json.toJson(x) 
+      case x: Deployment => Json.toJson(x) 
+      case x: ReplicaSet => Json.toJson(x)
+      case x: Secret => Json.toJson(x)
+      case x: ConfigMap => Json.toJson(x)
+      case x: StatefulSet => Json.toJson(x)
+      case x: PersistentVolume => Json.toJson(x)
+      case x: PersistentVolumeClaim => Json.toJson(x)
+      case x: Namespace => Json.toJson(x)
+      case _ => throw new RuntimeException(s"Unknown ObjectResource Type. found: ${r.getClass.getSimpleName}")
+    }
+  }
+
   private[controllers] def deleteResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     
     val qs = request.queryString
     val headers = request.headers.toMap
     val gracePeriod = QueryString.singleInt(qs, "k8s_gracePeriodSeconds").getOrElse(-1)
     val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
-    
-    
+        
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
     path match {
       case one("pods", nm)         => kubeDelete[Pod](context, nm, gracePeriod)
@@ -163,7 +269,7 @@ class KubeNativeController @Inject()(
     
     (lists orElse singles orElse notfound)(path)    
   }    
-
+  
   private def defaultHelmChartReleaseName() = {
     java.time.LocalDateTime.now()
       .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"))
@@ -189,18 +295,6 @@ class KubeNativeController @Inject()(
         case _ => payload
       }
     }
-
-//    val bytes = for {
-//      r <- payload.asRaw
-//      b <- r.asBytes()
-//    } yield b
-//    
-//    val rawBody = bytes.fold {
-//      throw new BadRequestException("Payload must not be empty")
-//    }{ b =>
-//      b.utf8String
-//    }
-
   }
   
   /**
@@ -235,7 +329,38 @@ class KubeNativeController @Inject()(
       }
     } yield createResponse) recover {case t: Throwable => HandleExceptions(t)}
   }  
-
+  
+  
+  private[controllers] def createKubeResource[T <: ObjectResource](
+      payload: String, context: RequestContext, qs: Map[String,Seq[String]]): Future[ObjectResource] = {
+      
+    val newKubeResource = for {
+      json <- Future.fromTry(YamlJson.fromYamlString(payload))
+      body = processCreatePayload(json, qs)
+      
+      createResponse <- parseKind(body) match {
+        case None => throw new Exception("foo") //Future.failed(new BadRequestException("Malformed request. Cannot find object 'kind'"))
+        case Some(kind) => kind.toLowerCase match {
+          case "pod"         => createKubeObject[Pod](body, context)
+          case "service"     => createKubeObject[Service](body, context)
+          case "deployment"  => createKubeObject[Deployment](body, context)
+          case "replicaset"  => createKubeObject[ReplicaSet](body, context)
+          case "secret"      => createKubeObject[Secret](body, context)
+          case "configmap"   => createKubeObject[ConfigMap](body, context)
+          case "statefulset" => createKubeObject[StatefulSet](body, context)
+          case "persistentvolume"       => createKubeObject[PersistentVolume](body, context)
+          case "persistentvolumeclaim"  => createKubeObject[PersistentVolumeClaim](body, context)
+          case "namespace" => createKubeObject[Namespace](body, context)
+          case e => throw new Exception("bar") //Future.failed(new BadRequestException(s"Cannot process requests for object kind '$kind'"))
+        }
+      }
+    } yield createResponse
+    
+    newKubeResource
+  }
+  
+  
+  
   /**
    * Handles marshaling a Kubernetes object to an appropriate data-type based on Accept headers.
    */
