@@ -5,6 +5,7 @@ import java.io.{PrintWriter, Writer}
 import akka.actor.ActorSystem
 import akka.stream.ActorMaterializer
 import com.galacticfog.gestalt.caas.kube.{Ascii, KubeConfig}
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
 import play.api.libs.json.{JsObject, JsString, Json}
@@ -80,10 +81,16 @@ class KubeContainerImport extends ContainerImport {
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
     val importTarget = (resource \ "properties" \ "external_id").asOpt[String] getOrElse(throw new RuntimeException("resource did not have 'external_id'"))
 
-    val (namespace,deplName) = importTarget match {
-      case r"/namespaces/([^/]+)${namespace}/deployments/(.*)${deployment}" => (namespace,deployment)
-      case _ => throw new RuntimeException(s"resource '.properties.external_id' did not match expected pattern, was '${importTarget}'")
+    val sanitizedImportTarget = importTarget
+      .stripPrefix("/")
+      .stripSuffix("/")
+      .replaceAll("\\s", "")
+
+    val (namespace, deplName) = sanitizedImportTarget match {
+      case r"$namespace[/\\]$deplName" => (namespace, deplName)
+      case _ => throw BadRequestException(s"Invalid External ID. expected: 'namespace/deployment'. found: '$importTarget'")
     }
+
     val kube = initializeKube(provider, namespace).get
 
     val fResp = for {
