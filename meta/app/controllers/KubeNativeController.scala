@@ -131,6 +131,16 @@ class KubeNativeController @Inject()(
   implicit lazy val formatKubeCreateObjectResponse = Json.format[KubeCreateObjectResponse]
   implicit lazy val formatKubeChartResponse = Json.format[KubeChartResponse]
   
+  
+  private[controllers] def errorJson(t: Throwable, kind: String, name: String): JsValue = {
+    Json.obj(
+    "status" -> "failed",
+    "resource" -> Json.obj(
+        "kind" -> kind,
+        "name" -> name),
+    "message" -> t.getMessage)
+  }
+  
   private[controllers] def deploymentResult[R](request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     
     val payload = request.body.asInstanceOf[AnyContentAsRaw]
@@ -149,22 +159,18 @@ class KubeNativeController @Inject()(
           s => s,
           e => throw new Exception("Failed creating object.")), 20.seconds)
       } match {
+        // KUBE REQUEST SUCCEEDED - add JSON resource
         case Success(r) => {
-          // kube request succeeded - add JSON resource
           objectResource2Json(r) match {
             case Success(a) => a
-            case Failure(e) => Json.obj(
-              "status" -> "failed",
-              "resource" -> "[not implemented]",
-              "message" -> e.getMessage) 
+            case Failure(e) => errorJson(e, r.kind, r.name)
           }
         }
+        // KUBE REQUEST FAILED - add error JSON        
         case Failure(e) => {
-          // kube request failed - add error JSON
-          Json.obj(
-              "status" -> "failed",
-              "resource" -> "[not implemented]",
-              "message" -> e.getMessage)
+          val res = CompiledHelmChart.string2Map(doc)
+          val metadata = CompiledHelmChart.toScalaMap(res("metadata"))
+          errorJson(e, res("kind").toString, metadata("name").toString)
         }
       }
       result +: acc
@@ -270,13 +276,13 @@ class KubeNativeController @Inject()(
     (lists orElse singles orElse notfound)(path)    
   }    
   
-  private def defaultHelmChartReleaseName() = {
+  private[controllers] def defaultHelmChartReleaseName() = {
     java.time.LocalDateTime.now()
       .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"))
       .toString    
   }
   
-  private def processCreatePayload(payload: JsValue, qs: Map[String, Seq[String]]): JsValue = {
+  private[controllers] def processCreatePayload(payload: JsValue, qs: Map[String, Seq[String]]): JsValue = {
     
     val source = QueryString.single(qs, "source").map(_.trim.toLowerCase)
     source.fold( payload ) {
@@ -443,8 +449,8 @@ class KubeNativeController @Inject()(
       val mimetypes = (MimeYaml ++ MimeJson).mkString(",") 
       NotAcceptable(s"Acceptable mime-types are: $mimetypes")
     }
-  }  
-
+  }
+  
   /**
    * Convert a Kubernetes object to YAML
    */

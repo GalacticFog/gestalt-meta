@@ -37,4 +37,7 @@ object CompiledHelmChart {
     mapAsScalaMap(jmap.asInstanceOf[java.util.Map[String,Object]]).toMap
   }
   
+  def string2Map(yaml: String) = {
+    toScalaMap(new Yaml().load(yaml))
+  }
 }
