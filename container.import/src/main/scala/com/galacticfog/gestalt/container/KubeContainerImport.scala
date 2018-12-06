@@ -172,7 +172,7 @@ class KubeContainerImport extends ContainerImport {
     ).as[JsObject]
   }
 
-  private[this] def initializeKube( provider: JsObject, namespace: String )
+  protected[this] def initializeKube( provider: JsObject, namespace: String )
                                   ( implicit ec: ExecutionContext ): Try[RequestContext] = for {
     config  <- extractKubeConfig(provider)
     context <- Try {
