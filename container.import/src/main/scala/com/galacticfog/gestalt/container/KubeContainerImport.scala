@@ -85,9 +85,13 @@ class KubeContainerImport extends ContainerImport {
       .stripPrefix("/")
       .stripSuffix("/")
       .replaceAll("\\s", "")
+    val importTargetPattern = "(.+)/(.+)".r
 
     val (namespace, deplName) = sanitizedImportTarget match {
-      case r"$namespace[/\\]$deplName" => (namespace, deplName)
+      case importTargetPattern(namespaceValue, deplNameValue) => {
+        log(s"namespace: $namespaceValue, deployment: $deplNameValue")
+        (namespaceValue, deplNameValue)
+      }
       case _ => throw BadRequestException(s"Invalid External ID. expected: 'namespace/deployment'. found: '$importTarget'")
     }
 
@@ -168,7 +172,7 @@ class KubeContainerImport extends ContainerImport {
     ).as[JsObject]
   }
 
-  private[this] def initializeKube( provider: JsObject, namespace: String )
+  protected[this] def initializeKube( provider: JsObject, namespace: String )
                                   ( implicit ec: ExecutionContext ): Try[RequestContext] = for {
     config  <- extractKubeConfig(provider)
     context <- Try {
