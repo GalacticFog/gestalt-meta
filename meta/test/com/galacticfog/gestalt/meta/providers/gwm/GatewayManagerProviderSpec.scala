@@ -92,7 +92,12 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
           |  }
           |}""".stripMargin
     )))
-    val Success(testKongProvider) = createInstance(ResourceIds.KongGateway, "test-kong-provider", properties = None)
+    val Success(testKongProvider) = createInstance(ResourceIds.KongGateway, "test-kong-provider", properties = Some(Map(
+      "config" -> Json.obj(
+        "env" -> Json.obj("public" -> Json.obj("PUBLIC_URL_VHOST_0" -> "public url host")),
+        "external_protocol" -> "http"
+      ).toString
+    )))
     val Success(testLambda) = createInstance(ResourceIds.Lambda, "test-lambda", properties = Some(Map(
       "public" -> "true",
       "cpus" -> "0.1",
@@ -164,7 +169,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
         "id" -> testGatewayProvider.id.toString,
         "locations" -> Json.arr(testKongProvider.id.toString)
       ).toString
-    )))
+    )), parent=Some(testApi.id))
     Ents.setNewResourceEntitlements(dummyRootOrgId, testEndpoint.id, user, Some(testApi.id))
 
     def newEndpoint(props: Map[String,String]) = {
@@ -174,7 +179,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
           "id" -> testGatewayProvider.id.toString,
           "locations" -> Json.arr(testKongProvider.id.toString)
         ).toString
-      ) ++ props))
+      ) ++ props), parent=Some(testApi.id))
       Ents.setNewResourceEntitlements(dummyRootOrgId, testEndpoint.id, user, Some(testApi.id))
       testEndpoint
     }
@@ -291,6 +296,34 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
         "id" -> newTestEndpoint.id,
         "apiId" -> testApi.id,
         "upstreamUrl" -> s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSync",
+        "path" -> "/some-path"
+      ))
+    }
+
+    "properly create upstream_url for synchronous http-aware lambda-bound endpoints" in new TestApplication {
+      var r: JsValue = null
+      val ws = MockWS {
+        case (POST, _) => Action { request =>
+          r = request.body.asJson.get
+          Ok("")
+        }
+      }
+      val gwmProvider = new GatewayManagerProvider(ws, providerMethods)
+
+      val newTestEndpoint = newEndpoint(Map[String,String](
+        "implementation_type" -> "lambda",
+        "synchronous" -> "true",
+        "is_http_aware" -> "true",
+        "implementation_id" -> testLambda.id.toString,
+        "resource" -> "/some-path"
+      ))
+
+      val _ = Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds)
+
+      r must beEqualTo(Json.obj(
+        "id" -> newTestEndpoint.id,
+        "apiId" -> testApi.id,
+        "upstreamUrl" -> s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSyncHA",
         "path" -> "/some-path"
       ))
     }
@@ -584,6 +617,12 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       val gwmProvider = new GatewayManagerProvider(ws, providerMethods)
 
       val _ = Await.result(gwmProvider.deleteEndpoint(testGatewayProvider, testEndpoint), 10 .seconds)
+    }
+
+    "getPublicUrl" in new TestApplication {
+      val gwmProvider = new GatewayManagerProvider(null, null)
+
+      gwmProvider.getPublicUrl(testEndpoint) must beEqualTo(Some("http://public url host/test-api/original/path"))
     }
   }
 }

@@ -22,6 +22,7 @@ object ResourceSerde {
       serializedProperties <- Either.fromOption(stringmap(Json.toJson(properties).asOpt[Map[String,JsValue]]),
        s"Failed to serialize resource properties: $properties")
     ) yield {
+      // !!! will not correctly remove missing/deleted properties:
       resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ serializedProperties))
     }
   }

@@ -27,8 +27,8 @@ class EventsSpec extends PlaySpecification with JsonMatchers with ResourceScope 
   override def beforeAll(): Unit = pristineDatabase()
 
   lazy val mockAmqpClient = mock[AmqpClient]
-  lazy val eventMethods = new EventMethods {
-    override def eventsClient(): AmqpClient = mockAmqpClient
+  lazy val eventMethods = new EventMethodsTrait {
+    def eventsClient(): AmqpClient = mockAmqpClient
   }
 
   "EventMessage" should {

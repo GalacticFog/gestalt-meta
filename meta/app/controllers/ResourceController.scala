@@ -13,7 +13,6 @@ import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, Resource
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
-import com.galacticfog.gestalt.meta.providers.gwm.GatewayManagerProvider
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import controllers.util.JsonUtil._
@@ -55,7 +54,7 @@ class ResourceController @Inject()(
     containerService: ContainerService,
     genericResourceMethods: GenericResourceMethods,
     lambdaMethods: LambdaMethods,
-    gwmImpl: GatewayManagerProvider  )
+    gatewayMethods: GatewayMethods  )
     
   extends SecureController(messagesApi = messagesApi, sec = sec)
     with Authorization with MetaControllerUtils {
@@ -1269,7 +1268,7 @@ class ResourceController @Inject()(
                                                  user: AuthAccountWithCreds,
                                                  qs: Option[QueryString] = None) = Try {
 
-    val maybePublicUrl = gwmImpl.getPublicUrl(res)
+    val maybePublicUrl = gatewayMethods.getPublicUrl(res)
 
     maybePublicUrl.fold(res) {public_url =>
       upsertProperties(res, "public_url" -> public_url)

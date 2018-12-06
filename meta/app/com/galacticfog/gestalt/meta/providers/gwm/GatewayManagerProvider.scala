@@ -67,11 +67,11 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   implicit val laserApiFormat: Format[LaserApi] = Json.format[LaserApi]
   implicit val laserEndpointFormat: Format[LaserEndpoint] = Json.format[LaserEndpoint]
 
-  def getPublicUrl(endpointResource: GestaltResourceInstance): Option[String] = {
+  def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
     def byHost(endpointProperties: ApiEndpointProperties): Either[String,String] = {
       val res = for {
-        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, endpointResource.id),
-         s"Api parent for ${endpointResource.id} not found")
+        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+         s"Api parent for ${resource.id} not found")
         maybePath = endpointProperties.resource.map { path => s"/${api.name}${path}" } getOrElse("")
         firstHost <- Either.fromOption(endpointProperties.hosts.flatMap(_.headOption), "hosts array must not be empty")
         location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
@@ -93,8 +93,8 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
 
     def byPath(endpointProperties: ApiEndpointProperties): Either[String,String] = {
       val res = for {
-        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, endpointResource.id),
-         s"Api parent for ${endpointResource.id} not found")
+        api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
+         s"Api parent for ${resource.id} not found")
         resourcePath <- Either.fromOption(endpointProperties.resource, "resource must be present")
         location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
         kongProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.KongGateway, UUID.fromString(location)),
@@ -115,7 +115,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       res
     }
 
-    (ResourceSerde.deserialize[ApiEndpointProperties](endpointResource) flatMap { ep =>
+    (ResourceSerde.deserialize[ApiEndpointProperties](resource) flatMap { ep =>
       if(ep.hosts.getOrElse(Seq()).size == 0) {
         byPath(ep) orElse byHost(ep)
       }else {
@@ -160,9 +160,10 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
     import com.galacticfog.gestalt.meta.api.ContainerSpec.ServiceAddress
 
     val implType = endpointProperties.implementation_type
-    val implId = endpointProperties.implementation_id
+    val implId = UUID.fromString(endpointProperties.implementation_id)
     val maybePortName = endpointProperties.container_port_name
     val sync = endpointProperties.synchronous.getOrElse(true)
+    val isHttpAware = endpointProperties.is_http_aware.getOrElse(false)
     (implType,maybePortName.map(_.trim).filter(_.nonEmpty)) match {
       case ("lambda",_) => {
         log.debug("ENTERED LAMBDA CASE...")
@@ -172,7 +173,11 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         ResourceFactory.findById(ResourceIds.Lambda, implId) match {
           case None => throw new BadRequestException("no lambda with id matching ApiEndpoint \"implementation_id\"")
           case Some(l) =>
-            val invoke = if (sync) "invokeSync" else "invoke"
+            val invoke = if(sync) {
+              if(isHttpAware) { "invokeSyncHA" }else { "invokeSync" }
+            }else {
+              "invoke"
+            }
             val providerId = UUID.fromString((Json.parse(l.properties.get("provider")) \ "id").as[String])
             val provider = ResourceFactory.findById(providerId).get
             val config = Json.parse(provider.properties.get("config")).as[JsObject]

@@ -404,13 +404,11 @@ class ContainerController @Inject()(
 
 object ContainerController {
   def findPromotionRule(start: UUID) = {
-    object Finder extends EventMethods
-    Finder.findEffectiveEventRules(start, Option("container.promote"))
+    EventMethods.findEffectiveEventRules(start, Option("container.promote"))
   }
 
   def findMigrationRule(start: UUID) = {
-    object Finder extends EventMethods
-    Finder.findEffectiveEventRules(start, Option("container.migrate"))
+    EventMethods.findEffectiveEventRules(start, Option("container.migrate"))
   }
 }
 
