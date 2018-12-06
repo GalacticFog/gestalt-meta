@@ -16,7 +16,7 @@ case class ApiProperties(
 case class ApiEndpointProperties(
   resource: Option[String],
   upstream_url: Option[String],
-  implementation_id: UUID,
+  implementation_id: String,
   implementation_type: String,    // `container` or `lambda`
   container_port_name: Option[String],    // container_port_name for container or rest api id for aws lambda
   auth_type: Option[JsValue],
@@ -24,6 +24,8 @@ case class ApiEndpointProperties(
   location_id: Option[String],
   parent: Option[String],
   synchronous: Option[Boolean],
+  is_http_aware: Option[Boolean],
+  whitelist: Option[Seq[String]],
   provider: InlineApiProvider,
   methods: Option[Seq[String]],
   plugins: Option[JsObject],
