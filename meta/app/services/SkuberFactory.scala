@@ -51,48 +51,54 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
     } yield token
   }
 
+  
   /**
-    *
-    */
+   *
+   */
   override def initializeKube( provider: GestaltResourceInstance, namespace: String )
                              ( implicit ec: ExecutionContext ): Future[RequestContext] = {
-    for {
-      configYaml  <- loadProviderConfiguration(provider)
-      initialConfig = KubeConfig.parseYaml(configYaml, Map.empty)
-      _ = log.info(s"parsed kubeconfig for provider ${provider.id}, authInfo of type ${initialConfig.currentContext.authInfo.getClass.getSimpleName}")
-      newAuth <- initialConfig.currentContext.authInfo match {
-        case gcp: skuber.api.client.GcpAuth if whitelistedCmdPaths.contains(gcp.command)=>
-          getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, gcp))
-        case exec: skuber.api.client.ExecAuth if whitelistedCmdPaths.contains(exec.command) =>
-          getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, exec))
-        case exec: skuber.api.client.ExecAuth =>
-          Future.failed(new BadRequestException("Kubernetes external authenticator was configured command not present on the configured white-list."))
-        case gcp: skuber.api.client.GcpAuth =>
-          Future.failed(new BadRequestException("Kubernetes GCP authenticator was configured command not present on the configured white-list."))
-        case other => Future.successful(other)
-      }
-      finalconfig = {
-        val ctx = initialConfig.currentContext.copy(
-          namespace = skuber.Namespace(metadata = skuber.ObjectMeta(name = namespace)),
-          authInfo = newAuth
-        )
-        initialConfig.copy(
-          currentContext = ctx
-        )
-      }
-    } yield skuber.api.client.init(finalconfig)
-  }
 
+    loadProviderConfiguration(provider).fold {
+      log.info(s"No configuration data found for Provider '${provider.id}'. Proceeding with default config...")
+      Future.successful(skuber.api.client.init())
+      
+    }{ configYaml =>
+      val initialConfig = KubeConfig.parseYaml(configYaml, Map.empty)
+      log.info(s"parsed kubeconfig for provider ${provider.id}, authInfo of type ${initialConfig.currentContext.authInfo.getClass.getSimpleName}")            
+      
+      for {
+        newAuth <- initialConfig.currentContext.authInfo match {
+          case gcp: skuber.api.client.GcpAuth if whitelistedCmdPaths.contains(gcp.command)=>
+            getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, gcp))
+          case exec: skuber.api.client.ExecAuth if whitelistedCmdPaths.contains(exec.command) =>
+            getToken(KubeTokenActor.KubeAuthTokenRequest(provider.id, configYaml.hashCode, exec))
+          case exec: skuber.api.client.ExecAuth =>
+            Future.failed(new BadRequestException("Kubernetes external authenticator was configured command not present on the configured white-list."))
+          case gcp: skuber.api.client.GcpAuth =>
+            Future.failed(new BadRequestException("Kubernetes GCP authenticator was configured command not present on the configured white-list."))
+          case other => Future.successful(other)
+        }
+        finalconfig = {
+          val ctx = initialConfig.currentContext.copy (
+            namespace = skuber.Namespace(metadata = skuber.ObjectMeta(name = namespace)),
+            authInfo = newAuth
+          )
+          initialConfig.copy(currentContext = ctx)
+        }
+      } yield skuber.api.client.init(finalconfig)      
+    }
+
+  }  
+  
   /**
-    * Get kube configuration from Provider. Performs lookup and validation of provider type.
-    */
+   * Get kube configuration from Provider. Performs lookup and validation of provider type.
+   */
   private[services] def loadProviderConfiguration(provider: GestaltResourceInstance)
-                                                 (implicit ec: ExecutionContext): Future[String] = Future {
+                                                 (implicit ec: ExecutionContext): Option[String] = {
     if (provider.typeId != ResourceIds.KubeProvider)
       throw ResourceNotFoundException(s"Provider '$provider' is not a Kubernetes Provider")
-    else extractKubeConfig(provider.properties) getOrElse {
-      throw new RuntimeException(s"Provider configuration not found. This is a bug")
-    }
+    else 
+      extractKubeConfig(provider.properties)
   }
 
   /**

@@ -3,6 +3,13 @@
 ###
 
 
+POST  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/chart    controllers.KubeNativeController.createApplicationDeployment(fqon: String, providerId: java.util.UUID)
+
+GET  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.get(fqon: String, providerId: java.util.UUID, path: String)
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.post(fqon: String, providerId: java.util.UUID, path: String)
+
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path   controllers.KubeNativeController.delete(fqon: String, providerId: java.util.UUID, path: String)
+
 
 
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
@@ -45,7 +52,7 @@ GET /tracking/credits               controllers.TrackingController.getCredits()
 
 
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
-PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
+PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
 
 ############################
 # ACTIONS
