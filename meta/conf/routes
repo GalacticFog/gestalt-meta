@@ -35,6 +35,14 @@ POST   /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id/redeploy  control
 
 GET    /root/check 		controllers.InfoController.serviceCheck()
 
+############################
+# TRACKING
+############################
+POST /tracking/credits              controllers.TrackingController.postCredit()
+DELETE /tracking/credits/:name      controllers.TrackingController.deleteCredit(name: String)
+GET /tracking/credits/:name         controllers.TrackingController.getCredit(name: String)
+GET /tracking/credits               controllers.TrackingController.getCredits()
+
 
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
 PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
@@ -281,4 +289,5 @@ POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceCont
 ### CORS support
 OPTIONS  /                           controllers.InfoController.options(path="")
 OPTIONS  /*path                      controllers.InfoController.options(path)
+
 

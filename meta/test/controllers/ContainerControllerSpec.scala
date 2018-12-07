@@ -29,8 +29,7 @@ import play.api.test.PlaySpecification
 import services._
 
 import scala.concurrent.Future
-import scala.util.{Try,Success}
-
+import scala.util.{Success, Try}
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 

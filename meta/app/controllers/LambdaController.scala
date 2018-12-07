@@ -20,6 +20,7 @@ import com.galacticfog.gestalt.util.Either._
 import cats.syntax.either._
 
 import com.galacticfog.gestalt.security.play.silhouette.{GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.galacticfog.tracking.FaasTrackingProvider
 import com.google.inject.Inject
 import play.api.i18n.MessagesApi
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
@@ -30,8 +31,9 @@ class LambdaController @Inject()(
     messagesApi: MessagesApi,
     resourceController: ResourceController,
     lambdaMethods: LambdaMethods,
-    sec: GestaltFrameworkSecurity)
-      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
+    sec: GestaltFrameworkSecurity,
+    trackingProvider: FaasTrackingProvider)
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with JsonInput {
   
   /*
    * This is the provider variable containing the provider host address.
@@ -72,6 +74,7 @@ class LambdaController @Inject()(
     }
 
     actionResult map { metaLambda =>
+      trackingProvider.reportCreate(metaLambda.id.toString)
       Created(RenderSingle(resourceController.transformResource(metaLambda).get))
     } recoverWith { case throwable =>
       HandleExceptionsAsync(throwable)
