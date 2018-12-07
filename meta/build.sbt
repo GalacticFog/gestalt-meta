@@ -27,7 +27,7 @@ addCompilerPlugin(scalafixSemanticdb)
 
 name := """gestalt-meta"""
 
-version := "0.7.8"
+version := "0.7.9"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -102,6 +102,7 @@ libraryDependencies ++= Seq(
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
   "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources(),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
+  "com.galacticfog" %% "gestalt-tracking-provider"     % "0.0.2",
   "net.codingwell"  %% "scala-guice"                   % "4.2.1",
   "org.slf4j"        % "slf4j-api"                     % "1.7.21",
   "ch.qos.logback"   % "logback-classic"               % "1.1.7",

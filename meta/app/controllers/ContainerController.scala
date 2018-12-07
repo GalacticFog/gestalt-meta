@@ -13,6 +13,7 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
 import com.galacticfog.gestalt.util.FutureFromTryST._
+import com.galacticfog.tracking.CaasTrackingProvider
 import com.google.inject.Inject
 import controllers.util._
 import javax.inject.Singleton
@@ -33,7 +34,8 @@ class ContainerController @Inject()(
      providerManager: ProviderManager,
      genericResourceMethods: GenericResourceMethods,
      resourceController: ResourceController,
-     db: play.api.db.Database)
+     db: play.api.db.Database,
+     trackingProvider: CaasTrackingProvider)
     extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
   def futureToFutureTry[T](f: Future[T]): Future[Try[T]] = f.map(Success(_)).recover({case x => Failure(x)})
@@ -144,7 +146,17 @@ class ContainerController @Inject()(
             spec      <- Future.fromTryST(ContainerSpec.fromResourceInstance(proto))
             context   = ProviderContext(request, spec.provider.id, None)
             container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
-          } yield container
+          } yield {
+            trackingProvider.reportCreate(
+              container.id.toString,
+              spec.cpus.toFloat,
+              spec.memory.toFloat,
+              spec.num_instances,
+              spec.image,
+              spec.name
+            )
+            container
+          }
         //
         // IMPORT
         case "import" =>
@@ -243,7 +255,18 @@ class ContainerController @Inject()(
       ), provider.id, Some(prevContainer))
       _ = log.debug("about to perform update")
       updated <- containerService.updateContainer(context, containerWithUpdates, request.identity, request)
-    } yield Ok(RenderSingle(resourceController.transformResource(updated).get))
+    } yield {
+      val maybeContainerSpec = ContainerSpec.fromResourceInstance(updated).toOption
+      maybeContainerSpec.map(
+        containerSpec => trackingProvider.reportUpdate(
+          updated.id.toString,
+          containerSpec.cpus.toFloat,
+          containerSpec.memory.toFloat,
+          containerSpec.num_instances
+        )
+      )
+      Ok(RenderSingle(resourceController.transformResource(updated).get))
+    }
     updated recover { case e => HandleExceptions(e) }
   }
 
@@ -273,7 +296,18 @@ class ContainerController @Inject()(
           service <- Future.fromTry(providerManager.getProviderImpl(context.provider.typeId))
           updated <- service.scale(context, c, numInstances)
           updatedResource <- Future.fromTry(ResourceFactory.update(updated, request.identity.account.id))
-        } yield Accepted(RenderSingle(resourceController.transformResource(updatedResource).get))
+        } yield {
+          val maybeContainerSpec = ContainerSpec.fromResourceInstance(updatedResource).toOption
+          maybeContainerSpec.map(
+            containerSpec => trackingProvider.reportUpdate(
+              updatedResource.id.toString,
+              containerSpec.cpus.toFloat,
+              containerSpec.memory.toFloat,
+              containerSpec.num_instances
+            )
+          )
+          Accepted(RenderSingle(resourceController.transformResource(updatedResource).get))
+        }
         scaled recover { case e => HandleExceptions(e) }
       }
     }
