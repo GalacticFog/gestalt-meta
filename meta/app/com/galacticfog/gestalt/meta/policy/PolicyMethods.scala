@@ -6,6 +6,7 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.output._
 import play.api.libs.json._
 import org.joda.time.DateTime
+// import org.joda.time.format.DateTimeFormat
 
 
 case class EventArgs(
@@ -39,6 +40,10 @@ case class EventMessage(
     )(
       (l,p) => l ++ Json.obj("payload" -> Json.obj("resource" -> pay))
     )
+
+    // val formatter = DateTimeFormat.forPattern("yyyyMMddHHmmss")
+
+    // msg ++ Json.obj("args" -> argsVal, "timestamp" -> timestamp.getMillis() / 1000)
     msg ++ Json.obj("args" -> argsVal)
   }
 }

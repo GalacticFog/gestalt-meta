@@ -78,7 +78,7 @@ class ProviderActionMethods @Inject()(lambdaMethods: LambdaMethods) {
        * TODO: Use implementation type ID to map a function for creating a new implementation-resource.
        * This just assumes Lambda for now.
        */
-      lambdaMethods.createLambdaCommon(org, env, implSpec, user) map { lam =>
+      lambdaMethods.createLambda(org, env, implSpec, user) map { lam =>
         log.debug(s"Successfully created new ${impl.kind}.")
         lam
       } recover {
@@ -145,7 +145,7 @@ class ProviderActionMethods @Inject()(lambdaMethods: LambdaMethods) {
        * TODO: Use implementation type ID to map a function for creating a new implementation-resource.
        * This just assumes Lambda for now.
        */
-      lambdaMethods.createLambdaCommon(org, env, implSpec, user) map { lam =>
+      lambdaMethods.createLambda(org, env, implSpec, user) map { lam =>
         log.debug(s"Successfully created new ${impl.kind}.")
         lam
       } recover {
@@ -206,7 +206,7 @@ class ProviderActionMethods @Inject()(lambdaMethods: LambdaMethods) {
        * TODO: Use implementation type ID to map a function for creating a new implementation-resource.
        * This just assumes Lambda for now.
        */
-      lambdaMethods.createLambdaCommon(org, env, implSpec, user) map { lam =>
+      lambdaMethods.createLambda(org, env, implSpec, user) map { lam =>
         log.debug(s"Successfully created new ${impl.kind}.")
         lam
       } recover {

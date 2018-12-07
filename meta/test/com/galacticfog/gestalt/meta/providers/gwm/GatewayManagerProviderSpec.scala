@@ -300,6 +300,34 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       ))
     }
 
+    "properly create upstream_url for synchronous http-aware lambda-bound endpoints" in new TestApplication {
+      var r: JsValue = null
+      val ws = MockWS {
+        case (POST, _) => Action { request =>
+          r = request.body.asJson.get
+          Ok("")
+        }
+      }
+      val gwmProvider = new GatewayManagerProvider(ws, providerMethods)
+
+      val newTestEndpoint = newEndpoint(Map[String,String](
+        "implementation_type" -> "lambda",
+        "synchronous" -> "true",
+        "is_http_aware" -> "true",
+        "implementation_id" -> testLambda.id.toString,
+        "resource" -> "/some-path"
+      ))
+
+      val _ = Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds)
+
+      r must beEqualTo(Json.obj(
+        "id" -> newTestEndpoint.id,
+        "apiId" -> testApi.id,
+        "upstreamUrl" -> s"http://laser.service:1111/lambdas/${testLambda.id}/invokeSyncHA",
+        "path" -> "/some-path"
+      ))
+    }
+
     "properly create upstream_url for asynchronous lambda-bound endpoints" in new TestApplication {
       var r: JsValue = null
       val ws = MockWS {

@@ -27,7 +27,7 @@ addCompilerPlugin(scalafixSemanticdb)
 
 name := """gestalt-meta"""
 
-version := "0.7.8"
+version := "0.7.9"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
