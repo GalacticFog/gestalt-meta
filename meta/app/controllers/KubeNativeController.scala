@@ -10,8 +10,11 @@ import scala.util.{Try, Success, Failure}
 import org.yaml.snakeyaml.Yaml
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.galacticfog.gestalt.caas.kube._
-import com.galacticfog.gestalt.data.ResourceFactory
+import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+//import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
 import com.galacticfog.gestalt.json.Js
+import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink, ResourceStates}
 
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.auth.Authorization
@@ -39,7 +42,8 @@ import skuber.LabelSelector
 import LabelSelector.dsl._
 import scala.language.postfixOps
 import play.api.mvc.AnyContentAsRaw
-
+import controllers.util._
+import controllers.util.QueryString
 
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
@@ -50,7 +54,9 @@ class KubeNativeController @Inject()(
     messagesApi: MessagesApi,
     sec: GestaltFrameworkSecurity,
     skuberFactory: SkuberFactory )
-      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
+      extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization with MetaController {
+  
+  override val log = play.api.Logger(this.getClass)
   
   private type Headers = Map[String, Seq[String]]
   private type YamlString = String
@@ -70,8 +76,9 @@ class KubeNativeController @Inject()(
     val contentType = request.contentType.getOrElse("")
     if (isYamlType(contentType)) {    
       val namespace = namespaceOrDefault(request.queryString)
+      val creator = request.identity.account.id
       skuberFactory.initializeKube(kube, namespace)
-          .flatMap { deploymentResult(request, _) }
+          .flatMap { deploymentResult(fqid(fqon), creator, provider, request, _) }
           .recover { case t: Throwable => HandleExceptions(t) }
     } else {
       Future(UnsupportedMediaType("Content-Type must be a valid YAML Mime type."))
@@ -109,7 +116,6 @@ class KubeNativeController @Inject()(
   
   private def param[T](m: Map[String,Seq[T]], n: String) = QueryString.single[T](m, n)
   
-  
   /**
    * Take the raw payload YAML for a Helm Chart and convert it to a string.
    */
@@ -125,23 +131,22 @@ class KubeNativeController @Inject()(
       b.utf8String
     }
   }
-  
-  case class KubeCreateObjectResponse(kind: String, name: String, status: String)
-  case class KubeChartResponse(namespace: String, objects: Seq[KubeCreateObjectResponse])
-  implicit lazy val formatKubeCreateObjectResponse = Json.format[KubeCreateObjectResponse]
-  implicit lazy val formatKubeChartResponse = Json.format[KubeChartResponse]
-  
-  
+
   private[controllers] def errorJson(t: Throwable, kind: String, name: String): JsValue = {
     Json.obj(
     "status" -> "failed",
+    "kind" -> kind,
     "resource" -> Json.obj(
-        "kind" -> kind,
         "name" -> name),
     "message" -> t.getMessage)
   }
   
-  private[controllers] def deploymentResult[R](request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
+  private[controllers] def deploymentResult[R](
+      org: UUID,
+      creator: UUID,
+      provider: UUID, 
+      request: SecuredRequest[_,_], 
+      context: RequestContext): Future[Result] = {
     
     val payload = request.body.asInstanceOf[AnyContentAsRaw]
     val rawBody = decodeCompiledChart(payload)
@@ -149,15 +154,51 @@ class KubeNativeController @Inject()(
     // This is a list of each YAML document in the composite input as a YAML String
     val documents: List[String] = CompiledHelmChart.splitToYamlString(rawBody)
 
+    val qs = request.queryString
+    val source = QueryString.requiredSingle(qs, "source")
+    val release = QueryString.requiredSingle(qs, "releaseName")
+    val namespace = QueryString.requiredSingle(qs, "namespace")
+    val metaenv = {
     /*
-     * Iterate over YAML docs, attempt to create each - resulting list is either JSON
-     * representation of the creted object, or JSON conveying the error that occured
+     * TODO: Validate and handle possible 'invalid UUID' error.
      */
-    val kubeResponses = documents.foldLeft(Seq[JsValue]()) { (acc, doc) =>
+      UUID.fromString(QueryString.requiredSingle(qs, "metaEnv"))
+    }
+    
+    log.debug(
+      "Query Params: source=[%s], release=[%s], namespace=[%s], meta-env=[%s]".format(
+        source, release, namespace, metaenv))    
+    
+    /*
+     * TODO: Validations 
+     * - Assert given Kubernetes namespace exists
+     * - Assert given Meta Environment ID exists
+     */
+    
+    val output = AppDeploymentData(
+      provider = provider,
+      status = "n/a",
+      source = DeploymentSource(
+          source = source, 
+          release = release
+      ),
+      timestamp = java.time.ZonedDateTime.now,
+      native_namespace = namespace,
+      resources = DeploymentResources(
+          KubeDeploymentResources(), 
+          MetaDeploymentResources()
+      )
+    )
+    
+    /*
+     * Iterate over YAML docs, attempt to create each in Kubernetes - pack each
+     * response (success or failure) into AppDeployment response
+     */    
+    val deploymentRecord = documents.foldLeft(output) { (acc, doc) =>
       val result = Try {
         Await.result(createKubeResource(doc, context, request.queryString).transform(
           s => s,
-          e => throw new Exception("Failed creating object.")), 20.seconds)
+          e => throw new Exception(s"Failed creating object: ${e.getMessage}")), 20.seconds)
       } match {
         // KUBE REQUEST SUCCEEDED - add JSON resource
         case Success(r) => {
@@ -173,17 +214,43 @@ class KubeNativeController @Inject()(
           errorJson(e, res("kind").toString, metadata("name").toString)
         }
       }
-      result +: acc
+      acc.withKubeResource(result)
     }
-    
-    // TODO: Complete this response format - should be an AppDeployment Resource
-    // TODO: Define AppDeployment Resource schema
-    val jsResponse = Json.obj(
-      "status" -> "[not implemented]",
-      "objects" -> Json.toJson(kubeResponses)
-    )
-    
-    Future(Ok(jsResponse))
+    /*
+     * TODO: Re-evaluate how these implicitly created AppDeployments are named.
+     * Here we're using the release name and a random UUID.
+     * ...
+     */
+    val deploymentName = "%s-%s".format(releaseName, UUID.randomUUID.toString)
+    Future {
+      metaAppDeployment(org, metaenv, creator, deploymentName, deploymentRecord) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(deployment) => Created(RenderSingle(deployment)(request))
+      }
+    }
+  
+  }
+  
+  /**
+   * Create and persist an AppDeployment Resource in Meta.
+   * 
+   * @return a Success containing the resource created in Meta or a Failure
+   */
+  private[controllers] def metaAppDeployment(
+      org: UUID, env: UUID, creator: UUID, name: String, info: AppDeploymentData): Try[GestaltResourceInstance] = {
+      
+    ResourceFactory.create(ResourceIds.User, creator)(
+        GestaltResourceInstance(
+          id = UUID.randomUUID(),
+          typeId = migrations.V25.APPDEPLOYMENT_TYPE_ID,
+          state = ResourceState.id(ResourceStates.Active),
+          orgId = org,
+          owner = ResourceOwnerLink(ResourceIds.User, creator.toString),
+          name = name,
+          properties = Some(Map("data" -> Json.stringify(Json.toJson(info)) ))
+        ),
+        parentId = Some(env)
+     )
   }
   
   def objectResource2Json(r: ObjectResource): Try[JsValue] = Try {
@@ -208,7 +275,7 @@ class KubeNativeController @Inject()(
     val headers = request.headers.toMap
     val gracePeriod = QueryString.singleInt(qs, "k8s_gracePeriodSeconds").getOrElse(-1)
     val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
-        
+    
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
     path match {
       case one("pods", nm)         => kubeDelete[Pod](context, nm, gracePeriod)
@@ -230,7 +297,7 @@ class KubeNativeController @Inject()(
       s => NoContent, 
       e => {
         println("*****E : " + e)
-        new Exception(s"There was an error: ${e.getMessage}")
+        new RuntimeException(s"There was an error: ${e.getMessage}")
       })
   }
   

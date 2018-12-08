@@ -32,6 +32,12 @@ object QueryString {
     }
   }
   
+  def requiredSingle[V](qs: Map[String,Seq[V]], param: String, errorMsg: Option[String] = None, strict: Boolean = false): V = {
+    single(qs, param, strict).getOrElse {
+      val msg = errorMsg.getOrElse(s"Query string parameter '${param}' is required.")
+      throw badRequest(msg)
+    }
+  }
   /**
    * Get a list of one or more values identified by key from the querystring Map. 
    * 
