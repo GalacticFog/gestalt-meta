@@ -65,7 +65,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     if(200 >= response.status && response.status < 300) {
       Future.successful(response)
     }else {
-      Future.failed(ApiError(response.status, response.body).throwable)
+      Future.failed(throw ApiError(response.status, response.body).throwable)
     }
   }
 

@@ -42,7 +42,7 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
         log.info("Successfully created Lambda in backend system.")
         resource
       } else {
-        throw new ApiError(result.status, result.body).throwable
+        throw ApiError(result.status, result.body).throwable
       }
     }
   }

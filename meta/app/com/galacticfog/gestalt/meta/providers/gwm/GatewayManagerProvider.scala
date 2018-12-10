@@ -142,7 +142,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         log.info("Successfully created API in GatewayManager.")
         resource
       } else {
-        throw new ApiError(result.status, result.body).throwable
+        throw ApiError(result.status, result.body).throwable
       }
     }
   }
@@ -276,9 +276,11 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       _ <- if(response.status == 200) {
         Future.successful(())
       }else if(response.status == 404) {
-        Future.failed(new ResourceNotFoundException(s"No ApiEndpoint with ID '${resource.id}' was found in gestalt-api-gateway"))
+        log.error(s"Failed to fetch endpoint ${resource.id}: not found")
+        Future.failed(throw new ResourceNotFoundException(s"No ApiEndpoint with ID '${resource.id}' was found in gestalt-api-gateway"))
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        log.error(s"Failed to fetch endpoint ${resource.id}")
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       };
       le <- eitherFromJsResult(response.json.validate[LaserEndpoint]).liftTo[Future];
       _ = log.debug("Endpoint found in ApiGateway provider.");
@@ -286,7 +288,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       newPlugins = processPlugins(resource, plugins);
       newLe = le.copy(
         path = endpointProperties.resource,
-        hosts = endpointProperties.hosts,
+        hosts = endpointProperties.hosts.filter(_.nonEmpty),
         methods = endpointProperties.methods orElse le.methods,
         plugins = Some(newPlugins),
         upstreamUrl = upstreamUrl
@@ -302,7 +304,8 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         log.info(s"Successfully PUT ApiEndpoint to ApiGateway provider.")
         Future.successful(())
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        log.error(s"Failed to update endpoint ${resource.id}")
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       }
     ) yield updatedResource
   }
