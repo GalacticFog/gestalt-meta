@@ -37,7 +37,8 @@ class DeleteController @Inject()(
                                   skuberFactory: SkuberFactory,
                                   genericResourceMethods: GenericResourceMethods,
                                   caasTrackingProvider: CaasTrackingProvider,
-                                  faasTrackingProvider: FaasTrackingProvider
+                                  faasTrackingProvider: FaasTrackingProvider,
+                                  kubeNative: KubeNativeMethods
  ) extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
 
   /*
@@ -158,11 +159,14 @@ class DeleteController @Inject()(
          * 
          * See: https://gitlab.com/galacticfog/gestalt-meta/issues/319
          */
-        val test = if (resource.typeId == ResourceIds.Environment) {
-          deleteEnvironmentSpecial(resource, identity)
-        } else {
-          Success(())
-        }
+        val test = 
+          if (resource.typeId == ResourceIds.Environment) {
+            deleteEnvironmentSpecial(resource, identity)
+          } else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {
+            deleteAppDeploymentSpecial(resource, request.queryString)
+          } else {
+            Success(())
+          }
         
         test match {
           case Failure(e) => {
@@ -264,8 +268,12 @@ class DeleteController @Inject()(
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     security.deleteGroup(res.id, account) map ( _ => () )
   }
-
-def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
+  
+  def deleteAppDeploymentSpecial(res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
+    kubeNative.deleteAppDeployment(res, qs)  
+  }
+  
+  def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
     val namespace = res.id.toString
