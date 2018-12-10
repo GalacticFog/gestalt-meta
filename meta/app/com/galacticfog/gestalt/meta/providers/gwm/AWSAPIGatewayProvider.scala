@@ -107,7 +107,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
       _ <- if(200 >= response.status && response.status < 300) {
         Future.successful(())
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       };
       restApiId = response.json.as[String];
       _ = log.debug(s"restApiId: ${restApiId}");
@@ -130,7 +130,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
       _ <- if(200 >= response.status && response.status < 300) {
         Future.successful(())
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       }
     ) yield ()
   }
