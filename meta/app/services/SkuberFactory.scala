@@ -60,7 +60,10 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
 
     loadProviderConfiguration(provider).fold {
       log.info(s"No configuration data found for Provider '${provider.id}'. Proceeding with default config...")
-      Future.successful(skuber.api.client.init())
+      val requestContext = skuber.api.client.init()
+      log.debug(s"default namespace: ${requestContext.namespaceName}")
+      log.debug(s"switching to namespace: $namespace")
+      Future.successful(requestContext.usingNamespace(namespace))
       
     }{ configYaml =>
       val initialConfig = KubeConfig.parseYaml(configYaml, Map.empty)
