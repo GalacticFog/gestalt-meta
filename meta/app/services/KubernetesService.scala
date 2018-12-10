@@ -469,6 +469,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def destroy(container: ResourceLike): Future[Unit] = {
+    log.debug("destroy(_)")
 
     val provider = ContainerService.containerProvider(container)
     /*
@@ -1030,6 +1031,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    log.debug("find(_,_)")
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
       case Some(deplSplitter(namespace,deploymentName)) =>
@@ -1067,11 +1069,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
           } yield update
         )
+      case Some(externalId) => Future.failed(throw new RuntimeException(s"Invalid external_id: $externalId"))
       case None => Future.successful(None)
     }
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    log.debug("listInEnvironment(_)")
     cleanly(context.provider, context.environment.id.toString) { kube =>
       val fDepls = kube.list[DeploymentList]()
       val fAllPods = kube.list[PodList]()
