@@ -512,6 +512,40 @@ class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOpti
     afterOps map( _.proceed(options) )
     result
   }
+  
+  
+  def ProtectT[T](f: Option[UUID] => T): Try[T] = {
+
+    @tailrec def evaluate(os: List[SeqStringOp], proceed: OptIdResponse): OptIdResponse = {
+      os match {
+        case Nil => proceed
+        case op :: tail => op.proceed(options) match {
+          case Continue => evaluate(tail, Continue)
+          case Accepted => evaluate(tail, Accepted)
+          case e: Halt  => e
+        }
+      }
+    }
+    
+    /*
+     * Separate operations list into pre and post ops.
+     */
+    val (beforeOps, afterOps) = sansPost(operations)
+    
+    val result = evaluate(beforeOps, Continue).toTry match {
+      case Success(state) => Success(f( state ))
+      case Failure(error) => Failure(error)
+    }
+    
+    if (afterOps.isDefined) {
+      log.debug(s"Found *.post events: ${afterOps.get}")
+    } else {
+      log.debug("No *.post events found.")
+    }
+    
+    afterOps map( _.proceed(options) )
+    result
+  }
 
   
   def ProtectAsync[T](f: Option[UUID] => Future[T]): Future[T] = {
@@ -580,6 +614,27 @@ object ComposableSafeRequest {
 
       def map(f: GestaltResourceInstance => Result): Future[Result] = Future.successful(sr.Execute(f))
       def flatMap(f: GestaltResourceInstance => Future[Result]): Future[Result] = sr.ExecuteAsync(f)
+    }
+  }
+}
+
+
+// SafeRequest itself needs to be refactored
+object ComposableSafeRequest2 {
+  def Protect(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
+    new {
+      val sr = new SafeRequest(operations, options)
+
+      def map[T](f: Option[UUID] => T): Future[T] = Future.fromTry(sr.ProtectT(f))
+      def flatMap[T](f: Option[UUID] => Future[T]): Future[T] = sr.ProtectAsync(f)
+    }
+  }
+  def Execute(operations: List[Operation[Seq[String]]], options: RequestOptions) = {
+    new {
+      val sr = new SafeRequest(operations, options)
+
+      def map[T](f: GestaltResourceInstance => T): Future[T] = ???
+      def flatMap[T](f: GestaltResourceInstance => Future[T]): Future[T] = sr.ExecuteAsyncT(f)
     }
   }
 }
