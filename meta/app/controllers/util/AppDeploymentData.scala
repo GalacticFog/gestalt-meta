@@ -4,13 +4,17 @@ package controllers.util
 import java.util.UUID
 import java.time.ZonedDateTime
 import play.api.libs.json._
-
+import scala.util.Try
+import com.galacticfog.gestalt.json.Js
 
 case class DeploymentSource(source: String, release: String)
 case class DeploymentResources(
     kube: KubeDeploymentResources,
     meta: MetaDeploymentResources
 )
+
+trait ResourceList[A]
+
 case class KubeDeploymentResources(
     pods: Option[Seq[JsValue]] = None,
     secrets: Option[Seq[JsValue]] = None,
@@ -23,12 +27,14 @@ case class KubeDeploymentResources(
     persistentvolumeclaims: Option[Seq[JsValue]] = None,
     namespaces: Option[Seq[JsValue]] = None,
     errors: Option[Seq[JsValue]] = None
-)
+) extends ResourceList[JsValue]
+
 case class MetaDeploymentResources(
     secrets: Option[Seq[UUID]] = None,
     containers: Option[Seq[UUID]] = None,
     errors: Option[Seq[UUID]] = None
-)
+) extends ResourceList[UUID]
+
 case class AppDeploymentData(
     provider: UUID,
     status: String,
@@ -36,6 +42,18 @@ case class AppDeploymentData(
     timestamp: ZonedDateTime,
     native_namespace: String,
     resources: DeploymentResources) {
+  
+  private lazy val kubeMap = {
+    listToMap(Json.toJson(resources.kube).as[JsObject]).getOrElse {
+      throw new RuntimeException(s"Failed converting Kube resource list to map. found: ${resources.kube}")
+    }
+  }
+  private lazy val (failed, successful) = partitionStatus(flat(kubeMap))
+  
+  
+  lazy val isSuccess: Boolean = failed.isEmpty
+  lazy val isFailure: Boolean = !failed.isEmpty  
+  
   
   private val validKubeTypes = Seq(
     "pod",
@@ -49,6 +67,13 @@ case class AppDeploymentData(
     "persistentvolumeclaim",
     "namespace")
   
+  def deletableKubeResources(): Seq[(String, String)] = {
+    /*
+     * TODO: Order the objects by kind. Deployments, before ReplicaSets
+     * and StatefulSets - then everything else.
+     */
+    identityTuples(successful)
+  }
   
   /**
    * Set the overall (top-level) deployment status
@@ -86,12 +111,56 @@ case class AppDeploymentData(
     this.copy(resources = resources.copy(kube = newKubeResources))
   }
   
+
   
   /**
    * Add an item to an Option[Seq[_]]. If Seq is None, create empty Seq and add item.
    */
   private[util] def prepend[A](res: A, seq: Option[Seq[A]]): Option[Seq[A]] = {
     Some(res +: seq.getOrElse(Seq.empty[A]))
+  }
+  
+  /**
+   * Parse identifying information (kind and name) from Seq of JSON values.
+   */
+  private[util] def identityTuples(rs: Seq[JsValue]): Seq[Tuple2[String, String]] = {
+    rs.map { r =>
+      val kind = (r \ "kind").asOpt[String].getOrElse {
+        throw new RuntimeException(s"Could not parse '/kind' from JSON object. found: ${r}")
+      }
+      val name = (r \ "metadata" \ "name").asOpt[String].getOrElse {
+        throw new RuntimeException(s"Could not parse '/metadata/name' from JSON object. found: ${r}")
+      }
+      (kind -> name)
+    }
+  }
+  
+  /**
+   * Convert a JSON object to a Scala Map of JSON values
+   */
+  private[util] def listToMap(rs: JsObject): Try[Map[String, Seq[JsValue]]] = {
+    Js.parse[Map[String, Seq[JsValue]]](rs)
+  }
+  
+  /**
+   * Partition list of JSON objects into two Seqs by status.
+   * 
+   * @return (Failed, Successful)
+   */
+  private[util] def partitionStatus(rs: Seq[JsValue]): Tuple2[Seq[JsValue], Seq[JsValue]] = {
+    rs.partition { r =>
+      (r \ "status").asOpt[String] match {
+        case Some("failed") => true
+        case _ => false
+      }
+    }
   }  
+  
+  /**
+   * Flatten a Map[String, Seq[A]] to a simple List[A] of values
+   */
+  private[util] def flat[A](lst: Map[String, Seq[A]]): List[A] = {
+    lst.values.flatten.toList
+  }
 }
     

@@ -48,7 +48,10 @@ import controllers.util.QueryString
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
 
-
+/*
+ * TODO: A lot of the code here needs to move to KubeNativeMethods. 
+ * For now there's some duplication.
+ */
 @Singleton
 class KubeNativeController @Inject()( 
     messagesApi: MessagesApi,
@@ -217,11 +220,11 @@ class KubeNativeController @Inject()(
       acc.withKubeResource(result)
     }
     /*
-     * TODO: Re-evaluate how these implicitly created AppDeployments are named.
-     * Here we're using the release name and a random UUID.
-     * ...
+     * TODO: At this point everything has been created in kubernetes (errors aside)
+     * Here's where we can kick off 'import'. TBD if that will handle Secrets 
+     * as well as Containers.
      */
-    val deploymentName = "%s-%s".format(releaseName, UUID.randomUUID.toString)
+    val deploymentName = "%s-%s".format(release, UUID.randomUUID.toString)
     Future {
       metaAppDeployment(org, metaenv, creator, deploymentName, deploymentRecord) match {
         case Failure(e) => HandleExceptions(e)
@@ -268,7 +271,7 @@ class KubeNativeController @Inject()(
       case _ => throw new RuntimeException(s"Unknown ObjectResource Type. found: ${r.getClass.getSimpleName}")
     }
   }
-
+  
   private[controllers] def deleteResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     
     val qs = request.queryString
