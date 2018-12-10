@@ -414,7 +414,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
+    log.debug("createDeploymentEtAl")
     val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
+    fDeployment.onFailure{
+      case e: Throwable => log.error(s"error creating Kubernetes Deployment for container ${containerId}; assuming that it was not created",e)
+    }
     val fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
