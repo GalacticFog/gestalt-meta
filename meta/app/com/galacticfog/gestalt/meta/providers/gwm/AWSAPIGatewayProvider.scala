@@ -34,7 +34,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
 
   private def getLinkedAwsProvider(provider: GestaltResourceInstance): Either[String,GestaltResourceInstance] = {
     for(
-      awsProviderProperties <- ResourceSerde.deserialize[AWSAPIGatewayProviderProperties](provider);
+      awsProviderProperties <- ResourceSerde.deserialize[AWSAPIGatewayProviderProperties](provider).liftTo[EitherString];
       linkedProvider <- Either.fromOption(awsProviderProperties.linked_providers.find(_.name == "AWS"),
        "AWS missing in linked_providers");
       awsProvider <- Either.fromOption(ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, linkedProvider.id),
@@ -44,7 +44,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
 
   def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
     val res = for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
       provider <- Either.fromOption(ResourceFactory.findById(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, endpointProperties.provider.id),
        s"Provider not found ${endpointProperties.provider.id}");
       awsProvider <- getLinkedAwsProvider(provider);
@@ -73,14 +73,14 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   
   def createEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
       awsProvider <- getLinkedAwsProvider(provider).liftTo[Future];
       client = providerMethods.configureWebClient(awsProvider, Some(ws));
       payload <- if(endpointProperties.implementation_type == "lambda") {
         for(
           lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(endpointProperties.implementation_id)),
            s"Lambda with id ${endpointProperties.implementation_id} not found").liftTo[Future];
-          lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource).liftTo[Future];
+          lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource).liftTo[EitherString].liftTo[Future];
           awsFunctionId <- Either.fromOption(lambdaProperties.aws_function_id,
            s"aws_function_id is unset for Lambda ${lambdaResource.id}").liftTo[Future]
         ) yield Json.obj(
@@ -112,7 +112,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
       restApiId = response.json.as[String];
       _ = log.debug(s"restApiId: ${restApiId}");
       updatedEndpointProperties = endpointProperties.copy(container_port_name=Some(restApiId));
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future]
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future]
     ) yield updatedResource
   }
   def updateEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {
@@ -121,7 +121,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   }
   def deleteEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[Unit] = {
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
       awsProvider <- getLinkedAwsProvider(provider).liftTo[Future];
       client = providerMethods.configureWebClient(awsProvider, Some(ws));
       restApiId <- Either.fromOption(endpointProperties.container_port_name,

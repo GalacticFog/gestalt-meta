@@ -83,6 +83,8 @@ case object VolumeSpec {
 
   implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { t => Json.toJson(t.label) }
 
+  implicit val metaVolumeSpec = Json.format[VolumeSpec]
+
   sealed trait VolumeConfig
   case object PersistentVolume extends VolumeConfig
   case class HostPathVolume(host_path: String) extends VolumeConfig
