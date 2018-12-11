@@ -52,8 +52,9 @@ case class AppDeploymentData(
   
   
   lazy val isSuccess: Boolean = failed.isEmpty
-  lazy val isFailure: Boolean = !failed.isEmpty  
+  lazy val isFailure: Boolean = !failed.isEmpty
   
+  def getStatus() = if (isSuccess) Status.Success else Status.Failure
   
   private val validKubeTypes = Seq(
     "pod",
@@ -67,12 +68,14 @@ case class AppDeploymentData(
     "persistentvolumeclaim",
     "namespace")
   
+  /**
+   * List resources that may be deleted from Kubernetes.
+   * Ordered to avoid re-spawning resources if evaluated left-to-right.
+   */
   def deletableKubeResources(): Seq[(String, String)] = {
-    /*
-     * TODO: Order the objects by kind. Deployments, before ReplicaSets
-     * and StatefulSets - then everything else.
-     */
-    identityTuples(successful)
+    val ordered = orderForDelete(resources.kube)
+    val (_, deletable) = partitionStatus(ordered)
+    identityTuples(deletable)
   }
   
   /**
@@ -112,13 +115,31 @@ case class AppDeploymentData(
   }
   
 
-  
   /**
    * Add an item to an Option[Seq[_]]. If Seq is None, create empty Seq and add item.
    */
   private[util] def prepend[A](res: A, seq: Option[Seq[A]]): Option[Seq[A]] = {
     Some(res +: seq.getOrElse(Seq.empty[A]))
   }
+
+  
+  private[util] def orderForDelete(kr: KubeDeploymentResources): Seq[JsValue] = {
+    // Extract values for the keys we want to shuffle
+    val d = kr.deployments.getOrElse(Seq.empty[JsValue])
+    val s = kr.statefulsets.getOrElse(Seq.empty[JsValue])
+    val r = kr.replicasets.getOrElse(Seq.empty[JsValue])
+    
+    val remove = Seq("deployments", "statefulsets", "replicasets")
+    val objects = listToMap(Json.toJson(kr).as[JsObject]).get
+    
+    // Remove keys from map
+    val filteredMap: Map[String,Seq[JsValue]] = remove.foldLeft(objects) { 
+      (filtered, target) => filtered - target
+    }
+    
+    // Reorder sequence
+    (d ++ s ++ r ++ filteredMap.values.toList.flatten)
+  }  
   
   /**
    * Parse identifying information (kind and name) from Seq of JSON values.
@@ -150,7 +171,7 @@ case class AppDeploymentData(
   private[util] def partitionStatus(rs: Seq[JsValue]): Tuple2[Seq[JsValue], Seq[JsValue]] = {
     rs.partition { r =>
       (r \ "status").asOpt[String] match {
-        case Some("failed") => true
+        case Some(Status.Failure) => true
         case _ => false
       }
     }
@@ -161,6 +182,11 @@ case class AppDeploymentData(
    */
   private[util] def flat[A](lst: Map[String, Seq[A]]): List[A] = {
     lst.values.flatten.toList
+  }
+  
+  object Status {
+    val Success = "success"
+    val Failure = "failed"
   }
 }
     

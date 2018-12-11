@@ -1,5 +1,7 @@
 package controllers.util
 
+import java.util.UUID
+
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 
@@ -16,11 +18,14 @@ import play.api.libs.json._
 import services.SkuberFactory
 
 import scala.util.{/*Try,*/ Success, Failure}
+
 import skuber._
-import skuber.apps.v1.{ReplicaSet/*, ReplicaSetList*/}
+import skuber.apps.v1.{ReplicaSet /*, ReplicaSetList*/}
 import skuber.api.client._
-//import skuber.json.format._
+import skuber.json.format._
 import skuber.apps.v1beta1._
+ 
+import skuber.LabelSelector
 
 class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
 
@@ -56,9 +61,34 @@ class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
      */
     skuberFactory.initializeKube(kube, namespace).flatMap { context =>
       val results = dep.deletableKubeResources.map { res =>
+        log.debug(s"Deleting [${res._1} ${res._2}] from kube.")
         deleteResource(res._1, res._2, context)
       }
       Future.sequence(results)
+    }
+  }
+  
+  private[controllers] def kubeProvider(providerId: UUID) = {
+    ResourceFactory.findById(providerId).getOrElse {
+      log.error(s"Kube provider with ID '${providerId}' not found.")
+      throw new RuntimeException(s"Kube provider with ID '${providerId}' not found.")
+    }    
+  }
+  
+  
+  def listContainersInNamespace(provider: UUID, qs: Map[String, Seq[String]]) = {
+    val kube = kubeProvider(provider)
+    val namespace = namespaceOrDefault(qs)
+    
+    skuberFactory.initializeKube(kube, namespace).flatMap { context =>
+      QueryString.single(qs, "label") match {
+        case None => context.list[PodList]()
+        case Some(lbl) => {
+          val selector = new LabelSelector(LabelSelector.IsEqualRequirement("release", lbl))
+          val fContainers = context.listSelected[PodList](selector)
+        }
+      }
+      ???
     }
   }
   
