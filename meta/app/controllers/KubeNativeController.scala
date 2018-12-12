@@ -344,6 +344,19 @@ class KubeNativeController @Inject()(
   }
   
 
+  def selected[L <: ListResource[_]](
+      request: SecuredRequest[_,_], context: RequestContext)(
+          implicit fmt: Format[L], rd: ResourceDefinition[L]) = {
+    
+    val headers = request.headers.toMap
+    QueryString.single(request.queryString, Params.Release) match {
+      case None => context.list[L].map(RenderObject(_, headers))
+      case Some(label) => {
+        val selector = new LabelSelector(LabelSelector.IsEqualRequirement(Labels.Release, label))
+        context.listSelected[L](selector).map(RenderObject(_, headers))        
+      }
+    }
+  }
   
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
@@ -354,25 +367,17 @@ class KubeNativeController @Inject()(
      */
     val lists: PartialFunction[String, Future[Result]] = {
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
-      case "pods"        => {
-        QueryString.single(request.queryString, "releaseName") match {
-          case None => context.list[PodList].map(RenderObject(_, headers))
-          case Some(lbl) => {
-            val selector = new LabelSelector(LabelSelector.IsEqualRequirement("release", lbl))
-            context.listSelected[PodList](selector).map(RenderObject(_, headers))
-          }
-        }
-      }
+      case "pods"        => selected[PodList](request, context) 
       case "containers"  => listContainers[Seq[Container]](context, request)
-      case "services"    => context.list[ServiceList].map(RenderObject(_, headers))
-      case "deployments" => context.list[DeploymentList].map(RenderObject(_, headers))
-      case "replicasets" => context.list[ReplicaSetList].map(RenderObject(_, headers))
-      case "secrets"     => context.list[SecretList].map(RenderObject(_, headers))
-      case "configmaps"   => context.list[ConfigMapList].map(RenderObject(_, headers))
-      case "statefulsets" => context.list[StatefulSetList].map(RenderObject(_, headers))      
-      case "persistentvolumes"      => context.list[PersistentVolumeList].map(RenderObject(_, headers))
-      case "persistentvolumeclaims" => context.list[PersistentVolumeClaimList].map(RenderObject(_, headers))
-      case "namespaces" => context.list[NamespaceList].map(RenderObject(_, headers))
+      case "services"    => selected[ServiceList](request, context) //context.list[ServiceList].map(RenderObject(_, headers))
+      case "deployments" => selected[DeploymentList](request, context) //context.list[DeploymentList].map(RenderObject(_, headers))
+      case "replicasets" => selected[ReplicaSetList](request, context) //context.list[ReplicaSetList].map(RenderObject(_, headers))
+      case "secrets"     => selected[SecretList](request, context) //context.list[SecretList].map(RenderObject(_, headers))
+      case "configmaps"   => selected[ConfigMapList](request, context) //context.list[ConfigMapList].map(RenderObject(_, headers))
+      case "statefulsets" => selected[StatefulSetList](request, context) //context.list[StatefulSetList].map(RenderObject(_, headers))      
+      case "persistentvolumes"      => selected[PersistentVolumeList](request, context) //context.list[PersistentVolumeList].map(RenderObject(_, headers))
+      case "persistentvolumeclaims" => selected[PersistentVolumeClaimList](request, context) //context.list[PersistentVolumeClaimList].map(RenderObject(_, headers))
+      case "namespaces" => selected[NamespaceList](request, context) //context.list[NamespaceList].map(RenderObject(_, headers))
     }
     
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r

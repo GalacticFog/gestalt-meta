@@ -184,6 +184,11 @@ case class AppDeploymentData(
     lst.values.flatten.toList
   }
   
+  
+  case class KubernetesView(
+      namespace: String,
+      resources: KubeDeploymentResources)  
+  
   object Status {
     val Success = "success"
     val Failure = "failed"
