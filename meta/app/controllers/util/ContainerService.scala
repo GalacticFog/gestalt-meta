@@ -124,7 +124,7 @@ object ContainerService {
         "fqon" -> fqon,
         "meta_url" -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL", metaUrl),
         "environment_id" -> env.toString,
-        "provider_id" -> providerQueryParam(queryString).get.toString)))
+        "provider_id" -> providerQueryParam(queryString).toString)))
     (operations, options)
   }
 
@@ -133,7 +133,7 @@ object ContainerService {
    *
    * @param qs the complete, unmodified queryString from the original request.
    */
-  protected[controllers] def providerQueryParam(qs: Map[String, Seq[String]]): Try[UUID] = Try {
+  protected[controllers] def providerQueryParam(qs: Map[String, Seq[String]]): UUID = {
     val PROVIDER_KEY = "provider"
 
     if (!qs.contains(PROVIDER_KEY) || qs(PROVIDER_KEY)(0).trim.isEmpty)
@@ -170,18 +170,16 @@ object ContainerService {
    *
    * @param qs the complete, unmodified queryString from the original request.
    */
-  protected[controllers] def targetEnvQueryParam(qs: Map[String, Seq[String]]): Try[UUID] = {
+  protected[controllers] def targetEnvQueryParam(qs: Map[String, Seq[String]]): UUID = {
     val TGT_KEY = "target"
     qs.get(TGT_KEY) match {
       case Some(Seq(tgt)) if tgt.trim.nonEmpty =>
-        for {
-          eid <- Try { UUID.fromString(tgt) }
-          resId <- ResourceFactory.findById(ResourceIds.Environment, eid).fold[Try[UUID]] {
-            Failure(badRequest(s"Environment with ID '$eid' not found."))
-          } { r => Success(r.id) }
-        } yield resId
-      case None => Failure(badRequest(s"'${TGT_KEY}' parameter not found. (i.e. */promote?${TGT_KEY}={UUID})"))
-      case _    => Failure(badRequest(s"Multiple target IDs found. found: [${qs(TGT_KEY).mkString(",")}]"))
+        val eid = UUID.fromString(tgt)
+        ResourceFactory.findById(ResourceIds.Environment, eid).fold {
+          throw badRequest(s"Environment with ID '$eid' not found.")
+        } { r => r.id }
+      case None => throw badRequest(s"'${TGT_KEY}' parameter not found. (i.e. */promote?${TGT_KEY}={UUID})")
+      case _    => throw badRequest(s"Multiple target IDs found. found: [${qs(TGT_KEY).mkString(",")}]")
     }
   }
 

@@ -67,7 +67,7 @@ class GatewayMethods @Inject() (
         resource_type=Some(typeId)
       );
       resource = inputToInstance(org, payload);
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString];
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parentId)));
@@ -89,7 +89,7 @@ class GatewayMethods @Inject() (
 
   def deleteApiHandler(resource: GestaltResourceInstance): Future[Unit] = {
     (for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString];
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
@@ -106,7 +106,7 @@ class GatewayMethods @Inject() (
   def createEndpoint(org: UUID, api: GestaltResourceInstance, requestBody: JsValue,
    caller: AccountLike): Future[GestaltResourceInstance] = {
     (for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
       typeId = gri.resource_type.getOrElse(ResourceIds.ApiEndpoint);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
@@ -125,7 +125,7 @@ class GatewayMethods @Inject() (
         ))
       );
       resource = inputToInstance(org, payload);
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(api.id)));
@@ -150,10 +150,10 @@ class GatewayMethods @Inject() (
 
   def deleteEndpointHandler(resource: GestaltResourceInstance): Future[Unit] = {
     (for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
        s"Could not find API parent of ApiEndpoint ${resource.id}");
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
@@ -173,10 +173,10 @@ class GatewayMethods @Inject() (
 
     (for(
       resource <- eitherFromTry(PatchInstance.applyPatch(originalResource, patch));
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
        s"Could not find API parent of ApiEndpoint ${resource.id}");
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {

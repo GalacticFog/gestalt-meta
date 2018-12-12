@@ -15,7 +15,7 @@ import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.patch.{PatchDocument, PatchOp}
 import controllers.util.{ContainerService, ContainerServiceImpl, GestaltSecurityMocking}
-import controllers.{ContainerController, DeleteController, SecurityResources}
+import controllers.{DeleteController, SecurityResources}
 import org.joda.time.DateTime
 import org.mockito.Matchers.{eq => meq}
 import org.specs2.execute.{AsResult, Result}
@@ -92,12 +92,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      ContainerController.findPromotionRule(data("environment")).isEmpty must beTrue
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote")).isEmpty must beTrue
 
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.promote.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
 
-      ContainerController.findPromotionRule(data("environment")) must beSome
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.promote")) must beSome
     }
   }
 
@@ -109,12 +109,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
 
       val data = newDummyEnvironment(dummyRootOrgId)
 
-      ContainerController.findMigrationRule(data("environment")).isEmpty must beTrue
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate")).isEmpty must beTrue
 
       val (_, rule) = createEventRule(data("environment"), data("lambda"), "container.migrate.pre")
       ResourceFactory.findById(ResourceIds.RuleEvent, rule) must beSome
 
-      ContainerController.findMigrationRule(data("environment")) must beSome
+      controllers.util.EventMethods.findEffectiveEventRules(data("environment"), Some("container.migrate")) must beSome
     }
   }
 

@@ -414,7 +414,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
+    log.debug("createDeploymentEtAl")
     val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
+    fDeployment.onFailure{
+      case e: Throwable => log.error(s"error creating Kubernetes Deployment for container ${containerId}; assuming that it was not created",e)
+    }
     val fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -465,6 +469,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def destroy(container: ResourceLike): Future[Unit] = {
+    log.debug("destroy(_)")
 
     val provider = ContainerService.containerProvider(container)
     /*
@@ -1026,6 +1031,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    log.debug("find(_,_)")
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
       case Some(deplSplitter(namespace,deploymentName)) =>
@@ -1063,11 +1069,13 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
           } yield update
         )
+      case Some(externalId) => Future.failed(throw new RuntimeException(s"Invalid external_id: $externalId"))
       case None => Future.successful(None)
     }
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+    log.debug("listInEnvironment(_)")
     cleanly(context.provider, context.environment.id.toString) { kube =>
       val fDepls = kube.list[DeploymentList]()
       val fAllPods = kube.list[PodList]()
