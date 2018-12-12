@@ -323,15 +323,18 @@ class KubeNativeController @Inject()(
       })
   }
   
-  def listContainers[A](context: RequestContext, request: SecuredRequest[_,_])(
-      implicit fmt: Format[A]): Future[Result] = {
-    def get() = QueryString.single(request.queryString, "releaseName") match {
+  def listContainers[A](
+      context: RequestContext, request: SecuredRequest[_,_])(
+          implicit fmt: Format[A]): Future[Result] = {
+    
+    def get() = QueryString.single(request.queryString, Params.Release) match {
       case None => context.list[PodList]
       case Some(lbl) => {
-        val selector = new LabelSelector(LabelSelector.IsEqualRequirement("release", lbl))
+        val selector = new LabelSelector(LabelSelector.IsEqualRequirement(Labels.Release, lbl))
         context.listSelected[PodList](selector)
       }
     }
+    
     val containers: Future[List[skuber.Container]] = for {
       pl <- get()
       cs <- Future(pl.flatMap { p => 
@@ -343,6 +346,46 @@ class KubeNativeController @Inject()(
     
   }
   
+  def kubernetesView(request: SecuredRequest[_,_], context: RequestContext) = {
+    
+    def listResource2Json[L <: ListResource[_]](lst: L): JsValue = {
+      if (lst.items.isEmpty) Json.obj()
+      else {
+        val items = lst.items.map { 
+          case a: Deployment => Json.toJson(a)
+          case a: Pod => Json.toJson(a)
+          case a: ReplicaSet => Json.toJson(a)
+          case a: StatefulSet => Json.toJson(a)
+          case a: Service => Json.toJson(a)
+          case a: Secret => Json.toJson(a)
+          case a: ConfigMap => Json.toJson(a)
+          case x => throw new BadRequestException(s"Unsupported resource type. found: ${x.getClass.getSimpleName}")
+        }
+        Json.toJson(items)
+      }
+    }
+    
+    val view: Future[Map[String, JsValue]] = Future.sequence(Seq(  
+       
+      selected2[DeploymentList](request, context).map("deployments" -> listResource2Json(_)),
+      selected2[PodList](request, context).map("pods" -> listResource2Json(_)),
+      selected2[ReplicaSetList](request, context).map("replicasets" -> listResource2Json(_)),
+      selected2[StatefulSetList](request, context).map("statefulsets" -> listResource2Json(_)),
+      selected2[ServiceList](request, context).map("services" -> listResource2Json(_)),
+      selected2[SecretList](request, context).map ("secrets" -> listResource2Json(_)),
+      selected2[ConfigMapList](request, context).map("configmaps" -> listResource2Json(_))
+      
+    )).transform(
+      s => s.foldLeft(Map.empty[String, JsValue]) { (acc, tup) => acc + tup },
+      e => throw new RuntimeException(s"Failed retrieving objects from kube: ${e.getMessage}")
+    )
+
+    view.map { m =>
+      Ok(Json.toJson(m))
+    }.recover {
+      case e: Throwable => HandleExceptions(e)
+    }
+  }
 
   def selected[L <: ListResource[_]](
       request: SecuredRequest[_,_], context: RequestContext)(
@@ -358,6 +401,24 @@ class KubeNativeController @Inject()(
     }
   }
   
+  /**
+   * TODO: Refactor to eliminate need for 'selected()' method above.
+   * This version is more general
+   */
+  def selected2[L <: ListResource[_]](
+      request: SecuredRequest[_,_], context: RequestContext)(
+          implicit fmt: Format[L], rd: ResourceDefinition[L]): Future[L] = {
+    
+    val headers = request.headers.toMap
+    QueryString.single(request.queryString, Params.Release) match {
+      case None => context.list[L]
+      case Some(label) => {
+        val selector = new LabelSelector(LabelSelector.IsEqualRequirement(Labels.Release, label))
+        context.listSelected[L](selector)        
+      }
+    }
+  }  
+  
   private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
     
@@ -366,6 +427,7 @@ class KubeNativeController @Inject()(
      * TODO: Check for k8s_labelSelector queryparam and handle accordingly...
      */
     val lists: PartialFunction[String, Future[Result]] = {
+      case "view"        => kubernetesView(request, context)
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
       case "pods"        => selected[PodList](request, context) 
       case "containers"  => listContainers[Seq[Container]](context, request)
@@ -577,6 +639,7 @@ class KubeNativeController @Inject()(
       NotAcceptable(s"Acceptable mime-types are: $mimetypes")
     }
   }
+  
   
   /**
    * Convert a Kubernetes object to YAML

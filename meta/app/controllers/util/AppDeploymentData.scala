@@ -27,8 +27,55 @@ case class KubeDeploymentResources(
     persistentvolumeclaims: Option[Seq[JsValue]] = None,
     namespaces: Option[Seq[JsValue]] = None,
     errors: Option[Seq[JsValue]] = None
-) extends ResourceList[JsValue]
-
+) extends ResourceList[JsValue] {
+  
+  import KubeDeploymentResources.supportedTypes
+  
+  def withResource(res: JsValue): KubeDeploymentResources = {
+    (res \ "kind") match {
+      case JsDefined(k) => {
+        val kind = k.as[String].trim.toLowerCase 
+        kind match {
+          case "pod" => this.copy(pods = prepend(res, pods))
+          case "secret" => this.copy(secrets = prepend(res, secrets))
+          case "service" => this.copy(services = prepend(res, services))
+          case "configmap" => this.copy(configmaps = prepend(res, configmaps))
+          case "deployment" => this.copy(deployments = prepend(res, deployments))
+          case "replicaset" => this.copy(replicasets = prepend(res, replicasets))
+          case "statefulset" => this.copy(statefulsets = prepend(res, statefulsets))
+          case "persistentvolume" => this.copy(persistentvolumes = prepend(res, persistentvolumes))
+          case "persistentvolumeclaim" => this.copy(persistentvolumeclaims = prepend(res, persistentvolumeclaims))
+          case "namespace" => this.copy(namespaces = prepend(res, namespaces))
+          case _ => 
+            throw new RuntimeException(s"Unknown resource 'kind'. expected one of: ${supportedTypes.mkString("[",",","]")}. found: ${kind}")
+        }
+      }
+      case _: JsUndefined => {
+        throw new RuntimeException("Could not find /kind in JSON.")
+      }
+    }
+  }
+  
+  /**
+   * Add an item to an Option[Seq[_]]. If Seq is None, create empty Seq and add item.
+   */
+  private[util] def prepend[A](res: A, seq: Option[Seq[A]]): Option[Seq[A]] = {
+    Some(res +: seq.getOrElse(Seq.empty[A]))
+  }  
+}
+object KubeDeploymentResources {
+  val supportedTypes = Seq(
+    "pod",
+    "secret",
+    "service",
+    "configmap",
+    "deployment",
+    "replicaset",
+    "statefulset",
+    "persistentvolume",
+    "persistentvolumeclaim",
+    "namespace")  
+}
 case class MetaDeploymentResources(
     secrets: Option[Seq[UUID]] = None,
     containers: Option[Seq[UUID]] = None,
@@ -56,17 +103,7 @@ case class AppDeploymentData(
   
   def getStatus() = if (isSuccess) Status.Success else Status.Failure
   
-  private val validKubeTypes = Seq(
-    "pod",
-    "secret",
-    "service",
-    "configmap",
-    "deployment",
-    "replicaset",
-    "statefulset",
-    "persistentvolume",
-    "persistentvolumeclaim",
-    "namespace")
+  private val supportedTypes = KubeDeploymentResources.supportedTypes
   
   /**
    * List resources that may be deleted from Kubernetes.
@@ -104,7 +141,7 @@ case class AppDeploymentData(
             case "persistentvolumeclaim" => rs.copy(persistentvolumeclaims = prepend(res, rs.persistentvolumeclaims))
             case "namespace" => rs.copy(namespaces = prepend(res, rs.namespaces))
             case _ => 
-              throw new RuntimeException(s"Unknown resource 'kind'. expected one of: ${validKubeTypes.mkString("[",",","]")}. found: ${kind}")
+              throw new RuntimeException(s"Unknown resource 'kind'. expected one of: ${supportedTypes.mkString("[",",","]")}. found: ${kind}")
           }
         }
         case _: JsUndefined => {
