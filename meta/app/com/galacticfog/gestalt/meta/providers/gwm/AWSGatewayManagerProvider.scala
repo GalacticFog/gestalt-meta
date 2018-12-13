@@ -33,6 +33,19 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
   implicit val formatLinkedProvider = Json.format[LinkedProvider]
   implicit val formatAWSAPIGatewayProviderProperties = Json.format[AWSAPIGatewayProviderProperties]
 
+  case class PublicEnvs(
+    AWS_APIGATEWAY_LOGLEVEL: Option[String],
+    AWS_APIGATEWAY_LOGREQUESTRESPONSE: Option[String],
+    AWS_APIGATEWAY_ACCESSLOGGROUP: Option[String],
+    AWS_APIGATEWAY_ACCESSLOGFORMAT: Option[String]
+  )
+  case class Envs(public: PublicEnvs)
+  case class ProviderConfig(env: Envs)
+  
+  implicit val formatPublicEnvs = Json.format[PublicEnvs]
+  implicit val formatEnvs = Json.format[Envs]
+  implicit val formatProviderConfig = Json.format[ProviderConfig]
+
   private def getLinkedAwsProvider(provider: GestaltResourceInstance): EitherError[GestaltResourceInstance] = {
     for(
       awsProviderProperties <- ResourceSerde.deserialize[AWSAPIGatewayProviderProperties](provider);
@@ -77,6 +90,9 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
       endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
       awsProvider <- getLinkedAwsProvider(provider).liftTo[Future];
       client = providerMethods.configureWebClient(awsProvider, Some(ws));
+      rawProviderConfig <- eitherFromTry(Try(Json.parse(provider.properties.get("config")))).liftTo[Future];
+      providerConfig <- eitherFromJsResult(rawProviderConfig.validate[ProviderConfig]).liftTo[Future];
+      _ = log.debug(s"providerConfig: $providerConfig");
       payload <- if(endpointProperties.implementation_type == "lambda") {
         for(
           lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(endpointProperties.implementation_id)),
@@ -104,7 +120,34 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
       payloadWithWhitelist = endpointProperties.whitelist.fold(payload) { whitelist =>
         payload ++ Json.obj("usersWhitelist" -> new JsArray(whitelist.toVector.map(JsString(_))))
       };
-      response <- client.post("/endpoint/create", Some(payloadWithWhitelist));
+      payloadWithErrorLog <- providerConfig.env.public.AWS_APIGATEWAY_LOGLEVEL.fold(Future.successful(payloadWithWhitelist)) { loglevel =>
+        val logRequestResponse = providerConfig.env.public.AWS_APIGATEWAY_LOGREQUESTRESPONSE.getOrElse("FALSE")
+        for(
+          _ <- if(Seq("TRUE", "FALSE").contains(logRequestResponse)) {
+            Future.successful(())
+          }else {
+            Future.failed(throw new RuntimeException("AWS_APIGATEWAY_LOGREQUESTRESPONSE must be one of TRUE or FALSE"))
+          };
+          _ <- if(Seq("INFO", "ERROR").contains(loglevel)) {
+            Future.successful(())
+          }else {
+            Future.failed(throw new RuntimeException("AWS_APIGATEWAY_LOGLEVEL must be one of ERROR or INFO"))
+          }
+        ) yield {
+          payloadWithWhitelist ++ Json.obj("errorLog" -> Json.obj(
+            "level" -> loglevel,
+            "logRequestResponseData" -> JsBoolean(if(logRequestResponse == "TRUE") { true }else { false })
+          ))
+        }
+      };
+      payloadWithAccessLog = providerConfig.env.public.AWS_APIGATEWAY_ACCESSLOGGROUP.fold(payloadWithErrorLog) { accessLogGroup =>
+        val accessLogFormat = providerConfig.env.public.AWS_APIGATEWAY_ACCESSLOGFORMAT.getOrElse("""$context.identity.sourceIp $context.identity.caller $context.identity.user [$context.requestTime] "$context.httpMethod $context.resourcePath $context.protocol" $context.status $context.responseLength $context.requestId""")
+        payloadWithErrorLog ++ Json.obj("accessLog" -> Json.obj(
+          "group" -> accessLogGroup,
+          "format" -> accessLogFormat
+        ))
+      };
+      response <- client.post("/endpoint/create", Some(payloadWithAccessLog));
       _ <- if(200 >= response.status && response.status < 300) {
         Future.successful(())
       }else {
