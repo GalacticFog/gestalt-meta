@@ -13,7 +13,7 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
-import com.galacticfog.gestalt.meta.providers.faas.{AWSLambdaProperties,LambdaSpec}
+import com.galacticfog.gestalt.meta.providers.faas._
 import com.galacticfog.gestalt.util.Error
 import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.ResourceSerde
@@ -45,6 +45,10 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
   implicit val formatPublicEnvs = Json.format[PublicEnvs]
   implicit val formatEnvs = Json.format[Envs]
   implicit val formatProviderConfig = Json.format[ProviderConfig]
+
+  case class UnknownLambdaProperties(provider: InlineLambdaProvider)
+
+  implicit val formatUnknownLambdaProperties = Json.format[UnknownLambdaProperties]
 
   private def getLinkedAwsProvider(provider: GestaltResourceInstance): EitherError[GestaltResourceInstance] = {
     for(
@@ -94,19 +98,42 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
       providerConfig <- eitherFromJsResult(rawProviderConfig.validate[ProviderConfig]).liftTo[Future];
       _ = log.debug(s"providerConfig: $providerConfig");
       payload <- if(endpointProperties.implementation_type == "lambda") {
-        for(
+        (for(
           lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(endpointProperties.implementation_id)),
-           Error.NotFound(s"Lambda with id ${endpointProperties.implementation_id} not found")).liftTo[Future];
-          lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource).liftTo[Future];
-          awsFunctionId <- Either.fromOption(lambdaProperties.aws_function_id,
-           Error.Default(s"aws_function_id is unset for Lambda ${lambdaResource.id}")).liftTo[Future]
-        ) yield Json.obj(
-          "name" -> s"${resource.id}",
-          "aws" -> Json.obj(
-            "functionArn" -> awsFunctionId
-          )//,
-          // "usersWhitelist" -> Json.arr("arn:aws:iam::326625211408:user/test-user")
-        )
+           Error.Default(s"Lambda with id ${endpointProperties.implementation_id} not found"));
+          unknownLambdaProperties <- ResourceSerde.deserialize[UnknownLambdaProperties](lambdaResource);
+          laserLambdaProvider = ResourceFactory.findById(ResourceIds.LambdaProvider, unknownLambdaProperties.provider.id);
+          awsLambdaProvider = ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, unknownLambdaProperties.provider.id);
+          payload <- (laserLambdaProvider, awsLambdaProvider) match {
+            case (Some(laserLambdaProvider), None) => for(
+              lambdaProperties <- ResourceSerde.deserialize[LaserLambdaProperties](lambdaResource);
+              providerProperties <- ResourceSerde.deserialize[LambdaProviderProperties](laserLambdaProvider);
+              config <- Either.fromOption(providerProperties.config, Error.Default("Missing configuration on lambda provider"));
+              laserNlbArn <- Either.fromOption(config.env.public.get("AWS_LASER_NLB_ARN"), Error.Default("AWS_LASER_NLB_ARN environment variable is missing on lambda provider"))
+            ) yield {
+              Json.obj(
+                "name" -> s"${resource.id}",
+                "privateHttp" -> Json.obj(
+                  "endpointUrl" -> s"http://laser.gestalt/lambdas/${lambdaResource.id}/invokeSyncHA",
+                  "laserNlbArn" -> laserNlbArn
+                )
+              )
+            }
+            case (None, Some(awsLambdaProvider)) => for(
+              lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource);
+              awsFunctionId <- Either.fromOption(lambdaProperties.aws_function_id, Error.Default(s"aws_function_id is unset for Lambda ${lambdaResource.id}"))
+            ) yield {
+              Json.obj(
+                "name" -> s"${resource.id}",
+                "aws" -> Json.obj(
+                  "functionArn" -> awsFunctionId
+                )
+              )
+            }
+            case (None, None) => Left(Error.Default(s"AWS/Laser Lambda provider with id ${unknownLambdaProperties.provider.id} not found"))
+            case _ => eitherFromTry(Try(???))
+          }
+        ) yield payload).liftTo[Future]
       }else if(endpointProperties.implementation_type == "link") {
         Future.successful(Json.obj(
           "name" -> s"${resource.id}",
@@ -126,17 +153,17 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
           _ <- if(Seq("TRUE", "FALSE").contains(logRequestResponse)) {
             Future.successful(())
           }else {
-            Future.failed(throw new RuntimeException("AWS_APIGATEWAY_LOGREQUESTRESPONSE must be one of TRUE or FALSE"))
+            Future.failed(new RuntimeException("AWS_APIGATEWAY_LOGREQUESTRESPONSE must be one of TRUE or FALSE"))
           };
           _ <- if(Seq("INFO", "ERROR").contains(loglevel)) {
             Future.successful(())
           }else {
-            Future.failed(throw new RuntimeException("AWS_APIGATEWAY_LOGLEVEL must be one of ERROR or INFO"))
+            Future.failed(new RuntimeException("AWS_APIGATEWAY_LOGLEVEL must be one of ERROR or INFO"))
           }
         ) yield {
           payloadWithWhitelist ++ Json.obj("errorLog" -> Json.obj(
             "level" -> loglevel,
-            "logRequestResponseData" -> JsBoolean(if(logRequestResponse == "TRUE") { true }else { false })
+            "logRequestResponseData" -> JsBoolean(logRequestResponse.toBoolean)
           ))
         }
       };
@@ -151,7 +178,7 @@ class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: Provide
       _ <- if(200 >= response.status && response.status < 300) {
         Future.successful(())
       }else {
-        Future.failed(throw ApiError(response.status, response.body).throwable)
+        Future.failed(ApiError(response.status, response.body).throwable)
       };
       restApiId = response.json.as[String];
       _ = log.debug(s"restApiId: ${restApiId}");
