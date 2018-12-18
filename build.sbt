@@ -1,4 +1,5 @@
 import com.typesafe.sbt.packager.docker._
+import sbtassembly.MergeStrategy
 
 // looks like these don't take effect in any subproject as of now – commenting out to make this fact explicit
 // scalacOptions ++= Seq(
@@ -44,16 +45,24 @@ lazy val meta = (project in file("meta")).
     // sources in (Compile,doc) := Seq.empty
   ).dependsOn(integrations)
 
+val reverseConcat: MergeStrategy = new MergeStrategy {
+  val name = "reverseConcat"
+  def apply(tempDir: File, path: String, files: Seq[File]): Either[String, Seq[(File, String)]] =
+    MergeStrategy.concat(tempDir, path, files.reverse)
+}
+
 lazy val containerImport = (project in file("container.import")).
   settings(commonSettings: _*).
   settings(
     assemblyMergeStrategy in assembly := {
       case PathList("META-INF", xs @ _*) => MergeStrategy.discard
-      case _ => MergeStrategy.first
-    },
-    assemblyShadeRules in assembly := Seq(      // until aws library is removed from laser jvm executor
-      ShadeRule.rename("com.amazonaws.**" -> "shadeaws.@1").inAll
-    )
+      case PathList("logback.xml", xs @ _*) => MergeStrategy.first
+      case x if Assembly.isConfigFile(x) => reverseConcat
+      case other  => MergeStrategy.defaultMergeStrategy(other)
+    }//,
+    // assemblyShadeRules in assembly := Seq(      // until aws library is removed from laser jvm executor
+    //   ShadeRule.rename("com.amazonaws.**" -> "shadeaws.@1").inAll
+    // )
   ).
   settings(
     artifact in (Compile, assembly) ~= { art =>
