@@ -115,22 +115,6 @@ class KubeNativeController @Inject()(
   
   type KubeEndpoint = (PathArity, SecuredRequest[_,_], RequestContext) => Future[Result]
   
-  sealed trait PathArity {
-    val kind: String
-  }
-  object PathArity {
-    private val matchSingle = """^([a-z]+)/([a-zA-Z0-9_-]+)""".r
-    private val matchPlural = """^([a-z]+)$""".r
-    
-    def test(s: String) = {
-      s match {
-        case matchSingle(kind, name) => Single(kind, name)
-        case matchPlural(kind) => Plural(kind)
-      }
-    }
-  }
-  case class Single(kind: String, name: String) extends PathArity
-  case class Plural(kind: String) extends PathArity
   
   /**
    * Get a reference to an initialized skuber RequestContext.
@@ -138,9 +122,9 @@ class KubeNativeController @Inject()(
    * 'default' if none is given in the querystring.
    */
   def initializeContext(kubeProviderId: UUID, request: SecuredRequest[_,_]): Future[RequestContext] = {
-    val kube = ResourceFactory.findById(ResourceIds.KubeProvider, kubeProviderId) getOrElse {
+    val kube = ResourceFactory.findById(ResourceIds.KubeProvider, kubeProviderId).getOrElse {
       throw new ResourceNotFoundException(s"KubeProvider with ID '${kubeProviderId}' not found.")
-    }  
+    }
     val namespace = namespaceOrDefault(request.queryString)
     skuberFactory.initializeKube(kube, namespace)    
   }
@@ -340,83 +324,14 @@ class KubeNativeController @Inject()(
     }
   }
   
-  object Kube {
-    
-    val supportedTypes = Seq(
-        "configmap", "container", "cronjob",
-        "daemonset", "deployment",
-        "job",
-        "namespace",
-        "persistentvolumeclaim", "persistentvolume", "pod",
-        "replicaset", "replicationcontroller", "rolebinding", "role",
-        "secret", "serviceaccount", "service", "statefulset"/*,
-        "volume"*/)
-    
-    def isSupported(t: String, extra: Seq[String] = Seq.empty) = {
-      val test = t.trim.toLowerCase
-      /*
-       * TODO: Not the most robust way to test for the plural-case...
-       */
-      val singular = test.dropRight(1)
-      val allSupported = singular +: (supportedTypes ++ extra)
-      allSupported.contains(test) || allSupported.contains(singular) 
-    }
-    
-    def throwUnsupported(kind: String) = {
-      throw new BadRequestException(
-          s"Unknown resource 'kind'. expected one of: ${supportedTypes.mkString("[",",","]")}. found: ${kind}")
-    }
-    
-    object Single {  
-      val ConfigMap = "configmap"
-      val Container = "container"
-      val CronJob = "cronjob"
-      val DaemonSet = "daemonset"
-      val Deployment = "deployment"
-      val Job = "job"
-      val Namespace = "namespace"
-      val PersistentVolumeClaim = "persistentvolumeclaim"
-      val PersistentVolume = "persistentvolume"
-      val Pod = "pod"
-      val ReplicaSet = "replicaset"
-      val ReplicationController = "replicationcontroller"
-      val RoleBinding = "rolebinding"
-      val Role = "role"
-      val Secret = "secret"
-      val ServiceAccount = "serviceaccount"
-      val Service = "service"
-      val StatefulSet = "statefulset"
-      val Volume = "volume"
-    }
-    
-    object Plural {
-      val ConfigMap = "configmaps"
-      val Container = "containers"
-      val CronJob = "cronjobs"
-      val DaemonSet = "daemonsets"
-      val Deployment = "deployments"
-      val Job = "jobs"
-      val Namespace = "namespaces"
-      val PersistentVolumeClaim = "persistentvolumeclaims"
-      val PersistentVolume = "persistentvolumes"
-      val Pod = "pods"
-      val ReplicaSet = "replicasets"
-      val ReplicationController = "replicationcontrollers"
-      val RoleBinding = "rolebindings"
-      val Role = "roles"
-      val Secret = "secrets"
-      val ServiceAccount = "serviceaccounts"
-      val Service = "services"
-      val StatefulSet = "statefulsets"
-      val Volume = "volumes"
-    }
-  }
+  
   
   private[controllers] def deleteResult[R](path: PathArity, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     
     val qs = request.queryString
-    //val headers = request.headers.toMap
     val gracePeriod = QueryString.singleInt(qs, "k8s_gracePeriodSeconds").getOrElse(-1)
+    
+    //val headers = request.headers.toMap    
     //val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
     
     path match {
@@ -439,8 +354,7 @@ class KubeNativeController @Inject()(
         case Kube.Single.CronJob        => kubeDelete[CronJob](context, nm, gracePeriod)
         case Kube.Single.DaemonSet      => kubeDelete[DaemonSet](context, nm, gracePeriod)
         case Kube.Single.Job            => kubeDelete[Job](context, nm, gracePeriod)
-        case Kube.Single.ReplicationController   => kubeDelete[ReplicationController](context, nm, gracePeriod)          
-         
+        case Kube.Single.ReplicationController   => kubeDelete[ReplicationController](context, nm, gracePeriod)
         //Kube.Plural.Volume => ???
       }
     }
@@ -913,5 +827,96 @@ class KubeNativeController @Inject()(
     | POST /{fqon}/providers/{id}/kube/persistentvolumeclaims
     | POST /{fqon}/providers/{id}/kube/namespaces
     """.stripMargin.trim
-
+    
 }
+
+sealed trait PathArity {
+  val kind: String
+}
+object PathArity {
+  private val matchSingle = """^([a-z]+)/([a-zA-Z0-9_-]+)""".r
+  private val matchPlural = """^([a-z]+)$""".r
+  
+  def test(s: String) = {
+    s match {
+      case matchSingle(kind, name) => Single(kind, name)
+      case matchPlural(kind) => Plural(kind)
+    }
+  }
+}
+case class Single(kind: String, name: String) extends PathArity
+case class Plural(kind: String) extends PathArity
+
+
+object Kube {
+    
+    val supportedTypes = Seq(
+        "configmap", "container", "cronjob",
+        "daemonset", "deployment",
+        "job",
+        "namespace",
+        "persistentvolumeclaim", "persistentvolume", "pod",
+        "replicaset", "replicationcontroller", "rolebinding", "role",
+        "secret", "serviceaccount", "service", "statefulset"/*,
+        "volume"*/)
+
+    
+    def isSupported(t: String, extra: Seq[String] = Seq.empty) = {
+      val test = t.trim.toLowerCase
+      /*
+       * TODO: Not the most robust way to test for the plural-case...
+       */
+      val singular = test.dropRight(1)
+      val allSupported = singular +: (supportedTypes ++ extra)
+      allSupported.contains(test) || allSupported.contains(singular) 
+    }
+    
+    def throwUnsupported(kind: String) = {
+      throw new BadRequestException(
+          s"Unknown resource 'kind'. expected one of: ${supportedTypes.mkString("[",",","]")}. found: ${kind}")
+    }
+    
+    object Single {  
+      val ConfigMap = "configmap"
+      val Container = "container"
+      val CronJob = "cronjob"
+      val DaemonSet = "daemonset"
+      val Deployment = "deployment"
+      val Job = "job"
+      val Namespace = "namespace"
+      val PersistentVolumeClaim = "persistentvolumeclaim"
+      val PersistentVolume = "persistentvolume"
+      val Pod = "pod"
+      val ReplicaSet = "replicaset"
+      val ReplicationController = "replicationcontroller"
+      val RoleBinding = "rolebinding"
+      val Role = "role"
+      val Secret = "secret"
+      val ServiceAccount = "serviceaccount"
+      val Service = "service"
+      val StatefulSet = "statefulset"
+      val Volume = "volume"
+    }
+    
+    object Plural {
+      val ConfigMap = "configmaps"
+      val Container = "containers"
+      val CronJob = "cronjobs"
+      val DaemonSet = "daemonsets"
+      val Deployment = "deployments"
+      val Job = "jobs"
+      val Namespace = "namespaces"
+      val PersistentVolumeClaim = "persistentvolumeclaims"
+      val PersistentVolume = "persistentvolumes"
+      val Pod = "pods"
+      val ReplicaSet = "replicasets"
+      val ReplicationController = "replicationcontrollers"
+      val RoleBinding = "rolebindings"
+      val Role = "roles"
+      val Secret = "secrets"
+      val ServiceAccount = "serviceaccounts"
+      val Service = "services"
+      val StatefulSet = "statefulsets"
+      val Volume = "volumes"
+    }
+  }
