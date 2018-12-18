@@ -30,13 +30,21 @@ import play.api.libs.json._
 import play.api.mvc.{Action, AnyContent, Result}
 
 import services.SkuberFactory
+
 import skuber._
-import skuber.apps.v1.{ReplicaSet, ReplicaSetList}
 import skuber.api.client._
-import skuber.json.format._
 import skuber.apps.v1beta1._
- 
-import skuber.LabelSelector
+
+import skuber.apps.v1.{DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
+import skuber.batch.{Job, JobList, CronJob, CronJobList}
+import skuber.rbac.{Role, RoleBinding}
+
+
+import skuber.json.format._
+import skuber.json.batch.format._
+import skuber.json.rbac.format._
+//import skuber.json.ext.format._ // <- DaemonSetList
+
 import LabelSelector.dsl._
 import scala.language.postfixOps
 import play.api.mvc.AnyContentAsRaw
@@ -68,60 +76,93 @@ class KubeNativeController @Inject()(
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
   
+  /*
+   * TODO: These shouldn't be necessary - need to dig them out of the appropriate 
+   * skuber namespace.
+   */
   implicit val configMapListFmt: Format[ConfigMapList] = ListResourceFormat[ConfigMap]
   implicit val replicaSetListFmt: Format[ReplicaSetList] = ListResourceFormat[ReplicaSet]
-    
+  implicit val daemonSetListFmt: Format[DaemonSetList] = Json.format[DaemonSetList]
   
-  def createApplicationDeployment(fqon: String, provider: UUID): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
-    /*
-     * TODO: Possible Validations...
-     * 
-     * - AT MOST 1 Deployment may be specified
-     * - Given kube-namespace exists (possible to create if not, but that might hide bugs [fat-fingers])
-     */
-    val kube = ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
-    }
-    
-    val contentType = request.contentType.getOrElse("")
-    if (isYamlType(contentType)) {    
-      val namespace = namespaceOrDefault(request.queryString)
-      val creator = request.identity.account.id
-      skuberFactory.initializeKube(kube, namespace)
-          .flatMap { deploymentResult(fqid(fqon), creator, provider, request, _) }
-          .recover { case t: Throwable => HandleExceptions(t) }
-    } else {
-      Future(UnsupportedMediaType("Content-Type must be a valid YAML Mime type."))
-    }        
-  }
-  
+
   /**
    * List objects in a Kubernetes cluster
    */
   def get(fqon: String, provider: UUID, path: String): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
-    val kube = ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
-    }
-    
-    val namespace = namespaceOrDefault(request.queryString)
-    skuberFactory.initializeKube(kube, namespace)
-        .flatMap {  getResult(path, request, _) }
-        .recover { case t: Throwable => HandleExceptions(t) }
+    kubeResult(provider, request, path, Seq("api", "view"))(getResult)
   }
   
   /**
    * Delete objects in a Kubernetes cluster
    */
   def delete(fqon: String, provider: UUID, path: String): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
-    val kube = ResourceFactory.findById(provider) getOrElse {
-      throw new ResourceNotFoundException(s"KubeProvider with ID '${provider}' not found.")
+    kubeResult(provider, request, path)(deleteResult)
+  }
+  
+  def createApplicationDeployment(fqon: String, provider: UUID): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
+
+    val contentType = request.contentType.getOrElse("")
+    
+    if (isYamlType(contentType)) {    
+      val creator = request.identity.account.id
+      initializeContext(provider, request)
+          .flatMap { deploymentResult(fqid(fqon), creator, provider, request, _) }
+          .recover { case t: Throwable => HandleExceptions(t) }
+    } else {
+      Future(UnsupportedMediaType("Content-Type must be a valid YAML Mime type."))
     }
+  }
+  
+  type KubeEndpoint = (PathArity, SecuredRequest[_,_], RequestContext) => Future[Result]
+  
+  sealed trait PathArity {
+    val kind: String
+  }
+  object PathArity {
+    private val matchSingle = """^([a-z]+)/([a-zA-Z0-9_-]+)""".r
+    private val matchPlural = """^([a-z]+)$""".r
     
+    def test(s: String) = {
+      s match {
+        case matchSingle(kind, name) => Single(kind, name)
+        case matchPlural(kind) => Plural(kind)
+      }
+    }
+  }
+  case class Single(kind: String, name: String) extends PathArity
+  case class Plural(kind: String) extends PathArity
+  
+  /**
+   * Get a reference to an initialized skuber RequestContext.
+   * Asserts that given KubeProvider exists, and sets kube namespace to
+   * 'default' if none is given in the querystring.
+   */
+  def initializeContext(kubeProviderId: UUID, request: SecuredRequest[_,_]): Future[RequestContext] = {
+    val kube = ResourceFactory.findById(ResourceIds.KubeProvider, kubeProviderId) getOrElse {
+      throw new ResourceNotFoundException(s"KubeProvider with ID '${kubeProviderId}' not found.")
+    }  
     val namespace = namespaceOrDefault(request.queryString)
+    skuberFactory.initializeKube(kube, namespace)    
+  }
+
+  /**
+   * Execute the given function against kubernetes, returning an HTTP Result
+   */
+  def kubeResult(
+      kubeProviderId: UUID, 
+      request: SecuredRequest[_,_], 
+      path: String,
+      additionalTypes: Seq[String] = Seq.empty[String])(f: KubeEndpoint) = {
     
-    skuberFactory.initializeKube(kube, namespace)
-        .flatMap {  deleteResult(path, request, _) }
-        .recover { case t: Throwable => HandleExceptions(t) }
+    val endpoint: PathArity = {
+      val p = PathArity.test(path)
+      if (Kube.isSupported(p.kind.trim.toLowerCase, additionalTypes)) p 
+      else Kube.throwUnsupported(p.kind)
+    }
+
+    initializeContext(kubeProviderId, request)
+      .flatMap { f(endpoint, request, _) }
+      .recover { case t: Throwable => HandleExceptions(t) }
   }
   
   private def param[T](m: Map[String,Seq[T]], n: String) = QueryString.single[T](m, n)
@@ -218,7 +259,7 @@ class KubeNativeController @Inject()(
           s => s,
           e => throw new Exception(s"Failed creating object: ${e.getMessage}")), 20.seconds)
       } match {
-        // KUBE REQUEST SUCCEEDED - add JSON resource
+        // KUBE REQUEST SUCCEEDED - add resoure serialized to JSON
         case Success(r) => {
           objectResource2Json(r) match {
             case Success(a) => a
@@ -277,53 +318,144 @@ class KubeNativeController @Inject()(
   
   def objectResource2Json(r: ObjectResource): Try[JsValue] = Try {
     r match {
-      case x: Pod => Json.toJson(x) 
-      case x: Service => Json.toJson(x) 
-      case x: Deployment => Json.toJson(x) 
-      case x: ReplicaSet => Json.toJson(x)
-      case x: Secret => Json.toJson(x)
       case x: ConfigMap => Json.toJson(x)
-      case x: StatefulSet => Json.toJson(x)
+      case x: CronJob => Json.toJson(x)
+      case x: DaemonSet => Json.toJson(x)
+      case x: Deployment => Json.toJson(x) 
+      case x: Job => Json.toJson(x)
+      case x: Namespace => Json.toJson(x)
       case x: PersistentVolume => Json.toJson(x)
       case x: PersistentVolumeClaim => Json.toJson(x)
-      case x: Namespace => Json.toJson(x)
+      case x: Pod => Json.toJson(x) 
+      case x: ReplicaSet => Json.toJson(x)
+      case x: ReplicationController => Json.toJson(x)
+      case x: Role => Json.toJson(x)
+      case x: RoleBinding => Json.toJson(x)
+      case x: Secret => Json.toJson(x)
+      case x: Service => Json.toJson(x) 
+      case x: ServiceAccount => Json.toJson(x)
+      case x: StatefulSet => Json.toJson(x)
+      //case x: Volume => Json.toJson(x)      
       case _ => throw new RuntimeException(s"Unknown ObjectResource Type. found: ${r.getClass.getSimpleName}")
     }
   }
   
-  private[controllers] def deleteResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
+  object Kube {
+    
+    val supportedTypes = Seq(
+        "configmap", "container", "cronjob",
+        "daemonset", "deployment",
+        "job",
+        "namespace",
+        "persistentvolumeclaim", "persistentvolume", "pod",
+        "replicaset", "replicationcontroller", "rolebinding", "role",
+        "secret", "serviceaccount", "service", "statefulset"/*,
+        "volume"*/)
+    
+    def isSupported(t: String, extra: Seq[String] = Seq.empty) = {
+      val test = t.trim.toLowerCase
+      /*
+       * TODO: Not the most robust way to test for the plural-case...
+       */
+      val singular = test.dropRight(1)
+      val allSupported = singular +: (supportedTypes ++ extra)
+      allSupported.contains(test) || allSupported.contains(singular) 
+    }
+    
+    def throwUnsupported(kind: String) = {
+      throw new BadRequestException(
+          s"Unknown resource 'kind'. expected one of: ${supportedTypes.mkString("[",",","]")}. found: ${kind}")
+    }
+    
+    object Single {  
+      val ConfigMap = "configmap"
+      val Container = "container"
+      val CronJob = "cronjob"
+      val DaemonSet = "daemonset"
+      val Deployment = "deployment"
+      val Job = "job"
+      val Namespace = "namespace"
+      val PersistentVolumeClaim = "persistentvolumeclaim"
+      val PersistentVolume = "persistentvolume"
+      val Pod = "pod"
+      val ReplicaSet = "replicaset"
+      val ReplicationController = "replicationcontroller"
+      val RoleBinding = "rolebinding"
+      val Role = "role"
+      val Secret = "secret"
+      val ServiceAccount = "serviceaccount"
+      val Service = "service"
+      val StatefulSet = "statefulset"
+      val Volume = "volume"
+    }
+    
+    object Plural {
+      val ConfigMap = "configmaps"
+      val Container = "containers"
+      val CronJob = "cronjobs"
+      val DaemonSet = "daemonsets"
+      val Deployment = "deployments"
+      val Job = "jobs"
+      val Namespace = "namespaces"
+      val PersistentVolumeClaim = "persistentvolumeclaims"
+      val PersistentVolume = "persistentvolumes"
+      val Pod = "pods"
+      val ReplicaSet = "replicasets"
+      val ReplicationController = "replicationcontrollers"
+      val RoleBinding = "rolebindings"
+      val Role = "roles"
+      val Secret = "secrets"
+      val ServiceAccount = "serviceaccounts"
+      val Service = "services"
+      val StatefulSet = "statefulsets"
+      val Volume = "volumes"
+    }
+  }
+  
+  private[controllers] def deleteResult[R](path: PathArity, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     
     val qs = request.queryString
-    val headers = request.headers.toMap
+    //val headers = request.headers.toMap
     val gracePeriod = QueryString.singleInt(qs, "k8s_gracePeriodSeconds").getOrElse(-1)
-    val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
+    //val propagationPolicy = QueryString.single(qs, "k8s_propagationPolicy")
     
-    val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
     path match {
-      case one("pods", nm)         => kubeDelete[Pod](context, nm, gracePeriod)
-      case one("secrets", nm)      => kubeDelete[Secret](context, nm, gracePeriod)
-      case one("services", nm)     => kubeDelete[Service](context, nm, gracePeriod)
-      case one("configmaps", nm)   => kubeDelete[ConfigMap](context, nm, gracePeriod)
-      case one("deployments", nm)  => kubeDelete[Deployment](context, nm, gracePeriod)
-      case one("replicasets", nm)  => kubeDelete[ReplicaSet](context, nm, gracePeriod)      
-      case one("statefulsets", nm) => kubeDelete[StatefulSet](context, nm, gracePeriod)      
-      case one("persistentvolumes", nm)       => kubeDelete[PersistentVolume](context, nm, gracePeriod)
-      case one("persistentvolumeclaims", nm)  => kubeDelete[PersistentVolumeClaim](context, nm, gracePeriod)
-      case one("namespaces", nm) => kubeDelete[Namespace](context, nm, gracePeriod)
-      case _ => Future(NotFound(s"$path is not a valid URI."))
+      case Plural(kind) => 
+        throw new BadRequestException(s"Bad path: DELETE path must include identifier for type $kind")
+      case Single(kind, nm) => kind match {
+        case Kube.Plural.Pod         => kubeDelete[Pod](context, nm, gracePeriod)
+        case Kube.Plural.Secret      => kubeDelete[Secret](context, nm, gracePeriod)
+        case Kube.Plural.Service     => kubeDelete[Service](context, nm, gracePeriod)
+        case Kube.Plural.ConfigMap   => kubeDelete[ConfigMap](context, nm, gracePeriod)
+        case Kube.Plural.Deployment  => kubeDelete[Deployment](context, nm, gracePeriod)
+        case Kube.Plural.ReplicaSet  => kubeDelete[ReplicaSet](context, nm, gracePeriod)
+        case Kube.Plural.StatefulSet => kubeDelete[StatefulSet](context, nm, gracePeriod)
+        case Kube.Plural.PersistentVolume      => kubeDelete[PersistentVolume](context, nm, gracePeriod)
+        case Kube.Plural.PersistentVolumeClaim => kubeDelete[PersistentVolumeClaim](context, nm, gracePeriod)
+        case Kube.Plural.Namespace      => kubeDelete[Namespace](context, nm, gracePeriod)
+        case Kube.Plural.ServiceAccount => kubeDelete[ServiceAccount](context, nm, gracePeriod)
+        case Kube.Plural.Role           => kubeDelete[Role](context, nm, gracePeriod)
+        case Kube.Plural.RoleBinding    => kubeDelete[RoleBinding](context, nm, gracePeriod)
+        case Kube.Single.CronJob        => kubeDelete[CronJob](context, nm, gracePeriod)
+        case Kube.Single.DaemonSet      => kubeDelete[DaemonSet](context, nm, gracePeriod)
+        case Kube.Single.Job            => kubeDelete[Job](context, nm, gracePeriod)
+        case Kube.Single.ReplicationController   => kubeDelete[ReplicationController](context, nm, gracePeriod)          
+         
+        //Kube.Plural.Volume => ???
+      }
     }
   }
   
   def kubeDelete[T <: ObjectResource](context: RequestContext, name: String, grace: Int = -1)(implicit rd: skuber.ResourceDefinition[T]): Future[Result] = {
     context.delete[T](name, grace).transform( 
       s => NoContent, 
-      e => {
-        println("*****E : " + e)
-        new RuntimeException(s"There was an error: ${e.getMessage}")
-      })
+      e => new RuntimeException(s"There was an error: ${e.getMessage}"))
   }
   
-  def listContainers[A](
+  /**
+   * Extract Containers from the selected Pods
+   */
+  def extractContainers[A](
       context: RequestContext, request: SecuredRequest[_,_])(
           implicit fmt: Format[A]): Future[Result] = {
     
@@ -343,9 +475,15 @@ class KubeNativeController @Inject()(
     } yield cs
 
     containers.map(RenderObject(_, request.headers.toMap))
-    
   }
   
+  
+
+  /**
+   * Generate a view of several kubernetes native resources (some that are not
+   * represented in Meta). Uses querystring parameters to determine the namespace
+   * to query.
+   */
   def kubernetesView(request: SecuredRequest[_,_], context: RequestContext) = {
     
     def listResource2Json[L <: ListResource[_]](lst: L): JsValue = {
@@ -380,6 +518,9 @@ class KubeNativeController @Inject()(
       e => throw new RuntimeException(s"Failed retrieving objects from kube: ${e.getMessage}")
     )
 
+    /*
+     * TODO: Respect Accept-Header and return YAML if requested.
+     */    
     view.map { m =>
       Ok(Json.toJson(m))
     }.recover {
@@ -400,7 +541,7 @@ class KubeNativeController @Inject()(
       }
     }
   }
-  
+
   /**
    * TODO: Refactor to eliminate need for 'selected()' method above.
    * This version is more general
@@ -419,65 +560,79 @@ class KubeNativeController @Inject()(
     }
   }  
   
-  private[controllers] def getResult[R](path: String, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
+  
+  private[controllers] def getResult[R](path: PathArity, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
     log.debug(s"getResult($path,_,_)")
     
     val headers = request.headers.toMap
-    /*
-     * TODO: Check for k8s_labelSelector queryparam and handle accordingly...
-     */
+    
     val lists: PartialFunction[String, Future[Result]] = {
       case "view"        => kubernetesView(request, context)
       case "api"         => Future(Ok(api).withHeaders(ContentType("text/plain")))
-      case "pods"        => selected[PodList](request, context) 
-      case "containers"  => listContainers[Seq[Container]](context, request)
-      case "services"    => selected[ServiceList](request, context) //context.list[ServiceList].map(RenderObject(_, headers))
-      case "deployments" => selected[DeploymentList](request, context) //context.list[DeploymentList].map(RenderObject(_, headers))
-      case "replicasets" => selected[ReplicaSetList](request, context) //context.list[ReplicaSetList].map(RenderObject(_, headers))
-      case "secrets"     => selected[SecretList](request, context) //context.list[SecretList].map(RenderObject(_, headers))
-      case "configmaps"   => selected[ConfigMapList](request, context) //context.list[ConfigMapList].map(RenderObject(_, headers))
-      case "statefulsets" => selected[StatefulSetList](request, context) //context.list[StatefulSetList].map(RenderObject(_, headers))      
-      case "persistentvolumes"      => selected[PersistentVolumeList](request, context) //context.list[PersistentVolumeList].map(RenderObject(_, headers))
-      case "persistentvolumeclaims" => selected[PersistentVolumeClaimList](request, context) //context.list[PersistentVolumeClaimList].map(RenderObject(_, headers))
-      case "namespaces" => selected[NamespaceList](request, context) //context.list[NamespaceList].map(RenderObject(_, headers))
+      case Kube.Plural.Pod        => selected[PodList](request, context) 
+      case Kube.Plural.Container  => extractContainers[Seq[Container]](context, request)
+      //case Kube.Plural.Volume     => ???
+      case Kube.Plural.Service    => selected[ServiceList](request, context)
+      case Kube.Plural.Deployment => selected[DeploymentList](request, context)
+      case Kube.Plural.ReplicaSet => selected[ReplicaSetList](request, context)
+      case Kube.Plural.Secret     => selected[SecretList](request, context)
+      case Kube.Plural.ConfigMap   => selected[ConfigMapList](request, context)
+      case Kube.Plural.StatefulSet => selected[StatefulSetList](request, context)      
+      case Kube.Plural.PersistentVolume      => selected[PersistentVolumeList](request, context)
+      case Kube.Plural.PersistentVolumeClaim => selected[PersistentVolumeClaimList](request, context)
+      case Kube.Plural.Namespace => selected[NamespaceList](request, context)
+      case Kube.Plural.Job => selected[JobList](request, context)
+      case Kube.Plural.CronJob => selected[CronJobList](request, context)
+      case Kube.Plural.DaemonSet => selected[DaemonSetList](request, context)
     }
     
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
     val singles: PartialFunction[String, Future[Result]] = {
-      case one("pods", nm)        => context.get[Pod](nm).map(RenderObject(_, headers))
-      case one("services", nm)    => context.get[Service](nm).map(RenderObject(_, headers))
-      case one("deployments", nm) => context.get[Deployment](nm).map(RenderObject(_, headers))
-      case one("replicasets", nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers)) 
-      case one("secrets", nm)     => context.get[Secret](nm).map(RenderObject(_, headers))
-      case one("configmaps", nm)   => context.get[ConfigMap](nm).map(RenderObject(_, headers))
-      case one("statefulsets", nm) => context.get[StatefulSet](nm).map(RenderObject(_, headers))      
-      case one("persistentvolumes", nm)       => context.get[PersistentVolume](nm).map(RenderObject(_, headers))
-      case one("persistentvolumeclaims", nm)  => context.get[PersistentVolumeClaim](nm).map(RenderObject(_, headers))
-      case one("namespaces", nm) => context.get[Namespace](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.Pod, nm)        => context.get[Pod](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.Service, nm)    => context.get[Service](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.Deployment, nm) => context.get[Deployment](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.ReplicaSet, nm) => context.get[ReplicaSet](nm).map(RenderObject(_, headers)) 
+      case one(Kube.Plural.Secret, nm)     => context.get[Secret](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.ConfigMap, nm)   => context.get[ConfigMap](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.StatefulSet, nm) => context.get[StatefulSet](nm).map(RenderObject(_, headers))      
+      case one(Kube.Plural.PersistentVolume, nm)       => context.get[PersistentVolume](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.PersistentVolumeClaim, nm)  => context.get[PersistentVolumeClaim](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.Namespace, nm) => context.get[Namespace](nm).map(RenderObject(_, headers))
     }
     
     val notfound: PartialFunction[String, Future[Result]] = {
       case e => Future(NotFound(s"$path is not a valid URI."))
     }
     
-    (lists orElse singles orElse notfound)(path)    
+    path match {
+      case Plural(kind) => lists(kind) 
+      case Single(kind, name) => singles(kind)
+    }
   }    
   
+  /*
+   * TODO: The system currently allows a caller to omit the 'releaseName' query param. If
+   * omitted we assign a string-formatted timestamp as the name. Not sure this is a great idea.
+   * We may want to make 'releaseName' required and avoid surprises. 
+   */
   private[controllers] def defaultHelmChartReleaseName() = {
     java.time.LocalDateTime.now()
       .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd-HH-mm-ss"))
       .toString    
   }
   
-  private[controllers] def processCreatePayload(payload: JsValue, qs: Map[String, Seq[String]]): JsValue = {
+  /**
+   * Pre-process a compiled Helm Chart (validation, variable-replacement, etc.)
+   */
+  private[controllers] def processHelmChart(payload: JsValue, qs: Map[String, Seq[String]]): JsValue = {
     
-    val source = QueryString.single(qs, "source").map(_.trim.toLowerCase)
+    val source = QueryString.single(qs, Params.Source).map(_.trim.toLowerCase)
     source.fold( payload ) {
       _ match {
         case "helm" => {
           // releaseName is required when source is 'helm'
-          val release = QueryString.single(qs, "releaseName").getOrElse {
-            log.warn("Creating helm-sourced kube resource - no 'releaseName' given")
+          val release = QueryString.single(qs, Params.Release).getOrElse {
+            log.warn(s"Creating helm-sourced kube resource - no '${Params.Release}' given")
             defaultHelmChartReleaseName()
           }
           // replace all occurrences of 'RELEASE-NAME' with the given value
@@ -503,20 +658,27 @@ class KubeNativeController @Inject()(
     (for {
       context <- skuberFactory.initializeKube(kube, namespace)
       json    <- Future.fromTry(jsonPayload(request.body, request.contentType))
-      body = processCreatePayload(json, request.queryString)
+      body = processHelmChart(json, request.queryString)
       createResponse <- parseKind(body) match {
-        case None => Future(BadRequest("Malformed request. Cannot find object 'kind'"))
+        case None => Future(BadRequest("Malformed request. Cannot find key 'kind' in payload."))
         case Some(kind) => kind.toLowerCase match {
-          case "pod"        => CreateResult(createKubeObject[Pod](body, context), headers)
-          case "service"    => CreateResult(createKubeObject[Service](body, context), headers)
-          case "deployment" => CreateResult(createKubeObject[Deployment](body, context), headers)
-          case "replicaset" => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
-          case "secret"     => CreateResult(createKubeObject[Secret](body, context), headers)
-          case "configmap"  => CreateResult(createKubeObject[ConfigMap](body, context), headers)
-          case "statefulset" => CreateResult(createKubeObject[StatefulSet](body, context), headers)
-          case "persistentvolume"       => CreateResult(createKubeObject[PersistentVolume](body, context), headers)
-          case "persistentvolumeclaim"  => CreateResult(createKubeObject[PersistentVolumeClaim](body, context), headers)
-          case "namespace" => CreateResult(createKubeObject[Namespace](body, context), headers)
+          case Kube.Single.Pod        => CreateResult(createKubeObject[Pod](body, context), headers)
+          case Kube.Single.Service    => CreateResult(createKubeObject[Service](body, context), headers)
+          case Kube.Single.Deployment => CreateResult(createKubeObject[Deployment](body, context), headers)
+          case Kube.Single.ReplicaSet => CreateResult(createKubeObject[ReplicaSet](body, context), headers)
+          case Kube.Single.Secret     => CreateResult(createKubeObject[Secret](body, context), headers)
+          case Kube.Single.ConfigMap  => CreateResult(createKubeObject[ConfigMap](body, context), headers)
+          case Kube.Single.StatefulSet => CreateResult(createKubeObject[StatefulSet](body, context), headers)
+          case Kube.Single.PersistentVolume       => CreateResult(createKubeObject[PersistentVolume](body, context), headers)
+          case Kube.Single.PersistentVolumeClaim  => CreateResult(createKubeObject[PersistentVolumeClaim](body, context), headers)
+          case Kube.Single.Namespace      => CreateResult(createKubeObject[Namespace](body, context), headers)
+          case Kube.Single.CronJob        => CreateResult(createKubeObject[CronJob](body, context), headers)
+          case Kube.Single.DaemonSet      => CreateResult(createKubeObject[DaemonSet](body, context), headers)
+          case Kube.Single.Role           => CreateResult(createKubeObject[Role](body, context), headers)
+          case Kube.Single.RoleBinding    => CreateResult(createKubeObject[RoleBinding](body, context), headers)
+          case Kube.Single.Job            => CreateResult(createKubeObject[Job](body, context), headers)
+          case Kube.Single.ServiceAccount => CreateResult(createKubeObject[ServiceAccount](body, context), headers)
+          case Kube.Single.ReplicationController   => CreateResult(createKubeObject[ReplicationController](body, context), headers)          
           case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
         }
       }
@@ -529,32 +691,37 @@ class KubeNativeController @Inject()(
       
     val newKubeResource = for {
       json <- Future.fromTry(YamlJson.fromYamlString(payload))
-      body = processCreatePayload(json, qs)
-      _ = {
-        println("BODY:\n" + Json.prettyPrint(body))
-      }
+      body = processHelmChart(json, qs)
+      
       createResponse <- parseKind(body) match {
-        case None => throw new Exception("foo") //Future.failed(new BadRequestException("Malformed request. Cannot find object 'kind'"))
+        case None => throw new BadRequestException("Malformed request. Cannot find object 'kind'")
         case Some(kind) => kind.toLowerCase match {
-          case "pod"         => createKubeObject[Pod](body, context)
-          case "service"     => createKubeObject[Service](body, context)
-          case "deployment"  => createKubeObject[Deployment](body, context)
-          case "replicaset"  => createKubeObject[ReplicaSet](body, context)
-          case "secret"      => createKubeObject[Secret](body, context)
-          case "configmap"   => createKubeObject[ConfigMap](body, context)
-          case "statefulset" => createKubeObject[StatefulSet](body, context)
-          case "persistentvolume"       => createKubeObject[PersistentVolume](body, context)
-          case "persistentvolumeclaim"  => createKubeObject[PersistentVolumeClaim](body, context)
-          case "namespace" => createKubeObject[Namespace](body, context)
-          case e => throw new Exception("bar") //Future.failed(new BadRequestException(s"Cannot process requests for object kind '$kind'"))
+          case Kube.Single.Pod         => createKubeObject[Pod](body, context)
+          case Kube.Single.Service     => createKubeObject[Service](body, context)
+          case Kube.Single.Deployment  => createKubeObject[Deployment](body, context)
+          case Kube.Single.ReplicaSet  => createKubeObject[ReplicaSet](body, context)
+          case Kube.Single.Secret      => createKubeObject[Secret](body, context)
+          case Kube.Single.ConfigMap   => createKubeObject[ConfigMap](body, context)
+          case Kube.Single.StatefulSet => createKubeObject[StatefulSet](body, context)
+          case Kube.Single.PersistentVolume       => createKubeObject[PersistentVolume](body, context)
+          case Kube.Single.PersistentVolumeClaim  => createKubeObject[PersistentVolumeClaim](body, context)
+          case Kube.Single.Namespace => createKubeObject[Namespace](body, context)
+          
+          case Kube.Single.CronJob        => createKubeObject[CronJob](body, context)
+          case Kube.Single.DaemonSet      => createKubeObject[DaemonSet](body, context)
+          case Kube.Single.Role           => createKubeObject[Role](body, context)
+          case Kube.Single.RoleBinding    => createKubeObject[RoleBinding](body, context)
+          case Kube.Single.Job            => createKubeObject[Job](body, context)
+          case Kube.Single.ServiceAccount => createKubeObject[ServiceAccount](body, context)
+          case Kube.Single.ReplicationController   => createKubeObject[ReplicationController](body, context)          
+
+          case e => throw new BadRequestException(s"Cannot process requests for object kind '$kind'")
         }
       }
     } yield createResponse
     
     newKubeResource
   }
-  
-  
   
   /**
    * Handles marshaling a Kubernetes object to an appropriate data-type based on Accept headers.
@@ -640,6 +807,19 @@ class KubeNativeController @Inject()(
     }
   }
   
+//  private[controllers] def Render[A](
+//      obj: A, hdrs: Headers, default: Boolean = true)(implicit fmt: Format[A]) = {
+//    if (AcceptsJson(hdrs))
+//      Json.toJson(obj)
+//    else if (AcceptsYaml(hdrs))
+//      toYaml(obj)
+//    else if (default)
+//      toYaml(obj)
+//    else {
+//      val mimetypes = (MimeYaml ++ MimeJson).mkString(",") 
+//      throw new BadRequestException(s"Acceptable mime-types are: $mimetypes")
+//    }      
+//  }
   
   /**
    * Convert a Kubernetes object to YAML
