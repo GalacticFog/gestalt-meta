@@ -25,7 +25,6 @@ import skuber.api.client.RequestContext
 import skuber.ext.Deployment
 
 import scala.concurrent.{ExecutionContext, Future}
-import scala.util.Try
 
 import scala.util.Success
 
@@ -108,7 +107,7 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
           "provider" -> Output.renderInstance(testProvider).toString,
           "image" -> "n/a",
           "container_type" -> "n/a",
-          "external_id" -> "test-namespace/test-deployment"
+          "external_id" -> "/namespaces/test-namespace/deployments/test-deployment"
         ))
       )
 
@@ -134,10 +133,11 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
         ))
       )
       skuberContextMock.getOption[skuber.ext.Deployment](meq("test-deployment"))(any, any, any) returns Future.successful(Some(testDeployment))
+      skuberContextMock.jsonMergePatch[skuber.ext.Deployment](any, any)(any, any, any) returns Future.successful(testDeployment)
 
       class KCI extends KubeContainerImport {
         override def initializeKube( provider: JsObject, namespace: String )
-                                   ( implicit ec: ExecutionContext ): Try[RequestContext] = Success(skuberContextMock)
+                                   ( implicit ec: ExecutionContext ): RequestContext = skuberContextMock
       }
 
       val response = new KCI().run(lastLambdaRequestBody.toString, "{}")

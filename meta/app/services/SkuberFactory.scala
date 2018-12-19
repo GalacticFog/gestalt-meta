@@ -88,7 +88,7 @@ class DefaultSkuberFactory @Inject()(@Named(KubeTokenActor.name) kubeTokenActor:
           )
           initialConfig.copy(currentContext = ctx)
         }
-      } yield skuber.api.client.init(finalconfig)      
+      } yield skuber.api.client.init(finalconfig)
     }
 
   }  

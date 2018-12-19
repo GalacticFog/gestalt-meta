@@ -16,6 +16,7 @@ libraryDependencies ++= Seq(
   "org.specs2" %% "specs2-core" % "4.3.4" % Test,
   "de.leanovate.play-mockws" %% "play-mockws" % "2.5.1" % Test
 )
+excludeDependencies += "commons-logging" % "commons-logging"
 
 scalacOptions ++= Seq(
   "-language:implicitConversions",

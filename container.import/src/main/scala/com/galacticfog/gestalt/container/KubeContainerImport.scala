@@ -25,11 +25,6 @@ class KubeContainerImport extends ContainerImport {
 
   val logger = LoggerFactory.getLogger(this.getClass)
 
-  val cl = this.getClass.getClassLoader
-  val config = ConfigFactory.load(this.getClass.getClassLoader)
-  implicit val system = ActorSystem("my-system", Some(config), Some(cl), Some(global))
-  implicit val materializer = ActorMaterializer()
-
   private[this] val logWriter = new PrintWriter(new Writer {
     override def write(cbuf: Array[Char], off: Int, len: Int): Unit = {
       logger.error(cbuf.subSequence(off, off+len).toString)
@@ -77,29 +72,41 @@ class KubeContainerImport extends ContainerImport {
     log("got provider config")
     // val providerConfig = (provider \ "properties" \ "config").asOpt[JsObject] getOrElse(throw new RuntimeException("provider did not have '.properties.config'"))
 
-    val resource = (payload \ "resource").asOpt[JsObject] getOrElse(throw new RuntimeException("payload did not have meta resource"))
+    val resource = (payload \ "resource").as[JsObject]
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
-    val importTarget = (resource \ "properties" \ "external_id").asOpt[String] getOrElse(throw new RuntimeException("resource did not have 'external_id'"))
+    val importTarget = (resource \ "properties" \ "external_id").as[String]
+    
+    val envId = (payload \ "context" \ "environment" \ "id").as[String]
 
-    val sanitizedImportTarget = importTarget
-      .stripPrefix("/")
-      .stripSuffix("/")
-      .replaceAll("\\s", "")
-    val importTargetPattern = "(.+)/(.+)".r
+    // val sanitizedImportTarget = importTarget
+    //   .stripPrefix("/")
+    //   .stripSuffix("/")
+    //   .replaceAll("\\s", "")
+    // val importTargetPattern = "(.+)/(.+)".r
 
-    val (namespace, deplName) = sanitizedImportTarget match {
-      case importTargetPattern(namespaceValue, deplNameValue) => {
+    // val (namespace, deplName) = sanitizedImportTarget match {
+    //   case importTargetPattern(namespaceValue, deplNameValue) => {
+    //     log(s"namespace: $namespaceValue, deployment: $deplNameValue")
+    //     (namespaceValue, deplNameValue)
+    //   }
+    //   case _ => throw BadRequestException(s"Invalid External ID. expected: 'namespace/deployment'. found: '$importTarget'")
+    // }
+    val (namespace, deplName) = importTarget.split("/") match {
+      case Array("", "namespaces", namespaceValue, "deployments", deplNameValue) => {
         log(s"namespace: $namespaceValue, deployment: $deplNameValue")
         (namespaceValue, deplNameValue)
       }
-      case _ => throw BadRequestException(s"Invalid External ID. expected: 'namespace/deployment'. found: '$importTarget'")
+      case _ => throw BadRequestException(s"Invalid External ID: '$importTarget'")
     }
 
-    val kube = initializeKube(provider, namespace).get
+    val kube = initializeKube(provider, namespace)
+
+    import skuber.json.ext.format._
 
     val fResp = for {
       depl <- getSkuberResource(kube, deplName)
-      importProps = convertAppToInstanceProps(depl)
+      updatedDepl <- kube.jsonMergePatch(depl, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
+      importProps = convertAppToInstanceProps(updatedDepl)
     } yield resource ++ Json.obj(
       "properties" -> (inputProps ++ importProps)
     )
@@ -173,22 +180,22 @@ class KubeContainerImport extends ContainerImport {
   }
 
   protected[this] def initializeKube( provider: JsObject, namespace: String )
-                                  ( implicit ec: ExecutionContext ): Try[RequestContext] = for {
-    config  <- extractKubeConfig(provider)
-    context <- Try {
-      val c = KubeConfig.parseYaml(config, Map.empty).setCurrentNamespace(namespace)
-      skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
-    }
-  } yield context
+                                  ( implicit ec: ExecutionContext ): RequestContext = {
+    val cl = this.getClass.getClassLoader
+    val config = ConfigFactory.load(this.getClass.getClassLoader)
+    implicit val system = ActorSystem("my-system", Some(config), Some(cl), Some(global))
+    implicit val materializer = ActorMaterializer()
+    
+    val kubeconfig = extractKubeConfig(provider)
+    val c = KubeConfig.parseYaml(kubeconfig, Map.empty).setCurrentNamespace(namespace)
+    skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
+  }
 
-  private[this] def extractKubeConfig(provider: JsObject): Try[String] = {
-    for {
-      data <- (provider \ "properties" \ "data").asOpt[String] match {
-        case Some(d) => Success(d)
-        case None => Failure(new RuntimeException("provider did not have '.properties.data'"))
-      }
-      decoded = if (Ascii.isBase64(data)) Ascii.decode64(data) else data
-    } yield decoded
+  private[this] def extractKubeConfig(provider: JsObject): String = {
+    val data = (provider \ "properties" \ "data").asOpt[String] getOrElse {
+      throw new RuntimeException("provider did not have '.properties.data'")
+    }
+    if (Ascii.isBase64(data)) Ascii.decode64(data) else data
   }
 
 }
