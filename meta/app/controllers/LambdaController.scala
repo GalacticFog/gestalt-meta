@@ -74,7 +74,7 @@ class LambdaController @Inject()(
     }
 
     actionResult map { metaLambda =>
-      trackingProvider.reportCreate(metaLambda.id.toString)
+      trackingProvider.reportCreate(metaLambda.id.toString, metaLambda.name)
       Created(RenderSingle(resourceController.transformResource(metaLambda).get))
     } recoverWith { case throwable =>
       HandleExceptionsAsync(throwable)
