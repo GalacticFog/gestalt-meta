@@ -3,15 +3,15 @@ package controllers
 import java.util.UUID
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec, sdk}
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.meta.genericactions.GenericProviderManager
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.meta.test._
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import com.galacticfog.gestalt.security.play.silhouette.fakes.FakeGestaltSecurityModule
+import com.galacticfog.gestalt.util.Error
 import controllers.util._
 import modules._
 import org.junit.runner.RunWith
@@ -23,14 +23,12 @@ import org.specs2.runner.JUnitRunner
 import play.api.inject.bind
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.JsValue.jsValueToJsLookup
-import play.api.libs.json.{JsString, JsValue, Json}
+import play.api.libs.json._
 import play.api.test.PlaySpecification
 import services._
 
 import scala.concurrent.Future
-import scala.util.{Try,Success}
-
+import scala.util.{Success, Try}
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager
 
@@ -135,7 +133,6 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
   "ContainerController" should {
 
     import com.galacticfog.gestalt.data.EnvironmentType
-    import com.galacticfog.gestalt.meta.api.errors._
     
     "assertCompatibleEnvType" should {
 
@@ -149,7 +146,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         prv must beSuccessfulTry
         
         val cc = app.injector.instanceOf[ContainerController]
-        scala.util.Try(cc.assertCompatibleEnvType(prv.get, env.get)) must beSuccessfulTry
+        cc.assertCompatibleEnvType(prv.get, env.get) must_== Right(())
       }
       
       "fail when the environment is incompatible with Provider declared env types" in new TestContainerController {
@@ -162,136 +159,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         prv must beSuccessfulTry
         
         val cc = app.injector.instanceOf[ContainerController]
-        scala.util.Try(cc.assertCompatibleEnvType(prv.get, env.get)) must beFailedTry.withThrowable[ConflictException]
-      }
-      
-    }
-
-    
-    "normalizeCaasPayload" should { //normalizeContainerPayload(containerJson: JsValue, environment: UUID): Try[JsObject]
-    
-      "succeed when give a valid Container payload" in new TestContainerController {
-        val env = createInstance(ResourceIds.Environment, uuid.toString, 
-            properties = Some(Map("environment_type" -> EnvironmentType.id("development").toString)))
-        env must beSuccessfulTry
-        
-        val prv = createInstance(ResourceIds.KubeProvider, uuid.toString, 
-            properties = Some(Map("environment_types" -> Json.stringify(Json.arr("development", "test")))))        
-        prv must beSuccessfulTry
-        
-        val payload = Json.parse(
-            s"""
-            |{
-            |  "name": "KubernetesProvider-1",
-            |  "description": "A Kubernetes Cluster.",
-            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
-            |  "properties": {
-            |  	"environment_types": ["development", "test", "production"],
-            |   "provider": {
-            |      "id": "${prv.get.id.toString}"
-            |   },
-            |  	"config": {}
-            |  }
-            |}""".trim.stripMargin)
-        val cc = app.injector.instanceOf[ContainerController]
-        val Success(normalizedPayload) = cc.normalizeCaasPayload(payload, env.get.id)
-        Js.find(normalizedPayload, "/properties/provider/id") must beSome(JsString(s"${prv.get.id}"))
-        Js.find(normalizedPayload, "/properties/provider/name") must beSome(JsString(s"${prv.get.name}"))
-        Js.find(normalizedPayload, "/properties/provider/resource_type") must beSome(JsString(s"${sdk.ResourceName(prv.get.typeId)}"))
-      }
-      
-      "fail when given an Environment that is incompatible with the Provider (env-type)" in new TestContainerController {
-        val env = createInstance(ResourceIds.Environment, uuid.toString, 
-            properties = Some(Map("environment_type" -> EnvironmentType.id("production").toString)))
-        env must beSuccessfulTry
-        
-        val prv = createInstance(ResourceIds.KubeProvider, uuid.toString, 
-            properties = Some(Map("environment_types" -> Json.stringify(Json.arr("development", "test")))))        
-        prv must beSuccessfulTry
-        
-        val payload = Json.parse(
-            s"""
-            |{
-            |  "name": "KubernetesProvider-1",
-            |  "description": "A Kubernetes Cluster.",
-            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
-            |  "properties": {
-            |  	"environment_types": ["development", "test", "production"],
-            |   "provider": {
-            |      "id": "${prv.get.id.toString}"
-            |   },
-            |  	"config": {}
-            |  }
-            |}""".trim.stripMargin)
-        val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
-      }      
-      
-      "fail when /properties/provider/id is not found on the container" in new TestContainerController {
-        val env = createInstance(ResourceIds.Environment, uuid.toString, 
-            properties = Some(Map("environment_type" -> EnvironmentType.id("development").toString)))
-        env must beSuccessfulTry
-        
-        val prv = createInstance(ResourceIds.KubeProvider, uuid.toString, 
-            properties = Some(Map("environment_types" -> Json.stringify(Json.arr("development", "test")))))        
-        prv must beSuccessfulTry
-        
-        val payload = Json.parse(
-            s"""
-            |{
-            |  "name": "KubernetesProvider-1",
-            |  "description": "A Kubernetes Cluster.",
-            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
-            |  "properties": {
-            |  	"environment_types": ["development", "test", "production"],
-            |  	"config": {}
-            |  }
-            |}""".trim.stripMargin)
-        val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
-      }
-      
-      "fail when the Environment with the given ID is not found" in new TestContainerController {
-        val prv = createInstance(ResourceIds.KubeProvider, uuid.toString, 
-            properties = Some(Map("environment_types" -> Json.stringify(Json.arr("development", "test")))))        
-        prv must beSuccessfulTry
-        
-        val payload = Json.parse(
-            s"""
-            |{
-            |  "name": "KubernetesProvider-1",
-            |  "description": "A Kubernetes Cluster.",
-            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
-            |  "properties": {
-            |  	"environment_types": ["development", "test", "production"],
-            |  	"config": {}
-            |  }
-            |}""".trim.stripMargin)
-        val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeCaasPayload(payload, uuid()) must beFailedTry
-      }
-      
-      "fail when the CaasProvider with the given ID is not found" in new TestContainerController {
-        val env = createInstance(ResourceIds.Environment, uuid.toString, 
-            properties = Some(Map("environment_type" -> EnvironmentType.id("development").toString)))
-        env must beSuccessfulTry
-        
-        val payload = Json.parse(
-            s"""
-            |{
-            |  "name": "KubernetesProvider-1",
-            |  "description": "A Kubernetes Cluster.",
-            |  "resource_type": "Gestalt::Configuration::Provider::CaaS::Kubernetes",
-            |  "properties": {
-            |  	"environment_types": ["development", "test", "production"],
-            |   "provider": {
-            |      "id": "${uuid.toString}"
-            |   },
-            |  	"config": {}
-            |  }
-            |}""".trim.stripMargin)
-        val cc = app.injector.instanceOf[ContainerController]
-        cc.normalizeCaasPayload(payload, env.get.id) must beFailedTry
+        cc.assertCompatibleEnvType(prv.get, env.get) must_== Left(Error.Conflict("Incompatible Environment type. Expected one of (development,test). found: 'production'"))
       }
       
     }
@@ -400,6 +268,10 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       )
       val Some(result) = route(app,request)
+      contentAsJson(result) must_== Json.obj(
+        "code" -> 400,
+        "message" -> "renaming containers is not supported"
+      )
       status(result) must equalTo(BAD_REQUEST)
     }
 
@@ -464,6 +336,26 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         )
       )
       val Some(result) = route(app,request)
+      (contentAsJson(result) \ "properties").as[JsValue] must_== Json.obj(
+        "network" -> "NEW-NETWORK",
+        "num_instances" -> 4,
+        // "provider" -> Output.renderInstance(testProvider),
+        "provider" -> Json.obj("id" -> testProvider.id.toString, "name" -> testProvider.name),
+        "secrets" -> Json.arr(),
+        "disk" -> 0,
+        "image" -> "nginx:updated",
+        "health_checks" -> Json.arr(),
+        "force_pull" -> false,
+        "volumes" -> Json.arr(),
+        "container_type" -> "DOCKER",
+        "labels" -> Json.obj(),
+        "constraints" -> Json.arr(),
+        "cpus" -> 2,
+        "port_mappings" -> Json.arr(),
+        "env" -> Json.obj(),
+        "memory" -> 2048,
+        "external_id" -> s"${extId}"
+      )
       status(result) must equalTo(OK)
       there was one(containerService).updateContainer(
         any,
@@ -545,7 +437,8 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
           hasId(createdResource.id) and
           hasProperties(
             "external_id" -> extId,
-            "provider" -> Output.renderInstance(testProvider).toString
+            // "provider" -> Output.renderInstance(testProvider).toString
+            "provider" -> Json.obj("id" -> testProvider.id.toString, "name" -> testProvider.name).toString
           )
         ),
         any,
@@ -633,8 +526,11 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       val Some(result) = route(app,request)
 
-      status(result) must equalTo(BAD_REQUEST)
-      contentAsString(result) must contain("not found")
+      contentAsJson(result) must_== Json.obj(
+        "code" -> 404,
+        "message" -> s"CaasProvider with ID '${testProps.provider.id}' not found"
+      )
+      status(result) must equalTo(NOT_FOUND)
     }
 
     "create containers using CaaSService interface" in new TestContainerController {
@@ -687,6 +583,9 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       val Some(result) = route(app,request)
 
+      (contentAsJson(result) \ "created").as[JsValue] must not equalTo(null)
+      (contentAsJson(result) \ "modified").as[JsValue] must not equalTo(null)
+      (contentAsJson(result) \ "owner").as[JsValue] must not equalTo(null)
       status(result) must equalTo(CREATED)
 
       val json = contentAsJson(result)
@@ -987,7 +886,10 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
 
       val Some(result) = route(app,request)
       status(result) must equalTo(BAD_REQUEST)
-      contentAsString(result) must contain("/properties/provider/id")
+      contentAsJson(result).as[JsValue] must_== Json.obj(
+        "code" -> 400,
+        "message" -> "Failed to parse payload: /provider: error.path.missing; /items: error.path.missing"
+      )
     }
 
     "create secrets with non-existent provider should 400" in new TestContainerController {
@@ -1005,8 +907,11 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
 
       val Some(result) = route(app,request)
+      contentAsJson(result).as[JsValue] must_== Json.obj(
+        "code" -> 400,
+        "message" -> "Failed to parse payload: /items: error.path.missing"
+      )
       status(result) must equalTo(BAD_REQUEST)
-      contentAsString(result) must contain("CaasProvider") and contain("not found")
     }
 
     "create secrets using CaaSService interface" in new TestContainerController {
@@ -1130,18 +1035,22 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
 
       val Some(result) = route(app,request)
+      contentAsJson(result).as[JsValue] must_== Json.obj(
+        "code" -> 400,
+        "message" -> "Failed to parse payload: /provider/id: error.path.missing"
+      )
       status(result) must equalTo(BAD_REQUEST)
-      contentAsString(result) must contain("/properties/provider/id")
     }
 
     "create volumes with non-existent provider should 400" in new TestContainerController {
+      val providerId = UUID.randomUUID()
       val newResource = newInstance(
         typeId = migrations.V13.VOLUME_TYPE_ID,
         name = "test-volume",
         properties = Some(Map(
           "type" -> "host_path",
           "provider" -> Json.toJson(
-            ContainerSpec.InputProvider(id = UUID.randomUUID())
+            ContainerSpec.InputProvider(id = providerId)
           ).toString,
           "size" -> "100",
           "access_mode" -> "ReadWriteOnce",
@@ -1153,8 +1062,11 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
 
       val Some(result) = route(app,request)
-      status(result) must equalTo(BAD_REQUEST)
-      contentAsString(result) must contain("CaasProvider") and contain("not found")
+      contentAsJson(result).as[JsValue] must_== Json.obj(
+        "code" -> 404,
+        "message" -> s"CaasProvider with ID '${providerId}' not found"
+      )
+      status(result) must equalTo(NOT_FOUND)
     }
 
     "create volumes using CaaSService interface" in new TestContainerController {

@@ -414,7 +414,11 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     * Create a Deployment with services in Kubernetes
     */
   private[services] def createDeploymentEtAl(kube: RequestContext, containerId: UUID, spec: ContainerSpec, namespace: String, context: ProviderContext): Future[ContainerSpec] = {
+    log.debug("createDeploymentEtAl")
     val fDeployment = kube.create[Deployment](mkDeploymentSpec(kube, containerId, spec, context, namespace))
+    fDeployment.onFailure{
+      case e: Throwable => log.error(s"error creating Kubernetes Deployment for container ${containerId}; assuming that it was not created",e)
+    }
     val fUpdatedPMsFromService = createServices(kube, namespace, containerId, spec, context) recover {
       case e: Throwable =>
         log.error(s"error creating Kubernetes Service for container ${containerId}; assuming that it was not created",e)
@@ -465,6 +469,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   def destroy(container: ResourceLike): Future[Unit] = {
+    log.debug("destroy(_)")
 
     val provider = ContainerService.containerProvider(container)
     /*
@@ -1026,6 +1031,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+    log.debug("find(_,_)")
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
       case Some(deplSplitter(namespace,deploymentName)) =>
@@ -1063,31 +1069,70 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
             update = maybeDeployment map (kubeDeplAndPodsToContainerStatus(_, pods, services, allEvents))
           } yield update
         )
+      case Some(externalId) => Future.failed(throw new RuntimeException(s"Invalid external_id: $externalId"))
       case None => Future.successful(None)
     }
   }
 
   override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
-    cleanly(context.provider, context.environment.id.toString) { kube =>
-      val fDepls = kube.list[DeploymentList]()
-      val fAllPods = kube.list[PodList]()
-      val fAllServices = kube.list[ServiceList]()
-      val fAllEvents = kube.list[EventList]()
-      for {
-        depls <- fDepls
-        allPods <- fAllPods
-        allServices <- fAllServices
-        allEvents <- fAllEvents map (_.items)
-        _ = log.debug(s"listInEnvironment returned ${depls.size} deployments, ${allPods.size} pods, ${allEvents.size} events")
-        stats = depls.flatMap (depl =>
-          depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
-            val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
-            val maybeLbSvc = listByLabel[Service,ServiceList](allServices, META_CONTAINER_KEY -> id).find(_.spec.exists(_._type == Service.Type.LoadBalancer))
-            log.debug(s"deployment for container ${id} selected ${thesePods.size} pods and ${maybeLbSvc.size} service")
-            kubeDeplAndPodsToContainerStatus(depl, thesePods, maybeLbSvc, allEvents)
+    import cats.syntax.traverse._
+    import cats.instances.vector._
+    import cats.instances.future._
+
+    cleanly(context.provider, context.environment.id.toString) { kube0 =>
+
+      kube0.getNamespaceNames flatMap { namespaces =>
+        val prunedNamespaces = namespaces filter { namespace =>
+          try {
+            UUID.fromString(namespace)
+            namespace == context.environment.id.toString
+          } catch {
+            case _: IllegalArgumentException => true
           }
-        )
-      } yield stats
+        }
+        val stats = Future.traverse(prunedNamespaces) { namespace =>
+          val kube = kube0.usingNamespace(namespace)
+
+          val envSelector = new LabelSelector(LabelSelector.IsEqualRequirement("meta/environment", context.environment.id.toString))
+
+          val fDepls = kube.listSelected[DeploymentList](envSelector)
+          // val fAllPods = kube.listSelected[PodList](envSelector)
+          // val fAllServices = kube.listSelected[ServiceList](envSelector)
+          val fAllEvents = kube.listSelected[EventList](envSelector)
+          for {
+            depls <- fDepls
+            // allPods <- fAllPods
+            // allServices <- fAllServices
+            allEvents <- fAllEvents map (_.items)
+            // _ = log.debug(s"listInEnvironment returned ${depls.size} deployments, ${allPods.size} pods, ${allEvents.size} events")
+            _ = log.debug(s"${namespace}: listInEnvironment returned ${depls.size} deployments, ${allEvents.size} events")
+            // stats = depls flatMap { depl =>
+              // depl.metadata.labels.get(META_CONTAINER_KEY) map { id =>
+              //   val thesePods = listByLabel[Pod,PodList](allPods, META_CONTAINER_KEY -> id)
+              //   val maybeLbSvc = listByLabel[Service,ServiceList](allServices, META_CONTAINER_KEY -> id).find(_.spec.exists(_._type == Service.Type.LoadBalancer))
+              //   log.debug(s"deployment for container ${id} selected ${thesePods.size} pods and ${maybeLbSvc.size} service")
+              //   kubeDeplAndPodsToContainerStatus(depl, thesePods, maybeLbSvc, allEvents)
+              // }
+            // }
+            deplsWithSelector = depls filter { depl => depl.spec.flatMap(_.selector).isDefined }
+            stats <- deplsWithSelector.toVector traverse { depl =>
+              val selector = depl.spec.flatMap(_.selector).get
+              val fPods = kube.listSelected[PodList](selector)
+              val fServices = kube.listSelected[ServiceList](selector)
+              for(
+                pods <- fPods;
+                services <- fServices
+              ) yield {
+                val id = depl.metadata.labels.get(META_CONTAINER_KEY).getOrElse(s"name=${depl.name}")
+                val lbs = services.find(_.spec.exists(_._type == Service.Type.LoadBalancer))
+                log.debug(s"deployment for container ${id} selected ${pods.size} pods and ${lbs.size} service")
+                kubeDeplAndPodsToContainerStatus(depl, pods, lbs, allEvents)
+              }
+            }
+          } yield stats.toSeq
+        }
+        stats.map(_.flatten)
+      }
     }
   }
 

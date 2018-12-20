@@ -38,12 +38,22 @@ dockerBaseImage := "openjdk:8-jre-alpine"
 dockerCommands := dockerCommands.value.flatMap {
   case cmd@Cmd("FROM",_) => List(
     cmd,
-    Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*")
+    Cmd("RUN", "apk --no-cache add bash curl python py-crcmod bash libc6-compat openssh-client git gnupg && ln -s /lib /lib64 && rm -rf /var/cache/apk/*"),
+    // see https://github.com/GoogleCloudPlatform/cloud-sdk-docker/blob/master/alpine/Dockerfile
+    Cmd("ENV", "CLOUD_SDK_VERSION=227.0.0"),
+    Cmd("RUN", """curl -s -O https://dl.google.com/dl/cloudsdk/channels/rapid/downloads/google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz &&
+      tar xzf google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz &&
+      rm google-cloud-sdk-${CLOUD_SDK_VERSION}-linux-x86_64.tar.gz &&
+      mkdir -p /opt/docker/authenticators &&
+      mv /google-cloud-sdk /opt/docker/authenticators/google-cloud-sdk &&
+      /opt/docker/authenticators/google-cloud-sdk/bin/gcloud config set core/disable_usage_reporting true &&
+      /opt/docker/authenticators/google-cloud-sdk/bin/gcloud config set component_manager/disable_update_check true &&
+      /opt/docker/authenticators/google-cloud-sdk/bin/gcloud config set metrics/environment gestalt_meta""".replace("\n", " "))
   )
   case Cmd("ADD", _) => List(
     Cmd("RUN", "mkdir -p /opt/docker/lib"),
     Cmd("RUN", "chown -R daemon:daemon ."),
-    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/authenticators", "/opt/docker/authenticators"),    // 150MB blob: updated never
+    Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/authenticators/aws-iam-authenticator", "/opt/docker/authenticators/aws-iam-authenticator"),
     Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/lib/*", "/opt/docker/lib/"),     // all third-party dependencies: updated once in a while
     Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/_lib/*", "/opt/docker/lib/"),    // our dependencies: updated very often
     Cmd("ADD", "--chown=daemon:daemon", "/opt/docker/conf", "/opt/docker/conf"),
@@ -101,8 +111,9 @@ libraryDependencies ++= Seq(
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
-  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources(),
+  ("com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources()),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
+  "com.galacticfog" %% "gestalt-tracking-provider"     % "0.0.3",
   "net.codingwell"  %% "scala-guice"                   % "4.2.1",
   "org.slf4j"        % "slf4j-api"                     % "1.7.21",
   "ch.qos.logback"   % "logback-classic"               % "1.1.7",
@@ -126,5 +137,7 @@ libraryDependencies ++= Seq(
   "org.mockito"                % "mockito-core"         % "1.10.19"     % Test,
   "com.typesafe.akka"         %% "akka-testkit"         % "2.3.10"      % Test
 )
+
+libraryDependencies += "org.yaml" % "snakeyaml" % "1.23"    
 
 // routesGenerator := InjectedRoutesGenerator

@@ -3,6 +3,13 @@
 ###
 
 
+POST  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/chart    controllers.KubeNativeController.createApplicationDeployment(fqon: String, providerId: java.util.UUID)
+
+GET  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.get(fqon: String, providerId: java.util.UUID, path: String)
+POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path controllers.KubeNativeController.post(fqon: String, providerId: java.util.UUID, path: String)
+
+DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*path   controllers.KubeNativeController.delete(fqon: String, providerId: java.util.UUID, path: String)
+
 
 
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
@@ -35,9 +42,17 @@ POST   /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:id/redeploy  control
 
 GET    /root/check 		controllers.InfoController.serviceCheck()
 
+############################
+# TRACKING
+############################
+POST /tracking/credits              controllers.TrackingController.postCredit()
+DELETE /tracking/credits/:name      controllers.TrackingController.deleteCredit(name: String)
+GET /tracking/credits/:name         controllers.TrackingController.getCredit(name: String)
+GET /tracking/credits               controllers.TrackingController.getCredits()
+
 
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
-PATCH /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
+PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
 
 
 ############################
@@ -290,4 +305,5 @@ POST /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path  		controllers.ResourceCont
 ### CORS support
 OPTIONS  /                           controllers.InfoController.options(path="")
 OPTIONS  /*path                      controllers.InfoController.options(path)
+
 

@@ -11,7 +11,7 @@ import org.clapper.scalasti.ST
 import play.api.libs.json._
 import play.api.libs.json.Reads._
 import play.api.libs.functional.syntax._
-import play.api.libs.ws.{WSClient, WSResponse}
+import play.api.libs.ws.{WSClient, WSResponse, DefaultWSProxyServer}
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import play.api.http.HeaderNames.{AUTHORIZATION, CONTENT_TYPE}
 
@@ -42,7 +42,8 @@ object GenericProvider {
 case class HttpGenericProvider(client: WSClient,
                                url: String,
                                method: String,
-                               authHeader: Option[String] = None) extends GenericProvider with JsonInput {
+                               authHeader: Option[String] = None,
+                               proxy: Option[DefaultWSProxyServer] = None) extends GenericProvider with JsonInput {
 
   private[this] def processResponse(resource: Option[GestaltResourceInstance], response: WSResponse): Try[InvocationResponse] = {
 
@@ -146,18 +147,20 @@ case class HttpGenericProvider(client: WSClient,
 
     val resp = for {
       expandedUrl <- Future.fromTry(st.render())
-      _ = println(s"*****template url: ${url} expanded url: ${expandedUrl}")
-      request = authHeader.foldLeft(
-          client.url(expandedUrl)
-            .withHeaders(params:_*)
-            .withMethod(method)
-            .withBody(invocation.toJson()) 
-          ) {
-        case (req, header) => req.withHeaders(AUTHORIZATION -> header)
+      _ = log.debug(s"template url: ${url} expanded url: ${expandedUrl}")
+      request = client.url(expandedUrl)
+        .withHeaders(params:_*)
+        .withMethod(method)
+        .withBody(invocation.toJson()) 
+      requestWithHeader = authHeader.fold(request) { header =>
+        request.withHeaders(AUTHORIZATION -> header)
+      }
+      requestWithProxy = proxy.fold(requestWithHeader) { proxy =>
+        requestWithHeader.withProxyServer(proxy)
       }
       _ = log.warn("Request: " + invocation.toJson().toString())
 
-      rawResp <- request.execute()
+      rawResp <- requestWithProxy.execute()
 
       processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
 
@@ -165,6 +168,7 @@ case class HttpGenericProvider(client: WSClient,
 
     resp recover {
       case e: Throwable => {
+        e.printStackTrace()
         log.error("Failed calling external action endpoint : " + e.getMessage)
         throw new RuntimeException("Failed calling external action endpoint : " + e.getMessage)
       }
@@ -199,18 +203,23 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     }
     data
   }
-  
-  def parseEndpointType(ep: GestaltEndpoint, action: GestaltFunction, callerAuth: Option[String]) = {
-    val method = action.verbString()
-    val protocol = ep.kind
-    val url = ep.url
-    
-    // Try to use the auth string in the endpoint, or else try the caller creds if given.
-    val effectiveAuth = ep.authentication orElse callerAuth
-    
-    println(s"${protocol}, ${url}, ${method}")
-    
-    val http = Option(HttpGenericProvider(wsclient, url, method, authHeader = effectiveAuth))
+
+  private[this] def parseEndpointType(endpoint: JsObject, provider: GestaltResourceInstance, callerAuth: String): Try[GenericProvider] = {
+    // only support a single endpoint type right now, pretty simple
+    val http = for {
+      http <- (endpoint \ "http").asOpt[JsObject]
+      method = (http \ "method").asOpt[String].getOrElse("POST")
+      url  <- (http \ "url").asOpt[String]
+      authHeader = ((http \ "authentication").asOpt[String] orElse Some(callerAuth))
+      proxyHost = (http \ "proxyHost").asOpt[String]
+      proxyPort = (http \ "proxyPort").asOpt[Int]
+      proxy = for(
+        host <- proxyHost;
+        port <- proxyPort
+      ) yield new DefaultWSProxyServer(host, port)
+    } yield HttpGenericProvider(wsclient, url, method, authHeader = authHeader, proxy = proxy)
+
+
     http match {
       case Some(p) =>
         Success(p)

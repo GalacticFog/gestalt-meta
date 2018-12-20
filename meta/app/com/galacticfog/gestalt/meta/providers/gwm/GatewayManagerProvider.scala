@@ -127,7 +127,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   def createApi(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[Future];
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString].liftTo[Future];
       locationId <- Either.fromOption(apiProperties.provider.locations.headOption, "Empty locations array").liftTo[Future];
       lapi = LaserApi(Some(resource.id.toString),
         resource.name,
@@ -142,7 +142,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         log.info("Successfully created API in GatewayManager.")
         resource
       } else {
-        throw new ApiError(result.status, result.body).throwable
+        throw ApiError(result.status, result.body).throwable
       }
     }
   }
@@ -217,7 +217,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   def createEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
       _ <- if(endpointProperties.hosts.getOrElse(Seq()) == Seq() && endpointProperties.resource == None) {
         Future.failed(new RuntimeException(s"Either `hosts` or `resource` field must be specified on resource ${resource.id}"))
       }else {
@@ -226,7 +226,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       upstreamUrl <- eitherFromTry(Try(mkUpstreamUrl(endpointProperties))).liftTo[Future];
       updatedEndpointProperties = endpointProperties.copy(upstream_url=Some(upstreamUrl));
       parent <- Either.fromOption(endpointProperties.parent, "Parent must be set").liftTo[Future];
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future];
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future];
       le = LaserEndpoint(
         id = Some(resource.id.toString),
         apiId = parent,
@@ -270,15 +270,17 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
 
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
       upstreamUrl <- eitherFromTry(Try(mkUpstreamUrl(endpointProperties))).liftTo[Future];
       response <- client.get(s"/endpoints/${resource.id}");
       _ <- if(response.status == 200) {
         Future.successful(())
       }else if(response.status == 404) {
-        Future.failed(new ResourceNotFoundException(s"No ApiEndpoint with ID '${resource.id}' was found in gestalt-api-gateway"))
+        log.error(s"Failed to fetch endpoint ${resource.id}: not found")
+        Future.failed(throw new ResourceNotFoundException(s"No ApiEndpoint with ID '${resource.id}' was found in gestalt-api-gateway"))
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        log.error(s"Failed to fetch endpoint ${resource.id}")
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       };
       le <- eitherFromJsResult(response.json.validate[LaserEndpoint]).liftTo[Future];
       _ = log.debug("Endpoint found in ApiGateway provider.");
@@ -286,7 +288,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       newPlugins = processPlugins(resource, plugins);
       newLe = le.copy(
         path = endpointProperties.resource,
-        hosts = endpointProperties.hosts,
+        hosts = endpointProperties.hosts.filter(_.nonEmpty),
         methods = endpointProperties.methods orElse le.methods,
         plugins = Some(newPlugins),
         upstreamUrl = upstreamUrl
@@ -296,13 +298,14 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         upstream_url = Some(upstreamUrl),
         plugins=Some(newPlugins)
       );
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future];
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future];
       response <- client.put(s"/endpoints/${resource.id}", Some(Json.toJson(newLe)));
       _ <- if(response.status == 200) {
         log.info(s"Successfully PUT ApiEndpoint to ApiGateway provider.")
         Future.successful(())
       }else {
-        Future.failed(ApiError(response.status, response.body).throwable)
+        log.error(s"Failed to update endpoint ${resource.id}")
+        Future.failed(throw ApiError(response.status, response.body).throwable)
       }
     ) yield updatedResource
   }

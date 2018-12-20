@@ -34,7 +34,9 @@ object OutputDatatypeHandlers {
   def renderFloat     (property: GestaltTypeProperty, value: String) = JsNumber(value.toDouble)
   def renderInt       (property: GestaltTypeProperty, value: String) = JsNumber(value.toInt)
   def renderBoolean   (property: GestaltTypeProperty, value: String) = JsBoolean(value.toBoolean)
-  def renderJson      (property: GestaltTypeProperty, value: String) = Json.parse( value )
+  def renderJson      (property: GestaltTypeProperty, value: String) = {
+    Json.parse( value )
+  }
   def renderUUID      (property: GestaltTypeProperty, value: String) = JsString(value)
   def renderDateTime  (property: GestaltTypeProperty, value: String) = JsString {
     ISODateTimeFormat.dateTime.print(new DateTime(value.trim))

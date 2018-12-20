@@ -65,7 +65,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     if(200 >= response.status && response.status < 300) {
       Future.successful(response)
     }else {
-      Future.failed(ApiError(response.status, response.body).throwable)
+      Future.failed(throw ApiError(response.status, response.body).throwable)
     }
   }
 
@@ -119,8 +119,8 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
   def createLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
       req <- mkRequest(provider).liftTo[Future];
-      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[Future];
-      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[Future];
+      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[EitherString].liftTo[Future];
+      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[EitherString].liftTo[Future];
       config <- mkConfig(lambda, lambdaProvider).liftTo[Future];
       code <- mkCode(lambda, lambdaProvider);
       response <- req("/function/create").post(Json.obj(
@@ -145,7 +145,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
           aws_role_id=Some(response.config.role),
           aws_function_id=Some(response.arn)
         );
-        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda)
+        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda).liftTo[EitherString]
       ) yield r).liftTo[Future]
     ) yield updatedResource
   }
@@ -153,7 +153,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
   def importLambda(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
       req <- mkRequest(provider).liftTo[Future];
-      lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[Future];
+      lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](resource).liftTo[EitherString].liftTo[Future];
       // because ResourceSerde.serialize doesn't know how to remove fields:
       _ <- (if(lambdaProperties.code == None) { Right(()) }else { Left("code field must be set to None") }).liftTo[Future];
       functionArn <- Either.fromOption(lambdaProperties.aws_function_id, "aws_function_id must be set").liftTo[Future];
@@ -172,7 +172,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
           package_url=Some(response.codeLocation),
           code=None
         );
-        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, importedLambdaProperties)
+        r <- ResourceSerde.serialize[AWSLambdaProperties](resource, importedLambdaProperties).liftTo[EitherString]
       ) yield r).liftTo[Future]
     ) yield importedResource
   }
@@ -183,8 +183,8 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
     for(
       req <- mkRequest(provider).liftTo[Future];
       patched <- Future.fromTryST(PatchInstance.applyPatch(resource, patch));
-      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](patched).liftTo[Future];
-      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[Future];
+      lambda <- ResourceSerde.deserialize[AWSLambdaProperties](patched).liftTo[EitherString].liftTo[Future];
+      lambdaProvider <- ResourceSerde.deserialize[LambdaProviderProperties](provider).liftTo[EitherString].liftTo[Future];
       modifiesCode = patch exists { op => op.path == "/properties/code" };
       modifiesConfig = patch exists { op =>
         val a = Seq("/properties/handler", "/properties/runtime", "/properties/timeout", "/properties/memory") contains op.path
@@ -219,7 +219,7 @@ class AWSLambdaProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods
               memory=response.config.memorySize,
               aws_role_id=Some(response.config.role)
             );
-            r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda)
+            r <- ResourceSerde.serialize[AWSLambdaProperties](resource, updatedLambda).liftTo[EitherString]
           ) yield r).liftTo[Future]
         ) yield updatedResource
       }else {

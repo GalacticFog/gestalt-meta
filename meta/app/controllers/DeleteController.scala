@@ -10,6 +10,7 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity}
+import com.galacticfog.tracking.{CaasTrackingProvider, FaasTrackingProvider}
 import com.google.inject.Inject
 import controllers.util._
 import javax.inject.Singleton
@@ -27,16 +28,19 @@ import scala.util.{Failure, Success, Try}
 
 @Singleton
 class DeleteController @Inject()(
-    messagesApi: MessagesApi,
-    sec: GestaltFrameworkSecurity,
-    security: Security,
-    providerManager: ProviderManager,
-    gatewayMethods: GatewayMethods,
-    lambdaMethods: LambdaMethods,
-    skuberFactory: SkuberFactory,
-    genericResourceMethods: GenericResourceMethods
+                                  messagesApi: MessagesApi,
+                                  sec: GestaltFrameworkSecurity,
+                                  security: Security,
+                                  providerManager: ProviderManager,
+                                  gatewayMethods: GatewayMethods,
+                                  lambdaMethods: LambdaMethods,
+                                  skuberFactory: SkuberFactory,
+                                  genericResourceMethods: GenericResourceMethods,
+                                  caasTrackingProvider: CaasTrackingProvider,
+                                  faasTrackingProvider: FaasTrackingProvider,
+                                  kubeNative: KubeNativeMethods
  ) extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
-   
+
   /*
    * Each of the types named by the keys in this map have representations both in
    * Meta and in some external system. When delete is called on any of these types
@@ -52,7 +56,11 @@ class DeleteController @Inject()(
       ResourceIds.User        -> deleteExternalUser,
       ResourceIds.Group       -> deleteExternalGroup,
       ResourceIds.Container   -> wrapUnauthedHandler { resourceLike =>
-        Try(Await.result(ContainerService.deleteContainerHandler(providerManager, resourceLike), 5 .seconds)) recoverWith {
+        Try{
+          Await.result(ContainerService.deleteContainerHandler(providerManager, resourceLike), 5 .seconds)
+          caasTrackingProvider.reportDelete(resourceLike.id.toString)
+          ()
+        } recoverWith {
           case _: scala.concurrent.TimeoutException => Failure(new InternalErrorException("timed out waiting for external CaaS service to respond"))
           case throwable => {
             throwable.printStackTrace()
@@ -73,7 +81,11 @@ class DeleteController @Inject()(
         Try(Await.result(gatewayMethods.deleteEndpointHandler(resourceLike), 5 .seconds))
       },
       ResourceIds.Lambda      -> wrapUnauthedHandler { resourceLike =>
-        Try(Await.result(lambdaMethods.deleteLambdaHandler(resourceLike), 5 .seconds))
+        Try{
+          Await.result(lambdaMethods.deleteLambdaHandler(resourceLike), 5 .seconds)
+          faasTrackingProvider.reportDelete(resourceLike.id.toString)
+          ()
+        }
       }
     )
   )
@@ -147,11 +159,14 @@ class DeleteController @Inject()(
          * 
          * See: https://gitlab.com/galacticfog/gestalt-meta/issues/319
          */
-        val test = if (resource.typeId == ResourceIds.Environment) {
-          deleteEnvironmentSpecial(resource, identity)
-        } else {
-          Success(())
-        }
+        val test = 
+          if (resource.typeId == ResourceIds.Environment) {
+            deleteEnvironmentSpecial(resource, identity)
+          } else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {
+            deleteAppDeploymentSpecial(resource, request.queryString)
+          } else {
+            Success(())
+          }
         
         test match {
           case Failure(e) => {
@@ -253,8 +268,12 @@ class DeleteController @Inject()(
   def deleteExternalGroup[A <: ResourceLike](res: A, account: AuthAccountWithCreds) = {
     security.deleteGroup(res.id, account) map ( _ => () )
   }
-
-def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
+  
+  def deleteAppDeploymentSpecial(res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
+    kubeNative.deleteAppDeployment(res, qs)  
+  }
+  
+  def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
     log.info("Checking for in-scope Kube providers to clean up namespaces...")
     
     val namespace = res.id.toString

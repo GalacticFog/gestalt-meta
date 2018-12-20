@@ -32,6 +32,12 @@ object QueryString {
     }
   }
   
+  def requiredSingle[V](qs: Map[String,Seq[V]], param: String, errorMsg: Option[String] = None, strict: Boolean = false): V = {
+    single(qs, param, strict).getOrElse {
+      val msg = errorMsg.getOrElse(s"Query string parameter '${param}' is required.")
+      throw badRequest(msg)
+    }
+  }
   /**
    * Get a list of one or more values identified by key from the querystring Map. 
    * 
@@ -58,6 +64,20 @@ object QueryString {
       }
     }
   }
+  
+  def singleInt[V](qs: Map[String, Seq[V]], param: String, strict: Boolean = false): Option[Int] = {
+    single(qs, param).fold {
+      if (strict) errorNoValue(param) else Option.empty[Int]
+    }{ p =>
+      Try(p.toString.toInt) match {
+        case Success(i) => Some(i)
+        case Failure(e) =>
+          throw new BadRequestException("Failed parsing Int param: " + e.getMessage)
+      }
+    }
+  }
+  
+  
   
   def expandSeq[V](param: (String, Seq[V])): String = {
     param._2.size match {

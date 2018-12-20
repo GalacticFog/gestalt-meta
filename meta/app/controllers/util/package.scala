@@ -33,6 +33,15 @@ import scala.concurrent.ExecutionContext
 
 package object util {
   
+  /*
+   * TODO: Move to appropriate companion objects.
+   */
+  implicit lazy val deploymentSourceFormat = Json.format[DeploymentSource]
+  implicit lazy val kubeDeploymentResourcesFormat = Json.format[KubeDeploymentResources]
+  implicit lazy val metaDeploymentResourcesFormat = Json.format[MetaDeploymentResources]
+  implicit lazy val deploymentResourcesFormat = Json.format[DeploymentResources]
+  implicit lazy val appDeploymentDataFormat = Json.format[AppDeploymentData]
+
   protected[controllers] object Errors {
     def ORG_NOT_FOUND(id: String) = s"Org '${id}' not found."
     def PROPERTY_NOT_FOUND(id: String) = s"TypeProperty '${id}' not found."
