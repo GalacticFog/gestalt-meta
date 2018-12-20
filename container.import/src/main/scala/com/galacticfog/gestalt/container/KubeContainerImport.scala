@@ -8,41 +8,38 @@ import com.galacticfog.gestalt.caas.kube.{Ascii, KubeConfig}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
-import play.api.libs.json.{JsObject, JsString, Json}
+import play.api.libs.json._
 import skuber.api.client.RequestContext
 
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.duration._
-import scala.concurrent.{Await, ExecutionContext, Future}
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.Await
+import scala.util.{Failure,Success,Try}
 
 
 class KubeContainerImport extends ContainerImport {
+  import scala.concurrent.ExecutionContext.Implicits.global
+  import skuber.json.format._
+  import skuber.json.ext.format._
 
-  implicit class Regex(sc: StringContext) {
-    def r = new util.matching.Regex(sc.parts.mkString, sc.parts.tail.map(_ => "x"): _*)
-  }
+  val log = LoggerFactory.getLogger(this.getClass)
 
-  val logger = LoggerFactory.getLogger(this.getClass)
-
-  private[this] val logWriter = new PrintWriter(new Writer {
+  val logWriter = new PrintWriter(new Writer {
     override def write(cbuf: Array[Char], off: Int, len: Int): Unit = {
-      logger.error(cbuf.subSequence(off, off+len).toString)
+      log.error(cbuf.subSequence(off, off+len).toString)
     }
     override def flush(): Unit = ()
     override def close(): Unit = ()
   })
-  private[this] def log(s: String) = logger.debug(s)
 
   def run(payloadStr: String, ctxStr: String): String = {
     val payload = Try {Json.parse(payloadStr).as[JsObject]} getOrElse Json.obj()
-    log(s"parsed payload is: '${payload}'")
+    log.debug(s"parsed payload is: '${payload}'")
     val ctx = Json.parse(ctxStr).as[JsObject]
-    log(s"parsed context is: '${ctx}'")
+    log.debug(s"parsed context is: '${ctx}'")
 
     val resp = (payload \ "action").asOpt[String] match {
-      case Some("container.import") =>
-        log("performing container.import")
+      case Some(action) if Seq("container.import", "secret.import").contains(action) =>
+        log.debug("performing container.import")
         Try {
           doImport(payload, ctx)
         } match {
@@ -54,12 +51,12 @@ class KubeContainerImport extends ContainerImport {
             )
         }
       case Some(other) =>
-        log(s"action '${other}' not supported")
+        log.debug(s"action '${other}' not supported")
         Json.obj(
           "actionFailed" -> s"action '$other' not supported"
         )
       case None =>
-        log("payload was bad")
+        log.debug("payload was bad")
         Json.obj(
           "actionFailed" -> "payload was not properly formatted"
         )
@@ -67,61 +64,66 @@ class KubeContainerImport extends ContainerImport {
     resp.toString
   }
 
-  private[this] def doImport(payload: JsObject, ctx: JsObject): JsObject = {
+  protected def initializeKube(provider: JsObject, namespace: String): RequestContext = {
+    val cl = this.getClass.getClassLoader
+    val config = ConfigFactory.load(this.getClass.getClassLoader)
+    implicit val system = ActorSystem("my-system", Some(config), Some(cl), Some(global))
+    implicit val materializer = ActorMaterializer()
+    
+    val rawKubeconfig = (provider \ "properties" \ "data").asOpt[String] getOrElse {
+      throw new RuntimeException("provider did not have '.properties.data'")
+    }
+    val kubeconfig = if (Ascii.isBase64(rawKubeconfig)) Ascii.decode64(rawKubeconfig) else rawKubeconfig
+    val c = KubeConfig.parseYaml(kubeconfig, Map.empty).setCurrentNamespace(namespace)
+    skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
+  }
+
+  private def doImport(payload: JsObject, ctx: JsObject): JsValue = {
     val provider = (payload \ "provider").asOpt[JsObject] getOrElse(throw new RuntimeException("payload did not have '.provider'"))
-    log("got provider config")
+    log.debug("got provider config")
     // val providerConfig = (provider \ "properties" \ "config").asOpt[JsObject] getOrElse(throw new RuntimeException("provider did not have '.properties.config'"))
 
+    val action = (payload \ "action").as[String]
     val resource = (payload \ "resource").as[JsObject]
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
     val importTarget = (resource \ "properties" \ "external_id").as[String]
     
     val envId = (payload \ "context" \ "environment" \ "id").as[String]
 
-    // val sanitizedImportTarget = importTarget
-    //   .stripPrefix("/")
-    //   .stripSuffix("/")
-    //   .replaceAll("\\s", "")
-    // val importTargetPattern = "(.+)/(.+)".r
+    val fResp = (action, importTarget.split("/")) match {
+      case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
+        log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
 
-    // val (namespace, deplName) = sanitizedImportTarget match {
-    //   case importTargetPattern(namespaceValue, deplNameValue) => {
-    //     log(s"namespace: $namespaceValue, deployment: $deplNameValue")
-    //     (namespaceValue, deplNameValue)
-    //   }
-    //   case _ => throw BadRequestException(s"Invalid External ID. expected: 'namespace/deployment'. found: '$importTarget'")
-    // }
-    val (namespace, deplName) = importTarget.split("/") match {
-      case Array("", "namespaces", namespaceValue, "deployments", deplNameValue) => {
-        log(s"namespace: $namespaceValue, deployment: $deplNameValue")
-        (namespaceValue, deplNameValue)
+        val kube = initializeKube(provider, namespaceValue)
+
+        for {
+          depl <- kube.getInNamespace[skuber.ext.Deployment](deplNameValue, namespaceValue)
+          updatedDepl <- kube.jsonMergePatch(depl, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
+          importProps = deploymentToContainerSpec(updatedDepl)
+        } yield resource ++ Json.obj(
+          "properties" -> (inputProps ++ importProps)
+        )
       }
-      case _ => throw BadRequestException(s"Invalid External ID: '$importTarget'")
+      case ("secret.import", Array("", "namespaces", namespaceValue, "secrets", secretName)) => {
+        log.debug(s"namespace: $namespaceValue, secret: $secretName")
+
+        val kube = initializeKube(provider, namespaceValue)
+        
+        for {
+          secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
+          updatedSecret <- kube.jsonMergePatch(secret, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
+          importProps = secretToSecretSpec(updatedSecret)
+        } yield resource ++ Json.obj(
+          "properties" -> (inputProps ++ importProps)
+        )
+      }
+      case _ => throw BadRequestException(s"Invalid combination of action and External ID: (`${action}`, `${importTarget}`)")
     }
 
-    val kube = initializeKube(provider, namespace)
-
-    import skuber.json.ext.format._
-
-    val fResp = for {
-      depl <- getSkuberResource(kube, deplName)
-      updatedDepl <- kube.jsonMergePatch(depl, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
-      importProps = convertAppToInstanceProps(updatedDepl)
-    } yield resource ++ Json.obj(
-      "properties" -> (inputProps ++ importProps)
-    )
     Await.result(fResp, 15.seconds)
   }
 
-  private[this] def getSkuberResource(kube: RequestContext, deplName: String): Future[skuber.ext.Deployment] = {
-    import skuber.json.ext.format.depFormat
-    kube.getOption[skuber.ext.Deployment](deplName) flatMap {
-      case Some(d) => Future.successful(d)
-      case None => Future.failed(new RuntimeException(s"could not located deployment with name '${deplName}'"))
-    }
-  }
-
-  private[this] def convertAppToInstanceProps(depl: skuber.ext.Deployment): JsObject = {
+  private def deploymentToContainerSpec(depl: skuber.ext.Deployment): JsObject = {
     val containerSpec = depl.getPodSpec.map(_.containers) match {
       case Some(List(single)) => single
       case None => throw new RuntimeException("Kubernetes deployment did not have a Pod spec")
@@ -152,19 +154,29 @@ class KubeContainerImport extends ContainerImport {
       )
     })
 
-    val cpu =
-      containerSpec.resources.flatMap(_.limits.get(skuber.Resource.cpu)) orElse
-      containerSpec.resources.flatMap(_.requests.get(skuber.Resource.cpu))
-    val mem =
-      containerSpec.resources.flatMap(_.limits.get(skuber.Resource.memory)) orElse
-        containerSpec.resources.flatMap(_.requests.get(skuber.Resource.memory))
+    val cpuLimits = for(
+      r <- containerSpec.resources;
+      cpu <- r.limits.get(skuber.Resource.cpu)
+    ) yield cpu.amount.toDouble
+    val cpuRequests = for(
+      r <- containerSpec.resources;
+      cpu <- r.requests.get(skuber.Resource.cpu)
+    ) yield cpu.amount.toDouble
+    val memLimits = for(
+      r <- containerSpec.resources;
+      memory <- r.limits.get(skuber.Resource.memory)
+    ) yield (memory.amount / 1.0e6).toDouble
+    val memRequests = for(
+      r <- containerSpec.resources;
+      memory <- r.requests.get(skuber.Resource.memory)
+    ) yield (memory.amount / 1.0e6).toDouble
 
     Json.obj(
       "container_type" -> "DOCKER",
       "image" -> containerSpec.image,
       "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
-      "cpus" -> cpu.flatMap(q => Try(q.amount.toDouble).toOption).getOrElse[Double](0.0),
-      "memory" -> mem.flatMap(q => Try((q.amount / 1.0e6).toDouble).toOption).getOrElse[Double](0.0),
+      "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
+      "memory" -> (memLimits orElse memRequests).getOrElse[Double](0.0),
       "labels" -> depl.metadata.labels,
       "env" -> Json.toJson(containerSpec.env.collect({
         case skuber.EnvVar(name, skuber.EnvVar.StringValue(value)) => name -> value
@@ -176,26 +188,15 @@ class KubeContainerImport extends ContainerImport {
         Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
         Option(containerSpec.args).filter(_.nonEmpty).map(args => "args" -> Json.toJson(args))
       ).flatten
-    ).as[JsObject]
+    )
   }
 
-  protected[this] def initializeKube( provider: JsObject, namespace: String )
-                                  ( implicit ec: ExecutionContext ): RequestContext = {
-    val cl = this.getClass.getClassLoader
-    val config = ConfigFactory.load(this.getClass.getClassLoader)
-    implicit val system = ActorSystem("my-system", Some(config), Some(cl), Some(global))
-    implicit val materializer = ActorMaterializer()
-    
-    val kubeconfig = extractKubeConfig(provider)
-    val c = KubeConfig.parseYaml(kubeconfig, Map.empty).setCurrentNamespace(namespace)
-    skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
+  private def secretToSecretSpec(secret: skuber.Secret): JsObject = {
+    Json.obj(
+      // "name" -> secret.name,
+      "items" -> (secret.data map { case(key, value) =>
+        Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
+      })
+    )
   }
-
-  private[this] def extractKubeConfig(provider: JsObject): String = {
-    val data = (provider \ "properties" \ "data").asOpt[String] getOrElse {
-      throw new RuntimeException("provider did not have '.properties.data'")
-    }
-    if (Ascii.isBase64(data)) Ascii.decode64(data) else data
-  }
-
 }

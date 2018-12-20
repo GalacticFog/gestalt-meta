@@ -12,7 +12,9 @@ import scala.util.{Failure, Try}
 case class SecretSpec( name: String,
                        description: Option[String] = None,
                        provider: ContainerSpec.InputProvider,
-                       items: Seq[SecretSpec.Item] = Seq.empty )
+                       items: Seq[SecretSpec.Item] = Seq.empty,
+                       external_id: Option[String] = None
+                     )
 
 case object SecretSpec {
 

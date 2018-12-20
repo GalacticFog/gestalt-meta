@@ -169,22 +169,71 @@ class ContainerController @Inject()(
   }
 
   def postSecret(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    def createSecret(org: GestaltResourceInstance, env: GestaltResourceInstance): EitherError[Future[GestaltResourceInstance]] = {
+      for(
+        resource <- mkResource(request.body, request.identity, env, ResourceIds.Secret);
+        modifiedResource = resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map(
+          "name" -> resource.name,
+          "description" -> resource.description.getOrElse("")
+        )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
+        secretProperties <- ResourceSerde.deserialize[SecretSpec](modifiedResource);
+        provider <- Either.fromOption(ResourceFactory.findById(secretProperties.provider.id),
+         Error.NotFound(s"CaasProvider with ID '${secretProperties.provider.id}' not found"));
+        _ <- assertCompatibleEnvType(provider, env)
+      ) yield {
+        val context = ProviderContext(request, secretProperties.provider.id, None)
+        containerService.createSecret(context, request.identity, secretProperties, Some(resource.id)) map { created =>
+          resourceController.transformResource(created).get
+        }
+      }
+    }
+
+    val action = request.getQueryString("action").getOrElse("create")
     (for(
+      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
-      resource <- mkResource(request.body, request.identity, env, ResourceIds.Secret);
-      modifiedResource = resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map(
-        "name" -> resource.name,
-        "description" -> resource.description.getOrElse("")
-      )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
-      secretProperties <- ResourceSerde.deserialize[SecretSpec](modifiedResource);
-      provider <- Either.fromOption(ResourceFactory.findById(secretProperties.provider.id),
-       Error.NotFound(s"CaasProvider with ID '${secretProperties.provider.id}' not found"));
-      _ <- assertCompatibleEnvType(provider, env)
+      futureRes <- action match {
+        case "create" => createSecret(org, env)
+        case "import" => for(
+          importPayload <- eitherFromJsResult(request.body.validate[ImportPayload]);
+          provider <- Either.fromOption(ResourceFactory.findById(importPayload.properties.provider.id),
+           Error.NotFound(s"CaasProvider with ID '${importPayload.properties.provider.id}' not found"));
+          _ <- assertCompatibleEnvType(provider, env)
+        ) yield {
+          genericResourceMethods.createProviderBackedResource(
+            org = org,
+            identity = request.identity,
+            body = request.body,
+            parent = env,
+            resourceType = ResourceIds.Secret,
+            providerType = provider.typeId,
+            actionVerb = "import"
+          ) map { resource =>
+            val updatedProps = for(
+              props <- resource.properties;
+              items <- props.get("items")
+            ) yield {
+              val itemsJson = Json.parse(items).as[JsArray]
+              val jsonTransformer = (__ \ 'value).json.prune
+              val transformed = JsArray(itemsJson.value map { item =>
+                val JsSuccess(transformed, _) = item.transform(jsonTransformer)
+                transformed
+              })
+              props ++ Map("items" -> transformed.toString)
+            }
+            if(updatedProps.isEmpty) {
+              resource
+            }else {
+              resource.copy(properties=updatedProps)
+            }
+          }
+        }
+        case _ => Left(Error.BadRequest("invalid 'action' on secret create: must be 'create' or 'import'"))
+      }
     ) yield {
-      val context = ProviderContext(request, secretProperties.provider.id, None)
-      containerService.createSecret(context, request.identity, secretProperties, Some(resource.id)) map { created =>
-        Accepted(RenderSingle(resourceController.transformResource(created).get))
+      futureRes map { res =>
+        Created(RenderSingle(res))
       }
     }) valueOr { error =>
       Future.successful(errorToResult(error))

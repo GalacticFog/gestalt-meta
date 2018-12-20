@@ -20,11 +20,9 @@ import play.api.libs.ws.ahc.AhcWSModule
 import play.api.mvc.Results._
 import play.api.mvc._
 import play.api.test.PlaySpecification
-import skuber.{Container, Pod}
 import skuber.api.client.RequestContext
-import skuber.ext.Deployment
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 import scala.util.Success
 
@@ -82,7 +80,7 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
     val kubeProviderConfig: Seq[(String,JsValueWrapper)] = Seq(
       "endpoints" -> Json.arr(
         Json.obj(
-          "actions" -> Json.arr("container.import"),
+          "actions" -> Json.arr("container.import", "secret.import"),
           "default" -> false,
           "http" -> Json.obj(
             "method" -> "POST",
@@ -91,10 +89,12 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
         )
       )
     )
-    var lastLambdaRequestBody: JsValue = null
+    var lastLambdaRequestBody = Map.empty[String,JsValue]
     val mockWs = MockWS {
       case (POST, "http://localhost:8090") => Action { request =>
-        lastLambdaRequestBody = request.body.asJson.get
+        val body = request.body.asJson.get
+        val action = (body \ "action").as[String]
+        lastLambdaRequestBody = lastLambdaRequestBody ++ Map(action -> body)
         Ok("http response")
       }
     }
@@ -120,11 +120,11 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
       await(route(app, importRequest).get)
 
       val skuberContextMock = mock[skuber.api.client.RequestContext]
-      val testDeployment = Deployment(
-        spec = Some(Deployment.Spec(
-          template = Some(Pod.Template.Spec(
-            spec = Some(Pod.Spec(
-              containers = List(Container(
+      val testDeployment = skuber.ext.Deployment(
+        spec = Some(skuber.ext.Deployment.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(skuber.Container(
                 name = "testContainer",
                 image = "testImage"
               ))
@@ -132,15 +132,14 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
           ))
         ))
       )
-      skuberContextMock.getOption[skuber.ext.Deployment](meq("test-deployment"))(any, any, any) returns Future.successful(Some(testDeployment))
+      skuberContextMock.getInNamespace[skuber.ext.Deployment](meq("test-deployment"), meq("test-namespace"))(any, any, any) returns Future.successful(testDeployment)
       skuberContextMock.jsonMergePatch[skuber.ext.Deployment](any, any)(any, any, any) returns Future.successful(testDeployment)
 
       class KCI extends KubeContainerImport {
-        override def initializeKube( provider: JsObject, namespace: String )
-                                   ( implicit ec: ExecutionContext ): RequestContext = skuberContextMock
+        override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
       }
 
-      val response = new KCI().run(lastLambdaRequestBody.toString, "{}")
+      val response = new KCI().run(lastLambdaRequestBody("container.import").toString, "{}")
       val container = (Json.parse(response) \ "properties").as[ContainerSpec]
 
       container must_== ContainerSpec(
@@ -173,6 +172,46 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
         None,
         List()
       )
+    }
+
+    "import secret" in new MockScope(kubeProviderConfig, mockWs) {
+      val metaSecret: GestaltResourceInstance = newInstance(
+        ResourceIds.Secret,
+        "test",
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> "/namespaces/test-namespace/secrets/test-secret"
+        ))
+      )
+
+      val json0: JsObject = Output.renderInstance(metaSecret).as[JsObject]
+      val json = json0 ++ JsObject(Seq("resource_type" -> JsString(ResourceIds.Secret.toString)))
+
+      val importRequest = fakeAuthRequest("POST", s"/root/environments/${testEnv.id}/secrets?action=import", testCreds).withBody(
+        json
+      )
+      val res = route(app, importRequest).get
+      val _ = contentAsJson(res)
+
+      val skuberContextMock = mock[skuber.api.client.RequestContext]
+      val testSecret = skuber.Secret(
+        kind = "Secret",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(),
+        data = Map("test" -> "123".getBytes),
+        `type` = ""
+      )
+      skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret)
+      skuberContextMock.jsonMergePatch[skuber.Secret](any, any)(any, any, any) returns Future.successful(testSecret)
+
+      class KCI extends KubeContainerImport {
+        override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
+      }
+
+      val response = new KCI().run(lastLambdaRequestBody("secret.import").toString, "{}")
+      val secret = (Json.parse(response) \ "properties").as[JsValue]
+
+      (secret \ "items").as[JsValue] must_== Json.arr(Json.obj("key" -> "test", "value" -> "123"))
     }
   }
 }
