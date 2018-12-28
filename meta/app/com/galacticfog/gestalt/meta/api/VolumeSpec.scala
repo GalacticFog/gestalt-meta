@@ -29,6 +29,7 @@ case class VolumeSpec(name: String = "",
       case HostPath   => config.validate[HostPathVolume](hostPathVolumeFmt)
       case Dynamic    => config.validate[DynamicVolume](dynamicVolumeFmt)
       case External   => config.validate[ExternalVolume](externalVolumeRds)
+      case EmptyDir   => JsSuccess(EmptyDirVolume)
     }
   }
 
@@ -66,8 +67,9 @@ case object VolumeSpec {
   case object HostPath extends Type {val label = "host_path"}
   case object External extends Type {val label = "external"}
   case object Dynamic extends Type {val label = "dynamic"}
+  case object EmptyDir extends Type {val label = "empty_dir"}
   object Type {
-    val values = Seq(Persistent,HostPath,External,Dynamic)
+    val values = Seq(Persistent,HostPath,External,Dynamic,EmptyDir)
     def fromString(s: String) =
       values.find(_.label == s).map(Success(_)).getOrElse(
         Failure[Type](new BadRequestException(s"/properties/type was '$s', must be one of ${values.map("'" + _.label + "'").mkString(", ")}"))
@@ -87,6 +89,7 @@ case object VolumeSpec {
 
   sealed trait VolumeConfig
   case object PersistentVolume extends VolumeConfig
+  case object EmptyDirVolume extends VolumeConfig
   case class HostPathVolume(host_path: String) extends VolumeConfig
   case class DynamicVolume(storage_class: String) extends VolumeConfig
   case class ExternalVolume(config: JsValue) extends VolumeConfig

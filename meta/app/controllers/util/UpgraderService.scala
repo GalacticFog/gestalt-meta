@@ -7,17 +7,18 @@ import akka.actor.ActorRef
 import akka.pattern.ask
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.{HardDeleteInstanceManager, ResourceFactory}
-import com.galacticfog.gestalt.meta.api.Resource
+import com.galacticfog.gestalt.meta.api
+import com.galacticfog.gestalt.meta.api.{ContainerSpec, Resource, VolumeSpec}
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.providers.ProviderManager
 import javax.inject.{Inject, Named}
-import play.api.libs.json.{Format, JsObject, Json}
+import play.api.libs.json._
 
 import scala.concurrent.duration._
-import scala.concurrent.{ExecutionContext, Future, Await}
-import scala.util.{Try, Failure}
+import scala.concurrent.{Await, ExecutionContext, Future}
+import scala.util.{Failure, Try}
 
 trait UpgraderService {
   import UpgraderService._
@@ -25,7 +26,7 @@ trait UpgraderService {
   def deleteUpgrader(creator: AccountLike)
                     (implicit ec: ExecutionContext): Future[UpgradeStatus]
 
-  def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch)
+  def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch, metaUrl: String)
                     (implicit ec: ExecutionContext): Future[UpgradeStatus]
 }
 
@@ -83,9 +84,10 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
     } yield newStatus
   }
 
-  override def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch)
+  override def launchUpgrader(creator: AccountLike, payload: UpgradeLaunch, metaUrl: String)
                              (implicit ec: ExecutionContext): Future[UpgradeStatus] = {
     val providerId = java.util.UUID.randomUUID()
+
     for {
       // get gwm provider
       gwmProvider <- Future.fromTry(Try(
@@ -94,7 +96,7 @@ class DefaultUpgraderService @Inject() ( @Named(SystemConfigActor.name) configAc
       ))
       // compute provider prototype
       providerProto <- Future.fromTry(
-        jsonToResource(rootId, creator, getProviderPayload(payload), Some(ResourceIds.Provider))
+        jsonToResource(rootId, creator, getProviderPayload(payload, metaUrl), Some(ResourceIds.Provider))
       )
       // save providerId, just in case it gets a partial create
       _ <- updateStatus(
@@ -180,7 +182,16 @@ case object UpgraderService {
     )
   )
 
-  def getProviderPayload(launchPayload: UpgradeLaunch): JsObject = Json.obj(
+  def volumeSpec(providerId: UUID) = VolumeSpec(
+    name = "upgrader",
+    provider = Some(ContainerSpec.InputProvider(providerId)),
+    `type` = VolumeSpec.EmptyDir,
+    size = 1024,
+    access_mode = VolumeSpec.ReadWriteMany,
+    config = Json.obj()
+  )
+
+  def getProviderPayload(launchPayload: UpgradeLaunch, metaUrl: String): JsObject = Json.obj(
     "id" -> java.util.UUID.randomUUID().toString,
     "name" -> "gestalt-upgrade",
     "properties" -> Json.obj(
@@ -215,7 +226,7 @@ case object UpgraderService {
             "image" -> launchPayload.image,
             "memory" -> 512,
             "env" -> Json.obj(
-              "META_CALLBACK_URL" -> sys.env.get("META_POLICY_CALLBACK_URL")
+              "META_CALLBACK_URL" -> System.getenv().getOrDefault("META_POLICY_CALLBACK_URL", metaUrl)
             ),
             "network" -> "BRIDGE",
             "num_instances" -> 1,
@@ -229,9 +240,8 @@ case object UpgraderService {
               "id" -> launchPayload.caasProviderId
             ),
             "volumes" -> Seq(Json.obj(
-              "container_path" -> "persistence",
-              "mode" -> "RW",
-              "persistent" -> Json.obj("size" -> launchPayload.persistenceSize.getOrElse[Long](1024))
+              "mount_path" -> "persistence",
+              "volume_resource" -> api.VolumeSpec.toResourcePrototype(volumeSpec(launchPayload.caasProviderId))
             ))
           )
         ),

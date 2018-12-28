@@ -187,7 +187,7 @@ class UpgraderServiceSpec extends GestaltProviderMocking with BeforeAll with Jso
         caasProviderId = testCaasProvider.id,
         gwmProviderId = gwmProviderId,
         kongProviderId = kongProviderId
-      )))
+      ), "http://meta.test"))
 
       there was one(mockGatewayMethods).createApi(any, any, any, any)
       there was one(mockGatewayMethods).createEndpoint(any, any, any, any)

@@ -4,7 +4,7 @@ import java.util.{Base64, TimeZone, UUID}
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadOnlyMany
 import com.galacticfog.gestalt.meta.api.errors._
@@ -801,24 +801,39 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val (storageVolumes,volMounts) = containerSpec.volumes.map({
         case ex: ExistingVolumeMountSpec =>
           val r = ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, ex.volume_id).getOrElse(
-            throw new BadRequestException("container spec had volume mount for non-existent volume")
+            throw BadRequestException("container spec had volume mount for non-existent volume")
           )
           val spec = VolumeSpec.fromResourceInstance(r).getOrElse(
-            throw new InternalErrorException(s"could not parse referenced volume resource '${r.name}' as VolumeSpec")
+            throw InternalErrorException(s"could not parse referenced volume resource '${r.name}' as VolumeSpec")
           )
           val eid = spec.external_id.getOrElse(
-            throw new InternalErrorException(s"Volume resource '${r.id}' did not have 'external_id'")
+            throw InternalErrorException(s"Volume resource '${r.id}' did not have 'external_id'")
           )
           val eidExtracter = "/namespaces/([^/]+)/persistentvolumeclaims/(.*)".r
           val pvcName = eid match {
             case eidExtracter(_,name) /* TODO: need to check namespace */ => name
-            case _ => throw new InternalErrorException(s"Volume resource '${r.id}' 'external_id' was not well-formed")
+            case _ => throw InternalErrorException(s"Volume resource '${r.id}' 'external_id' was not well-formed")
           }
           val readOnly = (spec.access_mode == ReadOnlyMany)
           val lbl = r.name // TODO: don't need this now: UUID.randomUUID().toString
           skuber.Volume(lbl, skuber.Volume.PersistentVolumeClaimRef(pvcName, readOnly)) -> Volume.Mount(lbl, ex.mount_path, readOnly)
+        case in: InlineVolumeMountSpec => //TODO: improve this implementation
+          val name = in.volume_resource.name
+          val mountPath = in.mount_path
+          val volumeType = for {
+            properties <- in.volume_resource.properties
+            volumeTypeString <- properties.get("type")
+            volumeTypeValue <- VolumeSpec.Type.fromString(volumeTypeString.as[String]).toOption
+          } yield volumeTypeValue
+
+          volumeType match {
+            case Some(VolumeSpec.EmptyDir) => skuber.Volume(name, skuber.Volume.EmptyDir()) -> Volume.Mount(name, mountPath)
+            case Some(any) => throw BadRequestException(s"volume type $any is currently not supported for InlineVolumeMountSpec")
+            case None => throw BadRequestException(s"volume type is not defined for InlineVolumeMountSpec")
+          }
+
         case _ =>
-          throw new BadRequestException("container create/update only accepting volume mount to existing volumes; inline volume specs are not currently supported.")
+          throw BadRequestException("unsupported type of VolumeMountSpec")
       }).unzip
 
 
