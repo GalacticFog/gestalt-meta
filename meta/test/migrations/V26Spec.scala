@@ -28,5 +28,17 @@ class V26Spec extends PlaySpecification with MetaRepositoryOps {
       actionInfo must beSuccessfulTry
       actionInfo.get.verbs.contains("import") === true
     }
+
+    "add 'import' to Volume resource type" >> {
+      val tpe = TypeFactory.findById(migrations.V13.VOLUME_TYPE_ID)
+      tpe must beSome
+
+      val actionInfo = {
+        val js = Json.parse(tpe.get.properties.get("actions"))
+        Js.parse[ActionInfo](js.as[JsObject])
+      }
+      actionInfo must beSuccessfulTry
+      actionInfo.get.verbs.contains("import") === true
+    }
   }
 }

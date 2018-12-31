@@ -266,6 +266,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
     def newMetaRequest() = for {
       metaRequest <- buildMetaRequest(org.id, identity, body, parent.id, resourceType, actionVerb, META_URL)
+      _ = log.debug(s"metaRequest: ${metaRequest}")
       (operations, options) = newResourceRequestArgs(metaRequest)
     } yield (operations, options, metaRequest)
 
@@ -296,7 +297,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
              * "function authors" are the implementors of the provider...
              * the external work has been done, any policy violation has already been realized in a literal sense of the word
              */
-            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input),Some(parent.id))
+            CreateWithEntitlements(org.id, identity, actionResult.getOrElse(input), Some(parent.id))
           }
         } yield metaResult
       }

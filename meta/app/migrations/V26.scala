@@ -55,8 +55,17 @@ class V26 extends MetaMigration() {
         addPropertyTypeToResourceType(tpe, newProperty)(acc)         
       }
       _ <- addVerbToResourceType(identity, payload, verb = "import", typeId = ResourceIds.Secret)
-      x <- {
+      _ <- {
         val failures = addEntitlementsToInstances(identity, action = "secret.import", typeId = ResourceIds.Secret).collect { case Failure(e) => e.getMessage }
+        if (failures.nonEmpty) {
+          Failure(new RuntimeException(failures.mkString("[", ",", "]")))
+        } else {
+          Success(())
+        }
+      }
+      _ <- addVerbToResourceType(identity, payload, verb = "import", typeId = migrations.V13.VOLUME_TYPE_ID)
+      x <- {
+        val failures = addEntitlementsToInstances(identity, action = "volume.import", typeId = migrations.V13.VOLUME_TYPE_ID).collect { case Failure(e) => e.getMessage }
         if (failures.nonEmpty) {
           Failure(new RuntimeException(failures.mkString("[", ",", "]")))
         } else {

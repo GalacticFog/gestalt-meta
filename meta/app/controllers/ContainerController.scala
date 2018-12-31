@@ -241,23 +241,54 @@ class ContainerController @Inject()(
   }
 
   def postVolume(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    def createVolume(org: GestaltResourceInstance, env: GestaltResourceInstance): EitherError[Future[GestaltResourceInstance]] = {
+      for(
+        resource <- mkResource(request.body, request.identity, env, migrations.V13.VOLUME_TYPE_ID);
+        modifiedResource = resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map(
+          "name" -> resource.name,
+          "description" -> resource.description.getOrElse("")
+        )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
+        volumeProperties <- ResourceSerde.deserialize[VolumeSpec](modifiedResource);
+        volumeProvider <- Either.fromOption(volumeProperties.provider, Error.BadRequest("provider not specified"));
+        provider <- Either.fromOption(ResourceFactory.findById(volumeProvider.id),
+         Error.NotFound(s"CaasProvider with ID '${volumeProvider.id}' not found"));
+        _ <- assertCompatibleEnvType(provider, env)
+      ) yield {
+        val context = ProviderContext(request, volumeProvider.id, None)
+        containerService.createVolume(context, request.identity, volumeProperties, Some(resource.id)) map { created =>
+          resourceController.transformResource(created).get
+        }
+      }
+    }
+
+    val action = request.getQueryString("action").getOrElse("create")
     (for(
+      org <- Either.fromOption(Resource.findFqon(fqon), "could not locate org resource after authentication").liftTo[EitherError];
       env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
        Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
-      resource <- mkResource(request.body, request.identity, env, migrations.V13.VOLUME_TYPE_ID);
-      modifiedResource = resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map(
-        "name" -> resource.name,
-        "description" -> resource.description.getOrElse("")
-      )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
-      volumeProperties <- ResourceSerde.deserialize[VolumeSpec](modifiedResource);
-      volumeProvider <- Either.fromOption(volumeProperties.provider, Error.BadRequest("provider not specified"));
-      provider <- Either.fromOption(ResourceFactory.findById(volumeProvider.id),
-       Error.NotFound(s"CaasProvider with ID '${volumeProvider.id}' not found"));
-      _ <- assertCompatibleEnvType(provider, env)
+      futureRes <- action match {
+        case "create" => createVolume(org, env)
+        case "import" => for(
+          importPayload <- eitherFromJsResult(request.body.validate[ImportPayload]);
+          provider <- Either.fromOption(ResourceFactory.findById(importPayload.properties.provider.id),
+           Error.NotFound(s"CaasProvider with ID '${importPayload.properties.provider.id}' not found"));
+          _ <- assertCompatibleEnvType(provider, env)
+        ) yield {
+          genericResourceMethods.createProviderBackedResource(
+            org = org,
+            identity = request.identity,
+            body = request.body,
+            parent = env,
+            resourceType = migrations.V13.VOLUME_TYPE_ID,
+            providerType = provider.typeId,
+            actionVerb = "import"
+          )
+        }
+        case _ => Left(Error.BadRequest("invalid 'action' on volume create: must be 'create' or 'import'"))
+      }
     ) yield {
-      val context = ProviderContext(request, volumeProvider.id, None)
-      containerService.createVolume(context, request.identity, volumeProperties, Some(resource.id)) map { created =>
-        Accepted(RenderSingle(resourceController.transformResource(created).get))
+      futureRes map { res =>
+        Created(RenderSingle(res))
       }
     }) valueOr { error =>
       Future.successful(errorToResult(error))
