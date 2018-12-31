@@ -37,7 +37,7 @@ import scala.concurrent.Future
 import scala.util.Success
 
 @RunWith(classOf[JUnitRunner])
-class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
+class KubernetesServiceSpec extends PlaySpecification with ResourceScope with BeforeAll with BeforeAfterEach with JsonMatchers {
 
   case class TestSetup(svc: KubernetesService,
                        client: skuber.api.client.RequestContext,
@@ -291,6 +291,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
     ).addLabels(containerLbls)
 
     val deploymentUid = uuid()
+    val selector = skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test"))
     lazy val mockDepl = skuber.ext.Deployment(
       metadata = skuber.ObjectMeta(
         uid = deploymentUid.toString,
@@ -309,7 +310,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
           }).toList
         )
       )
-    )
+    ).withLabelSelector(selector)
     val replicaSetUid = uuid()
     lazy val mockReplicaA = skuber.ext.ReplicaSet(
       metadata = skuber.ObjectMeta(
@@ -1869,7 +1870,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         name = metaContainer.name,
         namespace = testEnv.id.toString,
         labels = Map(label)
-      ))
+      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
       val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
         name = metaContainer.name,
         namespace = testEnv.id.toString,
@@ -1919,7 +1920,7 @@ class KubeServiceSpec extends PlaySpecification with ResourceScope with BeforeAl
         name = metaContainer.name,
         namespace = testEnv.id.toString,
         labels = Map(label)
-      ))
+      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
       val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
       testSetup.client.listSelected(any)(any,meq(Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
       testSetup.client.listSelected(any)(any,meq(ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))

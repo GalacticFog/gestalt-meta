@@ -1,5 +1,6 @@
 package com.galacticfog.gestalt.container
 
+import java.util.UUID
 import java.io.{PrintWriter, Writer}
 
 import akka.actor.ActorSystem
@@ -10,9 +11,10 @@ import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
 import play.api.libs.json._
 import skuber.api.client.RequestContext
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 
 import scala.concurrent.duration._
-import scala.concurrent.Await
+import scala.concurrent.{Await,Future}
 import scala.util.{Failure,Success,Try}
 
 
@@ -37,8 +39,10 @@ class KubeContainerImport extends ContainerImport {
     val ctx = Json.parse(ctxStr).as[JsObject]
     log.debug(s"parsed context is: '${ctx}'")
 
+    val supportedActions = Seq("container.import", "secret.import", "volume.import")
+
     val resp = (payload \ "action").asOpt[String] match {
-      case Some(action) if Seq("container.import", "secret.import").contains(action) =>
+      case Some(action) if supportedActions.contains(action) =>
         log.debug("performing container.import")
         Try {
           doImport(payload, ctx)
@@ -88,9 +92,49 @@ class KubeContainerImport extends ContainerImport {
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
     val importTarget = (resource \ "properties" \ "external_id").as[String]
     
+    val uuid = (resource \ "id").as[String]
     val envId = (payload \ "context" \ "environment" \ "id").as[String]
 
-    val fResp = (action, importTarget.split("/")) match {
+    val contextLabels = Json.obj(
+      "meta/environment" -> (payload \ "context" \ "environment" \ "id").as[String],
+      "meta/workspace" -> (payload \ "context" \ "workspace" \ "id").as[String],
+      "meta/fqon" -> "",    // what should I put here?
+      "meta/provider" -> (payload \ "provider" \ "id").as[String]
+    )
+
+    def checkLabels(obj: skuber.ObjectResource, uuidLabel: String): Future[Unit] = {
+      val uuid = obj.metadata.labels.get(s"meta/${uuidLabel}")
+      val environment = obj.metadata.labels.get("meta/environment")
+      if(uuid.isEmpty && environment.isEmpty) {
+        Future.successful(())
+      }else {
+        Future.failed(new RuntimeException(s"Resource is already managed by gestalt: envId=${environment}; id=${uuid}"))
+      }
+    }
+
+    def setLabels[T <: skuber.ObjectResource](kube: RequestContext, obj: T, uuidLabel: String)(implicit rd: skuber.ResourceDefinition[T], fmt: Format[T]): Future[T] = {
+      val labels = Json.obj(
+        "metadata" -> Json.obj(
+          "labels" -> (Json.obj(
+            s"meta/${uuidLabel}" -> uuid
+          ) ++ contextLabels)
+        )
+      )
+      kube.jsonMergePatch(obj, labels.toString)
+    }
+
+    def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
+      val idInMeta = obj.metadata.labels.get(s"meta/${uuidLabel}").map(UUID.fromString(_)) getOrElse {
+        throw new RuntimeException(s"Resource ${obj.name} in namespace ${obj.ns} has not been imported to gestalt")
+      }
+      val objEnvId = obj.metadata.labels.get("meta/environment").getOrElse("")
+      if(envId != objEnvId) {
+        throw new RuntimeException(s"Resource ${obj.name} (env. id=${objEnvId}) and resource being imported (env. id=${envId}) must belong to the same gestalt environment")
+      }
+      idInMeta
+    }
+
+    val fResp = (action, importTarget.split("/", 5)) match {
       case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
         log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
 
@@ -98,8 +142,129 @@ class KubeContainerImport extends ContainerImport {
 
         for {
           depl <- kube.getInNamespace[skuber.ext.Deployment](deplNameValue, namespaceValue)
-          updatedDepl <- kube.jsonMergePatch(depl, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
-          importProps = deploymentToContainerSpec(updatedDepl)
+          _ <- checkLabels(depl, "container")    // so that failed imports don't set labels
+          containerSpec <- depl.getPodSpec.map(_.containers) match {
+            case Some(List(single)) => Future.successful(single)
+            case None => Future.failed(new RuntimeException("Kubernetes deployment did not have a Pod spec"))
+            case Some(_) => Future.failed(new RuntimeException("Kubernetes container.import currently only supports Deployments with a single container spec"))
+          }
+          volumesSpec = depl.getPodSpec.get.volumes
+          portMappings = containerSpec.ports map { kp =>
+            Json.obj(
+              "container_port" -> kp.containerPort,
+              "service_port" -> kp.hostPort,
+              "name" -> kp.name,
+              "virtual_hosts" -> Seq.empty[String],
+              "protocol" -> (kp.protocol match {
+                case skuber.Protocol.TCP => "tcp"
+                case skuber.Protocol.UDP => "udp"
+              }),
+              "expose_endpoint" -> false // ...for now
+               // "service_port" -> (pm \ "servicePort").asOpt[Int],
+               // "lb_port" -> vipHostPort.map(_._2),
+               // "expose_endpoint" -> vipHostPort.isDefined,
+               // "service_address" -> vipHostPort.map {
+               //   case (host, port) => Json.obj(
+               //     "protocol" -> (pm \ "protocol").asOpt[String],
+               //     "host" -> host,
+               //     "port" -> port
+               //   )
+               // }
+            )
+          }
+          cpuLimits = for(
+            r <- containerSpec.resources;
+            cpu <- r.limits.get(skuber.Resource.cpu)
+          ) yield cpu.amount.toDouble
+          cpuRequests = for(
+            r <- containerSpec.resources;
+            cpu <- r.requests.get(skuber.Resource.cpu)
+          ) yield cpu.amount.toDouble
+          memLimits = for(
+            r <- containerSpec.resources;
+            memory <- r.limits.get(skuber.Resource.memory)
+          ) yield (memory.amount / 1.0e6).toDouble
+          memRequests = for(
+            r <- containerSpec.resources;
+            memory <- r.requests.get(skuber.Resource.memory)
+          ) yield (memory.amount / 1.0e6).toDouble
+          // secrets
+          secretsAsEnvVars <- Future.traverse(containerSpec.env collect {
+            case skuber.EnvVar(name, skuber.EnvVar.SecretKeyRef(secretKey, secretName)) => {
+              (name, secretKey, secretName)
+            }
+          }) { case(name, secretKey, secretName) =>
+            kube.getInNamespace[skuber.Secret](secretName, namespaceValue) map { secret =>
+              Json.toJson(ContainerSpec.SecretEnvMount(getMetaId(secret, envId, "secret"), name, secretKey))
+            }
+          }
+          secretVolumes = (volumesSpec collect {
+            case skuber.Volume(name, skuber.Volume.Secret(secretName, _, _, _)) => (name, secretName)
+          }).toMap
+          secretsAsVolumes <- Future.traverse(containerSpec.volumeMounts collect { 
+            case skuber.Volume.Mount(name, mountPath, readOnly, subPath, mountPropagation) if secretVolumes.contains(name) => {
+              (secretVolumes(name), mountPath)
+            }
+          }) { case(secretName, mountPath) =>
+            kube.getInNamespace[skuber.Secret](secretName, namespaceValue) map { secret =>
+              Json.toJson(ContainerSpec.SecretDirMount(getMetaId(secret, envId, "secret"), mountPath))
+            }
+          }
+          // volumes
+          mounts = (containerSpec.volumeMounts map {
+            case skuber.Volume.Mount(name, mountPath, _, _, _) => (name, mountPath)
+          }).toMap
+          inlineVolumes = volumesSpec collect {
+            case skuber.Volume(name, skuber.Volume.HostPath(path, _)) => {
+              Json.obj(
+                "mount_path" -> mounts(name),
+                "volume_resource" -> Json.obj(
+                  "name" -> s"${deplNameValue}-${name}",
+                  "resource_type" -> "Gestalt::Resource::Volume",
+                  "resource_state" -> "Gestalt::Resource::State::Active",
+                  "properties" -> Json.obj(
+                    // "type" -> "",
+                    // "config" -> Json.obj(),
+                    // "reclamation_policy" -> "",
+                    "mount_path" -> path
+                  )
+                )
+              )
+            }
+          }
+          pvcs <- Future.traverse(volumesSpec collect {
+            case skuber.Volume(name, skuber.Volume.PersistentVolumeClaimRef(claimName, _)) => (name, claimName)
+          }) { case(name, claimName) =>
+            kube.getInNamespace[skuber.PersistentVolumeClaim](claimName, namespaceValue) map { pvc =>
+              // Json.toJson(ContainerSpec.ExistingVolumeMountSpec(mounts(claimName), getMetaId(pvc, envId)))
+              // ^^ doesn't get serialized
+              Json.obj(
+                "mount_path" -> mounts(name),
+                "volume_id" -> getMetaId(pvc, envId, "volume")
+              )
+            }
+          }
+          importProps = Json.obj(
+            "container_type" -> "DOCKER",
+            "image" -> containerSpec.image,
+            "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
+            "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
+            "memory" -> (memLimits orElse memRequests).getOrElse[Double](0.0),
+            "volumes" -> (pvcs ++ inlineVolumes),
+            "labels" -> depl.metadata.labels,
+            "env" -> Json.toJson(containerSpec.env.collect({
+              case skuber.EnvVar(name, skuber.EnvVar.StringValue(value)) => name -> value
+            }).toMap),
+            "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
+            "port_mappings" -> portMappings,
+            "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes)
+          ) ++ JsObject(
+            Seq(
+              Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
+              Option(containerSpec.args).filter(_.nonEmpty).map(args => "args" -> Json.toJson(args))
+            ).flatten
+          )
+          _ <- setLabels(kube, depl, "container")
         } yield resource ++ Json.obj(
           "properties" -> (inputProps ++ importProps)
         )
@@ -111,8 +276,51 @@ class KubeContainerImport extends ContainerImport {
         
         for {
           secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
-          updatedSecret <- kube.jsonMergePatch(secret, s"""{"metadata":{"labels":{"meta/environment":"${envId}"}}}""");
-          importProps = secretToSecretSpec(updatedSecret)
+          _ <- checkLabels(secret, "secret")    // so that failed imports don't set labels
+          importProps = Json.obj(
+            // "name" -> secret.name,
+            "items" -> (secret.data map { case(key, value) =>
+              Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
+            })
+          )
+          _ <- setLabels(kube, secret, "secret")
+        } yield resource ++ Json.obj(
+          "properties" -> (inputProps ++ importProps)
+        )
+      }
+      case ("volume.import", Array("", "namespaces", namespaceValue, "persistentvolumeclaims", pvcName)) => {
+        log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
+
+        val kube = initializeKube(provider, namespaceValue)
+        
+        for {
+          pvc <- kube.getInNamespace[skuber.PersistentVolumeClaim](pvcName, namespaceValue)
+          _ <- checkLabels(pvc, "volume")    // so that failed imports don't set labels
+          pvcSpec = pvc.spec.get
+          _ = log.debug(s"getting pv ${pvcSpec.volumeName}")
+          pv <- kube.getInNamespace[skuber.PersistentVolume](pvcSpec.volumeName, namespaceValue)
+          _ = log.debug(s"got pv ${pvcSpec.volumeName}")
+          pvSpec = pv.spec.get
+          pvType = pvSpec.source match {
+            // not sure if this is the correct correspondence
+            case _: skuber.Volume.AWSElasticBlockStore => "external"
+            case _: skuber.Volume.GCEPersistentDisk => "persistent"
+            case _: skuber.Volume.Glusterfs => "external"
+            case _: skuber.Volume.HostPath => "host_path"
+            case _: skuber.Volume.ISCSI => "external"
+            case _: skuber.Volume.NFS => "external"
+            case _: skuber.Volume.RBD => "external"
+            case _: skuber.Volume.GenericVolumeSource => "external"
+          }
+          size = pvSpec.capacity.get("storage").map(_.amount.toInt / 1024 / 1024).getOrElse(0)
+          accessMode: String = (pvcSpec.accessModes.headOption orElse pvSpec.accessModes.headOption).map(_.toString).getOrElse("")
+          importProps = Json.obj(
+            "type" -> pvType,
+            "config" -> Json.obj(),     // what should I put in here?
+            "size" -> size,
+            "access_mode" -> accessMode
+          )
+          _ <- setLabels(kube, pvc, "volume")
         } yield resource ++ Json.obj(
           "properties" -> (inputProps ++ importProps)
         )
@@ -121,82 +329,5 @@ class KubeContainerImport extends ContainerImport {
     }
 
     Await.result(fResp, 15.seconds)
-  }
-
-  private def deploymentToContainerSpec(depl: skuber.ext.Deployment): JsObject = {
-    val containerSpec = depl.getPodSpec.map(_.containers) match {
-      case Some(List(single)) => single
-      case None => throw new RuntimeException("Kubernetes deployment did not have a Pod spec")
-      case Some(_) => throw new RuntimeException("Kubernetes container.import currently only supports Deployments with a single container spec")
-    }
-
-    val portMappings = containerSpec.ports.map({
-      kp => Json.obj(
-        "container_port" -> kp.containerPort,
-        "service_port" -> kp.hostPort,
-        "name" -> kp.name,
-        "virtual_hosts" -> Seq.empty[String],
-        "protocol" -> (kp.protocol match {
-          case skuber.Protocol.TCP => "tcp"
-          case skuber.Protocol.UDP => "udp"
-        }),
-        "expose_endpoint" -> false // ...for now
-//      "service_port" -> (pm \ "servicePort").asOpt[Int],
-//      "lb_port" -> vipHostPort.map(_._2),
-//      "expose_endpoint" -> vipHostPort.isDefined,
-//      "service_address" -> vipHostPort.map {
-//        case (host, port) => Json.obj(
-//          "protocol" -> (pm \ "protocol").asOpt[String],
-//          "host" -> host,
-//          "port" -> port
-//        )
-//      }
-      )
-    })
-
-    val cpuLimits = for(
-      r <- containerSpec.resources;
-      cpu <- r.limits.get(skuber.Resource.cpu)
-    ) yield cpu.amount.toDouble
-    val cpuRequests = for(
-      r <- containerSpec.resources;
-      cpu <- r.requests.get(skuber.Resource.cpu)
-    ) yield cpu.amount.toDouble
-    val memLimits = for(
-      r <- containerSpec.resources;
-      memory <- r.limits.get(skuber.Resource.memory)
-    ) yield (memory.amount / 1.0e6).toDouble
-    val memRequests = for(
-      r <- containerSpec.resources;
-      memory <- r.requests.get(skuber.Resource.memory)
-    ) yield (memory.amount / 1.0e6).toDouble
-
-    Json.obj(
-      "container_type" -> "DOCKER",
-      "image" -> containerSpec.image,
-      "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
-      "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
-      "memory" -> (memLimits orElse memRequests).getOrElse[Double](0.0),
-      "labels" -> depl.metadata.labels,
-      "env" -> Json.toJson(containerSpec.env.collect({
-        case skuber.EnvVar(name, skuber.EnvVar.StringValue(value)) => name -> value
-      }).toMap),
-      "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
-      "port_mappings" -> portMappings
-    ) ++ JsObject(
-      Seq(
-        Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
-        Option(containerSpec.args).filter(_.nonEmpty).map(args => "args" -> Json.toJson(args))
-      ).flatten
-    )
-  }
-
-  private def secretToSecretSpec(secret: skuber.Secret): JsObject = {
-    Json.obj(
-      // "name" -> secret.name,
-      "items" -> (secret.data map { case(key, value) =>
-        Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
-      })
-    )
   }
 }
