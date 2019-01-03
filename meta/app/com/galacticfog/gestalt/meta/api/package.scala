@@ -1,10 +1,11 @@
 package com.galacticfog.gestalt.meta
 
 import com.galacticfog.gestalt.meta.api.sdk._
-import com.galacticfog.gestalt.data.{DataType, PropertyFactory, TypeFactory}
+import com.galacticfog.gestalt.data.{DataType, PropertyFactory, TypeFactory, ResourceFactory}
 import java.util.UUID
 
 import com.galacticfog.gestalt.data
+import com.galacticfog.gestalt.data.models.GestaltResourceType
 import play.api.libs.json.Json
 
 import scala.util.Try
@@ -13,17 +14,103 @@ package object api {
 
   def isProviderBackedResource(typeId: UUID): Boolean = getBackingProviderType(typeId).isDefined
 
-  def getBackingProviderType(resourceType: UUID): Option[UUID] = for {
-    // is the resourcetype marked as provider-backed?
-    rt <- TypeFactory.findById(resourceType)
-    props <- rt.properties
-    isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
-    if isProviderBacked
-    // what is the refers to type for the provider property?
-    pp <- PropertyFactory.findByName(resourceType, "provider")
-    if pp.datatype == DataType.id("resource::uuid::link")
-    refersTo <- pp.refersTo
-  } yield refersTo
+  private[api] val GESTALT_CORE_TYPE_ID = UUID.fromString("10d0a758-e844-4496-8321-1ee7509381df")
+  
+  val rootid = Resource.findFqon("root").fold {
+    throw new RuntimeException("Could not find Root Org. Unable to determine ID for entitlement setting.")
+  }{ r => 
+    r.id 
+  }    
+
+  def isGestalt(typeId: UUID): Boolean = {
+    TypeFactory.findById(typeId).fold(false) { tpe =>
+      isGestalt(Some(tpe))
+    }
+  }
+  
+  def isGestalt(tpe: GestaltResourceType): Boolean = {
+    isGestalt(Some(tpe))
+  }
+  
+  def isGestalt(tpe: Option[GestaltResourceType]): Boolean = {
+    (for {
+      x  <- tpe
+      ps <- x.properties
+      b  <- ps.get("is_gestalt").flatMap(g => Try(g.toBoolean).toOption)
+    } yield b).getOrElse(false)
+  }
+  
+  def findGestaltProvider(tpe: GestaltResourceType): Option[UUID] = {
+    /*
+     * Search /root for GestaltProvider type
+     * Return the UUID
+     */
+    val rs = ResourceFactory.findChildrenOfType(GESTALT_CORE_TYPE_ID, rootid)
+    rs.size match {
+      case 0 => None
+      case 1 => Some(rs.head.typeId)
+      case _ => None
+    }
+  }
+  
+  import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+  
+  def findGestaltProvider(): Option[GestaltResourceInstance] = {
+    /*
+     * Search /root for GestaltProvider type
+     * Return the UUID
+     */
+    val rs = ResourceFactory.findChildrenOfType(GESTALT_CORE_TYPE_ID, rootid)
+    rs.size match {
+      case 0 => None
+      case 1 => Some(rs.head)
+      case _ => None
+    }
+  }  
+  
+  
+  private[api] def findCustomProvider(tpe: GestaltResourceType): Option[UUID] = {
+    for {
+      // is the resourcetype marked as provider-backed?
+      props <- tpe.properties
+      isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
+      if isProviderBacked
+      // what is the refers to type for the provider property?
+      pp <- PropertyFactory.findByName(tpe.id, "provider")
+      if pp.datatype == DataType.id("resource::uuid::link")
+      refersTo <- pp.refersTo
+    } yield refersTo
+  }
+  
+  
+  def getBackingProviderType(resourceType: UUID): Option[UUID] = {
+    TypeFactory.findById(resourceType).fold(Option.empty[UUID]) { tpe =>
+//      if (!isGestalt(tpe)) {
+//        findCustomProvider(tpe)
+//      } else {
+//        /*
+//         * TODO: If type 'is-gestalt', it is an ERROR if provider not found!!!
+//         */
+//        findGestaltProvider(tpe)
+//      }
+      findCustomProvider(tpe).orElse(findGestaltProvider(tpe))
+    }
+  }
+  
+  
+//  def getBackingProviderType(resourceType: UUID): Option[UUID] = {
+//    for {
+//      // is the resourcetype marked as provider-backed?
+//      rt <- TypeFactory.findById(resourceType)
+//      props <- rt.properties
+//      isProviderBacked <- props.get("is_provider_backed") flatMap (s => Try{s.toBoolean}.toOption)
+//      if isProviderBacked
+//      // what is the refers to type for the provider property?
+//      pp <- PropertyFactory.findByName(resourceType, "provider")
+//      if pp.datatype == DataType.id("resource::uuid::link")
+//      refersTo <- pp.refersTo
+//    } yield refersTo
+//  }
 
   /**
     * Translate resource REST name to Resource Type ID

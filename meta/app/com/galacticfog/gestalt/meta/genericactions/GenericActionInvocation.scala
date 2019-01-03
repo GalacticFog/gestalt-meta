@@ -55,7 +55,7 @@ case class GenericActionInvocation(
       "metaAddress" -> metaAddress,
       "context" -> context.toJson(),
       "provider" -> Output.renderInstance(provider),
-      "resource" -> resource.map(Output.renderInstance(_)),
+      "resource" -> resource.map(Output.renderInstanceInput(_)),
       "actionPayload" -> actionPayload,
       "requestUrl" -> requestUrl,
       "queryParams" -> queryParams

@@ -4,7 +4,7 @@ const create = require('./functions/create')
 const publish = require('./functions/publish')
 const deploy = require('./functions/deploy')
 const u = require('util')
-
+const MetaClient = require('./common/client')
 const debug = require('debug')('gestalt')
 
 
@@ -16,10 +16,9 @@ exports.entryPoint = function(event, context, callback) {
   util.assert(contextData.headers.Authorization, 
     'context.headers.Authorization not found. API Endpoint must be configured for authentication.')
   
-  const metaUrl = util.assert(eventData.metaAddress, 'event.meta URL is missing. Cannot contact Meta')
+  const metaUrl = util.assert(eventData.metaAddress, 'event.metaAddress URL is missing. Cannot contact Meta')
   const authorization = contextData.headers.Authorization
-  
-  
+  const client = new MetaClient(metaUrl, authorization)
   /*
    * Handle action events.
    */ 
@@ -35,7 +34,7 @@ exports.entryPoint = function(event, context, callback) {
 
       case 'servicespec.publish':
         console.log("[handle-action]: 'servicespec.publish'")
-        let out = await publish.eventPublish(eventData, contextData)
+        let out = await publish.eventPublish(eventData, contextData, client)
         console.log("OUT:\n" + JSON.stringify(out, null, 2))
         let finalResponse = publish.makePublishResponse('DUMMY_FQON', eventData.metaAddress, out)
 

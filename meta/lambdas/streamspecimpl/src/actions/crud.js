@@ -1,6 +1,7 @@
 const util = require('../metautil')
 const laser = require('../laser')
 const MetaClient = require('../client')
+const uuid = require('uuid4')
 
 module.exports = {
   async actionCreate(event, context, client) {

@@ -20,13 +20,31 @@ import controllers.util._
 import javax.inject.Singleton
 import play.api.i18n.MessagesApi
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
-import play.api.libs.json.{JsObject, JsValue, Json}
+import play.api.libs.json._
 import play.api.mvc.{Action, Result}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await, Future}
 import scala.language.postfixOps
 import scala.util.{Failure, Success, Try}
+
+import com.galacticfog.gestalt.data.{DataType,EnvironmentType,ResourceState,VisibilityType}
+
+import com.galacticfog.gestalt.json._
+import com.galacticfog.gestalt.marathon.containerWithDefaults
+
+import services.ProviderContext  
+import play.api.mvc.Request
+import play.api.mvc.AnyContent
+
+import java.math.BigInteger
+import java.security.SecureRandom
+import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
+import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}  
+import com.galacticfog.gestalt.meta.auth._  
+import com.galacticfog.gestalt.meta.api.output.toLink
+
+
 
 @Singleton
 class ResourceController @Inject()( 
@@ -130,11 +148,11 @@ class ResourceController @Inject()(
         case List(fqon,ptype,pid) if ptype == "environments" => (fqon,pid)
         case _ => throwBadRequest("container lookup can happen only in the context of an environment")
       }
-
+      
       /*
        * Have to pre-process the container-list
        */
-
+      
       Await.result(
         containerService.listEnvironmentContainers(fqon, eid),
         5 seconds
@@ -145,7 +163,7 @@ class ResourceController @Inject()(
   def FqonNotFound(fqon: String) = {
     throw new BadRequestException(s"Org with FQON '${fqon}' not found.")
   }
-
+  
   def getOrgFqon(fqon: String) = Audited() { implicit request =>
     val action = "org.view"
     log.debug(s"Authorizing lookup : user=${request.identity.account.id}, ${action}")
@@ -165,7 +183,7 @@ class ResourceController @Inject()(
       ResourceFactory.findAll(typeId)
     }
   }
-
+  
   /**
    * Custom lookup providing a shortcut to Provider containers.
    */
@@ -195,7 +213,6 @@ class ResourceController @Inject()(
     }
   }
 
-
   def findResourceGlobal(typeName: String, id: UUID) = Audited() { implicit request =>
     GlobalResource.getResource(typeName, id) match {
       case Failure(e) => HandleExceptions(e)
@@ -204,93 +221,520 @@ class ResourceController @Inject()(
   }
 
 
-  def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
-    log.debug(s"genericResourcePost(${fqon},${path})")
-    val rp = new ResourcePath(fqon, path)
-    log.debug(rp.info.toString)
-
-    if (rp.isList) {
-      // create semantics
-
-      val tryParent = ResourceFactory.findById(
+  /**
+   * Find the parent of a resource given it's path (default to given fqon)
+   */
+  def findResourceParent(rp: ResourcePath, fqon: String) = {
+    ResourceFactory.findById(
         typeId = rp.parentTypeId getOrElse ResourceIds.Org,
         id = rp.parentId getOrElse fqid(fqon)
       ) match {
         case Some(parent) => Success(parent)
         case None => Failure(new ConflictException("parent not specified/does not exist/does match type"))
       }
-
-      for {
-        org <- findOrgOrFail(fqon)
-        parent <- Future.fromTry(tryParent)
-        jsonRequest <- fTry(request.map(_.asJson.getOrElse(throw new UnsupportedMediaTypeException("Expecting text/json or application/json"))))
-        jsonSecuredRequest = SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue](request.identity, request.authenticator, jsonRequest)
-        /*
-         * Determine if the resource we're creating is backed by a provider.
-         */
-        result <- getBackingProviderType(rp.targetTypeId) match {
-          case None =>
-            log.debug("request to create non-provider-backed resource")
-            newDefaultResourceResult(org.id, rp.targetTypeId, parent.id, jsonRequest.body)(jsonSecuredRequest)
-
-          case Some(backingProviderType) =>
-            log.debug(s"request to create provider-backed resource of type ${ResourceLabel(backingProviderType)}")
-            val result = genericResourceMethods.createProviderBackedResource(
-              org = org,
-              identity = request.identity,
-              body = jsonRequest.body,
-              parent = parent,
-              resourceType = rp.targetTypeId,
-              providerType = backingProviderType,
-              actionVerb = jsonRequest.getQueryString("action").getOrElse("create")
-            )
-            result
-              .map (r => Created(Output.renderInstance(r, Some(META_URL))))
-              .recover { case e => HandleExceptions(e) }
-        }
-      } yield result
-
-    } else {
-
-      // perform action
-      for {
-        org <- findOrgOrFail(fqon)
-
-        /*
-         *  Lookup action to be performed
-         */
-        action <- fTry{
-          request.getQueryString("action") getOrElse {throwBadRequest("Missing parameter: action")}
-        }
-
-        /*
-         * Get resource target ID from request URL
-         */
-        targetId <- rp.targetId match {
-          case Some(targetId) => Future.successful(UUID.fromString(targetId))
-          case None => Future.failed(new ResourceNotFoundException("actions must be performed against a specific resource"))
-        }
-
-        /*
-         *
-         */
-        result <- getBackingProviderType(rp.targetTypeId) match {
-          case None =>
-            Future.successful(BadRequestResult("actions can only be performed against provider-backed resources"))
-          case Some(backingProviderType) =>
-            genericResourceMethods.performProviderBackedAction(
-              org = org,
-              identity = request.identity,
-              body = request.body,
-              resourceType = rp.targetTypeId,
-              providerType = backingProviderType,
-              actionVerb = action,
-              resourceId = targetId)
-        }
-      } yield result
+  }
+ 
+  /**
+   * Get JSON from a Request - fail if content-type isn't JSON.
+   */
+  def requireJsonRequest(request: SecuredRequest[GestaltFrameworkSecurityEnvironment, AnyContent])= {
+    request.map { ac => 
+      ac.asJson.getOrElse {
+        throw new UnsupportedMediaTypeException("Expecting text/json or application/json")
+      }
     }
   }
+  
+  /**
+   * Execute a generic 'create' request. If the target resource is provider-backed,
+   * delegate creation to the appropriate provider. If not provider-backed, use the
+   * default 'create in Meta' function.
+   */
+  def execGenericCreate(
+      org: GestaltResourceInstance,
+      targetTypeId: UUID,
+      parent: GestaltResourceInstance,
+      payload: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue])
+        : Future[GestaltResourceInstance] = {
+      
+    /*
+     * Determine if the resource we're creating is backed by a provider.
+     */    
+    getBackingProviderType(targetTypeId) match {
+      case None => {
+        log.debug("**Request to create non-provider-backed resource")
+        newDefaultResource(org.id, targetTypeId, parent.id, payload)(request)
+      }
+      case Some(backingProviderType) => {
+        genericResourceMethods.createProviderBackedResource(
+          org = org,
+          identity = request.identity,
+          body = payload,
+          parent = parent,
+          resourceType = targetTypeId,
+          providerType = backingProviderType,
+          actionVerb = "create")       
+      }
+    }
+  }
+  
+  /**
+   * Execute an arbitrary generic resource action. Action will fail if the 
+   * given resource is NOT provider-backed.
+   */
+  def execGenericAction(
+      org: GestaltResourceInstance,
+      targetTypeId: UUID,
+      targetId: UUID,
+      action: String)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,AnyContent]) = {
+    
+    /*
+     * Ensure the target resource is backed by a provider.
+     */
+    getBackingProviderType(targetTypeId) match {
+      case None => {
+        Future.successful(
+            BadRequestResult("actions can only be performed against provider-backed resources"))
+      }
+      case Some(backingProviderType) => { 
+        genericResourceMethods.performProviderBackedAction(
+          org = org,
+          identity = request.identity,
+          body = request.body,
+          resourceType = targetTypeId,
+          providerType = backingProviderType,
+          actionVerb = action,
+          resourceId = targetId)
+      }
+    }
+  }
+  
+  def requireActionParam(request: Request[AnyContent]) = {
+    request.getQueryString("action").getOrElse {
+      throwBadRequest("Missing parameter: action")
+    }    
+  }
+  
+  def requireTargetId(path: ResourcePath) = {
+    path.targetId match {
+      case Some(targetId) => Future.successful(UUID.fromString(targetId))
+      case None => Future.failed(
+        new ResourceNotFoundException("actions must be performed against a specific resource")
+      )
+    }    
+  }
+  
 
+  
+  def createContainer(
+      org: UUID, 
+      environment: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
+    
+    val created = for {
+      payload   <- Future.fromTry(normalizeCaasPayload(request.body, environment))
+      proto     <- Future.fromTry(jsonToResource(org, request.identity, normalizeInputContainer(payload), None))
+      spec      <- Future.fromTry(ContainerSpec.fromResourceInstance(proto))
+      context   = ProviderContext(request, spec.provider.id, None)
+      container <- containerService.createContainer(context, request.identity, spec, Some(proto.id))
+    } yield container
+  }  
+  
+  
+  /**
+   * Ensure Container input JSON is well-formed and valid. Ensures that required properties
+   * are given and fills in default values where appropriate.
+   */
+  private [this] def normalizeInputContainer(inputJson: JsValue): JsObject = {
+    val defaults = containerWithDefaults(inputJson)
+    val newprops = Json.toJson(defaults).as[JsObject] ++ (inputJson \ "properties").as[JsObject]
+    inputJson.as[JsObject] ++
+      Json.obj("resource_type" -> ResourceIds.Container.toString) ++
+      Json.obj("properties" -> newprops)
+  }  
+  
+  private[controllers] def normalizeCaasPayload(payloadJson: JsValue, environment: UUID): Try[JsObject] = Try {
+  
+    val payload = payloadJson.as[JsObject]
+    
+    val (env, provider) = (for {
+      pid <- Try(Js.find(payload, "/properties/provider/id") getOrElse {
+            throw new BadRequestException(s"`/properties/provider/id` not found.")
+          })
+      env <- Try(ResourceFactory.findById(ResourceIds.Environment, environment) getOrElse {
+            throw new BadRequestException(s"Environment with ID '$environment' not found.")
+          })
+      prv <- Try(ResourceFactory.findById(UUID.fromString(pid.as[String])) getOrElse {
+            throw new BadRequestException(s"CaasProvider with ID '$pid' not found")
+          })
+    } yield (env, prv)).get
+    
+    /*
+     *  This throws an exception if the environment is incompatible with the provider.
+     */
+    assertCompatibleEnvType(provider, env)
+
+    // Inject `provider` object into container.properties
+    val oldProperties = Js.find(payload, "/properties").flatMap(_.asOpt[JsObject]).getOrElse(Json.obj())
+    payload ++ Json.obj(
+      "properties" -> (oldProperties ++ Json.obj(
+        "provider" -> Json.obj(
+          "name"          -> provider.name,
+          "id"            -> provider.id,
+          "resource_type" -> sdk.ResourceName(provider.typeId)
+        )
+      ))
+    )
+  }  
+  
+  
+  /**
+   * Test that the given Provider is compatible with the given Environment. An
+   * exception is thrown if the given Environment is incompatible.
+   */
+  private[controllers] def assertCompatibleEnvType(provider: GestaltResourceInstance, env: GestaltResourceInstance) {
+    
+    // These are the values tha Meta will accept for 'environment_type'
+    val acceptableTypes = Set("development", "test", "production")
+    
+    //provider.properties.get.get("environment_types").map { types =>
+    provider.properties.get.get("environment_types").foreach { types =>  
+      // Environment types the provider is compatible with.
+      val allowedByProvider = Json.parse(types).as[Seq[String]]
+      
+      // Environment type of the given environment.
+      val envType = {
+        val typeId = env.properties.get.get("environment_type") getOrElse {
+          val msg = s"Environment with ID '${env.id}' does not contain 'environment_type' property. Data is corrupt"
+          throw new RuntimeException(msg)
+        }
+        val target = EnvironmentType.name(UUID.fromString(typeId))
+        if (acceptableTypes.contains(target.trim.toLowerCase)) target
+        else {
+          val msg = s"Invalid environment_type. Expected: one of (${acceptableTypes.mkString(",")}. found: '$target'"
+          throw new UnprocessableEntityException(msg)
+        }
+      }
+      
+      // Given MUST be in the allowed list.
+      if (allowedByProvider.nonEmpty && !allowedByProvider.contains(envType)) {
+        val msg = s"Incompatible Environment type. Expected one of (${allowedByProvider.mkString(",")}). found: '$envType'"
+        throw new ConflictException(msg)
+      }
+    }    
+  }  
+  
+  
+  private object StorageManager {
+
+    def createStorageProvider() = {
+      ???
+    }
+
+    def createStorageContainer(extraConfig: Option[JsValue]) = {
+      ???
+    }    
+    
+  }
+  
+  
+  private object StorageType {
+    
+    def mergeEnvironmentVars(res: GestaltResourceInstance, vars: Map[String, String]) = {
+      val ps = res.properties.getOrElse(Map.empty)
+      val newvars = {
+        Json.toJson {
+          ps.get("env").fold(Map.empty[String,String]){ env =>
+            val oldenv = Js.parse[Map[String,String]](Json.parse(env).as[JsObject]).get
+            oldenv ++ vars
+          }
+        }
+      }
+
+      val newprops = try {
+        ps ++ Map("env" -> Json.stringify(newvars))
+      } catch {
+        case e: Throwable => {
+          println("****ERRROR : " + e.getMessage)
+          throw e
+        }
+      }
+
+      res.copy(properties = Some(newprops))
+    }
+    
+    def getStorageProperty(res: GestaltResourceInstance): Option[String] = {
+      for {
+        ps <- res.properties
+        st <- ps.get("storage")
+      } yield st
+    }
+    
+    def getUpstreamStorageVar(res: GestaltResourceInstance): Option[String] = {
+      EnvironmentVars.get(res.orgId, res.id).get("GF_DEFAULT_OBJECT_STORAGE_ID")
+    }
+    
+    def isExisting(s: String): Boolean = {
+      test(s){ js => Js.find(js, "provider_id").isDefined }
+    }
+    
+    def isNone(s: String): Boolean = {
+      test(s){ js =>
+        Js.find(js, "/kind").fold(false){ k =>
+          k.as[String] == "none"}
+      }
+    }
+    
+    def isConfig(s: String): Boolean = {
+      test(s){ js =>
+        Js.find(js, "/provider_id").isEmpty &&
+        Js.find(js, "/kind").isEmpty
+      }
+    }
+    
+    private def test(s: String)(f: JsObject => Boolean): Boolean = {
+      try {
+        f(Json.parse(s).as[JsObject])
+      } catch {
+        case e: Throwable => {
+          throw new BadRequestException("Error parsing '/properties/storage': " + e.getMessage)
+        }
+      }
+    }
+  }
+  
+
+  
+  def randomAlphaNum(chars: Int = 24): String = {
+    new BigInteger(chars * 5, new SecureRandom()).toString(32)
+  }
+
+  def postCreateEnvironment(resource: GestaltResourceInstance)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment, JsValue]) = {
+    
+    def addEnvVar(r: GestaltResourceInstance, pair: (String, String)) = {
+      val props = r.properties.getOrElse(Map.empty)
+      val envs = props.get("env").map(Json.parse(_).as[JsObject]).getOrElse(Json.obj())
+      
+      val newEnvs = envs + (pair._1 -> JsString(pair._2))
+      val newProps = props ++ Map("env" -> Json.stringify(newEnvs))
+      r.copy(properties = Some(newProps))
+    }
+    
+    def validateCaasProvider(providerString: String): Option[UUID] = {
+      /*
+       * TODO: Protect if can't parse as UUID
+       */
+      val pid = UUID.fromString(providerString)
+      
+      ResourceFactory.findById(pid).fold(Option.empty[UUID]) { prv =>
+        if (ResourceFactory.isSubTypeOf(prv.typeId, ResourceIds.CaasProvider)) {
+          Some(prv.id)
+        } else 
+          throw new BadRequestException(s"Invalid caas_provider property. found: '${providerString}'")
+      }
+    }
+    
+    // Check for CaaS provider property - set as env var if found
+    val updated = for {
+      ps     <- resource.properties
+      value  <- ps.get("caas_provider")
+      caas   <- validateCaasProvider(value)
+      update = addEnvVar(resource, "GF_DEFAULT_CAAS_PROVIDER_ID" -> caas)
+    } yield update
+
+    /*
+     * Evaluate storage creation
+     */
+    val updated2: Option[GestaltResourceInstance] = 
+      StorageType.getStorageProperty(resource) match {
+      
+      case Some(storage) => {
+        if (StorageType.isExisting(storage)) {
+          /*
+           * TODO: validate pointer and set env vars
+           * - (set storage_id, storage_address, storage_key, storage_secret, storage_protocol)
+           * 
+           */
+          val pid = Js.find(Json.parse(storage).as[JsObject], "/provider_id").get.as[String]
+          println(s"***[Storage]: FOUND existing storage pointer [$pid]...validating")          
+          updated
+          
+        } else if (StorageType.isNone(storage)) {
+          /*
+           * TODO: ???
+           * Leave storage property set to 'none'? That way we know the creator explicitly
+           * DID NOT want storage.
+           */
+          println("***[Storage]: Object Store creation has been SUPPRESSED.")
+          updated
+          
+        } else if (StorageType.isConfig(storage)) {
+          /*
+           * TODO: Merge configuration ???
+           * Remove storage property from map
+           */
+          println("***[Storage]: CONFIGURATION-ONLY storage object...merging config and provisioning.")
+          /*
+           * 1.) Get spec
+           * 2.) Merge in new config (spec ++ newConfig)
+           * 3.) Create the storage.
+           */
+          updated
+        } else {
+          /*
+           * TODO: Test if value is complete inline storage-specification!!!
+           */
+          updated
+        }
+      }
+      case None => {
+
+        /*
+         * We didn't find a storage configuration - check if there's
+         * an object store in upstream variables.
+         */
+        val upstream = StorageType.getUpstreamStorageVar(resource)
+        if (upstream.isDefined) {
+          /*
+           * TODO: We have an object store upstream that we're supposed 
+           * to use. I don't think there's anything to do in this case.
+           */
+          println("***[Storage]: Found upstream storage!")
+          updated
+        } else {
+          /*
+           * TODO: No upstream storage was found. Provision new...
+           */
+          println("***[Storage]: Provisioning new Object Store...")
+          val envs = Map(
+            "GF_DEFAULT_OBJECT_STORAGE_ID" -> "ebb9a4f9-5e01-4484-a2e0-81d8ddf7bf0c",
+            //"GF_DEFAULT_OBJECT_STORAGE_ADDRESS" -> "35.199.37.155",
+            "GF_DEFAULT_OBJECT_STORAGE_PORT" -> "9000", 
+            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_KEY" -> randomAlphaNum(),
+            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_SECRET" -> randomAlphaNum()
+          )
+
+          createContainer(resource.orgId, resource.id)
+          
+          val x = Some(StorageType.mergeEnvironmentVars(updated.getOrElse(resource), envs))
+          println("X : " + x)
+          x
+        }
+
+      }
+    }
+    
+    
+//    resource.properties.get.get("storage") match {
+//      case Some(storage) => {
+//        val pid = Js.find(Json.parse(storage).as[JsObject], "/provider_id")
+//        
+//        
+//        if (pid.isDefined) {
+//          // Found pointer to existing storage
+//          /*
+//           * TODO: Validate existing storage provider - use if good.
+//           */
+//          println("***FOUND existing storage pointer...validating for use...")
+//        } else if (Js.find(Json.parse(storage).as[JsObject], "/kind").isDefined) {
+//          // No pointer - merge in configuration and create new.
+//        }
+//      }
+//      case None => {
+//        // Auto-create new storage
+//        println("*** NO STORAGE INFO FOUND...")
+//        println("*** Checking for default object store in scope")
+//        /*
+//         * TODO: Rollup env vars and test for 'GF_DEFAULT_OBJECT_STORAGE_ID'
+//         */
+//        val sid = EnvironmentVars.get(resource.orgId, resource.id).get("GF_DEFAULT_OBJECT_STORAGE_ID")
+//        if (sid.isDefined) {
+//          /*
+//           * TODO: Found an existing default - nothing to do.
+//           */
+//        } else {
+//          /*
+//           * TODO: No storage given 
+//           */
+//        }
+//      }
+//    }
+    
+    updated2.getOrElse(updated.getOrElse(resource))
+  } 
+  
+  
+  def postCreateCheck(resource: GestaltResourceInstance, identity: UUID)
+    (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment, JsValue]): GestaltResourceInstance = {
+    
+    println("*****POST-CHECK resource of type : " + ResourceLabel(resource.typeId))
+    
+    /*
+    // List of all spec types allowed by the current resource schema
+    val allowedSpecs = PropertyFactory.findAll(resource.typeId).filter { t =>
+      t.datatype == DataType.id("spec::uuid::link")
+    }
+    
+    println("*****LOOKING for spec type properties...")
+    val given = resource.properties.getOrElse(Map.empty)
+    
+    //val newSpecs = given.filter { case (k,v) => allowedSpecs.map(_.name).contains(k) }
+    
+    val newSpecs = allowedSpecs.filter { p => given.keySet.contains(p.name) }
+    
+    println("*****SPEC properties found: " + newSpecs.size)
+    
+    newSpecs foreach { p => println("***Creating : [%s] %s".format(p.id, p.name)) }
+    */
+    
+    println("****Checking resource type for post-create...")
+    
+    val outputResource = if (resource.typeId == ResourceIds.Environment) {
+      println("*****Type is Environment...checking for variable updates...")
+      val update = postCreateEnvironment(resource)
+      val x = ResourceFactory.update(update, identity)
+      println("UPDATE STATUS : " + x)
+      update
+    } else resource
+    
+    /*
+     * TODO: If specs are created we need to update the resource!
+     */
+     
+    outputResource
+  }  
+  
+  
+  def genericResourcePost(fqon: String, path: String) = AsyncAuditedAny(fqon) { implicit request =>
+    log.debug(s"genericResourcePost(${fqon},${path})")
+    
+    val rp = new ResourcePath(fqon, path)
+    log.debug(rp.info.toString)
+    
+    if (rp.isList) { // create semantics
+      val x = for {
+        org         <- findOrgOrFail(fqon)
+        parent      <- Future.fromTry(findResourceParent(rp, fqon))
+        jsonRequest <- fTry(requireJsonRequest(request))
+        securedRequest = SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue](request.identity, request.authenticator, jsonRequest)
+        
+        resource    <- execGenericCreate(org, rp.targetTypeId, parent, jsonRequest.body)(securedRequest)
+        r2 = postCreateCheck(resource, request.identity.account.id)(securedRequest)
+      } yield r2
+      
+      x.map (r => Created(Output.renderInstance(r, Some(META_URL))))
+        .recover { case e => HandleExceptions(e) }  
+      
+    } else { // perform action
+      for {
+        org      <- findOrgOrFail(fqon)
+        action   <- fTry( requireActionParam(request) )
+        targetId <- requireTargetId(rp)
+        
+        result   <- execGenericAction(org, rp.targetTypeId, targetId, action)
+      } yield result
+    }
+  }      
+  
   /**
    * Get a Resource or list of Resources by path.
    */
@@ -367,101 +811,217 @@ class ResourceController @Inject()(
         f(res, account, None).get
       }
     }
-  }
 
-  import com.galacticfog.gestalt.data.parseUUID
-  import com.galacticfog.gestalt.meta.providers._
-
-
-  def getActionUi(fqon: String, actionId: UUID) = Audited(fqon) { implicit request =>
-
-    log.debug("Finding Action...")
-
-    ResourceFactory.findById(ResourceIds.ProviderAction, actionId).fold {
-      this.ResourceNotFound(ResourceIds.ProviderAction, actionId)
-
-    }{ act =>
-
-      log.debug("Finding target resource...")
-
-      val resource = for {
-        a   <- request.queryString.get("resource") orElse {
-          throw new BadRequestException("You must supply a `?resource={id}` query parameter")
-        }
-        b   <- a.headOption
-        id  = parseUUID(b) getOrElse {
-            throw new BadRequestException(s"Invalid resource UUID. found: '$b'")
-        }
-        res = ResourceFactory.findById(id) getOrElse {
-          throw new ResourceNotFoundException(s"Resource with ID '$id' not found.")
-        }
-      } yield res
-
-      import com.galacticfog.gestalt.meta.providers.ui._
-
-      val metaAddress = META_URL
-
-      log.debug("using META_ADDRESS : " + metaAddress)
-
-      val output = Assembler.assemble(
-          fqon,
-          metaAddress,
-          act,
-          resource.get,
-          request.identity,
-          request.queryString)
-      Ok(output).as("text/html")
-    }
-  }
+  }  
 
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
-
-  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
-    log.debug("Looking up applicable actions...")
-
-    val actions = ResourceFactory.findById(target).fold {
-      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-    }{ _ =>
-      val prvs = for {
-        anc <- {
-          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
-          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
-          rs.reverse ++ root
-        }
-        prv <- {
-          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.ActionProvider, anc.id)
-          rs
-        }
-      } yield prv
-      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
+  
+  import com.galacticfog.gestalt.meta.genericactions._
+  
+  /**
+   * 
+   */
+  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[JsObject] = {
+    log.debug("findActionsInScope()")
+    
+    def makeActionUrl(provider: GestaltResourceInstance, action: String) = {
+      val act = action.drop(action.indexOf(""".""")+1)
+      val org = ResourceFactory.findById(ResourceIds.Org, provider.orgId) getOrElse {
+        throw new RuntimeException(s"Could not find 'provider.org' with ID ${provider.orgId}")
+      }
+      val fqon = org.properties.get("fqon")
+      "/%s/providers/%s?action=%s".format(fqon, provider.id, act)
+    }
+    
+    /*
+     * 
+     */
+    def toOutputJson(
+        provider: GestaltResourceInstance, 
+        endpoint: GestaltEndpoint, 
+        function: GestaltFunction,
+        response: FunctionResponse,
+        params:   Map[String,Option[String]]) = {
+      
+      val icon = (for {
+        ui <- response.gestalt_ui
+        ic <- ui.icon
+        sv <- ic.svg
+      } yield sv)
+      
+      val url = {
+        if (endpoint.kind.endsWith("-external")) endpoint.url
+        else makeActionUrl(provider, function.name)
+      }
+        
+      Json.obj(
+        "url"          -> url, //makeActionUrl(provider, function.name),
+        "action"       -> function.name,
+        "display_name" -> function.display_name,
+        "method"       -> "POST",
+        "code"         -> response.code,
+        "content_type" -> response.content_type,
+        "render"       -> response.gestalt_ui.get.render,
+        "locations"    -> response.gestalt_ui.get.locations,
+        "params"       -> Json.toJson(params),
+        "icon"         -> icon
+      )
     }
 
-    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
+    /*
+     * Determine if given function contains a UI action with a location
+     * matching a filter (gestalt_ui.locations)
+     */
+    def inFilter(fn: GestaltFunction, filters: Seq[String]): Boolean = {
+      if (filters.isEmpty) true
+      else {
+        val locations = for {
+          r <- fn.getUiResponse
+          u <- r.gestalt_ui
+          locs = u.locations
+        } yield locs
+        
+        locations.get.exists { loc =>
+          filters.exists { f => loc.startsWith(f) }
+        }
+      }
+    }
+    
+    def reWriteParams2(ps: Seq[RequestQueryParameter]): Map[String,Option[String]] = {
+      ps.map(p => (p.name -> p.value)).toMap  
+    }
+    
+//    def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
+//      ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
+//        Json.obj(p.name -> p.value) +: acc
+//      }
+//    }
+    
+    ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
+      getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
+        config.endpoints.flatMap { ep =>
+          val act = ep.getUiActions()
+          act.collect { case ac if ac.hasUi && inFilter(ac, prefixFilter) =>
+            val uiResponse = ac.post.get.getUiResponse.get
 
-    if (prefixFilter.isEmpty) actions
-    else actions filter { act =>
-      val spec = ProviderActionSpec.fromResource(act)
-      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
+            //
+            // This finds any query params where .value isDefined
+            //
+            val params = ac.post.fold(Seq.empty[RequestQueryParameter]){ ps =>
+              ps.query_parameters.getOrElse(Seq.empty[RequestQueryParameter]).
+                    filter(_.value.isDefined)
+            }
+
+            // Now we translate those query params to the JSON output format.
+            val y = reWriteParams2(params)
+            toOutputJson(p, ep, ac, uiResponse, y)
+          }
+        }
+      }
     }
   }
+  
+  
+//  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+//    log.debug("Looking up applicable actions...")
+//
+//    val actions = ResourceFactory.findById(target).fold {
+//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
+//    }{ _ =>
+//      val prvs = for {
+//        anc <- {
+//          /*
+//           * This selects the ancestor environment and workspace, as well as all 
+//           * ancestor Orgs up to 'root'
+//           */
+//          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
+//          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
+//          rs.reverse ++ root
+//        }
+//        prv <- {
+//          /*
+//           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
+//           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
+//           * top-level to indicate that it exposes UI actions, we need to select ALL providers
+//           * in context and inspect individually.
+//           */
+//          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, anc.id)
+//          rs
+//        }
+//      } yield prv
+//      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
+//    }
+//    
+//    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
+//    
+//    if (prefixFilter.isEmpty) actions
+//    else actions filter { act =>
+//      val spec = ProviderActionSpec.fromResource(act)
+//      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
+//    }
+//  }
+  
+//  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
+//    log.debug("Looking up applicable actions...")
+//
+//    val actions = ResourceFactory.findById(target).fold {
+//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
+//    }{ _ =>
+//      val prvs = for {
+//        anc <- {
+//          /*
+//           * This selects the ancestor environment and workspace, as well as all 
+//           * ancestor Orgs up to 'root'
+//           */
+//          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
+//          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
+//          rs.reverse ++ root
+//        }
+//        prv <- {
+//          /*
+//           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
+//           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
+//           * top-level to indicate that it exposes UI actions, we need to select ALL providers
+//           * in context and inspect individually.
+//           */
+//          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.ActionProvider, anc.id)
+//          rs
+//        }
+//      } yield prv
+//      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
+//    }
+//    
+//    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
+//    
+//    if (prefixFilter.isEmpty) actions
+//    else actions filter { act =>
+//      val spec = ProviderActionSpec.fromResource(act)
+//      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
+//    }
+//  }
 
+  
   def getResourceActionsOrg(fqon: String) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
     val org = fqid(fqon)
-    RenderList {
-      findActionsInScope(org, org, targetPrefix)
-    }
+//    RenderList {
+//      findActionsInScope(org, org, targetPrefix)
+//    }
+    
+    Ok(Json.toJson(findActionsInScope(org, org, targetPrefix)))
   }
 
   def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
     val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
-    RenderList {
-      findActionsInScope(fqid(fqon), target, targetPrefix)
-    }
+//    RenderList {
+//      findActionsInScope(fqid(fqon), target, targetPrefix)
+//    }
+    
+    Ok(Json.toJson(findActionsInScope(fqid(fqon), target, targetPrefix)))
   }
-
+  
   /*
    * This function is needed to keep root from showing up in the output of GET /root/orgs.
    * The query that selects the orgs uses the 'owning org' as a filter. root is the only
@@ -476,7 +1036,7 @@ class ResourceController @Inject()(
   def lookupEntitlement(path: ResourcePath, account: AuthAccountWithCreds, qs: Option[QueryString]): Option[GestaltResourceInstance] = {
     Resource.toInstance(path) map { transformEntitlement(_, account).get }
   }
-
+  
   def lookupSeqEntitlements(path: ResourcePath, account: AuthAccountWithCreds, qs: QueryString): List[GestaltResourceInstance] = {
 
     val rs = if (Resource.isTopLevel(path.path)) {
@@ -486,7 +1046,7 @@ class ResourceController @Inject()(
 
     if (getExpandParam(qs)) rs map { transformEntitlement(_, account).get } else rs
   }
-
+  
   /*
    * Type-Based Lookup Functions
    */
@@ -531,9 +1091,6 @@ class ResourceController @Inject()(
     }
   }
 
-  import com.galacticfog.gestalt.data.ResourceFactory.findTypesWithVariance
-  import com.galacticfog.gestalt.data.{CoVariant, Invariant, ResourceType, Variance}
-
   private[controllers] def providerTypeVariance(typeName: String): Variance[UUID] = {
     val typeid = ResourceType.id(typeName)
     val abstractProviders = Seq(
@@ -565,7 +1122,7 @@ class ResourceController @Inject()(
     }
   }
 
-  import com.galacticfog.gestalt.meta.auth._
+
 
   private[controllers] def transformEntitlement(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString] = None) = Try {
     val props  = EntitlementProps.make(res)
@@ -703,7 +1260,6 @@ class ResourceController @Inject()(
       case (res, fn) => fn(res, user, qs)
     }
   }
-
   
   /**
     * Lookup and inject Kong public_url into ApiEndpoint
@@ -891,7 +1447,6 @@ class ResourceController @Inject()(
     Ok(Output.renderLinks(ResourceFactory.findAll(typeId, fqid(fqon))))
   }
 
-  import com.galacticfog.gestalt.meta.api.output.toLink
   
   def mkPath2(fqon: String, path: String) = {
     
@@ -955,6 +1510,29 @@ class ResourceController @Inject()(
     }
   }
   
+  
+
+  
+  
+  def findDataTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(DataType.data) )
+  }
+  
+  def findEnvironmentTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(EnvironmentType.data) )
+  }
+  
+  def findVisibilityTypes() = Audited() { implicit request =>
+    Ok( mapReferenceType(VisibilityType.data) )
+  }
+  
+  def findResourceStates() = Audited() { implicit request =>
+    Ok( mapReferenceType(ResourceState.data) )
+  }
+  
+  private[controllers] def mapReferenceType(m: Map[String, String]): JsValue = {
+    Json.toJson(m.map( v => Json.obj("id" -> v._2, "name" -> v._1) ))
+  }
   
   private[this] def standardRequestOptions(
     user: AuthAccountWithCreds,

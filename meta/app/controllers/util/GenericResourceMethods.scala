@@ -161,7 +161,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                   actionVerb: String,
                                   specificProviderId: Option[UUID] = None)
                                  ( implicit request: RequestHeader ) : Future[Result] = {
-                                 
+                    
     val metaAddress = META_URL
 
     val response = for {
@@ -175,7 +175,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
       providerId <- getOrFail(specificProviderId orElse
         resource.properties.getOrElse(Map.empty).get("provider").flatMap(s => Try(UUID.fromString(s)).toOption),
-        s"Could not location 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
+        s"Could not locate 'obj.properties.provider' on ${sdk.ResourceLabel(resourceType)} '${resourceId}'"
       )
 
       providerResource <- getOrFail(
@@ -281,6 +281,11 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
 
           // Execute provider action function if one exists, return result if there is one.
           actionResult <- {
+            /*
+             * This function invokes the action and returns the payload if any. That payload can be
+             * a modified version of the resource - meaning that the provider action is executed
+             * BEFORE the Meta action.
+             */
             invokeProviderAction(
               backingProvider, org, parent,
               metaRequest, input, body, identity.creds.headerValue)
@@ -304,33 +309,39 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     } yield response
   }
 
-
-
   /**
     * Find and retrieve a Provider resource instance from a 'resource.create' payload.
-    *
     */
   private[util] def lookupProvider(payload: JsValue, resourceType: UUID, providerType: UUID): Future[GestaltResourceInstance] = {
-
+    log.debug("Looking up Generic Provider...")
     if (!ResourceFactory.isSubTypeOf(providerType, ResourceIds.Provider)) {
       throw new BadRequestException(s"Given provider-type '$providerType' is not a sub-type of Provider.")
     }
+    
+//    if (isGestalt(resourceType)) {
+//      log.debug("Target is core Gestalt resource...finding provider...")
+//      getOrFail(findGestaltProvider, "Gestalt Core Provider not found. Contact an administrator.")
+//      
+//    } else {
+      
+      for {
+        // Lookup provider-id in the payload properties (properties.provider)
+        providerId <- getOrFail(
+          (payload \ "properties" \ "provider").asOpt[UUID]
+            orElse
+          (payload \ "properties" \ "provider" \ "id").asOpt[UUID],
+          s"${sdk.ResourceLabel(resourceType)} creation requires a provider to be specified in 'obj.properties.provider'"
+        )
+  
+        // Retrieve the provider resource.
+        providerResource <- getOrFail(
+          ResourceFactory.findById(providerType, providerId),
+          s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
+        )
+      } yield providerResource
 
-    for {
-      // Lookup provider-id in the payload properties (properties.provider)
-      providerId <- getOrFail(
-        (payload \ "properties" \ "provider").asOpt[UUID]
-          orElse
-        (payload \ "properties" \ "provider" \ "id").asOpt[UUID],
-        s"${sdk.ResourceLabel(resourceType)} creation requires a provider to be specified in 'obj.properties.provider'"
-      )
-
-      // Retrieve the provider resource.
-      providerResource <- getOrFail(
-        ResourceFactory.findById(providerType, providerId),
-        s"Provider of type ${sdk.ResourceLabel(providerType)} '${providerId}' not found"
-      )
-    } yield providerResource
+    //}
+    
   }
 
   private[util] def buildMetaRequest(
@@ -370,9 +381,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
     for {
       invocation <- {
 
-        println("***REQUEST-URL : " + request.uri)
-        println("***QUERY-PARAMS: " + request.queryString)
-
         fTry(GenericActionInvocation(
           action   = metaRequest.action,
           metaAddress = metaAddress,
@@ -390,14 +398,16 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
           genericProviderManager.getProvider(backingProvider, metaRequest.action, callerAuth)
         )
       }
-
+      
       maybeOutputResource <- providerImpl match {
-        case None =>
+        case None => {
           Future.successful(Option.empty[GestaltResourceInstance])
-        case Some(p) =>
+        }
+        case Some(p) => {
           p.invokeAction(invocation).map { response =>
             response.left.toOption
           }
+        }
       }
     } yield maybeOutputResource
   }

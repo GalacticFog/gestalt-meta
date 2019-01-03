@@ -103,6 +103,20 @@ object OutputDatatypeHandlers {
       JsArray( links )
     }
   }
+  def resourceUUIDLinkListInput(property: GestaltTypeProperty, value: String) = {
+    if (value.isEmpty) Json.arr()
+    else {
+      val baseUri = None
+      val typeId = safeGetTypeId(property)
+      val ids = normalArray(unquote(value)).split(",") map { v => v.trim }
+      val links = ids map { id => JsString(id)
+        //Json.toJson( linkFromId( typeId, UUID.fromString( id ), baseUri ) ) 
+      }
+      JsArray( links )
+    }
+  }  
+  
+  
   
   /**
    * Render resource::uuid::name

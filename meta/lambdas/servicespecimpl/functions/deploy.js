@@ -7,6 +7,7 @@ const debug = require('debug')('gestalt')
 
 const u = require('util')
 
+
 module.exports = {
 
   /**
@@ -14,31 +15,37 @@ module.exports = {
    * @param {*} event 
    * @param {*} context 
    */
-  async eventDeploy(event, context) {
-    const metaUrl = util.assert(event.metaAddress, 'event.meta URL is missing. Cannot contact Meta')
-    const authorization = context.headers.Authorization
-    const client = new MetaClient(metaUrl, authorization)
+  async eventDeploy(event, context, client) {
+    const providerSpec = getObjectProvider(event.resource)
+    if (providerSpec) {
+      return await eventDeployMinio(event, context, client)
+    } else {
+      const metaUrl = util.assert(event.metaAddress, 'event.meta URL is missing. Cannot contact Meta')
+      const authorization = context.headers.Authorization
+      const client = new MetaClient(metaUrl, authorization)
 
-    const location = event.actionPayload.location_uri
-    const provider = event.resource.properties.provider_def
+      const location = event.actionPayload.location_uri
+      const provider = event.resource.properties.provider_def
 
-    try {
-      const serviceEndpoints = await createImplementation(metaUrl, location, provider, client)
+      try {
+        const serviceEndpoints = await createImplementation(metaUrl, location, provider, client)
+        
+        console.log('Endpoints created...')
+        console.log('Creating Service Provider...')
+        console.log(JSON.stringify("*****SECOND-EPS : " + serviceEndpoints, null, 2))
+
+        const definition = event.actionPayload.definition
+        const serviceProvider = await createServiceProvider(metaUrl, location, definition, serviceEndpoints, client)
       
-      console.log('Endpoints created...')
-      console.log('Creating Service Provider...')
-      console.log(JSON.stringify("*****SECOND-EPS : " + serviceEndpoints, null, 2))
-
-      const definition = event.actionPayload.definition
-      const serviceProvider = await createServiceProvider(metaUrl, location, definition, serviceEndpoints, client)
-    
-      console.log('Service-Provider created...')
-    } catch(err) {
-      console.error("ERROR : " + err.message)
-      
+        console.log('Service-Provider created...')
+      } catch(err) {
+        console.error("ERROR : " + err.message)
+        
+      }
+      return JSON.stringify(serviceProvider, null, 2)
+      return JSON.stringify({ status: 'OK', message: 'Testing'}, null, 2)
     }
-    return JSON.stringify(serviceProvider, null, 2)
-    return JSON.stringify({ status: 'OK', message: 'Testing'}, null, 2)
+
   }
 };
 
@@ -291,164 +298,65 @@ async function fetchGatewayProvider(meta, location, metaClient) {
   return ps[0]
 }
 
-/*
-651310cd-92b7-4cc6-bf89-1ed0f66adcfd
 
-https://meta.test.galacticfog.com/engineering/apiendpoints/651310cd-92b7-4cc6-bf89-1ed0f66adcfd?force=true
-
-function createImplementation2(metaUrl, location, provider) {
-  if (!provider.endpoints) {
-    // There is no implementation given
-    return { message: 'No endpoints found.'}
-  }
-
-  const eps = provider.endpoints.map(ep => {
-    console.log("Found endpoints...")
-    console.log('kind : ' + ep.kind)
-    console.log('actions : ' + JSON.stringify(ep.actions))
-    console.log('implementation-type : ' + ep.implementation.kind)
-
-    if (!ep.implementation.kind === 'Lambda') {
-      throw new Error('Unsupported endpoint.implementation.kind. found: ' + ep.implementation.kind)
-    }
-
-    if (!ep.implementation.spec) {
-      throw new Error('Must provide data for endpoint.implementation.spec')
-    }
-
-    const lambdaSpec = ep.implementation.spec
-    const url = `${metaUrl}/${trimLeading(location)}/lambdas`
-
-    console.log('***POST ' + url)
-    console.log(JSON.stringify(lambdaSpec, null, 2))
-
-    ep
-  })
-
-  return eps
-}
-Object: Fidget
-  actions: spin, stop
-
-
-api: {
-  "kind": "http",
-  "name": "fidget_impl_v1",
-  "implementation": {
-    "kind": "lambda",
-    "spec": {
-
-    }
-  },
-  "endpoints": [
-    {
-      "path": "/invoke",
-      "actions": ["fidget.spin", "fidget.stop"]
-    }
-  ]
+function validStoreTypeName(typeName) {
+  return typeName.toLowerCase() === "gestalt::configuration::provider::storage::s3::minio"
 }
 
-- Create API
-- [foreach endpoint]:
-  - if there is an 'implementation.spec', create lambda
-  - create endpoint
-
-How do i know which lambda to create a given endpoint against???
-
-
-
-  what if you want to use multiple endpoints, but you only create one lambda inline?
-
-***** CREATE API *****
-
-POST .../environments/{id}/apis
-{
-  "name": "resource-impl-1",
-  "description": "API implementing functions for a resource.",
-  "properties": {
-    "provider": {
-      "locations": [
-        "b9cb99d4-32c0-495b-8bcb-680ba3d6b80e"
-      ],
-      "id": "644a2ea6-8648-46cc-b69a-db9023968e57"
-    }
+function getObjectProvider(spec) {
+  const provider = spec.properties.provider_spec
+  if (validStoreTypeName(provider.kind)) {
+    return provider
+  } else {
+    return undefined
   }
 }
 
-***** CREATE ENDPOINT *****
+async function eventDeployMinio(event, context, client, cb) {
+  /* 
+  1.) Create container
+  2.) Create provider with status == pending
+  3.) Wait for container.public_address
+  4.) Update provider with status == ready
+  */
+  const containerSpec = event.resource.properties.container_spec
+  const providerSpec = event.resource.properties.provider_spec
+  const payload = event.actionPayload
+  const environment = payload.environment
+  
+  const fqon = event.context.org.name
+  const envUrl = `${event.metaAddress}/${fqon}/environments/${environment}`
 
-POST .../apis/{id}/apiendpoints
-{
-  "name": "/invoke",
-  "description": "",
-  "properties": {
-    "resource": "/invoke",
-    "methods": [
-      "GET",
-      "POST"
-    ],
-    "plugins": {
-      "rateLimit": {
-        "enabled": false,
-        "perMinute": 60
-      },
-      "gestaltSecurity": {
-        "enabled": true,
-        "users": [],
-        "groups": []
-      }
-    },
-    "synchronous": true,
-    "implementation_id": "a7f499ff-6428-4a45-9e2c-eac32860d8fb",
-    "implementation_type": "lambda"
+  //const containerResponse = await client.post(`${envUrl}/containers`, containerSpec)
+  //const providerResponse = await client.post(`${envUrl}/providers`, providerSpec)
+
+  const containerName = `minio-${environment}`
+  const providerName = `default-minio-${environment}`
+
+  const containerPayload = {
+    name: containerName,
+    ...containerSpec
   }
+
+  const providerPayload = {
+    name: providerName,
+    ...providerSpec,
+    properties: {
+      status: 'pending',
+      ...providerSpec.properties
+    }
+  }
+
+  const output = {
+    provider: providerPayload, 
+    container: containerPayload
+  }
+
+  const containerResponse = 
+    await client.post(`${envUrl}/containers`, containerSpec).then(container => container.data)
+
+  return output //JSON.stringify(output, null, 2)
+
 }
 
-After create endpoint - take 'properties.public_url' for provider endpoint.
 
-{
-  "kind": "http",
-  "actions": [
-    "fidget.spin",
-    "fidget.stop"
-  ],
-  "path": "/invoke"
-}
-
-{
-  "actions":[
-    "servicespec.publish",
-    "servicespec.deploy", 
-    "servicespec.import", 
-    "servicespec.export"
-  ],
-  "http":{
-    "url":"https://gtw1.test.galacticfog.com/sy-dev-api/secure1"
-  }
-}          
-
-POSTING : https://meta.test.galacticfog.com/engineering/environments/58b13c79-ef24-4ee8-8f5a-b081f2e3fc63/apis/ae96b6a4-ee6c-4f61-8f31-245b6bf519ea/apiendpoints
-{
-  name: "/invoke",
-  description: "",
-  properties: {
-    resource: "/invoke",
-    methods: ["POST"],
-    plugins: {
-      rateLimit: {
-        enabled: false,
-        perMinute: 60
-      },
-      gestaltSecurity: {
-        enabled: true,
-        users: [],
-        groups: []
-      }
-    },
-    synchronous: true,
-    implementation_id: "5cf8323d-e181-46e3-85cc-898feaee2eae",
-    implementation_type: "lambda"
-  }
-}
-
-*/

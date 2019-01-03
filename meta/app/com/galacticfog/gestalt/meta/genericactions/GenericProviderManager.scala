@@ -85,7 +85,7 @@ case class HttpGenericProvider(client: WSClient,
           contentType = response.header(CONTENT_TYPE), 
           contentString = Try{response.bodyAsBytes}.toOption.map(_.utf8String))
     ))
-    
+
     response.status match {
       case s if Range(200,299).contains(s) =>
         val r = maybeError orElse maybeResource getOrElse notResource
@@ -118,7 +118,7 @@ case class HttpGenericProvider(client: WSClient,
           case JsNumber(n) => n
         }
       }
-      convertObj(Output.renderInstance(r).as[JsObject])
+      convertObj(Output.renderInstanceInput(r).as[JsObject])
     }
 
     val context = Seq(
@@ -128,7 +128,7 @@ case class HttpGenericProvider(client: WSClient,
     ).collect({
       case (lbl,Some(r)) => lbl -> resourceToMap(r)
     }).toMap
-
+    
     val st = invocation.resource.foldLeft(
       ST(url)
         .add("metaAddress", invocation.metaAddress)
@@ -161,7 +161,9 @@ case class HttpGenericProvider(client: WSClient,
       _ = log.warn("Request: " + invocation.toJson().toString())
 
       rawResp <- requestWithProxy.execute()
+
       processed <- Future.fromTry(processResponse(invocation.resource, rawResp))
+
     } yield processed
 
     resp recover {
@@ -176,32 +178,41 @@ case class HttpGenericProvider(client: WSClient,
 
 
 class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends GenericProviderManager {
-
-  override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String): Try[Option[GenericProvider]] = {
-
-    // Parse config.endpoints from provider resource properties.
-    val endpoints: Seq[JsObject] = ContainerService.getProviderConfig(provider).flatMap {
-      c => (c \ "endpoints").asOpt[Seq[JsObject]] 
-    }.getOrElse(Seq.empty)
-
-    // Find an endpoint that matches the given 'action' (or endpoint labeled 'default')
-    // Prefer the exact match over the 'default'
-    val matchingEp = endpoints.find {
-      _.asOpt[EndpointProperties].exists(_.actions.contains(action))
+  
+  import com.galacticfog.gestalt.json.Js
+  
+  
+  /*
+   * TODO: For temporary compatibility...
+   * - Attempt to parse to GestaltFunctionConfig (new) - if that fails, fall back to EndpointProperties (old)
+   * - Configure provider with parseEndpointTypeV1 and V2 functions.
+   * In this build - for quick integration purposes - we're only checking for the new config format...but we
+   * can support both versions if we need to.
+   */  
+  override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String) = {
+    
+    val config = ContainerService.getProviderConfig(provider).getOrElse {
+      throw new RuntimeException(s"'/properties/config' not found on Provider '${provider.id}'")
     }
-    val defaultEp = endpoints.find {
-      _.asOpt[EndpointProperties].exists(_.default)
+        
+    val cfg = Js.parse[GestaltFunctionConfig](config.as[JsObject])(formatGestaltFunctionConfig).get
+    val found: Seq[(GestaltEndpoint, GestaltFunction)] = for {
+      e <- cfg.endpoints
+      a <- e.actions
+      if a.name == action
+    } yield (e, a)
+    
+    val data = found.size match {
+      case 1 => {
+        parseEndpointTypeV2(found.head._1,found.head._2, Some(callerAuth)).map(Some(_))
+      }
+      case 0 => Success(None)
+      case _ => Failure(new RuntimeException(
+          s"Ambiguous endpoint for action '${action}'. found: ${found.size}, expected: 1"))
     }
-
-    // Resolve to an implementation
-    (matchingEp orElse defaultEp) match {
-      case None =>
-        Success(None)
-      case Some(ep) =>
-        parseEndpointType(ep, provider, callerAuth) map (Some(_))
-    }
+    data
   }
-
+  
   private[this] def parseEndpointType(endpoint: JsObject, provider: GestaltResourceInstance, callerAuth: String): Try[GenericProvider] = {
     // only support a single endpoint type right now, pretty simple
     val http = for {
@@ -217,12 +228,33 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
       ) yield new DefaultWSProxyServer(host, port)
     } yield HttpGenericProvider(wsclient, url, method, authHeader = authHeader, proxy = proxy)
 
+
     http match {
       case Some(p) =>
         Success(p)
       case None =>
-        Failure(ConflictException(s"Provider '${provider.id}' endpoint configuration did not match supported types."))
-    }
+        Failure(ConflictException(s"Provider endpoint configuration did not match supported types."))
+    }    
+  }
+  
+  /*
+   * This parses the 'new' (latest) provider config format.
+   */
+  def parseEndpointTypeV2(ep: GestaltEndpoint, action: GestaltFunction, callerAuth: Option[String]): Try[GenericProvider] = {
+    val method = action.verbString()
+    val protocol = ep.kind
+    val url = ep.url
+    
+    // Try to use the auth string in the endpoint, or else try the caller creds if given.
+    val effectiveAuth = ep.authentication orElse callerAuth
+    
+    val http = Option(HttpGenericProvider(wsclient, url, method, authHeader = effectiveAuth))
+    http match {
+      case Some(p) =>
+        Success(p)
+      case None =>
+        Failure(ConflictException(s"Provider endpoint configuration did not match supported types."))
+    }    
   }
 
 }

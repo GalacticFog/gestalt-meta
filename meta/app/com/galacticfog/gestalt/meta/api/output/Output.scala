@@ -92,6 +92,37 @@ object Output {
   }
 
   
+  
+  def renderInstanceInput(r: GestaltResourceInstance, baseUri: Option[String] = None): JsValue = {
+
+    val res = GestaltResourceOutput(
+      id = r.id,
+      org = {
+        val props = OrgCache.getFqon(r.orgId) map { f => Map("fqon" -> f) }
+        jsonLink(ResourceIds.Org, r.orgId, r.orgId, None, baseUri, props)
+      },
+      resource_type = jsonTypeName(Option(r.typeId)).get,
+      resource_state = JsString(ResourceState.name(r.state)),
+      owner = Json.toJson(r.owner),
+      name = r.name,
+      description = r.description,
+      created = Json.toJson(r.created),
+      modified = Json.toJson(r.modified),
+      properties = None, // expanded below
+      variables = jsonHstore(r.variables),
+      tags = jsonArray(r.tags),
+      auth = r.auth)       
+      println("*****RENDERING INPUT PROPERTIES*****")
+    // this renders the properties
+    val renderedProps = renderInstancePropertiesInput(r.typeId, r.id, r.properties)
+    Json.toJson(res.copy(
+      properties = renderedProps orElse Some(Json.obj())
+    ))
+  }  
+  
+  
+  
+  
   def compact(r: JsValue, metaUrl: Option[String] = None): JsValue = {
     import com.galacticfog.gestalt.patch._
     
@@ -356,6 +387,40 @@ object Output {
     
   }
   
+  
+  def renderInstancePropertiesInput(typeId: UUID, instanceId: UUID, properties: Option[Hstore]): Option[JsValue] = {
+    /* Get a Map of the properties defined for the current ResourceType. */
+    
+    val templateProps = Properties.getTypePropertyMap(typeId)
+    
+    @tailrec
+    def loop(propKeys: Seq[String], given: Hstore, acc: Map[String,JsValue]): Option[Map[String,JsValue]] = {
+      propKeys match {
+        case Nil    => Option(acc)
+        case property :: tail => {
+        
+          /*
+           * DEBUG-NOTE: You'll get "key not found 'property'" if key is not in templateProps.
+           * That shouldn't happen as this is output (resource should been validated at create/update).
+           * just a note to look here if you see that error pop up.
+           */
+          if (skipRender(templateProps(property), given)) loop(tail, given, acc)
+          else {
+            val renderedValue = renderDataTypeInput(templateProps( property ), given( property ))
+            loop( tail, given, acc + (property -> renderedValue) )
+          }
+        }
+      }
+    }
+    
+    val givenProperties = collectInstanceProperties(typeId, instanceId, properties)
+    givenProperties map {
+      loop(templateProps.keys.toList, _, Map[String, JsValue]())
+    } map {
+      Json.toJson(_)
+    }
+  }  
+  
 
   
   /*
@@ -390,6 +455,20 @@ object Output {
     else renderDefault( property, value )
   }  
   
+  private def renderDataTypeOutput(property: GestaltTypeProperty, value: String): JsValue = {
+    val typeName = DataType.name(property.datatype)
+    if (typeRenderers.contains( typeName )) 
+      typeRenderers( typeName )( property, value )
+    else renderDefault( property, value )
+  }    
+  
+  private def renderDataTypeInput(property: GestaltTypeProperty, value: String): JsValue = {
+    val typeName = DataType.name(property.datatype)
+    if (inputRenderers.contains( typeName )) 
+      inputRenderers( typeName )( property, value )
+    else renderDefault( property, value )
+  }    
+  
   type RenderFunction = (GestaltTypeProperty, String) => JsValue
   
   private val typeRenderers = Map[String, (GestaltTypeProperty,String) => JsValue](
@@ -413,6 +492,29 @@ object Output {
       "boolean::list" -> renderBooleanList,
       "uuid::list"    -> renderStringList
   )
+  
+  
+  private val inputRenderers = Map[String, (GestaltTypeProperty,String) => JsValue](
+      "resource::uuid"             -> renderDefault,
+      "resource::uuid::name"       -> renderDefault,
+      "resource::uuid::link"       -> renderDefault,
+      
+      "resource::uuid::list"       -> renderStringList,
+      "resource::uuid::link::list" -> resourceUUIDLinkListInput,
+
+      "int"       -> renderInt,
+      "float"     -> renderFloat,
+      "boolean"   -> renderBoolean,
+      "datetime"  -> renderDateTime,
+      "json"      -> renderJson,
+      
+      "json::list"    -> renderJsonList,
+      "string::list"  -> renderStringList,
+      "int::list"     -> renderIntList,
+      "float::list"   -> renderFloatList,
+      "boolean::list" -> renderBooleanList,
+      "uuid::list"    -> renderStringList
+  )  
   
   /**
    * Get the TypeProprties of any resource-type and convert to list of ResourceLinks.

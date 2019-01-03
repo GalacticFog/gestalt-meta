@@ -54,12 +54,21 @@ GET /tracking/credits               controllers.TrackingController.getCredits()
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/resourcetypes/:typeId  	controllers.PatchController.patchType(fqon: String, typeId: java.util.UUID)
 PATCH  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/typeproperties/:propId		controllers.PatchController.patchProperty(fqon: String, propId: java.util.UUID)
 
+
+############################
+# REFERENCE TYPES
+############################
+GET /datatypes         controllers.ResourceController.findDataTypes()
+GET /environmenttypes  controllers.ResourceController.findEnvironmentTypes()
+GET /visibilitytypes   controllers.ResourceController.findVisibilityTypes()
+GET /resourcestates    controllers.ResourceController.findResourceStates()
+
 ############################
 # ACTIONS
 ############################
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path/context  			controllers.ResourceController.getResourceContext(fqon, path)
 
-GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/actions/:id/ui  			controllers.ResourceController.getActionUi(fqon, id: java.util.UUID)
+#GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/actions/:id/ui  			controllers.ResourceController.getActionUi(fqon, id: java.util.UUID)
 
 GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/actions							controllers.ResourceController.getResourceActionsOrg(fqon)
 GET		/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/actions 			controllers.ResourceController.getResourceActions(fqon, id: java.util.UUID)
@@ -227,7 +236,7 @@ POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/users 				controllers.Meta.postU
 # WORKSPACES
 ############################
 POST 	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces  						controllers.Meta.postResourceToOrg(fqon: String, typ: String = "fa17bae4-1294-42cc-93cc-c4ead7dc0343")
-POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/environments 	controllers.Meta.postResource2(fqon: String, typ: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID)
+#POST    /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:parent/environments 	controllers.Meta.postResource2(fqon: String, typ: String = "46b28076-9d94-4860-9aca-e8483a56d32c", parent: java.util.UUID)
 
 ############################
 # CONTAINERS
