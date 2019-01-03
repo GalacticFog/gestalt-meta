@@ -181,13 +181,22 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
   
   import com.galacticfog.gestalt.json.Js
   
+  
+  /*
+   * TODO: For temporary compatibility...
+   * - Attempt to parse to GestaltFunctionConfig (new) - if that fails, fall back to EndpointProperties (old)
+   * - Configure provider with parseEndpointTypeV1 and V2 functions.
+   * In this build - for quick integration purposes - we're only checking for the new config format...but we
+   * can support both versions if we need to.
+   */  
   override def getProvider(provider: GestaltResourceInstance, action: String, callerAuth: String) = {
+    
     val config = ContainerService.getProviderConfig(provider).getOrElse {
       throw new RuntimeException(s"'/properties/config' not found on Provider '${provider.id}'")
     }
-    
+        
     val cfg = Js.parse[GestaltFunctionConfig](config.as[JsObject])(formatGestaltFunctionConfig).get
-    val found = for {
+    val found: Seq[(GestaltEndpoint, GestaltFunction)] = for {
       e <- cfg.endpoints
       a <- e.actions
       if a.name == action
@@ -195,7 +204,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     
     val data = found.size match {
       case 1 => {
-        parseEndpointType(found.head._1,found.head._2, Some(callerAuth)).map(Some(_))
+        parseEndpointTypeV2(found.head._1,found.head._2, Some(callerAuth)).map(Some(_))
       }
       case 0 => Success(None)
       case _ => Failure(new RuntimeException(
@@ -203,7 +212,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     }
     data
   }
-
+  
   private[this] def parseEndpointType(endpoint: JsObject, provider: GestaltResourceInstance, callerAuth: String): Try[GenericProvider] = {
     // only support a single endpoint type right now, pretty simple
     val http = for {
@@ -220,6 +229,26 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
     } yield HttpGenericProvider(wsclient, url, method, authHeader = authHeader, proxy = proxy)
 
 
+    http match {
+      case Some(p) =>
+        Success(p)
+      case None =>
+        Failure(ConflictException(s"Provider endpoint configuration did not match supported types."))
+    }    
+  }
+  
+  /*
+   * This parses the 'new' (latest) provider config format.
+   */
+  def parseEndpointTypeV2(ep: GestaltEndpoint, action: GestaltFunction, callerAuth: Option[String]): Try[GenericProvider] = {
+    val method = action.verbString()
+    val protocol = ep.kind
+    val url = ep.url
+    
+    // Try to use the auth string in the endpoint, or else try the caller creds if given.
+    val effectiveAuth = ep.authentication orElse callerAuth
+    
+    val http = Option(HttpGenericProvider(wsclient, url, method, authHeader = effectiveAuth))
     http match {
       case Some(p) =>
         Success(p)
