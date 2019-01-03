@@ -860,7 +860,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       ))
 
       val Some(result) = route(app,request)
-      println(contentAsString(result))
+      // println(contentAsString(result))
       status(result) must equalTo(CREATED)
       val json = contentAsJson(result)
       (json \ "name").asOpt[String] must beSome(testContainerName)
@@ -949,7 +949,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
 
       val Some(result) = route(app,request)
-      status(result) must equalTo(ACCEPTED)
+      status(result) must equalTo(CREATED)
 
       there was one(containerService).createSecret(
         context = matchesProviderContext(
@@ -1013,6 +1013,59 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
       there was atLeastOne(providerManager).getProviderImpl(ResourceIds.KubeProvider)
     }
+
+    "import secrets using the GenericResourceMethods interface" in new TestContainerController {
+      val testSecretName = "test-secret"
+      val testItems = Seq(
+        SecretSpec.Item("item-a", Some("c2hoaGho")),
+        SecretSpec.Item("item-b", Some("dGhpcyBpcyBhIHNlY3JldA=="))
+      )
+      val testProps = SecretSpec(
+        name = testSecretName,
+        description = None,
+        provider = ContainerSpec.InputProvider(id = testProvider.id, name = Some(testProvider.name)),
+        items = testItems
+        // external_id = Some(s"/${testEnv.id}/test-container")
+      )
+      // val extId = s"/${testEnv.id}/test-container"
+      val Success(createdResource) = createInstance(ResourceIds.Secret, testSecretName,
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> Json.toJson(testProps.items).toString
+          // "external_id" -> testProps.external_id.get
+        ))
+      )
+
+      val genericMethods = app.injector.instanceOf[GenericResourceMethods]
+      genericMethods.createProviderBackedResource(any,any,any,any,any,any,any)(any) returns Future.successful(createdResource)
+
+      val request = fakeAuthRequest(POST,
+        s"/root/environments/${testEnv.id}/secrets?action=import",
+        testCreds
+      ).withBody(Json.obj(
+        "name" -> "imported-secret",
+        "properties" -> Json.obj(
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          )//,
+          // "external_id" -> extId
+        )
+      ))
+
+      val Some(result) = route(app,request)
+      // println(contentAsString(result))
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testSecretName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Secret")
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      (json \ "properties" \ "items").as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        testItems.map(_.copy(value = None))
+      )
+    }
+
 
     /************
       *  Volumes
@@ -1094,7 +1147,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
         ))
       )
 
-      val extId = s"/${testEnv.id}/$testVolumeName"
+      val extId = s"/namespaces/${testEnv.id}/volumes/${testVolumeName}"
 
       val createdResource = newResource.copy(
         properties = Some(Map(
@@ -1114,7 +1167,7 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       )
 
       val Some(result) = route(app,request)
-      status(result) must equalTo(ACCEPTED)
+      status(result) must equalTo(CREATED)
 
       there was one(containerService).createVolume(
         context = matchesProviderContext(
@@ -1141,6 +1194,71 @@ class ContainerControllerSpec extends PlaySpecification with MetaRepositoryOps w
       (json \ "properties" \ "type").as[VolumeSpec.Type] must_== VolumeSpec.HostPath
       (json \ "properties" \ "config").as[JsValue] must_== testProps.config
       (json \ "properties" \ "external_id").as[String] must_== extId
+    }
+
+    "import volumes using the GenericResourceMethods interface" in new TestContainerController {
+      val testVolumeName = "test-volume"
+      val testProps = VolumeSpec(
+        name = testVolumeName,
+        provider = Some(ContainerSpec.InputProvider(id = testProvider.id)),
+        `type` = VolumeSpec.HostPath,
+        size = 1000,
+        access_mode = VolumeSpec.ReadWriteOnce,
+        config = Json.obj(
+          "host_path" -> "/tmp"
+        )
+      )
+
+      val newResource = newInstance(
+        typeId = migrations.V13.VOLUME_TYPE_ID,
+        name = testVolumeName,
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "type" -> testProps.`type`.label,
+          "size" -> testProps.size.toString,
+          "access_mode" -> testProps.access_mode.toString,
+          "config" -> testProps.config.toString
+        ))
+      )
+
+      val extId = s"/namespaces/${testEnv.id}/volumes/${testVolumeName}"
+
+      val createdResource = newResource.copy(
+        properties = Some(Map(
+          "provider" -> Json.toJson(testProps.provider).toString,
+          "type" -> testProps.`type`.label,
+          "config" -> testProps.config.toString,
+          "size" -> testProps.size.toString,
+          "access_mode" -> testProps.access_mode.toString,
+          "external_id" -> extId
+        ))
+      )
+
+      val genericMethods = app.injector.instanceOf[GenericResourceMethods]
+      genericMethods.createProviderBackedResource(any,any,any,any,any,any,any)(any) returns Future.successful(createdResource)
+
+      val request = fakeAuthRequest(POST,
+        s"/root/environments/${testEnv.id}/volumes?action=import",
+        testCreds
+      ).withBody(Json.obj(
+        "name" -> "imported-volume",
+        "properties" -> Json.obj(
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ),
+          "external_id" -> extId
+        )
+      ))
+
+      val Some(result) = route(app,request)
+      // println(contentAsString(result))
+      status(result) must equalTo(CREATED)
+      val json = contentAsJson(result)
+      (json \ "id").asOpt[UUID] must beSome(createdResource.id)
+      (json \ "name").asOpt[String] must beSome(testVolumeName)
+      (json \ "resource_type").asOpt[String] must beSome("Gestalt::Resource::Volume")
+      (json \ "properties" \ "provider" \ "id").asOpt[UUID] must beSome(testProvider.id)
+      // (json \ "properties").as[JsValue] must equalTo(Json.obj())
     }
 
     "delete volumes using the ContainerService interface" in new TestContainerController {

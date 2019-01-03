@@ -4,7 +4,7 @@ import java.util.{Base64, TimeZone, UUID}
 
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
+import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadOnlyMany
 import com.galacticfog.gestalt.meta.api.errors._
@@ -13,6 +13,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSp
 import com.galacticfog.gestalt.util.Helpers.OptionWithDefaults
 import com.galacticfog.gestalt.util.Helpers.StringCompare
 import com.galacticfog.gestalt.util.Helpers.OptionDefaults._
+import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.google.inject.Inject
 import controllers.util._
 import org.joda.time.{DateTime, DateTimeZone}
@@ -30,10 +31,7 @@ import skuber.json.format._
 
 import scala.util.Try
 import scala.annotation.tailrec
-import scala.concurrent.ExecutionContext.Implicits.global
 import scala.concurrent.{ExecutionContext, Future}
-import scala.language.{implicitConversions, postfixOps, reflectiveCalls}
-import scala.reflect.runtime.universe._
 import scala.util.{Failure, Success}
 
 object KubernetesService {
@@ -84,12 +82,8 @@ object KubernetesService {
         name = metaResource.name.substring(0, math.min(8,metaResource.name.length)) + "-" + metaResource.id.toString,
         namespace = "",
         labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString,
-          META_ENVIRONMENT_KEY -> context.environmentId.toString,
-          META_WORKSPACE_KEY   -> context.workspace.id.toString,
-          META_FQON_KEY        -> context.fqon,
-          META_PROVIDER_KEY    -> context.providerId.toString
-        )
+          META_VOLUME_KEY      -> metaResource.id.toString
+        ) ++ mkLabels(context)
       ),
       spec = Some(PersistentVolume.Spec(
         capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
@@ -113,12 +107,8 @@ object KubernetesService {
         name = metaResource.name,
         namespace = namespace.name,
         labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString,
-          META_ENVIRONMENT_KEY -> context.environmentId.toString,
-          META_WORKSPACE_KEY   -> context.workspace.id.toString,
-          META_FQON_KEY        -> context.fqon,
-          META_PROVIDER_KEY    -> context.providerId.toString
-        )
+          META_VOLUME_KEY      -> metaResource.id.toString
+        ) ++ mkLabels(context)
       ),
       spec = Some(PersistentVolumeClaim.Spec(
         accessModes = List(spec.access_mode),
@@ -132,10 +122,19 @@ object KubernetesService {
     )
   }
 
+  def mkLabels(context: ProviderContext): Map[String,String] = {
+    Map(
+      META_ENVIRONMENT_KEY -> context.environmentId.toString,
+      META_WORKSPACE_KEY -> context.workspace.id.toString,
+      META_FQON_KEY -> context.fqon,
+      META_PROVIDER_KEY -> context.providerId.toString
+    )
+  }
 }
 
 class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   extends CaasService with JsonInput with MetaControllerUtils {
+  import scala.concurrent.ExecutionContext.Implicits.global
   
   import KubernetesService._
 
@@ -148,6 +147,23 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val fT = f(kube)
       fT.onComplete(_ => kube.close)
       fT
+    }
+  }
+
+  private def getNamespaceForResource(resource: ResourceLike, resourceName: String): String = {
+    // why not attempt to take the namespace from external_id first?
+
+    val namespaceGetter = s"/namespaces/([^/]+)/${resourceName}/.*".r
+    (for {
+      eid <- ContainerService.resourceExternalId(resource)
+      ns <- eid match {
+        case namespaceGetter(namespace) => Some(namespace)
+        case _ => None
+      }
+    } yield ns) orElse {
+      ResourceFactory.findParent(ResourceIds.Environment, resource.id).map(_.id.toString)
+    } getOrElse {
+      throw new RuntimeException(s"Failed to delete '${resource.id}' in Kubernetes: invalid external_id and missing parent environment.")
     }
   }
 
@@ -177,27 +193,29 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * TODO: Change signature of deleteSecret to take a ProviderContext - providers
      * must never user ResourceFactory directly.
      */
-    val environment: String = {
-      ResourceFactory.findParent(ResourceIds.Environment, secret.id).map(_.id.toString) orElse {
-        val namespaceGetter = "/namespaces/([^/]+)/secrets/.*".r
-        for {
-          eid <- ContainerService.resourceExternalId(secret)
-          ns <- eid match {
-            case namespaceGetter(namespace) => Some(namespace)
-            case _ => None
-          }
-        } yield ns
-      } getOrElse {
-        throw new RuntimeException(s"Could not find Environment for secret '${secret.id}' in Meta.")
-      }
-    }
+    // val environment: String = {
+    //   ResourceFactory.findParent(ResourceIds.Environment, secret.id).map(_.id.toString) orElse {
+    //     val namespaceGetter = "/namespaces/([^/]+)/secrets/.*".r
+    //     for {
+    //       eid <- ContainerService.resourceExternalId(secret)
+    //       ns <- eid match {
+    //         case namespaceGetter(namespace) => Some(namespace)
+    //         case _ => None
+    //       }
+    //     } yield ns
+    //   } getOrElse {
+    //     throw new RuntimeException(s"Could not find Environment for secret '${secret.id}' in Meta.")
+    //   }
+    // }
+
+    val namespace = getNamespaceForResource(secret, "secrets")
 
     val targetLabel = META_SECRET_KEY -> secret.id.toString
-    cleanly(provider, environment) { kube =>
+    cleanly(provider, namespace) { kube =>
       val fSecretDel = for {
         deps <- deleteAllWithLabel[Secret](kube, targetLabel)
       } yield deps.headOption.getOrElse({
-        log.debug("deleted no Secrets")
+        log.debug(s"$namespace: deleted no Secrets")
         ()
       })
 
@@ -267,12 +285,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     log.debug(s"getNamespace(environment = ${pc.environmentId}, create = ${create}")
     val namespaceGetter = "/namespaces/([^/]+)/.*/.*".r
 
-    val namespaces = ResourceFactory.findChildren(pc.environmentId).filter(
+    val namespaces = (ResourceFactory.findChildren(pc.environmentId).filter(
       r => Set(ResourceIds.Container, ResourceIds.Secret, migrations.V13.VOLUME_TYPE_ID).contains(r.typeId) &&
         Try{ContainerService.containerProviderId(r)}.toOption.contains(pc.providerId)
     ).flatMap(ContainerService.resourceExternalId).collect {
       case namespaceGetter(namespace) => namespace
-    } distinct
+    }).distinct
 
     val targetNamespace = namespaces match {
       case Seq() => pc.environmentId.toString
@@ -288,12 +306,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
         rc.create(Namespace(metadata = ObjectMeta(
           name = targetNamespace,
-          labels = Map(
-            META_ENVIRONMENT_KEY -> pc.environmentId.toString,
-            META_WORKSPACE_KEY -> pc.workspace.id.toString,
-            META_FQON_KEY -> pc.fqon,
-            META_PROVIDER_KEY -> pc.providerId.toString
-          )
+          labels = mkLabels(pc)
         )))
       case None if !create =>
         log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
@@ -305,7 +318,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     upsertProperties(container, "status" -> "LAUNCHED")
   }
 
-  private[this] implicit def toProtocol(proto: String): skuber.Protocol.Value = proto.toUpperCase match {
+  private[this] def stringToProtocol(proto: String): skuber.Protocol.Value = proto.toUpperCase match {
     case "TCP" => skuber.Protocol.TCP
     case "UDP" => skuber.Protocol.UDP
     case _ => unprocessable("port mapping must specify \"TCP\" or \"UDP\" as protocol")
@@ -476,40 +489,76 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
      * TODO: Change signature of deleteContainer to take a ProviderContext - providers
      * must never use ResourceFactory directly.
      */
-    val environment: String = {
-      ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
-        val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
-        for {
-          eid <- ContainerService.resourceExternalId(container)
-          ns <- eid match {
-            case namespaceGetter(namespace) => Some(namespace)
-            case _ => None
-          }
-        } yield ns
-      } getOrElse {
-        throw new RuntimeException(s"Could not find Environment for container '${container.id}' in Meta.")
-      }
-    }
+    // val environment: String = {
+    //   ResourceFactory.findParent(ResourceIds.Environment, container.id).map(_.id.toString) orElse {
+    //     val namespaceGetter = "/namespaces/([^/]+)/deployments/.*".r
+    //     for {
+    //       eid <- ContainerService.resourceExternalId(container)
+    //       ns <- eid match {
+    //         case namespaceGetter(namespace) => Some(namespace)
+    //         case _ => None
+    //       }
+    //     } yield ns
+    //   } getOrElse {
+    //     throw new RuntimeException(s"Could not find Environment for container '${container.id}' in Meta.")
+    //   }
+    // }
+
+    val namespace = getNamespaceForResource(container, "deployments")
 
     val targetLabel = META_CONTAINER_KEY -> container.id.toString
-    cleanly(provider, environment) { kube =>
-      val fDplDel = for {
-        deps <- deleteAllWithLabel[Deployment](kube, targetLabel)
-        rses <- deleteAllWithLabel[ReplicaSet](kube, targetLabel)
-        pods <- deleteAllWithLabel[Pod](kube, targetLabel) recover {
-          case e: K8SException =>
+    cleanly(provider, namespace) { kube =>
+      
+      // val fDplDel = for {
+      //   deps <- deleteAllWithLabel[Deployment](kube, targetLabel)
+      //   rses <- deleteAllWithLabel[ReplicaSet](kube, targetLabel)
+      //   pods <- deleteAllWithLabel[Pod](kube, targetLabel) recover {
+      //     case e: K8SException =>
+      //       log.warn(s"K8S error listing/deleting Pods associated with container ${container.id}")
+      //       List(())
+      //   }
+      // } yield pods.headOption.getOrElse({
+      //   log.debug(s"$namespace: deleted no Pods")
+      //   ()
+      // })
+
+      val fDplDel = for(
+        deployments <- kube.listSelected[ListResource[Deployment]](targetLabel._1 is targetLabel._2);
+        _ = log.debug(s"deployments: ${deployments}");
+        selectors = deployments map { depl =>
+          depl.spec.flatMap(_.selector).get    // fair to think that every deployment has a selector
+        };
+        rss <- Future.traverse(selectors) { selector =>
+          kube.listSelected[ListResource[ReplicaSet]](selector).map(_.items)
+        };
+        pods <- (Future.traverse(selectors) { selector =>
+          kube.listSelected[PodList](selector).map(_.items)
+        }) recover {
+          case e: K8SException => {
             log.warn(s"K8S error listing/deleting Pods associated with container ${container.id}")
-            List(())
+            List()
+          }
+        };
+        _ <- Future.traverse(deployments.items) { depl =>
+          kube.delete[Deployment](depl.name)
+        };
+        _ <- Future.traverse(rss.flatten) { replicaSet =>
+          kube.delete[ReplicaSet](replicaSet.name)
+        };
+        _ <- Future.traverse(pods.flatten) { pod =>
+          kube.delete[Pod](pod.name)
         }
-      } yield pods.headOption.getOrElse({
-        log.debug("deleted no Pods")
+      ) yield {
+        if(pods.isEmpty) {
+          log.debug(s"$namespace: deleted no Pods")
+        }
         ()
-      })
+      }
 
       val fSrvDel = (for {
         svcs <- deleteAllWithLabel[Service](kube, targetLabel)
       } yield svcs.headOption.getOrElse({
-        log.debug("deleted no Services")
+        log.debug(s"$namespace: deleted no Services")
         ()
       })) recover {
         case e: K8SException =>
@@ -520,7 +569,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val fIngDel = (for {
         ings <- deleteAllWithLabel[Ingress](kube, targetLabel)
       } yield ings.headOption.getOrElse({
-        log.debug("deleted no Ingresses")
+        log.debug(s"$namespace: deleted no Ingresses")
         ()
       })) recover {
         case e: K8SException =>
@@ -528,9 +577,12 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           ()
       }
 
-      Future.sequence(Seq(fDplDel,fSrvDel,fIngDel)) map {_ =>
+      for(
+        _ <- fDplDel;
+        _ <- fSrvDel;
+        _ <- fIngDel
+      ) yield {
         log.debug(s"finished deleting Deployments, ReplicaSets, Pods, Services and Ingresses for container ${container.id}")
-        ()
       }
     }
   }
@@ -538,17 +590,16 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   def listByLabel[O <: ObjectResource, L <: ListResource[O]](objs: L, label: (String, String)): List[O] =
     objs filter { _.metadata.labels.get(label._1).contains(label._2) }
 
-  def deleteAllWithLabel[O <: ObjectResource : TypeTag]( kube: RequestContext, label: (String, String) )
+  def deleteAllWithLabel[O <: ObjectResource]( kube: RequestContext, label: (String, String) )
                                                        ( implicit fmtL: Format[ListResource[O]], fmtO: Format[O],
                                                                   rdo: skuber.ResourceDefinition[O],
                                                                   rd: skuber.ResourceDefinition[ListResource[O]] ) : Future[List[Unit]] = {
-    val otype = typeOf[O]
     for {
-      foundResources <- kube.listSelected[ListResource[O]](label._1 is label._2) map (_.items)
-      _ = log.debug(s"found ${foundResources.size} ${otype} resources")
-      deletes <- Future.traverse(foundResources){
+      foundResources <- kube.listSelected[ListResource[O]](label._1 is label._2)
+      _ = log.debug(s"found ${foundResources.items.size} ${rdo.spec.names.plural} labeled with ${label}")
+      deletes <- Future.traverse(foundResources.items){
         d =>
-          log.info(s"deleting ${typeOf[O]} ${d.name} labeled with ${label}")
+          log.info(s"deleting ${rdo.spec.names.singular} ${d.name} labeled with ${label}")
           kube.delete[O](d.name)
       }
     } yield deletes
@@ -559,12 +610,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       name = secret.name,
       namespace = namespace,
       labels = Map(
-        META_SECRET_KEY      -> id.toString,
-        META_ENVIRONMENT_KEY -> context.environmentId.toString,
-        META_WORKSPACE_KEY   -> context.workspace.id.toString,
-        META_FQON_KEY        -> context.fqon,
-        META_PROVIDER_KEY    -> context.providerId.toString
-      )
+        META_SECRET_KEY      -> id.toString
+      ) ++ mkLabels(context)
     )
     val data = secret.items.map {
       case SecretSpec.Item(key, Some(value)) => key -> Base64.getDecoder.decode(value)
@@ -579,7 +626,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   private[services] def mkPortMappingsSpec(pms: Seq[PortMapping]): Seq[Port] = {
     pms.map(pm => skuber.Container.Port(
       containerPort = pm.container_port.getOrElse(unprocessable("port mapping must specify container_port")),
-      protocol = pm.protocol,
+      protocol = stringToProtocol(pm.protocol),
       name = pm.name.getOrElse(
         if (pms.size > 1) unprocessable("multiple port mappings requires port names") else ""
       ),
@@ -603,12 +650,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         name = svcName,
         namespace = namespace,
         labels = Map(
-          META_CONTAINER_KEY -> containerId.toString,
-          META_ENVIRONMENT_KEY -> context.environmentId.toString,
-          META_WORKSPACE_KEY -> context.workspace.id.toString,
-          META_FQON_KEY -> context.fqon,
-          META_PROVIDER_KEY -> context.providerId.toString
-        )
+          META_CONTAINER_KEY -> containerId.toString
+        ) ++ mkLabels(context)
       ))
     ){
       case (acc, (vhost,port)) => acc.addHttpRule(
@@ -696,18 +739,14 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
               META_CONTAINER_KEY -> containerId.toString
             )
             .addLabels(Map(
-              META_CONTAINER_KEY -> containerId.toString,
-              META_ENVIRONMENT_KEY -> context.environmentId.toString,
-              META_WORKSPACE_KEY -> context.workspace.id.toString,
-              META_FQON_KEY -> context.fqon,
-              META_PROVIDER_KEY -> context.providerId.toString
-            ))
+              META_CONTAINER_KEY -> containerId.toString
+            ) ++ mkLabels(context))
         ) {
           case (svc, pm) =>
             val cp = pm.container_port.getOrElse(unprocessable("port mapping must contain container_port"))
             svc.exposeOnPort(Service.Port(
               name = pm.name.getOrElse(""),
-              protocol = pm.protocol,
+              protocol = stringToProtocol(pm.protocol),
               port = pm.lb_port.filter(_ != 0).getOrElse(cp),
               targetPort = Some(Left(cp)),
               nodePort = pm.service_port.filter(_ => serviceType == Service.Type.NodePort).getOrElse(0)
@@ -785,12 +824,8 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   private[services] def mkDeploymentSpec(kube: RequestContext, id: UUID, containerSpec: ContainerSpec, context: ProviderContext, namespace: String): Deployment = {
 
     val labels = containerSpec.labels ++ Map(
-      META_CONTAINER_KEY -> id.toString,
-      META_ENVIRONMENT_KEY -> context.environmentId.toString,
-      META_WORKSPACE_KEY -> context.workspace.id.toString,
-      META_FQON_KEY -> context.fqon,
-      META_PROVIDER_KEY -> context.providerId.toString
-    )
+      META_CONTAINER_KEY -> id.toString
+    ) ++ mkLabels(context)
 
 
     val podTemplate = {
@@ -801,33 +836,48 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       val (storageVolumes,volMounts) = containerSpec.volumes.map({
         case ex: ExistingVolumeMountSpec =>
           val r = ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, ex.volume_id).getOrElse(
-            throw new BadRequestException("container spec had volume mount for non-existent volume")
+            throw BadRequestException("container spec had volume mount for non-existent volume")
           )
           val spec = VolumeSpec.fromResourceInstance(r).getOrElse(
-            throw new InternalErrorException(s"could not parse referenced volume resource '${r.name}' as VolumeSpec")
+            throw InternalErrorException(s"could not parse referenced volume resource '${r.name}' as VolumeSpec")
           )
           val eid = spec.external_id.getOrElse(
-            throw new InternalErrorException(s"Volume resource '${r.id}' did not have 'external_id'")
+            throw InternalErrorException(s"Volume resource '${r.id}' did not have 'external_id'")
           )
           val eidExtracter = "/namespaces/([^/]+)/persistentvolumeclaims/(.*)".r
           val pvcName = eid match {
             case eidExtracter(_,name) /* TODO: need to check namespace */ => name
-            case _ => throw new InternalErrorException(s"Volume resource '${r.id}' 'external_id' was not well-formed")
+            case _ => throw InternalErrorException(s"Volume resource '${r.id}' 'external_id' was not well-formed")
           }
           val readOnly = (spec.access_mode == ReadOnlyMany)
           val lbl = r.name // TODO: don't need this now: UUID.randomUUID().toString
           skuber.Volume(lbl, skuber.Volume.PersistentVolumeClaimRef(pvcName, readOnly)) -> Volume.Mount(lbl, ex.mount_path, readOnly)
+        case in: InlineVolumeMountSpec => //TODO: improve this implementation
+          val name = in.volume_resource.name
+          val mountPath = in.mount_path
+          val volumeType = for {
+            properties <- in.volume_resource.properties
+            volumeTypeString <- properties.get("type")
+            volumeTypeValue <- VolumeSpec.Type.fromString(volumeTypeString.as[String]).toOption
+          } yield volumeTypeValue
+
+          volumeType match {
+            case Some(VolumeSpec.EmptyDir) => skuber.Volume(name, skuber.Volume.EmptyDir()) -> Volume.Mount(name, mountPath)
+            case Some(any) => throw BadRequestException(s"volume type $any is currently not supported for InlineVolumeMountSpec")
+            case None => throw BadRequestException(s"volume type is not defined for InlineVolumeMountSpec")
+          }
+
         case _ =>
-          throw new BadRequestException("container create/update only accepting volume mount to existing volumes; inline volume specs are not currently supported.")
+          throw BadRequestException("unsupported type of VolumeMountSpec")
       }).unzip
 
 
       /*
        * make sure the secrets all exist
        */
-      val allEnvSecrets: Map[UUID, GestaltResourceInstance] = ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
+      val allEnvSecrets: Map[UUID, GestaltResourceInstance] = (ResourceFactory.findChildrenOfType(ResourceIds.Secret, context.environmentId) map {
         res => res.id -> res
-      } toMap
+      }).toMap
 
       containerSpec.secrets.foreach {
         secret =>
@@ -1372,37 +1422,38 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   }
 
   override def destroyVolume(volume: ResourceLike): Future[Unit] = {
-
     def doTheDelete: Future[Unit] = {
       val provider = ContainerService.containerProvider(volume)
       /*
        * TODO: Change signature of deleteVolume to take a ProviderContext - providers
        * must never user ResourceFactory directly.
        */
-      val environment: String = {
-        ResourceFactory.findParent(ResourceIds.Environment, volume.id).map(_.id.toString) orElse {
-          val namespaceGetter = "/namespaces/([^/]+)/persistentvolumeclaims/.*".r
-          for {
-            eid <- ContainerService.resourceExternalId(volume)
-            ns <- eid match {
-              case namespaceGetter(namespace) => Some(namespace)
-              case _ => None
-            }
-          } yield ns
-        } getOrElse {
-          throw new RuntimeException(s"Could not find Environment for volume '${volume.id}' in Meta.")
-        }
-      }
+      // val environment: String = {
+      //   ResourceFactory.findParent(ResourceIds.Environment, volume.id).map(_.id.toString) orElse {
+      //     val namespaceGetter = "/namespaces/([^/]+)/persistentvolumeclaims/.*".r
+      //     for {
+      //       eid <- ContainerService.resourceExternalId(volume)
+      //       ns <- eid match {
+      //         case namespaceGetter(namespace) => Some(namespace)
+      //         case _ => None
+      //       }
+      //     } yield ns
+      //   } getOrElse {
+      //     throw new RuntimeException(s"Could not find Environment for volume '${volume.id}' in Meta.")
+      //   }
+      // }
+
+      val namespace = getNamespaceForResource(volume, "persistentvolumeclaims")
 
       val deletePVs = volume.properties.getOrElse(Map.empty).get("reclamation_policy").contains("delete_persistent_volume")
 
       val targetLabel = META_VOLUME_KEY -> volume.id.toString
-      cleanly(provider, environment) { kube =>
+      cleanly(provider, namespace) { kube =>
         val fVolumeDels = for {
           pvcs <- deleteAllWithLabel[PersistentVolumeClaim](kube, targetLabel)
           _    <- if (deletePVs) deleteAllWithLabel[PersistentVolume](kube, targetLabel) else Future.successful(Seq.empty)
         } yield pvcs.headOption.getOrElse({
-          log.debug("deleted no PersistentVolumeClaims")
+          log.debug(s"$namespace: deleted no PersistentVolumeClaims")
           ()
         })
 
@@ -1414,13 +1465,19 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
 
     for {
-      spec <- Future.fromTry(VolumeSpec.fromResourceInstance(volume))
-      d <- spec.`type` match {
-        case VolumeSpec.External | VolumeSpec.Dynamic | VolumeSpec.HostPath =>
+      specType <- Future.fromTryST(VolumeSpec.fromResourceInstance(volume)) map { spec =>
+        Some(spec.`type`)
+      } recoverWith { case throwable =>
+        log.warn(s"Failed to deserialize volume spec due to ${throwable}, proceeding")
+        Future.successful(None)
+      }
+      d <- specType match {
+        case Some(VolumeSpec.External | VolumeSpec.Dynamic | VolumeSpec.HostPath) =>
           doTheDelete
-        case other =>
+        case Some(other) =>
           log.info(s"destroyVolume(): nothing to do for type ${other}")
           Future.successful(())
+        case None => Future.successful(())
       }
     } yield d
   }

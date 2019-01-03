@@ -279,7 +279,7 @@ class ProviderManager @Inject() (
         resource.properties.get
       }
       external_id <- Try(existing.properties.flatMap(_.get("external_id")).getOrElse {
-        throw new RuntimeException("could not determine external_id property for container resource")
+        throw new RuntimeException(s"could not determine external_id property for container resource `${existing.name}`")
       })
       tgt         =  existing.copy(
         properties = Some(new_props ++ Map(
@@ -292,6 +292,7 @@ class ProviderManager @Inject() (
 
     metaUpdate match {
       case Failure(e) => {
+        e.printStackTrace()
         log.error("Failed updating container in Meta.")
         throw e
       }

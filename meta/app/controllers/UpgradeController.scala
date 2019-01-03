@@ -61,7 +61,7 @@ class UpgradeController @Inject()( messagesApi: MessagesApi,
               "message" -> "upgrade is already active"
             )))
           } else {
-            upgraderService.launchUpgrader(request.identity, payload)
+            upgraderService.launchUpgrader(request.identity, payload, META_URL)
               .map {s => Accepted(Json.toJson(s))}
           }
         }

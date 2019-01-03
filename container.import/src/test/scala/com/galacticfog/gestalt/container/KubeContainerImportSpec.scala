@@ -1,6 +1,8 @@
 package com.galacticfog.gestalt.container
 
+import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+// import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -20,11 +22,9 @@ import play.api.libs.ws.ahc.AhcWSModule
 import play.api.mvc.Results._
 import play.api.mvc._
 import play.api.test.PlaySpecification
-import skuber.{Container, Pod}
 import skuber.api.client.RequestContext
-import skuber.ext.Deployment
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 
 import scala.util.Success
 
@@ -82,7 +82,7 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
     val kubeProviderConfig: Seq[(String,JsValueWrapper)] = Seq(
       "endpoints" -> Json.arr(
         Json.obj(
-          "actions" -> Json.arr("container.import"),
+          "actions" -> Json.arr("container.import", "secret.import"),
           "default" -> false,
           "http" -> Json.obj(
             "method" -> "POST",
@@ -91,10 +91,12 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
         )
       )
     )
-    var lastLambdaRequestBody: JsValue = null
+    var lastLambdaRequestBody = Map.empty[String,JsValue]
     val mockWs = MockWS {
       case (POST, "http://localhost:8090") => Action { request =>
-        lastLambdaRequestBody = request.body.asJson.get
+        val body = request.body.asJson.get
+        val action = (body \ "action").as[String]
+        lastLambdaRequestBody = lastLambdaRequestBody ++ Map(action -> body)
         Ok("http response")
       }
     }
@@ -120,27 +122,111 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
       await(route(app, importRequest).get)
 
       val skuberContextMock = mock[skuber.api.client.RequestContext]
-      val testDeployment = Deployment(
-        spec = Some(Deployment.Spec(
-          template = Some(Pod.Template.Spec(
-            spec = Some(Pod.Spec(
-              containers = List(Container(
+      val testDeployment = skuber.ext.Deployment(
+        spec = Some(skuber.ext.Deployment.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(skuber.Container(
                 name = "testContainer",
-                image = "testImage"
-              ))
+                image = "testImage",
+                env = List(
+                  skuber.EnvVar("TEST1", skuber.EnvVar.StringValue("1234")),
+                  skuber.EnvVar("TEST2", skuber.EnvVar.SecretKeyRef("test-key", "test-secret"))
+                ),
+                volumeMounts = List(
+                  skuber.Volume.Mount(
+                    name = "test-secret-volume",
+                    mountPath = "/tmp",
+                    readOnly = true
+                  ),
+                  skuber.Volume.Mount(
+                    name = "test-pvc-volume",
+                    mountPath = "/tmp2",
+                    readOnly = true
+                  )//,
+                  // skuber.Volume.Mount(
+                  //   name = "test-host-volume",
+                  //   mountPath = "/tmp3"
+                  // )
+                )
+              )),
+              volumes = List(
+                skuber.Volume("test-secret-volume",
+                  skuber.Volume.Secret(
+                    secretName = "test-secret-2",
+                    items = Some(List(
+                      skuber.Volume.KeyToPath("test-key", "key.json"),
+                      skuber.Volume.KeyToPath("test-key-2", "key2.json")
+                    )),
+                    defaultMode = Some(400)     // ignored
+                  )
+                ),
+                skuber.Volume("test-pvc-volume",
+                  skuber.Volume.PersistentVolumeClaimRef(
+                    claimName = "test-pvc",
+                    readOnly = true     // ignored
+                  )
+                )//,
+                // skuber.Volume("test-host-volume",
+                //   skuber.Volume.HostPath(
+                //     path = "/host/path"
+                //   )
+                // )
+              )
             ))
-          ))
+          )),
+          selector = Some(new skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
         ))
       )
-      skuberContextMock.getOption[skuber.ext.Deployment](meq("test-deployment"))(any, any, any) returns Future.successful(Some(testDeployment))
+      val testSecret = skuber.Secret(
+        kind = "Secret",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(labels = Map(
+          "meta/secret" -> "93029c37-c054-4837-9d66-1c6af8f8d648",
+          "meta/environment" -> s"${testEnv.id}",
+          "meta/workspace" -> s"${testWork.id}",
+          "meta/provider" -> s"${testProvider.id}"
+        )),
+        data = Map("test-key" -> "123".getBytes),
+        `type` = ""
+      )
+      val testSecret2 = skuber.Secret(
+        kind = "Secret",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(labels = Map(
+          "meta/secret" -> "454e1069-0d83-4af0-8ce4-f5509e556fbe",
+          "meta/environment" -> s"${testEnv.id}",
+          "meta/workspace" -> s"${testWork.id}",
+          "meta/provider" -> s"${testProvider.id}"
+        )),
+        data = Map("test-key" -> "123".getBytes),
+        `type` = ""
+      )
+      val testPvc = new skuber.PersistentVolumeClaim(
+        kind = "PersistentVolumeClaim",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(labels = Map(
+          "meta/volume" -> "127b4668-9132-4f2a-8124-dd63ddb39bbd",
+          "meta/environment" -> s"${testEnv.id}",
+          "meta/workspace" -> s"${testWork.id}",
+          "meta/provider" -> s"${testProvider.id}"
+        )),
+        spec = Some(skuber.PersistentVolumeClaim.Spec(
+          volumeName = "test-pv"
+        )),
+        status = None
+      )
+      skuberContextMock.getInNamespace[skuber.ext.Deployment](meq("test-deployment"), meq("test-namespace"))(any, any, any) returns Future.successful(testDeployment)
+      skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret)
+      skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret-2"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret2)
+      skuberContextMock.getInNamespace[skuber.PersistentVolumeClaim](meq("test-pvc"), meq("test-namespace"))(any, any, any) returns Future.successful(testPvc)
       skuberContextMock.jsonMergePatch[skuber.ext.Deployment](any, any)(any, any, any) returns Future.successful(testDeployment)
 
       class KCI extends KubeContainerImport {
-        override def initializeKube( provider: JsObject, namespace: String )
-                                   ( implicit ec: ExecutionContext ): RequestContext = skuberContextMock
+        override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
       }
 
-      val response = new KCI().run(lastLambdaRequestBody.toString, "{}")
+      val response = new KCI().run(lastLambdaRequestBody("container.import").toString, "{}")
       val container = (Json.parse(response) \ "properties").as[ContainerSpec]
 
       container must_== ContainerSpec(
@@ -165,14 +251,71 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
         None,
         false,
         List(),
-        List(),
+        List(
+          ContainerSpec.ExistingVolumeMountSpec("/tmp2", UUID.fromString("127b4668-9132-4f2a-8124-dd63ddb39bbd"))//,
+          // ContainerSpec.InlineVolumeMountSpec("/tmp2", GestaltResourceInput(
+          //   name = "",
+          //   resource_type = None,
+          //   id = None,
+          //   owner = None,
+          //   resource_state = None,
+          //   description = None,
+          //   properties = None,
+          //   variables = None,
+          //   tags = None,
+          //   auth = None
+          // ))
+        ),
         Map(),
-        Map(),
+        Map("TEST1" -> "1234"),
         None,
         None,     // not deserialized
         None,
-        List()
+        List(
+          ContainerSpec.SecretEnvMount(UUID.fromString("93029c37-c054-4837-9d66-1c6af8f8d648"), "TEST2", "test-key"),
+          ContainerSpec.SecretDirMount(UUID.fromString("454e1069-0d83-4af0-8ce4-f5509e556fbe"), "/tmp")
+        )
       )
+    }
+
+    "import secret" in new MockScope(kubeProviderConfig, mockWs) {
+      val metaSecret: GestaltResourceInstance = newInstance(
+        ResourceIds.Secret,
+        "test",
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> "/namespaces/test-namespace/secrets/test-secret"
+        ))
+      )
+
+      val json0: JsObject = Output.renderInstance(metaSecret).as[JsObject]
+      val json = json0 ++ JsObject(Seq("resource_type" -> JsString(ResourceIds.Secret.toString)))
+
+      val importRequest = fakeAuthRequest("POST", s"/root/environments/${testEnv.id}/secrets?action=import", testCreds).withBody(
+        json
+      )
+      val res = route(app, importRequest).get
+      val _ = contentAsJson(res)
+
+      val skuberContextMock = mock[skuber.api.client.RequestContext]
+      val testSecret = skuber.Secret(
+        kind = "Secret",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(),
+        data = Map("test" -> "123".getBytes),
+        `type` = ""
+      )
+      skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret)
+      skuberContextMock.jsonMergePatch[skuber.Secret](any, any)(any, any, any) returns Future.successful(testSecret)
+
+      class KCI extends KubeContainerImport {
+        override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
+      }
+
+      val response = new KCI().run(lastLambdaRequestBody("secret.import").toString, "{}")
+      val secret = (Json.parse(response) \ "properties").as[JsValue]
+
+      (secret \ "items").as[JsValue] must_== Json.arr(Json.obj("key" -> "test", "value" -> "123"))
     }
   }
 }
