@@ -32,6 +32,17 @@ class InfoController @Inject()(
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
   implicit lazy val aboutMetaFormat = Json.format[AboutMeta]
 
+  def upgradeAvailable() = Audited() { implicit request =>
+    Ok {
+      Json.obj(    
+        "upgradeAvailable" -> true,
+        "upgradeImage" -> "gcr.io/galactic-public-2018/upgradeFrom2.4.1TO2.4.2",
+        "upgradeNotes" -> "http://docs.galacticfog.com/docs/patchnotes2.4.2.html",
+        "severity" -> "recommended"
+      )
+    }
+  }
+  
   /*
    * TODO:
    */
