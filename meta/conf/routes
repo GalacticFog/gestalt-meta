@@ -4,6 +4,7 @@
 
 
 GET   /upgradeavailable  controllers.InfoController.upgradeAvailable()
+GET   /upgradeavailable/status  controllers.InfoController.upgradeStatus()
 
 POST  /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/chart    controllers.KubeNativeController.createApplicationDeployment(fqon: String, providerId: java.util.UUID)
 
