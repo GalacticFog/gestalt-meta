@@ -29,7 +29,7 @@ class UpgradeCheckScheduler @Inject() (
         log.info(s"Upgrade Check configured for every ${UpgradeVars.interval} hours at ${UpgradeVars.baseUrl}")
         val actor = actorSystem.scheduler.schedule(
             initialDelay = 5.seconds, 
-            interval = UpgradeVars.interval.seconds, task, "check")      
+            interval = UpgradeVars.interval.hours, task, "check")      
       }
     }
   }
