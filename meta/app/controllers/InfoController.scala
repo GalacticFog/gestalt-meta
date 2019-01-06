@@ -2,23 +2,34 @@ package controllers
 
 import com.galacticfog.gestalt.meta.api.BuildInfo
 import com.galacticfog.gestalt.meta.api.errors._
-import com.galacticfog.gestalt.meta.auth.Authorization
+
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
 import com.google.inject.Inject
+import controllers.util._
 import controllers.util.db.EnvConfig
 import controllers.util.{MetaHealth, SecureController}
 import javax.inject.Singleton
+
 import play.api.i18n.MessagesApi
-import play.api.libs.json.{JsValue, Json}
+import play.api.libs.json._
 import play.api.mvc.Action
+import play.api.cache._
+import com.galacticfog.gestalt.data.ResourceFactory
+import java.nio.file.{Files, Paths}
+import com.galacticfog.gestalt.meta.api.errors._
+import controllers.util.QueryString
+import scala.io.Source
+import actors._
+import scala.util.{Try,Success,Failure}
 
 @Singleton
 class InfoController @Inject()( 
     messagesApi: MessagesApi,
     sec: GestaltFrameworkSecurity,
-    metaHealth: MetaHealth)
-  extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
-  
+    metaHealth: MetaHealth,
+    @NamedCache("upgrade-cache") cache: CacheApi)
+  extends SecureController(messagesApi = messagesApi, sec = sec) with MetaController {
+
   case class AboutMeta(status: String,
                        url: String,
                        time: String,
@@ -32,20 +43,52 @@ class InfoController @Inject()(
   implicit lazy val serviceInfoFormat = Json.format[ServiceInfo]
   implicit lazy val aboutMetaFormat = Json.format[AboutMeta]
 
+  /**
+   * Determine if a Meta upgrade is available. This function simply checks the 'upgrade-cache' 
+   * for data at the 'meta.upgrade' key. If data is found, it is formatted and returned with 
+   * status TRUE. If there is nothing at that key it returns status FALSE.
+   */
   def upgradeAvailable() = Audited() { implicit request =>
-    Ok {
-      Json.obj(    
-        "upgradeAvailable" -> true,
-        "upgradeImage" -> "gcr.io/galactic-public-2018/upgradeFrom2.4.1TO2.4.2",
-        "upgradeNotes" -> "http://docs.galacticfog.com/docs/patchnotes2.4.2.html",
-        "severity" -> "recommended"
-      )
+
+    Try(cache.get[JsObject](UpgradeVars.UPGRADE_CACHE_KEY)) match {
+      case Failure(e) => HandleExceptions(e)
+      case Success(json) => {
+        json.fold {
+          Ok(Json.toJson(UpgradeMessage(false)))
+        }{ info =>
+          // Ensure we can parse what we got from the cache.
+          UpgradeMessage.fromUpgradeInfo(info) match {
+            case Failure(e) => HandleExceptions(e)
+            case Success(message) => Ok(Json.toJson(message))
+          }
+        }
+      }
     }
   }
   
-  /*
-   * TODO:
+  /**
+   * Get information about the status of automatic upgrade checking. Indicates
+   * whether or not checks are enabled and displays the relevant environment variables.
    */
+  def upgradeStatus() = Audited() { implicit request =>
+    val url = UpgradeVars.baseUrl
+    val interval = UpgradeVars.interval
+    val enabled = UpgradeVars.checksEnabled
+    
+    val env = Json.obj(
+      UpgradeVars.UrlName -> url,
+      UpgradeVars.CheckIntervalName -> interval,
+      UpgradeVars.EnableUpgradesName -> enabled
+    )
+    
+    val message = if (enabled) 
+      "Automatic upgrade checks are ENABLED"
+    else 
+      "Automatic upgrade checks are DISABLED"
+    
+    Ok(Json.obj( "message" -> message, "env" -> env))    
+  }
+  
   def about() = Audited() { implicit request =>
     import com.galacticfog.gestalt.meta.auth.DefaultMetaConfiguration
     val rootInitialized = new DefaultMetaConfiguration().getRoot().nonEmpty
@@ -81,14 +124,7 @@ class InfoController @Inject()(
    * @param fqon Fully-Qualified Org Name
    */
   def healthAuthenticated(fqon: String) = Audited(fqon) { _ => checkHealth(verbose = true) }  
-  
-//  protected[controllers] def healthStatus() = {
-//    MetaHealth.selfCheck(false) match {
-//      case Left(e) => ???
-//      case Right(s) => ???
-//    }
-//  }
-  
+
   protected[controllers] def checkHealth(verbose: Boolean) = {
     metaHealth.selfCheck(verbose) match {
       case Left(err)      => InternalServerError(err)
@@ -96,7 +132,6 @@ class InfoController @Inject()(
     }    
   }
 
-  
   def options(path: String) = Action {Ok("")}
   
   def serviceCheck() = Audited() { implicit request =>
@@ -113,18 +148,10 @@ class InfoController @Inject()(
       }
     }
   }
-  import com.galacticfog.gestalt.data.ResourceFactory
-  
+   
   def resourceStats() = Audited() { implicit request =>
     Ok(ResourceFactory.resourceStats("dsc"))  
   }
-  
-  import java.nio.file.{Files, Paths}
-
-  import com.galacticfog.gestalt.meta.api.errors._
-  import controllers.util.QueryString
-
-  import scala.io.Source
   
   def readAuditLogs() = Audited() { implicit request =>
     val fileVar = "META_AUDIT_LOG_FILE"
