@@ -15,8 +15,15 @@ import play.api.libs.json.{JsValue, Json}
 
 import scala.util.{Either, Failure, Success, Try}
 
+sealed trait ProcessState
+object ProcessState {
+  case object NothingToDo extends ProcessState
+  case object Continue extends ProcessState
+}
 
 abstract class MetaMigration() {
+
+  type CreateTypeFunction = (UUID, GestaltResourceInstance) => Try[GestaltResourceType]
   
   def migrate(identity: UUID, payload: Option[JsValue]): Either[JsValue,JsValue]
 
@@ -186,4 +193,109 @@ abstract class MetaMigration() {
     acc push "Performing update in Meta"
     TypeFactory.update(updated, identity).get
   }
+  
+  /**
+   * Test if a ResourceType exists with the same name and ID as given.
+   * 
+   * @return ProcessState indicating how to proceed. If a type is found by either name or ID both values must match
+   * the arguments given. If they do not match an error is thrown. If they match, return NothingToDo. If neither value
+   * matches, return Continue.
+   */
+  def testExistingType(typeId: UUID, typeName: String, acc: MessageAccumulator): Try[ProcessState] = Try {
+    val ad1 = TypeFactory.findByName(typeName)
+    (if (ad1.isEmpty) ProcessState.Continue 
+    else {
+      // Type name exists - check that it has the expected ID
+      if (ad1.get.id == typeId) {
+        acc push s"Type ${typeName} with ID ${typeId} already exists. Nothing to do."
+        ProcessState.NothingToDo
+      } else {
+        // Type exists but ID does not match expected - this is an error.
+        throw new ConflictException(s"Type ${typeName} already exists, but its ID is unexpected. expected: ${typeId}, found: ${ad1.get.id}")
+      }
+    }) match {
+      case ProcessState.NothingToDo => ProcessState.NothingToDo
+      case ProcessState.Continue => {
+        val ad2 = TypeFactory.findById(typeId)
+        if (ad2.isEmpty) ProcessState.Continue
+        else {
+          // Type with ID already exists - check it has expected name
+          if (ad2.get.name == typeName) {
+            acc push s"Type ${typeName} with ID ${typeId} already exists. Nothing to do."
+            ProcessState.NothingToDo
+          } else {
+            // Type with ID exists, buy name does not match expected - error.
+            throw new ConflictException(s"Type with ID ${typeId} found, but name is unexpected. expected: ${typeName}. found: ${ad2.get.name}")
+          }
+        }
+      }
+    } 
+  }  
+
+  /**
+   * Idempotent method to add a ResourceType to an Org. Tests first for a type with the same
+   * Name and/or ID before creating. If type already exists, the function completes successfully
+   * with a message explaining that the type already exists and there's "nothing to do".
+   * 
+   * @param org UUID of the Org where the new type will be created
+   * @param newTypeId UUID of the new type
+   * @param newTypeName name of the new type
+   * @param identity of the User creating this type
+   * @param payload Optional JSON for the creation method
+   * @param acc A MessageAccumulator
+   * @param typeFunction a function to create the new type
+   */
+  def addTypeToOrg(
+      org: UUID,
+      newTypeId: UUID,
+      newTypeName: String,
+      identity: UUID, 
+      payload: Option[JsValue] = None,
+      acc: MessageAccumulator)(
+          typeFunction : CreateTypeFunction): Either[JsValue, JsValue] = {
+    
+    val process: Try[_] =
+      testExistingType(newTypeId, newTypeName, acc).map { state =>
+        state match {
+          case ProcessState.NothingToDo => Success(())
+          case ProcessState.Continue => for {
+            creator <- Try {
+              acc push s"Looking up creator '${identity}'"
+              ResourceFactory.findById(ResourceIds.User, identity).getOrElse {
+                throw new RuntimeException(s"Could not locate creator '${identity}'")
+              }
+            }
+            newType <- {
+              acc push s"Creating Type ${newTypeName}"
+              typeFunction(org, creator)
+            }
+          } yield newType
+        }
+      }
+    handleResultStatus(process, acc)
+  }
+  
+  /**
+   * General method to handle the final result and message stack of a migration process.
+   */
+  def handleResultStatus[A](result: Try[A], acc: MessageAccumulator): Either[JsValue,JsValue] = {
+    result match {
+      case Success(_) => {
+        acc push "Meta update successful."
+        Right(MigrationStatus(
+            status = "SUCCESS",
+            message = s"Upgrade successfully applied",
+            succeeded = Some(acc.messages),
+            None).toJson)
+      }
+      case Failure(e) => {
+        Left(MigrationStatus(
+            status = "FAILURE",
+            message = s"There were errors performing this upgrade: ${e.getMessage}",
+            succeeded = Some(acc.messages),
+            errors = Some(Seq(e.getMessage))).toJson)
+      }
+    }  
+  }
+  
 }

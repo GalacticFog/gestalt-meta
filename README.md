@@ -46,6 +46,59 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
+
+## Automatic Upgrade Checking (0.7.10)
+Meta may be configured to check for updates to core Gestalt Platform components. This functionality is configured using the environment variables described below. *NOTE: These variables are set on the Meta process.*
+
+| Variable | Default | Description |
+|----------|----------|-------------|
+| META_UPGRADE_CHECK_ENABLED | true | Controls upgrade checking overall. If `false` Meta will never check for updates |
+| META_UPGRADE_URL | *required*| URL to check for updates |
+| META_UPGRADE_CHECK_HOURS | 24| Number of hours between update checks
+
+As an example, the following configuration enables update checks every 6 hours:
+
+    export META_UPGRADE_CHECK_ENABLED=true
+    export META_UPGRADE_URL=https://example.com/gestaltplatform/upgrades
+    export META_UPGRADE_CHECK_HOURS=6
+
+#### Upgrade Checking API
+Enabling upgrade checks on Meta simply means that the service will check for upgrades on the given schedule. Data about any upgrades that are found is cached and may be accessed via the Meta REST API.
+
+#### Determine if an update is available
+    GET /upgradeavailable
+
+Response when an upgrade is available:
+
+    {
+      "upgradeAvailable": true,
+      "upgradeImage": "gcr.io/galactic-public-2018/upgradeFrom2.4.1TO2.4.2",
+      "upgradeNotes": "http://docs.galacticfog.com/docs/patchnotes2.4.2.html",
+      "severity" : "recommended"
+    }
+
+Response when there is no current upgrade avaiable:
+
+    {
+      "upgradeAvailable": false
+    }
+    
+#### View the Upgrade Checking Status and Settings
+
+    GET /upgradeavailable/status
+
+Example Response
+
+    {
+      "message": "Automatic upgrade checks are ENABLED",
+      "env": {
+        "META_UPGRADE_URL": "https://s3.amazonaws.com/gestaltplatform/upgrades",
+        "META_UPGRADE_CHECK_HOURS": 24,
+        "META_UPGRADE_CHECK_ENABLED": true
+      }
+    }
+
+
 ## Setting Root User
 Similar to a *nix operating system, Meta employs the concept of a 'root' or 'super' user. Root is simply a special user-account that has all possible privileges in the system. Note that in this context, root is a self contained concept - this user is defined in gestalt-security, and given special permissions in Meta. By default this user has nothing to do with any Directory/LDAP integration you may have in place. Root privileges do not (automatically) extend to any external systems your installation may integrate with.
 
