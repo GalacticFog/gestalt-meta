@@ -12,13 +12,14 @@ import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import com.galacticfog.gestalt.caas.kube._
 import com.galacticfog.gestalt.data.{ResourceFactory, ResourceState, parseUUID}
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
-//import com.galacticfog.gestalt.meta.api.output.gestaltResourceInstanceFormat
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceOwnerLink, ResourceStates}
 
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, ResourceNotFoundException}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.play.silhouette.GestaltFrameworkSecurity
+import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
+
 import com.google.inject.Inject
 import controllers.util.SecureController
 import javax.inject.Singleton
@@ -39,7 +40,6 @@ import skuber.apps.v1.{DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
 import skuber.batch.{Job, JobList, CronJob, CronJobList}
 import skuber.rbac.{Role, RoleBinding}
 
-
 import skuber.json.format._
 import skuber.json.batch.format._
 import skuber.json.rbac.format._
@@ -53,6 +53,7 @@ import controllers.util.QueryString
 
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt 
+import com.galacticfog.gestalt.meta.api.ContainerSpec
 
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
@@ -100,7 +101,6 @@ class KubeNativeController @Inject()(
   }
   
   def createApplicationDeployment(fqon: String, provider: UUID): Action[AnyContent] = AsyncAuditedAny(fqon) { implicit request =>
-
     val contentType = request.contentType.getOrElse("")
     
     if (isYamlType(contentType)) {    
@@ -180,13 +180,13 @@ class KubeNativeController @Inject()(
    * Get metaEnv param from QueryString as a UUID.
    * Validates both that the string is a valid UUID and that the Environment exists.
    */
-  private[controllers] def validateMetaEnv(qs: Map[String, Seq[String]]): UUID = {
+  private[controllers] def validateMetaEnv(qs: Map[String, Seq[String]]): GestaltResourceInstance = {
     val sid = parseUUID(QueryString.requiredSingle(qs, Params.Environment)).getOrElse {
       throw new BadRequestException(s"'${Params.Environment}' query param not found in querystring.")
     }
     ResourceFactory.findById(ResourceIds.Environment, UUID.fromString(sid)).getOrElse {
       throw new BadRequestException(s"Environment ${sid} not found.")
-    }.id
+    }
   }
   
   private[controllers] def deploymentResult[R](
@@ -196,27 +196,53 @@ class KubeNativeController @Inject()(
       request: SecuredRequest[_,_], 
       context: RequestContext): Future[Result] = {
     
+    /*
+     * TODO: Validations 
+     * - Assert given Kubernetes namespace exists
+     */    
+    
     val payload = request.body.asInstanceOf[AnyContentAsRaw]
     val rawBody = decodeCompiledChart(payload)
     
-    // This is a list of each YAML document in the composite input as a YAML String
+    /* 
+     * This is a list of each YAML document in the composite input as a YAML String 
+     * (each document is a separate List item)
+     */
     val documents: List[String] = CompiledHelmChart.splitToYamlString(rawBody)
 
     val qs = request.queryString
     val source = QueryString.requiredSingle(qs, Params.Source)
     val release = QueryString.requiredSingle(qs, Params.Release)
     val namespace = QueryString.requiredSingle(qs, Params.Namespace)
-    val metaenv = validateMetaEnv(qs)
+    val env = validateMetaEnv(qs)
+    val metaenv = env.id
+
+    /*
+     * Get the 'final' name of the Kubernetes Deployment from the Chart. Note, final-name is
+     * the Deployment.metadata.name with the 'RELEASE-NAME' token replaced. This method throws
+     * if there is no explicit Deployment resource found in the chart.
+     */
+    def extractNameFromDeployment() = {
+      val deployment = documents
+        .map(doc => CompiledHelmChart.string2Map(doc))
+        .find(m => m("kind").toString.toLowerCase == "deployment").getOrElse {
+        throw new BadRequestException(s"Chart MUST contain an explicit 'Deployment' object")
+      }
+      val rawName = CompiledHelmChart.toScalaMap(deployment("metadata"))("name")
+      rawName.toString.replaceAll("(?i)RELEASE-NAME", release)
+    }
+    
+    /*
+     * Format container.properties.external ID
+     */
+    def formatExternalId(namespace: String, deploymentName: String): String = {
+      s"/namespaces/${namespace}/deployments/${deploymentName}"
+    }
     
     log.debug(
       "Query Params: source=[%s], release=[%s], namespace=[%s], meta-env=[%s]".format(
         source, release, namespace, metaenv))    
-    
-    /*
-     * TODO: Validations 
-     * - Assert given Kubernetes namespace exists
-     */
-    
+
     val output = AppDeploymentData(
       provider = provider,
       status = "n/a",
@@ -235,8 +261,7 @@ class KubeNativeController @Inject()(
     /*
      * Iterate over YAML docs, attempt to create each in Kubernetes - pack each
      * response (success or failure) into AppDeployment response
-     */    
-    
+     */
     val deploymentRecord = documents.foldLeft(output) { (acc, doc) =>
       val result = Try {
         Await.result(createKubeResource(doc, context, request.queryString).transform(
@@ -261,45 +286,82 @@ class KubeNativeController @Inject()(
     }
 
     /*
-     * TODO: At this point everything has been created in kubernetes (errors aside)
-     * Here's where we can kick off 'import'. TBD if that will handle Secrets 
-     * as well as Containers.
-     * 
-     * Here we need to select containers by label (release: $release) for import.
+     * NOTE: At this point everything has been created in kubernetes (errors aside).
      */
-    println(s"Importing containers by label => 'release: ${release}'")
-    
-    def selectByRelease(releaseName: String): List[skuber.Container] = {
+     
+    val finalName = extractNameFromDeployment()
+    val externalId = formatExternalId(namespace, finalName)
+    val actionPayload = formatImportActionPayload(finalName, provider, metaenv, externalId)
+    val newContainerJson = formatImportJson(actionPayload, "container.import", provider, metaenv)
+    val containerCreator = request.identity.asInstanceOf[AuthAccountWithCreds]
 
-      val selector = new LabelSelector(LabelSelector.IsEqualRequirement(Labels.Release, releaseName))
-            
-      val containers: Future[List[skuber.Container]] = for {
-        pl <- context.listSelected[PodList](selector)
-        cs <- Future(pl.flatMap { p => 
-          p.spec.map(_.containers) 
-        }.flatten)
-      } yield cs
-  
-      Await.result(containers, 10.seconds)
-      //containers.map(RenderObject(_, request.headers.toMap))
-    } 
-   
-    val kcs = selectByRelease(release)
-    kcs.foreach { c =>
-      println(s"Importing : {name: ${c.name}, image: ${c.image}}")
-    }
-    val deploymentName = "%s-%s".format(release, UUID.randomUUID.toString)
     Future {
-      metaAppDeployment(org, metaenv, creator, deploymentName, 
+      log.debug("About to create AppDeployment in Meta...")
+      val appDeploymentName = "%s-%s".format(release, UUID.randomUUID.toString)
+      metaAppDeployment(org, metaenv, creator, appDeploymentName, 
           deploymentRecord.withStatus(deploymentRecord.getStatus)) match {
-        case Failure(e) => HandleExceptions(e)
+        case Failure(e) => {
+          log.error(s"Failed creating AppDeployment in Meta: ${e.getMessage}")
+          HandleExceptions(e)
+        }
         case Success(deployment) => {
-          Created(RenderSingle(deployment)(request))
+          log.debug("AppDeployment created successfully.")
+          log.debug("About to import deployment container into Meta...")
+          
+          CreateWithEntitlements(org, containerCreator, newContainerJson, ResourceIds.Container, Some(metaenv)) match {
+            case Failure(e) => {
+              log.error(s"Failed creating imported container in Meta: ${e.getMessage}")
+              HandleExceptions(e)
+            }
+            case Success(importedContainer) => {
+              log.debug("Container imported successfully.")
+              Created(RenderSingle(deployment)(request))    
+            }
+          }
         }
       }
     }
   
   }
+  
+  def formatImportActionPayload(name: String, provider: UUID, envid: UUID, externalId: String) = {
+    // Get ID of parent workspace
+    val workspaceId = ResourceFactory.findParent(ResourceIds.Workspace, envid).fold {
+      throw new RuntimeException(s"Could not find parent workspace for environment '${envid}'")
+    }{ w => w.id }
+    
+    Json.obj(
+      "context" -> Json.obj(
+        "org" -> Json.obj("fqon" -> "" /* not currently used */),
+        "workspace" -> Json.obj("id" -> workspaceId)
+       ),
+       "resource" -> Json.obj(
+          "name" -> name,
+          "properties" -> Json.obj(
+            "image" -> "n/a",
+            "container_type" -> "n/a",
+            "external_id" -> externalId,
+            "provider" -> Json.obj(
+                "id" -> provider.toString
+             )
+           )
+        )
+     )
+  }
+  
+  def selectByRelease(context: RequestContext, releaseName: String): List[skuber.Container] = {
+    println(s"Importing containers by label => 'release: ${releaseName}'")
+    val selector = new LabelSelector(LabelSelector.IsEqualRequirement(Labels.Release, releaseName))
+          
+    val containers: Future[List[skuber.Container]] = for {
+      pl <- context.listSelected[PodList](selector)
+      cs <- Future(pl.flatMap { p => 
+        p.spec.map(_.containers) 
+      }.flatten)
+    } yield cs
+
+    Await.result(containers, 10.seconds)
+  }   
   
   /**
    * Create and persist an AppDeployment Resource in Meta.
@@ -346,7 +408,6 @@ class KubeNativeController @Inject()(
       case _ => throw new RuntimeException(s"Unknown ObjectResource Type. found: ${r.getClass.getSimpleName}")
     }
   }
-  
   
   
   private[controllers] def deleteResult[R](path: PathArity, request: SecuredRequest[_,_], context: RequestContext): Future[Result] = {
@@ -744,20 +805,6 @@ class KubeNativeController @Inject()(
     }
   }
   
-//  private[controllers] def Render[A](
-//      obj: A, hdrs: Headers, default: Boolean = true)(implicit fmt: Format[A]) = {
-//    if (AcceptsJson(hdrs))
-//      Json.toJson(obj)
-//    else if (AcceptsYaml(hdrs))
-//      toYaml(obj)
-//    else if (default)
-//      toYaml(obj)
-//    else {
-//      val mimetypes = (MimeYaml ++ MimeJson).mkString(",") 
-//      throw new BadRequestException(s"Acceptable mime-types are: $mimetypes")
-//    }      
-//  }
-  
   /**
    * Convert a Kubernetes object to YAML
    */
@@ -850,284 +897,71 @@ class KubeNativeController @Inject()(
     | POST /{fqon}/providers/{id}/kube/persistentvolumeclaims
     | POST /{fqon}/providers/{id}/kube/namespaces
     """.stripMargin.trim
-    
-    
-//  private def doImport2(
-//      payload: JsObject, 
-//      ctx: JsObject
-//      
-//      action: String,
-//      providerId: UUID,
-//      resourceId: UUID,
-//      envId: UUID
-//      ): JsValue = {
-//    
-//    val provider = {
-//      (payload \ "provider").asOpt[JsObject] getOrElse(throw new RuntimeException("payload did not have '.provider'"))
-//    }
-//    
-//    val providerResource = {
-//      val id = (provider \ "id").asOpt[String] getOrElse(throw new RuntimeException("Could not find provider/id"))
-//      ResourceFactory.findById(UUID.fromString(id)) getOrElse(throw new RuntimeException(s"Kube provider with ID '$id' not found."))
-//    }
-//    
-//    /*
-//action: String = i.e. container.import
-//resourceId: String = ID of Container? from payload/resource/id
-//envId: String = meta environment ID
-//providerId: String = kube provider ID
-//     */
-//    
-//    log.debug("got provider config")
-//    // val providerConfig = (provider \ "properties" \ "config").asOpt[JsObject] getOrElse(throw new RuntimeException("provider did not have '.properties.config'"))
-//
-//    //val action = (payload \ "action").as[String]
-//    val resource = (payload \ "resource").as[JsObject]
-//    //val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
-//    val inputProps = Json.obj(
-//        "image" -> "n/a",
-//        "container_type" -> "n/a",
-//        "external_id" -> "n/a", /* i.e. /default/nginx */
-//        "provider" -> Json.obj("id" -> providerId.toString))
-//        
-///*
-//  "properties": {
-//    "image": "n/a",
-//    "container_type": "n/a",
-//    "external_id": "/default/nginx",
-//    "provider": {
-//      "id": "aed3cec3-4fd7-49d8-9adf-e24fccbc1a1c"
-//    }
-//  }
-//*/
-//    
-//    val importTarget = (resource \ "properties" \ "external_id").as[String]
-//
-//    val uuid = (resource \ "id").as[String]
-//    val envId = (payload \ "context" \ "environment" \ "id").as[String]
-//
-//    val contextLabels = Json.obj(
-//      "meta/environment" -> (payload \ "context" \ "environment" \ "id").as[String],
-//      "meta/workspace" -> (payload \ "context" \ "workspace" \ "id").as[String],
-//      "meta/fqon" -> "",    // what should I put here?
-//      "meta/provider" -> (payload \ "provider" \ "id").as[String]
-//    )
-//    
-//    //import com.galacticfog.gestalt.meta.api.ContainerSpec
-//    
-//    def checkLabels(obj: skuber.ObjectResource, uuidLabel: String): Future[Unit] = {
-//      val uuid = obj.metadata.labels.get(s"meta/${uuidLabel}")
-//      val environment = obj.metadata.labels.get("meta/environment")
-//      if(uuid.isEmpty && environment.isEmpty) {
-//        Future.successful(())
-//      }else {
-//        Future.failed(new RuntimeException(s"Resource is already managed by gestalt: envId=${environment}; id=${uuid}"))
-//      }
-//    }
-//
-//    def setLabels[T <: skuber.ObjectResource](kube: RequestContext, obj: T, uuidLabel: String)(implicit rd: skuber.ResourceDefinition[T], fmt: Format[T]): Future[T] = {
-//      val labels = Json.obj(
-//        "metadata" -> Json.obj(
-//          "labels" -> (Json.obj(
-//            s"meta/${uuidLabel}" -> uuid
-//          ) ++ contextLabels)
-//        )
-//      )
-//      kube.jsonMergePatch(obj, labels.toString)
-//    }
-//
-//    def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
-//      val idInMeta = obj.metadata.labels.get(s"meta/${uuidLabel}").map(UUID.fromString(_)) getOrElse {
-//        throw new RuntimeException(s"Resource ${obj.name} in namespace ${obj.ns} has not been imported to gestalt")
-//      }
-//      val objEnvId = obj.metadata.labels.get("meta/environment").getOrElse("")
-//      if(envId != objEnvId) {
-//        throw new RuntimeException(s"Resource ${obj.name} (env. id=${objEnvId}) and resource being imported (env. id=${envId}) must belong to the same gestalt environment")
-//      }
-//      idInMeta
-//    }
-//
-//    def initKube(providerResource: GestaltResourceInstance, namespaceValue: String) = {
-//      Await.result(skuberFactory.initializeKube(providerResource, namespaceValue), 5.seconds)
-//    }
-//    
-//    val fResp = (action, importTarget.split("/", 5)) match {
-//      case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
-//        log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
-//
-//        val kube = initKube(providerResource, namespaceValue)
-//        importContainer(kube, envId: String, namespaceValue, deplNameValue, contextLabels, resource)
-//      }
-//      case ("secret.import", Array("", "namespaces", namespaceValue, "secrets", secretName)) => {
-//        log.debug(s"namespace: $namespaceValue, secret: $secretName")
-//
-//        //val kube = initializeKube(provider, namespaceValue)
-//        val kube = initKube(providerResource, namespaceValue)
-//        for {
-//          secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
-//          _ <- checkLabels(secret, "secret")    // so that failed imports don't set labels
-//          importProps = Json.obj(
-//            // "name" -> secret.name,
-//            "items" -> (secret.data map { case(key, value) =>
-//              Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
-//            })
-//          )
-//          _ <- setLabels(kube, secret, "secret")
-//        } yield resource ++ Json.obj(
-//          "properties" -> (inputProps ++ importProps)
-//        )
-//      }
-//      case ("volume.import", Array("", "namespaces", namespaceValue, "persistentvolumeclaims", pvcName)) => {
-//        log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
-//
-//        //val kube = initializeKube(provider, namespaceValue)
-//        val kube = initKube(providerResource, namespaceValue)
-//        for {
-//          pvc <- kube.getInNamespace[skuber.PersistentVolumeClaim](pvcName, namespaceValue)
-//          _ <- checkLabels(pvc, "volume")    // so that failed imports don't set labels
-//          pvcSpec = pvc.spec.get
-//          _ = log.debug(s"getting pv ${pvcSpec.volumeName}")
-//          pv <- kube.getInNamespace[skuber.PersistentVolume](pvcSpec.volumeName, namespaceValue)
-//          _ = log.debug(s"got pv ${pvcSpec.volumeName}")
-//          pvSpec = pv.spec.get
-//          pvType = pvSpec.source match {
-//            // not sure if this is the correct correspondence
-//            case _: skuber.Volume.AWSElasticBlockStore => "external"
-//            case _: skuber.Volume.GCEPersistentDisk => "persistent"
-//            case _: skuber.Volume.Glusterfs => "external"
-//            case _: skuber.Volume.HostPath => "host_path"
-//            case _: skuber.Volume.ISCSI => "external"
-//            case _: skuber.Volume.NFS => "external"
-//            case _: skuber.Volume.RBD => "external"
-//            case _: skuber.Volume.GenericVolumeSource => "external"
-//          }
-//          size = pvSpec.capacity.get("storage").map(_.amount.toInt / 1024 / 1024).getOrElse(0)
-//          accessMode: String = (pvcSpec.accessModes.headOption orElse pvSpec.accessModes.headOption).map(_.toString).getOrElse("")
-//          importProps = Json.obj(
-//            "type" -> pvType,
-//            "config" -> Json.obj(),     // what should I put in here?
-//            "size" -> size,
-//            "access_mode" -> accessMode
-//          )
-//          _ <- setLabels(kube, pvc, "volume")
-//        } yield resource ++ Json.obj(
-//          "properties" -> (inputProps ++ importProps)
-//        )
-//      }
-//      case _ => throw BadRequestException(s"Invalid combination of action and External ID: (`${action}`, `${importTarget}`)")
-//    }
-//
-//    Await.result(fResp, 15.seconds)
-//  }        
-    
-    
-  private def doImport(payload: JsObject, ctx: JsObject): JsValue = {
-    val provider = {
-      (payload \ "provider").asOpt[JsObject] getOrElse(throw new RuntimeException("payload did not have '.provider'"))
-    }
-    
-    val providerResource = {
-      val id = (provider \ "id").asOpt[String] getOrElse(throw new RuntimeException("Could not find provider/id"))
-      ResourceFactory.findById(UUID.fromString(id)) getOrElse(throw new RuntimeException(s"Kube provider with ID '$id' not found."))
-    }
-    
-    /*
-action: String = i.e. container.import
-resourceId: String = ID of Container? from payload/resource/id
-envId: String = meta environment ID
-providerId: String = kube provider ID
-     */
-    
-    log.debug("got provider config")
-    // val providerConfig = (provider \ "properties" \ "config").asOpt[JsObject] getOrElse(throw new RuntimeException("provider did not have '.properties.config'"))
+  
+  
+  private def formatImportJson(
+      payload: JsObject,
+      action: String,
+      providerId: UUID,
+      envId: UUID ): JsValue = {
 
-    val action = (payload \ "action").as[String]
+    val providerResource = ResourceFactory.findById(ResourceIds.KubeProvider, providerId).getOrElse {
+      throw new RuntimeException(s"Could not find KubeProvider '${providerId}'.")
+    }
+    
     val resource = (payload \ "resource").as[JsObject]
-    val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
+
+    val inputProps = Json.obj(
+        "image" -> "n/a",
+        "container_type" -> "n/a",
+        "external_id" -> "n/a", /* i.e. /default/nginx */
+        "provider" -> Json.obj("id" -> providerId.toString))
+
     val importTarget = (resource \ "properties" \ "external_id").as[String]
-    
-    val uuid = (resource \ "id").as[String]
-    val envId = (payload \ "context" \ "environment" \ "id").as[String]
 
+    val uuid = UUID.randomUUID
+    
     val contextLabels = Json.obj(
-      "meta/environment" -> (payload \ "context" \ "environment" \ "id").as[String],
-      "meta/workspace" -> (payload \ "context" \ "workspace" \ "id").as[String],
-      "meta/fqon" -> "",    // what should I put here?
-      "meta/provider" -> (payload \ "provider" \ "id").as[String]
+      "meta/fqon"        -> (payload \ "context" \ "org" \ "fqon").as[String],
+      "meta/workspace"   -> (payload \ "context" \ "workspace" \ "id").as[String],
+      "meta/environment" -> envId.toString,
+      "meta/provider"    -> providerId.toString
     )
-    
-    //import com.galacticfog.gestalt.meta.api.ContainerSpec
-    
-    def checkLabels(obj: skuber.ObjectResource, uuidLabel: String): Future[Unit] = {
-      val uuid = obj.metadata.labels.get(s"meta/${uuidLabel}")
-      val environment = obj.metadata.labels.get("meta/environment")
-      if(uuid.isEmpty && environment.isEmpty) {
-        Future.successful(())
-      }else {
-        Future.failed(new RuntimeException(s"Resource is already managed by gestalt: envId=${environment}; id=${uuid}"))
-      }
-    }
 
-    def setLabels[T <: skuber.ObjectResource](kube: RequestContext, obj: T, uuidLabel: String)(implicit rd: skuber.ResourceDefinition[T], fmt: Format[T]): Future[T] = {
-      val labels = Json.obj(
-        "metadata" -> Json.obj(
-          "labels" -> (Json.obj(
-            s"meta/${uuidLabel}" -> uuid
-          ) ++ contextLabels)
-        )
-      )
-      kube.jsonMergePatch(obj, labels.toString)
-    }
-
-    def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
-      val idInMeta = obj.metadata.labels.get(s"meta/${uuidLabel}").map(UUID.fromString(_)) getOrElse {
-        throw new RuntimeException(s"Resource ${obj.name} in namespace ${obj.ns} has not been imported to gestalt")
-      }
-      val objEnvId = obj.metadata.labels.get("meta/environment").getOrElse("")
-      if(envId != objEnvId) {
-        throw new RuntimeException(s"Resource ${obj.name} (env. id=${objEnvId}) and resource being imported (env. id=${envId}) must belong to the same gestalt environment")
-      }
-      idInMeta
-    }
-
-    def initKube(providerResource: GestaltResourceInstance, namespaceValue: String) = {
-      Await.result(skuberFactory.initializeKube(providerResource, namespaceValue), 5.seconds)
-    }
-    
     val fResp = (action, importTarget.split("/", 5)) match {
       case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
         log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
-
+        
         val kube = initKube(providerResource, namespaceValue)
-        importContainer(kube, envId: String, namespaceValue, deplNameValue, contextLabels, resource)
+        importContainer(kube, envId.toString, namespaceValue, deplNameValue, contextLabels, (resource ++ Json.obj("id" -> uuid.toString)))
       }
+      
       case ("secret.import", Array("", "namespaces", namespaceValue, "secrets", secretName)) => {
         log.debug(s"namespace: $namespaceValue, secret: $secretName")
 
-        //val kube = initializeKube(provider, namespaceValue)
         val kube = initKube(providerResource, namespaceValue)
         for {
           secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
-          _ <- checkLabels(secret, "secret")    // so that failed imports don't set labels
+          _ <- assertUnmanaged(secret, "secret")    // so that failed imports don't set labels
           importProps = Json.obj(
             // "name" -> secret.name,
             "items" -> (secret.data map { case(key, value) =>
               Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
             })
           )
-          _ <- setLabels(kube, secret, "secret")
+          _ <- setLabels(kube, secret, "secret", uuid, contextLabels)
         } yield resource ++ Json.obj(
           "properties" -> (inputProps ++ importProps)
         )
       }
+      
       case ("volume.import", Array("", "namespaces", namespaceValue, "persistentvolumeclaims", pvcName)) => {
         log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
 
-        //val kube = initializeKube(provider, namespaceValue)
         val kube = initKube(providerResource, namespaceValue)
         for {
           pvc <- kube.getInNamespace[skuber.PersistentVolumeClaim](pvcName, namespaceValue)
-          _ <- checkLabels(pvc, "volume")    // so that failed imports don't set labels
+          _ <- assertUnmanaged(pvc, "volume")    // so that failed imports don't set labels
           pvcSpec = pvc.spec.get
           _ = log.debug(s"getting pv ${pvcSpec.volumeName}")
           pv <- kube.getInNamespace[skuber.PersistentVolume](pvcSpec.volumeName, namespaceValue)
@@ -1152,17 +986,53 @@ providerId: String = kube provider ID
             "size" -> size,
             "access_mode" -> accessMode
           )
-          _ <- setLabels(kube, pvc, "volume")
+          _ <- setLabels(kube, pvc, "volume", uuid, contextLabels)
         } yield resource ++ Json.obj(
           "properties" -> (inputProps ++ importProps)
         )
       }
       case _ => throw BadRequestException(s"Invalid combination of action and External ID: (`${action}`, `${importTarget}`)")
     }
-
     Await.result(fResp, 15.seconds)
-  }    
+  }
+
+  
+  def initKube(providerResource: GestaltResourceInstance, namespaceValue: String) = {
+    Await.result(skuberFactory.initializeKube(providerResource, namespaceValue), 5.seconds)
+  }
+  
+//  def parseProviderFromActionPayload(payload: JsObject): GestaltResourceInstance = {
+//    (payload \ "provider").asOpt[JsObject].fold {
+//      throw new RuntimeException("payload did not have '.provider'")
+//    }{ providerJson =>
+//      (providerJson \ "id").asOpt[String].fold {
+//        throw new RuntimeException("Could not find provider/id")
+//      }{ id =>
+//        ResourceFactory.findById(UUID.fromString(id)).getOrElse {
+//          throw new RuntimeException(s"Kube provider with ID '$id' not found.")
+//        }
+//      }
+//    }    
+//  }
+
+  def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
     
+    // Assert that resource exists in Meta
+    val idInMeta = obj.metadata.labels.get(s"meta/${uuidLabel}").map(UUID.fromString(_)) getOrElse {
+      throw new RuntimeException(s"Resource ${obj.name} in namespace ${obj.ns} has not been imported to gestalt")
+    }
+    
+    // Get the environment the resource is actually in
+    val objEnvId = obj.metadata.labels.get("meta/environment").getOrElse("")
+    
+    // Ensure the
+    if(envId != objEnvId) {
+      throw new RuntimeException(
+          s"Resource ${obj.name} (env. id=${objEnvId}) and resource being imported (env. id=${envId}) must belong to the same gestalt environment")
+    }
+    idInMeta
+  }  
+
   
   def importContainer(
       kube: RequestContext, 
@@ -1174,170 +1044,197 @@ providerId: String = kube provider ID
     
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
     //val importTarget = (resource \ "properties" \ "external_id").as[String]
-    val uuid = (resource \ "id").as[String]    
+    val resourceUuid = UUID.fromString((resource \ "id").as[String])    
     
-    import com.galacticfog.gestalt.meta.api.ContainerSpec
-    def checkLabels(obj: skuber.ObjectResource, uuidLabel: String): Future[Unit] = {
-      val uuid = obj.metadata.labels.get(s"meta/${uuidLabel}")
-      val environment = obj.metadata.labels.get("meta/environment")
-      if(uuid.isEmpty && environment.isEmpty) {
-        Future.successful(())
-      }else {
-        Future.failed(new RuntimeException(s"Resource is already managed by gestalt: envId=${environment}; id=${uuid}"))
+    for {
+      depl <- kube.getInNamespace[Deployment](deplNameValue, namespaceValue)
+      _    <- assertUnmanaged(depl, "container")    // so that failed imports don't set labels
+      /*
+       * Here is where we limit import targets to a single Container.
+       */
+      containerSpec: Container <- depl.getPodSpec.map(_.containers) match {
+        case Some(List(single)) => Future.successful(single)
+        case None => Future.failed(new RuntimeException("Kubernetes deployment did not have a Pod spec"))
+        case Some(_) => Future.failed(new RuntimeException(
+            "Kubernetes container.import currently only supports Deployments with a single container spec"))
       }
-    }    
-    
-    def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
-      val idInMeta = obj.metadata.labels.get(s"meta/${uuidLabel}").map(UUID.fromString(_)) getOrElse {
-        throw new RuntimeException(s"Resource ${obj.name} in namespace ${obj.ns} has not been imported to gestalt")
-      }
-      val objEnvId = obj.metadata.labels.get("meta/environment").getOrElse("")
-      if(envId != objEnvId) {
-        throw new RuntimeException(s"Resource ${obj.name} (env. id=${objEnvId}) and resource being imported (env. id=${envId}) must belong to the same gestalt environment")
-      }
-      idInMeta
-    }    
-    
-    def setLabels[T <: skuber.ObjectResource](kube: RequestContext, obj: T, uuidLabel: String)(implicit rd: skuber.ResourceDefinition[T], fmt: Format[T]): Future[T] = {
-      val labels = Json.obj(
-        "metadata" -> Json.obj(
-          "labels" -> (Json.obj(
-            s"meta/${uuidLabel}" -> uuid
-          ) ++ contextLabels)
+      
+      volumesSpec  = depl.getPodSpec.get.volumes
+      portMappings = containerSpec.ports.map { kp =>
+        Json.obj(
+          "container_port" -> kp.containerPort,
+          "service_port"   -> kp.hostPort,
+          "name"           -> kp.name,
+          "virtual_hosts"  -> Seq.empty[String],
+          "protocol"       -> (kp.protocol match {
+            case skuber.Protocol.TCP => "tcp"
+            case skuber.Protocol.UDP => "udp"
+          }),
+          "expose_endpoint" -> false // ...for now
+           // "service_port" -> (pm \ "servicePort").asOpt[Int],
+           // "lb_port" -> vipHostPort.map(_._2),
+           // "expose_endpoint" -> vipHostPort.isDefined,
+           // "service_address" -> vipHostPort.map {
+           //   case (host, port) => Json.obj(
+           //     "protocol" -> (pm \ "protocol").asOpt[String],
+           //     "host" -> host,
+           //     "port" -> port
+           //   )
+           // }
         )
-      )
-      kube.jsonMergePatch(obj, labels.toString)
-    }
-
-        for {
-          depl <- kube.getInNamespace[Deployment](deplNameValue, namespaceValue)
-          _ <- checkLabels(depl, "container")    // so that failed imports don't set labels
-          containerSpec <- depl.getPodSpec.map(_.containers) match {
-            case Some(List(single)) => Future.successful(single)
-            case None => Future.failed(new RuntimeException("Kubernetes deployment did not have a Pod spec"))
-            case Some(_) => Future.failed(new RuntimeException("Kubernetes container.import currently only supports Deployments with a single container spec"))
-          }
-          volumesSpec = depl.getPodSpec.get.volumes
-          portMappings = containerSpec.ports map { kp =>
-            Json.obj(
-              "container_port" -> kp.containerPort,
-              "service_port" -> kp.hostPort,
-              "name" -> kp.name,
-              "virtual_hosts" -> Seq.empty[String],
-              "protocol" -> (kp.protocol match {
-                case skuber.Protocol.TCP => "tcp"
-                case skuber.Protocol.UDP => "udp"
-              }),
-              "expose_endpoint" -> false // ...for now
-               // "service_port" -> (pm \ "servicePort").asOpt[Int],
-               // "lb_port" -> vipHostPort.map(_._2),
-               // "expose_endpoint" -> vipHostPort.isDefined,
-               // "service_address" -> vipHostPort.map {
-               //   case (host, port) => Json.obj(
-               //     "protocol" -> (pm \ "protocol").asOpt[String],
-               //     "host" -> host,
-               //     "port" -> port
-               //   )
-               // }
-            )
-          }
-          cpuLimits = for(
-            r <- containerSpec.resources;
-            cpu <- r.limits.get(skuber.Resource.cpu)
-          ) yield cpu.amount.toDouble
-          cpuRequests = for(
-            r <- containerSpec.resources;
-            cpu <- r.requests.get(skuber.Resource.cpu)
-          ) yield cpu.amount.toDouble
-          memLimits = for(
-            r <- containerSpec.resources;
-            memory <- r.limits.get(skuber.Resource.memory)
-          ) yield (memory.amount / 1.0e6).toDouble
-          memRequests = for(
-            r <- containerSpec.resources;
-            memory <- r.requests.get(skuber.Resource.memory)
-          ) yield (memory.amount / 1.0e6).toDouble
-          // secrets
-          secretsAsEnvVars <- Future.traverse(containerSpec.env collect {
+      }
+      
+      cpuLimits = for(
+        r <- containerSpec.resources;
+        cpu <- r.limits.get(skuber.Resource.cpu)
+      ) yield cpu.amount.toDouble
+      
+      cpuRequests = for(
+        r <- containerSpec.resources;
+        cpu <- r.requests.get(skuber.Resource.cpu)
+      ) yield cpu.amount.toDouble
+      
+      memLimits = for(
+        r <- containerSpec.resources;
+        memory <- r.limits.get(skuber.Resource.memory)
+      ) yield (memory.amount / 1.0e6).toDouble
+      
+      memRequests = for(
+        r <- containerSpec.resources;
+        memory <- r.requests.get(skuber.Resource.memory)
+      ) yield (memory.amount / 1.0e6).toDouble
+      
+      /*
+       * Variable Secrets
+       */
+      secretsAsEnvVars <- Future.traverse(
+          containerSpec.env collect { 
             case skuber.EnvVar(name, skuber.EnvVar.SecretKeyRef(secretKey, secretName)) => {
               (name, secretKey, secretName)
-            }
-          }) { case(name, secretKey, secretName) =>
-            kube.getInNamespace[skuber.Secret](secretName, namespaceValue) map { secret =>
-              Json.toJson(ContainerSpec.SecretEnvMount(getMetaId(secret, envId, "secret"), name, secretKey))
-            }
-          }
-          secretVolumes = (volumesSpec collect {
-            case skuber.Volume(name, skuber.Volume.Secret(secretName, _, _, _)) => (name, secretName)
-          }).toMap
-          secretsAsVolumes <- Future.traverse(containerSpec.volumeMounts collect { 
-            case skuber.Volume.Mount(name, mountPath, readOnly, subPath, mountPropagation) if secretVolumes.contains(name) => {
-              (secretVolumes(name), mountPath)
-            }
-          }) { case(secretName, mountPath) =>
-            kube.getInNamespace[skuber.Secret](secretName, namespaceValue) map { secret =>
-              Json.toJson(ContainerSpec.SecretDirMount(getMetaId(secret, envId, "secret"), mountPath))
-            }
-          }
-          // volumes
-          mounts = (containerSpec.volumeMounts map {
-            case skuber.Volume.Mount(name, mountPath, _, _, _) => (name, mountPath)
-          }).toMap
-          inlineVolumes = volumesSpec collect {
-            case skuber.Volume(name, skuber.Volume.HostPath(path, _)) => {
-              Json.obj(
-                "mount_path" -> mounts(name),
-                "volume_resource" -> Json.obj(
-                  "name" -> s"${deplNameValue}-${name}",
-                  "resource_type" -> "Gestalt::Resource::Volume",
-                  "resource_state" -> "Gestalt::Resource::State::Active",
-                  "properties" -> Json.obj(
-                    // "type" -> "",
-                    // "config" -> Json.obj(),
-                    // "reclamation_policy" -> "",
-                    "mount_path" -> path
-                  )
-                )
+        }
+      }) { case(name, secretKey, secretName) =>
+        kube.getInNamespace[skuber.Secret](secretName, namespaceValue).map { secret =>
+          Json.toJson(ContainerSpec.SecretEnvMount(getMetaId(secret, envId, "secret"), name, secretKey))
+        }
+      }
+      
+      /*
+       * Volume Secrets
+       */
+      secretVolumes = (volumesSpec.collect {
+        case skuber.Volume(name, skuber.Volume.Secret(secretName, _, _, _)) => (name, secretName)
+      }).toMap
+      secretsAsVolumes <- Future.traverse(containerSpec.volumeMounts collect { 
+        case skuber.Volume.Mount(name, mountPath, readOnly, subPath, mountPropagation) if secretVolumes.contains(name) => {
+          (secretVolumes(name), mountPath)
+        }
+      }) { case(secretName, mountPath) =>
+        kube.getInNamespace[skuber.Secret](secretName, namespaceValue) map { secret =>
+          Json.toJson(ContainerSpec.SecretDirMount(getMetaId(secret, envId, "secret"), mountPath))
+        }
+      }
+      
+      /*
+       * VOLUMES
+       */
+      mounts = (containerSpec.volumeMounts.map {
+        case skuber.Volume.Mount(name, mountPath, _, _, _) => (name, mountPath)
+      }).toMap
+      
+      inlineVolumes = volumesSpec.collect {
+        case skuber.Volume(name, skuber.Volume.HostPath(path, _)) => {
+          Json.obj(
+            "mount_path" -> mounts(name),
+            "volume_resource"  -> Json.obj(
+              "name"           -> s"${deplNameValue}-${name}",
+              "resource_type"  -> "Gestalt::Resource::Volume",
+              "resource_state" -> "Gestalt::Resource::State::Active",
+              "properties" -> Json.obj(
+                // "type" -> "",
+                // "config" -> Json.obj(),
+                // "reclamation_policy" -> "",
+                "mount_path" -> path
               )
-            }
+            )
+          )
+        }
+      }
+      pvcs <- Future.traverse(
+        volumesSpec.collect {
+          case skuber.Volume(name, skuber.Volume.PersistentVolumeClaimRef(claimName, _)) => 
+            (name, claimName)
           }
-          pvcs <- Future.traverse(volumesSpec collect {
-            case skuber.Volume(name, skuber.Volume.PersistentVolumeClaimRef(claimName, _)) => (name, claimName)
-          }) { case(name, claimName) =>
-            kube.getInNamespace[skuber.PersistentVolumeClaim](claimName, namespaceValue) map { pvc =>
+        ){ 
+          case(name, claimName) =>
+            kube.getInNamespace[skuber.PersistentVolumeClaim](claimName, namespaceValue).map { pvc =>
               // Json.toJson(ContainerSpec.ExistingVolumeMountSpec(mounts(claimName), getMetaId(pvc, envId)))
               // ^^ doesn't get serialized
               Json.obj(
                 "mount_path" -> mounts(name),
-                "volume_id" -> getMetaId(pvc, envId, "volume")
+                "volume_id"  -> getMetaId(pvc, envId, "volume")
               )
             }
-          }
-          importProps = Json.obj(
-            "container_type" -> "DOCKER",
-            "image" -> containerSpec.image,
-            "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
-            "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
-            "memory" -> (memLimits orElse memRequests).getOrElse[Double](0.0),
-            "volumes" -> (pvcs ++ inlineVolumes),
-            "labels" -> depl.metadata.labels,
-            "env" -> Json.toJson(containerSpec.env.collect({
-              case skuber.EnvVar(name, skuber.EnvVar.StringValue(value)) => name -> value
-            }).toMap),
-            "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
-            "port_mappings" -> portMappings,
-            "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes)
-          ) ++ JsObject(
-            Seq(
-              Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
-              Option(containerSpec.args).filter(_.nonEmpty).map(args => "args" -> Json.toJson(args))
-            ).flatten
-          )
-          _ <- setLabels(kube, depl, "container")
-        } yield resource ++ Json.obj(
-          "properties" -> (inputProps ++ importProps)
-        )    
+        }
+      
+      importProps = Json.obj(
+        "container_type" -> "DOCKER",
+        "image" -> containerSpec.image,
+        "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
+        "cpus"     -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
+        "memory"   -> (memLimits orElse memRequests).getOrElse[Double](0.0),
+        "volumes"  -> (pvcs ++ inlineVolumes),
+        "labels"   -> depl.metadata.labels,
+        "env"      -> Json.toJson(containerSpec.env.collect({
+          case skuber.EnvVar(name, skuber.EnvVar.StringValue(value)) => (name -> value)
+        }).toMap),
+        "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
+        "port_mappings" -> portMappings,
+        "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes)
+      ) ++ JsObject(
+        Seq(
+          Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
+          Option(containerSpec.args).filter(_.nonEmpty).map(args => "args" -> Json.toJson(args))
+        ).flatten
+      )
+      _ <- setLabels(kube, depl, "container", resourceUuid, contextLabels)
+    } yield resource ++ Json.obj(
+      "properties" -> (inputProps ++ importProps)
+    )    
   }
+  
+  
+  /**
+   * Assert the given resource is NOT already managed by Gestalt.
+   */
+  protected[controllers] def assertUnmanaged(obj: skuber.ObjectResource, uuidLabel: String): Future[Unit] = {
+    val uuid = obj.metadata.labels.get(s"meta/${uuidLabel}")
+    val environment = obj.metadata.labels.get("meta/environment")
+    if(uuid.isEmpty && environment.isEmpty) {
+      Future.successful(())
+    }else {
+      Future.failed(new RuntimeException(s"Resource is already managed by gestalt: envId=${environment}; id=${uuid}"))
+    }
+  }
+  
+  /**
+   * Set Meta management labels on a Kubernetes resource.
+   */
+  protected[controllers] def setLabels[T <: skuber.ObjectResource](
+      kube: RequestContext, 
+      obj: T, 
+      uuidLabel: String,
+      metaUuid: UUID,
+      contextLabels: JsObject)(implicit rd: skuber.ResourceDefinition[T], fmt: Format[T]): Future[T] = {
+    
+    val labels = Json.obj(
+      "metadata" -> Json.obj(
+        "labels" -> (Json.obj(
+          s"meta/${uuidLabel}" -> metaUuid.toString
+        ) ++ contextLabels)
+      )
+    )
+    kube.jsonMergePatch(obj, labels.toString)
+  }  
   
 }
 

@@ -29,7 +29,7 @@ object CompiledHelmChart {
   /**
    * Convert a YAML Object to a Scala Map[String, Object]    
    */
-  def toScalaMap(jmap: Object) = {
+  def toScalaMap(jmap: Object): Map[String, Object] = {
     /*
      * mapAsScalaMap returns a mutable.Map - the final toMap call 
      * converts to immutable.Map
@@ -37,7 +37,7 @@ object CompiledHelmChart {
     mapAsScalaMap(jmap.asInstanceOf[java.util.Map[String,Object]]).toMap
   }
   
-  def string2Map(yaml: String) = {
+  def string2Map(yaml: String): Map[String, Object] = {
     toScalaMap(new Yaml().load(yaml))
   }
 }
