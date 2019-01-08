@@ -6,7 +6,7 @@ import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.Future
 
 import com.galacticfog.gestalt.data.models._
-//import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds}
+import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds}
 import scala.util.{Success,Failure}
 import javax.inject.Inject
 import play.api.Logger
@@ -26,12 +26,16 @@ import skuber.json.format._
 import skuber.apps.v1beta1._
  
 import skuber.LabelSelector
+import controllers.DeleteController
 
-class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
+
+class KubeNativeMethods @Inject()(
+    skuberFactory: SkuberFactory,
+    deleteController: DeleteController) {
 
   private val log = Logger(this.getClass)
   
-  def deleteAppDeployment(r: GestaltResourceInstance, qs: Map[String,Seq[String]]) = {
+  def deleteAppDeployment(auth: AuthAccountWithCreds, r: GestaltResourceInstance, qs: Map[String,Seq[String]]) = {
     log.info(s"Received request to delete AppDeployment ${r.id}")
     
     val ps = r.properties.getOrElse {
@@ -46,6 +50,29 @@ class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
         throw new RuntimeException(s"Failed parsing resource ${r.id} to AppDeployment: ${e.getMessage}")
     }
     log.debug("Successfully parsed AppDeployment from resource.")
+    
+    
+    /*
+    
+    TODO: Lookup container by properties.external_id and delete.
+    
+    val kubeDeployment: JsValue = (for {
+      ds <- dep.resources.kube.deployments
+      d <- ds.headOption
+    } yield d).getOrElse {
+      throw new RuntimeException("Could not find Kube Deployment for Meta AppDeployment Resource.")
+    }
+    
+    val externalId = {
+      val nm = (kubeDeployment \ "metadata" \ "namespace").as[String]
+      val dn = (kubeDeployment \ "metadata" \ "name").as[String]
+      s"/namespaces/${nm}/deployments/${dn}"
+    }
+    
+    import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
+    deleteController.manager.delete(???, auth, force=true, skipExternals=Seq(ResourceIds.Container))
+    
+    */
     
     val kube = ResourceFactory.findById(dep.provider).getOrElse {
       log.error(s"Kube provider with ID '${dep.provider}' not found.")

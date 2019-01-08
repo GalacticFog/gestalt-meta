@@ -163,7 +163,7 @@ class DeleteController @Inject()(
           if (resource.typeId == ResourceIds.Environment) {
             deleteEnvironmentSpecial(resource, identity)
           } else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {
-            deleteAppDeploymentSpecial(resource, request.queryString)
+            deleteAppDeploymentSpecial(identity, resource, request.queryString)
           } else {
             Success(())
           }
@@ -269,8 +269,8 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteAppDeploymentSpecial(res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
-    kubeNative.deleteAppDeployment(res, qs)  
+  def deleteAppDeploymentSpecial(auth: AuthAccountWithCreds, res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
+    kubeNative.deleteAppDeployment(auth, res, qs)  
   }
   
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
