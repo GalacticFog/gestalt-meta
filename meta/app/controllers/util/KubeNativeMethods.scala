@@ -24,14 +24,13 @@ import skuber.apps.v1.{ReplicaSet /*, ReplicaSetList*/}
 import skuber.api.client._
 import skuber.json.format._
 import skuber.apps.v1beta1._
- 
+
 import skuber.LabelSelector
-import controllers.DeleteController
+//import controllers.DeleteController
 
 
 class KubeNativeMethods @Inject()(
-    skuberFactory: SkuberFactory,
-    deleteController: DeleteController) {
+    skuberFactory: SkuberFactory) {
 
   private val log = Logger(this.getClass)
   
@@ -49,42 +48,51 @@ class KubeNativeMethods @Inject()(
       case Failure(e) =>
         throw new RuntimeException(s"Failed parsing resource ${r.id} to AppDeployment: ${e.getMessage}")
     }
+    
     log.debug("Successfully parsed AppDeployment from resource.")
     
-    
     /*
-    
-    TODO: Lookup container by properties.external_id and delete.
+     *  Find the Kubernetes Deployment object in the AppDeployment
+     *  Currently we require the source Helm Chart to include an explicit Deployment
+     *  object.
+     */
+    log.debug("Finding Kubernetes Deployment in AppDeployment resources.")
     
     val kubeDeployment: JsValue = (for {
       ds <- dep.resources.kube.deployments
-      d <- ds.headOption
+      d  <- ds.headOption
     } yield d).getOrElse {
       throw new RuntimeException("Could not find Kube Deployment for Meta AppDeployment Resource.")
     }
     
-    val externalId = {
-      val nm = (kubeDeployment \ "metadata" \ "namespace").as[String]
-      val dn = (kubeDeployment \ "metadata" \ "name").as[String]
-      s"/namespaces/${nm}/deployments/${dn}"
-    }
-    
-    import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
-    deleteController.manager.delete(???, auth, force=true, skipExternals=Seq(ResourceIds.Container))
-    
-    */
+    /*
+     *  Find the AppDeployment Kube Provider
+     */
+    log.debug("Looking up KubeProvider")
     
     val kube = ResourceFactory.findById(dep.provider).getOrElse {
       log.error(s"Kube provider with ID '${dep.provider}' not found.")
       throw new RuntimeException(s"Kube provider with ID '${dep.provider}' not found.")
     }
-    
-    val namespace = namespaceOrDefault(qs)
+
     /*
-     * TODO: 
-     * Delete everything EXCEPT Pods from kube. 
-     * Delete the containers through meta, which will clean up the pods.
-     *   
+     * TODO: There doesn't seem to be a need for the caller to specify a kube namespace.
+     * The namespace should come from the AppDeployment
+     * 
+     * val namespace = namespaceOrDefault(qs)
+     */
+    
+    val (namespace, externalId) = {
+      val nm = (kubeDeployment \ "metadata" \ "namespace").as[String]
+      val dn = (kubeDeployment \ "metadata" \ "name").as[String]
+      (nm, s"/namespaces/${nm}/deployments/${dn}")
+    }
+    
+    log.debug(s"Using namespace '${namespace}'")
+    log.debug(s"External-ID : ${externalId}")
+    
+    /*
+     * Delete from Kubernetes.   
      */
     skuberFactory.initializeKube(kube, namespace).flatMap { context =>
       val results = dep.deletableKubeResources.map { res =>
@@ -93,6 +101,15 @@ class KubeNativeMethods @Inject()(
       }
       Future.sequence(results)
     }
+
+    /*
+     * Find the container and delete.
+     */    
+    log.debug(s"Looking up container with external_id matching '${externalId}'")
+    val maybeContainer = ResourceFactory.findContainersByExternalId(externalId)
+    
+    log.debug(s"${maybeContainer.size} Container(s) found.")
+    maybeContainer
   }
   
   private[controllers] def kubeProvider(providerId: UUID) = {

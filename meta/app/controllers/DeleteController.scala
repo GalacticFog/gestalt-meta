@@ -162,8 +162,19 @@ class DeleteController @Inject()(
         val test = 
           if (resource.typeId == ResourceIds.Environment) {
             deleteEnvironmentSpecial(resource, identity)
-          } else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {
-            deleteAppDeploymentSpecial(identity, resource, request.queryString)
+          } 
+          else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {            
+            deleteAppDeploymentSpecial(identity, resource, request.queryString) match {
+              case Failure(e) => Failure(e)
+              case Success(containerList) =>  {
+                val results = containerList.map { c =>
+                  log.debug(s"Deleting container with ID '${c.id}'")
+                  manager.delete(c, identity, force=true, skipExternals=Seq(ResourceIds.Container))
+                }
+                val failed = results.filter(_.isFailure)
+                if (failed.isEmpty) Success(()) else failed.head
+              }
+            }
           } else {
             Success(())
           }
@@ -171,7 +182,7 @@ class DeleteController @Inject()(
         test match {
           case Failure(e) => {
             log.warn(s"An error occurred checking Kube providers for namespace. The error received was, '${e.getMessage}'. This probably indicates a problem with an upstream Kubernetes provider.")
-            log.info("Ignoring error - proceeding with Environment delete.")
+            //log.info("Ignoring error - proceeding with Environment delete.")
             DeleteHandler.handle(resource, identity)
           }
           case Success(_) => DeleteHandler.handle(resource, identity)
