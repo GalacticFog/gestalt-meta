@@ -34,16 +34,24 @@ class KubeNativeMethods @Inject()(
 
   private val log = Logger(this.getClass)
   
-  def deleteAppDeployment(auth: AuthAccountWithCreds, r: GestaltResourceInstance, qs: Map[String,Seq[String]]) = {
+  import scala.util.{Either, Left, Right}
+  import scala.util.Try
+  import scala.concurrent.Await
+  import scala.concurrent.duration.DurationInt
+  
+  
+  def deleteAppDeployment(auth: AuthAccountWithCreds, r: GestaltResourceInstance, qs: Map[String,Seq[String]]): Try[Either[Unit, GestaltResourceInstance]] = {
     log.info(s"Received request to delete AppDeployment ${r.id}")
     
     val ps = r.properties.getOrElse {
       throw new RuntimeException(s"Empty properties collection on resource ${r.id}")
     }
+    
     val data = ps.get("data").getOrElse {
       throw new RuntimeException(s"Could not find /properties/data on resource ${r.id}")
-    } 
-    val dep = Js.parse[AppDeploymentData](Json.parse(data)) match {
+    }
+    
+    val appDeployment = Js.parse[AppDeploymentData](Json.parse(data)) match {
       case Success(d) => d
       case Failure(e) =>
         throw new RuntimeException(s"Failed parsing resource ${r.id} to AppDeployment: ${e.getMessage}")
@@ -59,7 +67,7 @@ class KubeNativeMethods @Inject()(
     log.debug("Finding Kubernetes Deployment in AppDeployment resources.")
     
     val kubeDeployment: JsValue = (for {
-      ds <- dep.resources.kube.deployments
+      ds <- appDeployment.resources.kube.deployments
       d  <- ds.headOption
     } yield d).getOrElse {
       throw new RuntimeException("Could not find Kube Deployment for Meta AppDeployment Resource.")
@@ -70,48 +78,67 @@ class KubeNativeMethods @Inject()(
      */
     log.debug("Looking up KubeProvider")
     
-    val kube = ResourceFactory.findById(dep.provider).getOrElse {
-      log.error(s"Kube provider with ID '${dep.provider}' not found.")
-      throw new RuntimeException(s"Kube provider with ID '${dep.provider}' not found.")
+    val kube = ResourceFactory.findById(appDeployment.provider).getOrElse {
+      log.error(s"Kube provider with ID '${appDeployment.provider}' not found.")
+      throw new RuntimeException(s"Kube provider with ID '${appDeployment.provider}' not found.")
     }
 
     /*
      * TODO: There doesn't seem to be a need for the caller to specify a kube namespace.
-     * The namespace should come from the AppDeployment
+     * The namespace should come from the AppDeployment - we can get rid of the 'namespace'
+     * query parameter for `DELETE /appdeployments/{id}`
      * 
      * val namespace = namespaceOrDefault(qs)
      */
-    
-    val (namespace, externalId) = {
-      val nm = (kubeDeployment \ "metadata" \ "namespace").as[String]
-      val dn = (kubeDeployment \ "metadata" \ "name").as[String]
-      (nm, s"/namespaces/${nm}/deployments/${dn}")
-    }
-    
-    log.debug(s"Using namespace '${namespace}'")
-    log.debug(s"External-ID : ${externalId}")
-    
-    /*
-     * Delete from Kubernetes.   
-     */
-    skuberFactory.initializeKube(kube, namespace).flatMap { context =>
-      val results = dep.deletableKubeResources.map { res =>
-        log.debug(s"Deleting [${res._1} ${res._2}] from kube.")
-        deleteResource(res._1, res._2, context)
-      }
-      Future.sequence(results)
-    }
 
-    /*
-     * Find the container and delete.
-     */    
-    log.debug(s"Looking up container with external_id matching '${externalId}'")
-    val maybeContainer = ResourceFactory.findContainersByExternalId(externalId)
+    val (namespace, deploymentName) = {
+      ((kubeDeployment \ "metadata" \ "namespace").as[String],
+       (kubeDeployment \ "metadata" \ "name").as[String])
+    }
+    val externalId = s"/namespaces/${namespace}/deployments/${deploymentName}"
     
-    log.debug(s"${maybeContainer.size} Container(s) found.")
-    maybeContainer
+    log.debug(s"[deployment-name]: ${deploymentName}, [namespace]: ${namespace}, [external-id]: ${externalId}")
+
+    // Attempt to delete the Kube Deployment along with dependent resources.
+    val maybeKubeDelete = for {
+      context <- skuberFactory.initializeKube(kube, namespace)
+      r1 <- deleteDeployment(context, deploymentName, DeletePropagation.Foreground)
+      r2 <- ancillaryCleanup(context, appDeployment)
+    } yield r2
+    
+    val result = maybeKubeDelete.transform(
+      s => Try(findDeploymentContainer(externalId)),
+      e => throw e
+    )
+
+    Await.result(result, 10.seconds)
   }
-  
+
+  /**
+   * Find the (single) Container that may be associated with an AppDeployment. Not finding
+   * the Container is currently NOT considered an error since there may (?) be valid cases
+   * where a chart deployment does not produce a meta container.
+   */
+  def findDeploymentContainer(externalId: String): Either[Unit, GestaltResourceInstance] = {
+    // TODO: This returns a list but should actually be single.
+    // TODO: Revisit whether or not it should be an error to NOT find the Container.
+    ResourceFactory.findContainersByExternalId(externalId).headOption match {
+      case Some(c) => Right(c)
+      case None    => Left(())
+    }
+  }
+
+  /**
+   * Cleanup Kubernetes resources that are listed in an AppDeployment.
+   */
+  def ancillaryCleanup(context: RequestContext, app: AppDeploymentData): Future[Seq[Unit]] = Future.sequence {
+    val results: Seq[Future[Unit]] = app.deletableKubeResources.map { res =>
+      log.debug(s"Deleting [${res._1} ${res._2}] from kube.")
+      deleteResource(res._1, res._2, context)
+    }
+    results
+  }    
+    
   private[controllers] def kubeProvider(providerId: UUID) = {
     ResourceFactory.findById(providerId).getOrElse {
       log.error(s"Kube provider with ID '${providerId}' not found.")
@@ -135,8 +162,17 @@ class KubeNativeMethods @Inject()(
       ???
     }
   }
+  /*
+   * DeletePropagation.Foreground
+   * DeletePropagation.Background
+   * DeletePropagation.Orphan
+   */
+  private[controllers] def deleteDeployment(context: RequestContext, deploymentName: String, policy: DeletePropagation.Value): Future[Unit] = {
+    val options = DeleteOptions(propagationPolicy = Some(policy))
+    context.deleteWithOptions[Deployment](deploymentName, options)    
+  }
   
-  private[controllers] def deleteResource(kind: String, nm: String, context: RequestContext): Future[_] = {
+  private[controllers] def deleteResource(kind: String, nm: String, context: RequestContext): Future[Unit] = {
     
     val gracePeriod = -1
     
@@ -151,7 +187,7 @@ class KubeNativeMethods @Inject()(
       case "statefulset" => kubeDelete[StatefulSet](context, nm, gracePeriod)
       case "persistentvolume"       => kubeDelete[PersistentVolume](context, nm, gracePeriod)
       case "persistentvolumeclaim"  => kubeDelete[PersistentVolumeClaim](context, nm, gracePeriod)
-      case _ => Future(new Exception(s"/$kind/$nm is not a valid URI."))
+      case _ => Future(throw new Exception(s"/$kind/$nm is not a valid URI."))
     }
   }
   
@@ -165,7 +201,7 @@ class KubeNativeMethods @Inject()(
     }
   }
   
-  def kubeDelete[T <: ObjectResource](context: RequestContext, name: String, grace: Int = -1)(implicit rd: skuber.ResourceDefinition[T]): Future[_] = {
+  def kubeDelete[T <: ObjectResource](context: RequestContext, name: String, grace: Int = -1)(implicit rd: skuber.ResourceDefinition[T]): Future[Unit] = {
     context.delete[T](name, grace).transform( 
       s => (), 
       e => {

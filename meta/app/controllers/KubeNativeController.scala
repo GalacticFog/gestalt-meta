@@ -36,7 +36,8 @@ import skuber._
 import skuber.api.client._
 import skuber.apps.v1beta1._
 
-import skuber.apps.v1.{DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
+
+import skuber.apps.v1.{Deployment, DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
 import skuber.batch.{Job, JobList, CronJob, CronJobList}
 import skuber.rbac.{Role, RoleBinding}
 
@@ -217,6 +218,12 @@ class KubeNativeController @Inject()(
     val env = validateMetaEnv(qs)
     val metaenv = env.id
 
+    /*
+     * Test if namespace exists - create if not.
+     */
+    
+    val ns = Namespace(metadata = ObjectMeta(name = namespace))
+    
     /*
      * Get the 'final' name of the Kubernetes Deployment from the Chart. Note, final-name is
      * the Deployment.metadata.name with the 'RELEASE-NAME' token replaced. This method throws
@@ -703,8 +710,7 @@ class KubeNativeController @Inject()(
           case Kube.Single.StatefulSet => createKubeObject[StatefulSet](body, context)
           case Kube.Single.PersistentVolume       => createKubeObject[PersistentVolume](body, context)
           case Kube.Single.PersistentVolumeClaim  => createKubeObject[PersistentVolumeClaim](body, context)
-          case Kube.Single.Namespace => createKubeObject[Namespace](body, context)
-          
+          case Kube.Single.Namespace      => createKubeObject[Namespace](body, context)
           case Kube.Single.CronJob        => createKubeObject[CronJob](body, context)
           case Kube.Single.DaemonSet      => createKubeObject[DaemonSet](body, context)
           case Kube.Single.Role           => createKubeObject[Role](body, context)

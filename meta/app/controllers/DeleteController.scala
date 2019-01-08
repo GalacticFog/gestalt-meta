@@ -164,17 +164,7 @@ class DeleteController @Inject()(
             deleteEnvironmentSpecial(resource, identity)
           } 
           else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {            
-            deleteAppDeploymentSpecial(identity, resource, request.queryString) match {
-              case Failure(e) => Failure(e)
-              case Success(containerList) =>  {
-                val results = containerList.map { c =>
-                  log.debug(s"Deleting container with ID '${c.id}'")
-                  manager.delete(c, identity, force=true, skipExternals=Seq(ResourceIds.Container))
-                }
-                val failed = results.filter(_.isFailure)
-                if (failed.isEmpty) Success(()) else failed.head
-              }
-            }
+            deleteAppDeploymentSpecial(identity, resource, request.queryString) 
           } else {
             Success(())
           }
@@ -280,8 +270,20 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteAppDeploymentSpecial(auth: AuthAccountWithCreds, res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
-    kubeNative.deleteAppDeployment(auth, res, qs)  
+  def deleteAppDeploymentSpecial(auth: AuthAccountWithCreds, res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = {
+    kubeNative.deleteAppDeployment(auth, res, qs) match {
+      case Failure(e) => Failure(e)
+      case Success(maybeContainer) => maybeContainer match {
+        case Left(()) => {
+          log.info("No container associated with this AppDeployment was found. Nothing to delete.")
+          Success(())
+        }
+        case Right(container) => {
+          log.info(s"About to delete Container '${container.id}' from Meta.")
+          manager.delete(container, auth, force=true, skipExternals=Seq(ResourceIds.Container))
+        }
+      }
+    }
   }
   
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {
