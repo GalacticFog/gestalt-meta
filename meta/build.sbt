@@ -106,7 +106,7 @@ libraryDependencies ++= Seq(
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
 
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.10" withSources(),
+  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.12" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),

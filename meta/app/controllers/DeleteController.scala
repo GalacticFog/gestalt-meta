@@ -162,8 +162,9 @@ class DeleteController @Inject()(
         val test = 
           if (resource.typeId == ResourceIds.Environment) {
             deleteEnvironmentSpecial(resource, identity)
-          } else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {
-            deleteAppDeploymentSpecial(resource, request.queryString)
+          } 
+          else if (resource.typeId == migrations.V25.APPDEPLOYMENT_TYPE_ID) {            
+            deleteAppDeploymentSpecial(identity, resource, request.queryString) 
           } else {
             Success(())
           }
@@ -171,7 +172,7 @@ class DeleteController @Inject()(
         test match {
           case Failure(e) => {
             log.warn(s"An error occurred checking Kube providers for namespace. The error received was, '${e.getMessage}'. This probably indicates a problem with an upstream Kubernetes provider.")
-            log.info("Ignoring error - proceeding with Environment delete.")
+            //log.info("Ignoring error - proceeding with Environment delete.")
             DeleteHandler.handle(resource, identity)
           }
           case Success(_) => DeleteHandler.handle(resource, identity)
@@ -269,8 +270,20 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteAppDeploymentSpecial(res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = Try {
-    kubeNative.deleteAppDeployment(res, qs)  
+  def deleteAppDeploymentSpecial(auth: AuthAccountWithCreds, res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = {
+    kubeNative.deleteAppDeployment(auth, res, qs) match {
+      case Failure(e) => Failure(e)
+      case Success(maybeContainer) => maybeContainer match {
+        case Left(()) => {
+          log.info("No container associated with this AppDeployment was found. Nothing to delete.")
+          Success(())
+        }
+        case Right(container) => {
+          log.info(s"About to delete Container '${container.id}' from Meta.")
+          manager.delete(container, auth, force=true, skipExternals=Seq(ResourceIds.Container))
+        }
+      }
+    }
   }
   
   def deleteEnvironmentSpecial(res: GestaltResourceInstance, account: AuthAccountWithCreds) = Try {

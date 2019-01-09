@@ -208,7 +208,7 @@ class DefaultGenericProviderManager @Inject()( wsclient: WSClient ) extends Gene
       }
       case 0 => Success(None)
       case _ => Failure(new RuntimeException(
-          s"Ambiguous endpoint for action '${action}'. found: ${found.size}, expected: 1"))
+          s"Ambiguous endpoint for action '${action}'. found: ${found.size} action configs, expected: 1"))
     }
     data
   }
