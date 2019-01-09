@@ -235,8 +235,9 @@ case object ContainerSpec extends Spec {
       created = created
     )
     log.debug("finished conversion")
-    attempt.recoverWith {
-      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
+    attempt.recoverWith { case e: Throwable =>
+      // e.printStackTrace()
+      Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
     }
   }
 
