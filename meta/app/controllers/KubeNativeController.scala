@@ -190,18 +190,16 @@ class KubeNativeController @Inject()(
     }
   }
   
+  /*
+   * TODO: This is just for testing. Get rid of waits, sequence and return future.
+   */
   private[controllers] def deploymentResult[R](
       org: UUID,
       creator: UUID,
       provider: UUID, 
       request: SecuredRequest[_,_], 
       context: RequestContext): Future[Result] = {
-    
-    /*
-     * TODO: Validations 
-     * - Assert given Kubernetes namespace exists
-     */    
-    
+
     val payload = request.body.asInstanceOf[AnyContentAsRaw]
     val rawBody = decodeCompiledChart(payload)
     
@@ -219,10 +217,12 @@ class KubeNativeController @Inject()(
     val metaenv = env.id
 
     /*
-     * Test if namespace exists - create if not.
+     * For now we're going to fail if the selected Kube namespace doesn't exist.
      */
-    
-    val ns = Namespace(metadata = ObjectMeta(name = namespace))
+    val maybeNamespace = Await.result(context.getOption[Namespace](namespace), 20.seconds)
+    if (maybeNamespace.isEmpty) { 
+      throw new BadRequestException(s"Namespace must exist for AppDeployment. Namespace '${namespace}' not found.")
+    }
     
     /*
      * Get the 'final' name of the Kubernetes Deployment from the Chart. Note, final-name is
