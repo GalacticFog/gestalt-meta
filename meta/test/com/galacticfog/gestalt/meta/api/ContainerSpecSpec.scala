@@ -118,6 +118,27 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
     secrets = Seq(secretEnvMount, secretFileMount, secretDirMount)
   )
 
+  val volumeSpec = VolumeSpec(
+    name = "test volume",
+    description = Some("description"),
+    provider = Some(ContainerSpec.InputProvider(id = UUID.fromString("c698901f-1ddc-426c-9b50-ae8740856c10"))),
+    `type` = VolumeSpec.Persistent,
+    config = Json.obj("test" -> "123"),
+    size = 100,
+    access_mode = VolumeSpec.ReadWriteOnce,
+    reclamation_policy = Some("delete"),
+    external_id = Some("external_id"),
+    mount_path = Some("/path")
+  )
+
+  val secretSpec = SecretSpec(
+    name = "test-secret",
+    description = Some("description"),
+    provider = ContainerSpec.InputProvider(id = UUID.fromString("c698901f-1ddc-426c-9b50-ae8740856c10")),
+    items = Seq(SecretSpec.Item("key", Some("value"))),
+    external_id = Some("external_id")
+  )
+
   "ContainerSpec#toResourcePrototype" should {
     "convert minimal ContainerSpec" in {
       val cs = minimalContainerSpec
@@ -133,7 +154,7 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
           "image" -> JsString("nginx:latest"),
           "provider" -> Json.obj("id" -> "c698901f-1ddc-426c-9b50-ae8740856c10"),
           "port_mappings" -> Json.arr(),
-          "cpus" -> JsNumber(0.2),
+          "cpus" -> JsNumber(1),
           "memory" -> JsNumber(128),
           "disk" -> JsNumber(0),
           "num_instances" -> JsNumber(1),
@@ -241,7 +262,7 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
       ContainerSpec.fromResourceInstance(instance) must equalTo(Success(cs.copy(external_id=None, created=None)))
     }
 
-    "fail with invalid pm" in {
+    "fail on invalid pm" in {
       val cs = fullContainerSpec
       val input = ContainerSpec.toResourcePrototype(cs).copy(owner=Some(owner))
       val updatedInput = input.copy(properties=Some(input.properties.get ++ Map(
@@ -263,7 +284,36 @@ class ContainerSpecSpec extends Specification with MetaRepositoryOps with Before
         )
       )))
       val instance = inputToInstance(UUID.randomUUID(), updatedInput)
-      ContainerSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[RuntimeException]("Could not convert GestaltResourceInstance into ContainerSpec: JsResultException\\(errors:List\\(\\(\\(0\\)/type,List\\(JsonValidationError\\(List\\(error.invalid\\),WrappedArray\\(\\)\\)\\)\\)\\)\\)")
+      ContainerSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[RuntimeException]("Could not convert GestaltResourceInstance into ContainerSpec: Failed to parse payload: \\/port_mappings\\(0\\)\\/type: error.invalid")
+    }
+  }
+
+  "VolumeSpec" should {
+    "convert both ways" in {
+      val input = VolumeSpec.toResourcePrototype(volumeSpec).copy(owner=Some(owner))
+      val instance = inputToInstance(UUID.randomUUID(), input)
+      VolumeSpec.fromResourceInstance(instance) must equalTo(Success(volumeSpec.copy(mount_path=None)))
+    }
+    "fail on invalid access mode" in {
+      val input = VolumeSpec.toResourcePrototype(volumeSpec).copy(owner=Some(owner))
+      val updatedInput = input.copy(properties=Some(input.properties.get ++ Map(
+        "access_mode" -> JsString("BLAH")
+      )))
+      val instance = inputToInstance(UUID.randomUUID(), updatedInput)
+      VolumeSpec.fromResourceInstance(instance) must beFailedTry.withThrowable[com.galacticfog.gestalt.meta.api.errors.BadRequestException](".*?Failed to parse payload: \\/access_mode: Volume Access Mode type must be one of 'ReadWriteOnce', 'ReadWriteMany', 'ReadOnlyMany'.*?")
+    }
+  }
+
+  "SecretSpec" should {
+    "convert both ways" in {
+      val input = SecretSpec.toResourcePrototype(secretSpec).copy(owner=Some(owner))
+      val instance = inputToInstance(UUID.randomUUID(), input)
+      SecretSpec.fromResourceInstance(instance) must equalTo(Success(secretSpec.copy(
+        external_id=None,
+        items=secretSpec.items map { item =>
+          item.copy(value=None)
+        }
+      )))
     }
   }
 }
