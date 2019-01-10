@@ -1,8 +1,13 @@
 package com.galacticfog.gestalt.meta.api
 
-import com.galacticfog.gestalt.data.models.ResourceLike
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors._
+import ai.x.play.json.Jsonx
+import ai.x.play.json.implicits.optionWithNull
+import cats.syntax.either._
 import play.api.libs.json.Reads._
 import play.api.libs.json._
 
@@ -85,7 +90,8 @@ case object VolumeSpec {
 
   implicit val volumeTypeWrites = Writes[VolumeSpec.Type] { t => Json.toJson(t.label) }
 
-  implicit val metaVolumeSpec = Json.format[VolumeSpec]
+  // implicit val metaVolumeSpec = Json.format[VolumeSpec]
+  implicit val metaVolumeSpec = Jsonx.formatCaseClassUseDefaults[VolumeSpec]
 
   sealed trait VolumeConfig
   case object PersistentVolume extends VolumeConfig
@@ -99,43 +105,26 @@ case object VolumeSpec {
   implicit val externalVolumeRds = JsPath.read[JsValue].map(ExternalVolume.apply)
   implicit val externalVolumeWrts = Writes[ExternalVolume] { v: ExternalVolume => v.config }
 
-  def toResourcePrototype(spec: VolumeSpec): GestaltResourceInput = GestaltResourceInput(
-    name = spec.name,
-    resource_type = Some(migrations.V13.VOLUME_TYPE_ID),
-    description = spec.description,
-    resource_state = None,
-    properties = Some(Map[String,JsValue](
-      "provider" -> Json.toJson(spec.provider),
-      "type" -> JsString(spec.`type`.label),
-      "config" -> spec.config,
-      "size" -> JsNumber(spec.size),
-      "access_mode" -> JsString(spec.access_mode.toString)
-    ) ++ Seq[Option[(String,JsValue)]](
-      spec.reclamation_policy map ("reclamation_policy" -> JsString(_)),
-      spec.external_id map ("external_id" -> JsString(_))
-    ).flatten.toMap)
-  )
+  def toResourcePrototype(spec: VolumeSpec) = {
+    val properties = Json.toJson(spec).as[Map[String,JsValue]] -- Seq("name", "description", "mount_path")
 
-  def fromResourceInstance(metaVolumeSpec: ResourceLike): Try[VolumeSpec] = {
-    if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
-    for {
-      props <- Try{metaVolumeSpec.properties.get}
-      provider = Try{Json.parse(props("provider")).as[ContainerSpec.InputProvider]}.toOption
-      tpe <- Try{props("type")}.flatMap(Type.fromString)
-      mode <- Try{props("access_mode")}.flatMap(AccessMode.fromString)
-      size <- Try{props("size").toInt}
-      config <- Try{Json.parse(props("config"))}
-    } yield VolumeSpec(
-      name = metaVolumeSpec.name,
-      description = metaVolumeSpec.description,
-      provider = provider,
-      `type` = tpe,
-      config = config,
-      reclamation_policy = props.get("reclamation_policy"),
-      external_id = props.get("external_id"),
-      access_mode = mode,
-      size = size
+    GestaltResourceInput(
+      name = spec.name,
+      resource_type = Some(migrations.V13.VOLUME_TYPE_ID),
+      description = spec.description,
+      resource_state = None,
+      properties = Some(properties)
     )
+  }
+
+  def fromResourceInstance(metaVolumeSpec: GestaltResourceInstance): Try[VolumeSpec] = {
+    if (metaVolumeSpec.typeId != migrations.V13.VOLUME_TYPE_ID) return Failure(new RuntimeException("cannot convert non-Volume resource into VolumeSpec"))
+    ResourceSerde.deserialize[VolumeSpec](metaVolumeSpec).liftTo[Try] map { volumeSpec =>
+      volumeSpec.copy(
+        name=metaVolumeSpec.name,
+        description=metaVolumeSpec.description
+      )
+    }
   }
 
 }

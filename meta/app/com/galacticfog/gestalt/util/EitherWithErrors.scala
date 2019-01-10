@@ -149,4 +149,20 @@ object EitherWithErrors {
       ApplicativeError[Future,Throwable].raiseError(errorToThrowable(e))
     }
   }
+
+  implicit def tryErrorApplicativeError = new ApplicativeError[Try,Error.Error] {
+    def ap[A, B](ff: Try[(A) => B])(fa: Try[A]): Try[B] = {
+      for(
+        f <- ff;
+        a <- fa
+      ) yield f(a)
+    }
+    def pure[A](x: A): Try[A] = Success(x)
+    def handleErrorWith[A](fa: Try[A])(f: Error.Error => Try[A]): Try[A] = {
+      fa recoverWith { case e: Throwable =>
+        f(throwableToError(e))
+      }
+    }
+    def raiseError[A](e: Error.Error): Try[A] = Failure(errorToThrowable(e))
+  }
 }

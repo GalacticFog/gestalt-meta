@@ -131,7 +131,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
 
   override def destroySecret(secret: ResourceLike): Future[Unit] = Future.fromTryST(Try(???))
 
-  override def destroyVolume(secret: ResourceLike): Future[Unit] = Future.fromTryST(Try(???))
+  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))

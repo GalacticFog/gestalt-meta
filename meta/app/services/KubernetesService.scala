@@ -1421,7 +1421,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield v
   }
 
-  override def destroyVolume(volume: ResourceLike): Future[Unit] = {
+  override def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
     def doTheDelete: Future[Unit] = {
       val provider = ContainerService.containerProvider(volume)
       /*

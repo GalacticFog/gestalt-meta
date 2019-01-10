@@ -5,10 +5,13 @@ import java.util.UUID
 import ai.x.play.json.Jsonx
 import ai.x.play.json.implicits.optionWithNull
 import com.galacticfog.gestalt.util.Helpers.JodaJsonFormats._
-import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import org.joda.time.DateTime
+import cats.syntax.either._
 import play.api.Logger
 import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
@@ -23,7 +26,7 @@ case class ContainerSpec(name: String = "",
                          image: String,
                          provider: ContainerSpec.InputProvider,
                          port_mappings: Seq[ContainerSpec.PortMapping] = Seq(),
-                         cpus: Double = 0.2,
+                         cpus: Double = 1.0,
                          memory: Double = 128.0,
                          disk: Double = 0.0,
                          num_instances: Int = 1,
@@ -140,103 +143,35 @@ case object ContainerSpec extends Spec {
     }
   }
   
-  def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = GestaltResourceInput(
-    name = spec.name,
-    resource_type = Some(ResourceIds.Container),
-    description = spec.description,
-    resource_state = None,
-    properties = Some(
-      Map[String,JsValue](
-      "container_type" -> JsString(spec.container_type),
-      "image" -> JsString(spec.image),
-      "provider" -> Json.toJson(spec.provider),
-      "cpus" -> JsNumber(spec.cpus),
-      "memory" -> JsNumber(spec.memory),
-      "disk" -> JsNumber(spec.disk),
-      "num_instances" -> JsNumber(spec.num_instances),
-      "port_mappings" -> Json.toJson(spec.port_mappings),
-      "constraints" -> Json.toJson(spec.constraints),
-      "force_pull" -> Json.toJson(spec.force_pull),
-      "health_checks" -> Json.toJson(spec.health_checks),
-      "volumes" -> Json.toJson(spec.volumes),
-      "secrets" -> Json.toJson(spec.secrets),
-      "labels" -> Json.toJson(spec.labels),
-      "env" -> Json.toJson(spec.env)
-    ) ++ Seq[Option[(String,JsValue)]](
-        spec.cmd map ("cmd" -> JsString(_)),
-        spec.network map ("network" -> JsString(_)),
-        spec.accepted_resource_roles map ("accepted_resource_roles" -> Json.toJson(_)),
-        status map ("status" -> JsString(_)),
-        spec.args map ("args" -> Json.toJson(_)),
-        spec.user map ("user" -> Json.toJson(_))
-    ).flatten.toMap)
-  )
+  def toResourcePrototype(spec: ContainerSpec, status: Option[String] = None): GestaltResourceInput = {
+    val properties = Json.toJson(spec).as[Map[String,JsValue]] -- Seq("name", "description", "created", "external_id")
+
+    GestaltResourceInput(
+      name = spec.name,
+      resource_type = Some(ResourceIds.Container),
+      description = spec.description,
+      resource_state = None,
+      properties = Some(properties)
+    )
+  }
 
 
-  def fromResourceInstance(metaContainer: ResourceLike): Try[ContainerSpec] = {
+  def fromResourceInstance(metaContainer: GestaltResourceInstance): Try[ContainerSpec] = {
     if (metaContainer.typeId != ResourceIds.Container) return Failure(new RuntimeException("cannot convert non-Container resource into ContainerSpec"))
-    log.debug(s"loading Container from Resource ${metaContainer.id}")
+    // log.debug(s"loading Container from Resource ${metaContainer.id}")
     val created: Option[DateTime] = for {
       c <- metaContainer.created
       ts <- c.get("timestamp")
       parsedTimestamp <- Try{DateTime.parse(ts)}.toOption
     } yield parsedTimestamp
 
-    val attempt = for {
-      props <- Try{metaContainer.properties.get}
-      ctype <- Try{props("container_type")}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      cpus = props.get("cpus").flatMap( c => Try(c.toDouble).toOption )
-      memory = props.get("memory").flatMap( c => Try(c.toDouble).toOption )
-      disk = props.get("disk").flatMap( c => Try(c.toDouble).toOption )
-      num_instances = props.get("num_instances").flatMap( c => Try(c.toInt).toOption )
-      cmd = props.get("cmd")
-      constraints = props.get("constraints") map {json => Json.parse(json).as[Seq[String]]}
-      acceptedResourceRoles = props.get("accepted_resource_roles") map {json => Json.parse(json).as[Seq[String]]}
-      args = props.get("args") map {json => Json.parse(json).as[Seq[String]]}
-      health_checks = props.get("health_checks") map {json => Json.parse(json).as[Seq[ContainerSpec.HealthCheck]]}
-      volumes = props.get("volumes") map {json => Json.parse(json).as[Seq[ContainerSpec.VolumeMountSpec]]}
-      secrets = props.get("secrets") map {json => Json.parse(json).as[Seq[ContainerSpec.SecretMount]]}
-      labels = props.get("labels") map {json => Json.parse(json).as[Map[String,String]]}
-      env = props.get("env") map {json => Json.parse(json).as[Map[String,String]]}
-
-      port_mappings = props.get("port_mappings") map {json => Json.parse(json).as[Seq[ContainerSpec.PortMapping]]}
-
-      user = props.get("user")
-      image <- if (ctype.equalsIgnoreCase("DOCKER")) Try{props("image")} else Try("")
-      network = props.get("network")
-      force_pull = props.get("force_pull") map {_.toBoolean}
-      external_id = props.get("external_id")
-
-    } yield ContainerSpec(
-      name = metaContainer.name,
-      description = metaContainer.description,
-      container_type = ctype,
-      image = image,
-      provider = provider,
-      port_mappings = port_mappings getOrElse Seq(),
-      cpus = cpus getOrElse 1.0,
-      memory = memory getOrElse 128.0,
-      disk = disk getOrElse 0.0,
-      num_instances = num_instances getOrElse 1,
-      network = network,
-      cmd = cmd,
-      constraints = constraints getOrElse Seq(),
-      accepted_resource_roles = acceptedResourceRoles,
-      args = args,
-      force_pull = force_pull getOrElse false,
-      health_checks = health_checks getOrElse Seq(),
-      volumes = volumes getOrElse Seq(),
-      labels = labels getOrElse Map(),
-      env = env getOrElse Map(),
-      secrets = secrets getOrElse Seq(),
-      user = user,
-      external_id = external_id,
-      created = created
-    )
-    log.debug("finished conversion")
-    attempt.recoverWith { case e: Throwable =>
-      // e.printStackTrace()
+    ResourceSerde.deserialize[ContainerSpec](metaContainer).liftTo[Try] map { containerSpec =>
+      containerSpec.copy(
+        name=metaContainer.name,
+        description=metaContainer.description,
+        created=created
+      )
+    } recoverWith { case e: Throwable =>
       Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into ContainerSpec: ${e.getMessage}"))
     }
   }
