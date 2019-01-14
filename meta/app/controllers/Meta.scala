@@ -623,7 +623,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
 
             getCurrentProvider(targetid, results) map { newprovider =>
 
-
               val output: GestaltResourceInstance = {
 
                 if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider

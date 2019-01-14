@@ -297,7 +297,7 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
              * TODO: Using actionResult OR input here is not a good idea. By the time we get here
              * any policy checks have already been run against 'input' - allowing the substitution
              * at this point gives function authors a very clear way to circumvent policy.
-             *
+             * 
              * TODO: ^^^ then run the policy check again.
              * "function authors" are the implementors of the provider...
              * the external work has been done, any policy violation has already been realized in a literal sense of the word

@@ -36,7 +36,6 @@ import skuber._
 import skuber.api.client._
 import skuber.apps.v1beta1._
 
-
 import skuber.apps.v1.{Deployment, DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
 import skuber.batch.{Job, JobList, CronJob, CronJobList}
 import skuber.rbac.{Role, RoleBinding}
@@ -189,7 +188,7 @@ class KubeNativeController @Inject()(
       throw new BadRequestException(s"Environment ${sid} not found.")
     }
   }
-  
+
   /*
    * TODO: This is just for testing. Get rid of waits, sequence and return future.
    */
@@ -264,7 +263,7 @@ class KubeNativeController @Inject()(
           MetaDeploymentResources()
       )
     )
-    
+
     /*
      * Iterate over YAML docs, attempt to create each in Kubernetes - pack each
      * response (success or failure) into AppDeployment response
@@ -275,7 +274,7 @@ class KubeNativeController @Inject()(
           s => s,
           e => throw new Exception(s"Failed creating object: ${e.getMessage}")), 20.seconds)
       } match {
-        // KUBE REQUEST SUCCEEDED - add resoure serialized to JSON
+        // KUBE REQUEST SUCCEEDED - add resource serialized to JSON
         case Success(r) => {
           objectResource2Json(r) match {
             case Success(a) => a
@@ -910,21 +909,34 @@ class KubeNativeController @Inject()(
       action: String,
       providerId: UUID,
       envId: UUID ): JsValue = {
-
+    
     val providerResource = ResourceFactory.findById(ResourceIds.KubeProvider, providerId).getOrElse {
       throw new RuntimeException(s"Could not find KubeProvider '${providerId}'.")
     }
     
     val resource = (payload \ "resource").as[JsObject]
-
+    
+    import com.galacticfog.gestalt.data.TypeFactory
+    
+    val providerTypeName: String = {
+      TypeFactory.findById(providerResource.typeId).fold {
+        throw new RuntimeException(s"Provider with type ID '${providerResource.typeId}' not found. This is a bug.")
+      }{ tpe => tpe.name }
+    }
+    
     val inputProps = Json.obj(
-        "image" -> "n/a",
-        "container_type" -> "n/a",
-        "external_id" -> "n/a", /* i.e. /default/nginx */
-        "provider" -> Json.obj("id" -> providerId.toString))
-
+      "image" -> "n/a",
+      "container_type" -> "n/a",
+      "external_id" -> "n/a", /* i.e. /default/nginx */
+      "provider" -> Json.obj(
+          "name" -> providerResource.name,          
+          "id" -> providerResource.id.toString,
+          "resource_type" -> providerTypeName
+       )
+    )
+    
     val importTarget = (resource \ "properties" \ "external_id").as[String]
-
+    
     val uuid = UUID.randomUUID
     
     val contextLabels = Json.obj(
@@ -933,7 +945,7 @@ class KubeNativeController @Inject()(
       "meta/environment" -> envId.toString,
       "meta/provider"    -> providerId.toString
     )
-
+    
     val fResp = (action, importTarget.split("/", 5)) match {
       case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
         log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
