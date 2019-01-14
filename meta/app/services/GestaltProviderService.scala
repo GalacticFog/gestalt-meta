@@ -27,7 +27,7 @@ trait CaasService extends GestaltProviderService {
 
   def destroySecret(secret: ResourceLike): Future[Unit]
 
-  def destroyVolume(secret: ResourceLike): Future[Unit]
+  def destroyVolume(secret: GestaltResourceInstance): Future[Unit]
 
   def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance]

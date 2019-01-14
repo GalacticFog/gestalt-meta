@@ -9,7 +9,7 @@ import scala.concurrent.ExecutionContext.Implicits.global
 import scala.util.{Failure, Success, Try}
 import scala.concurrent.{ExecutionContext, Future}
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory, ResourceState}
-import com.galacticfog.gestalt.data.models.ResourceLike
+import com.galacticfog.gestalt.data.models.{ResourceLike, GestaltResourceInstance}
 import com.galacticfog.gestalt.marathon.MarathonClient
 import com.galacticfog.gestalt.meta.api.errors.{BadRequestException, InternalErrorException, UnprocessableEntityException}
 import com.galacticfog.gestalt.marathon._
@@ -405,7 +405,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     Future.successful(metaResource)
   }
 
-  override def destroyVolume(secret: ResourceLike): Future[Unit] = Future.successful(())
+  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] = Future.successful(())
 
 }
 

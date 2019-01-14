@@ -2,6 +2,9 @@ package com.galacticfog.gestalt.meta.api
 
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors._
+import cats.syntax.either._
 import play.api.Logger
 import play.api.libs.functional.syntax._
 import play.api.libs.json.Reads._
@@ -44,31 +47,36 @@ case object SecretSpec {
 
   val log = Logger(this.getClass)
 
-  def toResourcePrototype(spec: SecretSpec): GestaltResourceInput = GestaltResourceInput(
-    name = spec.name,
-    resource_type = Some(ResourceIds.Secret),
-    description = spec.description,
-    resource_state = None,
-    properties = Some(Map[String,JsValue](
-      "provider" -> Json.toJson(spec.provider),
-      "items" -> Json.toJson(spec.items.map(_.copy(value = None))) // values do not get persisted to meta
-    ))
-  )
+  def toResourcePrototype(spec: SecretSpec) = {
+    val prunedSpec = spec.copy(items=spec.items map { item =>
+      item.copy(value=None) // values do not get persisted to meta
+      // shouldn't this happen somewhere outside serialization-deserialization code?
+    })
+    val properties = Json.toJson(prunedSpec).as[Map[String,JsValue]] -- Seq("name", "description")
+
+    GestaltResourceInput(
+      name = spec.name,
+      resource_type = Some(ResourceIds.Secret),
+      description = spec.description,
+      resource_state = None,
+      properties = Some(properties)
+    )
+  }
 
   def fromResourceInstance(metaSecretSpec: GestaltResourceInstance): Try[SecretSpec] = {
     if (metaSecretSpec.typeId != ResourceIds.Secret) return Failure(new RuntimeException("cannot convert non-Secret resource into SecretSpec"))
-    val attempt = for {
-      props <- Try{metaSecretSpec.properties.get}
-      provider <- Try{props("provider")} map {json => Json.parse(json).as[ContainerSpec.InputProvider]}
-      items = props.get("items") map {json => Json.parse(json).as[Seq[SecretSpec.Item]]}
-    } yield SecretSpec(
-      name = metaSecretSpec.name,
-      description = metaSecretSpec.description,
-      provider = provider,
-      items = items.getOrElse(Seq.empty)
+    val mssWithName = metaSecretSpec.copy(
+      properties=metaSecretSpec.properties map { props =>
+        props ++ Map("name" -> metaSecretSpec.name)
+      }
     )
-    attempt.recoverWith {
-      case e: Throwable => Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into SecretSpec: ${e.getMessage}"))
+    ResourceSerde.deserialize[SecretSpec](mssWithName).liftTo[Try] map { secretSpec =>
+      secretSpec.copy(
+        name=metaSecretSpec.name,
+        description=metaSecretSpec.description
+      )
+    } recoverWith { case e: Throwable =>
+      Failure(new RuntimeException(s"Could not convert GestaltResourceInstance into SecretSpec: ${e.getMessage}"))
     }
   }
 

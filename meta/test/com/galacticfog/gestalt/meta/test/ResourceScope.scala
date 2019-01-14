@@ -278,7 +278,7 @@ trait ResourceScope extends Scope with Mockito {
       name = name,
       parent = Option(parent),
       properties = Option(Map(
-        "provider" -> "",
+        "provider" -> Json.stringify(Json.toJson(Json.obj("id" -> uuid().toString))),
         "type" -> "host_path",
         "access_mode" -> "ReadWriteMany",
         "size" -> "0",

@@ -351,7 +351,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] =
     Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 
-  override def destroyVolume(secret: ResourceLike): Future[Unit] =
+  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] =
     Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 
   override def updateVolume(context: ProviderContext, container: Instance)(implicit ec: ExecutionContext): Future[Instance] =

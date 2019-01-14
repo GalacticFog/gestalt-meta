@@ -94,6 +94,8 @@ javaOptions in Universal ++= Seq(
 javaOptions in Test ++= Seq("-Dconfig.file=test/resources/application.test.conf", 
                             "-Dlogger.file=test/resources/logback-test.xml")
 
+// ivyLoggingLevel in ThisBuild := UpdateLogging.Full
+
 val silencerVersion = "1.2.1"
 
 libraryDependencies ++= Seq(
