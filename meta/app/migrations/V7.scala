@@ -440,16 +440,18 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
         org = rootId,
         creator = creator,
         json = Json.obj(
-            "name" -> SYSTEM_ENVIRONMENT_NAME,
-            "properties" -> Json.obj(
-                "environment_type" -> envType)
-            ),
+          "name" -> SYSTEM_ENVIRONMENT_NAME,
+          "properties" -> Json.obj(
+            "environment_type" -> envType,
+            "workspace" -> workspaceId
+          )
+        ),
         typeId = Option(ResourceIds.Environment),
         parent = Option(workspaceId))
       _ = setNewResourceEntitlements(rootId, env.id, creator, Some(workspaceId))
     } yield env
   }
-  
+
   /**
    * Lookup or create the 'system' environment where the Stream Provider lambda will go.
    * /root/gestalt-system-workspace/gestalt-system-environment
@@ -487,8 +489,6 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
       throw new BadRequestException(s"Lambda Provider with ID '${providerId}' not found.")
     }
   }
-  
-  
   
   
   private[migrations] def createStreamProviderLambda(
