@@ -76,9 +76,8 @@ case class Validate(override val args: String*) extends Operation(args) {
 }
 
 case class Authorize(override val args: String*) extends Operation(args) with AuthorizationMethods {
-  //private[this] val log = Logger(this.getClass)
-  
-  def proceed(opts: RequestOptions) = {
+
+  override def proceed(opts: RequestOptions): OperationResponse[Option[UUID]] = {
     
     val user = opts.user
     val action = args(0)
@@ -86,12 +85,16 @@ case class Authorize(override val args: String*) extends Operation(args) with Au
     
     log.debug(s"Checking Authorization : action=$action, user=${user.account.id}, target=$target")
 
-    isAuthorized(target, action, user) match {
+    opts.providerIdOpt.fold(isAuthorized(target, action, user)) { providerId =>
+      for {
+        _ <- isAuthorized(providerId, "provider.view", user)
+       result <- isAuthorized(target, action, user)
+      } yield result
+    } match {
       case Success(_) => Continue
-      case Failure(e) => {
-        Halt(e.getMessage)
-      }
+      case Failure(e) => Halt(e.getMessage)
     }
+
   }
 }
 
@@ -334,7 +337,8 @@ case class RequestOptions(
     authTarget: Option[UUID], 
     policyOwner: Option[UUID], 
     policyTarget: Option[GestaltResourceInstance],
-    data: Option[Map[String,String]] = None)
+    data: Option[Map[String,String]] = None,
+    providerIdOpt: Option[UUID] = None)
 
 
 class SafeRequest(operations: List[Operation[Seq[String]]], options: RequestOptions) {
