@@ -73,12 +73,14 @@ object ContainerService {
   def caasObjectRequestOptions(user: AuthAccountWithCreds,
                                environment: UUID,
                                caasObject: GestaltResourceInstance,
-                               data: Option[Map[String, String]] = None) = RequestOptions(
+                               data: Option[Map[String, String]] = None,
+                               providerIdOpt: Option[UUID] = None) = RequestOptions(
     user = user,
     authTarget = Option(environment),
     policyOwner = Option(environment),
     policyTarget = Option(caasObject),
-    data = data)
+    data = data,
+    providerIdOpt = providerIdOpt)
 
   def setupPromoteRequest(fqon: String,
                           source_env_id: UUID,
@@ -523,7 +525,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     val proto = resourceWithDefaults(context.workspace.orgId, input, user, None)
     val containerOps = caasObjectRequestOperations("container.create")
     // TODO: should also have provider.view for the selected provider, as well as (maybe) volume.create for inline volume creation
-    val options = caasObjectRequestOptions(user, context.environmentId, proto)
+    val options = caasObjectRequestOptions(user, context.environmentId, proto, providerIdOpt = Some(context.providerId))
 
     SafeRequest(containerOps, options) ProtectAsync { _ =>
 
@@ -563,7 +565,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     val input = SecretSpec.toResourcePrototype(secretSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
     val operations = caasObjectRequestOperations("secret.create")
-    val options = caasObjectRequestOptions(user, context.environmentId, proto)
+    val options = caasObjectRequestOptions(user, context.environmentId, proto, providerIdOpt = Some(context.providerId))
 
     SafeRequest(operations, options) ProtectAsync { _ =>
 
@@ -605,7 +607,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     val input = VolumeSpec.toResourcePrototype(volumeSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
     val operations = caasObjectRequestOperations("volume.create")
-    val options = caasObjectRequestOptions(user, context.environmentId, proto)
+    val options = caasObjectRequestOptions(user, context.environmentId, proto, providerIdOpt = Some(context.providerId))
 
     SafeRequest(operations, options) ProtectAsync { _ =>
 
