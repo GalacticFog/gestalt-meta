@@ -42,14 +42,17 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
   def foreach[R : AsResult](f: TestScope => R): Result = {
     scalikejdbc.config.DBs.setupAll()
 
-    var Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
+    val Success((testWork, testEnv)) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment")
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     val mockProviderManager  = mock[ProviderManager]
-    var testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
+    val testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
     val mockCaasService = mock[KubernetesService]
+
     mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
+
     val mockDeleteController = mock[DeleteController]
     val containerService = new ContainerServiceImpl(mockProviderManager, mockDeleteController)
+
     try AsResult(f(TestScope(testWork, testEnv, testProvider, mockCaasService, containerService)))
     finally {
       scalikejdbc.config.DBs.closeAll()
@@ -471,7 +474,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       )(any)
     }
 
-    "throw 400 on bad provider during container creation" >> { t : TestScope =>
+    "throw 409 on bad provider during container creation" >> { t : TestScope =>
       val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val badProvider = UUID.randomUUID()
       val testContainerName = "test-container"
@@ -483,12 +486,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         network = Some("BRIDGE")
       )
 
-      containerService.createContainer(
+      await(containerService.createContainer(
         context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/containers"), badProvider, None),
         user = user,
         containerSpec = testSpec,
         userRequestedId = None
-      ) must throwAn[BadRequestException]("is absent. Associated container may be corrupt.")
+      )) must throwA[ConflictException]("Failed: 'provider.view'")
     }
 
     "throw 400 if patching a container with the same name" >> { t : TestScope =>
@@ -854,7 +857,7 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
       there were no(mockCaasService).createVolume(any, any)(any)
     }
 
-    "throw 400 on bad provider during secret creation" >> { t : TestScope =>
+    "throw 409 on bad provider during secret creation" >> { t : TestScope =>
       val TestScope(testWrk, testEnv, testProvider, mockCaasService, containerService) = t
       val badProvider = UUID.randomUUID()
       val testSecretName = "test-container"
@@ -864,12 +867,12 @@ class ContainerServiceSpec extends TestApplication with BeforeAll with JsonMatch
         items = Seq.empty
       )
 
-      containerService.createSecret(
+      await(containerService.createSecret(
         context = ProviderContext(FakeURI(s"/root/environments/${testEnv.id}/secrets"), badProvider, None),
         user = user,
         secretSpec = testSpec,
         userRequestedId = None
-      ) must throwAn[BadRequestException]("is absent. Associated container may be corrupt.")
+      )) must throwA[ConflictException]("Failed: 'provider.view'")
     }
 
   }

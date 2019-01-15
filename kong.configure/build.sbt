@@ -23,7 +23,7 @@ scalacOptions ++= Seq(
 version in ThisBuild := "0.1.0-SNAPSHOT"
 
 publishTo in ThisBuild <<= version { (v: String) =>
-  val ao = "https://galacticfog.artifactoryonline.com/galacticfog/"
+  val ao = "https://galacticfog.jfrog.io/galacticfog/"
   if (v.trim.endsWith("SNAPSHOT"))
     Some("publish-gf-snapshots" at ao + "libs-snapshots-local;build.timestamp=" + new java.util.Date().getTime)
   else

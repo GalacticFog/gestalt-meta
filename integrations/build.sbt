@@ -8,7 +8,8 @@ val awsJavaSdkVersion = "1.11.410"
 
 libraryDependencies ++= Seq(
   "com.galacticfog" %% "gestalt-meta-repository" % "0.8.5" withSources(),
-  "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
+  // "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
+  "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.7" withSources(),
   "com.typesafe.play" %% "play-json" % "2.5.12",
   "com.typesafe.play" %% "play-ws" % "2.5.12",
   "io.jsonwebtoken" % "jjwt" % "0.7.0",

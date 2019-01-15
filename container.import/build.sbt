@@ -5,9 +5,11 @@ versionWithGit
 name := """container.import"""
 
 libraryDependencies ++= Seq(
-  "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.6-SNAPSHOT" withSources(),
+  // "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.6-SNAPSHOT" withSources(),
+  "com.galacticfog"   %% "gestalt-caas-kube"    % "0.3.7-eb8a6957-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-meta-repository" % "0.8.5" withSources(),
-  "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
+  // "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.5-SNAPSHOT" withSources(),
+  "com.galacticfog" %% "gestalt-security-sdk-scala" % "2.4.7" withSources(),
   "com.typesafe.play" %% "play-json" % "2.5.12",
   "com.typesafe.play" %% "play-ws" % "2.5.12",
   "io.jsonwebtoken" % "jjwt" % "0.7.0",
@@ -20,8 +22,9 @@ excludeDependencies += "commons-logging" % "commons-logging"
 
 scalacOptions ++= Seq(
   "-language:implicitConversions",
+  "-deprecation",
   "-feature",
-  "-Xfatal-warnings",
+  // "-Xfatal-warnings",
   "-Ywarn-value-discard",
   "-Ywarn-unused-import"
 )
@@ -39,7 +42,7 @@ fork in Test := true
 // version in ThisBuild := "0.1.0-SNAPSHOT"
 
 publishTo in ThisBuild <<= version { (v: String) =>
-  val ao = "https://galacticfog.artifactoryonline.com/galacticfog/"
+  val ao = "https://galacticfog.jfrog.io/galacticfog/"
   if (v.trim.endsWith("SNAPSHOT"))
     Some("publish-gf-snapshots" at ao + "libs-snapshots-local;build.timestamp=" + new java.util.Date().getTime)
   else
