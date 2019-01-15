@@ -86,6 +86,7 @@ case class Authorize(override val args: String*) extends Operation(args) with Au
     log.debug(s"Checking Authorization : action=$action, user=${user.account.id}, target=$target")
 
     opts.providerIdOpt.fold(isAuthorized(target, action, user)) { providerId =>
+      log.debug(s"Checking Authorization : action=provider.view, user=${user.account.id}, target=$providerId")
       for {
         _ <- isAuthorized(providerId, "provider.view", user)
        result <- isAuthorized(target, action, user)
