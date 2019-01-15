@@ -109,11 +109,12 @@ libraryDependencies ++= Seq(
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
 
   "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.12" withSources(),
-  "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
+  // "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
+  "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.7" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),
   "com.galacticfog" %% "gestalt-security-play-testkit" % "4.1.0" withSources(),
   "com.galacticfog"  % "gestalt-license-keymgr"        % "1.2.2-SNAPSHOT",
-  ("com.galacticfog" %% "gestalt-caas-kube"             % "0.3.6" withSources()),
+  "com.galacticfog" %% "gestalt-caas-kube"             % "0.3.7-eb8a6957-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-play-json"             % "0.5.0",
   "com.galacticfog" %% "gestalt-tracking-provider"     % "0.0.3",
   "net.codingwell"  %% "scala-guice"                   % "4.2.1",
@@ -130,8 +131,8 @@ libraryDependencies ++= Seq(
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",
   
-  // compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
-  // "com.github.ghik" %% "silencer-lib" % silencerVersion % Provided,
+  compilerPlugin("com.github.ghik" %% "silencer-plugin" % silencerVersion),
+  "com.github.ghik" %% "silencer-lib" % silencerVersion % Provided,
 
   "de.leanovate.play-mockws"  %% "play-mockws"          % "2.5.1"       % Test,
   "com.typesafe.play"         %% "play-specs2"          % play.core.PlayVersion.current  % Test,

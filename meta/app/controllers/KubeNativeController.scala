@@ -56,6 +56,8 @@ import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt 
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 
+import com.github.ghik.silencer.silent
+
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
 
@@ -1239,7 +1241,7 @@ class KubeNativeController @Inject()(
         ) ++ contextLabels)
       )
     )
-    kube.jsonMergePatch(obj, labels.toString)
+    kube.jsonMergePatch(obj, labels.toString): @silent
   }  
   
 }

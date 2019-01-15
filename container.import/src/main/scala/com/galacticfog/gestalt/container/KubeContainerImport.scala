@@ -220,10 +220,11 @@ class KubeContainerImport extends ContainerImport {
                 "mount_path" -> mounts(name),
                 "volume_resource" -> Json.obj(
                   "name" -> s"${deplNameValue}-${name}",
-                  "resource_type" -> "Gestalt::Resource::Volume",
+                  // I have no other option but to hardcode resource id here
+                  "resource_type" -> "24361db7-0fc0-4be5-9973-d88d5602956f", // "Gestalt::Resource::Volume",
                   "resource_state" -> "Gestalt::Resource::State::Active",
                   "properties" -> Json.obj(
-                    // "type" -> "",
+                    "type" -> "host_path",
                     // "config" -> Json.obj(),
                     // "reclamation_policy" -> "",
                     "mount_path" -> path

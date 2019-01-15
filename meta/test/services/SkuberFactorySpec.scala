@@ -59,7 +59,7 @@ users:
       val sf = new DefaultSkuberFactory(testActor, play.api.Configuration.empty)
       val client = await(sf.initializeKube(testProvider, "namespace-override"))
       client.namespaceName must_== "namespace-override"
-      client.requestAuth must_== skuber.api.client.TokenAuth("kube-config-token-value")
+      client.asInstanceOf[skuber.api.client.impl.KubernetesClientImpl].requestAuth must_== skuber.api.client.TokenAuth("kube-config-token-value")
       expectNoMsg
     }
 
@@ -109,7 +109,7 @@ users:
       ))
       val client = await(sf.initializeKube(testProvider, "namespace-override"))
       client.namespaceName must_== "namespace-override"
-      client.requestAuth must_== skuber.api.client.TokenAuth("externally-generated-token-value")
+      client.asInstanceOf[skuber.api.client.impl.KubernetesClientImpl].requestAuth must_== skuber.api.client.TokenAuth("externally-generated-token-value")
     }
 
     "fail on non-white-listed external authenticators" in new WithProviderConfig("""
