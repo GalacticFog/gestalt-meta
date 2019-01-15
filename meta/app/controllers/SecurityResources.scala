@@ -44,6 +44,7 @@ class SecuritySync @Inject()(
     
     val secConfig = keyInit.asInstanceOf[GestaltLateInitSecurityEnvironment].config
     val creds = GestaltBasicCredentials(secConfig.apiKey, secConfig.apiSecret)
+    log.info("Got Credentials about to sync OrgTree")
     val sd = security.getOrgSyncTree(None, creds).get
  
     val metaorgs = ResourceFactory.findAll(ResourceIds.Org)
@@ -63,7 +64,7 @@ class SecuritySync @Inject()(
     val secOrgMap = (sd.orgs map { o => (o.id, o) }).toMap
     val secAccMap = (sd.accounts map { a => (a.id, a) }).toMap
     val secGroupMap = (sd.groups map { g => (g.id, g) }).toMap
-    
+    log.info("Got info from Meta and Security computing Diffs")
     val (orgsCreate,orgsDelete,orgsUpdate)   = computeResourceDiffs(secOrgIds, metaOrgIds)
     val (usersCreate,usersDelete,usersUpdate) = computeResourceDiffs(secAccIds, metaUserIds)
     val (groupsCreate,groupsDelete,groupsUpdate) = computeResourceDiffs(secGroupIds, metaGroupIds)
