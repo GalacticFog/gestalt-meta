@@ -83,7 +83,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   }  
   
   def getOrgSyncTree(orgId: Option[UUID], auth: AuthAccountWithCreds): Try[GestaltOrgSync] = {
-    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(auth.creds)), 30 seconds))
   }
   
   def getOrgSyncTree2()(implicit client: GestaltSecurityClient): Try[GestaltOrgSync] = {
@@ -94,7 +94,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
    * Use explicit credentials
    */
   def getOrgSyncTree(orgId: Option[UUID], creds: GestaltBasicCredentials): Try[GestaltOrgSync] = {
-    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(creds)), 5 seconds))
+    Try(Await.result(GestaltOrg.syncOrgTree(orgId)(secClientProvider.client.withCreds(creds)), 30 seconds))
   }
   
   def getRootOrg(auth: AuthAccountWithCreds): Try[GestaltOrg] = {
@@ -112,11 +112,11 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   }
 
   def getGroups(auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try(Await.result(GestaltGroup.listGroups()(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltGroup.listGroups()(secClientProvider.client.withCreds(auth.creds)), 30 seconds))
   }
   
   def getGroupAccounts(groupId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltAccount]] = {
-    Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds))
+    Try(Await.result(GestaltGroup.listAccounts(groupId)(secClientProvider.client.withCreds(auth.creds)), 30 seconds))
   }
 
   def createGroup(org: UUID, auth: AuthAccountWithCreds, group: GestaltResourceInput): Try[GestaltGroup] = {
@@ -127,7 +127,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
         rights = None,
         description = group.description
       )
-      Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)
+      Await.result(GestaltOrg.createGroup(org, newGroup)(secClientProvider.client.withCreds(auth.creds)), 30 seconds)
     }
   }
   
@@ -136,23 +136,23 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
 //  }
   
   def updateGroup(groupId: UUID, auth: AuthAccountWithCreds, update: GestaltGroupUpdate) = {
-    Try {Await.result(GestaltGroup.updateGroup(groupId, update)(secClientProvider.client.withCreds(auth.creds)), 5.seconds)}  
+    Try {Await.result(GestaltGroup.updateGroup(groupId, update)(secClientProvider.client.withCreds(auth.creds)), 30.seconds)}  
   }
   
   def getAccountGroups(auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltAccount.listGroupMemberships(auth.account.id)(secClientProvider.client.withCreds(auth.creds)), 30 seconds)}
   }
   
   def getAccountGroups(accountId: UUID, auth: AuthAccountWithCreds): Try[Seq[GestaltGroup]] = {
-    Try{Await.result(GestaltAccount.listGroupMemberships(accountId)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltAccount.listGroupMemberships(accountId)(secClientProvider.client.withCreds(auth.creds)), 30 seconds)}
   }
   
   def deleteGroup(id: UUID, auth: AuthAccountWithCreds): Try[Boolean] = {
-    Try{Await.result(GestaltGroup.deleteGroup(id)(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltGroup.deleteGroup(id)(secClientProvider.client.withCreds(auth.creds)), 30 seconds)}
   }
   
   def getAllOrgs(org: Option[UUID], auth: AuthAccountWithCreds): Try[Seq[GestaltOrg]] = {
-    Try{Await.result(GestaltOrg.listOrgs()(secClientProvider.client.withCreds(auth.creds)), 5 seconds)}
+    Try{Await.result(GestaltOrg.listOrgs()(secClientProvider.client.withCreds(auth.creds)), 30 seconds)}
   }
   
   def createOrg(parent: UUID, auth: AuthAccountWithCreds, org: GestaltResourceInput): Try[GestaltOrg] = {
