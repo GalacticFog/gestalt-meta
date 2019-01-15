@@ -163,7 +163,23 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
                                  ( implicit request: RequestHeader ) : Future[Result] = {
                     
     val metaAddress = META_URL
-
+    
+    /*
+     * Currently our action strings are all in the form of {resource}.{verb}. Here we're checking to
+     * see if the caller passed the fully-qualified action string (resource AND verb) or just the verb.
+     * If qualified, use the string as is - else get the prefix from the resource type and combine with verb.
+     */
+    def getQualifiedAction(resource: GestaltResourceInstance, givenAction: String): Future[String] = {
+      givenAction.split("""\.""").size match {
+        case 2 => fTry(givenAction)
+        case 1 => getOrFail (
+          actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
+          s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
+        )
+        case _ => fTry(throw new RuntimeException(s"Invalid action string. expected: {resource}.{verb}, found: ${givenAction}"))
+      }
+    }
+    
     val response = for {
       /*
        * Resource we're performing the action against.
@@ -188,11 +204,13 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"Could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
       )
 
-      action <- getOrFail (
-        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
-        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
-      )
+//      action <- getOrFail (
+//        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
+//        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
+//      )
 
+      action <- getQualifiedAction(resource, actionVerb)
+      
       operations = List(
         controllers.util.Authorize(action),
         controllers.util.PolicyCheck(action),
