@@ -27,7 +27,7 @@ case class KubeDeploymentResources(
     persistentvolumeclaims: Option[Seq[JsValue]] = None,
     namespaces: Option[Seq[JsValue]] = None,
     errors: Option[Seq[JsValue]] = None
-) extends ResourceList[JsValue] {
+      ) extends ResourceList[JsValue] {
   
   import KubeDeploymentResources.supportedTypes
   
@@ -63,6 +63,7 @@ case class KubeDeploymentResources(
     Some(res +: seq.getOrElse(Seq.empty[A]))
   }  
 }
+
 object KubeDeploymentResources {
   val supportedTypes = Seq(
     "pod",

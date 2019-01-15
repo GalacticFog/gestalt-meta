@@ -811,9 +811,8 @@ class ResourceController @Inject()(
         f(res, account, None).get
       }
     }
-
   }  
-
+  
   def getResourceContext(fqon: String, path: String) = Audited(fqon) { implicit request =>
     Ok(Json.toJson(mkPath2(fqon, path)))
   }
@@ -827,10 +826,19 @@ class ResourceController @Inject()(
     log.debug("findActionsInScope()")
     
     def makeActionUrl(provider: GestaltResourceInstance, action: String) = {
-      val act = action.drop(action.indexOf(""".""")+1)
+      val act = {
+        val cmps = action.split("""\.""")
+        if (cmps(0).trim == "streamspec") {
+          action
+        } else {
+          action.drop(action.indexOf(""".""")+1)  
+        }
+        //action.drop(action.indexOf(""".""")+1)
+      }
       val org = ResourceFactory.findById(ResourceIds.Org, provider.orgId) getOrElse {
         throw new RuntimeException(s"Could not find 'provider.org' with ID ${provider.orgId}")
       }
+      log.debug("Using action.string : " + act)
       val fqon = org.properties.get("fqon")
       "/%s/providers/%s?action=%s".format(fqon, provider.id, act)
     }

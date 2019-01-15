@@ -313,7 +313,7 @@ class TypeController @Inject()(
           PropertyFactory.create(owner)(prop).get
         }
       }
-
+      
       log.debug("Setting type lineage...")
       /*
        * Get list of types declared as parent types.
@@ -323,10 +323,10 @@ class TypeController @Inject()(
        * 2.) Update all parent types /properties/lineage/child_types
        * 3.) Update all instances of all parent-types with entitlements for the new type.
        */
-
+       
       // Get a list of all parent-type IDs
       val newParentTypes = TypeMethods.getParentTypes(newtype)
-
+      
       val results = for {
         _ <- updateParentLineage(owner, newtype, newParentTypes)
         a <- updateParentEntitlements(caller, newtype.id, newParentTypes)
