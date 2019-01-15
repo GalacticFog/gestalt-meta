@@ -39,7 +39,7 @@ class Security @Inject()(secClientProvider: SecurityClientProvider) {
   
   def clientUrl(): String = {
     val c = secClientProvider.client
-    "%s://%s%s".format(c.protocol, c.hostname, c.port)
+    "%s://%s:%s".format(c.protocol, c.hostname, c.port)
   }
   
   def searchAccounts(org: UUID, auth: AuthAccountWithCreds, criteria: (String,String)*): Future[Seq[GestaltAccount]] = {
