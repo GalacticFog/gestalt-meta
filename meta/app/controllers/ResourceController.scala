@@ -666,8 +666,6 @@ class ResourceController @Inject()(
   def postCreateCheck(resource: GestaltResourceInstance, identity: UUID)
     (implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment, JsValue]): GestaltResourceInstance = {
     
-    println("*****POST-CHECK resource of type : " + ResourceLabel(resource.typeId))
-    
     /*
     // List of all spec types allowed by the current resource schema
     val allowedSpecs = PropertyFactory.findAll(resource.typeId).filter { t =>
@@ -686,13 +684,9 @@ class ResourceController @Inject()(
     newSpecs foreach { p => println("***Creating : [%s] %s".format(p.id, p.name)) }
     */
     
-    println("****Checking resource type for post-create...")
-    
     val outputResource = if (resource.typeId == ResourceIds.Environment) {
-      println("*****Type is Environment...checking for variable updates...")
       val update = postCreateEnvironment(resource)
-      val x = ResourceFactory.update(update, identity)
-      println("UPDATE STATUS : " + x)
+      ResourceFactory.update(update, identity)
       update
     } else resource
     
