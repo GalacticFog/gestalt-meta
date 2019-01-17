@@ -400,11 +400,12 @@ class ContainerController @Inject()(
        s"could not find Environment parent for container ${container.id}").liftTo[Future];
       _ <- Either.fromOption(EventMethods.findEffectiveEventRules(environment.id, Some("container.migrate")),
        Error.Conflict("No promotion policy found for target environment.")).liftTo[Future];
-      _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
-        Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
-      }else {
-        Right(())
-      }).liftTo[Future];
+      // _ <- (if(container.properties.flatMap(_.get("status")) == Some("MIGRATING")) {
+      //   Left(Error.Conflict(s"Container '$id' is already migrating. No changes made."))
+      // }else {
+      //   Right(())
+      // }).liftTo[Future];
+      _ = log.warn(s"Container '$id' is already migrating. Attempting to perform the migration again.");
       (operations, options) = ContainerService.setupMigrateRequest(fqon, environment.id, container, request.identity,
        META_URL, request.queryString);
       _ <- ComposableSafeRequest2.Protect(operations, options);
