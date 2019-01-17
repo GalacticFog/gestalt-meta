@@ -220,9 +220,39 @@ class KubeNativeController @Inject()(
     /*
      * For now we're going to fail if the selected Kube namespace doesn't exist.
      */
-    val maybeNamespace = Await.result(context.getOption[Namespace](namespace), 20.seconds)
-    if (maybeNamespace.isEmpty) { 
-      throw new BadRequestException(s"Namespace must exist for AppDeployment. Namespace '${namespace}' not found.")
+    val usableNamespace = for {
+      maybeExistingNamespace <- context.getOption[Namespace](namespace)
+      targetNamespace        <- {
+        if (maybeExistingNamespace.isDefined) {
+          log.info(s"Using existing namespace '${namespace}' for deployment")
+          Future.successful(maybeExistingNamespace.get)
+        } else {
+          // Given namespace does not exist - create it.
+            val json = YamlJson.fromYamlString {
+                s"""
+                |apiVersion: v1
+                |kind: Namespace
+                |metadata:
+                |  name: ${namespace}
+                """.stripMargin
+              }
+            log.info(s"Creating new Kubernetes namespace '${namespace}' for deployment")
+            createKubeObject[Namespace](json.get, context)
+        }
+      }
+    } yield targetNamespace
+    
+    /*
+     * Make sure we have a namespace to deploy to.
+     */
+    Await.ready(usableNamespace, 20.seconds).value.get match {
+      case Success(_) => {
+        log.info("Using Kubernetes namespace: " + namespace) 
+      }
+      case Failure(e) => {
+        log.error("Failed to find or create Kubernetes namespace for deployment.")
+        throw e
+      }
     }
     
     /*
@@ -479,12 +509,11 @@ class KubeNativeController @Inject()(
         p.spec.map(_.containers) 
       }.flatten)
     } yield cs
-
+    
     containers.map(RenderObject(_, request.headers.toMap))
   }
   
   
-
   /**
    * Generate a view of several kubernetes native resources (some that are not
    * represented in Meta). Uses querystring parameters to determine the namespace
@@ -503,7 +532,8 @@ class KubeNativeController @Inject()(
           case a: Service => Json.toJson(a)
           case a: Secret => Json.toJson(a)
           case a: ConfigMap => Json.toJson(a)
-          case x => throw new BadRequestException(s"Unsupported resource type. found: ${x.getClass.getSimpleName}")
+          case x => throw new BadRequestException(
+              s"Unsupported resource type. found: ${x.getClass.getSimpleName}")
         }
         Json.toJson(items)
       }
