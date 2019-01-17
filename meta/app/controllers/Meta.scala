@@ -829,12 +829,16 @@ class Meta @Inject()( messagesApi: MessagesApi,
         log.debug(s"Found resource_id query-param - using for target: ${rid}")
         UUID.fromString(rid) 
       }
-      
+      targetResourceTypeId = {
+        ResourceFactory.findById(targetResourceId).fold {
+          throw new BadRequestException(s"Resource with ID '${targetResourceId}' not found.")
+        }{ r => r.typeId }
+      }
       result <- genericResourceMethods.performProviderBackedAction(
         org = org,
         identity = request.identity,
         body = request.body,
-        resourceType = provider.typeId,
+        resourceType = targetResourceTypeId, //provider.typeId,
         providerType = provider.typeId,
         actionVerb = action,
         resourceId = targetResourceId, //provider.id,
