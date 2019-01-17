@@ -131,7 +131,20 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
 
   override def destroySecret(secret: ResourceLike): Future[Unit] = Future.fromTryST(Try(???))
 
-  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
+  override def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
+    val volumeType = for(
+      properties <- volume.properties;
+      `type` <- properties.get("type")
+    ) yield `type`
+    volumeType match {
+      case Some("host_path") => Future.successful(())
+      case Some(_) => Future.fromTryST(Try(???))
+      case None => {
+        log.warn(s"`type` field was missing on volume resource ${volume.id}")
+        Future.successful(())
+      }
+    }
+  }
 
   override def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
