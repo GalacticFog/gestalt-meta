@@ -128,12 +128,14 @@ function injectLaserProviderInfo(event) {
     * streamspec.properties.provider is a reference UUID in the schema. That means
     * the rendered link must be replaced with 'just' the UUID for Meta input.
     */
-  const providerId = event.resource.properties.provider.id
-
+  //const providerId = event.resource.properties.provider.id
+  const providerId = event.provider.id
+  console.log(`Injecting provider ID into output: ${providerId}`)
   const nprops = Object.assign(
     Object.assign(props, { provider : providerId}), 
       { lambda_provider: { id: '12345', url: providerUrl}})
 
+  console.log('New properties -> ' + util.pretty(nprops))
   return Object.assign(event.resource, { properties : nprops })
 }
 

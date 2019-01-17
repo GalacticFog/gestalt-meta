@@ -75,9 +75,6 @@ case class Validate(override val args: String*) extends Operation(args) {
   }
 }
 
-
-//The problem is with the 'targetId' that gets sent to Authorize. It is looking for entitlements on the provider itself...NOT on the streamspec!!!
-
 case class Authorize(override val args: String*) extends Operation(args) with AuthorizationMethods {
 
   override def proceed(opts: RequestOptions): OperationResponse[Option[UUID]] = {
