@@ -1,6 +1,6 @@
 package services
 
-import com.galacticfog.gestalt.data.Instance
+import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,SecretSpec}
 import com.galacticfog.gestalt.util.FutureFromTryST._
@@ -112,6 +112,8 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
   }
 
   override def destroy(container: ResourceLike): Future[Unit] = {
+    import play.api.libs.concurrent.Execution.Implicits.defaultContext
+    
     val provider = ContainerService.containerProvider(container)
     
     def destroyRunningContainer(externalId: String): Future[Unit] = {
@@ -124,7 +126,28 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
     
     ContainerService.resourceExternalId(container) match {
-      case Some(externalId) => destroyRunningContainer(externalId)
+      case Some(externalId) => {
+        // destroy() signature ought to be changed
+        val mounts = ContainerSpec.fromResourceInstance(container.asInstanceOf[GestaltResourceInstance]) map { spec =>
+          spec.volumes
+        } recoverWith { case e: Throwable =>
+          e.printStackTrace()
+          log.warn(s"Failed to deserialize container ${container.id}: ${e.getMessage}")
+          Failure(e)
+        } getOrElse {
+          Seq()
+        }
+        for(
+          _ <- destroyRunningContainer(externalId);
+          _ <- Future.traverse(mounts) {
+            case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => {
+              // destroyVolume(volume)    // this is practically no-op now
+              Future.fromTryST(ResourceFactory.hardDeleteResource(volumeId))
+            }
+            case _ => Future.successful(())
+          }
+        ) yield ()
+      }
       case None => Future.successful(())    // the container wasn't created properly – can be safely deleted
     }
   }
