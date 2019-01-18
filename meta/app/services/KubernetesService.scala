@@ -577,6 +577,30 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
           ()
       }
 
+      // destroy() signature ought to be changed
+      val mounts = ContainerSpec.fromResourceInstance(container.asInstanceOf[GestaltResourceInstance]) map { spec =>
+        spec.volumes
+      } recoverWith { case e: Throwable =>
+        e.printStackTrace()
+        log.warn(s"Failed to deserialize container ${container.id}: ${e.getMessage}")
+        Failure(e)
+      } getOrElse {
+        Seq()
+      }
+
+      val fVolumeResourceDel = Future.traverse(mounts) { 
+        case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => {
+          kube.listSelected[ListResource[PersistentVolumeClaim]](META_VOLUME_KEY is volumeId.toString) flatMap { resources =>
+            if(resources.items.size == 0) {
+              Future.fromTryST(ResourceFactory.hardDeleteResource(volumeId))
+            }else {
+              Future.successful(())
+            }
+          }
+        }
+        case _ => Future.successful(())
+      }
+
       for(
         _ <- fDplDel;
         _ <- fSrvDel;
