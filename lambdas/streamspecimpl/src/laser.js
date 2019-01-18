@@ -4,9 +4,11 @@ module.exports = {
   getAddress(event) {
     
     if (event.resource.properties.lambda_provider) {
-      console.log("Found existing lambda_provider.url")
-      return event.resource.properties.lambda_provider.url
+      const lambdaUrl = event.resource.properties.lambda_provider.url
+      console.log("Found existing lambda_provider.url: " + lambdaUrl)
+      return lambdaUrl //event.resource.properties.lambda_provider.url
     } else {
+      console.log("Lambda address not found - using default.")
       return 'http://laser.test.galacticfog.com'
     }
   },

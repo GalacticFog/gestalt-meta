@@ -315,13 +315,27 @@ class ResourceController @Inject()(
     }    
   }
   
-  def requireTargetId(path: ResourcePath) = {
-    path.targetId match {
-      case Some(targetId) => Future.successful(UUID.fromString(targetId))
-      case None => Future.failed(
-        new ResourceNotFoundException("actions must be performed against a specific resource")
-      )
-    }    
+  def requireTargetId(path: ResourcePath, qs: Map[String,Seq[String]]): Future[UUID] = {
+//    val maybeResourceId = QueryString.singel(qs, "resource_id")
+//    path.targetId match {
+//      case Some(targetId) => Future.successful(UUID.fromString(targetId))
+//      case None => Future.failed(
+//        new ResourceNotFoundException("actions must be performed against a specific resource")
+//      )
+//    }    
+    
+    QueryString.single(qs, "resource_id").fold {
+      log.debug("Taking target ID from path.")
+      path.targetId match {
+        case Some(targetId) => Future.successful(UUID.fromString(targetId))
+        case None => Future.failed(
+          new ResourceNotFoundException("actions must be performed against a specific resource")
+        )
+      }      
+    }{ rid =>
+      log.debug(s"Using target ID from querystring: ${rid}")
+      Future.successful(UUID.fromString(rid)) 
+    }
   }
   
 
@@ -722,7 +736,7 @@ class ResourceController @Inject()(
       for {
         org      <- findOrgOrFail(fqon)
         action   <- fTry( requireActionParam(request) )
-        targetId <- requireTargetId(rp)
+        targetId <- requireTargetId(rp, request.queryString)
         
         result   <- execGenericAction(org, rp.targetTypeId, targetId, action)
       } yield result

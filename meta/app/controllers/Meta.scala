@@ -821,14 +821,27 @@ class Meta @Inject()( messagesApi: MessagesApi,
         case Some(np) => Future.failed(new ResourceNotFoundException(s"Resource '${id}' is not a subtype of Provider"))
         case None => Future.failed(new ResourceNotFoundException(s"Resource '${id}' not found"))
       }
+      
+      targetResourceId = QueryString.single(request.queryString, "resource_id").fold {
+        log.debug("Setting target resource ID to provider ID")
+        provider.id
+      }{ rid =>
+        log.debug(s"Found resource_id query-param - using for target: ${rid}")
+        UUID.fromString(rid) 
+      }
+      targetResourceTypeId = {
+        ResourceFactory.findById(targetResourceId).fold {
+          throw new BadRequestException(s"Resource with ID '${targetResourceId}' not found.")
+        }{ r => r.typeId }
+      }
       result <- genericResourceMethods.performProviderBackedAction(
         org = org,
         identity = request.identity,
         body = request.body,
-        resourceType = provider.typeId,
+        resourceType = targetResourceTypeId, //provider.typeId,
         providerType = provider.typeId,
         actionVerb = action,
-        resourceId = provider.id,
+        resourceId = targetResourceId, //provider.id,
         specificProviderId = Some(provider.id)
       )
     } yield result

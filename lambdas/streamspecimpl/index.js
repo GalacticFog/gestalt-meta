@@ -62,11 +62,16 @@ exports.entryPoint = function(event, context, callback) {
   const result = handleEvents()
 
   function translateProviderLink(spec) {
-    const props = spec.properties
-    const providerId = props.provider.id
-    
+    const props = spec.properties;
+    const providerId = {
+      if (props.provider.id !== undefined) {
+        return props.provider.id
+      } else {
+        return props.provider
+      }
+    }
     const nprops = Object.assign(Object.assign(props, { provider : providerId}))
-
+    console.log('translateProviderLink => output properties : ' + util.pretty(nprops))
     return Object.assign(spec, { properties : nprops })    
   }
   
