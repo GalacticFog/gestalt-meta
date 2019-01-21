@@ -270,19 +270,31 @@ class DeleteController @Inject()(
     security.deleteGroup(res.id, account) map ( _ => () )
   }
   
-  def deleteAppDeploymentSpecial(auth: AuthAccountWithCreds, res: GestaltResourceInstance, qs: Map[String, Seq[String]]) = {
-    kubeNative.deleteAppDeployment(auth, res, qs) match {
-      case Failure(e) => Failure(e)
-      case Success(maybeContainer) => maybeContainer match {
-        case Left(()) => {
-          log.info("No container associated with this AppDeployment was found. Nothing to delete.")
-          Success(())
-        }
-        case Right(container) => {
-          log.info(s"About to delete Container '${container.id}' from Meta.")
-          manager.delete(container, auth, force=true, skipExternals=Seq(ResourceIds.Container))
-        }
+  def deleteAppDeploymentSpecial(
+      auth: AuthAccountWithCreds, 
+      res: GestaltResourceInstance, 
+      qs: Map[String, Seq[String]]): Try[Unit] = {
+    
+    kubeNative.deleteAppDeployment(auth, res, qs).map { resources =>
+      /*
+       * deleteAppDeployment() deletes all relevant resources from kubernetes and returns
+       * a list of associated Meta resources that need to be deleted from Meta. Here we
+       * attempt to delete those resources and capture the results.
+       */
+      val results = resources.map { r =>
+        log.info(s"Deleting deployment resource '${r.id}' from Meta.")
+        manager.delete(r, auth, force=true, skipExternals=Seq(r.typeId))          
       }
+      /*
+       * If any of the deletes from Meta fail we fail the entire op. Concatenate
+       * all error messages into a single string and throw.
+       */
+      val failures = results.filter(_.isFailure)
+      if (failures.nonEmpty) {     
+        throw new RuntimeException(
+          failures.map(_.failed.get.getMessage).mkString(";")
+        )
+      } else () 
     }
   }
   
@@ -311,7 +323,6 @@ class DeleteController @Inject()(
                * delete a namespace. This guard checks for thos known cases and ignores
                * the failure if possible.
                */
-                
                 if (ignorableNamespaceError(namespace, e.status))
                   Future.successful(())
                 else throw e

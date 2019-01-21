@@ -26,21 +26,24 @@ import skuber.json.format._
 import skuber.apps.v1beta1._
 
 import skuber.LabelSelector
-//import controllers.DeleteController
+import scala.util.Try
+import scala.concurrent.Await
+import scala.concurrent.duration.DurationInt
 
+object KubeNativeMethods {
+  val META_DEPLOYMENT_ANNOTATION = "meta/appdeployment"  
+}
+class KubeNativeMethods @Inject()(skuberFactory: SkuberFactory) {
 
-class KubeNativeMethods @Inject()(
-    skuberFactory: SkuberFactory) {
-
+  import KubeNativeMethods._
+  
   private val log = Logger(this.getClass)
   
-  import scala.util.{Either, Left, Right}
-  import scala.util.Try
-  import scala.concurrent.Await
-  import scala.concurrent.duration.DurationInt
-  
-  
-  def deleteAppDeployment(auth: AuthAccountWithCreds, r: GestaltResourceInstance, qs: Map[String,Seq[String]]): Try[Either[Unit, GestaltResourceInstance]] = {
+  def deleteAppDeployment(
+      auth: AuthAccountWithCreds, 
+      r: GestaltResourceInstance, 
+      qs: Map[String,Seq[String]]): Try[Seq[GestaltResourceInstance]] = {
+    
     log.info(s"Received request to delete AppDeployment ${r.id}")
     
     val ps = r.properties.getOrElse {
@@ -107,25 +110,26 @@ class KubeNativeMethods @Inject()(
     } yield r2
     
     val result = maybeKubeDelete.transform(
-      s => Try(findDeploymentContainer(externalId)),
+      s => Try(findDeploymentContainer(externalId, r.id)),
       e => throw e
     )
 
     Await.result(result, 10.seconds)
   }
 
+  
+  def findDeletableMetaResources(deploymentId: UUID): Seq[GestaltResourceInstance] = {
+    ResourceFactory.findByVariable(META_DEPLOYMENT_ANNOTATION, deploymentId.toString)
+  }
+  
   /**
    * Find the (single) Container that may be associated with an AppDeployment. Not finding
    * the Container is currently NOT considered an error since there may (?) be valid cases
    * where a chart deployment does not produce a meta container.
    */
-  def findDeploymentContainer(externalId: String): Either[Unit, GestaltResourceInstance] = {
-    // TODO: This returns a list but should actually be single.
-    // TODO: Revisit whether or not it should be an error to NOT find the Container.
-    ResourceFactory.findContainersByExternalId(externalId).headOption match {
-      case Some(c) => Right(c)
-      case None    => Left(())
-    }
+  def findDeploymentContainer(externalId: String, deploymentId: UUID): Seq[GestaltResourceInstance] = { //Either[Unit, GestaltResourceInstance] = {
+    ResourceFactory.findContainersByExternalId(externalId) ++ 
+    ResourceFactory.findByVariable(META_DEPLOYMENT_ANNOTATION, deploymentId.toString)
   }
 
   /**
