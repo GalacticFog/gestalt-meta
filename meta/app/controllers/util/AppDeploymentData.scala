@@ -111,7 +111,7 @@ case class AppDeploymentData(
    * Ordered to avoid re-spawning resources if evaluated left-to-right.
    */
   def deletableKubeResources(): Seq[(String, String)] = {
-    val ordered = orderForDelete(resources.kube)
+    val ordered: Seq[JsValue] = orderForDelete(resources.kube)
     val (_, deletable) = partitionStatus(ordered)
     identityTuples(deletable)
   }

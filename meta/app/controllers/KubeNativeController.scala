@@ -51,14 +51,22 @@ import play.api.mvc.AnyContentAsRaw
 import controllers.util._
 import controllers.util.QueryString
 
+import scala.concurrent.ExecutionContext
 import scala.concurrent.Await
 import scala.concurrent.duration.DurationInt 
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 
 import com.github.ghik.silencer.silent
+//import controllers.util.KubeNativeMethods
+import controllers.util.KubeNativeMethods.META_DEPLOYMENT_ANNOTATION
 
+import scala.concurrent.duration.FiniteDuration
+  
+case class ResourceUnavailableException(message: String, cause: Throwable = null) extends RuntimeException(message, cause)
 case class UnsupportedMediaTypeException(message: String) extends RuntimeException
 case class NotAcceptableMediaTypeException(message: String) extends RuntimeException
+
+case class RetrySpec(retryUnavailable: Boolean = false, delay: FiniteDuration = 3.seconds, attempts: Int = 5)
 
 /*
  * TODO: A lot of the code here needs to move to KubeNativeMethods. 
@@ -78,6 +86,8 @@ class KubeNativeController @Inject()(
   
   private type FunctionGetSingle[A <: ObjectResource] = () => A
   private type FunctionGetList[K <: KListItem] = () => Future[KList[K]]
+  
+  private type KubeEndpoint = (PathArity, SecuredRequest[_,_], RequestContext) => Future[Result]
   
   /*
    * TODO: These shouldn't be necessary - need to dig them out of the appropriate 
@@ -107,15 +117,16 @@ class KubeNativeController @Inject()(
     
     if (isYamlType(contentType)) {    
       val creator = request.identity.account.id
-      initializeContext(provider, request)
-          .flatMap { deploymentResult(fqid(fqon), creator, provider, request, _) }
-          .recover { case t: Throwable => HandleExceptions(t) }
+      for {
+        context <- initializeContext(provider, request)
+        result  <- deployHelmChart(fqid(fqon), creator, provider, request, context).map { app =>
+          Created(RenderSingle(app)(request))
+        }.recover { case t: Throwable => HandleExceptions(t) }
+      } yield result
     } else {
       Future(UnsupportedMediaType("Content-Type must be a valid YAML Mime type."))
     }
   }
-  
-  type KubeEndpoint = (PathArity, SecuredRequest[_,_], RequestContext) => Future[Result]
   
   
   /**
@@ -190,41 +201,281 @@ class KubeNativeController @Inject()(
       throw new BadRequestException(s"Environment ${sid} not found.")
     }
   }
-
+  
+  case class ResourceContext(
+      kind: String, 
+      namespace: String, 
+      providerId: UUID, 
+      orgId: UUID,
+      environmentId: UUID, 
+      workspace: GestaltResourceInstance, 
+      annotation: Map[String,String]) {
+    
+    val typeId = ResourceContext.typeFromKind(kind)
+    
+    def withKind(kind: String): ResourceContext = this.copy(kind = kind)
+  }
+  
+  object ResourceContext {
+    import migrations.V13.VOLUME_TYPE_ID
+    
+    def fromChart(kind: String, chart: ChartData): ResourceContext = {
+      ResourceContext(
+        kind = kind,
+        namespace = chart.namespace,
+        providerId = chart.provider,
+        orgId = chart.org,
+        environmentId = chart.environment,
+        workspace = chart.workspace,
+        annotation = chart.metaAnnotation
+      )
+    }
+    
+    def typeFromKind(kind: String): UUID = {
+      kind match {
+        case "container" => ResourceIds.Container
+        case "secret" => ResourceIds.Secret
+        case "volume" | "persistentvolume" | "persistentvolumeclaim" => VOLUME_TYPE_ID
+        case _ => throw new RuntimeException(s"Unsupported resource kind '$kind'. This is a bug.")
+      }
+    }
+  }
+  
+  def importResourceMeta(resource: JsValue, creator: AuthAccountWithCreds, context: ResourceContext, retry: RetrySpec = RetrySpec()) = {
+    val name = (resource \ "metadata" \ "name").as[String]
+    val externalId = formatExternalId(context.kind, context.namespace, name)
+    val actionPayload = 
+      formatSecretImportActionPayload(name, 
+        context.providerId, 
+        context.environmentId, 
+        externalId, 
+        context.workspace, 
+        context.annotation)
+        
+    formatImportJson2(
+        actionPayload, s"${context.kind}.import", context.providerId, context.environmentId).map { newJson =>
+      CreateWithEntitlements(context.orgId, creator, newJson, context.typeId, Some(context.environmentId)) match {
+        case Failure(e) => {
+          log.error(s"Failed creating imported ${context.kind} in Meta: ${e.getMessage}")
+          throw e
+        }
+        case Success(imported) => {
+          log.info(s"${context.kind} imported successfully.")   
+        }
+      }
+    }
+  }  
+  
   /*
-   * TODO: This is just for testing. Get rid of waits, sequence and return future.
+   * TODO: Move ChartData to own file.
    */
-  private[controllers] def deploymentResult[R](
+  type YamlDoc = String
+  type YamlMap = Map[String, Object]
+  
+  case class ChartData( 
+      queryString: Map[String, Seq[String]],
+      source: String, 
+      release: String, 
+      namespace: String, 
+      environment: UUID, 
+      creator: AuthAccountWithCreds, 
+      raw: String, 
+      documents: List[YamlDoc], 
+      deploymentId: UUID,
+      org: UUID,
+      provider: UUID) {
+
+    val metaAnnotation = Map(META_DEPLOYMENT_ANNOTATION -> deploymentId.toString)
+    val workspace: GestaltResourceInstance = ResourceFactory.findParent(ResourceIds.Workspace, environment).getOrElse {
+      throw new RuntimeException(s"Could not find parent workspace for given environment '${environment}'")
+    }
+    def withDeploymentId(id: UUID) = this.copy(deploymentId = id)
+  }
+  
+  object ChartData {
+    
+    def validate(kubeContext: RequestContext, org: UUID, provider: UUID, request: SecuredRequest[_,_]): Future[ChartData] = {
+      ChartData.fromRequest(org, provider, request) match {
+        case Failure(e) => Future(throw e)
+        case Success(chart) => this.validate(kubeContext, chart)
+      }
+    }
+    
+    def validate(kubeContext: RequestContext, chart: ChartData): Future[ChartData] = {
+      for {
+        _ <- Future.fromTry(findSingleDeployment(chart.documents))
+        result <- findOrCreateNamespace(kubeContext, chart.namespace).map { _ =>
+          log.info("Using Kubernetes namespace: " + chart.namespace)
+          chart
+        }.recover {
+          case e: Throwable =>
+            log.error("Failed to find or create Kubernetes namespace for deployment.")
+            throw e
+        }
+      } yield result
+    }
+    
+    def findSingleDeployment(documents: Seq[YamlDoc]): Try[YamlMap] = Try {
+      documents
+        .map(doc => CompiledHelmChart.string2Map(doc))
+        .find(m => m("kind").toString.toLowerCase == "deployment").getOrElse {
+          throw new BadRequestException(s"Chart MUST contain an explicit 'Deployment' object")
+        }
+    }
+
+    def fromRequest(org: UUID, provider: UUID, request: SecuredRequest[_,_]): Try[ChartData] = Try {
+      val qs = request.queryString
+      val body = decodeCompiledChart(request.body.asInstanceOf[AnyContentAsRaw])
+      val docs = CompiledHelmChart.splitToYamlString(body)
+      
+      ChartData(
+        queryString = qs,
+        source = QueryString.requiredSingle(qs, Params.Source),
+        release = QueryString.requiredSingle(qs, Params.Release),
+        namespace = QueryString.requiredSingle(qs, Params.Namespace),
+        environment = validateMetaEnv(qs).id,
+        creator = request.identity.asInstanceOf[AuthAccountWithCreds],
+        raw = body,
+        documents = docs,
+        deploymentId = UUID.randomUUID,
+        org = org,
+        provider = provider
+      )
+    }
+  }  
+
+  
+  /**
+   * Create a resource in Kubernetes converting the output to JSON.
+   */
+  private[controllers] def createDeploymentResource(yaml: String, context: RequestContext, qs: Map[String,Seq[String]]): Future[JsValue] = {  
+    createKubeResource(yaml, context, qs).map { kubeResource =>
+      log.debug(s"Adding resource ${kubeResource.kind}(${kubeResource.name}) to AppDeployment.")
+      objectResource2Json(kubeResource) match {
+        case Success(a) => a
+        case Failure(e) => errorJson(e, kubeResource.kind, kubeResource.name)
+      }
+    }.recover {
+      case e: Throwable => {
+        val res = CompiledHelmChart.string2Map(yaml)
+        val metadata = CompiledHelmChart.toScalaMap(res("metadata"))
+        errorJson(e, res("kind").toString, metadata("name").toString)
+      }
+    }      
+  }
+  
+  /**
+   * Creates all of the Kubernetes resources in a compiled Helm chart - formats the
+   * results as a Meta AppDeployment resource.
+   */
+  private[controllers] def executeChart(context: RequestContext, chart: ChartData, z: AppDeploymentData): Future[AppDeploymentData] = {
+    // Split the chart into individual YAML docs.
+    val docs = CompiledHelmChart.splitToYamlString(chart.raw)
+    docs.foldLeft(Future.successful(z)) { (acc, doc) =>        
+      for {
+        result <- createDeploymentResource(doc, context, chart.queryString)
+        deployment <- acc
+      } yield deployment.withKubeResource(result)
+    }
+  }
+
+  private[controllers] def importResources(resources: Seq[JsValue], creator: AuthAccountWithCreds, context: ResourceContext): Future[Seq[_]] = {
+    Future.sequence(resources.map(r => importResourceMeta(r, creator, context)))
+  }
+    
+  private[controllers] def deployHelmChart[R](
       org: UUID,
       creator: UUID,
       provider: UUID, 
       request: SecuredRequest[_,_], 
-      context: RequestContext): Future[Result] = {
+      context: RequestContext): Future[GestaltResourceInstance] = {
 
-    val payload = request.body.asInstanceOf[AnyContentAsRaw]
-    val rawBody = decodeCompiledChart(payload)
+    def metaImportContainer(chart: ChartData, request: SecuredRequest[_,_]): Future[GestaltResourceInstance] = {
+      val finalDeploymentName = genReleaseName(findSingleDeployment(chart.documents), chart.release)
+      val externalContainerId = formatExternalId("container", chart.namespace, finalDeploymentName)    
+      val actionPayload = formatImportActionPayload(finalDeploymentName, chart.provider, chart.environment, externalContainerId)
+      val newContainerJson = formatImportJson(actionPayload, "container.import", chart.provider, chart.environment)
+      
+      Future.fromTry(
+        CreateWithEntitlements(org, chart.creator, newContainerJson, ResourceIds.Container, Some(chart.environment)) match {
+          case Failure(e) => {
+            log.error(s"Failed creating imported container in Meta: ${e.getMessage}")
+            throw e
+          }
+          case Success(importedContainer) => {
+            log.debug("Container imported successfully.")
+            Success(importedContainer)    
+          }
+        }
+      )
+    }    
+  
+    for {
+      // Validate chart, create resources in kube
+
+      chart <- ChartData.validate(context, org, provider, request)
+      output = newAppDeployment(chart)
+      deploymentData <- executeChart(context, chart, output)
+      
+      // Import dependent (non-container) resources into Meta
+
+      importableSecrets = deploymentData.resources.kube.secrets.getOrElse(Seq())
+      secretContext = ResourceContext.fromChart("secret", chart)
+      importableVolumeClaims = deploymentData.resources.kube.persistentvolumeclaims.getOrElse(Seq())    
+      volumeContext = secretContext.withKind("volume")
+      dependentImports <- Future.sequence(Seq(
+          importResources(importableSecrets, chart.creator, secretContext),
+          importResources(importableVolumeClaims, chart.creator, volumeContext)))
+
+      // Create final AppDeployment in Meta and import deployment container.
+
+      appName = "%s-%s".format(chart.release, UUID.randomUUID.toString)
+      finalApp = deploymentData.withStatus(deploymentData.getStatus)
+      deployment <- createMetaAppDeployment(chart, org, appName, finalApp).transform(
+        success => {
+          log.debug("AppDeployment created successfully.")
+          success
+        },
+        failure => {
+          log.error(s"Failed creating AppDeployment in Meta: ${failure.getMessage}")
+          failure
+        })
+      result <- metaImportContainer(chart, request).map(_ => deployment)    
+    } yield result
+  }
     
-    /* 
-     * This is a list of each YAML document in the composite input as a YAML String 
-     * (each document is a separate List item)
-     */
-    val documents: List[String] = CompiledHelmChart.splitToYamlString(rawBody)
 
-    val qs = request.queryString
-    val source = QueryString.requiredSingle(qs, Params.Source)
-    val release = QueryString.requiredSingle(qs, Params.Release)
-    val namespace = QueryString.requiredSingle(qs, Params.Namespace)
-    val env = validateMetaEnv(qs)
-    val metaenv = env.id
-
-    /*
-     * For now we're going to fail if the selected Kube namespace doesn't exist.
-     */
-    val usableNamespace = for {
+  /**
+   * Find the Deployment in a collection of YAML documents comprising a Helm Chart.
+   * Ensures there is a single Deployment. 
+   */
+  private[controllers] def findSingleDeployment(documents: List[String]): Map[String,Object] = {
+    documents
+      .map(doc => CompiledHelmChart.string2Map(doc))
+      .find(m => m("kind").toString.toLowerCase == "deployment").getOrElse {
+        throw new BadRequestException(s"Chart MUST contain an explicit 'Deployment' object")
+      }      
+  }
+  
+  /**
+   * Find and replace the 'release-name' token in kube resource YAML. Replaces
+   * the Helm-based 'release-name' token in [object].metadata.name. 
+   */
+  private[controllers] def genReleaseName(yaml: Map[String,Object], releaseName: String): String = {
+    CompiledHelmChart.toScalaMap(yaml("metadata"))("name")
+      .toString.replaceAll("(?i)RELEASE-NAME", releaseName)      
+  }  
+  
+  /**
+   * If given namespace exists in Kubernetes, use it - else create new.
+   * TODO: Possibly use a query param to control dynamic namespace creation.
+   */  
+  private[controllers] def findOrCreateNamespace(context: RequestContext, namespace: String): Future[Namespace] = {
+    for {
       maybeExistingNamespace <- context.getOption[Namespace](namespace)
       targetNamespace        <- {
         if (maybeExistingNamespace.isDefined) {
-          log.info(s"Using existing namespace '${namespace}' for deployment")
+          log.info(s"Found existing namespace '${namespace}' for deployment")
           Future.successful(maybeExistingNamespace.get)
         } else {
           // Given namespace does not exist - create it.
@@ -240,209 +491,46 @@ class KubeNativeController @Inject()(
             createKubeObject[Namespace](json.get, context)
         }
       }
-    } yield targetNamespace
-    
-    /*
-     * Make sure we have a namespace to deploy to.
-     */
-    Await.ready(usableNamespace, 20.seconds).value.get match {
-      case Success(_) => {
-        log.info("Using Kubernetes namespace: " + namespace) 
-      }
-      case Failure(e) => {
-        log.error("Failed to find or create Kubernetes namespace for deployment.")
-        throw e
-      }
+    } yield targetNamespace      
+  }  
+  
+  /*
+   * Format properties.external_id for Meta Resources deployed to kubernetes.
+   */
+  private[controllers] def formatExternalId(objectType: String, namespace: String, objectName: String): String = {
+    objectType match {
+      case "container" => s"/namespaces/${namespace}/deployments/${objectName}"
+      case "secret"    => s"/namespaces/${namespace}/secrets/${objectName}"
+      case "volume"    => s"/namespaces/${namespace}/persistentvolumeclaims/${objectName}"
+      case _ => throw new RuntimeException(s"Invalid objectType '${objectType}' - this is a bug")
     }
-    
-    /*
-     * Get the 'final' name of the Kubernetes Deployment from the Chart. Note, final-name is
-     * the Deployment.metadata.name with the 'RELEASE-NAME' token replaced. This method throws
-     * if there is no explicit Deployment resource found in the chart.
-     */
-    def extractNameFromDeployment() = {
-      val deployment = documents
-        .map(doc => CompiledHelmChart.string2Map(doc))
-        .find(m => m("kind").toString.toLowerCase == "deployment").getOrElse {
-        throw new BadRequestException(s"Chart MUST contain an explicit 'Deployment' object")
-      }
-      val rawName = CompiledHelmChart.toScalaMap(deployment("metadata"))("name")
-      rawName.toString.replaceAll("(?i)RELEASE-NAME", release)
-    }
-    
-    /*
-     * Format container.properties.external ID
-     */
-    def formatExternalId(objectType: String, namespace: String, objectName: String): String = {
-      objectType match {
-        case "container" => s"/namespaces/${namespace}/deployments/${objectName}"
-        case "secret"    => s"/namespaces/${namespace}/secrets/${objectName}"
-        case "volume"    => s"/namespaces/${namespace}/persistentvolumeclaims/${objectName}"
-        case _ => throw new RuntimeException(s"Invalid objectType '${objectType}' - this is a bug")
-      }
-    }
-    
-    log.debug(
-      "Query Params: source=[%s], release=[%s], namespace=[%s], meta-env=[%s]".format(
-        source, release, namespace, metaenv))    
-
-    val output = AppDeploymentData(
-      provider = provider,
+  }  
+  
+  private[controllers] def newAppDeployment(chart: ChartData) = {
+    AppDeploymentData(
+      provider = chart.provider,
       status = "n/a",
       source = DeploymentSource(
-          source = source, 
-          release = release
+          source = chart.source, 
+          release = chart.release
       ),
       timestamp = java.time.ZonedDateTime.now,
-      native_namespace = namespace,
+      native_namespace = chart.namespace,
       resources = DeploymentResources(
           KubeDeploymentResources(), 
           MetaDeploymentResources()
       )
-    )
-
-    /*
-     * Iterate over YAML docs, attempt to create each in Kubernetes - pack each
-     * response (success or failure) into AppDeployment response
-     */
-    val deploymentRecord = documents.foldLeft(output) { (acc, doc) =>
-      val result = Try {
-        Await.result(createKubeResource(doc, context, request.queryString).transform(
-          s => s,
-          e => throw new Exception(s"Failed creating object: ${e.getMessage}")), 20.seconds)
-      } match {
-        // KUBE REQUEST SUCCEEDED - add resource serialized to JSON
-        case Success(r) => {
-          log.debug(s"Adding resource ${r.kind}(${r.name}) to AppDeployment.")
-          objectResource2Json(r) match {
-            case Success(a) => a
-            case Failure(e) => errorJson(e, r.kind, r.name)
-          }
-        }
-        // KUBE REQUEST FAILED - add error JSON        
-        case Failure(e) => {
-          val res = CompiledHelmChart.string2Map(doc)
-          val metadata = CompiledHelmChart.toScalaMap(res("metadata"))
-          errorJson(e, res("kind").toString, metadata("name").toString)
-        }
-      }
-      acc.withKubeResource(result)
-    }
-    
-    val parentWorkspace = ResourceFactory.findParent(ResourceIds.Workspace, metaenv).getOrElse {
-      throw new RuntimeException(s"Could not find parent workspace for environment '${metaenv}'")
-    }
-    
-    val containerCreator = request.identity.asInstanceOf[AuthAccountWithCreds]
-    
-    /*
-     * TODO: Both the secret and volume import blocks here need refactoring. As of now they
-     * will basically swallow errors and can fail unpredictably.
-     * Handle failed imports
-     * Make meta create dependent on successful lookup/modification in kube
-     */
-    log.debug("Checking chart for Secrets...")
-    val importableSecrets: Seq[JsValue] = deploymentRecord.resources.kube.secrets.getOrElse(Seq())
-    importableSecrets.foreach { s => 
-      val name = (s \ "metadata" \ "name").as[String]
-      val externalId = formatExternalId("secret", namespace, name)
-      val actionPayload = formatSecretImportActionPayload(name, provider, metaenv, externalId, parentWorkspace)
-      val newSecretJson = formatImportJson(actionPayload, "secret.import", provider, metaenv)
-
-      CreateWithEntitlements(org, containerCreator, newSecretJson, ResourceIds.Secret, Some(metaenv)) match {
-        case Failure(e) => {
-          log.error(s"Failed creating imported Secret in Meta: ${e.getMessage}")
-          throw e
-        }
-        case Success(imported) => {
-          log.info("Secret imported successfully.")   
-        }
-      }      
-    }
-
-    /*
-     * TODO: This is very not good - but suffices for testing.
-     */
-    Thread.sleep(3000)
-
-    log.debug("Checking deployment for PVCs...")
-    val importableVolumeClaims = deploymentRecord.resources.kube.persistentvolumeclaims.getOrElse(Seq())
-    importableVolumeClaims.foreach { c =>
-
-      val name = (c \ "metadata" \ "name").as[String]
-      val externalId = formatExternalId("volume", namespace, name)
-      /*
-       * TODO: all the format*ImportActionPayload methods can be combined into one
-       * And give the function a better name!
-       */      
-      val actionPayload = formatSecretImportActionPayload(name, provider, metaenv, externalId, parentWorkspace)
-      val newPvcJson = formatImportJson(actionPayload, "volume.import", provider, metaenv)
-      
-      import migrations.V13.VOLUME_TYPE_ID
-      CreateWithEntitlements(org, containerCreator, newPvcJson, VOLUME_TYPE_ID, Some(metaenv)) match {
-        case Failure(e) => {
-          log.error(s"Failed creating imported PVC in Meta: ${e.getMessage}")
-          throw e
-        }
-        case Success(imported) => {
-          log.info("Volume imported successfully.")  
-        }
-      }      
-    }
-
-    /*
-     * NOTE: At this point everything has been created in kubernetes (errors aside).
-     */
-    
-    /*
-     * TODO: Now we need to check for any Secrets the chart may have created and import them
-     * The import code expects that any secrets referenced by a container have already been imported.
-     */
-    
-    val finalDeploymentName = extractNameFromDeployment()
-    val externalContainerId = formatExternalId("container", namespace, finalDeploymentName)
-    
-    val actionPayload = formatImportActionPayload(finalDeploymentName, provider, metaenv, externalContainerId)
-    val newContainerJson = formatImportJson(actionPayload, "container.import", provider, metaenv)
-    
-    
-    Future {
-      
-      log.debug("About to create AppDeployment in Meta...")
-      val appDeploymentName = "%s-%s".format(release, UUID.randomUUID.toString)
-      metaAppDeployment(org, metaenv, creator, appDeploymentName, 
-          deploymentRecord.withStatus(deploymentRecord.getStatus)) match {
-        case Failure(e) => {
-          log.error(s"Failed creating AppDeployment in Meta: ${e.getMessage}")
-          HandleExceptions(e)
-        }
-        case Success(deployment) => {
-          log.debug("AppDeployment created successfully.")
-          log.debug("About to import deployment container into Meta...")
-
-          
-          CreateWithEntitlements(org, containerCreator, newContainerJson, ResourceIds.Container, Some(metaenv)) match {
-            case Failure(e) => {
-              log.error(s"Failed creating imported container in Meta: ${e.getMessage}")
-              HandleExceptions(e)
-            }
-            case Success(importedContainer) => {
-              log.debug("Container imported successfully.")
-              Created(RenderSingle(deployment)(request))    
-            }
-          }
-        }
-      }
-    }
+    )      
+  }  
   
-  }
   
   def formatSecretImportActionPayload(
       name: String, 
       provider: UUID, 
       envid: UUID, 
       externalId: String, 
-      workspace: GestaltResourceInstance): JsObject = {
+      workspace: GestaltResourceInstance,
+      variables: Map[String,String] = Map.empty): JsObject = {
     
     val json = Json.obj(
         "id"   -> UUID.randomUUID.toString,
@@ -452,7 +540,8 @@ class KubeNativeController @Inject()(
             "provider" -> Json.obj(
                 "id" -> provider.toString
             )
-         )
+         ),
+        "variables" -> Json.toJson(variables)
     )
     contextObject(workspace.id, json)
   }
@@ -509,12 +598,13 @@ class KubeNativeController @Inject()(
    * 
    * @return a Success containing the resource created in Meta or a Failure
    */
-  private[controllers] def metaAppDeployment(
+  private[controllers] def createMetaAppDeployment(
+      uuid: UUID,
       org: UUID, env: UUID, creator: UUID, name: String, info: AppDeploymentData): Try[GestaltResourceInstance] = {
       
     ResourceFactory.create(ResourceIds.User, creator)(
         GestaltResourceInstance(
-          id = UUID.randomUUID(),
+          id = uuid,
           typeId = migrations.V25.APPDEPLOYMENT_TYPE_ID,
           state = ResourceState.id(ResourceStates.Active),
           orgId = org,
@@ -525,7 +615,25 @@ class KubeNativeController @Inject()(
         parentId = Some(env)
      )
   }
-  
+
+  private[controllers] def createMetaAppDeployment(
+      chart: ChartData, org: UUID, name: String, info: AppDeploymentData): Future[GestaltResourceInstance] = {
+      
+    Future.fromTry {
+      ResourceFactory.create(ResourceIds.User, chart.creator.account.id)(
+          GestaltResourceInstance(
+            id = chart.deploymentId,
+            typeId = migrations.V25.APPDEPLOYMENT_TYPE_ID,
+            state = ResourceState.id(ResourceStates.Active),
+            orgId = org,
+            owner = ResourceOwnerLink(ResourceIds.User, chart.creator.account.id.toString),
+            name = name,
+            properties = Some(Map("data" -> Json.stringify(Json.toJson(info)) ))
+          ),
+          parentId = Some(chart.environment)
+       )
+    }
+  }  
   def objectResource2Json(r: ObjectResource): Try[JsValue] = Try {
     r match {
       case x: ConfigMap => Json.toJson(x)
@@ -1038,27 +1146,10 @@ class KubeNativeController @Inject()(
     | POST /{fqon}/providers/{id}/kube/namespaces
     """.stripMargin.trim
   
-  
-  
 
-  
   def initKube(providerResource: GestaltResourceInstance, namespaceValue: String) = {
     Await.result(skuberFactory.initializeKube(providerResource, namespaceValue), 5.seconds)
   }
-  
-//  def parseProviderFromActionPayload(payload: JsObject): GestaltResourceInstance = {
-//    (payload \ "provider").asOpt[JsObject].fold {
-//      throw new RuntimeException("payload did not have '.provider'")
-//    }{ providerJson =>
-//      (providerJson \ "id").asOpt[String].fold {
-//        throw new RuntimeException("Could not find provider/id")
-//      }{ id =>
-//        ResourceFactory.findById(UUID.fromString(id)).getOrElse {
-//          throw new RuntimeException(s"Kube provider with ID '$id' not found.")
-//        }
-//      }
-//    }    
-//  }
 
   def getMetaId(obj: skuber.ObjectResource, envId: String, uuidLabel: String): UUID = {
     log.debug(s"Testing import status of ${obj.kind}(${obj.metadata.name}])")
@@ -1080,11 +1171,94 @@ class KubeNativeController @Inject()(
     idInMeta
   }  
 
-private def formatImportJson(
+  import akka.actor.ActorSystem
+  import akka.pattern.Patterns.after
+  
+  lazy val VOLUMECLAIM_BINDING_ATTEMPTS = 5
+  lazy val VOLUMECLAIM_BINDING_DELAY = 3.seconds  
+  
+  //import com.galacticfog.gestalt.data.TypeFactory
+  import controllers.util.TypeMethods
+  
+  private def formatImportJson2(
       payload: JsObject,
       action: String,
       providerId: UUID,
-      envId: UUID ): JsValue = {
+      envId: UUID): Future[JsValue] = {
+    
+    log.debug(s"formatImportJson2(_, ${action}, _, _)")
+    
+    val providerResource = ResourceFactory.findById(ResourceIds.KubeProvider, providerId).getOrElse {
+      throw new RuntimeException(s"Could not find KubeProvider '${providerId}'.")
+    }
+    val providerTypeName = TypeMethods.typeName(providerResource.typeId).getOrElse {
+      throw new RuntimeException(s"Provider with type ID '${providerResource.typeId}' not found. This is a bug.")
+    }
+    
+    val providerLink = Json.obj(
+      "name" -> providerResource.name,          
+      "id" -> providerResource.id.toString,
+      "resource_type" -> providerTypeName)
+   
+    val inputProps = action match {
+      case "container.import" => Json.obj("provider" -> providerLink)
+      case "secret.import" => Json.obj("provider" -> providerId)
+      case "volume.import" => Json.obj("provider" -> providerId)
+      case _ => throw new RuntimeException(s"Invalid action '${action}'. This is a bug")
+    }
+    
+    val contextLabels = Json.obj(
+      "meta/fqon"        -> (payload \ "context" \ "org" \ "fqon").as[String],
+      "meta/workspace"   -> (payload \ "context" \ "workspace" \ "id").as[String],
+      "meta/environment" -> envId.toString,
+      "meta/provider"    -> providerId.toString
+    )
+    
+    val resource = (payload \ "resource").as[JsObject]
+    val importTarget = (resource \ "properties" \ "external_id").as[String]
+    
+    val fResp = (action, importTarget.split("/", 5)) match {
+      case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
+        log.debug(s"Looking up Container data => namespace: $namespaceValue, deployment: $deplNameValue")
+      /*
+       * TODO: This is used as /id of container. secret already include id in the resource payload
+       * Normalize this.
+       */        
+        val uuid = UUID.randomUUID
+        val kube = initKube(providerResource, namespaceValue)
+        importContainer(kube, envId.toString, namespaceValue, deplNameValue, contextLabels, (resource ++ Json.obj("id" -> uuid.toString)))
+      }
+
+      case ("secret.import", Array("", "namespaces", namespaceValue, "secrets", secretName)) => {
+        log.debug(s"Looking up Secret data => namespace: $namespaceValue, secret: $secretName")
+        
+        val kube = initKube(providerResource, namespaceValue)
+        importSecret(kube, namespaceValue, secretName, contextLabels, resource)
+      }
+      
+      case ("volume.import", Array("", "namespaces", namespaceValue, "persistentvolumeclaims", pvcName)) => {
+        log.debug(s"Looking up Volume data => namespace: $namespaceValue, pvc: $pvcName")
+
+        val kube = initKube(providerResource, namespaceValue)
+        val system = ActorSystem()
+        val maybeVolume = importDynamicVolumeRetry(kube, namespaceValue, pvcName, contextLabels, resource,
+            attempts = VOLUMECLAIM_BINDING_ATTEMPTS,
+            delay = VOLUMECLAIM_BINDING_DELAY)(system)
+        maybeVolume.onComplete { case _ => system.terminate() }
+        maybeVolume
+      }
+      case _ => 
+        throw BadRequestException(s"Invalid combination of action and External ID: (`${action}`, `${importTarget}`)")
+    }
+    fResp
+  }    
+  
+
+  private def formatImportJson(
+      payload: JsObject,
+      action: String,
+      providerId: UUID,
+      envId: UUID): JsValue = {
     
     log.debug(s"formatImportJson(_, action = ${action}, _, _)")
     
@@ -1161,59 +1335,105 @@ private def formatImportJson(
         log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
 
         val kube = initKube(providerResource, namespaceValue)
-        importPvc(kube, namespaceValue, pvcName, contextLabels, resource)
+        val system = ActorSystem()
+        importDynamicVolumeRetry(kube, namespaceValue, pvcName, contextLabels, resource,
+            attempts = VOLUMECLAIM_BINDING_ATTEMPTS,
+            delay = VOLUMECLAIM_BINDING_DELAY)(system)
       }
       case _ => throw BadRequestException(s"Invalid combination of action and External ID: (`${action}`, `${importTarget}`)")
     }
     Await.result(fResp, 15.seconds)
   }  
   
-  def importPvc(
+  
+  
+  def importDynamicVolumeRetry(
       kube: RequestContext, 
-      namespaceValue: String, 
-      pvcName: String,
-      contextLabels: JsObject,
-      resource: JsObject /*secret json*/) = {
+      namespace: String, 
+      name: String,
+      labels: JsObject,
+      resource: JsObject,
+      attempt: Int = 0,
+      attempts: Int = VOLUMECLAIM_BINDING_ATTEMPTS,      
+      delay: FiniteDuration = VOLUMECLAIM_BINDING_DELAY,
+      ec: ExecutionContext = scala.concurrent.ExecutionContext.global)(
+          implicit as: ActorSystem): Future[JsValue] = {
+  
+    importDynamicVolume(kube, namespace, name, labels, resource).recoverWith {
+      case a: ResourceUnavailableException => {
+        if (attempt >= attempts) {
+          log.error("Max retries exhausted - failing.")
+          throw a
+        }
+        else {
+          log.debug(s"PVC was unbound. Retrying in ${delay}: (${attempt+1}/${attempts})")
+          after(delay, as.scheduler, ec, Future.successful(1)).flatMap { _ =>
+            importDynamicVolumeRetry(kube, namespace, name, labels, resource, (1+attempt), attempts, delay)
+          }
+        }
+      }
+      case e: Throwable => {
+        as.terminate()
+        throw e
+      }      
+    }
+  }
+  
+  def importDynamicVolume(
+      kube: RequestContext, 
+      namespace: String, 
+      name: String,
+      labels: JsObject,
+      resource: JsObject) = {
     
-    log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
+    log.debug(s"importDynamicVolume(_, namespace=$namespace, name=$name ...)")
 
     val inputProps = (resource \ "properties").asOpt[JsObject].getOrElse(Json.obj())
-    val pvcUuid = UUID.fromString((resource \ "id").as[String])      
+    val metaId = ((resource\"id").asOpt[String]).fold(UUID.randomUUID)(UUID.fromString(_))
     
     for {
-      pvc <- kube.getInNamespace[skuber.PersistentVolumeClaim](pvcName, namespaceValue)
-      _   <- assertUnmanaged(pvc, "volume")    // so that failed imports don't set labels
+      pvc <- kube.getInNamespace[PersistentVolumeClaim](name, namespace)
+
+      pvcPhase = pvc.status.flatMap(_.phase)
+
+      _ = if (pvcPhase.isEmpty || pvcPhase.get != PersistentVolume.Phase.Bound) 
+              throw new ResourceUnavailableException(s"PVC is not yet bound. Status: ${pvcPhase.getOrElse("N/A")}")
+      
+      _   <- assertUnmanaged(pvc, "volume")
       pvcSpec = pvc.spec.get
-      _ = log.debug(s"getting pv ${pvcSpec.volumeName}")
-      pv  <- kube.getInNamespace[skuber.PersistentVolume](pvcSpec.volumeName, namespaceValue)
-      _ = log.debug(s"got pv ${pvcSpec.volumeName}")
-      pvSpec = pv.spec.get
-      pvType = pvSpec.source match {
-        // not sure if this is the correct correspondence
-        case _: skuber.Volume.AWSElasticBlockStore => "external"
-        case _: skuber.Volume.GCEPersistentDisk => "persistent"
-        case _: skuber.Volume.Glusterfs => "external"
-        case _: skuber.Volume.HostPath => "host_path"
-        case _: skuber.Volume.ISCSI => "external"
-        case _: skuber.Volume.NFS => "external"
-        case _: skuber.Volume.RBD => "external"
-        case _: skuber.Volume.GenericVolumeSource => "external"
+      pv  <- kube.getInNamespace[PersistentVolume](pvcSpec.volumeName, namespace)
+      _ = println("GOT PV => " + pv)
+      _ = println("PV SPEC == " + pv.spec)
+      pvSpec     = pv.spec.get
+      size       = pvSpec.capacity.get("storage").map(_.amount.toInt / 1024 / 1024).getOrElse(0)
+      accessMode = (pvcSpec.accessModes.headOption orElse pvSpec.accessModes.headOption).map(_.toString).getOrElse("")
+      configObj  = pvcSpec.storageClassName match {
+        case None    => Json.obj()
+        case Some(n) => Json.obj("storage_class" -> n)
       }
-      size = pvSpec.capacity.get("storage").map(_.amount.toInt / 1024 / 1024).getOrElse(0)
-      accessMode: String = (pvcSpec.accessModes.headOption orElse pvSpec.accessModes.headOption).map(_.toString).getOrElse("")
       importProps = Json.obj(
-        "type"   -> pvType,
-        "config" -> Json.obj(),     // what should I put in here? [sy]: This should contain 'storageClass'
+        "type"   -> "dynamic",
         "size"   -> size,
+        "config" -> configObj,
         "access_mode" -> accessMode
       )
-      _ <- setLabels(kube, pvc, "volume", pvcUuid, contextLabels)
-    } yield resource ++ Json.obj(
-      "properties" -> (inputProps ++ importProps)
-    )    
-    
+      _ <- setLabels(kube, pvc, "volume", metaId, labels)
+    } 
+    yield resource ++ Json.obj("properties" -> (inputProps ++ importProps))
   }
 
+//      pvType = pvSpec.source match {
+//        // not sure if this is the correct correspondence
+//        case _: skuber.Volume.AWSElasticBlockStore => "external"
+//        case _: skuber.Volume.GCEPersistentDisk => "persistent"
+//        case _: skuber.Volume.Glusterfs => "external"
+//        case _: skuber.Volume.HostPath => "host_path"
+//        case _: skuber.Volume.ISCSI => "external"
+//        case _: skuber.Volume.NFS => "external"
+//        case _: skuber.Volume.RBD => "external"
+//        case _: skuber.Volume.GenericVolumeSource => "external"
+//      }  
+  
   def importSecret(
       kube: RequestContext, 
       namespaceValue: String, 
@@ -1228,7 +1448,7 @@ private def formatImportJson(
 
     for {
       secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
-      _ <- assertUnmanaged(secret, "secret")    // so that failed imports don't set labels
+      _      <- assertUnmanaged(secret, "secret")
       importProps = Json.obj(
         "items" -> (secret.data map { case(key, value) =>
           Json.obj("key" -> key, "value" -> new String(value, "UTF-8"))
