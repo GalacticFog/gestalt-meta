@@ -15,6 +15,7 @@ libraryDependencies ++= Seq(
   "io.jsonwebtoken" % "jjwt" % "0.7.0",
   "com.amazonaws" % "aws-java-sdk-ecs" % awsJavaSdkVersion,
   "com.amazonaws" % "aws-java-sdk-ec2" % awsJavaSdkVersion,
+  "com.galacticfog" %% "gestalt-caas-kube" % "0.3.7-eb8a6957-SNAPSHOT" withSources(),
   "org.typelevel" %% "cats-core" % "1.0.1",
   "org.specs2" %% "specs2-core" % "4.3.4" % Test,
   "de.leanovate.play-mockws" %% "play-mockws" % "2.5.1" % Test

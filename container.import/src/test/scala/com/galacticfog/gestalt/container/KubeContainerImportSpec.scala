@@ -3,7 +3,6 @@ package com.galacticfog.gestalt.container
 import java.util.UUID
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 // import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
-import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, WithDb}
@@ -31,55 +30,55 @@ import scala.util.Success
 class KubeContainerImportSpec extends PlaySpecification with BeforeAll with BeforeAfterEach with MetaRepositoryOps {
 
 
- override def beforeAll(): Unit = { pristineDatabase(); () }
+  override def beforeAll(): Unit = { pristineDatabase(); () }
 
- override def before: Unit = scalikejdbc.config.DBs.setupAll()
+  override def before: Unit = scalikejdbc.config.DBs.setupAll()
 
- override def after: Unit = scalikejdbc.config.DBs.closeAll()
+  override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
- sequential
+  sequential
 
- def appWithMocks(ws: WSClient) = {
-   val defaultDisabled = Seq(
-     classOf[ProdSecurityModule],
-     classOf[HealthModule],
-     classOf[AhcWSModule]
-   )
+  def appWithMocks(ws: WSClient) = {
+    val defaultDisabled = Seq(
+      classOf[ProdSecurityModule],
+      classOf[HealthModule],
+      classOf[AhcWSModule]
+    )
 
-   val sc: Seq[GuiceableModule] = Seq(
-     bind[WSClient].toInstance(ws),
-     new UpgraderServiceModule,
-     new MetaConfigModule,
-     new MetaDefaultDocker,
-     FakeGestaltSecurityModule(fakeSecurityEnvironment()),
-     new SystemConfigModule,
-     bind[SecureController].toInstance(mockSecureController),
-     bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
-     bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
-     bind[MetaHealth].toInstance(mock[MetaHealth]),
-     bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
-     bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
-   )
+    val sc: Seq[GuiceableModule] = Seq(
+      bind[WSClient].toInstance(ws),
+      new UpgraderServiceModule,
+      new MetaConfigModule,
+      new MetaDefaultDocker,
+      FakeGestaltSecurityModule(fakeSecurityEnvironment()),
+      new SystemConfigModule,
+      bind[SecureController].toInstance(mockSecureController),
+      bind[SecurityClientProvider].toInstance(mock[SecurityClientProvider]),
+      bind[SecurityKeyInit].toInstance(mock[SecurityKeyInit]),
+      bind[MetaHealth].toInstance(mock[MetaHealth]),
+      bind[MetaServiceStatus].toInstance(mock[MetaServiceStatus]),
+      bind[GenericResourceMethods].to[GenericResourceMethodsImpl]
+    )
 
-   new GuiceApplicationBuilder()
+    new GuiceApplicationBuilder()
      .disable(defaultDisabled: _*)
      .bindings(sc: _*)
      .build
- }
+  }
 
- abstract class MockScope(providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty, ws: WSClient) extends WithDb(appWithMocks(ws)) {
+  abstract class MockScope(providerConfig: Seq[(String,JsValueWrapper)] = Seq.empty, ws: WSClient) extends WithDb(appWithMocks(ws)) {
 
-   lazy val (testWork, testEnv) = {
-     val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-     Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
-     (tw,te)
-   }
+    lazy val (testWork, testEnv) = {
+      val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      (tw,te)
+    }
 
-   lazy val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider", providerConfig)
- }
+    lazy val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider", providerConfig)
+  }
 
- "KubeContainerImport" should {
-   val kubeProviderConfig: Seq[(String,JsValueWrapper)] = Seq(
+  "KubeContainerImport" should {
+    val kubeProviderConfig: Seq[(String,JsValueWrapper)] = Seq(
       "endpoints" -> Json.arr(
         // Json.obj(
         //   "actions" -> Json.arr("container.import", "secret.import"),
@@ -231,9 +230,11 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
      skuberContextMock.getInNamespace[skuber.PersistentVolumeClaim](meq("test-pvc"), meq("test-namespace"))(any, any, any) returns Future.successful(testPvc)
      skuberContextMock.jsonMergePatch[skuber.ext.Deployment](any, any)(any, any, any) returns Future.successful(testDeployment)
 
-     class KCI extends KubeContainerImport {
-       override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
-     }
+    class KCI extends KubeContainerImport {
+      override def initializeKube( provider: JsObject, namespace: String ): Future[RequestContext] = {
+        Future.successful(skuberContextMock)
+      }
+    }
 
      val response = new KCI().run(lastLambdaRequestBody("container.import").toString, "{}")
      val container = (Json.parse(response) \ "properties").as[ContainerSpec]
@@ -287,44 +288,44 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
      )
    }
 
-   "import secret" in new MockScope(kubeProviderConfig, mockWs) {
-     val metaSecret: GestaltResourceInstance = newInstance(
-       ResourceIds.Secret,
-       "test",
-       properties = Some(Map(
+    "import secret" in new MockScope(kubeProviderConfig, mockWs) {
+      val metaSecret: GestaltResourceInstance = newInstance(
+        ResourceIds.Secret,
+        "test",
+        properties = Some(Map(
          "provider" -> Output.renderInstance(testProvider).toString,
          "external_id" -> "/namespaces/test-namespace/secrets/test-secret"
-       ))
-     )
+        ))
+      )
 
-     val json0: JsObject = Output.renderInstance(metaSecret).as[JsObject]
-     val json = json0 ++ JsObject(Seq("resource_type" -> JsString(ResourceIds.Secret.toString)))
+      val json0: JsObject = Output.renderInstance(metaSecret).as[JsObject]
+      val json = json0 ++ JsObject(Seq("resource_type" -> JsString(ResourceIds.Secret.toString)))
 
-     val importRequest = fakeAuthRequest("POST", s"/root/environments/${testEnv.id}/secrets?action=import", testCreds).withBody(
-       json
-     )
-     val res = route(app, importRequest).get
-     val _ = contentAsJson(res)
+      val importRequest = fakeAuthRequest("POST", s"/root/environments/${testEnv.id}/secrets?action=import", testCreds).withBody(
+        json
+      )
+      val res = route(app, importRequest).get
+      val _ = contentAsJson(res)
 
-     val skuberContextMock = mock[skuber.api.client.RequestContext]
-     val testSecret = skuber.Secret(
-       kind = "Secret",
-       apiVersion = skuber.v1,
-       metadata = new skuber.ObjectMeta(),
-       data = Map("test" -> "123".getBytes),
-       `type` = ""
-     )
-     skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret)
-     skuberContextMock.jsonMergePatch[skuber.Secret](any, any)(any, any, any) returns Future.successful(testSecret)
+      val skuberContextMock = mock[skuber.api.client.RequestContext]
+      val testSecret = skuber.Secret(
+        kind = "Secret",
+        apiVersion = skuber.v1,
+        metadata = new skuber.ObjectMeta(),
+        data = Map("test" -> "123".getBytes),
+        `type` = ""
+      )
+      skuberContextMock.getInNamespace[skuber.Secret](meq("test-secret"), meq("test-namespace"))(any, any, any) returns Future.successful(testSecret)
+      skuberContextMock.jsonMergePatch[skuber.Secret](any, any)(any, any, any) returns Future.successful(testSecret)
 
-     class KCI extends KubeContainerImport {
-       override def initializeKube( provider: JsObject, namespace: String ): RequestContext = skuberContextMock
-     }
+      class KCI extends KubeContainerImport {
+        override def initializeKube( provider: JsObject, namespace: String ): Future[RequestContext] = Future.successful(skuberContextMock)
+      }
 
-     val response = new KCI().run(lastLambdaRequestBody("secret.import").toString, "{}")
-     val secret = (Json.parse(response) \ "properties").as[JsValue]
+      val response = new KCI().run(lastLambdaRequestBody("secret.import").toString, "{}")
+      val secret = (Json.parse(response) \ "properties").as[JsValue]
 
-     (secret \ "items").as[JsValue] must_== Json.arr(Json.obj("key" -> "test", "value" -> "123"))
-   }
- }
+      (secret \ "items").as[JsValue] must_== Json.arr(Json.obj("key" -> "test", "value" -> "123"))
+    }
+  }
 }

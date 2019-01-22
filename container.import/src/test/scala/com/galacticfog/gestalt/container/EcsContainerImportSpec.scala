@@ -4,7 +4,6 @@ import scala.util.Success
 import scala.collection.JavaConversions._
 import org.specs2.specification.{BeforeAfterEach, BeforeAll}
 import mockws.MockWS
-import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.output.Output
 import com.galacticfog.gestalt.meta.test.{MetaRepositoryOps, WithDb}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds

@@ -9,6 +9,7 @@ import akka.testkit.{TestActor, TestActorRef, TestKit, TestProbe}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.test.ResourceScope
+import com.galacticfog.gestalt.integrations.kubernetes.KubeTokenActor
 import org.junit.runner.RunWith
 import org.specs2.runner.JUnitRunner
 import org.specs2.specification.{BeforeAll, Scope}

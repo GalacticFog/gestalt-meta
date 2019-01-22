@@ -1,4 +1,4 @@
-package services
+package com.galacticfog.gestalt.integrations.kubernetes
 
 import java.time.Instant
 import java.util.UUID
@@ -7,7 +7,7 @@ import akka.actor.{Actor, Props}
 import akka.pattern.ask
 import com.google.inject.{Inject, Singleton}
 import play.api.{Configuration, Logger}
-import services.KubeTokenActor.{KubeAuthTokenError, KubeAuthTokenRequest, KubeAuthTokenResponse}
+import KubeTokenActor.{KubeAuthTokenError, KubeAuthTokenRequest, KubeAuthTokenResponse}
 
 import scala.collection.mutable
 import scala.concurrent.duration._
@@ -25,8 +25,8 @@ class KubeTokenActor @Inject() (config: Configuration) extends Actor {
   val requestChild = context.actorOf(Props(classOf[KubeExternalExecActor]))
 
   val expiryInSeconds = config.getInt("skuberFactory.tokenExpiryInSeconds").getOrElse[Int](10 * 60)
-  val timeoutInSeconds: Long = config.getLong("skuberFactory.execAuthTimeoutInSeconds").getOrElse(30)
-  implicit val timeout = akka.util.Timeout(FiniteDuration(timeoutInSeconds, "seconds"))
+  val timeoutInSeconds = config.getLong("skuberFactory.execAuthTimeoutInSeconds").getOrElse(30l)
+  implicit val timeout = akka.util.Timeout(timeoutInSeconds .seconds)
 
   // use the error kernel pattern to help protect our state from being wiped...
   // if we fail, it's not the end of the world, because the tokens will be regenerated
