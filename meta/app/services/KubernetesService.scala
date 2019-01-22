@@ -26,7 +26,9 @@ import skuber.Volume.{GenericVolumeSource, HostPath}
 import skuber._
 import skuber.api.client._
 import skuber.ext._
+import skuber.rbac._
 import skuber.json.ext.format._
+import skuber.json.rbac.format._
 import skuber.json.format._
 
 import scala.util.Try
@@ -304,10 +306,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
         Future.successful(s)
       case None if create =>
         log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
-        rc.create(Namespace(metadata = ObjectMeta(
-          name = targetNamespace,
-          labels = mkLabels(pc)
-        )))
+        for(
+          namespace <- rc.create(Namespace(metadata = ObjectMeta(
+            name = targetNamespace,
+            labels = mkLabels(pc)
+          )));
+          _ <- rc.create(new ClusterRoleBinding(
+            metadata = ObjectMeta(
+              name = s"${targetNamespace}-cluster-admin",
+              labels = mkLabels(pc)
+            ),
+            roleRef = Some(new RoleRef("rbac.authorization.k8s.io", "ClusterRole", "cluster-admin")),
+            subjects = List(new Subject(None, "ServiceAccount", "default", Some(targetNamespace)))
+            // the namespace param is an Option, but leaving it off in ClusterRoleBinding causes an exception – at least if created via kubectl
+          ))
+        ) yield namespace
       case None if !create =>
         log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
         Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))
