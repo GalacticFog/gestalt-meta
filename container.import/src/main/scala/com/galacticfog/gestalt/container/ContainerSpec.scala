@@ -1,4 +1,4 @@
-package com.galacticfog.gestalt.meta.api
+package com.galacticfog.gestalt.container
 
 import java.util.UUID
 
@@ -14,6 +14,8 @@ import play.api.libs.json._
 import scala.util.{Failure, Success, Try}
 
 trait Spec {}
+
+// todo: meant to be moved out of container.import eventually
 
 case class ContainerSpec(name: String = "",
                          description: Option[String] = None,

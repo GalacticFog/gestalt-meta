@@ -5,7 +5,6 @@ package com.galacticfog.gestalt.container
 import scala.collection.JavaConversions._
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceInput
 import com.galacticfog.gestalt.meta.api.sdk.GestaltResourceOutput
-import com.galacticfog.gestalt.meta.api.ContainerSpec
 import play.api.libs.json._
 import cats.syntax.either._
 import cats.Semigroup

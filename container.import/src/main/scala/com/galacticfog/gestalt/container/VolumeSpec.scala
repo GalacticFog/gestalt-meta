@@ -1,4 +1,4 @@
-package com.galacticfog.gestalt.meta.api
+package com.galacticfog.gestalt.container
 
 // import com.galacticfog.gestalt.data.models.ResourceLike
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException

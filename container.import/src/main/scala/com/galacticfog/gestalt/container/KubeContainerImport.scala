@@ -3,15 +3,15 @@ package com.galacticfog.gestalt.container
 import java.util.UUID
 import java.io.{PrintWriter, Writer}
 
-import akka.actor.ActorSystem
+import akka.actor.{ActorSystem, Props, ActorRef}
 import akka.stream.ActorMaterializer
-import com.galacticfog.gestalt.caas.kube.{Ascii, KubeConfig}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.typesafe.config.ConfigFactory
 import org.slf4j.LoggerFactory
 import play.api.libs.json._
+import play.api.Configuration
 import skuber.api.client.RequestContext
-import com.galacticfog.gestalt.meta.api.ContainerSpec
+import com.galacticfog.gestalt.integrations.kubernetes.{KubeToken, KubeTokenActor}
 
 import scala.concurrent.duration._
 import scala.concurrent.{Await,Future}
@@ -68,18 +68,31 @@ class KubeContainerImport extends ContainerImport {
     resp.toString
   }
 
-  protected def initializeKube(provider: JsObject, namespace: String): RequestContext = {
+  protected def initializeKube(provider: JsObject, namespace: String): Future[RequestContext] = {
+    import scala.collection.JavaConverters._
+
     val cl = this.getClass.getClassLoader
     val config = ConfigFactory.load(this.getClass.getClassLoader)
     implicit val system = ActorSystem("my-system", Some(config), Some(cl), Some(global))
+
+    val kubeTokenActor = system.actorOf(Props(new KubeTokenActor(new Configuration(config))), "kubeTokenActor")
+
+    val kubeToken = new KubeToken {
+      val actor: ActorRef = kubeTokenActor
+
+      val whitelistedCmdPaths: Set[String] = Try(config.getStringList("skuberFactory.execWhiteList").asScala).toOption.getOrElse(List.empty[String]).toSet
+      val timeout: FiniteDuration = Try(config.getLong("skuberFactory.execAuthTimeoutInSeconds")).toOption.getOrElse(30l) .seconds
+    }
+
     implicit val materializer = ActorMaterializer()
     
-    val rawKubeconfig = (provider \ "properties" \ "data").asOpt[String] getOrElse {
-      throw new RuntimeException("provider did not have '.properties.data'")
-    }
-    val kubeconfig = if (Ascii.isBase64(rawKubeconfig)) Ascii.decode64(rawKubeconfig) else rawKubeconfig
-    val c = KubeConfig.parseYaml(kubeconfig, Map.empty).setCurrentNamespace(namespace)
-    skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
+    // val kubeconfig = if (Ascii.isBase64(rawKubeconfig)) Ascii.decode64(rawKubeconfig) else rawKubeconfig
+    // val c = KubeConfig.parseYaml(kubeconfig, Map.empty).setCurrentNamespace(namespace)
+    // skuber.api.client.init(c, ConfigFactory.load(this.getClass.getClassLoader))
+
+    val providerId = (provider \ "id").as[UUID]
+    val providerKubeconfig = (provider \ "properties" \ "data").asOpt[String]
+    kubeToken.mkKubeconfig(providerId, providerKubeconfig, namespace, Some(config))
   }
 
   private def doImport(payload: JsObject, ctx: JsObject): JsValue = {
@@ -138,9 +151,8 @@ class KubeContainerImport extends ContainerImport {
       case ("container.import", Array("", "namespaces", namespaceValue, "deployments", deplNameValue)) => {
         log.debug(s"namespace: $namespaceValue, deployment: $deplNameValue")
 
-        val kube = initializeKube(provider, namespaceValue)
-
         for {
+          kube <- initializeKube(provider, namespaceValue)
           depl <- kube.getInNamespace[skuber.ext.Deployment](deplNameValue, namespaceValue)
           _ <- checkLabels(depl, "container")    // so that failed imports don't set labels
           containerSpec <- depl.getPodSpec.map(_.containers) match {
@@ -272,10 +284,9 @@ class KubeContainerImport extends ContainerImport {
       }
       case ("secret.import", Array("", "namespaces", namespaceValue, "secrets", secretName)) => {
         log.debug(s"namespace: $namespaceValue, secret: $secretName")
-
-        val kube = initializeKube(provider, namespaceValue)
         
         for {
+          kube <- initializeKube(provider, namespaceValue)
           secret <- kube.getInNamespace[skuber.Secret](secretName, namespaceValue)
           _ <- checkLabels(secret, "secret")    // so that failed imports don't set labels
           importProps = Json.obj(
@@ -291,10 +302,9 @@ class KubeContainerImport extends ContainerImport {
       }
       case ("volume.import", Array("", "namespaces", namespaceValue, "persistentvolumeclaims", pvcName)) => {
         log.debug(s"namespace: $namespaceValue, pvc: $pvcName")
-
-        val kube = initializeKube(provider, namespaceValue)
         
         for {
+          kube <- initializeKube(provider, namespaceValue)
           pvc <- kube.getInNamespace[skuber.PersistentVolumeClaim](pvcName, namespaceValue)
           _ <- checkLabels(pvc, "volume")    // so that failed imports don't set labels
           pvcSpec = pvc.spec.get
