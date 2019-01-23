@@ -468,7 +468,18 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     )
   )
 
-  "KubernetesService" should {
+
+
+
+
+
+
+
+
+
+
+
+  "KubernetesService: containers" should {
 
     "configure environment variables for containers" in new FakeKube {
       val Success(metaContainer) = createInstance(
@@ -896,22 +907,13 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(Deployment.deployDef),any)
     }
 
-    "provision containers and secrets with the expected external_id property" in new FakeKubeCreate() {
+    "provision containers with the expected external_id property" in new FakeKubeCreate() {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
       )).properties
       updatedContainerProps must havePair(
         "external_id" -> s"/namespaces/${testEnv.id}/deployments/test-container"
-      )
-
-      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
-        secret = metaSecret,
-        items = Seq.empty
-      )).properties
-      updatedSecretProps must havePair(
-        "external_id" -> s"/namespaces/${testEnv.id}/secrets/test-secret"
       )
     }
 
@@ -1004,86 +1006,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(Deployment.deployDef),any)
     }
 
-    "create secret should use namespace from provider-env sibling containers" in new FakeKube() {
-      val Success(providerSibling) = createInstance(
-        ResourceIds.Container,
-        "existing-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> "DOCKER",
-          "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
-        ))
-      )
-
-      val Success(metaSecret) = createInstance(
-        ResourceIds.Secret,
-        "new-secret",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "items" -> "[]"
-        ))
-      )
-
-      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
-        secret = metaSecret,
-        items = Seq.empty
-      )).properties
-
-      updatedSecretProps must havePair("external_id" -> s"/namespaces/non-standard-namespace/secrets/${metaSecret.name}")
-      there was one(testSetup.client).create(argThat(
-        (((_:skuber.Secret).name) ^^ be_==(metaSecret.name)) and inNamespace("non-standard-namespace")
-      ))(any,meq(Secret.secDef),any)
-    }
-
-    "create volume should use namespace from provider-env sibling containers" in new FakeKube() {
-      val Success(providerSibling) = createInstance(
-        ResourceIds.Container,
-        "existing-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> "DOCKER",
-          "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
-        ))
-      )
-
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "external-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "external",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}"
-        ))
-      )
-
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {(x: Any) => answerId[skuber.PersistentVolume](x)}
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {(x: Any) => answerId[skuber.PersistentVolumeClaim](x)}
-
-      val newVolume = await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      ))
-      val newProps = newVolume.properties.get
-      newProps must havePairs(
-        "external_id" -> s"/namespaces/non-standard-namespace/persistentvolumeclaims/${metaVolume.name}",
-        "reclamation_policy" -> "delete_persistent_volume"
-      )
-
-      there was one(testSetup.client).create(argThat(
-        (((_:skuber.PersistentVolumeClaim).name) ^^ be_==(metaVolume.name)) and inNamespace("non-standard-namespace")
-      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "provision secrets and containers with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
+    "provision containers with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
       "labela" -> "value a",
       "labelb" -> "value b"
     )) {
@@ -1102,52 +1025,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
         )
       ))(any,meq(Deployment.deployDef),any)
-
-      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
-        secret = metaSecret,
-        items = Seq.empty
-      )).properties
-      there was one(testSetup.client).create(argThat(
-        ((_:skuber.Secret).metadata.labels) ^^ havePairs(
-          // "labela" -> "value a",
-          // "labelb" -> "value b",
-          KubernetesService.META_SECRET_KEY -> metaSecret.id.toString,
-          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-          KubernetesService.META_FQON_KEY -> "root",
-          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
-        )
-      ))(any,meq(Secret.secDef),any)
     }
-
-    // todo: fix this test case
-    // "provision namespace with the expected name and labels" in new FakeKube {
-    //   val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-    //   Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
-    //   testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
-    //   testSetup.client.create(argThat(
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
-    //   // testSetup.client.create(argThat(
-    //   //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
-    //   // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
-    //   val newNamespace = await(testSetup.svc.getNamespace(
-    //     rc = testSetup.client,
-    //     pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
-    //     create = true
-    //   ))
-    //   there was one(testSetup.client).create(argThat(
-    //     ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
-    //       KubernetesService.META_ENVIRONMENT_KEY -> newEnv.id.toString,
-    //       KubernetesService.META_WORKSPACE_KEY -> newWork.id.toString,
-    //       KubernetesService.META_FQON_KEY -> "root",
-    //       KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
-    //     )
-    //       and
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any)
-    // }
 
     "set PullPolicy Always when force_pull == true" in new FakeKubeCreate(force_pull = true) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
@@ -1303,6 +1181,751 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(Deployment.deployDef),any)
       there were two(testSetup.client).close
     }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+  "KubernetesService: secrets" should {
+
+    "provision secrets with the expected external_id property" in new FakeKubeCreate() {
+      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = Seq.empty
+      )).properties
+      updatedSecretProps must havePair(
+        "external_id" -> s"/namespaces/${testEnv.id}/secrets/test-secret"
+      )
+    }
+
+    "create secret should use namespace from provider-env sibling containers" in new FakeKube() {
+      val Success(providerSibling) = createInstance(
+        ResourceIds.Container,
+        "existing-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
+        ))
+      )
+
+      val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "new-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> "[]"
+        ))
+      )
+
+      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = Seq.empty
+      )).properties
+
+      updatedSecretProps must havePair("external_id" -> s"/namespaces/non-standard-namespace/secrets/${metaSecret.name}")
+      there was one(testSetup.client).create(argThat(
+        (((_:skuber.Secret).name) ^^ be_==(metaSecret.name)) and inNamespace("non-standard-namespace")
+      ))(any,meq(Secret.secDef),any)
+    }
+
+
+    "provision secrets with the requested labels and meta-specific labels" in new FakeKubeCreate(labels = Map(
+      "labela" -> "value a",
+      "labelb" -> "value b"
+    )) {
+      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = Seq.empty
+      )).properties
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.Secret).metadata.labels) ^^ havePairs(
+          // "labela" -> "value a",
+          // "labelb" -> "value b",
+          KubernetesService.META_SECRET_KEY -> metaSecret.id.toString,
+          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesService.META_FQON_KEY -> "root",
+          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+      ))(any,meq(Secret.secDef),any)
+    }
+
+
+    "not persist secret values in meta" in new FakeKubeCreate() {
+      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        secret = metaSecret,
+        items = metaSecretItems
+      )).properties
+
+      // this also checks that "base64-decode secrets before sending to skuber"
+      there was one(testSetup.client).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and
+          (
+            ((_: skuber.Secret).data.map({
+              case (key, bytes) => SecretSpec.Item(key, Some(Base64.getEncoder.encodeToString(bytes)))
+            }).toSeq) ^^ containTheSameElementsAs(metaSecretItems)
+          )
+      ))(any,meq(Secret.secDef),any)
+
+      Json.parse(updatedSecretProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
+
+      val persistedProps = ResourceFactory.findById(ResourceIds.Secret, metaSecret.id).get.properties.get
+      Json.parse(persistedProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
+        metaSecretItems.map(_.copy(value = None))
+      )
+    }
+
+    "delete secret" in new FakeKube {
+      val Success(metaSecret) = createInstance(
+        ResourceIds.Secret,
+        "test-secret",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "items" -> "[]"
+        ))
+      )
+
+      val label = KubernetesService.META_SECRET_KEY -> metaSecret.id.toString
+      val mockSecret = skuber.Secret(metadata = skuber.ObjectMeta(
+        name = metaSecret.name,
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      ))
+
+      testSetup.client.listSelected(any)(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
+      testSetup.client.delete(meq(mockSecret.name),any)(meq(skuber.Secret.secDef),any) returns Future.successful(())
+
+      await(testSetup.svc.destroySecret(metaSecret))
+      there was one(testSetup.client).delete(meq(mockSecret.name),any)(meq(skuber.Secret.secDef),any)
+      there was one(testSetup.client).close
+    }
+
+    "mount specified secrets on container create" in new FakeKubeCreate(
+      secrets = Seq(
+        SecretEnvMount(null, "SOME_ENV_VAR", "part-a"),
+        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a"),
+        SecretFileMount(null, "/mnt/secrets/files/file-b", "part-b"),
+        SecretFileMount(null, "/mnt/secrets/files/sub/file-c", "part-b"),
+        SecretDirMount(null, "/mnt/secrets/dir")
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a"),
+          skuber.Volume.KeyToPath(key = "part-b", path = "file-b"),
+          skuber.Volume.KeyToPath(key = "part-b", path = "sub/file-c")
+        )))),
+        skuber.Volume(dirVolName, skuber.Volume.Secret(secretName = metaSecret.name))
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true),
+        skuber.Volume.Mount(dirVolName, "/mnt/secrets/dir", true)
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
+        skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
+      ))
+    }
+
+    "mount a single secret file during container create (#338)" in new FakeKubeCreate(
+      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
+      secrets = Seq(
+        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a")
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
+        ))))
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true)
+      ))
+    }
+
+
+    "mount a single secret file during container create (#338) in root" in new FakeKubeCreate(
+      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
+      secrets = Seq(
+        SecretFileMount(null, "/file-a", "part-a")
+      )
+    ) {
+      val Some(updatedContainerProps) = await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
+
+      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
+      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
+      val createdDeployment = deploymentCaptor.getValue
+      createdDeployment must inNamespace(testSetup.testNS.name)
+      // deployment internal volume names are created on-demand, need to figure out what these were
+      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
+      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
+      deplVolumes must containAllOf(Seq(
+        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
+          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
+        ))))
+      ))
+      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
+        skuber.Volume.Mount(partsVolName, "/", true)
+      ))
+    }
+
+    "secret mounts must be unique" in new FakeKubeCreate(
+      secrets = Seq(
+        SecretFileMount(null, "/mnt/secrets/files/file", "part-a"),
+        SecretFileMount(null, "/mnt/secrets/files/file", "part-b")
+      )
+    ) {
+      await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )) must throwA[BadRequestException]("secrets must have unique paths")
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+  "KubernetesService: volumes, PVs, PVCs" should {
+
+    "create volume should use namespace from provider-env sibling containers" in new FakeKube() {
+      val Success(providerSibling) = createInstance(
+        ResourceIds.Container,
+        "existing-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
+        ))
+      )
+
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}"
+        ))
+      )
+
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {(x: Any) => answerId[skuber.PersistentVolume](x)}
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {(x: Any) => answerId[skuber.PersistentVolumeClaim](x)}
+
+      val newVolume = await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      ))
+      val newProps = newVolume.properties.get
+      newProps must havePairs(
+        "external_id" -> s"/namespaces/non-standard-namespace/persistentvolumeclaims/${metaVolume.name}",
+        "reclamation_policy" -> "delete_persistent_volume"
+      )
+
+      there was one(testSetup.client).create(argThat(
+        (((_:skuber.PersistentVolumeClaim).name) ^^ be_==(metaVolume.name)) and inNamespace("non-standard-namespace")
+      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+
+    "throw 400 on invalid volume type" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "invalid-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "invalid-type",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}"
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwA[BadRequestException]("/properties/type.*must be one of")
+    }
+
+    "422 on create of non-white-listed host_path volumes" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson("/tmp", "/mnt")
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/unsupported-path")).toString
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwAn[UnprocessableEntityException]("host_path.*is not in provider's white-list")
+      there were no(testSetup.client).create(any)(any,any,any)
+    }
+
+    "perform pass-through create on volume of type 'external'" in new FakeKube() { tag("volumes")
+      val extVolumeConfig = Json.obj(
+        "gcePersistentDisk" -> Json.obj(
+          "pdName" -> "my-data-disk",
+          "fsType" -> "ext4"
+        )
+      )
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> extVolumeConfig.toString
+        ))
+      )
+
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolume])
+      }
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
+      }
+
+      val newVolume = await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      ))
+      val newProps = newVolume.properties.get
+      newProps must havePairs(
+        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
+        "reclamation_policy" -> "delete_persistent_volume"
+      )
+
+      there was one(testSetup.client).create(argThat(
+        haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
+          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.GenericVolumeSource(extVolumeConfig.toString))) and
+          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
+            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
+              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
+          ))
+      ))(any, meq(skuber.PersistentVolume.pvDef), any)
+
+      there was one(testSetup.client).create(argThat(
+        haveName(metaVolume.name) and
+          inNamespace(testEnv.id.toString) and
+          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
+      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform HostPath create on volume of type 'host_path'" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolume])
+      }
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
+      }
+
+      val newVolume = await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      ))
+      val newProps = newVolume.properties.get
+      newProps must havePairs(
+        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
+        "reclamation_policy" -> "delete_persistent_volume"
+      )
+
+      there was one(testSetup.client).create(argThat(
+        haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
+          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.HostPath("/supported-path/sub-path"))) and
+          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
+            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
+              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
+          ))
+      ))(any, meq(skuber.PersistentVolume.pvDef), any)
+
+      there was one(testSetup.client).create(argThat(
+        haveName(metaVolume.name) and
+          inNamespace(testEnv.id.toString) and
+          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
+      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PV and PVC deletion on volume of type 'host_path' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-path-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "reclamation_policy" -> "delete_persistent_volume",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeList("","",None,List(
+          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
+            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.svc.destroyVolume(metaVolume))
+
+      there was one(testSetup.client).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion only on volume of type 'host_path' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "host-path-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "host_path",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
+        ))
+      )
+
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.svc.destroyVolume(metaVolume))
+
+      there were no(testSetup.client).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PV and PVC deletion on volume of type 'external' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
+      val extVolumeConfig = Json.obj(
+        "gcePersistentDisk" -> Json.obj(
+          "pdName" -> "my-data-disk",
+          "fsType" -> "ext4"
+        )
+      )
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "reclamation_policy" -> "delete_persistent_volume",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> extVolumeConfig.toString
+        ))
+      )
+
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeList("","",None,List(
+          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
+            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.svc.destroyVolume(metaVolume))
+
+      there was one(testSetup.client).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion only on volume of type 'external' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
+      val extVolumeConfig = Json.obj(
+        "gcePersistentDisk" -> Json.obj(
+          "pdName" -> "my-data-disk",
+          "fsType" -> "ext4"
+        )
+      )
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> extVolumeConfig.toString
+        ))
+      )
+
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.svc.destroyVolume(metaVolume))
+
+      there were no(testSetup.client).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
+      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "throw 400 on volume type 'persistent'" in new FakeKube() { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "unsupported-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "persistent",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}",
+          "size" -> "100",
+          "access_mode" -> "ReadWriteOnce"
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwA[BadRequestException]("Kubernetes providers only support volumes of type 'external', 'dynamic' and 'host_path'")
+    }
+
+    "422 on create of of 'dynamic' volume with unsupported storage class" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "dynamic-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(DynamicVolume("unsupported-storage-class")).toString
+        ))
+      )
+      await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      )) must throwAn[UnprocessableEntityException]("storage_class.*is not in provider's white-list")
+      there were no(testSetup.client).create(any)(any,any,any)
+    }
+
+    "perform PVC creation on volume of type 'dynamic' for supported storage_class" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "dynamic-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "size" -> "1000",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
+        ))
+      )
+
+      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
+        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
+      }
+
+      val newVolume = await(testSetup.svc.createVolume(
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        metaResource = metaVolume
+      ))
+      val newProps = newVolume.properties.get
+      newProps must havePair("external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}")
+
+      there was one(testSetup.client).create(argThat(
+        haveName(metaVolume.name) and
+        inNamespace(testEnv.id.toString) and
+        (((_: skuber.PersistentVolumeClaim).spec) ^^ beSome(
+          (((_:skuber.PersistentVolumeClaim.Spec).accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce))) and
+          (((_:skuber.PersistentVolumeClaim.Spec).storageClassName) ^^ beSome("storage-class-a"))
+        ))
+      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+
+    "perform PVC deletion on volume of type 'dynamic'" in new FakeKube(
+      providerConfig = Seq(
+        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+      )
+    ) { tag("volumes")
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "dynamic-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "dynamic",
+          "size" -> "1000",
+          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/dynamic-volume",
+          "access_mode" -> "ReadWriteOnce",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
+        ))
+      )
+
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
+      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
+      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
+        new skuber.PersistentVolumeClaimList("","",None,List(
+          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
+            name = metaVolume.name,
+            namespace = testEnv.id.toString,
+            labels = Map(KubernetesService.META_VOLUME_KEY -> metaVolume.id.toString)
+          ))
+        ))
+      )
+
+      await(testSetup.svc.destroyVolume(metaVolume))
+
+      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
+    }
+  }
+
+
+
+
+
+
+
+
+
+  "KubernetesService: connectivity" should {
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
       ContainerSpec.PortMapping( protocol = "tcp", container_port = Some(80),                          expose_endpoint = Some(true), name = Some("http"), virtual_hosts = Some(Seq("galacticfog.com","www.galacticfog.com")) ),
@@ -1383,6 +2006,401 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     //   containerStats must_== containerStats2
     //   there were two(testSetup.client).close
+    // }
+
+    "delete service and any ingress on container delete" in new FakeKube {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
+      )
+
+      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
+        name = metaContainer.name,
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
+      val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
+        name = metaContainer.name,
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      ))
+      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
+
+      val mockService = skuber.Service(metaContainer.name).withSelector( label ).addLabel( label )
+      testSetup.client.listSelected(any)(any,meq(Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,items = List(mockDep)))
+      testSetup.client.listSelected(any)(any,meq(ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,items = List(mockRS)))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
+      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,items = List(mockService)))
+      testSetup.client.listSelected(any)(any,meq(Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,items = List(mockIngress)))
+      testSetup.client.delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any) returns Future.successful(())
+      testSetup.client.delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any) returns Future.successful(())
+      testSetup.client.delete(meq(mockService.name),any)(meq(Service.svcDef),any) returns Future.successful(())
+      testSetup.client.delete(meq(mockIngress.name),any)(meq(Ingress.ingDef),any) returns Future.successful(())
+
+      await(testSetup.svc.destroy(metaContainer))
+      there was one(testSetup.client).delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any)
+      there was one(testSetup.client).delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any)
+      there was one(testSetup.client).delete(meq(mockService.name),any)(meq(Service.svcDef),any)
+      there was one(testSetup.client).delete(meq(mockIngress.name),any)(meq(Ingress.ingDef),any)
+      there was one(testSetup.client).close
+    }
+
+    "not fail if no service or ingress to delete on container delete" in new FakeKube {
+      val Success(metaContainer) = createInstance(
+        ResourceIds.Container,
+        "test-container",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "cpus" -> "1.0",
+          "memory" -> "128",
+          "num_instances" -> "1",
+          "force_pull" -> "true",
+          "port_mappings" -> "[]",
+          "network" -> "default"
+        ))
+      )
+
+      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
+        name = metaContainer.name,
+        namespace = testEnv.id.toString,
+        labels = Map(label)
+      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
+      val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
+      testSetup.client.listSelected(any)(any,meq(Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
+      testSetup.client.listSelected(any)(any,meq(ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))
+      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.client.listSelected(any)(any,meq(Ingress.ingListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
+      testSetup.client.delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any) returns Future.successful(())
+      testSetup.client.delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any) returns Future.successful(())
+
+      await(testSetup.svc.destroy(metaContainer))
+      there were no(testSetup.client).delete(any,any)(meq(Service.svcDef),any)
+      there were no(testSetup.client).delete(any,any)(meq(Pod.poDef),any)
+      there were no(testSetup.client).delete(any,any)(meq(Ingress.ingDef),any)
+      there was one(testSetup.client).close
+    }
+
+
+    "add service_port from kube Service on port_mappings update, ignore it on non-external types" in new FakeKubeCreate() {
+
+      val assignedNodePort81 = 33334
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
+      testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
+        mockSvc().setPorts(List(
+          skuber.Service.Port("web",    skuber.Protocol.TCP, 80,  Some(Left(80)),     0),
+          skuber.Service.Port("api",    skuber.Protocol.TCP, 81,  Some(Left(81)),     0),
+          skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)), 8443)
+        )).withType(Service.Type.ClusterIP)
+      })
+      testSetup.client.create(argThat((_:Service).name == metaContainer.name + "-ext"))(any,meq(Service.svcDef),any) returns Future.successful({
+        mockSvc().setPorts(List(
+          skuber.Service.Port("api",    skuber.Protocol.TCP,  81, Some(Left(81)),  assignedNodePort81),
+          skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)),               8443)
+        )).withType(Service.Type.NodePort)
+      })
+
+      val newPortMappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(8888),
+          name = Some("no-service"),
+          expose_endpoint = Some(false)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          service_port = Some(32000), // ignored
+          name = Some("web"),
+          expose_endpoint = Some(true)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(81),
+          service_port = Some(0),     // assigned
+          name = Some("api"),
+          `type` = Some("external"),
+          expose_endpoint = Some(true)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(443),
+          service_port = Some(8443),
+          name = Some("secure"),
+          `type` = Some("external"),
+          expose_endpoint = Some(true)
+        )
+      )
+      val updatedContainer = await(testSetup.svc.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          properties = metaContainer.properties.map(
+            _ ++ Map(
+              "port_mappings" -> Json.toJson(newPortMappings).toString
+            )
+          )
+        )
+      ))
+      val Some(updatedContainerProps) = updatedContainer.properties
+
+      there was one(testSetup.client).create(argThat(
+        inNamespace(testSetup.testNS.name)
+        and haveName(metaContainer.name)
+        and (((_: skuber.Service).spec.get.ports) ^^ containTheSameElementsAs(List(
+          skuber.Service.Port(name = "web",    protocol = skuber.Protocol.TCP, port = 80,  targetPort = Some(Left(80)),  nodePort = 0),
+          skuber.Service.Port(name = "api",    protocol = skuber.Protocol.TCP, port = 81,  targetPort = Some(Left(81)),  nodePort = 0),
+          skuber.Service.Port(name = "secure", protocol = skuber.Protocol.TCP, port = 443, targetPort = Some(Left(443)), nodePort = 0)
+        )))
+        and (((_: skuber.Service).spec.get._type) ^^ be_==(Service.Type.ClusterIP))
+      ))(any,meq(Service.svcDef),any)
+
+      there was one(testSetup.client).create(argThat(
+        inNamespace(testSetup.testNS.name)
+        and haveName(metaContainer.name + "-ext")
+        and (((_: skuber.Service).spec.get.ports) ^^ containTheSameElementsAs(List(
+          skuber.Service.Port(name = "api",    protocol = skuber.Protocol.TCP, port = 81,  targetPort = Some(Left(81)),  nodePort = 0),
+          skuber.Service.Port(name = "secure", protocol = skuber.Protocol.TCP, port = 443, targetPort = Some(Left(443)), nodePort = 8443)
+        )))
+        and (((_: skuber.Service).spec.get._type) ^^ be_==(Service.Type.NodePort))
+      ))(any,meq(Service.svcDef),any)
+
+      updatedContainerProps("port_mappings") must /#(0) and not /#(0) /("service_address")
+      updatedContainerProps("port_mappings") must /#(1) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
+      updatedContainerProps("port_mappings") must /#(1) /("container_port" -> 80)
+      updatedContainerProps("port_mappings") must not /#(1) /("service_port")
+      updatedContainerProps("port_mappings") must /#(2) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
+      updatedContainerProps("port_mappings") must /#(2) /("container_port" -> 81)
+      updatedContainerProps("port_mappings") must /#(2) /("service_port"   -> assignedNodePort81)
+      updatedContainerProps("port_mappings") must /#(3) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
+      updatedContainerProps("port_mappings") must /#(3) /("container_port" -> 443)
+      updatedContainerProps("port_mappings") must /#(3) /("service_port"   -> 8443)
+      there were two(testSetup.client).close
+    }
+
+    "delete empty ingress on container PUT" in new FakeKubeCreate(port_mappings = Seq(
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(80),
+            name = Some("remove-service"),
+            expose_endpoint = Some(true),
+            virtual_hosts = Some(Seq("port80.test.com"))
+          ),
+          ContainerSpec.PortMapping(
+            protocol = "tcp",
+            container_port = Some(81),
+            name = Some("no-service"),
+            expose_endpoint = Some(false)
+          )
+        )) {
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(skuber.ext.Ingress(metaContainer.name)))
+      testSetup.client.delete(meq(metaContainer.name),any)(meq(Ingress.ingDef),any) returns Future.successful(())
+
+      val newPortMappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          name = Some("removed-service"),
+          expose_endpoint = Some(false)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(81),
+          name = Some("no-service"),
+          expose_endpoint = Some(false)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(8881),
+          name = Some("new-service"),
+          expose_endpoint = Some(true)
+        )
+      )
+
+      val updatedContainer = await(testSetup.svc.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          properties = metaContainer.properties.map(
+            _ ++ Map(
+              "port_mappings" -> Json.toJson(newPortMappings).toString
+            )
+          )
+        )
+      ))
+      val Some(updatedContainerProps) = updatedContainer.properties
+      there was one(testSetup.client).delete(meq("test-container"),any)(meq(Ingress.ingDef),any)
+      there was one(testSetup.client).update(any)(any,meq(Service.svcDef),any)
+      there was one(testSetup.client).update(any)(any,meq(Deployment.deployDef),any)
+      there were two(testSetup.client).close
+    }
+
+    "delete empty services on container PUT" in new FakeKubeCreate(port_mappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          name = Some("remove-services"),
+          expose_endpoint = Some(true),
+          `type` = Some("loadBalancer"),  // this will create three Service objects
+          virtual_hosts = None
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(81),
+          name = Some("no-service"),
+          expose_endpoint = Some(false)
+        )
+      )) {
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
+
+      val newPortMappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          name = Some("removed-service"),
+          expose_endpoint = Some(false)
+        ),
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(81),
+          name = Some("no-service"),
+          expose_endpoint = Some(false)
+        )
+      )
+
+      val updatedContainer = await(testSetup.svc.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          properties = metaContainer.properties.map(
+            _ ++ Map(
+              "port_mappings" -> Json.toJson(newPortMappings).toString
+            )
+          )
+        )
+      ))
+      val Some(updatedContainerProps) = updatedContainer.properties
+      there was one(testSetup.client).update(any)(any,meq(Deployment.deployDef),any)
+      there was one(testSetup.client).delete(meq(metaContainer.name),       any)(meq(Service.svcDef),any)
+      there was one(testSetup.client).delete(meq(metaContainer.name+"-ext"),any)(meq(Service.svcDef),any)
+      there was one(testSetup.client).delete(meq(metaContainer.name+"-lb"), any)(meq(Service.svcDef),any)
+      there were two(testSetup.client).close
+    }
+
+    "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
+      ContainerSpec.PortMapping(
+        protocol = "tcp",
+        container_port = Some(80),
+        name = Some("update-port"),
+        expose_endpoint = Some(false),
+        virtual_hosts = None
+      )
+    )) {
+
+      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
+
+      val newPortMappings = Seq(
+        ContainerSpec.PortMapping(
+          protocol = "tcp",
+          container_port = Some(80),
+          name = Some("update-port"),
+          expose_endpoint = Some(true),
+          virtual_hosts = Some(Seq("port80.test.com"))
+        )
+      )
+      val updatedContainer = await(testSetup.svc.update(
+        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
+        container = metaContainer.copy(
+          properties = metaContainer.properties.map(
+            _ ++ Map(
+              "image" -> "nginx:updated",
+              "port_mappings" -> Json.toJson(newPortMappings).toString
+            )
+          )
+        )
+      ))
+      val Some(updatedContainerProps) = updatedContainer.properties
+      there was one(testSetup.client).update(argThat(
+        inNamespace(testSetup.testNS.name)
+          and haveName(metaContainer.name)
+          and (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.image) ^^ be_==("nginx:updated"))
+      ))(any,meq(Deployment.deployDef),any)
+      there was one(testSetup.client).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and haveName(metaContainer.name)
+          and (((_: skuber.ext.Ingress).spec.get.rules.toSeq.map(_.host)) ^^ containTheSameElementsAs(Seq("port80.test.com")))
+      ))(any,meq(Ingress.ingDef),any)
+      there was one(testSetup.client).create(argThat(
+        inNamespace(testSetup.testNS.name)
+          and haveName(metaContainer.name)
+          and (((_: skuber.Service).spec.get.ports.map(_.targetPort.get))) ^^ containTheSameElementsAs(Seq(skuber.portNumToNameablePort(80)))
+      ))(any,meq(Service.svcDef),any)
+
+      updatedContainerProps must havePair(
+        "image" -> "nginx:updated"
+      )
+      there were two(testSetup.client).close
+    }
+  }
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  "KubernetesService: other" should {
+
+    // todo: fix this test case
+    // "provision namespace with the expected name and labels" in new FakeKube {
+    //   val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+    //   Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
+    //   testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
+    //   testSetup.client.create(argThat(
+    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+    //   ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
+    //   // testSetup.client.create(argThat(
+    //   //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
+    //   // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
+    //   val newNamespace = await(testSetup.svc.getNamespace(
+    //     rc = testSetup.client,
+    //     pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
+    //     create = true
+    //   ))
+    //   there was one(testSetup.client).create(argThat(
+    //     ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
+    //       KubernetesService.META_ENVIRONMENT_KEY -> newEnv.id.toString,
+    //       KubernetesService.META_WORKSPACE_KEY -> newWork.id.toString,
+    //       KubernetesService.META_FQON_KEY -> "root",
+    //       KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+    //     )
+    //       and
+    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+    //   ))(any,meq(skuber.Namespace.namespaceDef),any)
     // }
 
     "prefer to update cpu/mem from limit instead of request" in new FakeKube {
@@ -1851,96 +2869,6 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       containerStats.memory must_== 0.0
     }
 
-    "delete service and any ingress on container delete" in new FakeKube {
-      val Success(metaContainer) = createInstance(
-        ResourceIds.Container,
-        "test-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> "DOCKER",
-          "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> "1.0",
-          "memory" -> "128",
-          "num_instances" -> "1",
-          "force_pull" -> "true",
-          "port_mappings" -> "[]",
-          "network" -> "default"
-        ))
-      )
-
-      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
-      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
-        name = metaContainer.name,
-        namespace = testEnv.id.toString,
-        labels = Map(label)
-      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
-      val mockIngress = skuber.ext.Ingress(metadata = skuber.ObjectMeta(
-        name = metaContainer.name,
-        namespace = testEnv.id.toString,
-        labels = Map(label)
-      ))
-      val mockRS  = skuber.ext.ReplicaSet("test-container-hash").addLabel( label )
-
-      val mockService = skuber.Service(metaContainer.name).withSelector( label ).addLabel( label )
-      testSetup.client.listSelected(any)(any,meq(Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,items = List(mockDep)))
-      testSetup.client.listSelected(any)(any,meq(ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,items = List(mockRS)))
-      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,Nil))
-      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.successful(new skuber.ServiceList("","",None,items = List(mockService)))
-      testSetup.client.listSelected(any)(any,meq(Ingress.ingListDef),any) returns Future.successful(new skuber.ext.IngressList("","",None,items = List(mockIngress)))
-      testSetup.client.delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any) returns Future.successful(())
-      testSetup.client.delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any) returns Future.successful(())
-      testSetup.client.delete(meq(mockService.name),any)(meq(Service.svcDef),any) returns Future.successful(())
-      testSetup.client.delete(meq(mockIngress.name),any)(meq(Ingress.ingDef),any) returns Future.successful(())
-
-      await(testSetup.svc.destroy(metaContainer))
-      there was one(testSetup.client).delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any)
-      there was one(testSetup.client).delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any)
-      there was one(testSetup.client).delete(meq(mockService.name),any)(meq(Service.svcDef),any)
-      there was one(testSetup.client).delete(meq(mockIngress.name),any)(meq(Ingress.ingDef),any)
-      there was one(testSetup.client).close
-    }
-
-    "not fail if no service or ingress to delete on container delete" in new FakeKube {
-      val Success(metaContainer) = createInstance(
-        ResourceIds.Container,
-        "test-container",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "container_type" -> "DOCKER",
-          "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "cpus" -> "1.0",
-          "memory" -> "128",
-          "num_instances" -> "1",
-          "force_pull" -> "true",
-          "port_mappings" -> "[]",
-          "network" -> "default"
-        ))
-      )
-
-      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
-      val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
-        name = metaContainer.name,
-        namespace = testEnv.id.toString,
-        labels = Map(label)
-      )).withLabelSelector(skuber.LabelSelector(skuber.LabelSelector.IsEqualRequirement("app", "test")))
-      val mockRS  = skuber.ext.ReplicaSet(s"${metaContainer.name}-hash").addLabel( label )
-      testSetup.client.listSelected(any)(any,meq(Deployment.deployListDef),any) returns Future.successful(new skuber.ext.DeploymentList("","",None,List(mockDep)))
-      testSetup.client.listSelected(any)(any,meq(ReplicaSet.rsListDef),any) returns Future.successful(new skuber.ext.ReplicaSetList("","",None,List(mockRS)))
-      testSetup.client.listSelected(any)(any,meq(Pod.poListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.client.listSelected(any)(any,meq(Service.svcListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.client.listSelected(any)(any,meq(Ingress.ingListDef),any) returns Future.failed(new skuber.api.client.K8SException(skuber.api.client.Status(reason = Some("test failure"))))
-      testSetup.client.delete(meq(mockDep.name),any)(meq(Deployment.deployDef),any) returns Future.successful(())
-      testSetup.client.delete(meq(mockRS.name),any)(meq(ReplicaSet.rsDef),any) returns Future.successful(())
-
-      await(testSetup.svc.destroy(metaContainer))
-      there were no(testSetup.client).delete(any,any)(meq(Service.svcDef),any)
-      there were no(testSetup.client).delete(any,any)(meq(Pod.poDef),any)
-      there were no(testSetup.client).delete(any,any)(meq(Ingress.ingDef),any)
-      there was one(testSetup.client).close
-    }
-
     "scale appropriately using skuber update" in new FakeKube {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
@@ -2111,430 +3039,6 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "add service_port from kube Service on port_mappings update, ignore it on non-external types" in new FakeKubeCreate() {
-
-      val assignedNodePort81 = 33334
-
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
-      testSetup.client.create(argThat((_:Service).name == metaContainer.name))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
-          skuber.Service.Port("web",    skuber.Protocol.TCP, 80,  Some(Left(80)),     0),
-          skuber.Service.Port("api",    skuber.Protocol.TCP, 81,  Some(Left(81)),     0),
-          skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)), 8443)
-        )).withType(Service.Type.ClusterIP)
-      })
-      testSetup.client.create(argThat((_:Service).name == metaContainer.name + "-ext"))(any,meq(Service.svcDef),any) returns Future.successful({
-        mockSvc().setPorts(List(
-          skuber.Service.Port("api",    skuber.Protocol.TCP,  81, Some(Left(81)),  assignedNodePort81),
-          skuber.Service.Port("secure", skuber.Protocol.TCP, 443, Some(Left(443)),               8443)
-        )).withType(Service.Type.NodePort)
-      })
-
-      val newPortMappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(8888),
-          name = Some("no-service"),
-          expose_endpoint = Some(false)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          service_port = Some(32000), // ignored
-          name = Some("web"),
-          expose_endpoint = Some(true)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(81),
-          service_port = Some(0),     // assigned
-          name = Some("api"),
-          `type` = Some("external"),
-          expose_endpoint = Some(true)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(443),
-          service_port = Some(8443),
-          name = Some("secure"),
-          `type` = Some("external"),
-          expose_endpoint = Some(true)
-        )
-      )
-      val updatedContainer = await(testSetup.svc.update(
-        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
-        container = metaContainer.copy(
-          properties = metaContainer.properties.map(
-            _ ++ Map(
-              "port_mappings" -> Json.toJson(newPortMappings).toString
-            )
-          )
-        )
-      ))
-      val Some(updatedContainerProps) = updatedContainer.properties
-
-      there was one(testSetup.client).create(argThat(
-        inNamespace(testSetup.testNS.name)
-        and haveName(metaContainer.name)
-        and (((_: skuber.Service).spec.get.ports) ^^ containTheSameElementsAs(List(
-          skuber.Service.Port(name = "web",    protocol = skuber.Protocol.TCP, port = 80,  targetPort = Some(Left(80)),  nodePort = 0),
-          skuber.Service.Port(name = "api",    protocol = skuber.Protocol.TCP, port = 81,  targetPort = Some(Left(81)),  nodePort = 0),
-          skuber.Service.Port(name = "secure", protocol = skuber.Protocol.TCP, port = 443, targetPort = Some(Left(443)), nodePort = 0)
-        )))
-        and (((_: skuber.Service).spec.get._type) ^^ be_==(Service.Type.ClusterIP))
-      ))(any,meq(Service.svcDef),any)
-
-      there was one(testSetup.client).create(argThat(
-        inNamespace(testSetup.testNS.name)
-        and haveName(metaContainer.name + "-ext")
-        and (((_: skuber.Service).spec.get.ports) ^^ containTheSameElementsAs(List(
-          skuber.Service.Port(name = "api",    protocol = skuber.Protocol.TCP, port = 81,  targetPort = Some(Left(81)),  nodePort = 0),
-          skuber.Service.Port(name = "secure", protocol = skuber.Protocol.TCP, port = 443, targetPort = Some(Left(443)), nodePort = 8443)
-        )))
-        and (((_: skuber.Service).spec.get._type) ^^ be_==(Service.Type.NodePort))
-      ))(any,meq(Service.svcDef),any)
-
-      updatedContainerProps("port_mappings") must /#(0) and not /#(0) /("service_address")
-      updatedContainerProps("port_mappings") must /#(1) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
-      updatedContainerProps("port_mappings") must /#(1) /("container_port" -> 80)
-      updatedContainerProps("port_mappings") must not /#(1) /("service_port")
-      updatedContainerProps("port_mappings") must /#(2) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
-      updatedContainerProps("port_mappings") must /#(2) /("container_port" -> 81)
-      updatedContainerProps("port_mappings") must /#(2) /("service_port"   -> assignedNodePort81)
-      updatedContainerProps("port_mappings") must /#(3) /("service_address") /("host" -> (metaContainer.name + "." + testEnv.id + ".svc.cluster.local"))
-      updatedContainerProps("port_mappings") must /#(3) /("container_port" -> 443)
-      updatedContainerProps("port_mappings") must /#(3) /("service_port"   -> 8443)
-      there were two(testSetup.client).close
-    }
-
-    "delete empty ingress on container PUT" in new FakeKubeCreate(port_mappings = Seq(
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(80),
-            name = Some("remove-service"),
-            expose_endpoint = Some(true),
-            virtual_hosts = Some(Seq("port80.test.com"))
-          ),
-          ContainerSpec.PortMapping(
-            protocol = "tcp",
-            container_port = Some(81),
-            name = Some("no-service"),
-            expose_endpoint = Some(false)
-          )
-        )) {
-
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(Some(skuber.ext.Ingress(metaContainer.name)))
-      testSetup.client.delete(meq(metaContainer.name),any)(meq(Ingress.ingDef),any) returns Future.successful(())
-
-      val newPortMappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          name = Some("removed-service"),
-          expose_endpoint = Some(false)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(81),
-          name = Some("no-service"),
-          expose_endpoint = Some(false)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(8881),
-          name = Some("new-service"),
-          expose_endpoint = Some(true)
-        )
-      )
-
-      val updatedContainer = await(testSetup.svc.update(
-        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
-        container = metaContainer.copy(
-          properties = metaContainer.properties.map(
-            _ ++ Map(
-              "port_mappings" -> Json.toJson(newPortMappings).toString
-            )
-          )
-        )
-      ))
-      val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.client).delete(meq("test-container"),any)(meq(Ingress.ingDef),any)
-      there was one(testSetup.client).update(any)(any,meq(Service.svcDef),any)
-      there was one(testSetup.client).update(any)(any,meq(Deployment.deployDef),any)
-      there were two(testSetup.client).close
-    }
-
-    "delete empty services on container PUT" in new FakeKubeCreate(port_mappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          name = Some("remove-services"),
-          expose_endpoint = Some(true),
-          `type` = Some("loadBalancer"),  // this will create three Service objects
-          virtual_hosts = None
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(81),
-          name = Some("no-service"),
-          expose_endpoint = Some(false)
-        )
-      )) {
-
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
-
-      val newPortMappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          name = Some("removed-service"),
-          expose_endpoint = Some(false)
-        ),
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(81),
-          name = Some("no-service"),
-          expose_endpoint = Some(false)
-        )
-      )
-
-      val updatedContainer = await(testSetup.svc.update(
-        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
-        container = metaContainer.copy(
-          properties = metaContainer.properties.map(
-            _ ++ Map(
-              "port_mappings" -> Json.toJson(newPortMappings).toString
-            )
-          )
-        )
-      ))
-      val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.client).update(any)(any,meq(Deployment.deployDef),any)
-      there was one(testSetup.client).delete(meq(metaContainer.name),       any)(meq(Service.svcDef),any)
-      there was one(testSetup.client).delete(meq(metaContainer.name+"-ext"),any)(meq(Service.svcDef),any)
-      there was one(testSetup.client).delete(meq(metaContainer.name+"-lb"), any)(meq(Service.svcDef),any)
-      there were two(testSetup.client).close
-    }
-
-    "create service and ingress on container update" in new FakeKubeCreate(port_mappings = Seq(
-      ContainerSpec.PortMapping(
-        protocol = "tcp",
-        container_port = Some(80),
-        name = Some("update-port"),
-        expose_endpoint = Some(false),
-        virtual_hosts = None
-      )
-    )) {
-
-      testSetup.client.getOption(meq(metaContainer.name))(any,meq(Ingress.ingDef),any) returns Future.successful(None)
-
-      val newPortMappings = Seq(
-        ContainerSpec.PortMapping(
-          protocol = "tcp",
-          container_port = Some(80),
-          name = Some("update-port"),
-          expose_endpoint = Some(true),
-          virtual_hosts = Some(Seq("port80.test.com"))
-        )
-      )
-      val updatedContainer = await(testSetup.svc.update(
-        context = ProviderContext(play.api.test.FakeRequest("PATCH", s"/root/environments/${testEnv.id}/containers/${metaContainer.id}"), testProvider.id, None),
-        container = metaContainer.copy(
-          properties = metaContainer.properties.map(
-            _ ++ Map(
-              "image" -> "nginx:updated",
-              "port_mappings" -> Json.toJson(newPortMappings).toString
-            )
-          )
-        )
-      ))
-      val Some(updatedContainerProps) = updatedContainer.properties
-      there was one(testSetup.client).update(argThat(
-        inNamespace(testSetup.testNS.name)
-          and haveName(metaContainer.name)
-          and (((_:skuber.ext.Deployment).getPodSpec.get.containers.head.image) ^^ be_==("nginx:updated"))
-      ))(any,meq(Deployment.deployDef),any)
-      there was one(testSetup.client).create(argThat(
-        inNamespace(testSetup.testNS.name)
-          and haveName(metaContainer.name)
-          and (((_: skuber.ext.Ingress).spec.get.rules.toSeq.map(_.host)) ^^ containTheSameElementsAs(Seq("port80.test.com")))
-      ))(any,meq(Ingress.ingDef),any)
-      there was one(testSetup.client).create(argThat(
-        inNamespace(testSetup.testNS.name)
-          and haveName(metaContainer.name)
-          and (((_: skuber.Service).spec.get.ports.map(_.targetPort.get))) ^^ containTheSameElementsAs(Seq(skuber.portNumToNameablePort(80)))
-      ))(any,meq(Service.svcDef),any)
-
-      updatedContainerProps must havePair(
-        "image" -> "nginx:updated"
-      )
-      there were two(testSetup.client).close
-    }
-
-    "not persist secret values in meta" in new FakeKubeCreate() {
-      val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
-        secret = metaSecret,
-        items = metaSecretItems
-      )).properties
-
-      // this also checks that "base64-decode secrets before sending to skuber"
-      there was one(testSetup.client).create(argThat(
-        inNamespace(testSetup.testNS.name)
-          and
-          (
-            ((_: skuber.Secret).data.map({
-              case (key, bytes) => SecretSpec.Item(key, Some(Base64.getEncoder.encodeToString(bytes)))
-            }).toSeq) ^^ containTheSameElementsAs(metaSecretItems)
-          )
-      ))(any,meq(Secret.secDef),any)
-
-      Json.parse(updatedSecretProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
-        metaSecretItems.map(_.copy(value = None))
-      )
-
-      val persistedProps = ResourceFactory.findById(ResourceIds.Secret, metaSecret.id).get.properties.get
-      Json.parse(persistedProps("items")).as[Seq[SecretSpec.Item]] must containTheSameElementsAs(
-        metaSecretItems.map(_.copy(value = None))
-      )
-    }
-
-    "delete secret" in new FakeKube {
-      val Success(metaSecret) = createInstance(
-        ResourceIds.Secret,
-        "test-secret",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "items" -> "[]"
-        ))
-      )
-
-      val label = KubernetesService.META_SECRET_KEY -> metaSecret.id.toString
-      val mockSecret = skuber.Secret(metadata = skuber.ObjectMeta(
-        name = metaSecret.name,
-        namespace = testEnv.id.toString,
-        labels = Map(label)
-      ))
-
-      testSetup.client.listSelected(any)(any,meq(skuber.Secret.secListDef),any) returns Future.successful(new skuber.SecretList("","",None,List(mockSecret)))
-      testSetup.client.delete(meq(mockSecret.name),any)(meq(skuber.Secret.secDef),any) returns Future.successful(())
-
-      await(testSetup.svc.destroySecret(metaSecret))
-      there was one(testSetup.client).delete(meq(mockSecret.name),any)(meq(skuber.Secret.secDef),any)
-      there was one(testSetup.client).close
-    }
-
-    "mount specified secrets on container create" in new FakeKubeCreate(
-      secrets = Seq(
-        SecretEnvMount(null, "SOME_ENV_VAR", "part-a"),
-        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a"),
-        SecretFileMount(null, "/mnt/secrets/files/file-b", "part-b"),
-        SecretFileMount(null, "/mnt/secrets/files/sub/file-c", "part-b"),
-        SecretDirMount(null, "/mnt/secrets/dir")
-      )
-    ) {
-      val Some(updatedContainerProps) = await(testSetup.svc.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
-      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
-      val createdDeployment = deploymentCaptor.getValue
-      createdDeployment must inNamespace(testSetup.testNS.name)
-      // deployment internal volume names are created on-demand, need to figure out what these were
-      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
-      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      deplVolumes must containAllOf(Seq(
-        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
-          skuber.Volume.KeyToPath(key = "part-a", path = "file-a"),
-          skuber.Volume.KeyToPath(key = "part-b", path = "file-b"),
-          skuber.Volume.KeyToPath(key = "part-b", path = "sub/file-c")
-        )))),
-        skuber.Volume(dirVolName, skuber.Volume.Secret(secretName = metaSecret.name))
-      ))
-      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
-        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true),
-        skuber.Volume.Mount(dirVolName, "/mnt/secrets/dir", true)
-      ))
-      createdDeployment.spec.get.template.get.spec.get.containers.head.env must containAllOf(Seq(
-        skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", metaSecret.name))
-      ))
-    }
-
-    "mount a single secret file during container create (#338)" in new FakeKubeCreate(
-      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
-      secrets = Seq(
-        SecretFileMount(null, "/mnt/secrets/files/file-a", "part-a")
-      )
-    ) {
-      val Some(updatedContainerProps) = await(testSetup.svc.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
-      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
-      val createdDeployment = deploymentCaptor.getValue
-      createdDeployment must inNamespace(testSetup.testNS.name)
-      // deployment internal volume names are created on-demand, need to figure out what these were
-      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
-      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      deplVolumes must containAllOf(Seq(
-        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
-          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
-        ))))
-      ))
-      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
-        skuber.Volume.Mount(partsVolName, "/mnt/secrets/files", true)
-      ))
-    }
-
-
-    "mount a single secret file during container create (#338) in root" in new FakeKubeCreate(
-      // https://gitlab.com/galacticfog/gestalt-meta/issues/338
-      secrets = Seq(
-        SecretFileMount(null, "/file-a", "part-a")
-      )
-    ) {
-      val Some(updatedContainerProps) = await(testSetup.svc.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )).properties
-
-      val deploymentCaptor = ArgumentCaptor.forClass(classOf[skuber.ext.Deployment])
-      there was one(testSetup.client).create(deploymentCaptor.capture())(any,meq(Deployment.deployDef),any)
-      val createdDeployment = deploymentCaptor.getValue
-      createdDeployment must inNamespace(testSetup.testNS.name)
-      // deployment internal volume names are created on-demand, need to figure out what these were
-      val deplVolumes = createdDeployment.spec.get.template.get.spec.get.volumes
-      val dirVolName   = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] && !v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      val partsVolName = deplVolumes.find(v => v.source.isInstanceOf[skuber.Volume.Secret] &&  v.source.asInstanceOf[skuber.Volume.Secret].items.exists(_.nonEmpty)).map(_.name).getOrElse("")
-      deplVolumes must containAllOf(Seq(
-        skuber.Volume(partsVolName, skuber.Volume.Secret(secretName = metaSecret.name, items = Some(List(
-          skuber.Volume.KeyToPath(key = "part-a", path = "file-a")
-        ))))
-      ))
-      createdDeployment.spec.get.template.get.spec.get.containers.head.volumeMounts must containTheSameElementsAs(Seq(
-        skuber.Volume.Mount(partsVolName, "/", true)
-      ))
-    }
-
-    "secret mounts must be unique" in new FakeKubeCreate(
-      secrets = Seq(
-        SecretFileMount(null, "/mnt/secrets/files/file", "part-a"),
-        SecretFileMount(null, "/mnt/secrets/files/file", "part-b")
-      )
-    ) {
-      await(testSetup.svc.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-        container = metaContainer
-      )) must throwA[BadRequestException]("secrets must have unique paths")
-    }
-
     "deployment should not have affinity if not configured in the provider" in new FakeKube() {
       val Success(metaContainer) = createInstance(
         ResourceIds.Container,
@@ -2654,435 +3158,6 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           (((_: skuber.ext.Deployment).getPodSpec.get.affinity) ^^ beSome(affinity))
       ))(any,meq(Deployment.deployDef),any)
       there were two(testSetup.client).close
-    }
-
-    "throw 400 on invalid volume type" in new FakeKube() { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "invalid-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "invalid-type",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}"
-        ))
-      )
-      await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      )) must throwA[BadRequestException]("/properties/type.*must be one of")
-    }
-
-    "422 on create of non-white-listed host_path volumes" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson("/tmp", "/mnt")
-      )
-    ) { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "host-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "host_path",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(HostPathVolume("/unsupported-path")).toString
-        ))
-      )
-      await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      )) must throwAn[UnprocessableEntityException]("host_path.*is not in provider's white-list")
-      there were no(testSetup.client).create(any)(any,any,any)
-    }
-
-    "perform pass-through create on volume of type 'external'" in new FakeKube() { tag("volumes")
-      val extVolumeConfig = Json.obj(
-        "gcePersistentDisk" -> Json.obj(
-          "pdName" -> "my-data-disk",
-          "fsType" -> "ext4"
-        )
-      )
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "external-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "external",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> extVolumeConfig.toString
-        ))
-      )
-
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolume])
-      }
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
-      }
-
-      val newVolume = await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      ))
-      val newProps = newVolume.properties.get
-      newProps must havePairs(
-        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
-        "reclamation_policy" -> "delete_persistent_volume"
-      )
-
-      there was one(testSetup.client).create(argThat(
-        haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
-          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.GenericVolumeSource(extVolumeConfig.toString))) and
-          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
-            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
-              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
-          ))
-      ))(any, meq(skuber.PersistentVolume.pvDef), any)
-
-      there was one(testSetup.client).create(argThat(
-        haveName(metaVolume.name) and
-          inNamespace(testEnv.id.toString) and
-          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
-      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform HostPath create on volume of type 'host_path'" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
-      )
-    ) { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "host-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "host_path",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
-        ))
-      )
-
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolume.pvDef),any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolume])
-      }
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
-      }
-
-      val newVolume = await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      ))
-      val newProps = newVolume.properties.get
-      newProps must havePairs(
-        "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}",
-        "reclamation_policy" -> "delete_persistent_volume"
-      )
-
-      there was one(testSetup.client).create(argThat(
-        haveName(metaVolume.name.substring(0,8) + "-" + metaVolume.id.toString) and
-          (((_: skuber.PersistentVolume).spec.get.source) ^^ be_==(skuber.Volume.HostPath("/supported-path/sub-path"))) and
-          (((_: skuber.PersistentVolume).spec.get.claimRef) ^^ beSome(
-            (((_:skuber.ObjectReference).name) ^^ be_==(metaVolume.name)) and
-              (((_:skuber.ObjectReference).namespace) ^^ be_==(testEnv.id.toString))
-          ))
-      ))(any, meq(skuber.PersistentVolume.pvDef), any)
-
-      there was one(testSetup.client).create(argThat(
-        haveName(metaVolume.name) and
-          inNamespace(testEnv.id.toString) and
-          (((_: skuber.PersistentVolumeClaim).spec.get.accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce)))
-      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform PV and PVC deletion on volume of type 'host_path' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "host-path-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "host_path",
-          "size" -> "1000",
-          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
-          "access_mode" -> "ReadWriteOnce",
-          "reclamation_policy" -> "delete_persistent_volume",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
-        ))
-      )
-
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeClaimList("","",None,List(
-          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
-            name = metaVolume.name,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeList("","",None,List(
-          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
-            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-
-      await(testSetup.svc.destroyVolume(metaVolume))
-
-      there was one(testSetup.client).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
-      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform PVC deletion only on volume of type 'host_path' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "host-path-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "host_path",
-          "size" -> "1000",
-          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/host-path-volume",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(HostPathVolume("/supported-path/sub-path")).toString
-        ))
-      )
-
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeClaimList("","",None,List(
-          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
-            name = metaVolume.name,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-
-      await(testSetup.svc.destroyVolume(metaVolume))
-
-      there were no(testSetup.client).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
-      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform PV and PVC deletion on volume of type 'external' if 'reclamation_policy' is 'delete_persistent_volume'" in new FakeKube() { tag("volumes")
-      val extVolumeConfig = Json.obj(
-        "gcePersistentDisk" -> Json.obj(
-          "pdName" -> "my-data-disk",
-          "fsType" -> "ext4"
-        )
-      )
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "external-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "external",
-          "size" -> "1000",
-          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
-          "access_mode" -> "ReadWriteOnce",
-          "reclamation_policy" -> "delete_persistent_volume",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> extVolumeConfig.toString
-        ))
-      )
-
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeClaimList("","",None,List(
-          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
-            name = metaVolume.name,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolume.pvListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeList("","",None,List(
-          skuber.PersistentVolume(metadata = skuber.ObjectMeta(
-            name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-
-      await(testSetup.svc.destroyVolume(metaVolume))
-
-      there was one(testSetup.client).delete(meq(metaVolume.name.substring(0,8)+"-"+metaVolume.id.toString), any)(meq(skuber.PersistentVolume.pvDef), any)
-      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform PVC deletion only on volume of type 'external' if 'reclamation_policy' is not 'delete_volume'" in new FakeKube() { tag("volumes")
-      val extVolumeConfig = Json.obj(
-        "gcePersistentDisk" -> Json.obj(
-          "pdName" -> "my-data-disk",
-          "fsType" -> "ext4"
-        )
-      )
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "external-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "external",
-          "size" -> "1000",
-          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/external-volume",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> extVolumeConfig.toString
-        ))
-      )
-
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeClaimList("","",None,List(
-          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
-            name = metaVolume.name,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
-          ))
-        ))
-      )
-
-      await(testSetup.svc.destroyVolume(metaVolume))
-
-      there were no(testSetup.client).delete(any, any)(meq(skuber.PersistentVolume.pvDef), any)
-      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "throw 400 on volume type 'persistent'" in new FakeKube() { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "unsupported-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "persistent",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> "{}",
-          "size" -> "100",
-          "access_mode" -> "ReadWriteOnce"
-        ))
-      )
-      await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      )) must throwA[BadRequestException]("Kubernetes providers only support volumes of type 'external', 'dynamic' and 'host_path'")
-    }
-
-    "422 on create of of 'dynamic' volume with unsupported storage class" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
-      )
-    ) { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "dynamic-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "dynamic",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(DynamicVolume("unsupported-storage-class")).toString
-        ))
-      )
-      await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      )) must throwAn[UnprocessableEntityException]("storage_class.*is not in provider's white-list")
-      there were no(testSetup.client).create(any)(any,any,any)
-    }
-
-    "perform PVC creation on volume of type 'dynamic' for supported storage_class" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
-      )
-    ) { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "dynamic-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "dynamic",
-          "size" -> "1000",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
-        ))
-      )
-
-      testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {
-        (a: Any) => Future.successful(a.asInstanceOf[Array[Object]](0).asInstanceOf[skuber.PersistentVolumeClaim])
-      }
-
-      val newVolume = await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
-        metaResource = metaVolume
-      ))
-      val newProps = newVolume.properties.get
-      newProps must havePair("external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/${metaVolume.name}")
-
-      there was one(testSetup.client).create(argThat(
-        haveName(metaVolume.name) and
-        inNamespace(testEnv.id.toString) and
-        (((_: skuber.PersistentVolumeClaim).spec) ^^ beSome(
-          (((_:skuber.PersistentVolumeClaim.Spec).accessModes.toSeq) ^^ containTheSameElementsAs(Seq(skuber.PersistentVolume.AccessMode.ReadWriteOnce))) and
-          (((_:skuber.PersistentVolumeClaim.Spec).storageClassName) ^^ beSome("storage-class-a"))
-        ))
-      ))(any, meq(skuber.PersistentVolumeClaim.pvcDef), any)
-    }
-
-    "perform PVC deletion on volume of type 'dynamic'" in new FakeKube(
-      providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
-      )
-    ) { tag("volumes")
-      val Success(metaVolume) = createInstance(
-        migrations.V13.VOLUME_TYPE_ID,
-        "dynamic-volume",
-        parent = Some(testEnv.id),
-        properties = Some(Map(
-          "type" -> "dynamic",
-          "size" -> "1000",
-          "external_id" -> s"/namespaces/${testEnv.id}/persistentvolumeclaims/dynamic-volume",
-          "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
-          "config" -> Json.toJson(DynamicVolume("storage-class-a")).toString
-        ))
-      )
-
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolume.pvDef),any) returns Future.successful(())
-      testSetup.client.delete(any, any)(meq(skuber.PersistentVolumeClaim.pvcDef),any) returns Future.successful(())
-      testSetup.client.listSelected(any)(any,meq(skuber.PersistentVolumeClaim.pvcListDef),any) returns Future.successful(
-        new skuber.PersistentVolumeClaimList("","",None,List(
-          skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
-            name = metaVolume.name,
-            namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY -> metaVolume.id.toString)
-          ))
-        ))
-      )
-
-      await(testSetup.svc.destroyVolume(metaVolume))
-
-      there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
 
   }
