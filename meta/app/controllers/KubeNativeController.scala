@@ -32,18 +32,54 @@ import play.api.mvc.{Action, AnyContent, Result}
 
 import services.SkuberFactory
 
-import skuber._
-import skuber.api.client._
-import skuber.apps.v1beta1._
 
-import skuber.apps.v1.{Deployment, DaemonSet, DaemonSetList, ReplicaSet, ReplicaSetList}
-import skuber.batch.{Job, JobList, CronJob, CronJobList}
-import skuber.rbac.{Role, RoleBinding}
+// apiVersion => v1
+import skuber.ConfigMap
+import skuber.Namespace
+import skuber.PersistentVolume
+import skuber.PersistentVolumeClaim
+import skuber.Pod
+import skuber.ReplicationController
+import skuber.Secret
+import skuber.Service
+import skuber.ServiceAccount
+//import skuber.Volume
+
+// apiVersion => apps/v1
+import skuber.apps.v1.Deployment
+import skuber.apps.v1.DeploymentList
+import skuber.apps.v1.DaemonSet
+import skuber.apps.v1.DaemonSetList
+import skuber.apps.v1.ReplicaSet
+import skuber.apps.v1.ReplicaSetList
+ 
+// apiVersion => apps/v1beta1
+import skuber.apps.v1beta1.StatefulSet
+import skuber.apps.v1beta1.StatefulSetList
+
+// apiVersion => batch/v1
+import skuber.batch.Job
+import skuber.batch.JobList
+import skuber.batch.CronJob
+import skuber.batch.CronJobList
+
+// apiVersion => rbac.authorization.k8s.io/v1beta1
+import skuber.rbac.Role
+import skuber.rbac.RoleList
+import skuber.rbac.RoleBinding
+import skuber.rbac.RoleBindingList
+import skuber.rbac.ClusterRole
+import skuber.rbac.ClusterRoleList
+import skuber.rbac.ClusterRoleBinding
+import skuber.rbac.ClusterRoleBindingList
 
 import skuber.json.format._
 import skuber.json.batch.format._
 import skuber.json.rbac.format._
-//import skuber.json.ext.format._ // <- DaemonSetList
+
+
+import skuber._
+import skuber.api.client._
 
 import LabelSelector.dsl._
 import scala.language.postfixOps
@@ -128,6 +164,9 @@ class KubeNativeController @Inject()(
     }
   }
   
+  def viewSupportedResources(fqon: String, providerId: UUID) = Audited(fqon) { implicit request =>
+    Ok(KubeDeploymentResources.supportedAsJson)
+  }
   
   /**
    * Get a reference to an initialized skuber RequestContext.
@@ -301,17 +340,45 @@ class KubeNativeController @Inject()(
       }
     }
     
-    def validate(kubeContext: RequestContext, chart: ChartData): Future[ChartData] = {
-      for {
-        _ <- Future.fromTry(findSingleDeployment(chart.documents))
-        result <- findOrCreateNamespace(kubeContext, chart.namespace).map { _ =>
-          log.info("Using Kubernetes namespace: " + chart.namespace)
-          chart
-        }.recover {
-          case e: Throwable =>
-            log.error("Failed to find or create Kubernetes namespace for deployment.")
-            throw e
+    def validate(kubeContext: RequestContext, chart: ChartData, testNamespace: Boolean = true): Future[ChartData] = {
+      
+      def assertValidResourceKinds(documents: List[YamlDoc]): Unit = {
+        documents.map { doc =>
+          val yaml = CompiledHelmChart.string2Map(doc)
+          val kind = yaml.getOrElse("kind", 
+              throw new BadRequestException(
+                  s"Chart resource is missing 'kind' property. No changes made.")).toString
+          val apiVersion = yaml.getOrElse("apiVersion",
+              throw new BadRequestException(
+                  s"Chart resource of type '${kind}' is missing 'apiVersion' property. No changes made.")).toString
+          val name = CompiledHelmChart.toScalaMap(yaml("metadata")).getOrElse("name",
+              throw new BadRequestException(
+                  s"Chart resource of type '${kind}' is missing 'name' property. No changes made.")).toString
+
+          log.debug(s"Testing resource for compatibility => [name]: ${name}, [kind]: ${kind}, [apiVersion]: ${apiVersion}")
+          KubeDeploymentResources.isSupportedResource(kind, apiVersion) match {
+            case Left(e) => throw new BadRequestException(e)
+            case Right(_) => ()
+          }
         }
+        ()
+      }
+
+      for {
+        _ <- Future.fromTry(Try(assertValidResourceKinds(chart.documents)))
+        _ <- Future.fromTry(findSingleDeployment(chart.documents))
+        
+        result <- testNamespace match {
+          case false => Future.successful(chart) 
+          case true  => findOrCreateNamespace(kubeContext, chart.namespace).map { _ =>
+            log.info("Using Kubernetes namespace: " + chart.namespace)
+            chart
+          }.recover {
+            case e: Throwable =>
+              log.error("Failed to find or create Kubernetes namespace for deployment.")
+              throw e
+          }
+        }        
       } yield result
     }
     
@@ -343,11 +410,11 @@ class KubeNativeController @Inject()(
       )
     }
   }  
-
   
   /**
    * Create a resource in Kubernetes converting the output to JSON.
    */
+
   private[controllers] def createDeploymentResource(yaml: String, context: RequestContext, qs: Map[String,Seq[String]]): Future[JsValue] = {  
     createKubeResource(yaml, context, qs).map { kubeResource =>
       log.debug(s"Adding resource ${kubeResource.kind}(${kubeResource.name}) to AppDeployment.")
@@ -653,6 +720,8 @@ class KubeNativeController @Inject()(
       case x: Service => Json.toJson(x) 
       case x: ServiceAccount => Json.toJson(x)
       case x: StatefulSet => Json.toJson(x)
+      case x: ClusterRole => Json.toJson(x)
+      case x: ClusterRoleBinding => Json.toJson(x)
       //case x: Volume => Json.toJson(x)      
       case _ => throw new RuntimeException(s"Unknown ObjectResource Type. found: ${r.getClass.getSimpleName}")
     }
@@ -688,6 +757,8 @@ class KubeNativeController @Inject()(
         case Kube.Single.DaemonSet      => kubeDelete[DaemonSet](context, nm, gracePeriod)
         case Kube.Single.Job            => kubeDelete[Job](context, nm, gracePeriod)
         case Kube.Single.ReplicationController   => kubeDelete[ReplicationController](context, nm, gracePeriod)
+        case Kube.Single.ClusterRole    => kubeDelete[ClusterRole](context, nm, gracePeriod)
+        case Kube.Single.ClusterRoleBinding    => kubeDelete[ClusterRoleBinding](context, nm, gracePeriod)
         //Kube.Plural.Volume => ???
       }
     }
@@ -830,7 +901,11 @@ class KubeNativeController @Inject()(
       case Kube.Plural.Namespace => selected[NamespaceList](request, context)
       case Kube.Plural.Job => selected[JobList](request, context)
       case Kube.Plural.CronJob => selected[CronJobList](request, context)
+      case Kube.Plural.Role => selected[RoleList](request, context)
+      case Kube.Plural.RoleBinding => selected[RoleBindingList](request, context)
       case Kube.Plural.DaemonSet => selected[DaemonSetList](request, context)
+      case Kube.Plural.ClusterRole    => selected[ClusterRoleList](request, context)
+      case Kube.Plural.ClusterRoleBinding => selected[ClusterRoleBindingList](request, context)
     }
     
     val one = """([a-z]+)/([a-zA-Z0-9_-]+)""".r
@@ -844,7 +919,12 @@ class KubeNativeController @Inject()(
       case one(Kube.Plural.StatefulSet, nm) => context.get[StatefulSet](nm).map(RenderObject(_, headers))      
       case one(Kube.Plural.PersistentVolume, nm)       => context.get[PersistentVolume](nm).map(RenderObject(_, headers))
       case one(Kube.Plural.PersistentVolumeClaim, nm)  => context.get[PersistentVolumeClaim](nm).map(RenderObject(_, headers))
-      case one(Kube.Plural.Namespace, nm) => context.get[Namespace](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.Namespace, nm) => context.get[Namespace](nm).map(RenderObject(_, headers))      
+      case one(Kube.Plural.Job, nm) => context.get[Job](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.CronJob, nm) => context.get[CronJob](nm).map(RenderObject(_, headers))      
+      case one(Kube.Plural.DaemonSet, nm) => context.get[DaemonSet](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.ClusterRole, nm) => context.get[ClusterRole](nm).map(RenderObject(_, headers))
+      case one(Kube.Plural.ClusterRoleBinding, nm) => context.get[ClusterRoleBinding](nm).map(RenderObject(_, headers))
     }
     
     val notfound: PartialFunction[String, Future[Result]] = {
@@ -925,7 +1005,9 @@ class KubeNativeController @Inject()(
           case Kube.Single.RoleBinding    => CreateResult(createKubeObject[RoleBinding](body, context), headers)
           case Kube.Single.Job            => CreateResult(createKubeObject[Job](body, context), headers)
           case Kube.Single.ServiceAccount => CreateResult(createKubeObject[ServiceAccount](body, context), headers)
-          case Kube.Single.ReplicationController   => CreateResult(createKubeObject[ReplicationController](body, context), headers)          
+          case Kube.Single.ReplicationController   => CreateResult(createKubeObject[ReplicationController](body, context), headers)
+          case Kube.Single.ClusterRole           => CreateResult(createKubeObject[ClusterRole](body, context), headers)
+          case Kube.Single.ClusterRoleBinding    => CreateResult(createKubeObject[ClusterRoleBinding](body, context), headers)          
           case e => Future(BadRequest(s"Cannot process requests for object kind '$kind'"))
         }
       }
@@ -959,7 +1041,9 @@ class KubeNativeController @Inject()(
           case Kube.Single.RoleBinding    => createKubeObject[RoleBinding](body, context)
           case Kube.Single.Job            => createKubeObject[Job](body, context)
           case Kube.Single.ServiceAccount => createKubeObject[ServiceAccount](body, context)
-          case Kube.Single.ReplicationController   => createKubeObject[ReplicationController](body, context)          
+          case Kube.Single.ReplicationController   => createKubeObject[ReplicationController](body, context)
+          case Kube.Single.ClusterRole           => createKubeObject[ClusterRole](body, context)
+          case Kube.Single.ClusterRoleBinding    => createKubeObject[ClusterRoleBinding](body, context)          
 
           case e => throw new BadRequestException(s"Cannot process requests for object kind '$kind'")
         }
@@ -1610,8 +1694,8 @@ class KubeNativeController @Inject()(
         "container_type" -> "DOCKER",
         "image" -> containerSpec.image,
         "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
-        "cpus"     -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
-        "memory"   -> (memLimits orElse memRequests).getOrElse[Double](0.0),
+        "cpus"     -> (cpuLimits orElse cpuRequests).getOrElse[Double](2.0),
+        "memory"   -> (memLimits orElse memRequests).getOrElse[Double](2056.0),
         "volumes"  -> (pvcs ++ inlineVolumes),
         "labels"   -> depl.metadata.labels,
         "env"      -> Json.toJson(containerSpec.env.collect({
@@ -1619,7 +1703,8 @@ class KubeNativeController @Inject()(
         }).toMap),
         "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
         "port_mappings" -> portMappings,
-        "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes)
+        "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes),
+        "network" -> "default"
       ) ++ JsObject(
         Seq(
           Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
@@ -1695,7 +1780,8 @@ object Kube {
         "namespace",
         "persistentvolumeclaim", "persistentvolume", "pod",
         "replicaset", "replicationcontroller", "rolebinding", "role",
-        "secret", "serviceaccount", "service", "statefulset"/*,
+        "secret", "serviceaccount", "service", "statefulset",
+        "clusterrole", "clusterrolebinding"/*,
         "volume"*/)
 
     
@@ -1734,6 +1820,8 @@ object Kube {
       val Service = "service"
       val StatefulSet = "statefulset"
       val Volume = "volume"
+      val ClusterRole = "clusterrole"
+      val ClusterRoleBinding = "clusterrolebinding"      
     }
     
     object Plural {
@@ -1756,5 +1844,7 @@ object Kube {
       val Service = "services"
       val StatefulSet = "statefulsets"
       val Volume = "volumes"
+      val ClusterRole = "clusterroles"
+      val ClusterRoleBinding = "clusterrolebindings"
     }
   }

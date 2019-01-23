@@ -46,6 +46,89 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
+## Kubernetes Native Functions
+...Coming Soon...
+#### Supported Types
+    GET /{fqon}/providers/{id}/kube/chart/supported
+    
+    [
+      {
+          "kind": "clusterrole",
+          "apiVersion": "rbac.authorization.k8s.io/v1beta1"
+      },
+      {
+          "kind": "clusterrolebinding",
+          "apiVersion": "rbac.authorization.k8s.io/v1beta1"
+      },
+      {
+          "kind": "configmap",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "cronjob",
+          "apiVersion": "batch/v1"
+      },
+      {
+          "kind": "daemonset",
+          "apiVersion": "apps/v1"
+      },
+      {
+          "kind": "deployment",
+          "apiVersion": "apps/v1"
+      },
+      {
+          "kind": "job",
+          "apiVersion": "batch/v1"
+      },
+      {
+          "kind": "namespace",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "persistentvolume",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "persistentvolumeclaim",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "pod",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "replicaset",
+          "apiVersion": "apps/v1"
+      },
+      {
+          "kind": "replicationcontroller",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "role",
+          "apiVersion": "rbac.authorization.k8s.io/v1beta1"
+      },
+      {
+          "kind": "rolebinding",
+          "apiVersion": "rbac.authorization.k8s.io/v1beta1"
+      },
+      {
+          "kind": "secret",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "service",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "serviceaccount",
+          "apiVersion": "v1"
+      },
+      {
+          "kind": "statefulset",
+          "apiVersion": "apps/v1beta1"
+      }
+    ]
 
 ## Automatic Upgrade Checking (0.7.10)
 Meta may be configured to check for updates to core Gestalt Platform components. This functionality is configured using the environment variables described below. *NOTE: These variables are set on the Meta process.*
