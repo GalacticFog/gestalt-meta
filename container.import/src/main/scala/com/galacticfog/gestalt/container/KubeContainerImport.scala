@@ -108,6 +108,11 @@ class KubeContainerImport extends ContainerImport {
     val uuid = (resource \ "id").as[String]
     val envId = (payload \ "context" \ "environment" \ "id").as[String]
 
+    // val providerNetworks = (provider \ "properties" \ "config" \ "networks").asOpt[Seq[JsValue]].getOrElse(Seq()) map { network =>
+    //   (network \ "name").as[String]
+    // }
+    // val defaultNetwork = providerNetworks.get(0).getOrElse("default")
+
     val contextLabels = Json.obj(
       "meta/environment" -> (payload \ "context" \ "environment" \ "id").as[String],
       "meta/workspace" -> (payload \ "context" \ "workspace" \ "id").as[String],
@@ -261,8 +266,8 @@ class KubeContainerImport extends ContainerImport {
             "container_type" -> "DOCKER",
             "image" -> containerSpec.image,
             "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
-            "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](0.0),
-            "memory" -> (memLimits orElse memRequests).getOrElse[Double](0.0),
+            "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](2.0),
+            "memory" -> (memLimits orElse memRequests).getOrElse[Double](2048.0),
             "volumes" -> (pvcs ++ inlineVolumes),
             "labels" -> depl.metadata.labels,
             "env" -> Json.toJson(containerSpec.env.collect({
@@ -270,7 +275,8 @@ class KubeContainerImport extends ContainerImport {
             }).toMap),
             "num_instances" -> depl.spec.flatMap(_.replicas).getOrElse[Int](0),
             "port_mappings" -> portMappings,
-            "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes)
+            "secrets" -> (secretsAsEnvVars ++ secretsAsVolumes),
+            "network" -> "default"
           ) ++ JsObject(
             Seq(
               Option(containerSpec.command).filter(_.nonEmpty).map(cmds => "cmd" -> JsString(cmds.mkString(" "))),
@@ -279,6 +285,7 @@ class KubeContainerImport extends ContainerImport {
           )
           _ <- setLabels(kube, depl, "container")
         } yield resource ++ Json.obj(
+          "name" -> deplNameValue,
           "properties" -> (inputProps ++ importProps)
         )
       }
