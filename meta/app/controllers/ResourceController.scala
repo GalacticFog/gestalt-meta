@@ -1452,6 +1452,18 @@ class ResourceController @Inject()(
     }
   }
   
+  import migrations.V28._
+  def findUserProfile(user: UUID) = Audited() { implicit request =>
+    handleExpandResourceResult(
+      ResourceFactory.findChildrenOfType(USERPROFILE_TYPE_ID, user),
+      request.queryString,
+      Some(META_URL))
+  }
+  
+  def postUserProfile(user: UUID) = AsyncAudited() { implicit request =>
+    ???
+  }
+  
   // --------------------------------------------------------------------------
   // CUSTOM-RESOURCES
   // --------------------------------------------------------------------------
@@ -1566,5 +1578,7 @@ class ResourceController @Inject()(
   private[this] def standardRequestOperations(action: String) = {
     List(
       controllers.util.Authorize(action))
-  }  
+  }
+  
+  
 }

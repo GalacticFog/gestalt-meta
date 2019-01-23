@@ -17,6 +17,8 @@ DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*pat
 
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
 
+GET /top/users/:userId/userprofiles controllers.ResourceController.findUserProfile(userId: java.util.UUID)
+
 GET /top/:typeName/:id  controllers.ResourceController.findResourceGlobal(typeName: String, id: java.util.UUID)
 
 
