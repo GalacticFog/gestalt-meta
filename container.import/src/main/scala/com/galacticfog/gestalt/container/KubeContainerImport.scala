@@ -267,7 +267,7 @@ class KubeContainerImport extends ContainerImport {
             "image" -> containerSpec.image,
             "force_pull" -> (containerSpec.imagePullPolicy == skuber.Container.PullPolicy.Always),
             "cpus" -> (cpuLimits orElse cpuRequests).getOrElse[Double](2.0),
-            "memory" -> (memLimits orElse memRequests).getOrElse[Double](2056.0),
+            "memory" -> (memLimits orElse memRequests).getOrElse[Double](2048.0),
             "volumes" -> (pvcs ++ inlineVolumes),
             "labels" -> depl.metadata.labels,
             "env" -> Json.toJson(containerSpec.env.collect({
@@ -285,6 +285,7 @@ class KubeContainerImport extends ContainerImport {
           )
           _ <- setLabels(kube, depl, "container")
         } yield resource ++ Json.obj(
+          "name" -> deplNameValue,
           "properties" -> (inputProps ++ importProps)
         )
       }

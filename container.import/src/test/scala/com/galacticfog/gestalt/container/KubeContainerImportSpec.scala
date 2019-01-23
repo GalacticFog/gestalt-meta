@@ -251,7 +251,7 @@ class KubeContainerImportSpec extends PlaySpecification with BeforeAll with Befo
        ),
        List(),
        2.0,
-       2056.0,
+       2048.0,
        0.0,
        1,
        Some("default"),
