@@ -179,7 +179,13 @@ class PatchController @Inject()(
     val action = actionInfo(target.typeId).prefix + ".update"
     val options = standardRequestOptions(user, target)
     val operations = standardRequestOperations(action)
-    
+
+    val ops = JsonUtil.safeParse[Seq[PatchOp]](request.body)
+    val patch = transforms.get(target.typeId).fold(PatchDocument(ops: _*)) {
+      transform => transform(PatchDocument(ops: _*))
+    }
+    PatchInstance.applyPatch(target, patch)
+
     val updated = SafeRequest(operations, options) ProtectAsync { maybeState =>
       for {
         patched <- Patch(target)
