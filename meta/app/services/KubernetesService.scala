@@ -297,7 +297,10 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     val targetNamespace = namespaces match {
       case Seq() => pc.environmentId.toString
       case Seq(single) => single
-      case _ => throw new BadRequestException(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+      case _ => {
+        log.error(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+        throw new BadRequestException(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+      }
     }
 
     rc.getOption[Namespace](targetNamespace) flatMap {
