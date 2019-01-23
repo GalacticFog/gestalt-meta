@@ -175,16 +175,16 @@ class PatchController @Inject()(
   private[controllers] def applyPatch( target: GestaltResourceInstance )
                                      ( implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue] ): Future[Result] = {
 
-    val user = request.identity
-    val action = actionInfo(target.typeId).prefix + ".update"
-    val options = standardRequestOptions(user, target)
-    val operations = standardRequestOperations(action)
-
     val ops = JsonUtil.safeParse[Seq[PatchOp]](request.body)
     val patch = transforms.get(target.typeId).fold(PatchDocument(ops: _*)) {
       transform => transform(PatchDocument(ops: _*))
     }
     PatchInstance.applyPatch(target, patch)
+
+    val user = request.identity
+    val action = actionInfo(target.typeId).prefix + ".update"
+    val options = standardRequestOptions(user, target)
+    val operations = standardRequestOperations(action)
 
     val updated = SafeRequest(operations, options) ProtectAsync { maybeState =>
       for {
