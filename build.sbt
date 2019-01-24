@@ -10,7 +10,6 @@ import sbtassembly.MergeStrategy
 // )
 
 resolvers in ThisBuild ++= Seq(
-  "Local Maven Repository" at "file://"+Path.userHome.absolutePath+"/.m2/repository",
   "jwtig" at  "https://jcenter.bintray.com/",
   "gestalt-snapshots" at "https://galacticfog.jfrog.io/galacticfog/libs-snapshots-local",
   "gestalt-releases" at  "https://galacticfog.jfrog.io/galacticfog/libs-releases-local",
