@@ -257,19 +257,25 @@ class ResourceController @Inject()(
       payload: JsValue)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue])
         : Future[GestaltResourceInstance] = {
       
+    // Inject parent link on all resources.
+    val parentLink: JsValue = Json.toJson(toLink(parent, Some(META_URL)))
+    val newPayload = JsonUtil.upsertProperty(payload.as[JsObject], "parent", parentLink).getOrElse {
+      throw new RuntimeException(s"Failed injecting parent link into resource. This is a bug.")
+    }
+    
     /*
      * Determine if the resource we're creating is backed by a provider.
      */    
     getBackingProviderType(targetTypeId) match {
       case None => {
         log.debug("**Request to create non-provider-backed resource")
-        newDefaultResource(org.id, targetTypeId, parent.id, payload)(request)
+        newDefaultResource(org.id, targetTypeId, parent.id, newPayload)(request)
       }
       case Some(backingProviderType) => {
         genericResourceMethods.createProviderBackedResource(
           org = org,
           identity = request.identity,
-          body = payload,
+          body = newPayload,
           parent = parent,
           resourceType = targetTypeId,
           providerType = backingProviderType,
@@ -718,7 +724,8 @@ class ResourceController @Inject()(
     val rp = new ResourcePath(fqon, path)
     log.debug(rp.info.toString)
     
-    if (rp.isList) { // create semantics
+    if (rp.isList) {
+      // create semantics
       val x = for {
         org         <- findOrgOrFail(fqon)
         parent      <- Future.fromTry(findResourceParent(rp, fqon))
@@ -732,7 +739,8 @@ class ResourceController @Inject()(
       x.map (r => Created(Output.renderInstance(r, Some(META_URL))))
         .recover { case e => HandleExceptions(e) }  
       
-    } else { // perform action
+    } else { 
+      // perform action
       for {
         org      <- findOrgOrFail(fqon)
         action   <- fTry( requireActionParam(request) )

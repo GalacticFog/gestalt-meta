@@ -37,29 +37,52 @@ trait PolicyMethods {
    * Set /resource_type, /properties/parent, and /properties/defined_at
    * values on Rule JSON.
    */
-  def transformRule(json3: JsValue, data: Map[String, String]): Try[JsValue] = Try {
+  def transformRule(input: JsValue, data: Map[String, String]): Try[JsValue] = {
     
-    val parentId = data.get("parent").getOrElse {
-      throw new RuntimeException("Could not find `parent` value in data-map. This is a bug")
+//    val parentId = data.get("parent").getOrElse {
+//      throw new RuntimeException("Could not find `parent` value in data-map. This is a bug")
+//    }
+//    
+//    val typeId = data.get("typeId").getOrElse {
+//      throw new RuntimeException("Could not find `typeId` value in data-map. This is a bug.")
+//    }
+//    
+//    // set `/resource_type`
+//    val json = input.as[JsObject] ++ Json.obj("resource_type" -> JsString(typeId))
+//    
+//    // set `/properties/parent` 
+//    val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parentId))
+    
+    val maybeData = Try {
+      val pid:UUID = data.get("parent").map(UUID.fromString(_)).getOrElse {
+        throw new RuntimeException("Could not find `parent` value in data-map. This is a bug")
+      }
+      val tid:UUID = data.get("typeId").map(UUID.fromString(_)).getOrElse {
+        throw new RuntimeException("Could not find `typeId` value in data-map. This is a bug.")
+      }
+      (pid, tid)
     }
     
-    val typeId = data.get("typeId").getOrElse {
-      throw new RuntimeException("Could not find `typeId` value in data-map. This is a bug.")
-    }
+    for {
+      (parentId, typeId) <- maybeData
+      j1 <- Try(input.as[JsObject] ++ Json.obj("resource_type" -> JsString(typeId)))
+      j2 <- Try(JsonUtil.withJsonPropValue(j1, "parent", JsString(parentId)))
+      
+      parent = ResourceFactory.findById(ResourceIds.Policy, UUID.fromString(parentId)).getOrElse {
+        throw new RuntimeException("Could not find parent policy.")
+      }
+      grandParent = Json.parse(parent.properties.get("parent"))
+      result <- Try(JsonUtil.withJsonPropValue(j2, "defined_at", grandParent))
+    } yield result
     
-    // set `/resource_type`
-    val json = json3.as[JsObject] ++ Json.obj("resource_type" -> JsString(typeId))
     
-    // set `/properties/parent` 
-    val json2 = JsonUtil.withJsonPropValue(json, "parent", JsString(parentId))
-    
-    // set `/properties/defined_at
-    val definedAt = ResourceFactory.findById(ResourceIds.Policy, UUID.fromString(parentId)).fold {
-      throw new RuntimeException("Could not find parent policy.")
-    }{ p =>
-      Json.parse(p.properties.get("parent"))
-    }
-    JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
+//    // set `/properties/defined_at
+//    val definedAt = ResourceFactory.findById(ResourceIds.Policy, UUID.fromString(parentId)).fold {
+//      throw new RuntimeException("Could not find parent policy.")
+//    }{ p =>
+//      Json.parse(p.properties.get("parent"))
+//    }
+//    JsonUtil.withJsonPropValue(json2, "defined_at", definedAt)
   }
 
   /* ************************************************************************************
