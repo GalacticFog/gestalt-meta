@@ -14,7 +14,8 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.data.ResourceState
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.meta.providers.faas._
 import cats.syntax.either._
 import javax.inject.Inject
@@ -32,31 +33,31 @@ class LambdaMethods @Inject()(
 
   import LambdaSpec.Implicits._
 
-  private def findLambdaProviderById(id: UUID): Either[String,GestaltResourceInstance] = {
+  private def findLambdaProviderById(id: UUID): EitherError[GestaltResourceInstance] = {
     log.debug("findLambdaProviderById")
     val opt = ResourceFactory.findById(ResourceIds.LambdaProvider, id) orElse
      ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, id)
-    Either.fromOption(opt, s"No LambdaProvider or AWSLambdaProvider found with id `$id`")
+    Either.fromOption(opt, Error.NotFound(s"No LambdaProvider or AWSLambdaProvider found with id `$id`"))
   }
 
-  private def getLambdaProvider(res: GestaltResourceInstance): Either[String,GestaltResourceInstance] = {
+  private def getLambdaProvider(res: GestaltResourceInstance): EitherError[GestaltResourceInstance] = {
     log.debug("getLambdaProvider")
     for {
-      rawProperties <- Either.fromOption(res.properties, s"Properties not set on resource ${res.id}");
-      rawProvider <- Either.fromOption(rawProperties.get("provider"), s"Provider id not set on resource ${res.id}");
+      rawProperties <- Either.fromOption(res.properties, Error.Default(s"Properties not set on resource ${res.id}"));
+      rawProvider <- Either.fromOption(rawProperties.get("provider"), Error.Default(s"Provider id not set on resource ${res.id}"));
       inlineProvider <- eitherFromJsResult(Json.parse(rawProvider).validate[InlineLambdaProvider]);
       provider <- findLambdaProviderById(inlineProvider.id)
     } yield provider
   }
 
-  private def getProviderImpl[A](provider: GestaltResourceInstance): Either[String,FaasProviderImplementation[Future]] = {
+  private def getProviderImpl[A](provider: GestaltResourceInstance): EitherError[FaasProviderImplementation[Future]] = {
     log.debug("getProviderImpl")
     if(provider.typeId == migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID) {
       Right(awsLambdaProvider)
     }else if(provider.typeId == ResourceIds.LambdaProvider) {
       Right(laserProviderImpl)
     }else {
-      Left(s"No faas implementation exists for provider `${provider.id}` with typeId `${provider.typeId}`")
+      Left(Error.Default(s"No faas implementation exists for provider `${provider.id}` with typeId `${provider.typeId}`"))
     }
   }
 
@@ -65,38 +66,37 @@ class LambdaMethods @Inject()(
      * Get lambda from stream to get provider.
     */
 
-    val eitherF: Either[String,Future[JsValue]] = for(
+    val eitherF: EitherError[Future[JsValue]] = for(
       rawProperties <- Either.fromOption(streamSpec.properties,
-       s"Could not get lambda streams for resource ${streamSpec.id} with unset properties");
+       Error.Default(s"Could not get lambda streams for resource ${streamSpec.id} with unset properties"));
       rawJsonProperties = unstringmap(Some(rawProperties)).get;
       streamSpecProperties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[StreamSpecProperties]);
       lambdaId = streamSpecProperties.processor.lambdaId;
       _ = log.debug(s"Found Lambda ID : ${lambdaId}");
       lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, lambdaId),
-       s"Lambda with ID '${lambdaId}' not found.");
+       Error.NotFound(s"Lambda with ID '${lambdaId}' not found."));
       lambdaProvider <- getLambdaProvider(lambdaResource)
     ) yield laserProviderImpl.getStreamDefinitions(lambdaProvider, streamSpec)
 
-    eitherF valueOr { errorMessage =>
-      Future.failed(new RuntimeException(errorMessage))
-    }
+    eitherF.liftTo[Future] flatMap identity
   }
   
   def deleteLambdaHandler(r: GestaltResourceInstance): Future[Unit] = {
-    (for(
+    val eitherF: EitherError[Future[Unit]] = (for(
       provider <- getLambdaProvider(r);
       impl <- getProviderImpl(provider)
     ) yield {
-      impl.deleteLambda(provider, r) recoverWith { case throwable =>
+      impl.deleteLambda(provider, r) recoverWith { case throwable: Throwable =>
         throwable.printStackTrace()
         log.error(s"Failed to delete backend lambda: ${throwable.getMessage()}")
         Future.successful(())
       }
-    }) valueOr { errorMessage =>
+    }) recoverWith { case e: Error.Error =>
       // Future.failed(new RuntimeException(errorMessage))
-      log.error(s"Failed to delete backend lambda: $errorMessage")
-      Future.successful(())
+      log.error(s"Failed to delete backend lambda: ${e.message}")
+      Right(Future.successful(()))
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   def patchLambdaHandler( r: GestaltResourceInstance,
@@ -111,9 +111,7 @@ class LambdaMethods @Inject()(
         ResourceFactory.update(updatedLambdaResource, user.account.id)
         updatedLambdaResource
       }
-    }) valueOr { errorMessage =>
-      Future.failed(new RuntimeException(errorMessage))
-    }
+    }).liftTo[Future] flatMap identity
   }
   
   def createLambda(
@@ -124,13 +122,13 @@ class LambdaMethods @Inject()(
 
     log.debug("createLambda")
 
-    (for(
+    val eitherF: EitherError[Future[GestaltResourceInstance]] = (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
       typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
       parentLink = Json.toJson(toLink(parent, None));
       lambdaId = gri.id.getOrElse(UUID.randomUUID);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
-      rawProperties <- Either.fromOption(gri.properties, "Properties not set");
+      rawProperties <- Either.fromOption(gri.properties, Error.Default("Properties not set"));
       payload = gri.copy(
         id=Some(lambdaId),
         owner=gri.owner.orElse(Some(ownerLink)),
@@ -162,10 +160,11 @@ class LambdaMethods @Inject()(
           Future.failed(throwable)
         }
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to create Lambda in Meta: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to create Lambda in Meta: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   def importLambda(
@@ -176,13 +175,13 @@ class LambdaMethods @Inject()(
 
     log.debug("importLambda")
 
-    (for(
+    val eitherF: EitherError[Future[GestaltResourceInstance]] = (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
       typeId = gri.resource_type.getOrElse(ResourceIds.Lambda);
       parentLink = Json.toJson(toLink(parent, None));
       lambdaId = gri.id.getOrElse(UUID.randomUUID);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
-      rawProperties <- Either.fromOption(gri.properties, "Properties not set");
+      rawProperties <- Either.fromOption(gri.properties, Error.Default("Properties not set"));
       payload = gri.copy(
         id=Some(lambdaId),
         owner=gri.owner.orElse(Some(ownerLink)),
@@ -214,10 +213,11 @@ class LambdaMethods @Inject()(
           Future.failed(throwable)
         }
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to create Lambda in Meta: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to create Lambda in Meta: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   /**
@@ -233,14 +233,12 @@ class LambdaMethods @Inject()(
   def findMessageProvider(lambdaProvider: GestaltResourceInstance): Option[GestaltResourceInstance] = {
     (for(
       rawProperties <- Either.fromOption(lambdaProvider.properties,
-       s"Could not get message provider for resource ${lambdaProvider.id} with unset properties");
+       Error.Default(s"Could not get message provider for resource ${lambdaProvider.id} with unset properties"));
       rawJsonProperties = rawProperties map { case(k, v) => (k, Json.parse(v)) };
       properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[LaserLambdaProperties]);
       linkedProviders = properties.linked_providers.getOrElse(Seq());
       messageProvider <- Either.fromOption(linkedProviders.find(_.name == "RABBIT"),
-       s"No MessageProvider configured for LambdaProvider '${lambdaProvider.id}'. Cannot invoke action.")
-    ) yield ResourceFactory.findById(messageProvider.id)) valueOr { errorMessage =>
-      throw new RuntimeException(errorMessage)
-    }
+       Error.Default(s"No MessageProvider configured for LambdaProvider '${lambdaProvider.id}'. Cannot invoke action."))
+    ) yield ResourceFactory.findById(messageProvider.id)).liftTo[Try].get
   }
 }

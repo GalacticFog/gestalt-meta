@@ -15,7 +15,7 @@ import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 // import com.galacticfog.gestalt.meta.api.errors.{ConflictException,BadRequestException}
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.EitherWithErrors._
 // import com.galacticfog.gestalt.util.FutureFromTryST._
 import cats.syntax.either._
 

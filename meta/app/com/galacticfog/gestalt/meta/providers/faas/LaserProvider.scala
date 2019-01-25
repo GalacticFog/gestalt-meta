@@ -17,7 +17,8 @@ import com.galacticfog.gestalt.meta.api.errors.ApiError
 import com.galacticfog.gestalt.meta.api.output.OrgCache
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.patch.PatchDocument
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import controllers.util.{ProviderMethods,unstringmap}
 
@@ -88,32 +89,30 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
 
     log.debug("toLaserLambda(...)")
 
-    type EitherString[A] = Either[String,A]
-
-    val eitherL: Either[String,LaserLambda] = for(
-      rawProperties <- Either.fromOption(lambda.properties, s"Cannot use lambda resource ${lambda.id} with unset properties map");
+    val eitherL: EitherError[LaserLambda] = for(
+      rawProperties <- Either.fromOption(lambda.properties, Error.Default(s"Cannot use lambda resource ${lambda.id} with unset properties map"));
       rawJsonProperties = unstringmap(Some(rawProperties)).get;
       properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[LaserLambdaProperties]);
 
       lambdaProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.LambdaProvider, properties.provider.id),
-       s"Lambda '${properties.provider.id}' provider did not exist");
-      rawLambdaProviderProperties <- Either.fromOption(lambdaProvider.properties, s"Cannot use lambda provider resource ${lambdaProvider.id} with unset properties map");
+       Error.Default(s"Lambda '${properties.provider.id}' provider did not exist"));
+      rawLambdaProviderProperties <- Either.fromOption(lambdaProvider.properties, Error.Default(s"Cannot use lambda provider resource ${lambdaProvider.id} with unset properties map"));
       rawJsonLambdaProviderProperties = unstringmap(Some(rawLambdaProviderProperties)).get;
       lambdaProviderProperties <- eitherFromJsResult(JsObject(rawJsonLambdaProviderProperties).validate[LambdaProviderProperties]);
 
-      fqon <- Either.fromOption(OrgCache.getFqon(lambda.orgId), s"Could not determine FQON for lambda ${lambda.id}.");
+      fqon <- Either.fromOption(OrgCache.getFqon(lambda.orgId), Error.Default(s"Could not determine FQON for lambda ${lambda.id}."));
       lambdaCaasProviderId <- Either.fromOption(lambdaProviderProperties.config.flatMap(_.env.public.get("META_COMPUTE_PROVIDER_ID")).map(UUID.fromString(_)),
-       s"Lambda '${lambda.id}' provider '${lambdaProvider.id}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'");
+       Error.Default(s"Lambda '${lambda.id}' provider '${lambdaProvider.id}' did not have '.properties.config.env.public.META_COMPUTE_PROVIDER_ID'"));
       lambdaEnvironment <- Either.fromOption(ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=lambda.id),
-       s"Could not locate parent Environment for Lambda '${lambda.id}'");
+       Error.Default(s"Could not locate parent Environment for Lambda '${lambda.id}'"));
 
-      secrets <- properties.secrets.getOrElse(Seq()).toVector.traverse[EitherString,GestaltResourceInstance] { secretMount => 
+      secrets <- properties.secrets.getOrElse(Seq()).toVector.traverse[EitherError,GestaltResourceInstance] { secretMount => 
         Either.fromOption(ResourceFactory.findById(ResourceIds.Secret, secretMount.secret_id),
-          s"Secret '${secretMount.secret_id}' does not exist")
+          Error.Default(s"Secret '${secretMount.secret_id}' does not exist"))
       };
-      secretProperties <- secrets.traverse[EitherString,SecretProperties] { secret =>
+      secretProperties <- secrets.traverse[EitherError,SecretProperties] { secret =>
         for(
-          rawProperties <- Either.fromOption(secret.properties, s"Cannot use secret resource ${secret.id} with unset properties");
+          rawProperties <- Either.fromOption(secret.properties, Error.Default(s"Cannot use secret resource ${secret.id} with unset properties"));
           rawJsonProperties = unstringmap(Some(rawProperties)).get;
           properties <- eitherFromJsResult(JsObject(rawJsonProperties).validate[SecretProperties])
         ) yield properties
@@ -121,18 +120,18 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
       _ <- secretProperties.map(_.provider.id).distinct match {
         case Vector() => Right(())
         case Vector(providerId) if providerId == lambdaCaasProviderId => Right(())
-        case Vector(_) => Left(s"Lambda '${lambda.id}' provider '${properties.provider.id}' did not have same CaaS provider as mounted Secrets")
-        case _ => Left("Secrets must have the same CaaS provider")
+        case Vector(_) => Left(Error.Default(s"Lambda '${lambda.id}' provider '${properties.provider.id}' did not have same CaaS provider as mounted Secrets"))
+        case _ => Left(Error.Default("Secrets must have the same CaaS provider"))
       };
-      secretEnvironments <- secrets.traverse[EitherString,GestaltResourceInstance] { secret =>
+      secretEnvironments <- secrets.traverse[EitherError,GestaltResourceInstance] { secret =>
         Either.fromOption(ResourceFactory.findParent(parentType=ResourceIds.Environment, childId=secret.id),
-         s"Could not locate parent Environment for Secret '${secret.id}'")
+         Error.Default(s"Could not locate parent Environment for Secret '${secret.id}'"))
       };
       _ <- secretEnvironments.map(_.id).distinct match {
         case Vector() => Right(())
         case Vector(environmentId) if environmentId == lambdaEnvironment.id => Right(())
-        case Vector(_) => Left(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets")
-        case _ => Left("All mounted Secrets must belong to the same Environment")
+        case Vector(_) => Left(Error.Default(s"Lambda '${lambda.id}' must belong to the same Environment as all mounted Secrets"))
+        case _ => Left(Error.Default("All mounted Secrets must belong to the same Environment"))
       }
     ) yield {
       val executorEnvironmentOptId = if(properties.pre_warm.exists(_ > 0)) {
@@ -172,10 +171,7 @@ class LaserProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) ex
       )
     }
 
-    eitherL match {
-      case Right(value) => Future.successful(value)
-      case Left(errorMessage) => Future.failed(new RuntimeException(errorMessage))
-    }
+    eitherL.liftTo[Future]
   }
 
   def getStreamDefinitions(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[JsValue] = {

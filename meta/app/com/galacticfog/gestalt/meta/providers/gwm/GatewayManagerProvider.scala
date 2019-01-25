@@ -14,7 +14,8 @@ import com.galacticfog.gestalt.meta.auth.Entitlement
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.ResourceSerde
 import controllers.util.ProviderMethods
 
@@ -68,49 +69,49 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   implicit val laserEndpointFormat: Format[LaserEndpoint] = Json.format[LaserEndpoint]
 
   def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
-    def byHost(endpointProperties: ApiEndpointProperties): Either[String,String] = {
+    def byHost(endpointProperties: ApiEndpointProperties): EitherError[String] = {
       val res = for {
         api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
-         s"Api parent for ${resource.id} not found")
+         Error.NotFound(s"Api parent for ${resource.id} not found"))
         maybePath = endpointProperties.resource.map { path => s"/${api.name}${path}" } getOrElse("")
-        firstHost <- Either.fromOption(endpointProperties.hosts.flatMap(_.headOption), "hosts array must not be empty")
-        location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
+        firstHost <- Either.fromOption(endpointProperties.hosts.flatMap(_.headOption), Error.Default("hosts array must not be empty"))
+        location <- Either.fromOption(endpointProperties.provider.locations.headOption, Error.Default("locations array must not be empty"))
         kongProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.KongGateway, UUID.fromString(location)),
-          s"Kong Provider with id ${location} not found")
-        kpp <- Either.fromOption(kongProvider.properties, "Aborting due to kong provider configuration: empty properties")
-        kpc <- Either.fromOption(kpp.get("config"), "Aborting due to kong provider configuration: empty config")
+          Error.NotFound(s"Kong Provider with id ${location} not found"))
+        kpp <- Either.fromOption(kongProvider.properties, Error.Default("Aborting due to kong provider configuration: empty properties"))
+        kpc <- Either.fromOption(kpp.get("config"), Error.Default("Aborting due to kong provider configuration: empty config"))
         kpcJson <- eitherFromTry(Try{Json.parse(kpc)})
         kongProto <- Either.fromOption((kpcJson \ "external_protocol").asOpt[String],
-         "Aborting due to kong provider configuration: no external_protocol")
+         Error.Default("Aborting due to kong provider configuration: no external_protocol"))
         publicUrl = s"$kongProto://$firstHost$maybePath"
       } yield publicUrl
 
-      res.left.foreach { errorMessage =>
-        log.warn(s"Failed to get public url by host: ${errorMessage}")
+      res.left.foreach { e =>
+        log.warn(s"Failed to get public url by host: ${e.message}")
       }
       res
     }
 
-    def byPath(endpointProperties: ApiEndpointProperties): Either[String,String] = {
+    def byPath(endpointProperties: ApiEndpointProperties): EitherError[String] = {
       val res = for {
         api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
-         s"Api parent for ${resource.id} not found")
-        resourcePath <- Either.fromOption(endpointProperties.resource, "resource must be present")
-        location <- Either.fromOption(endpointProperties.provider.locations.headOption, "locations array must not be empty")
+         Error.NotFound(s"Api parent for ${resource.id} not found"))
+        resourcePath <- Either.fromOption(endpointProperties.resource, Error.Default("resource must be present"))
+        location <- Either.fromOption(endpointProperties.provider.locations.headOption, Error.Default("locations array must not be empty"))
         kongProvider <- Either.fromOption(ResourceFactory.findById(ResourceIds.KongGateway, UUID.fromString(location)),
-          s"Kong Provider with id ${location} not found")
-        kpp <- Either.fromOption(kongProvider.properties, "Aborting due to kong provider configuration: empty properties")
-        kpc <- Either.fromOption(kpp.get("config"), "Aborting due to kong provider configuration: empty config")
+         Error.NotFound(s"Kong Provider with id ${location} not found"))
+        kpp <- Either.fromOption(kongProvider.properties, Error.Default("Aborting due to kong provider configuration: empty properties"))
+        kpc <- Either.fromOption(kpp.get("config"), Error.Default("Aborting due to kong provider configuration: empty config"))
         kpcJson <- eitherFromTry(Try{Json.parse(kpc)})
         kongVhost <- Either.fromOption((kpcJson \ "env" \ "public" \ "PUBLIC_URL_VHOST_0").asOpt[String],
-         "Aborting due to kong provider configuration: no public env var PUBLIC_URL_VHOST_0")
+         Error.Default("Aborting due to kong provider configuration: no public env var PUBLIC_URL_VHOST_0"))
         kongProto <- Either.fromOption((kpcJson \ "external_protocol").asOpt[String],
-         "Aborting due to kong provider configuration: no external_protocol")
+         Error.Default("Aborting due to kong provider configuration: no external_protocol"))
         publicUrl = s"${kongProto}://${kongVhost}/${api.name}${resourcePath}"
       } yield publicUrl
 
-      res.left.foreach { errorMessage =>
-        log.warn(s"Failed to get public url by path: ${errorMessage}")
+      res.left.foreach { e =>
+        log.warn(s"Failed to get public url by path: ${e.message}")
       }
       res
     }
@@ -127,7 +128,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   def createApi(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString].liftTo[Future];
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[Future];
       locationId <- Either.fromOption(apiProperties.provider.locations.headOption, "Empty locations array").liftTo[Future];
       lapi = LaserApi(Some(resource.id.toString),
         resource.name,
@@ -217,7 +218,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
   def createEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
       _ <- if(endpointProperties.hosts.getOrElse(Seq()) == Seq() && endpointProperties.resource == None) {
         Future.failed(new RuntimeException(s"Either `hosts` or `resource` field must be specified on resource ${resource.id}"))
       }else {
@@ -225,8 +226,8 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
       };
       upstreamUrl <- eitherFromTry(Try(mkUpstreamUrl(endpointProperties))).liftTo[Future];
       updatedEndpointProperties = endpointProperties.copy(upstream_url=Some(upstreamUrl));
-      parent <- Either.fromOption(endpointProperties.parent, "Parent must be set").liftTo[Future];
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future];
+      parent <- Either.fromOption(endpointProperties.parent, Error.Default("Parent must be set")).liftTo[Future];
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future];
       le = LaserEndpoint(
         id = Some(resource.id.toString),
         apiId = parent,
@@ -270,7 +271,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
 
     val client = providerMethods.configureWebClient(provider, Some(ws))
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
       upstreamUrl <- eitherFromTry(Try(mkUpstreamUrl(endpointProperties))).liftTo[Future];
       response <- client.get(s"/endpoints/${resource.id}");
       _ <- if(response.status == 200) {
@@ -298,7 +299,7 @@ class GatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMe
         upstream_url = Some(upstreamUrl),
         plugins=Some(newPlugins)
       );
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future];
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future];
       response <- client.put(s"/endpoints/${resource.id}", Some(Json.toJson(newLe)));
       _ <- if(response.status == 200) {
         log.info(s"Successfully PUT ApiEndpoint to ApiGateway provider.")
