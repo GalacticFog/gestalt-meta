@@ -14,7 +14,8 @@ import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.patch.PatchInstance
 import com.galacticfog.gestalt.meta.auth.AuthorizationMethods
 import com.galacticfog.gestalt.meta.api.output._
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.ResourceSerde
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.meta.providers.gwm._
@@ -22,7 +23,7 @@ import com.galacticfog.gestalt.meta.providers.gwm._
 class GatewayMethods @Inject() (
   ws: WSClient,
   providerMethods: ProviderMethods,
-  awsapiImpl: AWSAPIGatewayProvider,
+  awsapiImpl: AWSGatewayManagerProvider,
   gwmImpl: GatewayManagerProvider
  ) extends AuthorizationMethods {
 
@@ -31,13 +32,13 @@ class GatewayMethods @Inject() (
 
   private[this] val log = Logger(this.getClass)
 
-  def getGwmProviderAndImpl(providerId: UUID): Either[String,(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
+  def getGwmProviderAndImpl(providerId: UUID): EitherError[(GestaltResourceInstance,GwmProviderImplementation[Future])] = {
     val gmProvider = ResourceFactory.findById(ResourceIds.GatewayManager, providerId)
     val awsapiProvider = ResourceFactory.findById(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, providerId)
     (gmProvider, awsapiProvider) match {
       case (Some(provider), None) => Right((provider, gwmImpl))
       case (None, Some(provider)) => Right((provider, awsapiImpl))
-      case (None, None) => Left(s"No provider found for ${providerId}")
+      case (None, None) => Left(Error.NotFound(s"No provider found for ${providerId}"))
       case _ => ???
     }
   }
@@ -53,11 +54,11 @@ class GatewayMethods @Inject() (
 
   def createApi(org: UUID, parentId: UUID, requestBody: JsValue,
    caller: AccountLike): Future[GestaltResourceInstance] = {
-    (for(
+    val eitherF: EitherError[Future[GestaltResourceInstance]] = (for(
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
       typeId = gri.resource_type.getOrElse(ResourceIds.Api);
       environment <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, parentId),
-       s"Environment with id ${parentId} not found");
+       Error.NotFound(s"Environment with id ${parentId} not found"));
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
       apiId = gri.id.getOrElse(UUID.randomUUID);
       payload = gri.copy(
@@ -67,7 +68,7 @@ class GatewayMethods @Inject() (
         resource_type=Some(typeId)
       );
       resource = inputToInstance(org, payload);
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString];
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parentId)));
@@ -81,15 +82,16 @@ class GatewayMethods @Inject() (
         ResourceFactory.update(created.copy(state = failstate), caller.id)
         Future.failed(e)
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to create Api: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to create Api: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity     // == .flatten
   }
 
   def deleteApiHandler(resource: GestaltResourceInstance): Future[Unit] = {
-    (for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource).liftTo[EitherString];
+    val eitherF: EitherError[Future[Unit]] = (for(
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](resource);
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
@@ -97,22 +99,22 @@ class GatewayMethods @Inject() (
         log.error(s"Error deleting API from backend: " + e.getMessage)
         Future.failed(e)
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to delete Api: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to delete Api: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   def createEndpoint(org: UUID, api: GestaltResourceInstance, requestBody: JsValue,
    caller: AccountLike): Future[GestaltResourceInstance] = {
-    (for(
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
+    val eitherF: EitherError[Future[GestaltResourceInstance]] = (for(
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
       gri <- eitherFromJsResult(requestBody.validate[GestaltResourceInput]);
       typeId = gri.resource_type.getOrElse(ResourceIds.ApiEndpoint);
       ownerLink = toOwnerLink(ResourceIds.User, caller.id, name=Some(caller.name), orgId=caller.orgId);
       endpointId = gri.id.getOrElse(UUID.randomUUID);
-      rawProperties <- Either.fromOption(gri.properties, s"Properties not set on resource ${gri.id}");
-      _ = log.debug(s"rawProperties: $rawProperties");
+      rawProperties <- Either.fromOption(gri.properties, Error.Default(s"Properties not set on resource ${gri.id}"));
       payload = gri.copy(
         id=Some(endpointId),
         owner=gri.owner.orElse(Some(ownerLink)),
@@ -125,7 +127,7 @@ class GatewayMethods @Inject() (
         ))
       );
       resource = inputToInstance(org, payload);
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi;
       created <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(api.id)));
@@ -142,18 +144,19 @@ class GatewayMethods @Inject() (
         ResourceFactory.update(created.copy(state = failstate), caller.id).get
         Future.failed(e)
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to create Endpoint: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to create Endpoint: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   def deleteEndpointHandler(resource: GestaltResourceInstance): Future[Unit] = {
-    (for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
+    val eitherF: EitherError[Future[Unit]] = (for(
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
-       s"Could not find API parent of ApiEndpoint ${resource.id}");
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
+       Error.NotFound(s"Could not find API parent of ApiEndpoint ${resource.id}"));
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
@@ -163,20 +166,20 @@ class GatewayMethods @Inject() (
         log.error(s"Error deleting Endpoint from backend: " + e.getMessage)
         Future.successful(())
       }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to delete Endpoint: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to delete Endpoint: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 
   def updateEndpoint(originalResource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {
-
-    (for(
+    val eitherF: EitherError[Future[GestaltResourceInstance]] = (for(
       resource <- eitherFromTry(PatchInstance.applyPatch(originalResource, patch));
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
       api <- Either.fromOption(ResourceFactory.findParent(ResourceIds.Api, resource.id),
-       s"Could not find API parent of ApiEndpoint ${resource.id}");
-      apiProperties <- ResourceSerde.deserialize[ApiProperties](api).liftTo[EitherString];
+       Error.NotFound(s"Could not find API parent of ApiEndpoint ${resource.id}"));
+      apiProperties <- ResourceSerde.deserialize[ApiProperties](api);
       pi <- getGwmProviderAndImpl(apiProperties.provider.id);
       (provider, impl) = pi
     ) yield {
@@ -184,9 +187,10 @@ class GatewayMethods @Inject() (
         // no access to caller id – this works fine as is though
         // ResourceFactory.update(updatedResource, user.account.id).get
       // }
-    }) valueOr { errorMessage =>
-      log.error(s"Failed to update Endpoint: $errorMessage")
-      Future.failed(new RuntimeException(errorMessage))
+    }) recoverWith { case e: Error.Error =>
+      log.error(s"Failed to update Endpoint: ${e.message}")
+      Left(e)
     }
+    eitherF.liftTo[Future] flatMap identity
   }
 }

@@ -20,7 +20,7 @@ import com.galacticfog.gestalt.meta.test._
 import controllers.util.{GestaltSecurityMocking,ProviderMethods}
 import controllers.SecurityResources
 
-class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll
+class AWSGatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityMocking with ResourceScope with BeforeAll
  with DbShutdown with JsonMatchers {
 
   object Ents extends AuthorizationMethods with SecurityResources
@@ -134,7 +134,7 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
           Ok("\"rest api id\"")
         }
       }
-      val gwmProvider = new AWSAPIGatewayProvider(ws, providerMethods)
+      val gwmProvider = new AWSGatewayManagerProvider(ws, providerMethods)
 
       val resource = Await.result(gwmProvider.createEndpoint(testGatewayProvider, testEndpoint), 10 .seconds)
 
@@ -157,7 +157,7 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
           Ok("")
         }
       }
-      val gwmProvider = new AWSAPIGatewayProvider(ws, providerMethods)
+      val gwmProvider = new AWSGatewayManagerProvider(ws, providerMethods)
 
       val patch = PatchDocument(
         PatchOp.Replace("/properties/resource", "/new/path")
@@ -172,7 +172,7 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
           Ok("")
         }
       }
-      val gwmProvider = new AWSAPIGatewayProvider(ws, providerMethods)
+      val gwmProvider = new AWSGatewayManagerProvider(ws, providerMethods)
 
       val updatedTestEndpoint = testEndpoint.copy(
         properties = Some(testEndpoint.properties.get ++ Map[String,String](
@@ -183,7 +183,7 @@ class AWSAPIGatewayProviderSpec extends PlaySpecification with GestaltSecurityMo
       val _ = Await.result(gwmProvider.deleteEndpoint(testGatewayProvider, updatedTestEndpoint), 10 .seconds)
     }
     "getPublicUrl" in new TestApplication {
-      val gwmProvider = new AWSAPIGatewayProvider(null, null)
+      val gwmProvider = new AWSGatewayManagerProvider(null, null)
 
       gwmProvider.getPublicUrl(testEndpoint) must beEqualTo(Some("https://rest api id.execute-api.us-east-2.amazonaws.com/default/path"))
     }

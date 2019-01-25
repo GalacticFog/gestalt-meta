@@ -192,7 +192,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
 
   "GatewayMethods" should {
     "create api" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       var r: GestaltResourceInstance = null
@@ -208,7 +208,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       trimGri(r) must beEqualTo(testApi)
     }
     "delete api" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       mockGwmImpl.deleteApi(any, any) answers { a: Any =>
@@ -220,7 +220,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       val _ = Await.result(gatewayMethods.deleteApiHandler(testApi), 10 .seconds)
     }
     "create endpoint" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       var r: GestaltResourceInstance = null
@@ -236,7 +236,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       trimGri(r) must beEqualTo(testEndpoint)
     }
     "create endpoint with plugins" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       var r: GestaltResourceInstance = null
@@ -261,7 +261,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       trimGri(r) must beEqualTo(newTestEndpoint)
     }
     "update endpoint" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       var r: GestaltResourceInstance = null
@@ -287,7 +287,7 @@ class GatewayMethodsSpec extends PlaySpecification with GestaltSecurityMocking w
       ))
     }
     "delete endpoint" in new TestApplication {
-      val mockAwsapiImpl = mock[AWSAPIGatewayProvider]
+      val mockAwsapiImpl = mock[AWSGatewayManagerProvider]
       val mockGwmImpl = mock[GatewayManagerProvider]
 
       mockGwmImpl.deleteEndpoint(any, any) answers { a: Any =>

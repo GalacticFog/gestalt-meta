@@ -13,6 +13,7 @@ import play.api.mvc.Results._
 import org.specs2.specification.{BeforeAll, Scope}
 import org.specs2.matcher.JsonMatchers
 import mockws.MockWS
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
@@ -194,7 +195,7 @@ class AWSLambdaProviderSpec extends PlaySpecification with GestaltSecurityMockin
       )
 
       val res = Try(Await.result(awslProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      res must beFailedTry.withThrowable[RuntimeException]("Failed to parse payload: /handler: error.path.missing")
+      res must beFailedTry.withThrowable[BadRequestException]("Failed to parse payload: /handler: error.path.missing")
     }
   }
   "importLambda" should {
