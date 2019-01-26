@@ -1460,7 +1460,8 @@ class ResourceController @Inject()(
     }
   }
   
-  import migrations.V28._
+  import migrations.V30._
+  
   def findUserProfile(user: UUID) = Audited() { implicit request =>
     handleExpandResourceResult(
       ResourceFactory.findChildrenOfType(USERPROFILE_TYPE_ID, user),
