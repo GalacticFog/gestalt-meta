@@ -87,5 +87,5 @@ class V24() extends MetaMigration with AuthorizationMethods {
 
 object V24 {
   val AWS_API_GATEWAY_PROVIDER_TYPE_ID = UUID.fromString("4262ea0f-6f04-4ea9-b4b8-5ad2d75f8478")
-  val AWS_API_GATEWAY_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::AWSAPIGateway"
+  val AWS_API_GATEWAY_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::GatewayManager::AWS"
 }

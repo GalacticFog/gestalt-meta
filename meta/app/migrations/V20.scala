@@ -78,5 +78,5 @@ class V20() extends MetaMigration with AuthorizationMethods {
 
 object V20 {
   val AWS_LAMBDA_PROVIDER_TYPE_ID = UUID.fromString("53261b96-2ab4-49d2-bada-0d4b55661b5c")
-  val AWS_LAMBDA_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::AWSLambda"
+  val AWS_LAMBDA_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::Lambda::AWS"
 }

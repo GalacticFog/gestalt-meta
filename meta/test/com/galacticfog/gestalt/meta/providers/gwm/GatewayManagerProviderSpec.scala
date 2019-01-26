@@ -13,6 +13,7 @@ import play.api.mvc._
 import org.specs2.specification.{BeforeAll, Scope}
 import org.specs2.matcher.JsonMatchers
 import mockws.MockWS
+import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.security.api.GestaltSecurityConfig
 import com.galacticfog.gestalt.meta.api.ContainerSpec
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
@@ -503,7 +504,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       ))
 
       val t = Try(Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException]("port mapping with the specified name was not exposed or did not contain service address")
+      t must beFailedTry.withThrowable[BadRequestException]("port mapping with the specified name was not exposed or did not contain service address")
     }
 
     "BadRequest for container-bound endpoints with missing port mapping" in new TestApplication {
@@ -524,7 +525,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       ))
 
       val t = Try(Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException]("no port mapping with the specified name on the specified container")
+      t must beFailedTry.withThrowable[BadRequestException]("no port mapping with the specified name on the specified container")
     }
 
     "BadRequest for missing lambda on lambda-bound endpoints" in new TestApplication {
@@ -545,7 +546,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       ))
 
       val t = Try(Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException]("""no lambda with id matching ApiEndpoint "implementation_id"""")
+      t must beFailedTry.withThrowable[BadRequestException]("""no lambda with id matching ApiEndpoint "implementation_id"""")
     }
 
     "BadRequest for missing container on container-bound endpoints" in new TestApplication {
@@ -566,7 +567,7 @@ class GatewayManagerProviderSpec extends PlaySpecification with GestaltSecurityM
       ))
 
       val t = Try(Await.result(gwmProvider.createEndpoint(testGatewayProvider, newTestEndpoint), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException]("""no container with id matching ApiEndpoint "implementation_id"""")
+      t must beFailedTry.withThrowable[BadRequestException]("""no container with id matching ApiEndpoint "implementation_id"""")
     }
 
     "update endpoint" in new TestApplication {

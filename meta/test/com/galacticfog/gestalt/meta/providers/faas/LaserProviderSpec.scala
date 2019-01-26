@@ -13,6 +13,7 @@ import play.api.mvc.Results._
 import org.specs2.specification.{BeforeAll, Scope}
 import org.specs2.matcher.JsonMatchers
 import mockws.MockWS
+import com.galacticfog.gestalt.meta.api.errors.GenericApiException
 import com.galacticfog.gestalt.meta.test.{DbShutdown, ResourceScope}
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{SecretDirMount, SecretEnvMount, SecretFileMount}
@@ -270,7 +271,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
         ))
       )
       val t = Try(Await.result(laserProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException](s"Secret '${secretUuid}' does not exist")
+      t must beFailedTry.withThrowable[GenericApiException](s"Secret '${secretUuid}' does not exist")
     }
 
     "fail if lambda provider is not conformant with secrets provider" in new FakeLambdaScope {
@@ -293,7 +294,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
         ))
       )
       val t = Try(Await.result(laserProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException](s"Lambda '${testLambda.id}' provider '${testLambdaProvider.id}' did not have same CaaS provider as mounted Secrets")
+      t must beFailedTry.withThrowable[GenericApiException](s"Lambda '${testLambda.id}' provider '${testLambdaProvider.id}' did not have same CaaS provider as mounted Secrets")
     }
 
     "fail if secrets aren't mutual siblings" in new FakeLambdaScope {
@@ -332,7 +333,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
       )
       
       val t = Try(Await.result(laserProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException]("All mounted Secrets must belong to the same Environment")
+      t must beFailedTry.withThrowable[GenericApiException]("All mounted Secrets must belong to the same Environment")
     }
 
     "fail if secrets aren't siblings with lambda" in new FakeLambdaScope {
@@ -370,7 +371,7 @@ class LaserProviderSpec extends PlaySpecification with GestaltSecurityMocking wi
       )
       
       val t = Try(Await.result(laserProvider.createLambda(testLambdaProvider, newTestLambda), 10 .seconds))
-      t must beFailedTry.withThrowable[RuntimeException](s"Lambda '${testLambda.id}' must belong to the same Environment as all mounted Secrets")
+      t must beFailedTry.withThrowable[GenericApiException](s"Lambda '${testLambda.id}' must belong to the same Environment as all mounted Secrets")
     }
 
     "not specify computePathOverride in the absence of secrets" in new FakeLambdaScope {

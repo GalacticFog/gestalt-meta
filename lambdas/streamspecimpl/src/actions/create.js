@@ -15,6 +15,8 @@ module.exports = {
     const description = await makeLaserDescriptionMessage(event, client)
 
     console.log("...ABOUT TO CREATE DESCRIPTION IN LASER...")
+    console.log("POSTING =>")
+    console.log(util.pretty(description))
     /*
     * Create Description in Laser
     */ 
@@ -43,9 +45,6 @@ async function makeLaserDescriptionMessage(event, client) {
   // This gets the actual DataFeed resources named in the configs from Meta
   const inputFeed = await metaGetDataFeed(configs.input.feedID, client)
   const outputFeed = await metaGetDataFeed(configs.output.feedID, client)
-
-  console.log('INPUT-FEED:\n' + util.pretty(inputFeed))
-  console.log('OUTPUT-FEED:\n' + util.pretty(outputFeed))
 
   // Merge data from the meta feeds and configurations into the Laser format.
   const laserInputStream = toLaserInputStream(inputFeed, configs.input)
@@ -77,14 +76,16 @@ async function makeLaserDescriptionMessage(event, client) {
  */
 function toLaserInputStream(feed, config) {
   console.log('Entered toLaserInputStream()...')
-  return Object.assign(
+  const inputFeed = Object.assign(
     {name: config.name},
     {type: feed.properties.kind},
     {broker: feed.properties.data.endpoint},
     {topic: feed.properties.data.topic},
     {group: feed.properties.data.group},
-    {credentials: feed.properties.data.credentials},
+    {credentials: getFeedCredentials(feed)},
     {partitions: config.partitions})
+  console.log('INPUT-FEED:\n' + util.pretty(inputFeed))
+  return inputFeed
 }
 
 /**
@@ -92,13 +93,19 @@ function toLaserInputStream(feed, config) {
  */
 function toLaserOutputStream(feed, config) {
   console.log('Entered toLaserOutputStream()...')
-  return Object.assign(
+  const outputFeed = Object.assign(
     {name: config.name},
     {type: feed.properties.kind},
     {broker: feed.properties.data.endpoint},
     {topic: feed.properties.data.topic},
-    {credentials: feed.properties.data.credentials}
+    {credentials: getFeedCredentials(feed)}
   )
+  console.log('OUTPUT-FEED:\n' + util.pretty(outputFeed))
+  return outputFeed
+}
+
+function getFeedCredentials(feed) {
+  return feed.properties.credentials ? feed.properties.credentials : {}
 }
 
 /**

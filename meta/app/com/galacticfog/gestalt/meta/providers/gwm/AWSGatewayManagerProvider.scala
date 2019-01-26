@@ -14,11 +14,12 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.patch.PatchDocument
 import com.galacticfog.gestalt.meta.providers.faas.{AWSLambdaProperties,LambdaSpec}
-import com.galacticfog.gestalt.util.Either._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.EitherWithErrors._
 import com.galacticfog.gestalt.util.ResourceSerde
 import controllers.util.ProviderMethods
 
-class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) extends GwmProviderImplementation[Future] {
+class AWSGatewayManagerProvider @Inject()(ws: WSClient, providerMethods: ProviderMethods) extends GwmProviderImplementation[Future] {
 
   private[this] val log = Logger(this.getClass)
   
@@ -32,27 +33,27 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   implicit val formatLinkedProvider = Json.format[LinkedProvider]
   implicit val formatAWSAPIGatewayProviderProperties = Json.format[AWSAPIGatewayProviderProperties]
 
-  private def getLinkedAwsProvider(provider: GestaltResourceInstance): Either[String,GestaltResourceInstance] = {
+  private def getLinkedAwsProvider(provider: GestaltResourceInstance): EitherError[GestaltResourceInstance] = {
     for(
-      awsProviderProperties <- ResourceSerde.deserialize[AWSAPIGatewayProviderProperties](provider).liftTo[EitherString];
+      awsProviderProperties <- ResourceSerde.deserialize[AWSAPIGatewayProviderProperties](provider);
       linkedProvider <- Either.fromOption(awsProviderProperties.linked_providers.find(_.name == "AWS"),
-       "AWS missing in linked_providers");
+       Error.Default("AWS missing in linked_providers"));
       awsProvider <- Either.fromOption(ResourceFactory.findById(migrations.V20.AWS_LAMBDA_PROVIDER_TYPE_ID, linkedProvider.id),
-        s"AWS Lambda Provider with id ${linkedProvider.id} not found")
+        Error.NotFound(s"AWS Lambda Provider with id ${linkedProvider.id} not found"))
     ) yield awsProvider
   }
 
   def getPublicUrl(resource: GestaltResourceInstance): Option[String] = {
     val res = for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource);
       provider <- Either.fromOption(ResourceFactory.findById(migrations.V24.AWS_API_GATEWAY_PROVIDER_TYPE_ID, endpointProperties.provider.id),
-       s"Provider not found ${endpointProperties.provider.id}");
+       Error.NotFound(s"Provider not found ${endpointProperties.provider.id}"));
       awsProvider <- getLinkedAwsProvider(provider);
       config <- eitherFromTry(Try(Json.parse(awsProvider.properties.get("config"))));
       awsRegion <- Either.fromOption((config \ "env" \ "public" \ "AWS_REGION").asOpt[String],
-       "AWS_REGION env var not defined on provider");
+       Error.Default("AWS_REGION env var not defined on provider"));
       restApiId <- Either.fromOption(endpointProperties.container_port_name,
-       s"container_port_name (restApiId) field is missing on ${resource.id}")
+       Error.Default(s"container_port_name (restApiId) field is missing on ${resource.id}"))
     ) yield s"https://${restApiId}.execute-api.${awsRegion}.amazonaws.com/default/path"
 
     res.left.foreach { errorMessage =>
@@ -73,16 +74,16 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   
   def createEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[GestaltResourceInstance] = {
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
       awsProvider <- getLinkedAwsProvider(provider).liftTo[Future];
       client = providerMethods.configureWebClient(awsProvider, Some(ws));
       payload <- if(endpointProperties.implementation_type == "lambda") {
         for(
           lambdaResource <- Either.fromOption(ResourceFactory.findById(ResourceIds.Lambda, UUID.fromString(endpointProperties.implementation_id)),
-           s"Lambda with id ${endpointProperties.implementation_id} not found").liftTo[Future];
-          lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource).liftTo[EitherString].liftTo[Future];
+           Error.NotFound(s"Lambda with id ${endpointProperties.implementation_id} not found")).liftTo[Future];
+          lambdaProperties <- ResourceSerde.deserialize[AWSLambdaProperties](lambdaResource).liftTo[Future];
           awsFunctionId <- Either.fromOption(lambdaProperties.aws_function_id,
-           s"aws_function_id is unset for Lambda ${lambdaResource.id}").liftTo[Future]
+           Error.Default(s"aws_function_id is unset for Lambda ${lambdaResource.id}")).liftTo[Future]
         ) yield Json.obj(
           "name" -> s"${resource.id}",
           "aws" -> Json.obj(
@@ -112,7 +113,7 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
       restApiId = response.json.as[String];
       _ = log.debug(s"restApiId: ${restApiId}");
       updatedEndpointProperties = endpointProperties.copy(container_port_name=Some(restApiId));
-      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[EitherString].liftTo[Future]
+      updatedResource <- ResourceSerde.serialize[ApiEndpointProperties](resource, updatedEndpointProperties).liftTo[Future]
     ) yield updatedResource
   }
   def updateEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance, patch: PatchDocument): Future[GestaltResourceInstance] = {
@@ -121,11 +122,11 @@ class AWSAPIGatewayProvider @Inject()(ws: WSClient, providerMethods: ProviderMet
   }
   def deleteEndpoint(provider: GestaltResourceInstance, resource: GestaltResourceInstance): Future[Unit] = {
     for(
-      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[EitherString].liftTo[Future];
+      endpointProperties <- ResourceSerde.deserialize[ApiEndpointProperties](resource).liftTo[Future];
       awsProvider <- getLinkedAwsProvider(provider).liftTo[Future];
       client = providerMethods.configureWebClient(awsProvider, Some(ws));
       restApiId <- Either.fromOption(endpointProperties.container_port_name,
-       s"container_port_name (restApiId) is unset for Endpoint ${resource.id}").liftTo[Future];
+       Error.Default(s"container_port_name (restApiId) is unset for Endpoint ${resource.id}")).liftTo[Future];
       response <- client.delete(s"/endpoint/${restApiId}");
       _ <- if(200 >= response.status && response.status < 300) {
         Future.successful(())

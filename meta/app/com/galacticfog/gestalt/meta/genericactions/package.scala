@@ -34,7 +34,6 @@ package object genericactions {
         cfg <- ps.get("config")
         out = {
           val configJson = Json.parse(cfg).as[JsObject]
-          println("getFunctionConfig() => " + Json.prettyPrint(configJson))
           (Js.parse[GestaltFunctionConfig](configJson)(formatGestaltFunctionConfig)).get
         }
       } yield out
@@ -51,8 +50,8 @@ package object genericactions {
     name: String, 
     description: Option[String] = None, 
     example: Option[String] = None,
-    required: Option[Boolean] = Some(false),
-    data_type: Option[String] = Some("string"),
+    required: Option[Boolean] = None, //Some(false),
+    data_type: Option[String] = None, //Some("string"),
     value: Option[String] = None)    
 
   trait FunctionVerb {

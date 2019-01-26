@@ -13,14 +13,21 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 import com.galacticfog.gestalt.meta.auth._
 import com.google.inject.Inject
-import controllers.util.{AccountLike, JsonUtil, ProviderMethods}
-import play.api.libs.concurrent.Execution.Implicits.defaultContext
+
+
 import play.api.libs.json._
 import play.api.Logger
 
+import controllers.util.JsonUtil
+import controllers.util.ProviderMethods
+
+import controllers.util.AccountLike
+
+import play.api.libs.concurrent.Execution.Implicits.defaultContext
 import scala.concurrent.{Await, Future}
 import scala.concurrent.duration._
-import scala.util.{Either, Failure, Left, Right, Success, Try}
+
+import scala.util.{Either/*,Left,Right*/,Try,Success,Failure}
 
 
 trait LaserTransformationMigrationV7 {
@@ -241,6 +248,8 @@ trait LaserTransformationMigrationV7 {
 
 }
 
+import com.galacticfog.gestalt.meta.genericactions._
+
 class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) extends MetaMigration
  with AuthorizationMethods with LaserTransformationMigrationV7 {
 
@@ -254,9 +263,6 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
   private val SYSTEM_ENVIRONMENT_NAME = "gestalt-system-environment"
   val LAMBDA_PROVIDER_TIMEOUT_MS = 20000  
   
-  
-  // (Lambda-UUID, Seq-of-Actions)
-  private type LambdaAction = (UUID, Seq[String])
   
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
 
@@ -276,7 +282,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
               throw new RuntimeException(s"Could not locate creator with id '${identity}'")
             }
           }
-          x <- {
+          _ <- {
             acc push "Adding DataFeed Resource Type to /root/resourcetypes"
             addDataFeedType(root.id, root)
           }
@@ -284,30 +290,32 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
             acc push "Looking up environment for Stream Provider lambda"
             getLambdaEnvironment(root.id, creator)
           }
+          
           lamProvider <- {
             lookupLambdaProvider(payload.get)
           }
+
           lam <- {
             // Create lambda
             acc push "Creating StreamProvider Lambda"
             createStreamProviderLambda(root.id, env, creator, payload.get, lamProvider)
           }
+          
           _ <- {
             acc push "Adding StreamProvider Resource Type to /root/resourcetypes"
             addStreamProviderType(root.id, creator)
           }
           _ <- {
             acc push "Creating StreamProvider instance in /root/providers"
-            val lambdaActions = Seq(
-                (lam.id -> Seq(
+            val actions = Seq(
                   "streamspec.create", 
                   "streamspec.update", 
                   "streamspec.delete", 
                   "streamspec.start", 
-                  "streamspec.stop", 
-                  "streamspec.restart"))
-            )
-            createStreamProviderInstance(root.id, env.id, lambdaActions, creator, payload.get, lamProvider)
+                  "streamspec.stop"/*, 
+                  "streamspec.restart"*/)
+                  
+            createStreamProviderInstance(root.id, env.id, lam.id, actions, creator, payload.get, lamProvider)
           }
           x <- {
             acc push "Adding StreamSpec Resource Type to /root/resourcetypes"
@@ -315,53 +323,51 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
           }
       } yield x
     }
-    
-    process match {
-      case Success(_) => {
-        acc push "Meta update successful."
-        Right(MigrationStatus(
-            status = "SUCCESS",
-            message = s"Upgrade successfully applied",
-            succeeded = Some(acc.messages),
-            None).toJson)
-      }
-      case Failure(e) => {
-        Left(MigrationStatus(
-            status = "FAILURE",
-            message = s"There were errors performing this upgrade: ${e.getMessage}",
-            succeeded = Some(acc.messages),
-            errors = Some(Seq(e.getMessage))).toJson)
-      }
-    }    
+    handleResultStatus(process, acc)
   }  
   
   private[migrations] def createStreamProviderInstance(
-      rootId: UUID, envId: UUID, lambdaActions: Seq[LambdaAction], 
+      rootId: UUID, 
+      envId: UUID, 
+      lambdaId: UUID,
+      actions: Seq[String],
       creator: GestaltResourceInstance, 
       payload: JsValue,
       lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
     
     /*
-     * Map Lambda IDs/Actions to JSON Endpoints for Provider payload.
+     * Map Lambda IDs/functions to JSON Endpoints for Provider payload.
      */
-    val endpoints = lambdaActions.map { case (lambdaId, actions) =>
-      val upstream = s"<provider.properties.config.lambda_provider_url>/lambdas/$lambdaId/invokeSync"
-      
-      log.debug(s"UPSTREAM-URL FOR LAMBDA [$lambdaId]: ${upstream}")
-      
-      val lambdaJson = {
-        Js.find(payload.as[JsObject], "/lambda") getOrElse {
-          throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
-        }
-      }
-      mkEndpoint(actions, upstream)
+
+    val providerUrl = (for {
+      props <- lambdaProvider.properties
+      config <- Try{Json.parse(props("config")).as[JsObject]}.toOption
+      host <- Js.find(config, "/env/public/SERVICE_HOST_OVERRIDE").flatMap(_.asOpt[String])
+        .orElse(Js.find(config, "/env/public/SERVICE_HOST").flatMap(_.asOpt[String]))
+      port <- Js.find(config, "/env/public/SERVICE_PORT_OVERRIDE").flatMap(_.asOpt[String])
+          .orElse(Js.find(config, "/env/public/SERVICE_PORT").flatMap(_.asOpt[String]))
+    } yield s"http://$host:$port").getOrElse {
+      throw new RuntimeException("Could not find Lambda Provider URL in properties/config/env/public")
     }
-    val viewstatusEndpoint = mkStatusEndpoint(lambdaProvider)
     
-    val providerPayload = mkProviderPayload("default-streamspec", (endpoints :+ viewstatusEndpoint), lambdaProvider)
+    // Configure streamspec CRUD and stop/start endpoint
+    val crudUrl = s"${providerUrl}/lambdas/${lambdaId}/invokeSync"
+    val crudFunctions = actions.map(action => newStreamFunction(action))
+    val crudEndpoint = mkGestaltEndpoint(crudUrl, crudFunctions)
+    log.debug("CRUD-Endpoint:\n" + Json.prettyPrint(Json.toJson(crudEndpoint)))
     
-    log.debug("PROVIDER-PAYLOAD : " + Json.prettyPrint(providerPayload))
+    // Configure streamspec 'viewstatus' endpoint.
+    val statusFunction = mkStatusFunction()
+    val statusUrl = s"${providerUrl}/streams/<queryParams.persistenceId>/status"
+    val statusEndpoint = mkGestaltEndpoint(statusUrl, Seq(statusFunction))
+    log.debug("Status-Endpoint:\n" + Json.prettyPrint(Json.toJson(statusEndpoint)))
     
+    // Assemble StreamProvider payload for create.
+    val providerPayload = formatStreamProviderJson(
+        "default-stream-provider", Seq(crudEndpoint, statusEndpoint), providerUrl)  
+    log.debug("StreamProvider Payload : " + Json.prettyPrint(providerPayload))
+    
+    // Create StreamProvider in Meta
     for {
       prv <- CreateNewResource(
           org = rootId,
@@ -371,51 +377,190 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
           parent = Option(rootId))
       _ = setNewResourceEntitlements(rootId, prv.id, creator, Some(rootId))
     } yield prv    
-  }  
-  
-  private[migrations] def mkStatusEndpoint(lambdaProvider: GestaltResourceInstance): JsValue = {
-    val output = Json.obj(
-      "actions" -> Json.toJson(Seq("streamspec.viewstatus")),
-      "http" -> Json.obj(
-        "method" -> "GET",
-        "url" -> "<provider.properties.config.lambda_provider_url>/streams/<queryParams.persistenceId>/status"
-      )
-    )
-    log.debug("VIEW-STATUS ENDPOINT JSON:\n" + Json.prettyPrint(output))
-    output
   }
 
-  private[migrations] def mkEndpoint(actions: Seq[String], url: String): JsValue = {
-    Json.obj(
-      "actions" -> Json.toJson(actions),
-      "http" -> Json.obj(
-        "url" -> url
-      )
-    )
+  /**
+   * Assemble a GestaltEndpoint for Provider configuration.
+   */
+  private[migrations] def mkGestaltEndpoint(lambdaUrl: String, functions: Seq[GestaltFunction], kind: String = "http") = {
+    GestaltEndpoint(
+        kind = kind,
+        url = lambdaUrl,
+        actions = functions,
+        authentication = None)
   }
-  
-  private[migrations] def mkProviderPayload(name: String, endpoints: Seq[JsValue], lambdaProvider: GestaltResourceInstance): JsValue = {
-    val lambdaProviderUrl = for {
-      props <- lambdaProvider.properties
-      config <- Try{Json.parse(props("config")).as[JsObject]}.toOption
-      host <- Js.find(config, "/env/public/SERVICE_HOST_OVERRIDE").flatMap(_.asOpt[String])
-        .orElse(Js.find(config, "/env/public/SERVICE_HOST").flatMap(_.asOpt[String]))
-      port <- Js.find(config, "/env/public/SERVICE_PORT_OVERRIDE").flatMap(_.asOpt[String])
-          .orElse(Js.find(config, "/env/public/SERVICE_PORT").flatMap(_.asOpt[String]))
-    } yield s"http://$host:$port"
 
+  /**
+   * Assemble final StreamProvider JSON payload
+   */
+  private[migrations] def formatStreamProviderJson(
+      providerName: String, 
+      endpoints: Seq[GestaltEndpoint],
+      lambdaProviderUrl: String): JsValue = {
+    
     Json.obj(
-      "name" -> "default-stream-provider",
+      "name" -> providerName,
       "resource_type" -> STREAM_PROVIDER_TYPE_ID,
       "properties" -> Json.obj(
         "config" -> Json.obj(
-          "endpoints" -> Json.toJson(endpoints),
-          "lambda_provider_url" -> lambdaProviderUrl
+            "endpoints" -> Json.toJson(endpoints),
+            "lambda_provider_url" -> lambdaProviderUrl
         )
       )
     )
+  }  
+  
+  /**
+   * Map StreamProvider function names to GestaltFunction objects.
+   */
+  private[migrations] def newStreamFunction(action: String): GestaltFunction = {
+    action match {
+      case "streamspec.create" => mkPostFunction(
+          name = "streamspec.create",
+          displayName = None,
+          description = Some("Create a new StreamSpec"),
+          resultCodeGood = 201
+      )
+      
+      case "streamspec.update" => mkPostFunction(
+          name = "streamspec.update",
+          displayName = None,
+          description = Some("Update an existing StreamSpec"),
+          resultCodeGood = 202    
+      )
+      
+      case "streamspec.delete" => mkPostFunction(
+          name = "streamspec.delete",
+          displayName = None,
+          description = Some("Delete a StreamSpec"),
+          resultCodeGood = 204
+      )
+      
+      case "streamspec.start" => mkPostFunctionUi(
+          name = "streamspec.start",
+          displayName = Some("Start Stream"),
+          description = Some("Start a new StreamSpec instance."),
+          resultCodeGood = 202,
+          renderType = "none",
+          locations = Seq("streamspec.edit"),
+          queryParameters = Some(Seq(
+              RequestQueryParameter(
+                  name = "resource_id",
+                  value = Some("id")
+              )
+          ))
+      )
+      
+      case "streamspec.stop" => mkPostFunctionUi(
+          name = "streamspec.stop",
+          displayName = Some("Stop Stream"),
+          description = Some("Delete a StreamSpec"),
+          resultCodeGood = 202,
+          renderType = "none",
+          locations = Seq("streamspec.instances"),
+          queryParameters = Some(Seq(
+              RequestQueryParameter(
+                name = "resource_id",
+                value = Some("definitionId")
+              ),
+              RequestQueryParameter(
+                name = "pid",
+                value = Some("persistenceId")
+              )
+          ))
+      )
+      case _ => throw new RuntimeException(s"Unknown streamspec action found: '${action}'. This is a bug")
+    }
+  }
+  
+  private val JSON_CONTENT = "application/json"
+  
+  /**
+   * Create the 'viewstatus' function configuration.
+   */
+  private[migrations] def mkStatusFunction(): GestaltFunction = {
+    val output = GestaltFunction(
+      "streamspec.viewstatus",
+      get = Some(GetVerb(
+        body = None,
+        responses = Seq(FunctionResponse(
+          code = 200,
+          content_type = Some(JSON_CONTENT))
+        )
+      ))
+    )
+    log.debug("VIEW-STATUS ENDPOINT JSON:\n" + Json.prettyPrint(Json.toJson(output)))
+    output
   }
 
+  /**
+   * Create configuration for POST-type provider function.
+   */
+  private[migrations] def mkPostFunction(
+      name: String, 
+      displayName: Option[String], 
+      description: Option[String],
+      resultCodeGood: Int, 
+      queryParameters: Option[Seq[RequestQueryParameter]] = None): GestaltFunction = {
+    
+    val output = GestaltFunction(
+      name, displayName, description,
+      post = Some(PostVerb(
+        body = Some(RequestBody(
+            content_type = JSON_CONTENT
+        )),
+        responses = Seq(
+          FunctionResponse(
+            code = resultCodeGood,
+            content_type = Some(JSON_CONTENT)
+          )
+        ),
+        query_parameters = queryParameters
+      ))
+    )
+    log.debug("FUNCTION-ENDPOINT :\n" + Json.prettyPrint(Json.toJson(output)))
+    output
+  }
+  
+  /**
+   * Create configuration for POST-type provider function with UI-integration.
+   */
+  private[migrations] def mkPostFunctionUi(
+      name: String, 
+      displayName: Option[String], 
+      description: Option[String], 
+      resultCodeGood: Int,
+      renderType: String,
+      locations: Seq[String],
+      queryParameters: Option[Seq[RequestQueryParameter]] = None,
+      icon: Option[ActionIcon] = None): GestaltFunction = {
+    
+    val output = GestaltFunction(
+      name, 
+      displayName, 
+      description,
+      post = Some(PostVerb(
+        body = Some(RequestBody(
+            content_type = JSON_CONTENT
+        )),
+        responses = Seq(
+          FunctionResponse(
+            code = resultCodeGood,
+            content_type = Some(JSON_CONTENT),
+            gestalt_ui = Some(GestaltUi(
+              render = renderType,
+              locations = locations,
+              icon = None))
+            )
+          ),
+        query_parameters = queryParameters
+        ))
+      )
+    
+    log.debug("FUNCTION-ENDPOINT-UI :\n" + Json.prettyPrint(Json.toJson(output)))
+    output
+  }
+  
   /**
    * Create a new Workspace in the root Org
    */
@@ -475,8 +620,10 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
     } yield e
   }
   
-  
-  private[migrations] def lookupLambdaProvider(payload: JsValue) = Try {
+  /**
+   * Find and return the Lambda Provider given in the migration payload.
+   */
+  private[migrations] def lookupLambdaProvider(payload: JsValue): Try[GestaltResourceInstance] = Try {
     val providerId = {
       val jsId = Js.find(payload.as[JsObject], "/lambda/properties/provider/id") getOrElse {
         throw new BadRequestException("Bad migration payload. Missing: 'V7/lambda/properties/provider/id'")
@@ -498,7 +645,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
       payload: JsValue,      
       lambdaProvider: GestaltResourceInstance): Try[GestaltResourceInstance] = {
     
-    
+    // Get JSON for new Lambda from payload (what's passed into the migrate function)
     val lambdaJson = {
       val js = Js.find(payload.as[JsObject], "/lambda") getOrElse {
         throw new BadRequestException("Bad migration payload. Missing 'V7/lambda'.")
@@ -519,6 +666,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
         setNewResourceEntitlements(orgId, l.id, creator, Some(env.id))
       } map (_ => l)
     )
+
     val laserLambda = metaLambdaWithEnts.flatMap(toLaserLambda(_, lambdaProvider.id.toString))
     val theWholeShebang = laserLambda flatMap { ll =>
       val client = providerMethods.configureWebClient(lambdaProvider, None)
@@ -526,7 +674,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
       log.debug("Creating lambda in Laser...")
       log.debug("POSTING:\n")
       log.debug(Json.prettyPrint(Json.toJson(ll)))
-
+      
       val fLaser = client.post("/lambdas", Option(Json.toJson(ll))) flatMap { result =>
         if (Seq(200, 201).contains(result.status)) {
           Future.successful(())
@@ -658,6 +806,7 @@ class V7 @Inject()()(implicit actorSystem: ActorSystem, mat: Materializer) exten
         TypeProperty("parallelization", "int", require = "required"),
         TypeProperty("processor", "json", require = "required"),
         TypeProperty("streams", "json::list", require = "optional"),
+        TypeProperty("lambda_provider", "json", require = "optional"),
         TypeProperty("provider", "resource::uuid::link", require = "required",
           refersTo = Some(STREAM_PROVIDER_TYPE_ID))
 
@@ -695,5 +844,5 @@ object V7 {
   val STREAM_PROVIDER_TYPE_NAME = "Gestalt::Configuration::Provider::StreamProvider"
 
   val STREAM_SPEC_TYPE_ID = UUID.fromString("e9e90e0a-4f87-492e-afcc-2cd84057f226")
-  val STREAM_SPEC_TYPE_NAME = "Gestalt::Resource::Spec::StreamSpec"
+  val STREAM_SPEC_TYPE_NAME = "Gestalt::Resource::Spec::StreamSpec"  
 }
