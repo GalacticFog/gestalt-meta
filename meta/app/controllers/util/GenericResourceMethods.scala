@@ -204,11 +204,6 @@ class GenericResourceMethodsImpl @Inject()( genericProviderManager: GenericProvi
         s"Could not locate parent for ${sdk.ResourceLabel(resourceType)} with id '${resource.id}'"
       )
 
-//      action <- getOrFail (
-//        actions.prefixFromResource(resource).map { prefix => "%s.%s".format(prefix, actionVerb) },
-//        s"Could not find action prefix for type '${sdk.ResourceLabel(resourceType)}'"
-//      )
-
       action <- getQualifiedAction(resource, actionVerb)
       
       operations = List(
