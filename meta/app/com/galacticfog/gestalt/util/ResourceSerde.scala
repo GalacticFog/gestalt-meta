@@ -7,8 +7,13 @@ import cats.syntax.either._
 
 object ResourceSerde {
   def deserialize[A: Reads](resource: GestaltResourceInstance): Either[Error.Error,A] = {
+    implicit val toBadRequest = EitherWithErrors.toBadRequest
+
+    deserialize[A,Error.BadRequest](resource)
+  }
+  def deserialize[A: Reads,B <: Error.Error](resource: GestaltResourceInstance)(implicit toError: Error.ToError[B]): Either[Error.Error,A] = {
     for(
-      rawProperties <- Either.fromOption(resource.properties, Error.BadRequest(s"Could not parse resource ${resource.id} with unset properties"));
+      rawProperties <- Either.fromOption(resource.properties, toError.make(s"Could not parse resource ${resource.id} with unset properties"));
       rawJsonProperties = unstringmap(Some(rawProperties)).get;
       properties <- EitherWithErrors.eitherFromJsResult(JsObject(rawJsonProperties).validate[A])
     ) yield properties

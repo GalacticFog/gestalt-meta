@@ -28,10 +28,39 @@ object Error {
   case class UnprocessableEntity(message: String) extends Error
   case class NotAcceptable(message: String) extends Error
   case class Default(message: String) extends Error
+
+  trait ToError[A <: Error] {
+    def make(message: String): A
+  }
 }
 
 object EitherWithErrors {
   type EitherError[A] = Either[Error.Error,A]
+  
+  implicit val toNotFound: Error.ToError[Error.NotFound] = new Error.ToError[Error.NotFound] {
+    def make(message: String): Error.NotFound = Error.NotFound(message)
+  }
+  implicit val toBadRequest: Error.ToError[Error.BadRequest] = new Error.ToError[Error.BadRequest] {
+    def make(message: String): Error.BadRequest = Error.BadRequest(message)
+  } 
+  implicit val toConflict: Error.ToError[Error.Conflict] = new Error.ToError[Error.Conflict] {
+    def make(message: String): Error.Conflict = Error.Conflict(message)
+  } 
+  implicit val toForbidden: Error.ToError[Error.Forbidden] = new Error.ToError[Error.Forbidden] {
+    def make(message: String): Error.Forbidden = Error.Forbidden(message)
+  } 
+  implicit val toUnauthorized: Error.ToError[Error.Unauthorized] = new Error.ToError[Error.Unauthorized] {
+    def make(message: String): Error.Unauthorized = Error.Unauthorized(message)
+  } 
+  implicit val toUnprocessableEntity: Error.ToError[Error.UnprocessableEntity] = new Error.ToError[Error.UnprocessableEntity] {
+    def make(message: String): Error.UnprocessableEntity = Error.UnprocessableEntity(message)
+  } 
+  implicit val toNotAcceptable: Error.ToError[Error.NotAcceptable] = new Error.ToError[Error.NotAcceptable] {
+    def make(message: String): Error.NotAcceptable = Error.NotAcceptable(message)
+  } 
+  implicit val toDefault: Error.ToError[Error.Default] = new Error.ToError[Error.Default] {
+    def make(message: String): Error.Default = Error.Default(message)
+  } 
 
   def eitherFromJsResult[A](jsResult: JsResult[A]): Either[Error.Error,A] = {
     jsResult match {
@@ -86,6 +115,18 @@ object EitherWithErrors {
         Left(throwableToError(throwable))
       }
     }
+  }
+
+  def eitherFrom[B <: Error.Error](implicit toError: Error.ToError[B]) = {
+    new {
+      def option[A](option: Option[A], ifNone: => String): EitherError[A] = {
+        Either.fromOption(option, toError.make(ifNone))
+      }
+    }
+  }
+
+  def eitherFromOption[A](option: Option[A], ifNone: => String): EitherError[A] = {
+    eitherFrom[Error.Default].option[A](option, ifNone)
   }
 
   def errorToResult(error: Error.Error): Result = {
