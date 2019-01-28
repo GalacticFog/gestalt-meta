@@ -1462,14 +1462,140 @@ class ResourceController @Inject()(
   
   import migrations.V30._
   
-  def findUserProfile(user: UUID) = Audited() { implicit request =>
-    handleExpandResourceResult(
-      ResourceFactory.findChildrenOfType(USERPROFILE_TYPE_ID, user),
-      request.queryString,
-      Some(META_URL))
+  implicit lazy val resourceFavoriteFormat = Json.format[ResourceFavorite]
+  implicit lazy val userProfileFormat = Json.format[UserProfile]
+  
+  case class ResourceFavorite(
+      resource_id: UUID,
+      resource_type_id: UUID,
+      resource_name: Option[String] = None,
+      resource_display_name: Option[String] = None,
+      resource_description: Option[String] = None,
+      nickname: Option[String] = None)
+      
+  object ResourceFavorite {
+    def mergeWithResource(fav: ResourceFavorite, res: GestaltResourceInstance): ResourceFavorite = {
+      val displayName = for {
+        ps <- res.properties
+        dn <- ps.get("display_name")
+      } yield dn
+      
+      ResourceFavorite(res.id, res.typeId, Some(res.name), displayName, res.description, fav.nickname)
+    }
   }
   
-  def postUserProfile(user: UUID) = AsyncAudited() { implicit request =>
+  case class UserProfile(name: String, resource_favorites: Seq[ResourceFavorite]) {
+    
+  }
+  
+  object UserProfile {
+    def getFavorites(res: GestaltResourceInstance): Seq[ResourceFavorite] = {
+      
+      (for {
+        ps <- res.properties
+        _ = println("RAW-FAVS : " + ps.get("resource_favorites"))
+        raw <- ps.get("resource_favorites")
+        _ = println("CONVERTING TO JSON...")
+        json = Json.parse(raw).as[Seq[JsValue]]
+        _ = println("PARSED : " + json)
+        _ = println("About to parse favorites to object...")
+//        favs1 = json.validate[Seq[ResourceFavorite]]
+//        _ = println("RESULT : " + favs1)
+//        favs = favs1.get
+        favs = json.map(Js.parse[ResourceFavorite](_).get)
+//        .getOrElse {
+//          throw new RuntimeException("Failed parsing favorites from profile.")
+//        }
+        output = {
+          // Get IDs of all resources the user pinned as favorites.
+          val asPersisted: Map[UUID, ResourceFavorite] = favs.map(f => (f.resource_id -> f)).toMap
+          
+          // This will be all of those favorites that actually exist (may have been deletes)
+          val allExisting = ResourceFactory.findAllIn(asPersisted.keySet.toList)
+          
+          //
+          // TODO: Test if anything was deleted, log as info, and proceed.
+          //
+          allExisting.map(r => ResourceFavorite.mergeWithResource(asPersisted(r.id), r))          
+        }
+      } yield output).getOrElse(Seq.empty[ResourceFavorite])
+      
+    }
+  }
+  
+  def renderProfileOutput(profile: GestaltResourceInstance, favs: Seq[ResourceFavorite]): JsValue = {
+    log.debug("Rendering base resource...")
+    val pjson = Output.renderInstance(profile).as[JsObject]
+    println(Json.prettyPrint(pjson))
+    log.debug("Transforming favorites for output...")
+    JsonUtil.withJsonPropValue(pjson, "resource_favorites", Json.toJson(favs))
+  }
+  
+  def findUserProfile(user: UUID, profileId: UUID) = Audited() { implicit request =>
+    val output = ResourceFactory.findChildOfType(USERPROFILE_TYPE_ID, user, profileId).map { profile =>
+      log.debug(s"Found User Profile '${profileId}' - rendering to JSON")
+      renderProfileOutput(profile, UserProfile.getFavorites(profile))
+    }
+    output match {
+      case None => NotFoundResult(request.uri)
+      case Some(p) => Ok(p)
+    }
+  }
+  
+  def postUserProfile(userId: UUID) = AsyncAudited() { implicit request =>
+    val user = ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
+      throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
+    }
+    val org = ResourceFactory.findById(ResourceIds.Org, user.orgId).getOrElse {
+      throw new ResourceNotFoundException(s"Org with ID '${user.orgId}' not found.")
+    }
+    // Ensure all given favorites exist and have type-IDs
+    val payload = {
+
+      val favs: Seq[ResourceFavorite] = ((request.body \ "properties" \ "resource_favorites") match {
+        case e : JsUndefined => Seq.empty[JsValue]
+        case f : JsDefined => f.as[Seq[JsValue]]
+      }).map { f => 
+        val fav = f.validate[ResourceFavorite](resourceFavoriteFormat).getOrElse {
+          throw new BadRequestException(s"Cannot parse favorite '${f}'")
+        }
+        val res = ResourceFactory.findById(fav.resource_id).getOrElse {
+          throw new ResourceNotFoundException(s"Resource with ID '${fav.resource_id}' not found.")
+        }
+        f.copy(resource_type_id = res.typeId)        
+      }
+      
+//      favs.map { f =>
+//        val res = ResourceFactory.findById(f.resource_id).getOrElse {
+//          throw new ResourceNotFoundException(s"Resource with ID '${id}' not found.")
+//        }
+//        favorite.copy(resource_type_id = res.typeId)
+//      }
+//      val rfs = .getOrElse(Seq.empty).map { f => 
+//        Js.parse[ResourceFavorite](f.as[JsObject]) match {
+//          case Failure(_) => throw new BadRequestException(s"Cannot parse favorite '${f}'")
+//          case Some(favorite) => {
+//            val res = ResourceFactory.findById(favorite.resource_id).getOrElse {
+//              throw new ResourceNotFoundException(s"Resource with ID '${id}' not found.")
+//            }
+//            favorite.copy(resource_type_id = res.typeId)
+//          }
+//        }
+//      }
+//      JsonUtil.withJsonPropValue(request.body, "resource_favorites", Json.toJson(rfs))
+    }
+    execGenericCreate(org, USERPROFILE_TYPE_ID, user, request.body).map { profile =>
+      Created(RenderSingle(profile))
+    }
+  }
+  
+  def addFavorite(userId: UUID, profileId: UUID) = AsyncAudited() { implicit request =>
+    val user = ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
+      throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
+    }
+    val profile = ResourceFactory.findById(USERPROFILE_TYPE_ID, profileId).getOrElse {
+      throw new ResourceNotFoundException(s"UserProfile with ID '${profileId}' not found.")
+    }
     ???
   }
   
