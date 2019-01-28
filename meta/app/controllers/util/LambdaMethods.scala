@@ -141,6 +141,12 @@ class LambdaMethods @Inject()(
       resource = inputToInstance(org, payload);
       lambdaProvider <- getLambdaProvider(resource);
       impl <- getProviderImpl(lambdaProvider);
+      check = PolicyCheck("lambda.create").proceed(RequestOptions(
+        user = null,
+        authTarget = Option(parent.id),
+        policyOwner = Option(parent.id),
+        policyTarget = Option(resource),
+        providerIdOpt = Option(lambdaProvider.id))).toTry().get;
       lambdaResource <- eitherFromTry(ResourceFactory.create(ResourceIds.User, caller.id)(resource, Some(parent.id)));
       _ <- eitherFromTry(Try(setNewResourceEntitlements(org, lambdaResource.id, caller, Some(parent.id))))
     ) yield {
