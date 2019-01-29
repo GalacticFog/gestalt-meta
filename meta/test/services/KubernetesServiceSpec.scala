@@ -1,7 +1,7 @@
 package services
 
 import java.time.{ZoneOffset, ZonedDateTime}
-import java.util.{Base64, TimeZone}
+import java.util.{Base64, TimeZone, UUID}
 
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
@@ -84,20 +84,48 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     lazy val Success(testProvider) = createKubernetesProvider(testEnv.id, "test-provider", providerConfig)
 
+    val provider1Id = UUID.randomUUID()
+    lazy val (testWork1, testEnv1) = {
+      val (tw, te) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment", environmentProps=Map(
+        "provider_mapping" -> Json.obj(
+          s"${provider1Id}" -> Json.obj("namespaces" -> Json.arr(Json.obj("name" -> "non-standard-namespace", "default" -> true)))
+        ).toString
+      )).get
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, te.id, user, Some(tw.id))
+      (tw,te)
+    }
+
+    lazy val Success(testProvider1) = createInstance(
+      typeId = ResourceIds.KubeProvider,
+      name = "test-provider1",
+      id = provider1Id,
+      parent = Option(testEnv1.id),
+      properties = Option(Map(
+        "parent" -> "{}",
+        "config" -> "{}"
+      ))
+    )
+
     lazy val testSetup = {
       val skDefaultNs = mock[skuber.Namespace]
       skDefaultNs.name returns "default"
       val skTestNs    = mock[skuber.Namespace]
       skTestNs.name returns testEnv.id.toString
+      val skTest1Ns    = mock[skuber.Namespace]
+      skTest1Ns.name returns testEnv1.id.toString
       val skNonstandardNs = mock[skuber.Namespace]
       skNonstandardNs.name returns "non-standard-namespace"
       val mockSkuber = mock[client.RequestContext]
       val mockSkuberFactory = mock[SkuberFactory]
       mockSkuberFactory.initializeKube(meq(testProvider), meq("default")         )(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider1), meq("default")         )(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq("default"))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skDefaultNs))
       mockSkuberFactory.initializeKube(meq(testProvider), meq(testEnv.id.toString))(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider1), meq(testEnv1.id.toString))(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq(testEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skTestNs))
+      mockSkuber.getOption(meq(testEnv1.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skTest1Ns))
       mockSkuberFactory.initializeKube(meq(testProvider), meq("non-standard-namespace"))(any) returns Future.successful(mockSkuber)
+      mockSkuberFactory.initializeKube(meq(testProvider1), meq("non-standard-namespace"))(any) returns Future.successful(mockSkuber)
       mockSkuber.getOption(meq("non-standard-namespace"))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(Some(skNonstandardNs))
 
       mockSkuber.create(any)(any,meq(skuber.ext.Deployment.deployDef),any) answers {(x: Any) => answerId[skuber.ext.Deployment](x)}
@@ -971,15 +999,15 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(Deployment.deployDef),any)
     }
 
-    "create container should use namespace from provider-env sibling containers" in new FakeKube() {
+    "create container should use explicitly defined namespace" in new FakeKube() {
       val Success(providerSibling) = createInstance(
         ResourceIds.Container,
         "existing-container",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
+          "provider" -> Output.renderInstance(testProvider1).toString,
           "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
         ))
       )
@@ -987,7 +1015,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       val Success(newContainer) = createInstance(
         ResourceIds.Container,
         "new-container",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "image" -> "nginx",
@@ -996,7 +1024,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
 
       val fupdatedMetaContainer = testSetup.svc.create(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv1.id}/containers"), testProvider1.id, None),
         container = newContainer
       )
       val Some(updatedContainerProps) = await(fupdatedMetaContainer).properties
@@ -1207,15 +1235,15 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
     }
 
-    "create secret should use namespace from provider-env sibling containers" in new FakeKube() {
+    "create secret should use namespace from explicitly defined namespace" in new FakeKube() {
       val Success(providerSibling) = createInstance(
         ResourceIds.Container,
         "existing-container",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
+          "provider" -> Output.renderInstance(testProvider1).toString,
           "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
         ))
       )
@@ -1223,15 +1251,15 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       val Success(metaSecret) = createInstance(
         ResourceIds.Secret,
         "new-secret",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
-          "provider" -> Output.renderInstance(testProvider).toString,
+          "provider" -> Output.renderInstance(testProvider1).toString,
           "items" -> "[]"
         ))
       )
 
       val Some(updatedSecretProps) = await(testSetup.svc.createSecret(
-        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/secrets"), testProvider.id, None),
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv1.id}/secrets"), testProvider1.id, None),
         secret = metaSecret,
         items = Seq.empty
       )).properties
@@ -1446,11 +1474,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       val Success(providerSibling) = createInstance(
         ResourceIds.Container,
         "existing-container",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
           "container_type" -> "DOCKER",
           "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider).toString,
+          "provider" -> Output.renderInstance(testProvider1).toString,
           "external_id" -> "/namespaces/non-standard-namespace/deployments/pre-existing-container-1"
         ))
       )
@@ -1458,12 +1486,12 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       val Success(metaVolume) = createInstance(
         migrations.V13.VOLUME_TYPE_ID,
         "external-volume",
-        parent = Some(testEnv.id),
+        parent = Some(testEnv1.id),
         properties = Some(Map(
           "type" -> "external",
           "size" -> "1000",
           "access_mode" -> "ReadWriteOnce",
-          "provider" -> Output.renderInstance(testProvider).toString,
+          "provider" -> Output.renderInstance(testProvider1).toString,
           "config" -> "{}"
         ))
       )
@@ -1472,7 +1500,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       testSetup.client.create(any)(any,meq(skuber.PersistentVolumeClaim.pvcDef),any) answers {(x: Any) => answerId[skuber.PersistentVolumeClaim](x)}
 
       val newVolume = await(testSetup.svc.createVolume(
-        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv.id}/volumes"), testProvider.id, None),
+        context = ProviderContext(play.api.test.FakeRequest("POST",s"/root/environments/${testEnv1.id}/volumes"), testProvider1.id, None),
         metaResource = metaVolume
       ))
       val newProps = newVolume.properties.get

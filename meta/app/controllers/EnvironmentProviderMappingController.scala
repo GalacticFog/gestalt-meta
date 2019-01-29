@@ -16,9 +16,7 @@ import com.galacticfog.gestalt.meta.api.Resource
 import com.galacticfog.gestalt.meta.auth.Authorization
 import controllers.util._
 
-@Singleton
-class EnvironmentProviderMappingController @Inject()(messagesApi: MessagesApi,
- sec: GestaltFrameworkSecurity) extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
+object Environment {
 
   case class Namespace(name: String, default: Boolean)
   case class ProviderMapping(namespaces: Seq[Namespace])
@@ -52,6 +50,26 @@ class EnvironmentProviderMappingController @Inject()(messagesApi: MessagesApi,
   implicit val formatNamespace = Json.format[Namespace]
   implicit val formatProviderMapping = Json.format[ProviderMapping]
   implicit val formatEnvironmentProperties = Json.format[EnvironmentProperties]
+
+  def getDefaultNamespace(envId: UUID, providerId: UUID): EitherError[String] = {
+    for(
+      env <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(ResourceIds.Environment, envId),
+       s"Environment not found with id ${envId}");
+      // will not check if provider exists for providerId - calling code can do it better
+      envProperties <- ResourceSerde.deserialize[EnvironmentProperties,Error.Default](env);
+      defaultNamespaces = ProviderMapping(Seq(Namespace(s"${envId}", true)));
+      providerMapping = envProperties.provider_mapping.getOrElse(Map());
+      namespaces = providerMapping.get(providerId).getOrElse(defaultNamespaces);
+      namespace <- eitherFromOption(namespaces.namespaces.find(_.default), s"Default namespace not set for environment=${envId}")
+    ) yield namespace.name
+  }
+}
+
+@Singleton
+class EnvironmentProviderMappingController @Inject()(messagesApi: MessagesApi,
+ sec: GestaltFrameworkSecurity) extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
+
+  import Environment._
 
   def getAll(fqon: String, envId: UUID) = Audited() { request =>
     (for(
