@@ -165,7 +165,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield ns) orElse {
       ResourceFactory.findParent(ResourceIds.Environment, resource.id).map(_.id.toString)
     } getOrElse {
-      throw new RuntimeException(s"Failed to delete '${resource.id}' in Kubernetes: invalid external_id and missing parent environment.")
+      throw new RuntimeException(s"Failed to obtain namespace for '${resource.id}' in Kubernetes: invalid external_id and missing parent environment.")
     }
   }
 
@@ -285,49 +285,85 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     */
   private[services] def getNamespace(rc: RequestContext, pc: ProviderContext, create: Boolean = false): Future[Namespace] = {
     log.debug(s"getNamespace(environment = ${pc.environmentId}, create = ${create}")
-    val namespaceGetter = "/namespaces/([^/]+)/.*/.*".r
+    // val namespaceGetter = "/namespaces/([^/]+)/.*/.*".r
 
-    val namespaces = (ResourceFactory.findChildren(pc.environmentId).filter(
-      r => Set(ResourceIds.Container, ResourceIds.Secret, migrations.V13.VOLUME_TYPE_ID).contains(r.typeId) &&
-        Try{ContainerService.containerProviderId(r)}.toOption.contains(pc.providerId)
-    ).flatMap(ContainerService.resourceExternalId).collect {
-      case namespaceGetter(namespace) => namespace
-    }).distinct
+    // val namespaces = (ResourceFactory.findChildren(pc.environmentId).filter(
+    //   r => Set(ResourceIds.Container, ResourceIds.Secret, migrations.V13.VOLUME_TYPE_ID).contains(r.typeId) &&
+    //     Try{ContainerService.containerProviderId(r)}.toOption.contains(pc.providerId)
+    // ).flatMap(ContainerService.resourceExternalId).collect {
+    //   case namespaceGetter(namespace) => namespace
+    // }).distinct
 
-    val targetNamespace = namespaces match {
-      case Seq() => pc.environmentId.toString
-      case Seq(single) => single
-      case _ => {
-        log.error(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
-        throw new BadRequestException(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
-      }
-    }
+    // val targetNamespace = namespaces match {
+    //   case Seq() => pc.environmentId.toString
+    //   case Seq(single) => single
+    //   case _ => {
+    //     log.error(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+    //     throw new BadRequestException(s"Environment '${pc.environmentId}' contains resources from multiple Kubernetes namespaces; new resources cannot be created until this is resolved.")
+    //   }
+    // }
 
-    rc.getOption[Namespace](targetNamespace) flatMap {
-      case Some(s) =>
-        log.debug(s"Found Kubernetes namespace: ${s.name}")
-        Future.successful(s)
-      case None if create =>
-        log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
-        for(
-          namespace <- rc.create(Namespace(metadata = ObjectMeta(
-            name = targetNamespace,
-            labels = mkLabels(pc)
-          )));
-          _ <- rc.create(new ClusterRoleBinding(
-            metadata = ObjectMeta(
-              name = s"${targetNamespace}-cluster-admin",
+    import cats.syntax.either._
+    import com.galacticfog.gestalt.util.EitherWithErrors._
+
+    for(
+      targetNamespace <- controllers.Environment.getDefaultNamespace(pc.environmentId, pc.providerId).liftTo[Future];
+      namespaceOpt <- rc.getOption[Namespace](targetNamespace);
+      namespace <- namespaceOpt match {
+        case Some(s) => {
+          log.debug(s"Found Kubernetes namespace: ${s.name}")
+          Future.successful(s)
+        }
+        case None if create => {
+          log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
+          for(
+            namespace <- rc.create(Namespace(metadata = ObjectMeta(
+              name = targetNamespace,
               labels = mkLabels(pc)
-            ),
-            roleRef = Some(new RoleRef("rbac.authorization.k8s.io", "ClusterRole", "cluster-admin")),
-            subjects = List(new Subject(None, "ServiceAccount", "default", Some(targetNamespace)))
-            // the namespace param is an Option, but leaving it off in ClusterRoleBinding causes an exception – at least if created via kubectl
-          ))
-        ) yield namespace
-      case None if !create =>
-        log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
-        Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))
-    }
+            )));
+            _ <- rc.create(new ClusterRoleBinding(
+              metadata = ObjectMeta(
+                name = s"${targetNamespace}-cluster-admin",
+                labels = mkLabels(pc)
+              ),
+              roleRef = Some(new RoleRef("rbac.authorization.k8s.io", "ClusterRole", "cluster-admin")),
+              subjects = List(new Subject(None, "ServiceAccount", "default", Some(targetNamespace)))
+              // the namespace param is an Option, but leaving it off in ClusterRoleBinding causes an exception – at least if created via kubectl
+            ))
+          ) yield namespace
+        }
+        case None if !create => {
+          log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
+          Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))
+        }
+      }
+    ) yield namespace
+
+    // targetNamespace flatMap {
+    //   case Some(s) =>
+    //     log.debug(s"Found Kubernetes namespace: ${s.name}")
+    //     Future.successful(s)
+    //   case None if create =>
+    //     log.debug(s"Creating new Kubernetes namespace: ${targetNamespace}")
+    //     for(
+    //       namespace <- rc.create(Namespace(metadata = ObjectMeta(
+    //         name = targetNamespace,
+    //         labels = mkLabels(pc)
+    //       )));
+    //       _ <- rc.create(new ClusterRoleBinding(
+    //         metadata = ObjectMeta(
+    //           name = s"${targetNamespace}-cluster-admin",
+    //           labels = mkLabels(pc)
+    //         ),
+    //         roleRef = Some(new RoleRef("rbac.authorization.k8s.io", "ClusterRole", "cluster-admin")),
+    //         subjects = List(new Subject(None, "ServiceAccount", "default", Some(targetNamespace)))
+    //         // the namespace param is an Option, but leaving it off in ClusterRoleBinding causes an exception – at least if created via kubectl
+    //       ))
+    //     ) yield namespace
+    //   case None if !create =>
+    //     log.error(s"No namespace found for environment '${pc.environmentId}' - create == false")
+    //     Future.failed(UnprocessableEntityException(s"There is no Namespace corresponding with Environment '${pc.environmentId}', environment"))
+    // }
   }
 
   private[services] def setPostLaunchStatus(container: GestaltResourceInstance): GestaltResourceInstance = {
