@@ -1,4 +1,4 @@
-load("https://raw.githubusercontent.com/GalacticFog/lambda-examples/master/js_lambda/gestalt-sdk.js");
+load("http://gestalt-meta.gestalt-system.svc.cluster.local:10131/assets/system/lambdas/gestalt-sdk.js");
 
 function migrate(args, ctx) {
     log("***** begin migrate ************");
