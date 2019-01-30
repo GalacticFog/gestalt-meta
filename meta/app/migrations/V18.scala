@@ -11,10 +11,8 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import play.api.libs.json._
 
 
-/*
- * 
- * Add `/properties/provider_subtype` to ::CaasProvider
- * 
+/**
+ * Add `/properties/status_detail` to ::CaasProvider
  */
 class V18 extends MetaMigration() {
 

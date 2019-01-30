@@ -8,6 +8,9 @@ import com.galacticfog.gestalt.meta.auth._
 import play.api.libs.json._
 import scala.util.{Success,Failure,Either,Left,Right}
 
+/**
+ * Add Gestalt::Resource::State::Corrupt to ResourceState enumeration in Meta schema.
+ */
 class V16  extends MetaMigration with AuthorizationMethods {
   
   private val STATE_CORRUPT_ID = UUID.fromString("681099f4-da63-48ef-99d0-75c01166d202")

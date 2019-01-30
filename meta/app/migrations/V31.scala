@@ -16,7 +16,7 @@ class V31  extends MetaMigration {
   private implicit val acc = new MessageAccumulator()
   
   private val baseResource = TypeFactory.findById(ResourceIds.Resource).getOrElse {
-    throw new RuntimeException(s"Type ${Resources.Resource} not found. Ensure database has been initialize.")
+    throw new RuntimeException(s"Type ${Resources.Resource} not found. Ensure database has been initialized.")
   }
 
   private val displayNameProperty = GestaltTypeProperty(

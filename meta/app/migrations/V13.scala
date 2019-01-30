@@ -10,7 +10,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success}
 
-
+/**
+ * Add Volume ("Gestalt::Resource::Volume") Resource Type to Meta.
+ */
 class V13() extends MetaMigration with AuthorizationMethods {
 
   import V13._

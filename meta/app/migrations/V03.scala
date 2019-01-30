@@ -12,7 +12,9 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.session
 import play.api.libs.json._
 
-
+/**
+ * Add `properties.public_url` to ApiEndpoint, Container, and Lambda Resource types.
+ */
 class V3() extends MetaMigration() {
 
   private val acc = new MessageAccumulator()

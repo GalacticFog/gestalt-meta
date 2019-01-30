@@ -10,7 +10,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add "Gestalt::Configuration::Provider::Lambda::AWS" Provider type to Meta.
+ */
 class V20() extends MetaMigration with AuthorizationMethods {
 
   import V20._

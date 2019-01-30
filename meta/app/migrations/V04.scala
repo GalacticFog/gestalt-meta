@@ -10,7 +10,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success}
 
-
+/**
+ * Add `gestalt.upgrade` entitlement to root Org.
+ */
 class V4() extends MetaMigration() with JsonInput {
 
   private val acc = new MessageAccumulator()

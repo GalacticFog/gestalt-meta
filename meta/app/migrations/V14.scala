@@ -10,7 +10,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add "Gestalt::Configuration::Provider::CaaS::ECS" Provider type to Meta.
+ */
 class V14 extends MetaMigration with AuthorizationMethods {
 
   import V14._

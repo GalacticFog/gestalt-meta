@@ -11,7 +11,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add `import` verb to Container - update entitlements on existing resources.
+ */
 class V5 extends MetaMigration() {
 
   private val acc = new MessageAccumulator()

@@ -10,13 +10,14 @@ import com.galacticfog.gestalt.meta.auth._
 import play.api.libs.json._
 import scala.util.{Either, Success, Failure}
 
-
+/**
+ * Add "Gestalt::Configuration::AppDeployment" Resource type to Meta.
+ */
 class V25() extends MetaMigration with AuthorizationMethods {
 
   import V25._
 
   private implicit val acc = new MessageAccumulator()
-  
   
   def migrate(identity: UUID, payload: Option[JsValue] = None): Either[JsValue,JsValue] = {
     acc push "Looking up 'root' org"

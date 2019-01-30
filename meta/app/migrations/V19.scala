@@ -10,10 +10,8 @@ import play.api.libs.json._
 import scala.util.{Either, Failure, Left, Right, Success}
 
 
-/*
- * 
- * Add `/properties/provider_subtype` to ::CaasProvider
- * 
+/**
+ * Add `/properties/events` to ::CaasProvider
  */
 class V19 extends MetaMigration() {
 
