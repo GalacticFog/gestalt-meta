@@ -1,7 +1,7 @@
 package com.galacticfog.gestalt.meta.api
 
 import com.galacticfog.gestalt.meta.api.ContainerStats.{ContainerStateStat, EventStat}
-import com.galacticfog.gestalt.util.Helpers.JodaJsonFormats._
+import com.galacticfog.gestalt.util.JodaJsonFormats._
 
 import org.joda.time.DateTime
 import play.api.libs.json._

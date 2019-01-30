@@ -72,7 +72,7 @@ class LambdaControllerSpec extends PlaySpecification with MetaRepositoryOps with
       bind[ContainerService].toInstance(mock[ContainerService]),
       bind[ProviderManager].toInstance(mock[ProviderManager]),
       bind[MarathonClientFactory].toInstance(mock[MarathonClientFactory]),
-      bind[SkuberFactory].toInstance(mock[SkuberFactory]),
+      bind[kubernetes.SkuberFactory].toInstance(mock[kubernetes.SkuberFactory]),
       bind[DockerClientFactory].toInstance(mock[DockerClientFactory]),
       bind[GenericProviderManager].toInstance(mock[GenericProviderManager]),
       bind[GenericResourceMethods].toInstance(mock[GenericResourceMethods]),

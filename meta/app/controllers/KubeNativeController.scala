@@ -30,7 +30,7 @@ import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import play.api.mvc.{Action, AnyContent, Result}
 
-import services.SkuberFactory
+import services.kubernetes.SkuberFactory
 
 
 // apiVersion => v1

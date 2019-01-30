@@ -10,7 +10,8 @@ import play.api.inject._
 import play.api.inject.guice.GuiceableModule.{fromGuiceModule, fromPlayBinding}
 import play.api.inject.guice.{GuiceApplicationBuilder, GuiceableModule}
 import play.api.test.PlaySpecification
-import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory}
+import services.kubernetes.SkuberFactory
 
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager
 import com.galacticfog.gestalt.data.PostgresConfigManager

@@ -21,7 +21,8 @@ import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json._
 import play.api.test.{PlaySpecification, WithApplication}
-import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory}
+import services.kubernetes.SkuberFactory
 
 import scala.concurrent.Future
 import scala.util.Success
