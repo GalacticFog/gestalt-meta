@@ -13,7 +13,8 @@ import org.specs2.specification.BeforeAll
 import play.api.inject.{BindingKey, bind}
 import play.api.libs.json.Json
 import play.api.test.PlaySpecification
-import services.{MarathonClientFactory, SkuberFactory}
+import services.MarathonClientFactory
+import services.kubernetes.SkuberFactory
 import play.api.libs.concurrent.Execution.Implicits.defaultContext
 
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager

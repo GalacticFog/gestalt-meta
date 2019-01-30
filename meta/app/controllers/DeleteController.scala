@@ -34,7 +34,7 @@ class DeleteController @Inject()(
                                   providerManager: ProviderManager,
                                   gatewayMethods: GatewayMethods,
                                   lambdaMethods: LambdaMethods,
-                                  skuberFactory: SkuberFactory,
+                                  skuberFactory: kubernetes.SkuberFactory,
                                   genericResourceMethods: GenericResourceMethods,
                                   caasTrackingProvider: CaasTrackingProvider,
                                   faasTrackingProvider: FaasTrackingProvider,

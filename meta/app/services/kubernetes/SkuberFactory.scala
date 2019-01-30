@@ -1,4 +1,4 @@
-package services
+package services.kubernetes
 
 import akka.actor.{ActorRef, ActorSystem}
 import akka.stream.Materializer

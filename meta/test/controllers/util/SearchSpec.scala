@@ -14,7 +14,8 @@ import play.api.inject.bind
 import play.api.libs.json.JsValue.jsValueToJsLookup
 import play.api.libs.json.JsObject
 import play.api.test.{PlaySpecification, WithApplication}
-import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory}
+import services.kubernetes.SkuberFactory
 
 import scala.util.Success
 import com.galacticfog.gestalt.meta.api.sdk.GestaltConfigurationManager

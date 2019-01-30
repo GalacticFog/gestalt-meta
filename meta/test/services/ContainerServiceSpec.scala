@@ -46,7 +46,7 @@ trait TestApplication extends Specification with ForEach[TestScope] with Resourc
     Entitlements.setNewResourceEntitlements(dummyRootOrgId, testEnv.id, user, Some(testWork.id))
     val mockProviderManager  = mock[ProviderManager]
     val testProvider    = createKubernetesProvider(testEnv.id, "test-provider").get
-    val mockCaasService = mock[KubernetesService]
+    val mockCaasService = mock[kubernetes.KubernetesService]
 
     mockProviderManager.getProviderImpl(testProvider.typeId) returns Success(mockCaasService)
 

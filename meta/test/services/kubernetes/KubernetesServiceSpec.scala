@@ -1,4 +1,4 @@
-package services
+package services.kubernetes
 
 import java.time.{ZoneOffset, ZonedDateTime}
 import java.util.{Base64, TimeZone, UUID}
@@ -16,6 +16,7 @@ import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec}
 import com.galacticfog.gestalt.meta.test.ResourceScope
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
 import controllers.util.GestaltSecurityMocking
+import services.ProviderContext
 import org.joda.time.{DateTime, DateTimeZone}
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
@@ -237,13 +238,13 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     ).get
 
     lazy val genericLbls   = Map(
-      KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-      KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-      KubernetesService.META_FQON_KEY -> "root",
-      KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+      KubernetesConstants.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+      KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
+      KubernetesConstants.META_FQON_KEY -> "root",
+      KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
     )
-    lazy val secretLbls    = Map(KubernetesService.META_SECRET_KEY    -> metaSecret.id.toString) ++ genericLbls
-    lazy val containerLbls = Map(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) ++ genericLbls
+    lazy val secretLbls    = Map(KubernetesConstants.META_SECRET_KEY    -> metaSecret.id.toString) ++ genericLbls
+    lazy val containerLbls = Map(KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString) ++ genericLbls
 
     lazy val mockSecret = skuber.Secret(
       metadata = skuber.ObjectMeta(
@@ -625,11 +626,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       ))(any,meq(skuber.ext.Deployment.deployDef),any)
 
       val haveExpectedLabels = ((_:skuber.ObjectResource).metadata.labels) ^^ havePairs(
-        KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
-        KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-        KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-        KubernetesService.META_FQON_KEY -> "root",
-        KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+        KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString,
+        KubernetesConstants.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+        KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
+        KubernetesConstants.META_FQON_KEY -> "root",
+        KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
       )
 
       val serviceCaptor = ArgumentCaptor.forClass(classOf[skuber.Service])
@@ -645,7 +646,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
             skuber.Service.Port("https2",  skuber.Protocol.TCP,  8444, Some(Left(444)), 0),
             skuber.Service.Port("https3",  skuber.Protocol.TCP,  8445, Some(Left(445)), 0)
           ) and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString) and haveExpectedLabels,
+          hasSelector(KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString) and haveExpectedLabels,
         //
         inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-ext") and
           hasServiceType(Service.Type.NodePort) and
@@ -653,14 +654,14 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
             skuber.Service.Port("https",  skuber.Protocol.TCP,  443, Some(Left(443)), 32000),
             skuber.Service.Port("https3", skuber.Protocol.TCP, 8445, Some(Left(445)), 0)
           ) and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString),
+          hasSelector(KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString),
         //
         inNamespace(testSetup.testNS.name) and haveName(metaContainer.name + "-lb") and
           hasServiceType(Service.Type.LoadBalancer) and
           hasExactlyServicePorts(
             skuber.Service.Port("https3",   skuber.Protocol.TCP, 8445, Some(Left(445)), 0)
           )  and
-          hasSelector(KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString)
+          hasSelector(KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString)
       ))
 
       import ContainerSpec.{PortMapping, ServiceAddress}
@@ -1046,11 +1047,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ((_:skuber.ext.Deployment).metadata.labels) ^^ havePairs(
           "labela" -> "value a",
           "labelb" -> "value b",
-          KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
-          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-          KubernetesService.META_FQON_KEY -> "root",
-          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+          KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString,
+          KubernetesConstants.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesConstants.META_FQON_KEY -> "root",
+          KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
         )
       ))(any,meq(Deployment.deployDef),any)
     }
@@ -1284,11 +1285,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ((_:skuber.Secret).metadata.labels) ^^ havePairs(
           // "labela" -> "value a",
           // "labelb" -> "value b",
-          KubernetesService.META_SECRET_KEY -> metaSecret.id.toString,
-          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-          KubernetesService.META_FQON_KEY -> "root",
-          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+          KubernetesConstants.META_SECRET_KEY -> metaSecret.id.toString,
+          KubernetesConstants.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesConstants.META_FQON_KEY -> "root",
+          KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
         )
       ))(any,meq(Secret.secDef),any)
     }
@@ -1333,7 +1334,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ))
       )
 
-      val label = KubernetesService.META_SECRET_KEY -> metaSecret.id.toString
+      val label = KubernetesConstants.META_SECRET_KEY -> metaSecret.id.toString
       val mockSecret = skuber.Secret(metadata = skuber.ObjectMeta(
         name = metaSecret.name,
         namespace = testEnv.id.toString,
@@ -1536,7 +1537,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "422 on create of non-white-listed host_path volumes" in new FakeKube(
       providerConfig = Seq(
-        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson("/tmp", "/mnt")
+        KubernetesConstants.HOST_VOLUME_WHITELIST -> Json.toJson("/tmp", "/mnt")
       )
     ) { tag("volumes")
       val Success(metaVolume) = createInstance(
@@ -1613,7 +1614,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "perform HostPath create on volume of type 'host_path'" in new FakeKube(
       providerConfig = Seq(
-        KubernetesService.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
+        KubernetesConstants.HOST_VOLUME_WHITELIST -> Json.toJson(Seq("/supported-path"))
       )
     ) { tag("volumes")
       val Success(metaVolume) = createInstance(
@@ -1685,7 +1686,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
             name = metaVolume.name,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1694,7 +1695,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolume(metadata = skuber.ObjectMeta(
             name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1727,7 +1728,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
             name = metaVolume.name,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1767,7 +1768,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
             name = metaVolume.name,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1776,7 +1777,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolume(metadata = skuber.ObjectMeta(
             name = metaVolume.name.substring(0,8)+"-"+metaVolume.id,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1815,7 +1816,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
             name = metaVolume.name,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY    -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY    -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1847,7 +1848,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "422 on create of of 'dynamic' volume with unsupported storage class" in new FakeKube(
       providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+        KubernetesConstants.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
     ) { tag("volumes")
       val Success(metaVolume) = createInstance(
@@ -1871,7 +1872,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "perform PVC creation on volume of type 'dynamic' for supported storage_class" in new FakeKube(
       providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+        KubernetesConstants.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
     ) { tag("volumes")
       val Success(metaVolume) = createInstance(
@@ -1910,7 +1911,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "perform PVC deletion on volume of type 'dynamic'" in new FakeKube(
       providerConfig = Seq(
-        KubernetesService.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
+        KubernetesConstants.STORAGE_CLASSES -> Json.toJson("storage-class-a", "storage-class-b")
       )
     ) { tag("volumes")
       val Success(metaVolume) = createInstance(
@@ -1934,7 +1935,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           skuber.PersistentVolumeClaim(metadata = skuber.ObjectMeta(
             name = metaVolume.name,
             namespace = testEnv.id.toString,
-            labels = Map(KubernetesService.META_VOLUME_KEY -> metaVolume.id.toString)
+            labels = Map(KubernetesConstants.META_VOLUME_KEY -> metaVolume.id.toString)
           ))
         ))
       )
@@ -1977,11 +1978,11 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         inNamespace(testSetup.testNS.name)
           and
         ((_:Ingress).metadata.labels) ^^ havePairs(
-          KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString,
-          KubernetesService.META_ENVIRONMENT_KEY -> testEnv.id.toString,
-          KubernetesService.META_WORKSPACE_KEY -> testWork.id.toString,
-          KubernetesService.META_FQON_KEY -> "root",
-          KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+          KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString,
+          KubernetesConstants.META_ENVIRONMENT_KEY -> testEnv.id.toString,
+          KubernetesConstants.META_WORKSPACE_KEY -> testWork.id.toString,
+          KubernetesConstants.META_FQON_KEY -> "root",
+          KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
         )
           and
         ((_:Ingress).spec.map(_.rules).getOrElse(Nil)) ^^ containTheSameElementsAs(Seq(
@@ -2054,7 +2055,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ))
       )
 
-      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val label = KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = metaContainer.name,
         namespace = testEnv.id.toString,
@@ -2104,7 +2105,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ))
       )
 
-      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val label = KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString
       val mockDep = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = metaContainer.name,
         namespace = testEnv.id.toString,
@@ -2421,10 +2422,10 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     //   ))
     //   there was one(testSetup.client).create(argThat(
     //     ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
-    //       KubernetesService.META_ENVIRONMENT_KEY -> newEnv.id.toString,
-    //       KubernetesService.META_WORKSPACE_KEY -> newWork.id.toString,
-    //       KubernetesService.META_FQON_KEY -> "root",
-    //       KubernetesService.META_PROVIDER_KEY -> testProvider.id.toString
+    //       KubernetesConstants.META_ENVIRONMENT_KEY -> newEnv.id.toString,
+    //       KubernetesConstants.META_WORKSPACE_KEY -> newWork.id.toString,
+    //       KubernetesConstants.META_FQON_KEY -> "root",
+    //       KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
     //     )
     //       and
     //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
@@ -2433,7 +2434,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "prefer to update cpu/mem from limit instead of request" in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
           name = "test-container",
@@ -2489,7 +2490,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "fallback on getting cpu/mem from request" in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
           name = "test-container",
@@ -2542,7 +2543,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "fill pod events" in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -2583,7 +2584,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         ),
         involvedObject = skuber.ObjectReference(
           name = "test-pod",
-          kind = KubernetesService.POD
+          kind = "Pod"
         ),
         `type` = Some("type"),
         reason = Some("reason"),
@@ -2601,7 +2602,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.DEPLOYMENT,
+            kind = "Deployment",
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -2615,7 +2616,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.REPLICA_SET,
+            kind = "ReplicaSet",
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
@@ -2642,7 +2643,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
       containerStats.events must_== Some(List(EventStat(
         testEvent.involvedObject.name,
-        KubernetesService.POD,
+        "Pod",
         testEvent.`type`.get,
         testEvent.reason.get,
         new DateTime(
@@ -2656,7 +2657,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
     "fill status using container states" in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -2698,7 +2699,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.DEPLOYMENT,
+            kind = "Deployment",
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -2712,7 +2713,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.REPLICA_SET,
+            kind = "ReplicaSet",
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
@@ -2749,13 +2750,13 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         reason = Some("error"),
         priority = 2,
         objectName = "test-pod",
-        objectType = KubernetesService.POD
+        objectType = "Pod"
       ))
     }
 
     "fill status using pod conditions" in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val deploymentUid = uuid()
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
@@ -2797,7 +2798,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           uid = replicaSetUid.toString,
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.DEPLOYMENT,
+            kind = "Deployment",
             name = "test-container",
             uid = deploymentUid.toString,
             controller = None,
@@ -2811,7 +2812,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           name = "test-pod",
           ownerReferences = List(OwnerReference(
             apiVersion = "v1",
-            kind = KubernetesService.REPLICA_SET,
+            kind = "ReplicaSet",
             name = "test-replica",
             uid = replicaSetUid.toString,
             controller = None,
@@ -2843,13 +2844,13 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
         reason = Some("error"),
         priority = 1,
         objectName = "test-pod",
-        objectType = KubernetesService.POD
+        objectType = "Pod"
       ))
     }
 
     "fallback on to 0 cpu/mem if neither request nor limit " in new FakeKube {
       val testContainerId = uuid()
-      val lbls = Map(KubernetesService.META_CONTAINER_KEY -> testContainerId.toString)
+      val lbls = Map(KubernetesConstants.META_CONTAINER_KEY -> testContainerId.toString)
       val testDepl = skuber.ext.Deployment(
         metadata = skuber.ObjectMeta(
           name = "test-container",
@@ -2916,7 +2917,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )
 
       val testScale = 0
-      val label = KubernetesService.META_CONTAINER_KEY -> metaContainer.id.toString
+      val label = KubernetesConstants.META_CONTAINER_KEY -> metaContainer.id.toString
       val testDepl = skuber.ext.Deployment(metadata = skuber.ObjectMeta(
         name = metaContainer.name,
         namespace = testEnv.id.toString,
