@@ -14,7 +14,10 @@ import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.session
 import play.api.libs.json._
 
-
+/**
+ * Change `rule.properties.actions` to `rule.properties.match_actions`.
+ * Update the type schema and all existing instances.
+ */
 class V1() extends MetaMigration() {
 
   private val acc = new MessageAccumulator()

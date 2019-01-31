@@ -9,7 +9,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add `hosts` property to ApiEndpoint
+ */
 class V6() extends MetaMigration() {
 
   private val acc = new MessageAccumulator()

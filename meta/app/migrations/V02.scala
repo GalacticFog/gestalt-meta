@@ -14,7 +14,10 @@ import com.galacticfog.gestalt.data.session
 import play.api.libs.json._
 import com.galacticfog.gestalt.meta.auth._
 
-
+/**
+ * Add `invoke` to ApiEndpoint functions/verbs.
+ * Create the `invoke` entitlement on all appropriate existing resources.
+ */
 class V2 extends MetaMigration() {
 
   private val acc = new MessageAccumulator()

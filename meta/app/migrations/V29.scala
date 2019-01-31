@@ -6,14 +6,10 @@ import com.galacticfog.gestalt.data._
 import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.meta.api.sdk._
 import play.api.libs.json._
-
 import scala.util.{Either, Failure, Left, Right, Success}
 
-
-/*
- * 
+/**
  * Add `/properties/provider_mapping` to Environment
- * 
  */
 class V29 extends MetaMigration() {
 
@@ -75,4 +71,3 @@ class V29 extends MetaMigration() {
   }
   
 }
- 

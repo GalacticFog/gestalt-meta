@@ -29,7 +29,14 @@ import scala.concurrent.duration._
 
 import scala.util.{Either/*,Left,Right*/,Try,Success,Failure}
 
-
+/*
+ * TODO: This migration is way over-tasked. Migrations should only modify the meta schema and type-system.
+ * This migration creates resource instances as well (a lambda, a stream provider instance, streamspec instance).
+ * Instance creation should be handled external to migrations (i.e. the installer or other external script)
+ */
+/**
+ * Create New Types: DataFeed, StreamProvider, and StreamSpec
+ */
 trait LaserTransformationMigrationV7 {
   // copying this here because I'm in serious doubt that we can keep this migration working while evolving
   // the interface and behaviour of laser lambdas

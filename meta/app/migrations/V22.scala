@@ -7,7 +7,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success}
 
-
+/**
+ * Add `migrate` verb to Lambda
+ */
 class V22 extends MetaMigration() {
 
   private implicit val acc = new MessageAccumulator()

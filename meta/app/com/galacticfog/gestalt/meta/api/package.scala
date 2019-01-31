@@ -133,19 +133,14 @@ package object api {
       case "policies"         => Some(ResourceIds.Policy)
       case "rules"            => Some(ResourceIds.Rule)
       case "providers"        => Some(ResourceIds.Provider)
-      case "nodetypes"        => Some(ResourceIds.NodeType)
       case "environmenttypes" => Some(ResourceIds.EnvironmentType)
       case "datatypes"        => Some(ResourceIds.DataType)
       case "requirementtypes" => Some(ResourceIds.RequirementType)
       case "visibilitytypes"  => Some(ResourceIds.VisibilityType)
       case "resourcestates"   => Some(ResourceIds.ResourceState)
       case "resourcetypes"    => Some(ResourceIds.ResourceType)
-      case "taskstatustypes"  => Some(ResourceIds.TaskStatusType)
       case "licenses"         => Some(ResourceIds.License)
-      case "integrations"     => Some(ResourceIds.Integration)
       case "datacontainers"   => Some(ResourceIds.DataContainer)
-      case "actionproviders"  => Some(ResourceIds.ActionProvider)
-      case "actions"          => Some(ResourceIds.ProviderAction)
       case _                  => None
     }
     wellKnown orElse TypeFactory.listByApiPrefix(resource).headOption.map(_.id)
@@ -168,7 +163,6 @@ package object api {
       case ResourceIds.Domain          => Some("domains")
       case ResourceIds.Container       => Some("containers")
       case ResourceIds.Entitlement     => Some("entitlements")
-      case ResourceIds.NodeType        => Some("nodetypes")
       case ResourceIds.EnvironmentType => Some("environmenttypes")
       case ResourceIds.DataType        => Some("datatypes")
       case ResourceIds.RequirementType => Some("requirementtypes")
@@ -176,10 +170,6 @@ package object api {
       case ResourceIds.ResourceState   => Some("resourcestates")
       case ResourceIds.ResourceType    => Some("resourcetypes")
       case ResourceIds.TypeProperty    => Some("typeproperties")
-      case ResourceIds.TaskStatusType  => Some("taskstatustypes")
-      case ResourceIds.Integration     => Some("integrations")
-      case ResourceIds.ActionProvider  => Some("actionproviders")
-      case ResourceIds.ProviderAction  => Some("actions")
       case _ => None
     }
     wellKnown orElse {

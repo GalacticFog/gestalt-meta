@@ -299,10 +299,10 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
   }
 
   
-  protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
-    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
-    JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
-  }  
+//  protected [controllers] def updatePolicyJson(policyJson: JsValue, parent: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]) = {
+//    val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
+//    JsonUtil.withJsonPropValue(policyJson.as[JsObject], "parent", link)
+//  }  
 
   
   protected[controllers] def ResourceNotFound(typeId: UUID, id: UUID) = 
@@ -331,10 +331,24 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     ResourceIds.RuleEvent   -> transformRule
   )
   
-  def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue): Try[JsValue] = {
-    payloadTransforms.get(tpe).fold(Try(payload)) { f =>
+  def transformPayload(tpe: UUID, org: UUID, parent: UUID, payload: JsValue)(implicit request: SecuredRequest[_,_]): Try[JsValue] = {
+    
+    val newPayload = {
+      /*
+       * TODO: Here we're trying to inject a parent Link to the payload. The two
+       * Rule types already have parent properties that are uuid::links. These types
+       * are incompatible.
+       */
+      if (tpe == ResourceIds.RuleLimit || tpe == ResourceIds.RuleEvent) payload
+      else {
+        val link = Json.toJson(parentLink(parent, Some(META_URL)).get)
+        JsonUtil.withJsonPropValue(payload.as[JsObject], "parent", link)
+      }
+    }
+    
+    payloadTransforms.get(tpe).fold(Try(newPayload)) { f =>
       val data = Map("org" -> org.toString, "parent" -> parent.toString, "typeId" -> tpe.toString)
-      f(payload, data)
+      f(newPayload, data).map(_.as[JsObject])
     }
   }  
   
@@ -346,7 +360,6 @@ trait MetaController extends SecurityResources with MetaControllerUtils with Jso
     } yield c      
   }
   
-
   // TODO: Need to generalize name->uuid lookups
   // Replace environment_type simple-name into type UUID in environment properties
   def normalizeEnvironmentType(env: JsObject) = Try {

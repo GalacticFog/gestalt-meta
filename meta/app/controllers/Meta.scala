@@ -37,9 +37,7 @@ import javax.inject.Singleton
 import com.galacticfog.gestalt.meta.api.sdk
 import com.galacticfog.gestalt.meta.providers._
 import com.galacticfog.gestalt.data._
-import com.galacticfog.gestalt.events._
 import controllers.util.LambdaMethods
-import com.galacticfog.gestalt.meta.actions._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceOwnerLink
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 
@@ -49,7 +47,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
                       security: Security,
                       securitySync: SecuritySync,
                       lambdaMethods: LambdaMethods,
-                      actionMethods: ProviderActionMethods,
                       providerManager: ProviderManager,
                       genericResourceMethods: GenericResourceMethods )
 
@@ -624,19 +621,7 @@ class Meta @Inject()( messagesApi: MessagesApi,
             getCurrentProvider(targetid, results) map { newprovider =>
 
               val output: GestaltResourceInstance = {
-
-                if (!ProviderMethods.isActionProvider(newprovider.typeId)) newprovider
-                else {
-                  /*
-                   * This call will create a new Environment for this Provider. This is where we
-                   * will store the Lambda, Api, and ApiEndpoints for any specified ProviderActions.
-                   */
-                  val providerEnv = providerManager.getOrCreateProviderEnvironment(newprovider, user)
-                  log.debug("Creating Provider Actions...")
-                  val _ = createProviderActions(newprovider, user, providerEnv)
-                  ProviderMethods.injectProviderActions(newprovider)
-                }
-
+                newprovider
               }
 
               Created(RenderSingle(output))
@@ -655,102 +640,6 @@ class Meta @Inject()( messagesApi: MessagesApi,
     }
   }
 
-  
-  def invokeAction(fqon: String, id: UUID) = AsyncAudited(fqon) { implicit request =>
-    log.info(s"invokeAction($fqon, $id)")
-    val maybeEvents = for {
-      action   <- Try { ResourceFactory.findById(ResourceIds.ProviderAction, id) getOrElse {
-        throw new ResourceNotFoundException(s"Action with ID '$id' not found.")
-      }}
-      lambda   <- actionMethods.lambdaFromAction(action.id)
-      endpoint <- actionMethods.buildActionMessageEndpoint(lambda)
-      
-      client  = AmqpClient {
-        AmqpConnection(endpoint.service_host, endpoint.service_port.get, heartbeat = 300)
-      }
-      
-      eventEp = AmqpEndpoint(endpoint.message_exchange, endpoint.message_topic)
-    } yield (lambda, client, eventEp)
-    
-    maybeEvents match {
-      case Failure(e) => throw e
-      case Success((lambda, client, endpoint)) => {
-        
-        val event = ActionInvokeEvent(
-          lambdaId = lambda.id,
-          payload = Some(Json.stringify(request.body)),
-          params = request.queryString)
-
-        client.publish(endpoint, Json.stringify(Json.toJson(event)))
-      }
-    }
-    Future( Ok(Json.obj("status" -> "ok", "message" -> "sent")))
-  }  
-  
-  
-  /**
-   * 
-   * @param provider the Provider instance to create actions for
-   * @param creator the user who initiated this call
-   * @param providerEnv the new environment where action lambdas will be created
-   */
-  def createProviderActions( provider: GestaltResourceInstance,
-                             creator: AccountLike,
-                             providerEnv: GestaltResourceInstance) = {
-
-    // Parse the ActionSpec JSON from the Provider type definition.
-
-    val actionSpecs = for {
-      s <- TypeFactory.findById(provider.typeId)
-      p <- s.properties
-      a <- p.get("provider_actions")
-      jsv  = Json.parse(a)
-      acts = jsv.as[JsArray].value.map { Js.parse[ProviderActionSpec](_)(providerActionFormat) }
-    } yield acts
-
-    val (failedParse, successfulParse) = (actionSpecs getOrElse Seq.empty) partition { _.isFailure }
-
-    if (failedParse.nonEmpty) {
-      // TODO: There were errors parsing ProviderActions - DO SOMETHING!
-      throw new RuntimeException("FAILED PARSING PROVIDER-ACTIONS")
-    }
-
-    val fActions = successfulParse.map { spec =>
-      /*
-       * TODO: Idea is that we can use a pre-existing lambda or create a new one
-       * from a provided specification. First-pass we will only consider the
-       * new creation from a spec.
-       */
-      log.debug("Creating Action Lambda...")
-      log.debug(Json.prettyPrint(Json.toJson(spec.get)))
-
-      log.info("Attempting to resolve action-implementation...")
-
-      val impl = spec.get.implementation
-
-      val action = impl.kind.trim.toLowerCase match {
-        case "lambda" => {
-          actionMethods.resolveLambdaImplementation(provider.orgId, impl, providerEnv, creator).map { lam =>
-            spec.get.toResource(provider.orgId, provider.id, provider.owner, implId = Some(lam.id))
-          }
-        }
-        case "metacallback" => Future(spec.get.toResource(provider.orgId, provider.id, provider.owner))
-      }
-
-      action map { act =>
-        CreateWithEntitlements(provider.orgId, creator, act, Some(provider.id)) match {
-          case Success(res) => res
-          case Failure(err) => throw new RuntimeException("Failed creating ProviderAction: " + err.getMessage)
-        }        
-      }
-      
-    }
-    import scala.concurrent.Await
-    import scala.concurrent.duration.DurationInt
-
-    Await.result(Future.sequence(fActions), 15.seconds)
-  }
-  
   // --------------------------------------------------------------------------
   //
   // UTILITY FUNCTIONS

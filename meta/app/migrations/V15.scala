@@ -9,7 +9,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add `isolate` properties to Lambda type.
+ */
 class V15() extends MetaMigration() {
 
   private implicit val acc = new MessageAccumulator()

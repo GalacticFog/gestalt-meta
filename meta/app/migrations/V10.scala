@@ -9,7 +9,9 @@ import play.api.libs.json._
 
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 
-
+/**
+ * Add `secrets` and `credentials` properties to Lambda type.
+ */
 class V10() extends MetaMigration() {
 
   private implicit val acc = new MessageAccumulator()
@@ -37,7 +39,7 @@ class V10() extends MetaMigration() {
   private[migrations] def perform(identity: UUID) = Try {
     for {
       lambda <- Try{TypeFactory.findById(ResourceIds.Lambda) getOrElse {
-        throw new RuntimeException(s"Type ${Resources.Lambda} not found. Ensure database has been initialize.")
+        throw new RuntimeException(s"Type ${Resources.Lambda} not found. Ensure database has been initialized.")
       }}
       t <- addPropertyTypeToResourceType(lambda, GestaltTypeProperty(
         typeId = ResourceIds.TypeProperty,

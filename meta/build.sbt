@@ -27,7 +27,7 @@ addCompilerPlugin(scalafixSemanticdb)
 
 name := """gestalt-meta"""
 
-version := "0.7.10"
+version := "0.7.12"
 
 maintainer in Docker := "Chris Baker <chris@galacticfog.com>"
 
@@ -108,7 +108,7 @@ libraryDependencies ++= Seq(
   "org.clapper"     %% "scalasti"                      % "3.0.1",
   "org.jtwig"        % "jtwig-core"                    % "5.86.0.RELEASE",
 
-  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.13" withSources(),
+  "com.galacticfog" %% "gestalt-meta-repository"       % "0.8.15" withSources(),
   // "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.5-SNAPSHOT" withSources(),
   "com.galacticfog" %% "gestalt-security-sdk-scala"    % "2.4.7" withSources(),
   "com.galacticfog" %% "gestalt-security-play"         % "4.1.0" withSources(),

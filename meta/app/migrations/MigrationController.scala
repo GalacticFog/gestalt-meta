@@ -24,7 +24,6 @@ class MigrationController @Inject()(
     sec: GestaltFrameworkSecurity,
     security: Security,
     v7: V7,
-    v8: V8,
     genericResourceMethods: GenericResourceMethods,
     cacheProvider: CacheManagerProvider
   )
@@ -33,9 +32,9 @@ class MigrationController @Inject()(
   def migrate() = AsyncAudited() { implicit request =>
     log.debug("migrate()")
     
-    val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V8", "V9", "V10",
+    val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V9", "V10",
       "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19", "V20", "V21", "V22", 
-      "V23", "V24", "V25", "V26", "V27", "V28", "V29")
+      "V23", "V24", "V25", "V26", "V27", "V28", "V29", "V30", "V31")
     
     val version = QueryString.single(request.queryString, "version", strict = true)
     val caller = request.identity.account.id
@@ -100,7 +99,6 @@ class MigrationController @Inject()(
       case "V5" => new V5()
       case "V6" => new V6()
       case "V7" => v7
-      case "V8" => v8
       case "V9" => new V9()
       case "V10" => new V10()
       case "V11" => new V11()
@@ -122,6 +120,8 @@ class MigrationController @Inject()(
       case "V27" => new V27()
       case "V28" => new V28()
       case "V29" => new V29()
+      case "V30" => new V30()
+      case "V31" => new V31()
       case _ =>
         throw new BadRequestException(s"No migration found for version '$version'")
     }

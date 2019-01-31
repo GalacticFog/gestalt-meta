@@ -3,6 +3,7 @@ package migrations
 import java.util.UUID
 
 import com.galacticfog.gestalt.data._
+
 // import com.galacticfog.gestalt.data.bootstrap._
 // import com.galacticfog.gestalt.meta.api.sdk.{ResourceOwnerLink, _}
 // import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds
@@ -76,5 +77,4 @@ class V28() extends MetaMigration with AuthorizationMethods {
       }
     }    
   }  
-
 }

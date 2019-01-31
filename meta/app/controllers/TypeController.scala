@@ -24,8 +24,6 @@ import com.galacticfog.gestalt.json.Js
 import javax.inject.Singleton
 import com.galacticfog.gestalt.json.Js
 import com.galacticfog.gestalt.data.ResourceSelector
-import com.galacticfog.gestalt.meta.providers.ui.Assembler
-import com.galacticfog.gestalt.meta.providers._
 
 import scala.util.{Failure, Success, Try}
 import controllers.util.Security
@@ -91,52 +89,6 @@ class TypeController @Inject()(
         }
       }
       Ok(handleExpandType(tpes, qs, META_URL))
-    }
-  }
-
-  /**
-    * Get a Provider Action specification from the Provider. This is a convenience method that can be used to get
-    * an Action spec before an Action instance is created. The intended use is to test rendering of the Action UI.
-    */
-  def getProviderActionByIndex(fqon: String, typeId: UUID, actionIndex: Int) = Audited(fqon){ implicit request =>
-    log.info(s"getProviderActionByIndex($fqon, $typeId)")
-    TypeFactory.findById(typeId).fold {
-      HandleExceptions {
-        throw new ResourceNotFoundException(
-          s"Resource-Type with ID '$typeId' not found.")
-      }
-    }{ r =>
-      val jtype = Json.toJson(Output.renderResourceTypeOutput(r)).as[JsObject]
-      Js.find(jtype, s"/properties/provider_actions/$actionIndex").fold {
-        HandleExceptions {
-          throw new ResourceNotFoundException(
-            s"/properties/provider_actions/$actionIndex not found in Resource Type $typeId")
-        }
-      }{ action =>
-        val qs = request.queryString
-        if (QueryString.singleBoolean(qs, "render")) {
-          log.debug("Found 'render' query param.")
-
-          if (QueryString.singleBoolean(qs, "envelope")) {
-            val out = Assembler.envelope(fqon, META_URL, None, request.identity)
-            Ok(out).as("text/html")
-          } else {
-            Js.parse[ProviderActionSpec](action) match {
-              case Failure(e) => HandleExceptions {
-                throw new RuntimeException(s"Could not parse action JSON from provider. Error: ${e.getMessage}")
-              }
-              case Success(spec) => {
-                log.debug("Found 'envelope' query param.")
-                val output = Assembler.assemble(fqon, META_URL, spec, None, None, request.identity)
-                Ok(output).as("text/html")
-              }
-            }
-          }
-
-        } else {
-          Ok(action)
-        }
-      }
     }
   }
 
@@ -484,7 +436,4 @@ class TypeController @Inject()(
       case other  => other
     }
   }
-
-
-
 }

@@ -11,6 +11,9 @@ import play.api.libs.json._
 import scala.util.{Either, Failure, Left, Right, Success, Try}
 import com.galacticfog.gestalt.meta.api.Resource
 
+/**
+ * Update User, Group, and Entitlements resources to be owned by the root Org.
+ */
 class V11 extends MetaMigration() {
 
   private implicit val acc = new MessageAccumulator()

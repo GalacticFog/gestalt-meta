@@ -10,9 +10,9 @@ import play.api.libs.json._
 import scala.util.{Failure, Success, Try}
 
 
-/*
+/**
  * 
- * Add `/properties/provider_subtype` to ::CaasProvider
+ * Add `aws_role_id` and `aws_function_id` to Lambda type.
  * 
  */
 class V21 extends MetaMigration() {
