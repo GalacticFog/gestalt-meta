@@ -127,6 +127,8 @@ libraryDependencies ++= Seq(
 
   "com.lihaoyi"     %% "scalatags"                     % "0.6.7",
   "org.typelevel"   %% "cats-core"                     % "1.4.0",
+  "com.github.julien-truffaut" %% "monocle-core"       % "1.5.0-cats",
+  "com.github.julien-truffaut" %% "monocle-macro"      % "1.5.0-cats",
 
   "org.scalikejdbc" %% "scalikejdbc-config"            % "2.5.1",
   "org.scalikejdbc" %% "scalikejdbc-play-initializer"  % "2.5.1",

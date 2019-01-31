@@ -2,16 +2,20 @@ package services.kubernetes
 
 import java.util.{Base64, UUID}
 
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.data.ResourceFactory
 import com.galacticfog.gestalt.meta.api.ContainerSpec.{ExistingVolumeMountSpec, InlineVolumeMountSpec, PortMapping, SecretDirMount, SecretEnvMount, SecretFileMount}
 import com.galacticfog.gestalt.meta.api.VolumeSpec.ReadOnlyMany
 import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, SecretSpec, VolumeSpec}
+import com.galacticfog.gestalt.util.ResourceSerde
+import com.galacticfog.gestalt.util.EitherWithErrors._
+import com.galacticfog.gestalt.util.Error
 import controllers.util._
 import services.util.CommandParser
 import services.ProviderContext
+import cats.syntax.either._
 import skuber.Container.Port
 import skuber._
 import skuber.ext._
@@ -27,54 +31,78 @@ Transforms meta entities into kubernetes entities
 trait MkKubernetesSpec {
   import KubernetesConstants._
 
-  def mkPV( namespace: Namespace,
-            metaResource: ResourceLike,
-            spec: VolumeSpec,
-            context: ProviderContext,
-            source: Volume.PersistentSource ): PersistentVolume = {
-    PersistentVolume(
-      metadata = ObjectMeta(
-        name = metaResource.name.substring(0, math.min(8,metaResource.name.length)) + "-" + metaResource.id.toString,
-        namespace = "",
-        labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString
-        ) ++ mkLabels(context)
-      ),
-      spec = Some(PersistentVolume.Spec(
-        capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
-        source = source,
-        accessModes = List(spec.access_mode),
-        claimRef = Some(skuber.ObjectReference(
-          namespace = namespace.name,
-          name = metaResource.name.toString
-        ))
-      ))
-    )
-  }
+  def mkPVCandPV(provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(PersistentVolumeClaim, Option[PersistentVolume])] = {
 
-  def mkPVC( namespace: Namespace,
-             metaResource: ResourceLike,
-             spec: VolumeSpec,
-             context: ProviderContext,
-             maybeStorageClass: Option[String] = None): PersistentVolumeClaim = {
-    PersistentVolumeClaim(
-      metadata = ObjectMeta(
-        name = metaResource.name,
-        namespace = namespace.name,
-        labels = Map(
-          META_VOLUME_KEY      -> metaResource.id.toString
-        ) ++ mkLabels(context)
-      ),
-      spec = Some(PersistentVolumeClaim.Spec(
-        accessModes = List(spec.access_mode),
-        resources = Some(Resource.Requirements(
-          requests = Map(
-            Resource.storage -> s"${spec.size}Mi"
+    def isAllowedHostPath(provider: GestaltResourceInstance, hostPath: String): Boolean = {
+      val allowedHostPaths = ContainerService.getProviderProperty[Seq[String]](provider, HOST_VOLUME_WHITELIST).getOrElse(Seq.empty)
+      val hpParts = hostPath.stripSuffix("/").stripPrefix("/").split("/").scan("")(_ + "/" + _)
+      hpParts.exists(part => allowedHostPaths.map(_.stripSuffix("/")).contains(part))
+    }
+
+    def isConfiguredStorageClass(provider: GestaltResourceInstance, storageClass: String): Boolean = {
+      val configuredStorageClasses = ContainerService.getProviderProperty[Seq[String]](provider, STORAGE_CLASSES).getOrElse(Seq.empty)
+      configuredStorageClasses.contains(storageClass)
+    }
+
+    for(
+      spec <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](resource);
+      config <- eitherFromJsResult(spec.parseConfig);
+      props <- config match {
+        case VolumeSpec.HostPathVolume(hostPath) if isAllowedHostPath(provider, hostPath) => {
+          Right((Some(skuber.Volume.HostPath(hostPath)), None))
+        }
+        case VolumeSpec.HostPathVolume(hostPath) => Left(Error.UnprocessableEntity(s"host_path '$hostPath' is not in provider's white-list"))
+        case VolumeSpec.PersistentVolume => Left(Error.BadRequest("Kubernetes providers only support volumes of type 'external', 'dynamic' and 'host_path'"))
+        case VolumeSpec.ExternalVolume(config) => {
+          Right((Some(skuber.Volume.GenericVolumeSource(config.toString)), None))
+        }
+        case VolumeSpec.DynamicVolume(storageClass) if isConfiguredStorageClass(provider, storageClass) => {
+          Right((None, Some(storageClass)))
+        }
+        case VolumeSpec.DynamicVolume(storageClass) => Left(Error.UnprocessableEntity(s"storage_class '$storageClass' is not in provider's white-list"))
+      }
+    ) yield {
+      val (sourceOpt, storageClassOpt) = props
+      val pvOpt = sourceOpt map { source =>
+        PersistentVolume(
+          metadata = ObjectMeta(
+            name = s"${resource.name.take(8)}-${resource.id}",
+            namespace = "",
+            labels = Map(
+              META_VOLUME_KEY -> s"${resource.id}"
+            )
+          ),
+          spec = Some(PersistentVolume.Spec(
+            capacity = Map(Resource.storage -> Resource.Quantity(s"${spec.size}Mi")),
+            source = source,
+            accessModes = List(spec.access_mode),
+            claimRef = Some(skuber.ObjectReference(
+              namespace = "__SET_ME__",
+              name = resource.name
+            ))
+          ))
+        )
+      }
+      val pvc = PersistentVolumeClaim(
+        metadata = ObjectMeta(
+          name = resource.name,
+          namespace = "__SET_ME__",
+          labels = Map(
+            META_VOLUME_KEY -> s"${resource.id}"
           )
-        )),
-        storageClassName = maybeStorageClass
-      ))
-    )
+        ),
+        spec = Some(PersistentVolumeClaim.Spec(
+          accessModes = List(spec.access_mode),
+          resources = Some(Resource.Requirements(
+            requests = Map(
+              Resource.storage -> s"${spec.size}Mi"
+            )
+          )),
+          storageClassName = storageClassOpt
+        ))
+      )
+      (pvc, pvOpt)
+    }
   }
 
   def mkLabels(context: ProviderContext): Map[String,String] = {
@@ -108,17 +136,6 @@ trait MkKubernetesSpec {
       `type` = "Opaque",
       data = data
     )
-  }
-
-  def mkPortMappingsSpec(pms: Seq[PortMapping]): Seq[Port] = {
-    pms.map(pm => skuber.Container.Port(
-      containerPort = pm.container_port.getOrElse(throw new UnprocessableEntityException("port mapping must specify container_port")),
-      protocol = stringToProtocol(pm.protocol),
-      name = pm.name.getOrElse(
-        if (pms.size > 1) throw new UnprocessableEntityException("multiple port mappings requires port names") else ""
-      ),
-      hostPort = pm.host_port
-    ))
   }
 
   def mkIngressSpec(containerId: UUID, containerSpec: ContainerSpec, namespace: String, context: ProviderContext): Option[Ingress] = {
@@ -199,6 +216,17 @@ trait MkKubernetesSpec {
         mkSvc(containerSpec.name + "-lb",  Service.Type.LoadBalancer, lbPMs)
       )
     }
+  }
+
+  def mkPortMappingsSpec(pms: Seq[PortMapping]): Seq[Port] = {
+    pms.map(pm => skuber.Container.Port(
+      containerPort = pm.container_port.getOrElse(throw new UnprocessableEntityException("port mapping must specify container_port")),
+      protocol = stringToProtocol(pm.protocol),
+      name = pm.name.getOrElse(
+        if (pms.size > 1) throw new UnprocessableEntityException("multiple port mappings requires port names") else ""
+      ),
+      hostPort = pm.host_port
+    ))
   }
 
   def mkKubernetesContainer(spec: ContainerSpec, provider: GestaltResourceInstance): skuber.Container = {
