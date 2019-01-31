@@ -15,6 +15,7 @@ import com.galacticfog.gestalt.data.models._
 import com.galacticfog.gestalt.data.CoVariant
 import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.errors._
+import services.kubernetes.KubernetesService
 import services._
 import controllers.util.{AccountLike, JsonInput}
 import com.galacticfog.gestalt.security.play.silhouette.AuthAccountWithCreds

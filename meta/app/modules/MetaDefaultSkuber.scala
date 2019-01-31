@@ -4,7 +4,7 @@ import com.google.inject.AbstractModule
 import net.codingwell.scalaguice.ScalaModule
 import play.api.libs.concurrent.AkkaGuiceSupport
 import com.galacticfog.gestalt.integrations.kubernetes.KubeTokenActor
-import services.{DefaultSkuberFactory, SkuberFactory}
+import services.kubernetes.{DefaultSkuberFactory, SkuberFactory}
 
 class MetaDefaultSkuber extends AbstractModule with ScalaModule with AkkaGuiceSupport {
 

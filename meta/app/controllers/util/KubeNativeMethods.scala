@@ -15,7 +15,7 @@ import com.galacticfog.gestalt.data.ResourceFactory
 import play.api.libs.json._
 
 //import javax.inject.Singleton
-import services.SkuberFactory
+import services.kubernetes.SkuberFactory
 
 import scala.util.{/*Try,*/ Success, Failure}
 

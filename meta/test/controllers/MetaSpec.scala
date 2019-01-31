@@ -14,7 +14,8 @@ import play.api.libs.json.{JsObject, JsValue, Json}
 import play.api.libs.json.Json.toJsFieldJsValueWrapper
 import play.api.test.{PlaySpecification, WithApplication}
 import play.api.inject.bind
-import services.{DockerClientFactory, MarathonClientFactory, SkuberFactory}
+import services.{DockerClientFactory, MarathonClientFactory}
+import services.kubernetes.SkuberFactory
 
 import scala.util.Success
 import com.galacticfog.gestalt.data.{EnvironmentType, ResourceFactory}

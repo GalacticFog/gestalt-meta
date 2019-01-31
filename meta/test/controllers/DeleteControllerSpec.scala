@@ -13,7 +13,7 @@ import play.api.libs.json._
 import play.api.test._
 
 import scala.util.Success
-import services.SkuberFactory
+import services.kubernetes.SkuberFactory
 
 import scala.concurrent.Future
 

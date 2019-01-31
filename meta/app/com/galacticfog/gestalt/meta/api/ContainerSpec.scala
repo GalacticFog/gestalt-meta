@@ -4,7 +4,7 @@ import java.util.UUID
 
 import ai.x.play.json.Jsonx
 import ai.x.play.json.implicits.optionWithNull
-import com.galacticfog.gestalt.util.Helpers.JodaJsonFormats._
+import com.galacticfog.gestalt.util.JodaJsonFormats._
 import com.galacticfog.gestalt.meta.api.errors.BadRequestException
 import com.galacticfog.gestalt.meta.api.sdk._
 import com.galacticfog.gestalt.data.models.GestaltResourceInstance
