@@ -12,7 +12,8 @@ import com.galacticfog.gestalt.meta.api.output._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceInfo, ResourceLabel, resourceInfoFormat}
 import com.galacticfog.gestalt.meta.auth.Authorization
 import com.galacticfog.gestalt.security.api.errors.ForbiddenAPIException
-import com.galacticfog.gestalt.security.play.silhouette.{AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
+import com.galacticfog.gestalt.security.play.silhouette.{
+  AuthAccountWithCreds, GestaltFrameworkSecurity, GestaltFrameworkSecurityEnvironment}
 import com.google.inject.Inject
 import com.mohiva.play.silhouette.api.actions.SecuredRequest
 import controllers.util.JsonUtil._
@@ -93,22 +94,8 @@ class ResourceController @Inject()(
     ResourceIds.Org         -> lookupSeqOrgs,
     ResourceIds.Container   -> lookupContainers,
     ResourceIds.Entitlement -> lookupSeqEntitlements,
-    ResourceIds.Rule        -> lookupPolicyRules,
-    ResourceIds.ProviderAction -> lookupProviderActions
+    ResourceIds.Rule        -> lookupPolicyRules
   )
-
-
-  def lookupProviderActions(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
-    val mapPathData = Resource.mapListPathData(path.path)
-    val parent = mapPathData(Resource.ParentId)
-
-    if (qs.contains("q") && (qs("q")(0).toLowerCase == "entitlements")) {
-      ResourceFactory.rollupActionEntitlements(parent)
-    } else {
-      ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, UUID.fromString(parent))
-    }
-  }
-
 
   def lookupPolicyRules(path: ResourcePath, user: AuthAccountWithCreds, qs: QueryString): Seq[GestaltResourceInstance] ={
     val mapPathData = Resource.mapListPathData(path.path)
@@ -120,7 +107,8 @@ class ResourceController @Inject()(
     log.debug("Lookup function : lookupProvider(_,_,_)...")
 
     Resource.toInstance(path) map { res =>
-      (maybeInjectActions _  andThen maybeMaskCredentials(qs)) apply res
+      //(maybeMaskCredentials(qs)) apply res
+      maybeMaskCredentials(qs)(res)
     }
   }
 
@@ -322,14 +310,7 @@ class ResourceController @Inject()(
   }
   
   def requireTargetId(path: ResourcePath, qs: Map[String,Seq[String]]): Future[UUID] = {
-//    val maybeResourceId = QueryString.singel(qs, "resource_id")
-//    path.targetId match {
-//      case Some(targetId) => Future.successful(UUID.fromString(targetId))
-//      case None => Future.failed(
-//        new ResourceNotFoundException("actions must be performed against a specific resource")
-//      )
-//    }    
-    
+
     QueryString.single(qs, "resource_id").fold {
       log.debug("Taking target ID from path.")
       path.targetId match {
@@ -916,13 +897,7 @@ class ResourceController @Inject()(
     def reWriteParams2(ps: Seq[RequestQueryParameter]): Map[String,Option[String]] = {
       ps.map(p => (p.name -> p.value)).toMap  
     }
-    
-//    def reWriteParams(ps: Seq[RequestQueryParameter]): Seq[JsValue] = {
-//      ps.foldLeft(Seq.empty[JsValue]){ (acc, p) =>
-//        Json.obj(p.name -> p.value) +: acc
-//      }
-//    }
-    
+
     ResourceFactory.findProvidersWithEndpoints(target).flatMap { p =>
       getFunctionConfig(p).fold(Seq.empty[JsObject]) { config =>
         config.endpoints.flatMap { ep =>
@@ -945,105 +920,6 @@ class ResourceController @Inject()(
         }
       }
     }
-  }
-  
-  
-//  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
-//    log.debug("Looking up applicable actions...")
-//
-//    val actions = ResourceFactory.findById(target).fold {
-//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-//    }{ _ =>
-//      val prvs = for {
-//        anc <- {
-//          /*
-//           * This selects the ancestor environment and workspace, as well as all 
-//           * ancestor Orgs up to 'root'
-//           */
-//          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
-//          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
-//          rs.reverse ++ root
-//        }
-//        prv <- {
-//          /*
-//           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
-//           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
-//           * top-level to indicate that it exposes UI actions, we need to select ALL providers
-//           * in context and inspect individually.
-//           */
-//          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.Provider, anc.id)
-//          rs
-//        }
-//      } yield prv
-//      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
-//    }
-//    
-//    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
-//    
-//    if (prefixFilter.isEmpty) actions
-//    else actions filter { act =>
-//      val spec = ProviderActionSpec.fromResource(act)
-//      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
-//    }
-//  }
-  
-//  def findActionsInScope(org: UUID, target: UUID, prefixFilter: Seq[String] = Seq()): Seq[GestaltResourceInstance] = {
-//    log.debug("Looking up applicable actions...")
-//
-//    val actions = ResourceFactory.findById(target).fold {
-//      throw new ResourceNotFoundException(s"Resource with ID '$target' not found.")
-//    }{ _ =>
-//      val prvs = for {
-//        anc <- {
-//          /*
-//           * This selects the ancestor environment and workspace, as well as all 
-//           * ancestor Orgs up to 'root'
-//           */
-//          val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.ResourceContainer, target)
-//          val root = ResourceFactory.findAllByPropertyValue(ResourceIds.Org, "fqon", "root")
-//          rs.reverse ++ root
-//        }
-//        prv <- {
-//          /*
-//           * TODO: Type ActionProvider no longer exists, and *any* Provider may now expose
-//           * a 'UI action'. If we can't figure out a way to index or 'tag' a provider at a
-//           * top-level to indicate that it exposes UI actions, we need to select ALL providers
-//           * in context and inspect individually.
-//           */
-//          val rs = ResourceFactory.findChildrenOfSubType(ResourceIds.ActionProvider, anc.id)
-//          rs
-//        }
-//      } yield prv
-//      ResourceFactory.findChildrenOfTypeIn(ResourceIds.ProviderAction, prvs.map(_.id)) distinct
-//    }
-//    
-//    log.debug(s"Found ${actions.size} actions... filtering by prefix-filter : ${prefixFilter}")
-//    
-//    if (prefixFilter.isEmpty) actions
-//    else actions filter { act =>
-//      val spec = ProviderActionSpec.fromResource(act)
-//      (spec.ui_locations.map(_.name) intersect prefixFilter).nonEmpty
-//    }
-//  }
-
-  
-  def getResourceActionsOrg(fqon: String) = Audited(fqon) { implicit request =>
-    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
-    val org = fqid(fqon)
-//    RenderList {
-//      findActionsInScope(org, org, targetPrefix)
-//    }
-    
-    Ok(Json.toJson(findActionsInScope(org, org, targetPrefix)))
-  }
-
-  def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
-    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
-//    RenderList {
-//      findActionsInScope(fqid(fqon), target, targetPrefix)
-//    }
-    
-    Ok(Json.toJson(findActionsInScope(fqid(fqon), target, targetPrefix)))
   }
   
   /*
@@ -1088,7 +964,8 @@ class ResourceController @Inject()(
       val rs = ResourceFactory.findAncestorsOfSubType(ResourceIds.Provider, parentId)
       filterProvidersByType(rs, qs) map { res =>
 
-        (maybeInjectActions _ andThen maybeMaskCredentials(Option(qs))) apply res
+        //(maybeMaskCredentials(Option(qs))) apply res
+        maybeMaskCredentials(Option(qs))(res)
       }
     }
   }
@@ -1236,11 +1113,6 @@ class ResourceController @Inject()(
     if (!isShowCredentials && isCaaSProvider) {
       ProviderMethods.maskCredentials(provider)
     } else provider
-  }
-
-  private[controllers] def maybeInjectActions(provider: GestaltResourceInstance) : GestaltResourceInstance = {
-    if (ProviderMethods.isActionProvider(provider.typeId))
-      ProviderMethods.injectProviderActions(provider) else provider
   }
 
   private[controllers] def embedEndpoints(res: GestaltResourceInstance, user: AuthAccountWithCreds, qs: Option[QueryString]) = {
@@ -1462,142 +1334,185 @@ class ResourceController @Inject()(
   
   import migrations.V30._
   
-  implicit lazy val resourceFavoriteFormat = Json.format[ResourceFavorite]
-  implicit lazy val userProfileFormat = Json.format[UserProfile]
-  
-  case class ResourceFavorite(
-      resource_id: UUID,
-      resource_type_id: UUID,
-      resource_name: Option[String] = None,
-      resource_display_name: Option[String] = None,
-      resource_description: Option[String] = None,
-      nickname: Option[String] = None)
-      
-  object ResourceFavorite {
-    def mergeWithResource(fav: ResourceFavorite, res: GestaltResourceInstance): ResourceFavorite = {
-      val displayName = for {
-        ps <- res.properties
-        dn <- ps.get("display_name")
-      } yield dn
-      
-      ResourceFavorite(res.id, res.typeId, Some(res.name), displayName, res.description, fav.nickname)
-    }
-  }
-  
-  case class UserProfile(name: String, resource_favorites: Seq[ResourceFavorite]) {
-    
-  }
-  
-  object UserProfile {
-    def getFavorites(res: GestaltResourceInstance): Seq[ResourceFavorite] = {
-      
-      (for {
-        ps <- res.properties
-        _ = println("RAW-FAVS : " + ps.get("resource_favorites"))
-        raw <- ps.get("resource_favorites")
-        _ = println("CONVERTING TO JSON...")
-        json = Json.parse(raw).as[Seq[JsValue]]
-        _ = println("PARSED : " + json)
-        _ = println("About to parse favorites to object...")
-//        favs1 = json.validate[Seq[ResourceFavorite]]
-//        _ = println("RESULT : " + favs1)
-//        favs = favs1.get
-        favs = json.map(Js.parse[ResourceFavorite](_).get)
-//        .getOrElse {
-//          throw new RuntimeException("Failed parsing favorites from profile.")
-//        }
-        output = {
-          // Get IDs of all resources the user pinned as favorites.
-          val asPersisted: Map[UUID, ResourceFavorite] = favs.map(f => (f.resource_id -> f)).toMap
-          
-          // This will be all of those favorites that actually exist (may have been deletes)
-          val allExisting = ResourceFactory.findAllIn(asPersisted.keySet.toList)
-          
-          //
-          // TODO: Test if anything was deleted, log as info, and proceed.
-          //
-          allExisting.map(r => ResourceFavorite.mergeWithResource(asPersisted(r.id), r))          
-        }
-      } yield output).getOrElse(Seq.empty[ResourceFavorite])
-      
-    }
-  }
-  
-  def renderProfileOutput(profile: GestaltResourceInstance, favs: Seq[ResourceFavorite]): JsValue = {
-    log.debug("Rendering base resource...")
+  def renderProfileJson(profile: GestaltResourceInstance, favs: Seq[ResourceFavorite]): JsValue = {
     val pjson = Output.renderInstance(profile).as[JsObject]
-    println(Json.prettyPrint(pjson))
-    log.debug("Transforming favorites for output...")
     JsonUtil.withJsonPropValue(pjson, "resource_favorites", Json.toJson(favs))
   }
   
-  def findUserProfile(user: UUID, profileId: UUID) = Audited() { implicit request =>
-    val output = ResourceFactory.findChildOfType(USERPROFILE_TYPE_ID, user, profileId).map { profile =>
-      log.debug(s"Found User Profile '${profileId}' - rendering to JSON")
-      renderProfileOutput(profile, UserProfile.getFavorites(profile))
-    }
-    output match {
-      case None => NotFoundResult(request.uri)
-      case Some(p) => Ok(p)
+  /*
+   * TODO: Currently this just returns the first UserProfile in the list of
+   * all UserProfiles the user has. This is fine as we'll only support a single
+   * profile initially...but we'll need a method of tagging a given profile as 'default'
+   */
+  def findDefaultUserProfile(userId: UUID): Option[GestaltResourceInstance] = {
+    ResourceFactory.findChildrenOfType(USERPROFILE_TYPE_ID, userId).headOption
+  }
+  
+  def findUserProfileSelfDefault() = Audited() { implicit request =>
+    val user = request.identity.account.id
+    findDefaultUserProfile(user) match {
+      case None => NoContent
+      case Some(profile) => findUserProfileCommon(user, profile.id)
     }
   }
   
+  def addFavoriteSelfDefault() = AsyncAudited() { implicit request =>
+    val user = request.identity.account.id
+    findDefaultUserProfile(user) match {
+      case None => HandleExceptionsAsync(new ResourceNotFoundException(s"User '${user}' has not profiles defined."))
+      case Some(profile) => addFavoriteCommon(user, profile.id)
+    }
+  }
+  
+  def deleteFavoriteSelfDefault() = Audited() { implicit request =>
+    val user = request.identity.account.id
+    findDefaultUserProfile(user) match {
+      case None => NoContent
+      case Some(profile) => deleteFavoriteCommon(user, profile.id, request.queryString)
+    }
+  }
+  
+  /*
+   * POST /users/self/userprofiles
+   */
+  def postUserProfileSelf() = AsyncAudited() { implicit request =>
+    postUserProfileCommon(request.identity.account.id)
+  }
+  
+  /*
+   * POST /top/users/{userid}/userprofiles
+   */
   def postUserProfile(userId: UUID) = AsyncAudited() { implicit request =>
-    val user = ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
-      throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
-    }
-    val org = ResourceFactory.findById(ResourceIds.Org, user.orgId).getOrElse {
-      throw new ResourceNotFoundException(s"Org with ID '${user.orgId}' not found.")
-    }
-    // Ensure all given favorites exist and have type-IDs
-    val payload = {
-
-      val favs: Seq[ResourceFavorite] = ((request.body \ "properties" \ "resource_favorites") match {
-        case e : JsUndefined => Seq.empty[JsValue]
-        case f : JsDefined => f.as[Seq[JsValue]]
-      }).map { f => 
-        val fav = f.validate[ResourceFavorite](resourceFavoriteFormat).getOrElse {
-          throw new BadRequestException(s"Cannot parse favorite '${f}'")
+    postUserProfileCommon(userId)
+  }
+  
+  def postUserProfileCommon(userId: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]) = {
+    val favorites = for {
+      user <- Try(ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
+        throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
+      })
+      org <- Try(ResourceFactory.findById(ResourceIds.Org, user.orgId).getOrElse {
+        throw new ResourceNotFoundException(s"Org with ID '${user.orgId}' not found.")
+      })
+      favs <- UserProfileMethods.readProfileFavorites(request.body)
+    } yield (org, user, favs)
+    
+    favorites match {
+      case Failure(e) => HandleExceptionsAsync(e)
+      case Success((org, user, favorites)) => {
+        execGenericCreate(org, USERPROFILE_TYPE_ID, user, request.body).map { profile =>
+          Created(RenderSingle(UserProfile.updateFavoritesProperty(profile, favorites)))
+        }.recover {
+          case e: Throwable => HandleExceptions(e)
         }
-        val res = ResourceFactory.findById(fav.resource_id).getOrElse {
-          throw new ResourceNotFoundException(s"Resource with ID '${fav.resource_id}' not found.")
-        }
-        f.copy(resource_type_id = res.typeId)        
       }
-      
-//      favs.map { f =>
-//        val res = ResourceFactory.findById(f.resource_id).getOrElse {
-//          throw new ResourceNotFoundException(s"Resource with ID '${id}' not found.")
-//        }
-//        favorite.copy(resource_type_id = res.typeId)
-//      }
-//      val rfs = .getOrElse(Seq.empty).map { f => 
-//        Js.parse[ResourceFavorite](f.as[JsObject]) match {
-//          case Failure(_) => throw new BadRequestException(s"Cannot parse favorite '${f}'")
-//          case Some(favorite) => {
-//            val res = ResourceFactory.findById(favorite.resource_id).getOrElse {
-//              throw new ResourceNotFoundException(s"Resource with ID '${id}' not found.")
-//            }
-//            favorite.copy(resource_type_id = res.typeId)
-//          }
-//        }
-//      }
-//      JsonUtil.withJsonPropValue(request.body, "resource_favorites", Json.toJson(rfs))
-    }
-    execGenericCreate(org, USERPROFILE_TYPE_ID, user, request.body).map { profile =>
-      Created(RenderSingle(profile))
+    }    
+  }
+  
+  /*
+   * GET /users/self/userprofiles/{id}
+   */
+  def findUserProfileSelf(profileId: UUID) = Audited() { implicit request =>
+    findUserProfileCommon(request.identity.account.id, profileId)
+  }
+  
+  /*
+   * GET /top/users/{userid}/userprofiles/{id}
+   */
+  def findUserProfile(user: UUID, profileId: UUID) = Audited() { implicit request =>
+    findUserProfileCommon(user, profileId)
+  }
+  
+  def findUserProfileCommon(userId: UUID, profileId: UUID)(implicit request: SecuredRequest[_,_]): Result = {
+    ResourceFactory.findChildOfType(USERPROFILE_TYPE_ID, userId, profileId).map { profile =>
+      renderProfileJson(profile, UserProfile.getFavorites(profile))
+    } match {
+      case None => NotFoundResult(request.uri)
+      case Some(profile) => Ok(profile)
     }
   }
   
-  def addFavorite(userId: UUID, profileId: UUID) = AsyncAudited() { implicit request =>
-    val user = ResourceFactory.findById(ResourceIds.User, userId).getOrElse {
-      throw new ResourceNotFoundException(s"User with ID '${userId}' not found.")
-    }
-    val profile = ResourceFactory.findById(USERPROFILE_TYPE_ID, profileId).getOrElse {
-      throw new ResourceNotFoundException(s"UserProfile with ID '${profileId}' not found.")
-    }
-    ???
+  /*
+   * POST /users/self/userprofiles/{id}/favorites
+   */
+  def addFavoriteSelf(profileId: UUID) = AsyncAudited() { implicit request =>
+    addFavoriteCommon(request.identity.account.id, profileId)  
   }
+  
+  /*
+   * POST /top/users/{userid}/userprofiles/{id}/favorites
+   */
+  def addFavorite(userId: UUID, profileId: UUID) = AsyncAudited() { implicit request =>
+    addFavoriteCommon(userId, profileId)
+  }  
+  /* POST
+   * {
+   *   "id": <resource-uuid>,
+   *   "nickname": "My Resource"
+   * } 
+   */
+  def addFavoriteCommon(userId: UUID, profileId: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,JsValue]): Future[Result] = {
+    Future {
+      (for {
+        p <- UserProfileMethods.addFavorite(userId, profileId, request.body)
+        updated <- ResourceFactory.update(p, request.identity.account.id)
+      } yield updated) match {
+        case Failure(e) => HandleExceptions(e)
+        case Success(updated) => Ok(RenderSingle(updated))
+      }
+    }.recover {
+      case e: Throwable => HandleExceptions(e)
+    }    
+  }
+  
+  import com.galacticfog.gestalt.data._
+  
+  def deleteUserProfileSelf(profileId: UUID) = Audited() { implicit request =>
+    deleteUserProfileCommon(request.identity.account.id, profileId)  
+  }
+  
+  def deleteUserProfileCommon(userId: UUID, profileId: UUID)(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
+    ResourceFactory.findChildOfType(USERPROFILE_TYPE_ID, userId, profileId) match {
+      case None => NoContent
+      case Some(profile) => {
+        val manager = new HardDeleteInstanceManager[AuthAccountWithCreds](
+            Map.empty[UUID,((Instance, AuthAccountWithCreds) => Try[Unit])])
+        manager.delete(profile, request.identity, force = true) match {
+          case Failure(e) => HandleExceptions(e)
+          case Success(_) => NoContent
+        }
+      }
+    }
+  }
+  
+  /*
+   * DELETE /users/self/userprofiles/:id/favorites?id={resource-uuid}
+   */
+  def deleteFavoriteSelf(profileId: UUID) = Audited() { implicit request =>
+    deleteFavoriteCommon(request.identity.account.id, profileId, request.queryString)
+  }
+  
+  /*
+   * DELETE /top/users/{userid}/userprofiles/{id}/favorites?id={resource-uuid}
+   */
+  def deleteFavorite(userId: UUID, profileId: UUID) = Audited() { implicit request =>
+    deleteFavoriteCommon(userId, profileId, request.queryString)
+  }
+  
+  def deleteFavoriteCommon(userId: UUID, profileId: UUID, qs: Map[String,Seq[String]])(implicit request: SecuredRequest[GestaltFrameworkSecurityEnvironment,_]): Result = {
+    (for {
+      target  <- Try(QueryString.single(qs, "id").getOrElse {
+        throw new BadRequestException(s"Must provide query-param 'id' identifying the favorite to remove.")
+      })
+      profile <- UserProfileMethods.deleteFavorite(userId, profileId, UUID.fromString(target))
+      updated <- ResourceFactory.update(profile, request.identity.account.id) 
+    } yield updated) match {
+      case Failure(e) => HandleExceptions(e)
+      case Success(updated) => Ok(RenderSingle(updated))
+    }    
+  }
+  
+  
   
   // --------------------------------------------------------------------------
   // CUSTOM-RESOURCES

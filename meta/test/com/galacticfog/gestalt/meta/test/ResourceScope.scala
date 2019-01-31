@@ -123,7 +123,9 @@ trait ResourceScope extends Scope with Mockito {
           new V26(),
           new V27(),
           new V28(),
-          new V29()
+          new V29(),
+          new V30(),
+          new V31()
         )
 
         val tries = migrations.map {

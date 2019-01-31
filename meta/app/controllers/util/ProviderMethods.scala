@@ -14,7 +14,6 @@ import java.util.UUID
 
 import akka.actor.ActorSystem
 import akka.stream.Materializer
-import com.galacticfog.gestalt.meta.api.output.Output
 import play.api.libs.json.{JsDefined, JsObject, JsUndefined, Json}
 
 import cats.syntax.either._
@@ -87,23 +86,9 @@ class ProviderMethods @Inject()()(implicit actorSystem: ActorSystem, mat: Materi
 object ProviderMethods {
   
   private val log = Logger(this.getClass())
-  
-  def isActionProvider(testType: UUID): Boolean = {
-    ResourceFactory.isSubTypeOf(testType, ResourceIds.ActionProvider)
-  }
 
   def isCaaSProvider(testType: UUID) : Boolean = {
     ResourceFactory.isSubTypeOf(testType, ResourceIds.CaasProvider)
-  }
- 
-  def injectProviderActions(res: GestaltResourceInstance): GestaltResourceInstance = {
-    log.debug("injectProviderActions(_) : Looking up Provider Actions")
-    val actions = ResourceFactory.findChildrenOfType(ResourceIds.ProviderAction, res.id)
-    val actjson = Output.renderLinks(actions, None)
-    val props = res.properties map { ps =>
-      ps ++ Map("provider_actions" -> Json.stringify(actjson))
-    }
-    res.copy(properties = props)    
   }
 
   def maskCredentials(provider: GestaltResourceInstance) : GestaltResourceInstance = {
