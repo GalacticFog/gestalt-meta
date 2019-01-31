@@ -23,7 +23,7 @@ object Environment {
 
   case class EnvironmentProperties(
     environment_type: UUID,
-    workspace: UUID,
+    workspace: Option[UUID],
     provider_mapping: Option[Map[UUID,ProviderMapping]]
   )
 
@@ -55,7 +55,7 @@ object Environment {
     for(
       env <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(ResourceIds.Environment, envId),
        s"Environment not found with id ${envId}");
-      // will not check if provider exists for providerId - calling code can do it better
+      // will not check if provider exists for providerId - caller can do this better
       envProperties <- ResourceSerde.deserialize[EnvironmentProperties,Error.Default](env);
       defaultNamespaces = ProviderMapping(Seq(Namespace(s"${envId}", true)));
       providerMapping = envProperties.provider_mapping.getOrElse(Map());
