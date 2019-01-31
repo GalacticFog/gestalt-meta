@@ -17,24 +17,23 @@ DELETE /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/providers/:providerId/kube/*pat
 
 GET  /assets/*file        controllers.Assets.at(path="/public", file)
 
+GET     /users/self/userprofiles/default           controllers.ResourceController.findUserProfileSelfDefault()
+POST    /users/self/userprofiles/default/favorites controllers.ResourceController.addFavoriteSelfDefault()
+DELETE  /users/self/userprofiles/default/favorites controllers.ResourceController.deleteFavoriteSelfDefault()
 
+#GET     /users/self/userprofiles                controllers.ResourceController.findAllUserProfiles()
 GET     /users/self/userprofiles/:id         controllers.ResourceController.findUserProfileSelf(id: java.util.UUID)
 POST    /users/self/userprofiles             controllers.ResourceController.postUserProfileSelf()
 POST    /users/self/userprofiles/:id/favorites controllers.ResourceController.addFavoriteSelf(id: java.util.UUID)
 DELETE  /users/self/userprofiles/:id/favorites controllers.ResourceController.deleteFavoriteSelf(id: java.util.UUID)
 
-GET     /users/self/userprofiles/default           controllers.ResourceController.findUserProfileSelfDefault()
-POST    /users/self/userprofiles/default/favorites controllers.ResourceController.addFavoriteSelfDefault()
-DELETE  /users/self/userprofiles/default/favorites controllers.ResourceController.deleteFavoriteSelfDefault()
-
-
 # DELETE  /users/self/userprofiles/default
 DELETE  /users/self/userprofiles/:id         controllers.ResourceController.deleteUserProfileSelf(id: java.util.UUID)
 
 
-GET  /top/users/:userId/userprofiles/:id                controllers.ResourceController.findUserProfile(userId: java.util.UUID, id: java.util.UUID)
-POST /top/users/:userId/userprofiles                    controllers.ResourceController.postUserProfile(userId: java.util.UUID)
-POST /top/users/:userId/userprofiles/:id/favorites      controllers.ResourceController.addFavorite(userId: java.util.UUID, id: java.util.UUID)
+GET    /top/users/:userId/userprofiles/:id                controllers.ResourceController.findUserProfile(userId: java.util.UUID, id: java.util.UUID)
+POST   /top/users/:userId/userprofiles                    controllers.ResourceController.postUserProfile(userId: java.util.UUID)
+POST   /top/users/:userId/userprofiles/:id/favorites      controllers.ResourceController.addFavorite(userId: java.util.UUID, id: java.util.UUID)
 DELETE /top/users/:userId/userprofiles/:id/favorites    controllers.ResourceController.deleteFavorite(userId: java.util.UUID, id: java.util.UUID)
 
 
