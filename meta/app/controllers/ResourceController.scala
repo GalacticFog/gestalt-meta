@@ -438,6 +438,7 @@ class ResourceController @Inject()(
   }
   
   
+  
   private object StorageType {
     
     def mergeEnvironmentVars(res: GestaltResourceInstance, vars: Map[String, String]) = {
@@ -815,6 +816,17 @@ class ResourceController @Inject()(
   }
   
   import com.galacticfog.gestalt.meta.genericactions._
+  
+  def getResourceActionsOrg(fqon: String) = Audited(fqon) { implicit request =>
+    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
+    val org = fqid(fqon)
+    Ok(Json.toJson(findActionsInScope(org, org, targetPrefix)))
+  }
+
+  def getResourceActions(fqon: String, target: UUID) = Audited(fqon) { implicit request =>
+    val targetPrefix = request.queryString.get("filter") getOrElse Seq.empty
+    Ok(Json.toJson(findActionsInScope(fqid(fqon), target, targetPrefix)))
+  }
   
   /**
    * 
