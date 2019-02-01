@@ -94,6 +94,11 @@ GET /resourcestates    controllers.ResourceController.findResourceStates()
 ############################
 GET  	/$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/*path/context  			controllers.ResourceController.getResourceContext(fqon, path)
 
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/actions                           controllers.ResourceController.getResourceActionsOrg(fqon)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/workspaces/:id/actions            controllers.ResourceController.getResourceActions(fqon, id: java.util.UUID)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/environments/:id/actions          controllers.ResourceController.getResourceActions(fqon, id: java.util.UUID)
+GET     /$fqon<[-a-zA-Z0-9]+(?:\.[-a-zA-Z0-9]+)*>/containers/:id/actions            controllers.ResourceController.getResourceActions(fqon, id: java.util.UUID)
+
 
 ############################
 # ORGS
