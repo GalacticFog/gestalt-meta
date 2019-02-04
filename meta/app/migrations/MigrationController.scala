@@ -16,7 +16,7 @@ import play.api.i18n.MessagesApi
 import play.api.libs.json._
 import play.api.cache.CacheManagerProvider
 
-import scala.util.Try
+import scala.util.{Failure,Success,Try}
 import com.galacticfog.gestalt.json.Js
 
 class MigrationController @Inject()( 
@@ -29,51 +29,62 @@ class MigrationController @Inject()(
   )
       extends SecureController(messagesApi = messagesApi, sec = sec) with Authorization {
   
+
   def migrate() = AsyncAudited() { implicit request =>
+    
     log.debug("migrate()")
     
     val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V9", "V10",
       "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19", "V20", "V21", "V22", 
       "V23", "V24", "V25", "V26", "V27", "V28", "V29", "V30", "V31")
     
-    val version = QueryString.single(request.queryString, "version", strict = true)
-    val caller = request.identity.account.id
+    val qs = request.queryString
+    val filter = new MigrationFilter(DefaultVersionReader)
+    
+    filter.filterEffectiveMigrations(qs, ALL_MIGRATIONS) match {
+      case Failure(e) => HandleExceptionsAsync(e)
+      case Success(migrations) => {
+        
+        val dryRun = QueryString.singleBoolean(qs, "dryrun")
+        if (dryRun) {
+          Future(Ok(Json.obj(
+            "status" -> "dryrun", 
+            "migration_plan" -> Json.toJson(migrations))))
+            
+        } else {
+    
+          var failed = false
+          val caller = request.identity.account.id
+          
+          val results = migrations.map { v =>
+            val args = getMigrationArgs(v, request.body)
+            executeMigration(v, caller, args) match {
+              case Left(j) =>
+                failed = true
+                Json.obj(v -> j)
+              case Right(j) =>
+                Json.obj(v -> j)
+            }
+          }
 
-    val effectiveMigrations = version match {
-      case None =>
-        log.debug("No version given - running all migrations")
-        ALL_MIGRATIONS
-      case Some(v) =>
-        log.debug(s"Running migration version '${version.get}'")
-        Seq(v)
-    }
+          val resp = if (failed) {
+            log.error("There was an error during meta-schema migration.")
+            Conflict(JsArray(results))
+          } else {
+            log.info("Meta-Schema migration complete.")
+            Ok(JsArray(results))
+          }
 
-    var failed = false
-    val results = effectiveMigrations.map { v =>
-      val args = getMigrationArgs(v, request.body)
-      executeMigration(v, caller, args) match {
-        case Left(j) =>
-          failed = true
-          Json.obj(v -> j)
-        case Right(j) =>
-          Json.obj(v -> j)
+          // blowing up the cache
+          val cache: Cache = cacheProvider.get.getCache("play")
+          cache.removeAll()
+
+          log.debug(Json.prettyPrint(JsArray(results)))
+          Future(resp)
+        }
       }
     }
-
-    val resp = if (failed) {
-      log.error("There was an error during meta-schema migration.")
-      Conflict(JsArray(results))
-    } else {
-      log.info("Meta-Schema migration complete.")
-      Ok(JsArray(results))
-    }
-
-    // blowing up the cache
-    val cache: Cache = cacheProvider.get.getCache("play")
-    cache.removeAll()
-
-    log.debug(Json.prettyPrint(JsArray(results)))
-    Future(resp)
+    
   }  
   
   private[migrations] def getMigrationArgs(version: String, payload: JsValue): Option[JsObject] = {
