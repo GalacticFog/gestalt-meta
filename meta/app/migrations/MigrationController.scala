@@ -50,9 +50,9 @@ class MigrationController @Inject()(
           Future(Ok(Json.obj(
             "status" -> "dryrun", 
             "migration_plan" -> Json.toJson(migrations))))
-            
+          
         } else {
-    
+          
           var failed = false
           val caller = request.identity.account.id
           
@@ -66,7 +66,7 @@ class MigrationController @Inject()(
                 Json.obj(v -> j)
             }
           }
-
+          
           val resp = if (failed) {
             log.error("There was an error during meta-schema migration.")
             Conflict(JsArray(results))
@@ -81,6 +81,7 @@ class MigrationController @Inject()(
 
           log.debug(Json.prettyPrint(JsArray(results)))
           Future(resp)
+          
         }
       }
     }

@@ -7,7 +7,7 @@ import com.galacticfog.gestalt.data.bootstrap.{ActionInfo, SystemType, _}
 import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, GestaltResourceType, GestaltTypeProperty}
 import com.galacticfog.gestalt.data.{ResourceFactory, TypeFactory, session, _}
 import com.galacticfog.gestalt.json.Js
-import com.galacticfog.gestalt.meta.api.errors.ConflictException
+import com.galacticfog.gestalt.meta.api.errors._
 import com.galacticfog.gestalt.meta.api.sdk.{ResourceIds, ResourceLabel}
 import com.galacticfog.gestalt.meta.auth.{Entitlement, EntitlementProps}
 import controllers.util.TypeMethods
@@ -274,6 +274,34 @@ abstract class MetaMigration() {
       }
     handleResultStatus(process, acc)
   }
+  
+  
+  /**
+   * Lookup a Resource Type. Add success or failure messages to accumulator
+   * 
+   * @param typeId UUID of the type to find
+   */
+  def safeLookupResourceType(typeId: UUID)(implicit acc: MessageAccumulator): Try[GestaltResourceType] = Try {
+    acc push s"Looking up target resource type: ${typeId}"
+    TypeFactory.findById(typeId).getOrElse {
+      throw new ResourceNotFoundException(s"Resource Type with ID '${typeId}' not found.")
+    }
+  }
+
+  
+  /**
+   * Lookup a Resource Type Property by name and Type ID
+   * 
+   * @param typeId UUID of the Resource Type the property belongs to
+   * @param propertyName name of the property to find
+   */
+  def safeLookupPropertyByType(typeId: UUID, propertyName: String)(implicit acc: MessageAccumulator): Try[GestaltTypeProperty] = Try {
+    acc push s"Looking up type property '${propertyName}' on type '${typeId}'"
+    PropertyFactory.findByName(typeId, propertyName).getOrElse {
+      throw new ResourceNotFoundException(s"Resource Property '${propertyName}' not found on Type with ID '${typeId}'")
+    }
+  }
+  
   
   /**
    * General method to handle the final result and message stack of a migration process.
