@@ -46,6 +46,28 @@ Persistence service for Gestalt Framework Resources.
     export RABBIT_ROUTE="policy"
     export RABBIT_EXCHANGE="policy-exchange"
 
+## Meta Schema Migrations
+#### API
+    POST /migrate
+    Content-Type: application/json
+    
+    # Run specific version(s)
+    ?version=V5
+    ?version=V3&version=V5&version=V7
+
+    # Run a range of versions
+    ?from=V3&to=V15
+    ?from=V5  // runs to highest version
+    ?to=V25   // runs from lowest version
+    
+    # Run all migrations, skip V7 and V13
+    ?skip=V7&skip=V13
+    
+    # DRY-RUN: See what migrations will be run
+    ?from=V7&to=V15&skip=V10&dryrun=true
+    
+Note: All of the queryparams demonstrated above may be combined...
+
 ## Kubernetes Native Functions
 ...Coming Soon...
 #### Supported Types
