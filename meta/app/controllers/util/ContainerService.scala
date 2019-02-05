@@ -27,11 +27,6 @@ import scala.util.{Failure, Success, Try}
 
 trait ContainerService extends JsonInput {
 
-  def createSecret(context: ProviderContext,
-                   user: AuthAccountWithCreds,
-                   secretSpec: SecretSpec,
-                   userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
-
   def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(GestaltResourceInstance, Seq[ContainerInstance])]]
 
   def listEnvironmentContainers(fqon: String, environment: UUID): Future[Seq[(GestaltResourceInstance, Seq[ContainerInstance])]]
@@ -41,10 +36,20 @@ trait ContainerService extends JsonInput {
                       containerSpec: ContainerSpec,
                       userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance]
 
+  def createSecret(context: ProviderContext,
+                   user: AuthAccountWithCreds,
+                   secretSpec: SecretSpec,
+                   userRequestedId: Option[UUID]): Future[GestaltResourceInstance]
+
   def createVolume(context: ProviderContext,
                    user: AuthAccountWithCreds,
                    volumeSpec: VolumeSpec,
                    userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance]
+
+  def createJob(context: ProviderContext,
+                 user: AuthAccountWithCreds,
+                 jobSpec: ContainerSpec,
+                 userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance]
 
   def patchContainer(container: GestaltResourceInstance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance]
 
@@ -275,6 +280,15 @@ object ContainerService {
     ) yield ()
   }
 
+  def deleteJobHandler(providerManager: ProviderManager, res: Instance): Future[Unit] = {
+    val provider = containerProvider(res)
+    for(
+      service <- Future.fromTry(providerManager.getProviderImpl(provider.typeId));
+      _ = log.info(s"Attempting to delete job ${res.id} from CaaS Provider ${provider.id}");
+      _ <- service.destroyJob(res)
+    ) yield ()
+  }
+
 
 }
 
@@ -285,7 +299,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   val CAAS_PROVIDER_TIMEOUT_MS = 5000
 
-  override def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
+  def getEnvironmentContainer(fqon: String, environment: UUID, containerId: UUID): Future[Option[(Instance, Seq[ContainerInstance])]] = {
     val maybeMetaContainer = for {
       r <- ResourceFactory.findChildrenOfType(parentId = environment, typeId = ResourceIds.Container) find { _.id == containerId }
       s <- ContainerSpec.fromResourceInstance(r).toOption
@@ -560,7 +574,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     }
   }
 
-  override def createSecret(context: ProviderContext, user: AuthAccountWithCreds, secretSpec: SecretSpec, userRequestedId: Option[UUID]): Future[Instance] = {
+  def createSecret(context: ProviderContext, user: AuthAccountWithCreds, secretSpec: SecretSpec, userRequestedId: Option[UUID]): Future[Instance] = {
 
     val input = SecretSpec.toResourcePrototype(secretSpec).copy(id = userRequestedId)
     val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
@@ -598,7 +612,7 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   }
 
-  override def createVolume(context: ProviderContext, user: AuthAccountWithCreds, volumeSpec: VolumeSpec, userRequestedId: Option[UUID]): Future[Instance] = {
+  def createVolume(context: ProviderContext, user: AuthAccountWithCreds, volumeSpec: VolumeSpec, userRequestedId: Option[UUID]): Future[Instance] = {
 
     val providerId = volumeSpec.provider.map(_.id).getOrElse(
       throw new BadRequestException("Volume payload did not include '.properties.provider.id'")
@@ -642,7 +656,49 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
 
   }
 
-  override def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
+  def createJob(context: ProviderContext,
+                 user: AuthAccountWithCreds,
+                 jobSpec: ContainerSpec,
+                 userRequestedId: Option[UUID] = None): Future[GestaltResourceInstance] = {
+    
+    val input = ContainerSpec.toResourcePrototype(jobSpec).copy(id = userRequestedId, resource_type = Some(migrations.V33.JOB_TYPE_ID))
+    val proto = resourceWithDefaults(context.environment.orgId, input, user, None)
+    val operations = caasObjectRequestOperations("job.create")
+    val options = caasObjectRequestOptions(user, context.environmentId, proto, providerIdOpt = Some(context.providerId))
+
+    SafeRequest(operations, options) ProtectAsync { _ =>
+
+      val provider = caasProvider(context.provider.id)
+      val jobResourcePre = upsertProperties(
+        resource = proto,
+        "provider" -> Json.obj(
+          "name" -> provider.name,
+          "id" -> provider.id,
+          "resource_type" -> TypeMethods.typeName(context.provider.typeId)
+        ).toString
+      )
+
+      for {
+        metaResource <- Future.fromTryST {
+          log.debug("Creating job resource in Meta")
+          ResourceFactory.create(ResourceIds.User, user.account.id)(jobResourcePre, Some(context.environmentId))
+        }
+        _ = log.info("Meta job created: " + metaResource.id)
+        service <- Future.fromTryST {
+          log.debug("Retrieving CaaSService from ProviderManager")
+          providerManager.getProviderImpl(context.provider.typeId)
+        }
+        instanceWithUpdates <- {
+          log.info("Creating job in backend CaaS...")
+          service.createJob(context, metaResource)
+        }
+        updatedInstance <- Future.fromTryST(ResourceFactory.update(instanceWithUpdates, user.account.id))
+      } yield updatedInstance
+
+    }
+  }
+
+  def patchContainer(origContainer: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[GestaltResourceInstance] = {
     for {
       patched <- PatchInstance.applyPatch(origContainer, patch) match {
         case Success(r) if r.name == origContainer.name => Future.successful(r.asInstanceOf[GestaltResourceInstance])
@@ -657,6 +713,6 @@ class ContainerServiceImpl @Inject() (providerManager: ProviderManager, deleteCo
     } yield updated
   }
 
-  override def patchVolume(volume: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[Instance] = ???
+  def patchVolume(volume: Instance, patch: PatchDocument, user: AuthAccountWithCreds, request: RequestHeader): Future[Instance] = ???
 
 }

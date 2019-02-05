@@ -159,7 +159,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  def destroy(container: ResourceLike): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     val providerId = Json.parse(container.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
@@ -181,7 +181,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def find(context: ProviderContext, container: Instance): Future[Option[ContainerStats]] = {
+  def find(context: ProviderContext, container: Instance): Future[Option[ContainerStats]] = {
     // Lookup container in marathon, convert to ContainerStats
     ContainerService.resourceExternalId(container) match {
       case None => Future.successful(None)
@@ -194,7 +194,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+  def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     val externalIds = for {
       cts <- ResourceFactory.findChildrenOfType(typeId = ResourceIds.Container, parentId = context.environmentId)
       eid <- cts.properties.flatMap(_.get("external_id"))
@@ -285,7 +285,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     "%s_VHOST_%d".format(prefix, index)
   }
 
-  override def scale(context: ProviderContext, container: Instance, numInstances: Int): Future[Instance] = {
+  def scale(context: ProviderContext, container: Instance, numInstances: Int): Future[Instance] = {
     ContainerService.resourceExternalId(container) match {
       case None => Future.failed(new RuntimeException("container.properties.external_id not found."))
       case Some(external_id) =>
@@ -303,7 +303,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def update(context: ProviderContext, container: Instance)
+  def update(context: ProviderContext, container: Instance)
                      (implicit ec: ExecutionContext): Future[Instance] = {
     ContainerService.resourceExternalId(container) match {
       case None =>
@@ -340,7 +340,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
+  def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
                            (implicit ec: ExecutionContext): Future[Instance] = {
     log.debug("Entered createSecret(...)")
 
@@ -370,7 +370,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def destroySecret(secret: ResourceLike): Future[Unit] = {
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = {
     val providerId = Json.parse(secret.properties.get("provider")) \ "id"
     val provider   = ResourceFactory.findById(UUID.fromString(providerId.as[String])) getOrElse {
       throw new RuntimeException("Could not find Provider : " + providerId)
@@ -390,7 +390,7 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     }
   }
 
-  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
+  def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
     Future.fromTry(for {
       spec <- VolumeSpec.fromResourceInstance(metaResource)
       v <- spec.`type` match {
@@ -400,13 +400,17 @@ class MarathonService @Inject() ( marathonClientFactory: MarathonClientFactory )
     } yield v)
   }
 
-  override def updateVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
+  def updateVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] = {
     log.warn("MarathonService::updateVolume is currently a no-op and is not expected to be called")
     Future.successful(metaResource)
   }
 
-  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] = Future.successful(())
+  def destroyVolume(secret: GestaltResourceInstance): Future[Unit] = Future.successful(())
 
+  def createJob(context: ProviderContext, metaResource: Instance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = create(context, metaResource)
+  
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = destroy(job)
 }
 
 object MarathonService {

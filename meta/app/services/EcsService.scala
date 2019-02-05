@@ -1,7 +1,7 @@
 package services
 
 import com.galacticfog.gestalt.data.{Instance, ResourceFactory}
-import com.galacticfog.gestalt.data.models.{GestaltResourceInstance, ResourceLike}
+import com.galacticfog.gestalt.data.models.GestaltResourceInstance
 import com.galacticfog.gestalt.meta.api.{ContainerSpec,ContainerStats,SecretSpec}
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.integrations.ecs.EcsClient
@@ -20,9 +20,9 @@ import com.amazonaws.services.ecs.model.{ServiceNotActiveException,ServiceNotFou
 
 class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService with ECSOps with EC2Ops {
 
-  private[this] val log = Logger(this.getClass)
+  private val log = Logger(this.getClass)
 
-  def cleanly[T](providerId: UUID)(f: EcsClient => Future[T]): Future[T] = {
+  private def cleanly[T](providerId: UUID)(f: EcsClient => Future[T]): Future[T] = {
     import scala.concurrent.ExecutionContext.Implicits.global
     awsSdkFactory.getEcsClient(providerId) flatMap { client =>
       val fT = f(client)
@@ -31,11 +31,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
-    resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
-  }
-
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {     // the method signature doesn't support passing an implicit here – probably should be updated
+  def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {     // the method signature doesn't support passing an implicit here – probably should be updated
     cleanly(context.provider.id) { client =>
       ContainerService.resourceExternalId(container) match {
         case Some(externalId) => {
@@ -53,7 +49,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+  def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     @tailrec
     def describeAllServices(client: EcsClient, paginationToken: Option[String], stats: Seq[ContainerStats]): Try[Seq[ContainerStats]] = {
       val described = for(
@@ -72,7 +68,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  override def create(context: ProviderContext, container: GestaltResourceInstance)
+  def create(context: ProviderContext, container: GestaltResourceInstance)
    (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     cleanly(context.provider.id) { client =>
       Future.fromTryST(for(
@@ -96,10 +92,10 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
+  def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[SecretSpec.Item])
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
 
-  override def createVolume(context: ProviderContext, metaResource: Instance)
+  def createVolume(context: ProviderContext, metaResource: Instance)
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     //     GestaltResourceInstance(b1628891-749c-46a9-940d-ea19156d4803,24361db7-0fc0-4be5-9973-d88d5602956f,a4f47f53-0e3e-4796-99a9-eeca7a9216cc,fa1ad369-d571-479b-9e91-8a510b24f997,ResourceOwnerLink(
     // 58b6775d-37a5-44bc-9115-7331fc4964b7,1b514f76-d8d1-4ac9-8571-dc70ea39927e,Some(gestalt-admin),Some(/root/users/1b514f76-d8d1-4ac9-8571-dc70ea39927e),None),test,None,Some(Map(typeId -> 58b6775d-37a5-44bc-9115-7331fc4964b7, id -> 1b514f76-d
@@ -111,7 +107,7 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     Future.successful(metaResource)
   }
 
-  override def destroy(container: ResourceLike): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     
     val provider = ContainerService.containerProvider(container)
@@ -152,9 +148,9 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  override def destroySecret(secret: ResourceLike): Future[Unit] = Future.fromTryST(Try(???))
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
 
-  override def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
+  def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
     val volumeType = for(
       properties <- volume.properties;
       `type` <- properties.get("type")
@@ -169,13 +165,13 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
     }
   }
 
-  override def update(context: ProviderContext, container: GestaltResourceInstance)
+  def update(context: ProviderContext, container: GestaltResourceInstance)
             (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
 
-  override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)
+  def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)
                   (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
+  def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = {
     cleanly(context.provider.id) { client =>
       val scaled = for(
         spec <- ContainerSpec.fromResourceInstance(container);
@@ -193,4 +189,9 @@ class EcsService @Inject() (awsSdkFactory: AwsSdkFactory) extends CaasService wi
       Future.fromTryST(scaled)
     }
   }
+
+  def createJob(context: ProviderContext, metaResource: Instance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.fromTryST(Try(???))
+  
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = Future.fromTryST(Try(???))
 }

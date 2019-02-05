@@ -43,7 +43,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
 
   private[services] val DefaultNamespace = "default"
 
-  def cleanly[T](provider: GestaltResourceInstance, namespace: String)(f: RequestContext => Future[T]): Future[T] = {
+  private def cleanly[T](provider: GestaltResourceInstance, namespace: String)(f: RequestContext => Future[T]): Future[T] = {
     skuberFactory.initializeKube(provider, namespace) flatMap { kube =>
       val fT = f(kube)
       fT.onComplete(_ => kube.close)
@@ -95,7 +95,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  override def destroySecret(secret: ResourceLike): Future[Unit] = {
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = {
     val provider = ContainerService.containerProvider(secret)
     /*
      * TODO: Change signature of deleteSecret to take a ProviderContext - providers
@@ -273,7 +273,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
   //   upsertProperties(container, "status" -> "LAUNCHED")
   // }
 
-  def updateIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
+  private def updateIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
     // start this async call early, we'll need it later
     val fExistingIngress = kube.getOption[Ingress](spec.name)
     /*
@@ -298,7 +298,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
+  private def createIngress(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Option[Ingress]] = {
     mks.mkIngressSpec(containerId, spec, namespace, context).fold { Future.successful(Option.empty[Ingress]) }
                                                  { kube.create[Ingress](_) map(Some(_)) }
   }
@@ -315,7 +315,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def reconcileSvc(kube: RequestContext, plan: (Option[Service], Option[Service])): Future[Option[Service]] = {
+  private def reconcileSvc(kube: RequestContext, plan: (Option[Service], Option[Service])): Future[Option[Service]] = {
     plan match {
       case (None, None)            => Future.successful(None)
       case (Some(cur), None)       =>
@@ -334,7 +334,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def updateServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
+  private def updateServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
 
     // start this async call early, we'll need it later
     val fExistingSvcs = getContainerServices(kube, containerId)
@@ -357,7 +357,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield updatedPMs
   }
 
-  def createServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
+  private def createServices(kube: RequestContext, namespace: String, containerId: UUID, spec: ContainerSpec, context: ProviderContext): Future[Seq[PortMapping]] = {
     val svcs = mks.mkServiceSpecs(containerId, spec, namespace, context)
     for {
       svcs <- Future.traverse(Seq(svcs.intSvc, svcs.extSvc, svcs.lbSvc)) {
@@ -422,7 +422,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  def destroy(container: ResourceLike): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     log.debug("destroy(_)")
 
     val provider = ContainerService.containerProvider(container)
@@ -552,7 +552,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def deleteAllWithLabel[O <: ObjectResource]( kube: RequestContext, label: (String, String) )
+  private def deleteAllWithLabel[O <: ObjectResource]( kube: RequestContext, label: (String, String) )
                                                        ( implicit fmtL: Format[ListResource[O]], fmtO: Format[O],
                                                                   rdo: skuber.ResourceDefinition[O],
                                                                   rd: skuber.ResourceDefinition[ListResource[O]] ) : Future[List[Unit]] = {
@@ -633,7 +633,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
   }
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+  def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     log.debug("find(_,_)")
     lazy val deplSplitter = "/namespaces/([^/]+)/deployments/(.*)".r
     ContainerService.resourceExternalId(container) match {
@@ -677,7 +677,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+  def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     cleanly(context.provider, context.environment.id.toString) { kube0 =>
 
       kube0.getNamespaceNames flatMap { namespaces =>
@@ -800,7 +800,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  def eventStatFromPodEvent(podEvent: skuber.Event): EventStat = {
+  private def eventStatFromPodEvent(podEvent: skuber.Event): EventStat = {
       val eventAge = podEvent.metadata.creationTimestamp map skuberTimestampToJodaDateTime
       val (eventSourceComponent, eventSourceOption) = podEvent.source match {
         case None => (None, None)
@@ -818,7 +818,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       )
   }
 
-  def containerStateStatFromPodContainerStates(pod: skuber.Pod) : Option[ContainerStateStat] = {
+  private def containerStateStatFromPodContainerStates(pod: skuber.Pod) : Option[ContainerStateStat] = {
     val maybeContainerState = pod.status.flatMap(_.containerStatuses.headOption).flatMap(_.state)
     maybeContainerState.map(containerState => {
       containerState match {
@@ -855,7 +855,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     })
   }
 
-  def containerStateStatFromPodConditions(pod: skuber.Pod) : Option[ContainerStateStat] = {
+  private def containerStateStatFromPodConditions(pod: skuber.Pod) : Option[ContainerStateStat] = {
     pod.status flatMap (podStatus => {
       podStatus.conditions.find(_.status == "False").map(condition => {
         ContainerStateStat(
@@ -870,7 +870,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     })
   }
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = cleanly(context.provider, context.environmentId.toString) { kube =>
+  def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = cleanly(context.provider, context.environmentId.toString) { kube =>
     for {
       extantDepl <- kube.getOption[Deployment](container.name) flatMap {
         case Some(depl) => Future.successful(depl)
@@ -892,7 +892,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  override def createVolume(context: ProviderContext, metaResource: Instance)
+  def createVolume(context: ProviderContext, metaResource: Instance)
                            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
 
     import monocle.std.option._
@@ -940,7 +940,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  override def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
+  def destroyVolume(volume: GestaltResourceInstance): Future[Unit] = {
     def doTheDelete: Future[Unit] = {
       val provider = ContainerService.containerProvider(volume)
       /*
@@ -1001,16 +1001,21 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     } yield d
   }
 
-  override def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  def updateVolume(context: ProviderContext, metaResource: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.warn("KubernetesService::updateVolume is currently a no-op and is not expected to be called")
     Future.successful(metaResource)
   }
 
-  def skuberTimestampToJodaDateTime(timestamp: skuber.Timestamp): DateTime = {
+  private def skuberTimestampToJodaDateTime(timestamp: skuber.Timestamp): DateTime = {
     new DateTime(
       timestamp.toInstant().toEpochMilli(),
       DateTimeZone.forTimeZone(TimeZone.getTimeZone(timestamp.getZone())))
   }
+
+  def createJob(context: ProviderContext, metaResource: Instance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = create(context, metaResource)
+  
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = destroy(job)
 
 }
 

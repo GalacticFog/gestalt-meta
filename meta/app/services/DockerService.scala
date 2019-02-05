@@ -89,7 +89,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
 
   private[this] val log = LoggerFactory.getLogger(this.getClass)
 
-  def cleanly[T](providerId: UUID)(f: DockerClient => Future[T])(implicit ec: ExecutionContext): Future[T] = {
+  private def cleanly[T](providerId: UUID)(f: DockerClient => Future[T])(implicit ec: ExecutionContext): Future[T] = {
     dockerClientFactory.getDockerClient(providerId) match {
       case Failure(e) =>
         log.warn("failed to instantiate docker client",e)
@@ -203,7 +203,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     )
   }
 
-  override def create(context: ProviderContext,
+  def create(context: ProviderContext,
                       container: GestaltResourceInstance )
                      ( implicit ec: ExecutionContext ): Future[GestaltResourceInstance] = {
     log.debug("DockerService::create(...)")
@@ -224,7 +224,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
-  override def destroy(container: ResourceLike): Future[Unit] = {
+  def destroy(container: GestaltResourceInstance): Future[Unit] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::create(...)")
     val provider = ContainerService.containerProvider(container)
@@ -233,7 +233,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   }
 
 
-  override def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
+  def find(context: ProviderContext, container: GestaltResourceInstance): Future[Option[ContainerStats]] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     getExternalId(container) match {
       case None => Future.successful(None)
@@ -283,7 +283,7 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
   }
 
 
-  override def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
+  def listInEnvironment(context: ProviderContext): Future[Seq[ContainerStats]] = {
     import play.api.libs.concurrent.Execution.Implicits.defaultContext
     log.debug("DockerService::listInEnvironment(...)")
 
@@ -325,9 +325,9 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     )
   }
 
-  override def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
+  def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = ???
 
-  override def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
+  def scale(context: ProviderContext, container: GestaltResourceInstance, numInstances: Int): Future[GestaltResourceInstance] = ???
 
   private[services] def upsertProperties(resource: GestaltResourceInstance, values: (String,String)*) = {
     resource.copy(properties = Some((resource.properties getOrElse Map()) ++ values.toMap))
@@ -339,22 +339,27 @@ class DockerService @Inject() ( dockerClientFactory: DockerClientFactory ) exten
     }
   }
 
-  override def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[MetaSecretSpec.Item])
+  def createSecret(context: ProviderContext, metaResource: Instance, items: Seq[MetaSecretSpec.Item])
                            (implicit ec: ExecutionContext): Future[Instance] = Future.failed(
     new BadRequestException("Docker Swarm CaaS provider does not support secrets")
   )
 
-  override def destroySecret(secret: ResourceLike): Future[Unit] = Future.failed(
+  def destroySecret(secret: GestaltResourceInstance): Future[Unit] = Future.failed(
     new BadRequestException("DCOS CaaS provider does not support secrets")
   )
 
-  override def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+  def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[Instance] =
     Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 
-  override def destroyVolume(secret: GestaltResourceInstance): Future[Unit] =
+  def destroyVolume(secret: GestaltResourceInstance): Future[Unit] =
     Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
 
-  override def updateVolume(context: ProviderContext, container: Instance)(implicit ec: ExecutionContext): Future[Instance] =
+  def updateVolume(context: ProviderContext, container: Instance)(implicit ec: ExecutionContext): Future[Instance] =
     Future.failed(new BadRequestException("Docker CaaS providers do not support volumes"))
+
+  def createJob(context: ProviderContext, metaResource: Instance)
+                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = Future.failed(new BadRequestException("Docker CaaS providers do not support jobs"))
+  
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = Future.failed(new BadRequestException("Docker CaaS providers do not support jobs"))
 }
 
