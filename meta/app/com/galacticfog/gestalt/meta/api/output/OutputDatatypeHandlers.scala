@@ -83,9 +83,7 @@ object OutputDatatypeHandlers {
   def resourceUUIDLink(property: GestaltTypeProperty, value: String): JsValue = {
     val baseUri = None //"CHANGEMEIN::resourceUUIDLink"
     /* Get resource referenced by instanceId */
-    Json.toJson { 
-      linkFromId( safeGetTypeId(property), UUID.fromString( value ), baseUri )
-    }
+    Json.toJson(linkFromId(safeGetTypeId(property), UUID.fromString(value), baseUri))
   }
   
   /**
@@ -157,21 +155,13 @@ object OutputDatatypeHandlers {
    *  Convert a resource type instance to a ResourceLink 
    */
   private[output] def linkFromId(typeId: UUID, id: UUID, baseUri: Option[String] = None) = {
-    
-    /*
-     * 
-     * ResourceType.name(typeId) is failing when the resource type is a reference-type.
-     * 
-     */
-
     val target = ResourceFactory.findById(typeId, id) getOrElse {
       throw new BadRequestException(s"No resource of type '${ResourceType.name(typeId)}' with ID '${id} was found.")
     }
-
     ResourceLink(target.typeId, target.id, Some(target.name), 
         href = Option(toHref(typeId, id, target.orgId, baseUri)))
   }
-  
+
   private def jsonarray(value: String) = Json.parse(value).as[JsArray] 
   private def normalArray(value: String) = value.replaceAll("\\[", "").replaceAll("\\]", "").trim
   private def unquote(s: String) = s.replaceAll("\"", "")  

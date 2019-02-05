@@ -20,6 +20,7 @@ import play.api.libs.json._
 import scala.util.{Try,Success,Failure}
 
 import com.galacticfog.gestalt.meta.api.sdk._
+import com.galacticfog.gestalt.meta.api.errors._
 import scala.language.implicitConversions
 import play.api.Logger
 
@@ -345,25 +346,45 @@ object Output {
            */
           if (skipRender(templateProps(property), given)) loop(tail, given, acc)
           else {
-            val (renderedValue, newState) = Try(renderDataType(templateProps( property ), given( property ))) match {
-              case Failure(e) => {
-                log.error(s"Encountered an error rendering property '${property}' on resource '${instanceId}': ${e.getMessage}")
-                
-                val res = ResourceFactory.findById(instanceId)
-                val corrupt = ResourceState.id(ResourceStates.Corrupt)
+            val (renderedValue, newState) = 
+              Try {
                 /*
-                 * Update the object state to 'Corrupt. This is conditional because
-                 * I've seen this method used to render resources that are not yet
-                 * persisted.
+                 * TODO: This fallback for `properties.parent` is a temporary patch for a
+                 * larger issue: https://gitlab.com/galacticfog/gestalt-meta/issues/593
                  */
-                if (res.isDefined) {
-                  if (res.get.state != corrupt) {
-                    ResourceFactory.update(res.get.copy(state = corrupt), res.get.owner.id)
+                Try(renderDataType(templateProps(property), given(property))) match {
+                  case Failure(e) => {
+                    if (property == "parent") {
+                      val parentId = UUID.fromString(given(property))
+                      Json.toJson(
+                        ResourceFactory.findById(parentId).fold {
+                          throw new ResourceNotFoundException(s"Failed looking up parent resource '${parentId}'")
+                        }{ r => toLink(r, None) }
+                      )
+                    } else throw e
                   }
-                }                
-                (JsString(s"!!!ERROR: ${e.getMessage}: GIVEN_VALUE => '${given(property)}'"), corrupt)
-              }
-              case Success(v) => (v, acc._2)
+                  case Success(v) => v
+                }
+
+            } match {
+                case Success(v) => (v, acc._2)
+                case Failure(e) => {
+                  log.error(s"Encountered an error rendering property '${property}' on resource '${instanceId}': ${e.getMessage}")
+                  
+                  val res = ResourceFactory.findById(instanceId)
+                  val corrupt = ResourceState.id(ResourceStates.Corrupt)
+                  /*
+                   * Update the object state to 'Corrupt. This is conditional because
+                   * I've seen this method used to render resources that are not yet
+                   * persisted.
+                   */
+                  if (res.isDefined) {
+                    if (res.get.state != corrupt) {
+                      ResourceFactory.update(res.get.copy(state = corrupt), res.get.owner.id)
+                    }
+                  }                
+                  (JsString(s"!!!ERROR: ${e.getMessage}: GIVEN_VALUE => '${given(property)}'"), corrupt)
+                }
             }
             loop( tail, given, (acc._1 + (property -> renderedValue), newState) )
           }
