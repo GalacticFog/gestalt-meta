@@ -295,6 +295,49 @@ class ContainerController @Inject()(
     }
   }
 
+  def postJob(fqon: String, environment: java.util.UUID) = AsyncAudited(fqon) { implicit request =>
+    def createJob(org: GestaltResourceInstance, env: GestaltResourceInstance): EitherError[Future[GestaltResourceInstance]] = {
+      for(
+        resource <- mkResource(request.body, request.identity, env, migrations.V33.JOB_TYPE_ID);
+        modifiedResource = resource.copy(properties=Some(resource.properties.getOrElse(Map()) ++ Map(
+          "name" -> resource.name,
+          "description" -> resource.description.getOrElse("")
+        )));    // why not pass this explicitly from ui? I'd prefer verbosity over inconsistence
+        jobProperties <- ResourceSerde.deserialize[ContainerSpec](modifiedResource);
+        _ <- if(jobProperties.port_mappings.isEmpty) {
+          Right(())
+        }else {
+          Left(Error.BadRequest("port_mappings are not supported on Job resources"))
+        };
+        provider <- Either.fromOption(ResourceFactory.findById(jobProperties.provider.id),
+         Error.NotFound(s"CaasProvider with ID '${jobProperties.provider.id}' not found"));
+        _ <- assertCompatibleEnvType(provider, env)
+      ) yield {
+        val context = ProviderContext(request, provider.id, None)
+        containerService.createJob(context, request.identity, jobProperties, Some(resource.id)) map { created =>
+          resourceController.transformResource(created).get
+        }
+      }
+    }
+
+    val action = request.getQueryString("action").getOrElse("create")
+    (for(
+      org <- Either.fromOption(Resource.findFqon(fqon), Error.NotFound("could not locate org resource after authentication"));
+      env <- Either.fromOption(ResourceFactory.findById(ResourceIds.Environment, environment),
+       Error.NotFound(notFoundMessage(ResourceIds.Environment, environment)));
+      futureRes <- action match {
+        case "create" => createJob(org, env)
+        case _ => Left(Error.BadRequest("invalid 'action' on job create: must be 'create'"))
+      }
+    ) yield {
+      futureRes map { res =>
+        Created(RenderSingle(res))
+      }
+    }) valueOr { error =>
+      Future.successful(errorToResult(error))
+    }
+  }
+
   def updateContainer(fqon: String, cid: UUID) = AsyncAudited(fqon) { implicit request =>
     (for(
       prevContainer <- Either.fromOption(ResourceFactory.findById(ResourceIds.Container, cid),

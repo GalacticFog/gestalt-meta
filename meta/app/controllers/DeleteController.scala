@@ -74,6 +74,9 @@ class DeleteController @Inject()(
       migrations.V13.VOLUME_TYPE_ID -> wrapUnauthedHandler { resourceLike =>
         Try(Await.result(ContainerService.deleteVolumeHandler(providerManager, resourceLike), 10 .seconds))
       },
+      migrations.V33.JOB_TYPE_ID -> wrapUnauthedHandler { resourceLike =>
+        Try(Await.result(ContainerService.deleteJobHandler(providerManager, resourceLike), 10 .seconds))
+      },
       ResourceIds.Api         -> wrapUnauthedHandler { resourceLike =>
         Try(Await.result(gatewayMethods.deleteApiHandler(resourceLike), 5 .seconds))
       },
