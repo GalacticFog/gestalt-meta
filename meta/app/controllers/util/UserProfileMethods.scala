@@ -48,6 +48,8 @@ object UserProfileMethods {
       case b: JsUndefined => throw new BadRequestException(s"Payload property 'resource_id' is missing.")
     }
     
+    buildHierarchyContext(favoriteId)
+    
     val nickName = (newFavoriteJson \ "nickname") match {
       case a: JsDefined => Some(a.as[String])
       case b: JsUndefined => None
@@ -59,6 +61,57 @@ object UserProfileMethods {
     
     val newFavorite = ResourceFavorite(resource_id = favoriteId, nickname = nickName)            
     UserProfile.withResourceFavorite(profile, newFavorite).get
+  }
+  
+  def buildHierarchyContext(id: UUID) = {
+    /*
+     * Get Org with lowest integer depth
+     * Get Workspace:
+     *   if empty favorite is an Org
+     * Get Environment:
+     *   if empty favorite is workspace
+     * 
+     */
+    val family = ResourceFactory.getInstanceAncestors(id)
+    
+    family.foreach { case (depth, res) =>
+      println(s"${depth} - ${ResourceLabel(res.typeId)} - ${res.name}")
+    }
+    val (orgs, others) = family.partition(_._2.typeId == ResourceIds.Org)
+    val org = orgs.minBy(_._1)
+    
+    val all: List[GestaltResourceInstance] = (org._2 +: others.map(_._2))
+    
+    
+    val path = all.map(_.name).mkString("/","/","")
+    println("***PATH : " + path)
+    
+//    val x = family.groupBy(_._2.typeId)
+//    
+//    val org = x(ResourceIds.Org).minBy(_._1)
+    
+    
+    
+    
+    /*
+     * If others is empty, fav is an Org
+     * If others !contains workspace - fav is child of org (non-workspace)
+     * If others contains workspace only - fav is workspace
+     *  
+     */
+    //val y: Map[UUID, List[(Int, GestaltResourceInstance)]] = family.groupBy(_._2.typeId)
+    
+    val hi = family.foldLeft(Map[UUID, (Int, GestaltResourceInstance)]()) { case (acc, (depth, res)) =>
+      if (!acc.keySet.contains(res.typeId)) {
+        acc ++ Map(res.typeId -> (depth -> res))
+      } else if (acc(res.typeId)._1 > depth) {
+        acc ++ Map(res.typeId -> (depth -> res))
+      } else acc
+    }
+    
+    println("ref => " + (hi.map { case (k, (_, v)) => s"${k} - ${v.name}" }))
+    
+    ()
   }
   
   def deleteFavorite(userId: UUID, profileId: UUID, favoriteId: UUID): Try[GestaltResourceInstance] = {
