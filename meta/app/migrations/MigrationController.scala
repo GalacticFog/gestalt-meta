@@ -36,7 +36,7 @@ class MigrationController @Inject()(
     
     val ALL_MIGRATIONS = Seq("V1", "V2", "V3", "V4", "V5", "V6", "V7", "V9", "V10",
       "V11", "V12", "V13", "V14", "V15", "V16", "V17", "V18", "V19", "V20", "V21", "V22", 
-      "V23", "V24", "V25", "V26", "V27", "V28", "V29", "V30", "V31", "V32", "V33")
+      "V23", "V24", "V25", "V26", "V27", "V28", "V29", "V30", "V31", "V32", "V33", "V34")
     
     val qs = request.queryString
     val filter = new MigrationFilter(DefaultVersionReader)
@@ -136,6 +136,7 @@ class MigrationController @Inject()(
       case "V31" => new V31()
       case "V32" => new V32()
       case "V33" => new V33()
+      case "V34" => new V34()
       case _ =>
         throw new BadRequestException(s"No migration found for version '$version'")
     }
