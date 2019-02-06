@@ -606,20 +606,24 @@ class ResourceController @Inject()(
           /*
            * TODO: No upstream storage was found. Provision new...
            */
-          println("***[Storage]: Provisioning new Object Store...")
-          val envs = Map(
-            "GF_DEFAULT_OBJECT_STORAGE_ID" -> "ebb9a4f9-5e01-4484-a2e0-81d8ddf7bf0c",
-            //"GF_DEFAULT_OBJECT_STORAGE_ADDRESS" -> "35.199.37.155",
-            "GF_DEFAULT_OBJECT_STORAGE_PORT" -> "9000", 
-            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_KEY" -> randomAlphaNum(),
-            "GF_DEFAULT_OBJECT_STORAGE_ACCESS_SECRET" -> randomAlphaNum()
-          )
 
-          createContainer(resource.orgId, resource.id)
+          // println("***[Storage]: Provisioning new Object Store...")
+
+          /* val envs = Map(
+           * "GF_DEFAULT_OBJECT_STORAGE_ID" -> "ebb9a4f9-5e01-4484-a2e0-81d8ddf7bf0c",
+           * //"GF_DEFAULT_OBJECT_STORAGE_ADDRESS" -> "35.199.37.155",
+           * "GF_DEFAULT_OBJECT_STORAGE_PORT" -> "9000",
+           * "GF_DEFAULT_OBJECT_STORAGE_ACCESS_KEY" -> randomAlphaNum(),
+           * "GF_DEFAULT_OBJECT_STORAGE_ACCESS_SECRET" -> randomAlphaNum()
+           * )
+           */
+
+          // createContainer(resource.orgId, resource.id)
           
-          val x = Some(StorageType.mergeEnvironmentVars(updated.getOrElse(resource), envs))
-          println("X : " + x)
-          x
+          // val x = Some(StorageType.mergeEnvironmentVars(updated.getOrElse(resource), envs))
+          // println("X : " + x)
+          // x
+          updated
         }
 
       }
