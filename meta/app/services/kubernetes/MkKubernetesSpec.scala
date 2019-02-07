@@ -111,6 +111,14 @@ trait MkKubernetesSpec {
     }
   }
 
+  private def mkTransportProtocol(protocol: String): EitherError[skuber.Protocol.Protocol] = {
+    protocol.toUpperCase match {
+      case "TCP" => Right(skuber.Protocol.TCP)
+      case "UDP" => Right(skuber.Protocol.UDP)
+      case _ => Left(Error.UnprocessableEntity("port mapping must specify \"TCP\" or \"UDP\" as protocol"))
+    }
+  }
+
   def mkPodTemplate(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Pod.Template.Spec] = {
     // I want to 1) keep method signatures simple / short and uniform and 2) keep db access out of the code that merely transforms one data structure into another
     // so filling in namespace and data from other meta resources (including meta/*** labels) needs to happen somewhere else
@@ -121,11 +129,7 @@ trait MkKubernetesSpec {
       portMappings <- specProperties.port_mappings.toList traverse { pm =>
         val ee: EitherError[skuber.Container.Port] = for(
           containerPort <- eitherFrom[Error.UnprocessableEntity].option(pm.container_port, "port mapping must specify container_port");
-          protocol <- pm.protocol.toUpperCase match {
-            case "TCP" => Right(skuber.Protocol.TCP)
-            case "UDP" => Right(skuber.Protocol.UDP)
-            case _ => Left(Error.UnprocessableEntity("port mapping must specify \"TCP\" or \"UDP\" as protocol"))
-          };
+          protocol <- mkTransportProtocol(pm.protocol);
           _ <- if(specProperties.port_mappings.size > 1 && pm.name.isEmpty) {
             Left(Error.UnprocessableEntity("multiple port mappings requires port names"))
           }else {
@@ -202,6 +206,30 @@ trait MkKubernetesSpec {
         ) yield probe
         ee
       };
+      volumesAndMounts <- specProperties.volumes.toList traverse { mount =>
+        val ee: EitherError[(skuber.Volume, skuber.Volume.Mount)] = mount match {
+          case ex: ExistingVolumeMountSpec => {
+            val label = s"volume-ex-${ex.volume_id}"
+            Right(skuber.Volume(label, skuber.Volume.PersistentVolumeClaimRef(s"!${ex.volume_id}")) -> Volume.Mount(label, ex.mount_path))
+          }
+          case in: InlineVolumeMountSpec => {
+            import controllers.util.JsonInput
+            val ji = new JsonInput {}
+
+            val resource = ji.inputToInstance(UUID.fromString("00000000-0000-0000-0000-000000000000"), in.volume_resource)
+            for(
+              volumeProperties <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](resource);
+              label = s"volume-in-${volumeProperties.name}";
+              vm <- volumeProperties.`type` match {
+                case VolumeSpec.EmptyDir => Right(skuber.Volume(label, skuber.Volume.EmptyDir()) -> Volume.Mount(label, in.mount_path))
+                case any => Left(Error.UnprocessableEntity(s"volume type $any is currently not supported for InlineVolumeMountSpec"))
+              }
+            ) yield vm
+          }
+        }
+        ee
+      };
+      (storageVolumes, storageMounts) = volumesAndMounts.unzip;
       _ <- if(specProperties.secrets.nonEmpty && specProperties.secrets.map(_.path).distinct.size != specProperties.secrets.size) {
         Left(Error.UnprocessableEntity("secrets must have unique paths"))
       }else {
@@ -225,7 +253,7 @@ trait MkKubernetesSpec {
       commands = (specProperties.cmd map CommandParser.translate).getOrElse(Nil);
       envSecrets = specProperties.secrets.collect {
         case sem: ContainerSpec.SecretEnvMount =>
-         skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, s"${sem.secret_id}"))     // substitute with actual secret name
+         skuber.EnvVar(sem.path, EnvVar.SecretKeyRef(sem.secret_key, s"!${sem.secret_id}"))     // substitute with actual secret name
       };
       environmentVars = List(
         skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
@@ -242,7 +270,7 @@ trait MkKubernetesSpec {
       val secretDirVolumes: Seq[Volume] = dirSecrets.collect {
         // case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) => Volume(secretVolumeName, Volume.Secret(allEnvSecrets(secret_id).name))
         case (secretVolumeName, ContainerSpec.SecretDirMount(secret_id, path)) =>
-         Volume(secretVolumeName, Volume.Secret(s"${secret_id}"))     // substitute with actual secret name
+         Volume(secretVolumeName, Volume.Secret(s"!${secret_id}"))     // substitute with actual secret name
       }
 
       /*
@@ -306,7 +334,7 @@ trait MkKubernetesSpec {
           name = fileSecretVolumeNames(secretId),
           source = Volume.Secret(
             // secretName = allEnvSecrets(secretId).name,
-            secretName = s"${secretId}",    // substitute with actual secret name
+            secretName = s"!${secretId}",    // substitute with actual secret name
             items = Some(fileMounts map {
               sfm => Volume.KeyToPath(
                 key = sfm.secret_key,
@@ -327,18 +355,84 @@ trait MkKubernetesSpec {
         args = specProperties.args.getOrElse(Seq.empty).toList,
         command = commands,
         livenessProbe = probes.headOption,
-        volumeMounts = (secDirMounts ++ secretFileMounts).toList
+        volumeMounts = (storageMounts ++ secDirMounts ++ secretFileMounts).toList
       )
 
       val pod = Pod.Spec(
         containers = List(container),
         affinity = providerProperties.affinity,
-        volumes = (secretDirVolumes ++ secretFileVolumes).toList,
+        volumes = (storageVolumes ++ secretDirVolumes ++ secretFileVolumes).toList,
         dnsPolicy = skuber.DNSPolicy.ClusterFirst
       )
       Pod.Template.Spec(spec = Some(pod))
     }
   }
+
+  private def mkPort(pm: ContainerSpec.PortMapping): EitherError[Service.Port] = {
+    for(
+      cp <- eitherFrom[Error.UnprocessableEntity].option(pm.container_port, "port mapping must contain container_port");
+      protocol <- mkTransportProtocol(pm.protocol)
+    ) yield {
+      Service.Port(
+        name = pm.name.getOrElse(""),
+        protocol = protocol,
+        port = pm.lb_port.filter(_ != 0).getOrElse(cp),
+        targetPort = Some(Left(cp)),
+        nodePort = pm.service_port.getOrElse(0)
+      )
+    }
+  }
+
+  def mkClusterIpServiceSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Service.Spec]] = {
+    for(
+      ports <- specProperties.port_mappings.filter(_.expose_endpoint == Some(true))
+       .map(_.copy(service_port = None)).toList.traverse(mkPort)
+    ) yield {
+      if(ports.size > 0) {
+        Some(Service.Spec(
+          ports = ports,
+          _type = Service.Type.ClusterIP
+        ))
+      }else {
+        None
+      }
+    }
+  }
+
+  def mkNodePortServiceSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Service.Spec]] = {
+    for(
+      ports <- specProperties.port_mappings.filter(pm => pm.expose_endpoint == Some(true) &&
+       (pm.`type` == Some("external") || pm.`type` == Some("loadBalancer"))).toList.traverse(mkPort)
+    ) yield {
+      if(ports.size > 0) {
+        Some(Service.Spec(
+          ports = ports,
+          _type = Service.Type.NodePort
+        ))
+      }else {
+        None
+      }
+    }
+  }
+
+  def mkLoadBalancerServiceSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Service.Spec]] = {
+    for(
+      ports <- specProperties.port_mappings.filter(pm => pm.expose_endpoint == Some(true) && pm.`type` == Some("loadBalancer"))
+       .map(_.copy(service_port = None)).toList.traverse(mkPort)
+    ) yield {
+      if(ports.size > 0) {
+        Some(Service.Spec(
+          ports = ports,
+          _type = Service.Type.LoadBalancer
+        ))
+      }else {
+        None
+      }
+    }
+  }
+
+  // def mkIngressSpec(providerProperties: KubernetesProviderProperties.Properties, specProperties: ContainerSpec): EitherError[Option[Ingress.Spec]] = {
+  // }
 
   def mkLabels(context: ProviderContext): Map[String,String] = {
     Map(

@@ -500,14 +500,15 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
+  // run a single section:
+  // testOnly services.kubernetes.KubernetesServiceSpec -- include containers
 
 
 
 
 
 
-
-
+  section("containers")
   "KubernetesService: containers" should {
 
     "configure environment variables for containers" in new FakeKube {
@@ -947,21 +948,21 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     }
 
     // fails to detect mock on listSelected for some reason
-    // "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
-    //   val Some(updatedContainerProps) = await(testSetup.svc.create(
-    //     context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
-    //     container = metaContainer
-    //   )).properties
+    "listInEnvironment must use external_id in the ContainerStats" in new FakeKubeCreate() {
+      val Some(updatedContainerProps) = await(testSetup.svc.create(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
+        container = metaContainer
+      )).properties
 
-    //   val Seq(stat) = await(testSetup.svc.listInEnvironment(
-    //     context = ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
-    //   ))
+      val Seq(stat) = await(testSetup.svc.listInEnvironment(
+        context = ProviderContext(play.api.test.FakeRequest("GET", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None)
+      ))
 
-    //   val Some(externalId) = updatedContainerProps.get("external_id")
+      val Some(externalId) = updatedContainerProps.get("external_id")
 
-    //   stat.external_id must_== externalId
-    //   there were three(testSetup.client).close
-    // }
+      stat.external_id must_== externalId
+      there were three(testSetup.client).close
+    }.pendingUntilFixed("fails to detect mock on listSelected for some reason")
 
     "create container should use default namespace if there are no provider-env sibling containers" in new FakeKube() {
       val Success(anotherProvider) = createKubernetesProvider(testEnv.id, "another-provider")
@@ -1211,6 +1212,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
   }
+  section("containers")
 
 
 
@@ -1221,8 +1223,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("secrets")
   "KubernetesService: secrets" should {
 
     "provision secrets with the expected external_id property" in new FakeKubeCreate() {
@@ -1459,6 +1460,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       )) must throwA[BadRequestException]("secrets must have unique paths")
     }
   }
+  section("secrets")
 
 
 
@@ -1467,8 +1469,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("volumes")
   "KubernetesService: volumes, PVs, PVCs" should {
 
     "create volume should use namespace from provider-env sibling containers" in new FakeKube() {
@@ -1945,6 +1946,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there was one(testSetup.client).delete(meq(metaVolume.name), any)(meq(skuber.PersistentVolumeClaim.pvcDef), any)
     }
   }
+  section("volumes")
 
 
 
@@ -1952,8 +1954,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
-
-
+  section("connectivity")
   "KubernetesService: connectivity" should {
 
     "orchestrate kube ingress for virtual hosts" in new FakeKubeCreate(port_mappings = Seq(
@@ -2388,6 +2389,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
   }
+  section("connectivity")
 
 
 
@@ -2399,38 +2401,64 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
 
 
 
+  section("jobs")
+  "KubernetesService: jobs" should {
+    "create job" in new FakeKube {
+      val Success(providerSibling) = createInstance(
+        ResourceIds.Container,
+        "existing-container",
+        parent = Some(testEnv1.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx",
+          "provider" -> Output.renderInstance(testProvider1).toString,
+          "external_id" -> "/namespaces/non-standard-namespace/jobs/pre-existing-container-1"
+        ))
+      )
+    }
+  }
+  section("jobs")
 
 
 
+
+
+
+
+
+
+
+
+  section("other")
   "KubernetesService: other" should {
 
     // todo: fix this test case
-    // "provision namespace with the expected name and labels" in new FakeKube {
-    //   val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
-    //   Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
-    //   testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
-    //   testSetup.client.create(argThat(
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
-    //   // testSetup.client.create(argThat(
-    //   //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
-    //   // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
-    //   val newNamespace = await(testSetup.svc.getNamespace(
-    //     rc = testSetup.client,
-    //     pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
-    //     create = true
-    //   ))
-    //   there was one(testSetup.client).create(argThat(
-    //     ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
-    //       KubernetesConstants.META_ENVIRONMENT_KEY -> newEnv.id.toString,
-    //       KubernetesConstants.META_WORKSPACE_KEY -> newWork.id.toString,
-    //       KubernetesConstants.META_FQON_KEY -> "root",
-    //       KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
-    //     )
-    //       and
-    //     ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
-    //   ))(any,meq(skuber.Namespace.namespaceDef),any)
-    // }
+    "provision namespace with the expected name and labels" in new FakeKube {
+      val (newWork, newEnv) = createWorkEnv(wrkName = "test-workspace", envName = "test-environment").get
+      Entitlements.setNewResourceEntitlements(dummyRootOrgId, newEnv.id, user, Some(newWork.id))
+      testSetup.client.getOption(meq(newEnv.id.toString))(any,meq(skuber.Namespace.namespaceDef),any) returns Future.successful(None)
+      testSetup.client.create(argThat(
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,meq(skuber.Namespace.namespaceDef),any) returns Future(mock[skuber.Namespace])
+      // testSetup.client.create(argThat(
+      //   ((_:skuber.rbac.ClusterRoleBinding).name) ^^ beEqualTo(s"${newEnv.id.toString}-cluster-admin")
+      // ))(any,meq(skuber.rbac.ClusterRoleBinding.crDef),any) returns Future(mock[skuber.rbac.ClusterRoleBinding])
+      val newNamespace = await(testSetup.svc.getNamespace(
+        rc = testSetup.client,
+        pc = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${newEnv.id}/containers"), testProvider.id, None),
+        create = true
+      ))
+      there was one(testSetup.client).create(argThat(
+        ((_:skuber.Namespace).metadata.labels) ^^ havePairs(
+          KubernetesConstants.META_ENVIRONMENT_KEY -> newEnv.id.toString,
+          KubernetesConstants.META_WORKSPACE_KEY -> newWork.id.toString,
+          KubernetesConstants.META_FQON_KEY -> "root",
+          KubernetesConstants.META_PROVIDER_KEY -> testProvider.id.toString
+        )
+          and
+        ((_:skuber.Namespace).name) ^^ beEqualTo(newEnv.id.toString)
+      ))(any,meq(skuber.Namespace.namespaceDef),any)
+    }.pendingUntilFixed("todo: fix this test case")
 
     "prefer to update cpu/mem from limit instead of request" in new FakeKube {
       val testContainerId = uuid()
@@ -3190,5 +3218,6 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
     }
 
   }
+  section("other")
 
 }

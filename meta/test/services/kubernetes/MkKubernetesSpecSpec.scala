@@ -20,6 +20,19 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
   override def after: Unit = scalikejdbc.config.DBs.closeAll()
 
   sequential
+    
+  lazy val mks = new MkKubernetesSpec { }
+
+  def deserializeProperties(provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[(KubernetesProviderProperties.Properties,ContainerSpec)] = {
+    import cats.syntax.either._
+
+    import KubernetesProviderProperties.Implicits._
+
+    for(
+      specProperties <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](resource);
+      providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](provider)
+    ) yield (providerProperties, specProperties)
+  }
 
   "MkKubernetesSpec#mkPVCandPV" should {
     lazy val testK8SProvider = newInstance(
@@ -228,6 +241,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
     }
   }
 
+
   "MkKubernetesSpec#mkPodTemplate" should {
     lazy val testK8SProvider = newInstance(
       typeId = ResourceIds.KubeProvider,
@@ -240,19 +254,14 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
         ).toString
       ))
     )
-    
-    val mks = new MkKubernetesSpec { }
 
     def mkPodTemplate(provider: GestaltResourceInstance, resource: GestaltResourceInstance): EitherError[skuber.Pod.Template.Spec] = {
       import cats.syntax.either._
 
-      import KubernetesProviderProperties.Implicits._
-
       for(
-        specProperties <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](resource);
-        providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](provider);
-        podTemplate <- mks.mkPodTemplate(providerProperties, specProperties)
-      ) yield podTemplate
+        ppsp <- deserializeProperties(provider, resource);
+        r <- mks.mkPodTemplate(ppsp._1, ppsp._2)
+      ) yield r
     }
 
 
@@ -1048,7 +1057,7 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
                 ports = List(),
                 env = List(
                   skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")),
-                  skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", "00000000-0000-0000-0000-000000000000"))
+                  skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", "!00000000-0000-0000-0000-000000000000"))
                 ),
                 resources = Some(skuber.Resource.Requirements(
                   limits = Map("memory" -> "128.000M"),
@@ -1064,8 +1073,8 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
             ),
             volumes = List(
               // these are not meant to be actual secret names, but secret ids in meta
-              skuber.Volume("dir-4", skuber.Volume.Secret(secretName = "00000000-0000-0000-0000-000000000000")),
-              skuber.Volume("file-0", skuber.Volume.Secret(secretName = "00000000-0000-0000-0000-000000000000", items = Some(List(
+              skuber.Volume("dir-4", skuber.Volume.Secret(secretName = "!00000000-0000-0000-0000-000000000000")),
+              skuber.Volume("file-0", skuber.Volume.Secret(secretName = "!00000000-0000-0000-0000-000000000000", items = Some(List(
                 skuber.Volume.KeyToPath("part-a","file-a"),
                 skuber.Volume.KeyToPath("part-b","file-b"),
                 skuber.Volume.KeyToPath("part-b","sub/file-c")
@@ -1111,6 +1120,220 @@ class MkKubernetesSpecSpec extends PlaySpecification with ResourceScope with Bef
       )
       val res = mkPodTemplate(testK8SProvider, container)
       res === Left(Error.UnprocessableEntity("secrets must have unique paths"))
+    }
+
+    "create pod template with volumes" in {
+      val container = newInstance(
+        ResourceIds.Container,
+        "test-container",
+        properties = Some(Map(
+          "name" -> "test-container",
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testK8SProvider.id
+          ).toString,
+          "num_instances" -> "1",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> "[]",
+          "volumes" -> Json.arr(
+            Json.obj("mount_path" -> "/tmp", "volume_id" -> "00000000-0000-0000-0000-000000000000")//,
+            // Json.obj("mount_path" -> "/tmp1", "volume_resource" -> Json.obj(
+
+            // ))
+          ).toString
+        ))
+      )
+      val res = mkPodTemplate(testK8SProvider, container)
+      res === Right(
+        skuber.Pod.Template.Spec(
+          spec = Some(skuber.Pod.Spec(
+            containers = List(
+              skuber.Container(
+                name = "test-container",
+                image = "nginx:alpine",
+                ports = List(),
+                env = List(
+                  skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
+                ),
+                resources = Some(skuber.Resource.Requirements(
+                  limits = Map("memory" -> "128.000M"),
+                  requests = Map("cpu" -> "1.000", "memory" -> "128.000M")
+                )),
+                livenessProbe = None,
+                imagePullPolicy = skuber.Container.PullPolicy.IfNotPresent,
+                volumeMounts = List(
+                  skuber.Volume.Mount(name = "volume-ex-00000000-0000-0000-0000-000000000000", mountPath = "/tmp")
+                )
+              )
+            ),
+            volumes = List(
+              skuber.Volume(
+                "volume-ex-00000000-0000-0000-0000-000000000000",
+                skuber.Volume.PersistentVolumeClaimRef("!00000000-0000-0000-0000-000000000000"))
+            ),
+            affinity = None,
+            dnsPolicy = skuber.DNSPolicy.ClusterFirst
+          ))
+        )
+      )
+    }
+  }
+
+
+  "MkKubernetesSpec#mk***ServiceSpec" should {
+    lazy val testK8SProvider = newInstance(
+      typeId = ResourceIds.KubeProvider,
+      name = "test-provider",
+      properties = Option(Map(
+        "parent" -> "{}",
+        "config" -> Json.obj(
+          "host_volume_whitelist" -> Json.arr("/supported-path/sub-path"),
+          "storage_classes" -> Json.arr("storage-class-1")
+        ).toString
+      ))
+    )
+
+    "create service specs" in {
+      val container = newInstance(
+        ResourceIds.Container,
+        "test-container",
+        properties = Some(Map(
+          "name" -> "test-container",
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testK8SProvider.id
+          ).toString,
+          "num_instances" -> "1",
+          "port_mappings" -> Json.arr(
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 80,
+              "expose_endpoint" -> true,
+              "name" -> "http"
+            ),
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 443,
+              "lb_port" -> 0,
+              "expose_endpoint" -> true,
+              "name" -> "https",
+              "type" -> "external",
+              "service_port" -> 32000
+            ),
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 444,
+              "lb_port" -> 8444,
+              "expose_endpoint" -> true,
+              "name" -> "https2",
+              "type" -> "internal",
+              "service_port" -> 32001
+            ),
+            Json.obj(
+              "protocol" -> "tcp",
+              "container_port" -> 444,
+              "lb_port" -> 8444,
+              "expose_endpoint" -> true,
+              "name" -> "https3",
+              "type" -> "loadBalancer"
+            ),
+            Json.obj(
+              "protocol" -> "udp",
+              "container_port" -> 10000,
+              "lb_port" -> 0,
+              "expose_endpoint" -> false,
+              "name" -> "debug",
+              "type" -> "internal",
+              "host_port" -> 10000
+            )
+          ).toString,
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> "[]"
+        ))
+      )
+      val (pp, sp) = deserializeProperties(testK8SProvider, container).right.get
+
+      mks.mkClusterIpServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "http",
+            port = 80,
+            targetPort = Some(Left(80))
+          ),
+          skuber.Service.Port(
+            name = "https",
+            port = 443,
+            targetPort = Some(Left(443))
+          ),
+          skuber.Service.Port(
+            name = "https2",
+            port = 8444,
+            targetPort = Some(Left(444))
+          ),
+          skuber.Service.Port(
+            name = "https3",
+            port = 8444,
+            targetPort = Some(Left(444))
+          )
+        ),
+        _type = skuber.Service.Type.ClusterIP
+      )))
+      mks.mkNodePortServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "https",
+            port = 443,
+            targetPort = Some(Left(443)),
+            nodePort = 32000
+          ),
+          skuber.Service.Port(
+            name = "https3",
+            port = 8444,
+            targetPort = Some(Left(444)),
+            nodePort = 0
+          )
+        ),
+        _type = skuber.Service.Type.NodePort
+      )))
+      mks.mkLoadBalancerServiceSpec(pp, sp) === Right(Some(skuber.Service.Spec(
+        ports = List(
+          skuber.Service.Port(
+            name = "https3",
+            port = 8444,
+            targetPort = Some(Left(444))
+          )
+        ),
+        _type = skuber.Service.Type.LoadBalancer
+      )))
+    }
+    "do not create service specs with no port_mappings" in {
+      val container = newInstance(
+        ResourceIds.Container,
+        "test-container",
+        properties = Some(Map(
+          "name" -> "test-container",
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testK8SProvider.id
+          ).toString,
+          "num_instances" -> "1",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> "[]"
+        ))
+      )
+      val (pp, sp) = deserializeProperties(testK8SProvider, container).right.get
+
+      mks.mkClusterIpServiceSpec(pp, sp) === Right(None)
+      mks.mkNodePortServiceSpec(pp, sp) === Right(None)
+      mks.mkLoadBalancerServiceSpec(pp, sp) === Right(None)
     }
   }
 }
