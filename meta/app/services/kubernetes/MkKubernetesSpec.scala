@@ -209,7 +209,7 @@ trait MkKubernetesSpec {
       volumesAndMounts <- specProperties.volumes.toList traverse { mount =>
         val ee: EitherError[(skuber.Volume, skuber.Volume.Mount)] = mount match {
           case ex: ExistingVolumeMountSpec => {
-            val label = s"volume-ex-${ex.volume_id}"
+            val label = s"volume-ex-${ex.volume_id}"    // format of this label is important
             Right(skuber.Volume(label, skuber.Volume.PersistentVolumeClaimRef(s"!${ex.volume_id}")) -> Volume.Mount(label, ex.mount_path))
           }
           case in: InlineVolumeMountSpec => {
@@ -219,7 +219,7 @@ trait MkKubernetesSpec {
             val resource = ji.inputToInstance(UUID.fromString("00000000-0000-0000-0000-000000000000"), in.volume_resource)
             for(
               volumeProperties <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](resource);
-              label = s"volume-in-${volumeProperties.name}";
+              label = s"volume-in-${volumeProperties.name}";    // format of this label is important
               vm <- volumeProperties.`type` match {
                 case VolumeSpec.EmptyDir => Right(skuber.Volume(label, skuber.Volume.EmptyDir()) -> Volume.Mount(label, in.mount_path))
                 case any => Left(Error.UnprocessableEntity(s"volume type $any is currently not supported for InlineVolumeMountSpec"))

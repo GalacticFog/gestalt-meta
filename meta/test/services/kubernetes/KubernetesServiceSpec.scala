@@ -2404,15 +2404,312 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
   section("jobs")
   "KubernetesService: jobs" should {
     "create job" in new FakeKube {
-      val Success(providerSibling) = createInstance(
-        ResourceIds.Container,
-        "existing-container",
-        parent = Some(testEnv1.id),
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
         properties = Some(Map(
           "container_type" -> "DOCKER",
-          "image" -> "nginx",
-          "provider" -> Output.renderInstance(testProvider1).toString,
-          "external_id" -> "/namespaces/non-standard-namespace/jobs/pre-existing-container-1"
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")), 
+                    skuber.EnvVar("VAR1", skuber.EnvVar.StringValue("VAL1")),
+                    skuber.EnvVar("VAR2", skuber.EnvVar.StringValue("VAL2"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None
+                )
+              ),
+              volumes = List(),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            ))
+          ))
+        ))
+      )
+    }
+    "create job with secrets" in new FakeKubeCreate {
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "secrets" -> Json.arr(
+            Json.obj(
+              "mount_type" -> "env",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "SOME_ENV_VAR",
+              "secret_key" -> "part-a"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/file-a",
+              "secret_key" -> "part-a"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/file-b",
+              "secret_key" -> "part-b"
+            ),
+            Json.obj(
+              "mount_type" -> "file",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/files/sub/file-c",
+              "secret_key" -> "part-b"
+            ),
+            Json.obj(
+              "mount_type" -> "directory",
+              "secret_id" -> s"${metaSecret.id}",
+              "path" -> "/mnt/secrets/dir"
+            )
+          ).toString
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP")),
+                    skuber.EnvVar("SOME_ENV_VAR", skuber.EnvVar.SecretKeyRef("part-a", s"${metaSecret.name}"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None,
+                  volumeMounts = List(
+                    skuber.Volume.Mount(name = "dir-4", mountPath = "/mnt/secrets/dir", readOnly = true),
+                    skuber.Volume.Mount(name = "file-0", mountPath = "/mnt/secrets/files", readOnly = true)
+                  )
+                )
+              ),
+              volumes = List(
+                // these are not meant to be actual secret names, but secret ids in meta
+                skuber.Volume("dir-4", skuber.Volume.Secret(secretName = s"${metaSecret.name}")),
+                skuber.Volume("file-0", skuber.Volume.Secret(secretName = s"${metaSecret.name}", items = Some(List(
+                  skuber.Volume.KeyToPath("part-a","file-a"),
+                  skuber.Volume.KeyToPath("part-b","file-b"),
+                  skuber.Volume.KeyToPath("part-b","sub/file-c")
+                ))))
+              ),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            ))
+          ))
+        ))
+      )
+    }
+    "create job with volumes" in new FakeKubeCreate {
+      val Success(metaVolume) = createInstance(
+        migrations.V13.VOLUME_TYPE_ID,
+        "external-volume",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "type" -> "external",
+          "size" -> "1000",
+          "access_mode" -> "ReadOnlyMany",
+          "provider" -> Output.renderInstance(testProvider).toString,
+          "config" -> "{}",
+          "external_id" -> "/namespaces/test/persistentvolumeclaims/pvc-name"
+        ))
+      )
+
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> "{}",
+          "network" -> "",
+          "volumes" -> Json.arr(
+            Json.obj("mount_path" -> "/tmp", "volume_id" -> s"${metaVolume.id}")//,
+            // Json.obj("mount_path" -> "/tmp1", "volume_resource" -> Json.obj(
+
+            // ))
+          ).toString
+        ))
+      )
+      val mockJob = mock[skuber.batch.Job]
+      mockJob.ns returns s"${testEnv.id}"
+      mockJob.name returns "job-name"
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      val r = await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      r.properties === Some(metaJob.properties.get ++ Map(
+        "status" -> "LAUNCHED",
+        "external_id" -> s"/namespaces/${testEnv.id}/jobs/job-name"
+      ))
+
+      val captor = ArgumentCaptor.forClass(classOf[skuber.batch.Job])
+      there were one(testSetup.client).create(captor.capture())(any,meq(skuber.batch.Job.jobDef),any)
+      val createdJob = captor.getValue()
+
+      createdJob === skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "test-job",
+          namespace = s"${testEnv.id}",
+          labels = Map(
+            KubernetesConstants.META_ENVIRONMENT_KEY -> s"${testEnv.id}",
+            KubernetesConstants.META_WORKSPACE_KEY -> s"${testWork.id}",
+            KubernetesConstants.META_FQON_KEY -> "root",
+            KubernetesConstants.META_PROVIDER_KEY -> s"${testProvider.id}",
+            KubernetesConstants.META_JOB_KEY -> s"${metaJob.id}"
+          )
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(skuber.Pod.Template.Spec(
+            spec = Some(skuber.Pod.Spec(
+              containers = List(
+                skuber.Container(
+                  name = "test-job",
+                  image = "nginx:alpine",
+                  ports = List(),
+                  env = List(
+                    skuber.EnvVar("POD_IP", skuber.EnvVar.FieldRef("status.podIP"))
+                  ),
+                  resources = Some(skuber.Resource.Requirements(
+                    limits = Map("memory" -> "768.000M"),
+                    requests = Map("cpu" -> "2.000", "memory" -> "768.000M")
+                  )),
+                  livenessProbe = None,
+                  volumeMounts = List(
+                    skuber.Volume.Mount(name = s"volume-ex-${metaVolume.id}", mountPath = "/tmp", readOnly = true)
+                  )
+                )
+              ),
+              volumes = List(
+                skuber.Volume(
+                  s"volume-ex-${metaVolume.id}",
+                  skuber.Volume.PersistentVolumeClaimRef("pvc-name", true))
+              ),
+              affinity = None,
+              dnsPolicy = skuber.DNSPolicy.ClusterFirst
+            ))
+          ))
         ))
       )
     }

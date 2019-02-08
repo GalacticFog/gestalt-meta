@@ -4,6 +4,7 @@ object KubernetesConstants {
   val META_CONTAINER_KEY = "meta/container"
   val META_SECRET_KEY = "meta/secret"
   val META_VOLUME_KEY = "meta/volume"
+  val META_JOB_KEY = "meta/job"
   val META_ENVIRONMENT_KEY = "meta/environment"
   val META_WORKSPACE_KEY = "meta/workspace"
   val META_FQON_KEY = "meta/fqon"
