@@ -1154,7 +1154,41 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
   
-  def destroyJob(job: GestaltResourceInstance): Future[Unit] = destroy(job)
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = {
+    import skuber.json.batch.format._
+    
+    val provider = ContainerService.containerProvider(job)
+
+    val namespace = getNamespaceForResource(job, "jobs")
+
+    cleanly(provider, namespace) { kube =>
+      for(
+        jobs <- kube.listSelected[ListResource[skuber.batch.Job]](META_JOB_KEY is s"${job.id}");
+        selectors = jobs map { job =>
+          job.spec.flatMap(_.selector).get
+        };
+        pods <- (Future.traverse(selectors) { selector =>
+          kube.listSelected[PodList](selector).map(_.items)
+        }) recover {
+          case e: K8SException => {
+            log.warn(s"K8S error listing/deleting Pods associated with job ${job.id}")
+            List()
+          }
+        };
+        _ <- Future.traverse(jobs.items) { job =>
+          kube.delete[skuber.batch.Job](job.name)
+        };
+        _ <- Future.traverse(pods.flatten) { pod =>
+          kube.delete[Pod](pod.name)
+        }
+      ) yield {
+        if(pods.isEmpty) {
+          log.debug(s"$namespace: deleted no Pods")
+        }
+        ()
+      }
+    }
+  }
 
 }
 

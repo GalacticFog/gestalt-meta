@@ -1147,7 +1147,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> Json.arr("request", "limit"))) {
+    "provision cpu limit if specified (tight mode)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> "request,limit")) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1161,7 +1161,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory_requirement_type" -> Json.arr("request"))) {
+    "provision memory request-only if specified (noisy-neighbor)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("memory_requirement_type" -> "request")) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -1175,7 +1175,7 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
       there were two(testSetup.client).close
     }
 
-    "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> "[]", "memory_requirement_type" -> "[]")) {
+    "provision with no limits or resources if specified (wild-west)" in new FakeKubeCreate(cpu = 1.0, memory = 1024, providerConfig = Seq("cpu_requirement_type" -> "", "memory_requirement_type" -> "")) {
       val Some(updatedContainerProps) = await(testSetup.svc.create(
         context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/containers"), testProvider.id, None),
         container = metaContainer
@@ -2712,6 +2712,62 @@ class KubernetesServiceSpec extends PlaySpecification with ResourceScope with Be
           ))
         ))
       )
+    }
+    "delete job" in new FakeKube {
+      import skuber.LabelSelector.dsl._
+      
+      val Success(metaJob) = createInstance(
+        migrations.V33.JOB_TYPE_ID,
+        "test-job",
+        parent = Some(testEnv.id),
+        properties = Some(Map(
+          "container_type" -> "DOCKER",
+          "image" -> "nginx:alpine",
+          "provider" -> Json.obj(
+            "id" -> testProvider.id
+          ).toString,
+          "cpus" -> "2.0",
+          "memory" -> "768.0",
+          "num_instances" -> "1",
+          "force_pull" -> "false",
+          "port_mappings" -> "[]",
+          "env" -> Json.obj(
+            "VAR1" -> "VAL1",
+            "VAR2" -> "VAL2"
+          ).toString,
+          "network" -> ""
+        ))
+      )
+      // val mockJob = mock[skuber.batch.Job]
+      // mockJob.ns returns s"${testEnv.id}"
+      // mockJob.name returns "job-name"
+      val mockJob = skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = "job-name",
+          namespace = s"${testEnv.id}"
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          selector = Some("a" is "b")
+        ))
+      )
+      testSetup.client.create(any)(any,meq(skuber.batch.Job.jobDef),any) returns Future.successful(mockJob)
+      // testSetup.client.list()(any,meq(PersistentVolumeClaim.pvcListDef),any) returns Future.successful(new skuber.PersistentVolumeClaimList("","",None,Nil))
+
+      await(testSetup.svc.createJob(
+        context = ProviderContext(play.api.test.FakeRequest("POST", s"/root/environments/${testEnv.id}/jobs"), testProvider.id, None),
+        metaResource = metaJob
+      ))
+
+      val mockPod = skuber.Pod(
+        name = "mock-pod",
+        spec = skuber.Pod.Spec()
+      )
+      testSetup.client.listSelected(any)(any,meq(skuber.batch.Job.jobListDef),any) returns Future.successful(new skuber.batch.JobList("","",None,List(mockJob)))
+      testSetup.client.listSelected(any)(any,meq(skuber.Pod.poListDef),any) returns Future.successful(new skuber.PodList("","",None,List(mockPod)))
+      testSetup.client.delete(any,any)(meq(skuber.batch.Job.jobDef),any) returns Future.successful(())
+      testSetup.client.delete(any,any)(meq(skuber.Pod.poDef),any) returns Future.successful(())
+
+      await(testSetup.svc.destroyJob(metaJob))
     }
   }
   section("jobs")
