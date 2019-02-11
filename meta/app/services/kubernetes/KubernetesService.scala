@@ -11,11 +11,16 @@ import com.galacticfog.gestalt.meta.api.sdk.ResourceIds
 import com.galacticfog.gestalt.meta.api.{ContainerSpec, ContainerStats, SecretSpec, VolumeSpec}
 import com.galacticfog.gestalt.util.FutureFromTryST._
 import com.galacticfog.gestalt.util.EitherWithErrors._
+import com.galacticfog.gestalt.util.Error
+import com.galacticfog.gestalt.util.ResourceSerde
 import com.google.inject.Inject
 import controllers.util._
 import org.joda.time.{DateTime, DateTimeZone}
 import cats.syntax.either._
+import cats.syntax.traverse._
+import monocle.Traversal
 import monocle.macros.GenLens
+import monocle.macros.GenPrism
 import play.api.Logger
 import play.api.libs.json._
 import services.{ProviderContext,CaasService}
@@ -68,8 +73,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])
-                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  def createSecret(context: ProviderContext, secret: GestaltResourceInstance, items: Seq[SecretSpec.Item])(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
 
     def createKubeSecret(kube: RequestContext, secretId: UUID, spec: SecretSpec, namespace: String, context: ProviderContext): Future[Secret] = {
       kube.create[Secret](mks.mkSecret(secretId, spec, namespace, context)) recoverWith { case e: K8SException =>
@@ -134,8 +138,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     }
   }
 
-  def create(context: ProviderContext, container: GestaltResourceInstance)
-            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  def create(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("create(...)")
     for {
       spec <- Future.fromTry(ContainerSpec.fromResourceInstance(container))
@@ -149,8 +152,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  def update(context: ProviderContext, container: GestaltResourceInstance)
-            (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  def update(context: ProviderContext, container: GestaltResourceInstance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
     log.debug("update(...)")
     val nameGetter = "/namespaces/[^/]+/deployments/(.*)".r
     val previousName = for {
@@ -892,8 +894,7 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
     )
   }
 
-  def createVolume(context: ProviderContext, metaResource: Instance)
-                           (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+  def createVolume(context: ProviderContext, metaResource: Instance)(implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
 
     import monocle.std.option._
 
@@ -1012,10 +1013,188 @@ class KubernetesService @Inject() ( skuberFactory: SkuberFactory )
       DateTimeZone.forTimeZone(TimeZone.getTimeZone(timestamp.getZone())))
   }
 
-  def createJob(context: ProviderContext, metaResource: Instance)
-                  (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = create(context, metaResource)
+  def createJob(context: ProviderContext, metaResource: Instance) (implicit ec: ExecutionContext): Future[GestaltResourceInstance] = {
+    import KubernetesProviderProperties.Implicits._
+    import skuber.json.batch.format._
+    import cats.instances.list._
+    import monocle.std.option._
+
+    val podTemplateEnvSecretsOptics = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.containers) composeTraversal Traversal.fromTraverse[List,skuber.Container] composeLens
+     GenLens[skuber.Container](_.env) composeTraversal Traversal.fromTraverse[List,skuber.EnvVar] composeLens
+     GenLens[skuber.EnvVar](_.value) composePrism GenPrism[skuber.EnvVar.Value,skuber.EnvVar.SecretKeyRef] composeLens
+     GenLens[skuber.EnvVar.SecretKeyRef](_.name)
+
+    val podTemplateVolumeMountsOptics = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.containers) composeTraversal Traversal.fromTraverse[List,skuber.Container] composeLens
+     GenLens[skuber.Container](_.volumeMounts) composeTraversal Traversal.fromTraverse[List,skuber.Volume.Mount]
+
+    val podTemplateVolumeSecretsOptics = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.volumes) composeTraversal Traversal.fromTraverse[List,skuber.Volume] composeLens
+     GenLens[skuber.Volume](_.source) composePrism GenPrism[skuber.Volume.Source,skuber.Volume.Secret] composeLens
+     GenLens[skuber.Volume.Secret](_.secretName)
+
+    val podTemplateVolumePVCRefOptics = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.volumes) composeTraversal Traversal.fromTraverse[List,skuber.Volume] composeLens
+     GenLens[skuber.Volume](_.source) composePrism GenPrism[skuber.Volume.Source,skuber.Volume.PersistentVolumeClaimRef]
+
+    val podTemplateRestartPolicy = GenLens[skuber.Pod.Template.Spec](_.spec) composePrism some composeLens
+     GenLens[skuber.Pod.Spec](_.restartPolicy)
+
+    val eitherJobSpec: EitherError[skuber.batch.Job] = for(
+      specProperties0 <- ResourceSerde.deserialize[ContainerSpec,Error.UnprocessableEntity](metaResource);
+      specProperties = specProperties0.copy(name=metaResource.name);    // this should be done somewhere else
+      providerResource <- eitherFrom[Error.NotFound].option(ResourceFactory.findById(context.providerId), s"Provider not found: ${context.providerId}");
+      providerProperties <- ResourceSerde.deserialize[KubernetesProviderProperties.Properties,Error.UnprocessableEntity](providerResource);
+      _ <- if(specProperties.num_instances > 1) {
+        Left(Error.BadRequest("Setting num_replicas > 1 is not allowed for jobs"))
+      }else {
+        Right(())
+      };
+      podTemplateOriginal <- mks.mkPodTemplate(providerProperties, specProperties);
+      // restart policy can be OnFailure or Never for Jobs. Using Never here because it makes most sense for laser use case
+      // deployments have restart policy Always at all times
+      podTemplateWithRestartPolicy = podTemplateRestartPolicy.set(skuber.RestartPolicy.Never)(podTemplateOriginal);
+
+      allSecretsInEnv = (ResourceFactory.findChildrenOfType(metaResource.orgId, context.environmentId, ResourceIds.Secret) map { secret =>
+        secret.id -> secret
+      }).toMap;
+      secrets <- specProperties.secrets.toList traverse { secretMount =>
+        val ee: EitherError[(String,SecretSpec)] = for(
+          secretResource <- eitherFrom[Error.BadRequest].option(allSecretsInEnv.get(secretMount.secret_id),
+           s"secret with ID '${secretMount.secret_id}' does not exist in environment '${context.environmentId}'");
+          secretResourceWithName = secretResource.copy(     // it's unfortunate that this needs to be done
+            properties=secretResource.properties map { props =>
+              props ++ Map("name" -> secretResource.name)
+            }
+          );
+          secretProperties <- ResourceSerde.deserialize[SecretSpec,Error.UnprocessableEntity](secretResourceWithName);
+          _ <- if(secretProperties.provider.id == context.providerId) {
+            Right(())
+          }else {
+            Left(Error.UnprocessableEntity(s"secret with ID '${secretMount.secret_id}' belongs to a different provider"))
+          }
+        ) yield s"!${secretMount.secret_id}" -> secretProperties
+        ee
+      };
+      secretsMapping = secrets.toMap;
+      // setting correct secret name
+      setSecretName = { secretId: String =>
+        secretsMapping.get(secretId) match {
+          case Some(s) => s.name
+          case None => secretId
+        }
+      };
+      podTemplateWithSecrets = (podTemplateEnvSecretsOptics.modify(setSecretName) compose
+       podTemplateVolumeSecretsOptics.modify(setSecretName))(podTemplateWithRestartPolicy);
+
+      mountedExistingVolumeIds = specProperties.volumes collect {
+        case ContainerSpec.ExistingVolumeMountSpec(_, volumeId) => volumeId
+      };
+      volumes <- mountedExistingVolumeIds.toList traverse { volumeId =>
+        val ee: EitherError[(String,(String,Boolean))] = for(
+          volumeResource <- eitherFrom[Error.BadRequest].option(ResourceFactory.findById(migrations.V13.VOLUME_TYPE_ID, volumeId),
+           "container spec had volume mount for non-existent volume");
+          volumeResourceWithName = volumeResource.copy(     // it's unfortunate that this needs to be done
+            properties=volumeResource.properties map { props =>
+              props ++ Map("name" -> volumeResource.name)
+            }
+          );
+          volumeProperties <- ResourceSerde.deserialize[VolumeSpec,Error.UnprocessableEntity](volumeResourceWithName);
+          externalId <- eitherFrom[Error.UnprocessableEntity].option(volumeProperties.external_id, s"Volume resource '${volumeResource.id}' did not have 'external_id'");
+          pvcName <- externalId.split("/") match {
+            case Array("", "namespaces", _, "persistentvolumeclaims", name) => Right(name) /* TODO: need to check namespace */
+            case _ => Left(Error.Default(s"Volume resource '${volumeResource.id}' 'external_id' was not well-formed"))
+          }
+        ) yield s"!${volumeResource.id}" -> (pvcName, volumeProperties.access_mode == VolumeSpec.ReadOnlyMany)
+        ee
+      };
+      volumesMapping = volumes.toMap;
+      // inserting correct pvc names and read only flag
+      podTemplateWithPVCRefs = (podTemplateVolumePVCRefOptics modify { pvcRef: skuber.Volume.PersistentVolumeClaimRef =>
+        volumesMapping.get(pvcRef.claimName) match {
+          case Some((pvcName, readOnly)) => pvcRef.copy(claimName = pvcName, readOnly = readOnly)
+          case None => pvcRef
+        }
+      })(podTemplateWithSecrets);
+      podTemplateWithVolumeMounts = (podTemplateVolumeMountsOptics modify { mount: skuber.Volume.Mount =>
+        volumesMapping.get(s"!${mount.name.drop(10)}") match {     // chopping off "volume-ex-" from the beginning
+          case Some((_, readOnly)) => mount.copy(readOnly = readOnly)
+          case None => mount
+        }
+      })(podTemplateWithPVCRefs)
+    ) yield {
+      skuber.batch.Job(
+        metadata = skuber.ObjectMeta(
+          name = specProperties.name,
+          namespace = "",
+          labels = Map(
+            KubernetesConstants.META_JOB_KEY -> s"${metaResource.id}"
+          ) ++ mks.mkLabels(context)
+        ),
+        spec = Some(skuber.batch.Job.Spec(
+          template = Some(podTemplateWithVolumeMounts)
+        ))
+      )
+    }
+
+    val jobNamespaceOptics = GenLens[skuber.batch.Job](_.metadata.namespace)
+
+    for(
+      jobSpec <- eitherJobSpec.liftTo[Future];
+      namespace <- cleanly(context.provider, DefaultNamespace) { kube =>
+        getNamespace(kube, context, create = true)
+      };
+      job <- cleanly(context.provider, namespace.name) { kube =>
+        kube.create[skuber.batch.Job](jobNamespaceOptics.set(namespace.name)(jobSpec)) recoverWith { case e: K8SException =>
+          e.printStackTrace()
+          Future.failed(new RuntimeException(s"Failed creating Job '${metaResource.name}': ${e.status.message}"))
+        }
+      }
+    ) yield {
+      val extraProps = Map(
+        "external_id" -> s"/namespaces/${job.ns}/jobs/${job.name}",
+        "status" -> "LAUNCHED"
+      )
+      metaResource.copy(properties = Some((metaResource.properties getOrElse Map()) ++ extraProps))
+    }
+  }
   
-  def destroyJob(job: GestaltResourceInstance): Future[Unit] = destroy(job)
+  def destroyJob(job: GestaltResourceInstance): Future[Unit] = {
+    import skuber.json.batch.format._
+    
+    val provider = ContainerService.containerProvider(job)
+
+    val namespace = getNamespaceForResource(job, "jobs")
+
+    cleanly(provider, namespace) { kube =>
+      for(
+        jobs <- kube.listSelected[ListResource[skuber.batch.Job]](META_JOB_KEY is s"${job.id}");
+        selectors = jobs map { job =>
+          job.spec.flatMap(_.selector).get
+        };
+        pods <- (Future.traverse(selectors) { selector =>
+          kube.listSelected[PodList](selector).map(_.items)
+        }) recover {
+          case e: K8SException => {
+            log.warn(s"K8S error listing/deleting Pods associated with job ${job.id}")
+            List()
+          }
+        };
+        _ <- Future.traverse(jobs.items) { job =>
+          kube.delete[skuber.batch.Job](job.name)
+        };
+        _ <- Future.traverse(pods.flatten) { pod =>
+          kube.delete[Pod](pod.name)
+        }
+      ) yield {
+        if(pods.isEmpty) {
+          log.debug(s"$namespace: deleted no Pods")
+        }
+        ()
+      }
+    }
+  }
 
 }
 

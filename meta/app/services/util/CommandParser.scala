@@ -10,7 +10,7 @@ object CommandParser {
   val IN_QUOTE = 1
   val IN_DOUBLE_QUOTE = 2
 
-  def translate(toProcess: String) = {
+  def translate(toProcess: String): List[String] = {
 
     if (toProcess == null || toProcess.isEmpty) {
       Array[String]()
